@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development velocity — the migration, and what is left</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="top">
+  <p class="kicker">Walkthrough · rebuilt 2026-09-26 · the migration has landed, PR #348 is open</p>
+  <h1>Development velocity — the migration, and what is left</h1>
+  <p class="sub">Backlog <strong>#177</strong> · anchor <code>review-decides-itself</code> · branch <code>backlog-177-velocity-backfill</code></p>
+  <p class="lede">Highlight any passage and press <strong>Ask</strong> — the question reaches my session with the section and the text you selected, and I answer here.</p>
+</header>
+
+<div class="box acc" id="howto">
+  <span class="lbl">How to read this, and how to ask <span id="modechip">○ checking…</span></span>
+  <p><strong>Stable URL:</strong> <code>http://127.0.0.1:7391/latest</code> always points at the newest
+  page. This one is <code>http://127.0.0.1:7391/2026-09-25-brief-velocity-prespec-walkthrough</code>.</p>
+  <p><strong>To ask a question:</strong> select any text, or hover a heading, and press <strong>ask</strong>.
+  Type, press <strong>Send</strong>, then tell me <em>“read my questions”</em>. The question arrives with
+  the heading and the exact passage you highlighted, so you need not restate the context.</p>
+  <p><strong>If that URL does not load:</strong> run <code>python3 scripts/explainer-serve.py</code> from
+  the repository — safe to run twice. <strong>A reboot stops it</strong>, which is the one moment you will
+  need this sentence.</p>
+  <p>Opening the file directly from <code>~/explainers/</code> still reads perfectly; the only thing a
+  <code>file://</code> copy loses is the <strong>Send</strong> button.</p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">What changed since you last read this page</span>
+  <p><strong>This page used to say there was no spec. There is one now, and the old document is gone as
+  an authority.</strong> When you read this on the 25th it was a <em>pre-spec</em> walkthrough: one file,
+  <code>docs/development-velocity.md</code>, doing four jobs at once, and a list of questions a spec
+  would have to settle.</p>
+  <p>Since then the spec was written, passed your Phase&nbsp;1 gate, went through <strong>three
+  adversarial review rounds</strong>, and — on your instruction — the old document was decomposed
+  entirely. It is now three documents plus a forwarding stub.</p>
+</div>
+
+<h2><span class="n">1</span>One document became three, with one owner each</h2>
+
+<p>The root problem was never rigour — it had been through ten review rounds. The problem was that a
+single file held <strong>measurements, design, rules and decisions simultaneously</strong>. That is why
+three review rounds in a row each caught a reader being routed to it for something it no longer owned.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Document</th><th>Holds</th><th>Nothing else</th></tr>
+<tr>
+  <td><code>superpowers/specs/…-development-velocity-RECONSTRUCTED-design.md</code></td>
+  <td>the <strong>design</strong> — Q0, the four seam signals, the five timing rules, the sweep policy — <strong>and the decisions</strong>: four rejections, five settled answers</td>
+  <td>no measurements; it points at the evidence</td>
+</tr>
+<tr>
+  <td><code>docs/velocity-evidence-2026-09-24.md</code></td>
+  <td>the <strong>dated measurements</strong>: the baseline, the controlled experiment, the CI cost figures, and the evidence behind the two adopted rule sets</td>
+  <td>no rule, no design, no decision</td>
+</tr>
+<tr>
+  <td><code>docs/process-checklists.md</code> §6 and §7</td>
+  <td>the <strong>rules actually in force</strong> — unchanged, they landed in PR #345</td>
+  <td>—</td>
+</tr>
+<tr>
+  <td><code>docs/development-velocity.md</code></td>
+  <td>a 70-line <strong>tombstone</strong>: where each old §1–§10 went, plus the citing-sites list</td>
+  <td>not a document at all — a forwarding table</td>
+</tr>
+</table>
+</div>
+
+<div class="box acc">
+  <span class="lbl">The rule that decided every placement</span>
+  <p><strong>Is it a measurement, or is it a decision?</strong> A measurement is an observation with a
+  time on it, so a dated historical record is its correct home — and the spec cites it there rather than
+  copying it, which is what <code>portable-practices</code> §26 requires.</p>
+  <p>A <em>decision</em> is different, and this is the part that was wrong until today: §8's four
+  rejections and §9's five answers were <strong>pointed at</strong>, not moved. The evidence document's
+  own banner says no decision is cited from it. So the spec was citing a retired file for decisions
+  while forbidding exactly that — and the spec's own falsifier fired on it. <strong>They are moved
+  now.</strong></p>
+</div>
+
+<h2><span class="n">2</span>Why the section numbers have gaps on purpose</h2>
+
+<p>The evidence document keeps <strong>§1, §4, §5, §6, §7</strong> and skips the rest. That looks untidy
+and is deliberate: roughly <strong>23 review documents cite this content as <code>§6</code></strong>, by
+number. Renumbering would have broken every one of those citations silently.</p>
+
+<p>It is also why the old filename still exists. Deleting it would have turned 23 stale citations into
+23 dangling ones — so the path survives as a forwarding table whose only job is answering
+<em>“where did §N go?”</em></p>
+
+<h2><span class="n">3</span>The citing-sites list — the actual fix, and why prose kept failing</h2>
+
+<div class="box bad">
+  <span class="lbl">Three rounds, one defect, repeated</span>
+  <p>Rounds 1, 2 and 3 each found a reader sent to a retired section. Each repair covered
+  <strong>only the sites the previous round happened to name</strong>, so the next round found a
+  different one. Round 3 called this <strong>thrashing</strong> and named the cause: <em>no document
+  lists the inbound sites, so every sweep is performed from scratch by hand and each one is incomplete
+  somewhere new.</em></p>
+</div>
+
+<p>The tombstone now carries that list — <strong>7 live sites</strong>, each with what it cites and
+whether that is measurement or design, plus ~23 historical ones left untouched as dated testimony.</p>
+
+<div class="box warn">
+  <span class="lbl">The site that proves a search could never have worked</span>
+  <p>One live site <strong>contains no occurrence of the filename at all.</strong>
+  <code>process-checklists.md</code>'s side-job rule said <em>“that document's banner marks §3 not
+  built”</em> — a pronoun. Its antecedent had moved to the spec in an earlier fold and the sentence did
+  not follow.</p>
+  <p>Round 2 swept <strong>3,267 files</strong> for the filename and could not see it. Neither could the
+  fold that answered round 2. That single row is why the table is written by hand rather than generated,
+  and why the deletion condition says out loud that <code>grep</code> cannot answer it.</p>
+</div>
+
+<h2><span class="n">4</span>Three corrections I made were themselves wrong</h2>
+
+<p>Round 3 filed <strong>20 findings — 1 Blocking, 7 High, 8 Medium, 4 Low — and 16 of the 20 were
+created by an earlier round's own fix.</strong> Three of them land on corrections I had written the day
+before, and it derived all three rather than asserting them.</p>
+
+<div class="scroll">
+<table>
+<tr><th>What I claimed</th><th>What is true</th></tr>
+<tr>
+  <td>the sweep is 79.5–82.8% of <code>verify</code> — a <strong>3.3-point band</strong></td>
+  <td>that is a property of the <strong>six runs I picked by hand</strong>. Over all <strong>34</strong> runs in the window it is <strong>73.5–82.8%, a 9.3-point band</strong></td>
+</tr>
+<tr>
+  <td>the earlier figures <code>78 / 79 / 81 / 83 / 83%</code> are <strong>“NOT REPRODUCIBLE”</strong></td>
+  <td>every one reproduces — <code>78</code> is run <code>35947529595</code> at 77.7%. What they lacked was <strong>provenance, not truth</strong></td>
+</tr>
+<tr>
+  <td><code>1.76×</code> was <strong>invented</strong> — it is not derivable</td>
+  <td>587/333 = <strong>1.7628</strong>, the sweep-step spread of the same pair, printed one column over in my own table. <strong>Transposed, not fabricated</strong></td>
+</tr>
+<tr>
+  <td>a line count went stale <strong>at 335</strong></td>
+  <td>it went stale at <strong>285</strong>, <em>downward by 41 lines</em>, and stayed wrong for three commits. 335 was merely the count when I wrote the correction</td>
+</tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">The pattern worth naming out loud</span>
+  <p>Twice now, a sentence written <em>inside the table that exists to retract overclaims</em> was itself
+  an overclaim. “Not reproducible” reads as <em>invented</em>; what I had actually established was that no
+  run selection was recorded. <strong>The arithmetic was right and the diagnosis was asserted.</strong></p>
+</div>
+
+<h2><span class="n">5</span>The measurement that survives, and how it is stated now</h2>
+
+<p>The corpus is no longer a selection. It is a <strong>query</strong>, printed in the spec so anyone
+re-derives it: every successful <code>ci.yml</code> run from 2026-09-23 to 2026-09-26, <strong>n = 34</strong>,
+none excluded.</p>
+
+<div class="scroll">
+<table>
+<tr><th></th><th>Range</th><th>Spread</th></tr>
+<tr><td>sweep share of <code>verify</code></td><td><strong>73.5% – 82.8%</strong>, median 80.6%</td><td>1.13×</td></tr>
+<tr><td><code>verify</code> total</td><td><strong>397s – 709s</strong></td><td>1.79×</td></tr>
+</table>
+</div>
+
+<div class="box ok">
+  <span class="lbl">What is safe to say, and what is not</span>
+  <p><strong>Safe:</strong> the mutation sweep is roughly <strong>four fifths</strong> of the
+  <code>verify</code> job. That holds across all 34 runs.</p>
+  <p><strong>Safe:</strong> a within-run <em>ratio</em> is far steadier than a duration. Totals vary
+  1.79× while shares vary 1.13× — as dispersion above 1, <strong>79% against 13%, about six times less
+  variable.</strong> That “six times” now states the definition it depends on, because the raw quotient
+  of the two ratios is 1.6× and the two measure different things.</p>
+  <p>⛔ <strong>Not safe:</strong> any comparison of one run's duration against another's. And not the
+  old <em>“GitHub is 2× faster than this machine”</em> — it sets CI's whole <code>verify</code> job
+  against the local <em>sweep alone</em>. That retraction had reached one of five places that state it;
+  it now reaches all five.</p>
+</div>
+
+<h2><span class="n">6</span>Five decisions of record — do not re-open these</h2>
+
+<p>They moved into the spec today. Q2 and the session's scope were yours; the rest were settled from
+evidence.</p>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>Question</th><th>Answer</th></tr>
+<tr><td>1</td><td>Where does Q0 live?</td><td><code>review-method.md</code> §0 — measured: it is unbudgeted and §0 is already the decision-procedure home</td></tr>
+<tr><td>2</td><td>Is Q0 mechanisable?</td><td><strong>Partly — hybrid.</strong> Your decision: judgement at the entry, mechanical for escalation</td></tr>
+<tr><td>3</td><td>Should the draft PR be automatic?</td><td><strong>No</strong> — adopt the practice, don't build the hook</td></tr>
+<tr><td>4</td><td>Can “no unmeasured number” be a gate?</td><td><strong>No</strong> — a syntactic proxy for a semantic property. Adopted as a habit instead</td></tr>
+<tr><td>5</td><td>Does the side-job trigger belong in a hook?</td><td><strong>Deferred</strong> — it depends on Q0's form</td></tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">One decision ships on a justification the spec forbids citing</span>
+  <p>Decision 3's case rests entirely on the speed measurement — and that measurement is the cracked
+  comparison above. An earlier draft also claimed the draft-PR practice <em>“caught backlog #176 r2's
+  Blocking on its first use”</em>; <strong>false, and its own source says so</strong> — the review
+  records <code>verify pending</code> at that moment. <strong>There is no caught-defect evidence for the
+  practice.</strong> It is cheap and reversible, so it stands — but it should not be defended with that
+  figure. Recorded, not resolved.</p>
+</div>
+
+<h2><span class="n">7</span>What is actually left</h2>
+
+<p>Two strands of the original five, and one of them gates everything mechanical.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Strand</th><th>State</th></tr>
+<tr><td>⑴ <strong>Q0</strong> into <code>review-method.md</code> §0</td><td>designed, <strong>not built</strong></td></tr>
+<tr><td>⑸ <strong>De-escalation</strong> — when findings shift to wording, stop</td><td>open, small</td></tr>
+<tr><td><strong>Calibration</strong></td><td>⛔ <strong>not started, and it gates everything mechanical</strong> — the four signals (named just below) must be shown to separate thrashing branches from clean ones before any script asserts they do</td></tr>
+<tr><td>⑵⑶⑷</td><td>✅ shipped in PR #345</td></tr>
+</table>
+</div>
+
+<h3>The four signals, named — because the row above leans on them</h3>
+
+<p>They answer one question: <strong>is this a seam problem or a logic problem?</strong> A seam problem
+wants an architecture review <em>before</em> more building; a logic problem wants the normal review loop.
+Spec §2, <em>The escalation half</em>.</p>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>Signal</th><th>What it means in practice</th></tr>
+<tr><td><strong>1</strong></td><td>fixes locally correct but <strong>non-terminating</strong></td><td>each repair is right on its own terms, and the findings keep arriving</td></tr>
+<tr><td><strong>2</strong></td><td><strong>each fix ADDS code</strong></td><td>the change grows instead of removing the cause</td></tr>
+<tr><td><strong>3</strong></td><td><strong>machinery that manages a problem</strong> rather than doing work</td><td>scaffolding is being built around a defect instead of eliminating it</td></tr>
+<tr><td><strong>4</strong></td><td><strong>two names for one concept</strong></td><td>duplicate vocabulary, which shadows a duplicate mechanism</td></tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">This branch is a live positive for the first two — which is also why calibration is not optional</span>
+  <p>Round 3's verdict names the class exactly: <em>“a pointer changes and the repair covers only the
+  sites the previous round named.”</em> Three rounds, each fix locally correct, none terminating —
+  <strong>signal 1</strong>. And each fold answered by adding more prose rather than removing the cause —
+  <strong>signal 2</strong>. The spec's recorded positive is <code>decision-card-soundness</code>, which
+  hit <strong>signal 4</strong> (three synonyms hid a thrashing trigger) and <strong>signal 1</strong>
+  (four falsifier designs, each locally correct, none terminating).</p>
+  <p>⛔ <strong>But a signal that fires on real thrashing is only half of what a gate needs.</strong>
+  Nobody has checked whether these also stay <em>quiet</em> on branches that converged cleanly. Until
+  that is measured, a script asserting <em>“this is thrashing”</em> could be firing on everything — which
+  is precisely what §3 refuses to allow, and why a negative result there is a result and not a failure.</p>
+</div>
+
+<div class="box acc">
+  <span class="lbl">And one thing the backfill still has not achieved</span>
+  <p>The spec exists so #177 becomes visible to the anchor registry and the goals page. The registry half
+  works — <em>13 registered, all claimed</em> — and the documents render. But <strong>the page shows
+  <code>177</code> zero times</strong>, while carrying <code>#104 #117 #119 #125</code> and six more for
+  other goals. The page <em>has</em> a backlog-identity channel; <code>ROOTS</code> in
+  <code>gen-backlog-page.py</code> has exactly one key, and this goal is not it. That half is still unmet
+  — and it is now the measurable half.</p>
+</div>
+
+<h2><span class="n">8</span>Two things waiting on you</h2>
+
+<div class="box bad">
+  <span class="lbl">Decide · also on the dashboard at 2026-09-26/2</span>
+  <p><strong>1 · A rule fired saying this work needs a full architecture review, and I held none.</strong>
+  The arming condition is met — two consecutive rounds, one component, each finding introduced by the
+  previous round's repair — and round 3's required answer to <em>thrashing or prose floor?</em> is
+  <strong>thrashing</strong>. I did not convene one because the review's own named structural fix, an
+  enumerated citing-sites list, was already the change you had asked for; re-deriving it in a meeting
+  would be process for its own sake. <strong>That judgement is yours to overturn.</strong></p>
+  <p><strong>2 · Merging is a human gate.</strong> PR <strong>#348</strong> is open with six
+  documentation gates green. Not merged.</p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">Evidence, if you want to check rather than take it</span>
+  <p><code>check-docs</code>, <code>check-anchors</code>, <code>check-review-rounds</code>,
+  <code>check-backlog-closure</code>, <code>check-test-counts</code>, <code>check-dashboard-entry</code>
+  — all <code>rc=0</code>. Tombstone and evidence links: <strong>22 checked, 0 broken.</strong>
+  Reviews at <code>docs/reviews/codex/velocity-backfill-r2-codex.md</code> and
+  <code>docs/reviews/claude/velocity-backfill-r3-claude.md</code>.</p>
+  <p><code>git log --follow docs/velocity-evidence-2026-09-24.md</code> reaches PR #345 — the rename is
+  its own commit, because a rename plus a new file at the old path is not a rename and the first attempt
+  recorded none.</p>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var c = document.getElementById('modechip');
+  if (!c) return;
+  var live = location.protocol === 'http:' || location.protocol === 'https:';
+  c.textContent = live ? '\u25CF live \u2014 Send works' : '\u25CB local file \u2014 Send disabled';
+})();
+</script>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-09-26 07:54 · 2cf9be43</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+[
+  {
+    "name": "the no-detail probe becomes a WITH-detail probe, so the equality compares the wrong render (retargeted round 6, R3 is now a declared-render equality) [relocated with R3 to the hook's own guard, 2026-10-01]",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        got = render(rc, \"\", hook=hook).rstrip()",
+        "        got = render(rc, \"PROBE\", hook=hook).rstrip()"
+      ]
+    ],
+    "expect": "the SHIPPED hook renders exactly its declared sentences"
+  },
+  {
+    "name": "undeclared_render stops checking every code it was GIVEN and answers about only the first, so a wrong sentence further down the set is never reported",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    for rc in sorted(declared):\n        got = render(rc, \"\", hook=hook).rstrip()",
+        "    for rc in sorted(declared)[:1]:\n        got = render(rc, \"\", hook=hook).rstrip()"
+      ]
+    ],
+    "expect": "a declaration the hook does not match is reported"
+  },
+  {
+    "name": "the equality becomes a PREFIX test, so any text appended after the approved sentence passes \u2014 which is #201's shape exactly [relocated with R3 to the hook's own guard, 2026-10-01]",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        want = declared[rc].rstrip()\n        if got != want:",
+        "        want = declared[rc].rstrip()\n        if not got.startswith(want):"
+      ]
+    ],
+    "expect": "the corpus arm is refused \u2014 r6 B1   a suffix AFTER $OUT"
+  },
+  {
+    "name": "the declaration is read from the HOOK instead of from DECLARED_RENDER, so the rule approves whatever the hook currently does \u2014 the one way to make this gate worthless [relocated with R3 to the hook's own guard, 2026-10-01]",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        want = declared[rc].rstrip()",
+        "        want = got"
+      ]
+    ],
+    "expect": "the corpus arm is refused \u2014 r3 M4   append in a SEPARATE statement"
+  },
+  {
+    "name": "STDERR stops being a refusal, so a fatal error inside an arm is read as a clean run \u2014 round 6 H1, the defect that forwarded a hollow promise at EVERY firing",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    if proc.stderr.strip():",
+        "    if False and proc.stderr.strip():"
+      ]
+    ],
+    "expect": "a hook that writes to STDERR is a refusal \u2014 round 6 H1"
+  },
+  {
+    "name": "a non-zero hook exit stops being a refusal",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    if proc.returncode != 0:",
+        "    if proc.returncode is None:"
+      ]
+    ],
+    "expect": "a hook that exits NON-ZERO is a refusal"
+  },
+  {
+    "name": "malformed output is read as silence, so a broken envelope and a quiet hook stop being distinguishable",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        doc = json.loads(body)\n        return doc[\"hookSpecificOutput\"][\"additionalContext\"]",
+        "        doc = json.loads(body)\n        return doc.get(\"hookSpecificOutput\", {}).get(\"additionalContext\", \"\")"
+      ]
+    ],
+    "expect": "...and VALID JSON of the wrong shape is a refusal, not silence"
+  },
+  {
+    "name": "the coverage check stops reporting a DEFINED code with no declared sentence, so a new rc arrives with nobody having approved what the reader sees",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    for code in sorted(set(defined.values()) - set(declared)):",
+        "    for code in sorted(set() - set(declared)):"
+      ]
+    ],
+    "expect": "a defined code with NO declared sentence is refused"
+  },
+  {
+    "name": "the coverage check stops reporting a DECLARED code nothing defines",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    for code in sorted(set(declared) - set(defined.values())):",
+        "    for code in sorted(set() - set(defined.values())):"
+      ]
+    ],
+    "expect": "a declared sentence for a code nothing defines is refused"
+  },
+  {
+    "name": "the fixture hook stops being removed, so a self-test leaves debris in the repo it measures \u2014 an instrument that edits the repo corrupts its peers",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        path.unlink(missing_ok=True)",
+        "        pass"
+      ]
+    ],
+    "expect": "...and no fixture hook of THIS RUN survived the suite"
+  },
+  {
+    "name": "render stops defaulting to the SHIPPED hook, so production could observe a fixture",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "def render(rc: int, out: str, hook: Path | None = None) -> str:",
+        "def render(rc: int, out: str, hook: Path = HOOK) -> str:"
+      ]
+    ],
+    "expect": "render defaults to the SHIPPED hook, so the live run has no fixture to be unfaithful to"
+  },
+  {
+    "name": "the dangling-promise net over the DECLARED LITERALS stops reporting, so approving backlog #201's own text passes \u2014 round 7 H1, the property the relocation lost",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "            if sep and not tail.strip():",
+        "            if sep and tail.strip():"
+      ]
+    ],
+    "expect": "...and #201's own text WOULD be refused if someone approved it"
+  },
+  {
+    "name": "the net's result is never READ at the call site, so the literals go unchecked while the function that checks them still runs",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        for code, label in declaration_dangles(DECLARED_RENDER):",
+        "        for code, label in []:"
+      ]
+    ],
+    "expect": "H1 is WIRED \u2014 the net's result reaches the verdict through main"
+  },
+  {
+    "name": "the env is inherited wholesale again in the SCRUBBED probe, so an ambient PYTHONVERBOSE turns the gate into a refusal \u2014 round 7 L1, retargeted onto the named allowlist",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        env = ({k: v for k, v in os.environ.items() if k in SUBPROCESS_ENV_KEYS} if scrub\n               else dict(os.environ))",
+        "        env = dict(os.environ)"
+      ]
+    ],
+    "expect": "an ambient PYTHONVERBOSE does not turn the gate into a refusal \u2014 round 7 L1"
+  },
+  {
+    "name": "coverage's result is never READ at the call site, so a defined code with no approved reader sentence passes \u2014 round 8 B1, the FOURTH instance of the wiring class",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        problems = coverage(defined, DECLARED_RENDER)",
+        "        problems = []"
+      ]
+    ],
+    "expect": "coverage is WIRED \u2014 its result reaches the verdict through main"
+  },
+  {
+    "name": "the ambient probe is dropped, so the ENVIRONMENT becomes a staged proxy again and an arm reading an ambient variable passes \u2014 round 8 H2",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    if ambient != scrubbed:",
+        "    if False and ambient != scrubbed:"
+      ]
+    ],
+    "expect": "an arm reading an AMBIENT variable is a refusal \u2014 round 8 H2"
+  },
+  {
+    "name": "the WITH-DETAIL polarity stops being checked at the call site, so a truncated or reformatted detail reaches the reader unapproved \u2014 round 8 H3",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        bad += undeclared_detail(DECLARED_WITH_DETAIL)",
+        "        bad += []"
+      ]
+    ],
+    "expect": "the WITH-DETAIL polarity is WIRED \u2014 its result reaches the verdict through main"
+  },
+  {
+    "name": "the with-detail equality becomes a PREFIX test, so a TRUNCATED detail passes \u2014 the exact shape round 8 H3 reproduced",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "        want = declared[rc].replace(\"{detail}\", probe).rstrip()\n        if got != want:",
+        "        want = declared[rc].replace(\"{detail}\", probe).rstrip()\n        if not want.startswith(got):"
+      ]
+    ],
+    "expect": "a TRUNCATED detail is refused \u2014 round 8 H3's own arm"
+  },
+  {
+    "name": "the env allowlist diverges from its sibling, which is the drift the two hand-copies were always going to produce \u2014 round 8 H1",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")",
+        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\")"
+      ]
+    ],
+    "expect": "the subprocess env allowlist is the SAME in both guards \u2014 round 8 H1"
+  }
+]

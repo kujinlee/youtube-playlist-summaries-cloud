@@ -1,0 +1,610 @@
+<title>PR #336 and #338 — what they contain, what the review found, what needs you</title>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1a1a1a; --fg2:#3d3d3d; --fg3:#6b6b6b;
+  --rule:#e2ded6; --accent:#7a3b12; --accent2:#0f5c4a;
+  --verified:#0f5c4a; --verified-br:#bcd9d0;
+  --warnbg:#fdf6e9; --warnbr:#e6d2a8;
+  --stopbg:#fcefec; --stopbr:#e8c0b6;
+  --okbg:#eef6f2; --okbr:#bcd9d0;
+  --code:#f4f1ea; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#15161a; --panel:#1b1d22; --fg:#e9e7e2; --fg2:#c6c3bc; --fg3:#918d86;
+    --rule:#2d3036; --accent:#e8a06a; --accent2:#63c9ab;
+    --verified:#63c9ab; --verified-br:#2f5a4e;
+    --warnbg:#2a2418; --warnbr:#5c4c2a;
+    --stopbg:#2d1d1a; --stopbr:#6b3a30;
+    --okbg:#182822; --okbr:#2f5a4e;
+    --code:#202329;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:16px/1.65 ui-serif,Georgia,'Times New Roman',serif;
+  overflow-x:hidden;
+}
+.wrap{max-width:52rem; margin:0 auto; padding:2.6rem 1.4rem 6rem}
+h1{font-size:2rem; line-height:1.2; margin:0 0 .4rem; letter-spacing:-.01em}
+h2{font-size:1.32rem; margin:2.9rem 0 .7rem; padding-top:1.1rem; border-top:1px solid var(--rule); position:relative}
+h3{font-size:1.06rem; margin:1.8rem 0 .5rem; color:var(--fg2); position:relative}
+h1,h2,h3{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif; font-weight:640}
+p{margin:.75rem 0}
+a{color:var(--accent); text-decoration-thickness:1px; text-underline-offset:2px}
+code{font-family:var(--mono); font-size:.87em; background:var(--code); padding:.1em .34em; border-radius:3px}
+pre{
+  background:var(--code); border:1px solid var(--rule); border-radius:7px;
+  padding:.85rem 1rem; overflow-x:auto; margin:1rem 0;
+  white-space:pre; font-size:.84rem; line-height:1.55;
+}
+pre code{background:none; padding:0; font-size:1em; white-space:pre}
+.sub{color:var(--fg3); font-size:.95rem; margin:.1rem 0 0}
+.reading{
+  background:var(--panel); border:1px solid var(--rule); border-left:4px solid var(--accent);
+  border-radius:0 7px 7px 0; padding:.9rem 1.1rem; margin:1.5rem 0;
+}
+.reading b{display:block; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.74rem;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--fg3); margin-bottom:.3rem}
+.box{border:1px solid var(--rule); border-radius:7px; padding:.9rem 1.1rem; margin:1.3rem 0; background:var(--panel)}
+.box.warn{background:var(--warnbg); border-color:var(--warnbr)}
+.box.stop{background:var(--stopbg); border-color:var(--stopbr)}
+.box.ok{background:var(--okbg); border-color:var(--okbr)}
+.box .lbl{display:block; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.73rem;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--fg3); margin-bottom:.35rem}
+.box p:first-of-type{margin-top:0}
+.box p:last-child{margin-bottom:0}
+.tw{overflow-x:auto; margin:1.2rem 0; border:1px solid var(--rule); border-radius:7px; background:var(--panel)}
+table{border-collapse:collapse; width:100%; font-size:.9rem;
+  font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+th,td{text-align:left; padding:.55rem .75rem; border-bottom:1px solid var(--rule); vertical-align:top}
+th{font-weight:640; font-size:.79rem; letter-spacing:.04em; text-transform:uppercase; color:var(--fg3);
+   background:var(--code); position:sticky; top:0}
+tr:last-child td{border-bottom:none}
+td.num{text-align:right; font-family:var(--mono); font-size:.85rem; white-space:nowrap}
+.tag{display:inline-block; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.68rem;
+  font-weight:700; letter-spacing:.06em; padding:.13em .45em; border-radius:3px; vertical-align:.08em}
+.tag.m{background:var(--okbg); color:var(--verified); border:1px solid var(--okbr)}
+.tag.i{background:var(--warnbg); color:var(--accent); border:1px solid var(--warnbr)}
+.tag.hi{background:var(--stopbg); color:#b4442e; border:1px solid var(--stopbr)}
+@media (prefers-color-scheme:dark){ .tag.hi{color:#ef9179} }
+.toc{background:var(--panel); border:1px solid var(--rule); border-radius:7px; padding:.9rem 1.1rem; margin:1.4rem 0}
+.toc ol{margin:.3rem 0 0; padding-left:1.3rem}
+.toc li{margin:.24rem 0; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.92rem}
+.how{background:var(--panel); border:1px dashed var(--rule); border-radius:7px;
+  padding:.85rem 1.1rem; margin:1.4rem 0; font-size:.88rem;
+  font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+.how code{font-size:.85em}
+.how .u{font-family:var(--mono); font-weight:700; color:var(--accent2)}
+.how ul{margin:.45rem 0 0; padding-left:1.2rem}
+.how li{margin:.22rem 0}
+.mode{font-family:var(--mono); font-size:.76rem; color:var(--fg3)}
+.lede{font-size:1.06rem; color:var(--fg2)}
+blockquote{margin:1rem 0; padding:.55rem 0 .55rem 1.1rem; border-left:3px solid var(--rule);
+  color:var(--fg2); font-style:italic}
+blockquote p{margin:.35rem 0}
+.foot{margin-top:3.5rem; padding-top:1.1rem; border-top:1px solid var(--rule);
+  color:var(--fg3); font-size:.84rem; font-family:ui-sans-serif,system-ui,sans-serif}
+hr.sep{border:none; border-top:1px solid var(--rule); margin:2.2rem 0}
+.k{font-weight:640; color:var(--fg)}
+</style>
+
+<div class="wrap">
+
+<h1>PR #336 and #338</h1>
+<p class="sub">What they contain, what the architecture review concluded, and what is still waiting on you.</p>
+
+<div class="reading">
+  <b>How I read your request</b>
+  <p>You asked about <span class="k">PR #336 and #338</span>. I built this as <span class="k">what these two pull requests contain, what the review actually concluded, and what still needs a decision from you</span> — <em>not</em> a line-by-line diff. Both PRs are almost entirely documents; the substance is the reasoning, not the changed lines. If you wanted the diff, say so and I will build that instead.</p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">As of — rebuilt 2026-09-23 ~09:00 PDT</span>
+  <p>Master is <code>6a0974b3</code>. <span class="k">All three pull requests this page was written about are now MERGED</span>, and the decisions it asked for have been taken:</p>
+  <ul style="margin:.5rem 0 .3rem; padding-left:1.2rem; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.92rem">
+    <li><b>#336</b> merged <code>d99d9349</code> — terminology.</li>
+    <li><b>#338</b> merged <code>71a32378</code> — the review, 15 findings, six backlog entries.</li>
+    <li><b>#339</b> merged <code>6a0974b3</code> — F13 promoted to its own row, <b>🟠 #170</b>.</li>
+    <li><b>#340</b> <span class="k">OPEN, not merged</span> — backlog consolidation. Anything below marked as #340's work is <em>not on master yet</em>.</li>
+  </ul>
+  <p class="sub" style="margin-top:.5rem">Everything below was re-measured at <code>6a0974b3</code> for this rebuild, not carried over from the earlier draft.</p>
+</div>
+
+<div class="how">
+  <p style="margin:.1rem 0 .45rem"><b>This page can answer back.</b> <span class="mode" id="modechip">● checking…</span></p>
+  <ul>
+    <li>Live at <span class="u">http://127.0.0.1:7391/latest</span> — always the newest page, so a bookmark never goes stale.</li>
+    <li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say <b>“read my questions”</b> in the session.</li>
+    <li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice. <b>A reboot stops it</b>, which is the one moment you will need this line.</li>
+    <li>A <code>file://</code> copy still reads perfectly. It only loses <b>Send</b>.</li>
+  </ul>
+</div>
+
+<div class="toc">
+  <b style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:.74rem;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3)">On this page</b>
+  <ol>
+    <li><a href="#waiting">What needs you — two decisions taken, one PR open</a></li>
+    <li><a href="#what">What am I looking at</a></li>
+    <li><a href="#why">Why a review happened at all</a></li>
+    <li><a href="#finding">The finding</a></li>
+    <li><a href="#f13">F13 — the grammar already drifted (now row #170)</a></li>
+    <li><a href="#wrong">What I got wrong</a></li>
+    <li><a href="#order">The recommended order — <b>revised</b></a></li>
+    <li><a href="#evidence">Measured vs inferred</a></li>
+  </ol>
+</div>
+
+<h2 id="waiting">What needs you</h2>
+
+<p class="lede">The two decisions this page originally asked for are <b>done</b>. One thing is open, and one question is worth a deliberate answer before any code is written.</p>
+
+<div class="box ok">
+  <span class="lbl">✅ Settled since this page was first built</span>
+  <table>
+    <tr><th>Question</th><th>Your answer</th><th>Result</th></tr>
+    <tr><td>Merge #338?</td><td><b>Merge it</b></td><td><code>71a32378</code> — the review and all 15 findings are on master</td></tr>
+    <tr><td>Does F13 get its own row?</td><td><b>Yes</b></td><td><b>🟠 #170</b>, merged as <code>6a0974b3</code>. #166 keeps a <em>pointer</em>, not a summary, so the two cannot drift apart</td></tr>
+  </table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">Open — PR #340, backlog consolidation</span>
+  <p>You asked me to <em>“consolidate backlogs if reasonable”</em>. Reasonable turned out to mean <span class="k">three edits and zero merges</span> — combining rows would destroy the measured instances that make each one worth keeping.</p>
+  <table>
+    <tr><th>Edit</th><th>Why</th></tr>
+    <tr><td><b>#165 CLOSED</b></td><td>It asks for the architecture review that merged this morning. Its own correction already said it “reduces to #100”; only its status cell never caught up.</td></tr>
+    <tr><td><b>#143 ↔ #167 linked</b></td><td>Measured, not thematic — #167's adapter <em>finds</em> #143's copies, plus one #143 never knew about. See below.</td></tr>
+    <tr><td><b>#164 status refreshed</b></td><td>“for the architecture review this branch already owes” stopped being true when the review ran.</td></tr>
+  </table>
+  <p style="margin-top:.6rem">⛔ <span class="k">Closing #165 is not the same as the work being done.</span> The work it pointed at lives in #100 + #166 + #170. Conflating those is how a backlog starts lying, so the row says it explicitly.</p>
+</div>
+
+<div class="box stop">
+  <span class="lbl">Worth a deliberate answer — the build order changed</span>
+  <p>This page recommended <b>#167 first</b>. <span class="k">Your own question about filing all six overturned that</span>, and the revised argument is in §<a href="#order">The recommended order</a>. Short version: if the extraction work happens soon, <b>extract first, build the adapter second</b> — otherwise the guard goes red on its own <code>ALLOWED</code> entries.</p>
+</div>
+
+<h2 id="what">What am I looking at</h2>
+
+<div class="tw"><table>
+<thead><tr><th>PR</th><th>What it is</th><th>Size</th><th>State</th></tr></thead>
+<tbody>
+<tr><td><b>#336</b></td><td>A terminology correction — “Phase 6” → “architecture review” in four rows written that day. The process doc names the phase <em>Architecture Review</em>; the 6 is a row index.</td><td class="num">2 files<br>5 ± lines</td><td><b>MERGED</b><br><code>d99d9349</code></td></tr>
+<tr><td><b>#338</b></td><td>The architecture review itself (856 lines, 15 findings), three new backlog rows, dated corrections to four existing rows, a roadmap tick, and three dashboard entries.</td><td class="num">4 files<br>+1010 / −5</td><td><b>MERGED</b><br><code>71a32378</code></td></tr>
+<tr><td><b>#339</b></td><td>F13 promoted out of #166 into its own row, <b>🟠 #170</b>. #166 keeps a pointer rather than a summary — a summary in two places is the exact defect both rows describe.</td><td class="num">3 files<br>+37 / −1</td><td><b>MERGED</b><br><code>6a0974b3</code></td></tr>
+<tr><td><b>#340</b></td><td>Backlog consolidation — #165 closed, #143↔#167 linked, #164 refreshed. <b>No rows merged.</b></td><td class="num">2 files<br>+33 / −4</td><td><b>OPEN</b></td></tr>
+</tbody>
+</table></div>
+
+<p>#336 is trivial. <span class="k">Everything interesting is in #338.</span> The rest of this page is about that, plus what the two follow-ups changed.</p>
+
+<h2 id="why">Why a review happened at all</h2>
+
+<p>The process document has a rule that convenes an architecture review automatically. It is not a schedule and not a count:</p>
+
+<blockquote><p>“It fires when <b>two consecutive rounds carry findings caused by the previous round's own fix, in one component</b>”<br>— <code>docs/dev-process.md:108</code></p></blockquote>
+
+<p>That fired on <span class="k">two separate slices</span>, and in both cases the party whose own fixes were under review wrote the arming down <em>before</em> the round that would later have been accused of softening it:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Slice</th><th>Evidence</th><th>Who confirmed it</th></tr></thead>
+<tbody>
+<tr><td>banner / <code>unheralded</code> (PR #332)</td><td>rounds 3, 4 and 5 each carried findings caused by the previous round's fix</td><td>pre-committed <b>by round 4, in writing</b>, before round 5 ran</td></tr>
+<tr><td>Stop-observer (PR #333)</td><td>r3's Medium came from r2's fix; 2 of r4's 5 came from r3's fix</td><td><b>both review halves independently</b>; r5 re-derived the rule from the doc's own text</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="finding">The finding</h2>
+
+<div class="box stop">
+  <span class="lbl">The thing that reframes everything else</span>
+  <p><span class="k">This class was named, in writing, twenty-four hours before it happened again.</span></p>
+  <p>The previous architecture review — <code>architecture-review-2026-09-21-workflow-readers.md</code>, dated <b>2026-09-21</b> — ends by naming exactly this problem:</p>
+  <blockquote><p>“This is <code>CONTEXT.md</code>'s own doctrine — <em>one mechanism per concern; duplicate vocabulary is the shadow of a duplicate protocol</em> — which the repo enforces on schema (<code>check-vocabulary-collisions.py</code>, whose docstring scopes it to schema) and <b>has never applied to its own guards</b>.”<br>— <code>:50-53</code></p></blockquote>
+  <p>On <b>2026-09-22</b>, the very next day, a fourth duplicate shipped in commit <code>ebfb74f1</code> — carrying a docstring that names the problem in capitals and ships it anyway:</p>
+</div>
+
+<pre><code>⚠ THIS IS THE THIRD `log_line` IN `scripts/`, AND THAT IS WORTH SAYING OUT LOUD RATHER THAN
+LEAVING FOR THE NEXT READER TO NOTICE. ...
+⭐ SO THIS ONE DOES NOT INVENT A FOURTH GRAMMAR. Matching the closest sibling is the cheapest
+thing that does not make the problem worse; CONSOLIDATING the three is a design question, not a
+thing to decide inside a slice that was asked for a log.
+
+                                             — scripts/check-ci-watched.py:159-167</code></pre>
+
+<p><span class="k">That reasoning is correct at the moment it was written.</span> The author faced two real costs and took the smaller one. This is why the recommendation is an <em>instrument</em> and not a cleanup: nothing made the duplicate cost anything at the moment it was written, so naming the class did not — and could not — prevent it.</p>
+
+<h3>Why nothing caught it</h3>
+
+<p>Six guards take <code>scripts/</code> as their subject. Measured by reading each one, <span class="k">every one of them asks a question answerable by looking at a single file</span>:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Guard</th><th>Question it asks</th><th>Span</th></tr></thead>
+<tbody>
+<tr><td><code>check-ratchet-contract.py</code></td><td>does <b>this file</b> have a self-test / no fail-open / a caller?</td><td>one file</td></tr>
+<tr><td><code>check-selftest-counts.py</code></td><td>does <b>this file's</b> declared count match what ran?</td><td>one file</td></tr>
+<tr><td><code>check-plan-code.py</code></td><td>does <b>this mutation</b> redden the case it names?</td><td>one entry</td></tr>
+<tr><td><code>check-fixture-variation.py</code></td><td>do these cases vary <b>this parameter</b>?</td><td>one suite</td></tr>
+<tr><td><code>check-storage-independence.py</code></td><td>does <b>this file</b> read <code>storage.*</code>?</td><td>one file</td></tr>
+<tr><td><code>check-review-recorded.py</code></td><td>did <b>this branch</b> record a round?</td><td>one branch</td></tr>
+</tbody>
+</table></div>
+
+<p>Not one asks a property that holds over the <em>set</em>. The collision guard that <em>would</em> catch it exists — and its own opening paragraph explains why the other instruments cannot:</p>
+
+<blockquote><p>“every gate this project owns asks ‘is this correct?’, which is a LOCAL question and can always be answered yes by patching. <b>A duplicated mechanism is never locally incorrect.</b>”<br>— <code>scripts/check-vocabulary-collisions.py:12-14</code></p></blockquote>
+
+<h3>The extraction idiom already exists here and works</h3>
+
+<p>This is not “the repo doesn't factor code out”. It does, twice, at family scale — and the observer family has never used it:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Family</th><th>Shared module</th><th class="num">Importers</th></tr></thead>
+<tbody>
+<tr><td>Page generation</td><td><code>page_chrome</code></td><td class="num">6</td></tr>
+<tr><td>Page generation</td><td><code>page_markup</code></td><td class="num">5</td></tr>
+<tr><td>Schema gates</td><td><code>m4_base_db</code></td><td class="num">6</td></tr>
+<tr><td>Schema gates</td><td><code>m4_catalog</code></td><td class="num">5</td></tr>
+<tr><td>Schema gates</td><td><code>subject_status</code></td><td class="num">3</td></tr>
+<tr><td>Mutation harness</td><td><code>coverage_verdict</code></td><td class="num">1</td></tr>
+</tbody>
+</table></div>
+
+<div class="tw"><table>
+<thead><tr><th>The observer family</th><th class="num">Lines</th><th>Shared modules imported</th></tr></thead>
+<tbody>
+<tr><td><code>check-banner-armed.py</code></td><td class="num">2,545</td><td><b>none</b></td></tr>
+<tr><td><code>check-closing-table.py</code></td><td class="num">1,655</td><td><b>none</b></td></tr>
+<tr><td><code>begin-plan.py</code></td><td class="num">1,025</td><td><b>none</b></td></tr>
+<tr><td><code>check-ci-watched.py</code></td><td class="num">890</td><td><b>none</b></td></tr>
+<tr><td><code>check-plan-progress.py</code></td><td class="num">606</td><td><b>none</b></td></tr>
+<tr><td><b>total</b></td><td class="num"><b>6,721</b></td><td><b>none</b></td></tr>
+</tbody>
+</table></div>
+
+<h3>The fix is a second adapter, not a new guard</h3>
+
+<div class="box ok">
+  <span class="lbl">Answered 2026-09-23 · &ldquo;is this already implemented or you are just suggesting?&rdquo;</span>
+  <p><b>Suggesting. Nothing here is implemented</b> &mdash; backlog <b>#167</b> is a proposal and no
+  code has been written for it. But two things it rests on <em>are</em> already real, and that is
+  exactly where the wording above was ambiguous.</p>
+
+  <table>
+    <tr><th>Thing</th><th>Status, re-checked just now</th></tr>
+    <tr><td><code>evaluate()</code> is substrate-neutral</td>
+        <td><b>REAL, shipped.</b> It takes <code>(container, name)</code> string pairs and was split from
+        its data fetch in August so the rule could run without Postgres.</td></tr>
+    <tr><td>The extraction idiom</td>
+        <td><b>REAL, in use.</b> <code>page_chrome</code> has 6 importers, <code>m4_base_db</code> 6,
+        <code>page_markup</code> 5. Those modules exist today.</td></tr>
+    <tr><td>A second adapter over <code>scripts/</code></td>
+        <td><b>DOES NOT EXIST.</b> No such file in <code>scripts/</code>.</td></tr>
+    <tr><td>The guard reading <code>scripts/</code></td>
+        <td><b>DOES NOT HAPPEN.</b> Its population is still eight Postgres tables
+        (<code>check-vocabulary-collisions.py:52</code>) queried from
+        <code>information_schema.columns</code> (<code>:104-106</code>). Its only callers are
+        <code>check-schema-gates.sh:43</code> (gate 5 of 15, needs a live database) and
+        <code>ci.yml:293</code>, which runs <code>--self-test</code> only.</td></tr>
+  </table>
+
+  <p><b>So what is the six-collision output above?</b> A throwaway probe: an <code>ast</code> reader
+  written in a scratchpad directory, deliberately never committed, that fed <code>scripts/</code>
+  symbols to the <em>shipped</em> <code>evaluate()</code> unchanged. It demonstrates that the rule
+  <em>would</em> fire on this substrate. <span class="k">It is not the guard running, and no gate
+  anywhere checks this today.</span></p>
+
+  <p>The heading above this one says &ldquo;the extraction idiom already exists here and works&rdquo;.
+  That means the <em>pattern</em> is proven in this repo &mdash; not that this particular extraction
+  has been done. Fair challenge; the page now says so where you asked.</p>
+</div>
+
+<p><code>check-vocabulary-collisions.evaluate()</code> takes <code>(container, name)</code> pairs and does nothing but string work — <span class="k">it does not know it is looking at a database</span>. It was split from its data fetch in August specifically so the rule could run without Postgres. Handed the <code>scripts/</code> population <b>unchanged</b>, it fires correctly:</p>
+
+<pre><code>population: 1382 module-level symbols / 63 files
+
+  log_line         3 files: check-banner-armed, check-ci-watched, check-closing-table
+  WARN_LOG         3 files: check-banner-armed, check-ci-watched, check-closing-table
+  SENTINEL         4 files: begin-plan, check-banner-armed, check-ci-watched, check-plan-progress
+  parse_sentinel   2 files: check-ci-watched, check-plan-progress
+  render_sentinel  2 files: begin-plan, check-ci-watched
+  decide           5 files: check-banner-armed, check-ci-watched, check-closing-table,
+                            check-plan-progress, check-review-decision
+problems: 6</code></pre>
+
+<p><span class="k">Backlog #166 names one of those six.</span> It is not the largest.</p>
+
+<div class="box ok">
+  <span class="lbl">Answered 2026-09-23 · &ldquo;why not file all six? can we extend #166 to have all of them?&rdquo;</span>
+
+  <p><b>Five of the six are already filed &mdash; and the sixth is not a defect.</b> The wording above
+  undersold that, so here is the mapping, re-measured just now:</p>
+
+  <table>
+    <tr><th>Stem</th><th>Files</th><th>Real duplicate?</th><th>Already owned by</th></tr>
+    <tr><td><code>decide</code></td><td>5</td>
+        <td><b>No</b> &mdash; five different signatures</td><td>an <code>ALLOWED</code> entry</td></tr>
+    <tr><td><code>SENTINEL</code></td><td>4</td><td>Yes &mdash; 3 name one file</td><td>#100</td></tr>
+    <tr><td><code>parse_sentinel</code></td><td>2</td><td>Yes</td><td>#100</td></tr>
+    <tr><td><code>render_sentinel</code></td><td>2</td><td>Yes</td><td>#100</td></tr>
+    <tr><td><code>log_line</code></td><td>3</td><td>Yes</td><td>#166</td></tr>
+    <tr><td><code>WARN_LOG</code></td><td>3</td><td>Yes</td><td>#166</td></tr>
+  </table>
+
+  <p><b>Why <code>decide</code> is not a defect</b>, measured rather than asserted &mdash; the five
+  signatures share nothing but a verb:</p>
+
+<pre><code>check-banner-armed     decide(texts, armed, steps, edited, tool_uses, paused)
+check-ci-watched       decide(head_sha, watching_sha, ...)
+check-closing-table    decide(final_text, acts)
+check-plan-progress    decide(...)
+check-review-decision  decide(rounds, scope, tree_reviewed)</code></pre>
+
+  <p>Each returns its own guard's verdict. That is <em>shared identity</em>, the same category as
+  <code>created_at</code> repeating on every table &mdash; which the existing guard's docstring already
+  carves out as the reason its stem list is curated rather than &ldquo;any repeated name&rdquo;. It gets one
+  <code>ALLOWED</code> line with a written reason, not a fix.</p>
+
+  <p><b>So should #166 absorb the rest?</b> No &mdash; but the work should be done together, which is
+  not the same thing. #100 and #166 are separate <em>rows</em> because they carry different evidence
+  trails (#100 has three measured instances from September and an unresolved design question); they
+  are one <em>slice</em>. That is already how they are tracked.</p>
+
+  <div class="box stop" style="margin:.9rem 0 0">
+    <span class="lbl">⛔ Your question changed the build order</span>
+    <p>It did, and the revised argument now lives in one place:
+    §<a href="#order">The recommended order</a>. <span class="k">It is not restated here on
+    purpose</span> — an earlier version of this box carried its own copy, which then disagreed with
+    §order after that section was updated. Two copies of one argument, inside a page about two
+    copies of one mechanism.</p>
+  </div>
+
+<div class="box warn">
+  <span class="lbl">Two defects to fix while extracting</span>
+  <p><b>1 — the stem match is case-sensitive, and that is a false green.</b> Every stem in the existing list is lowercase, because Postgres column names are. Python constants are uppercase:</p>
+  <pre style="margin:.6rem 0"><code>stem='warn_log'   -> 0 hit(s)
+stem='WARN_LOG'   -> 3 hit(s)</code></pre>
+  <p>Three files declare <code>WARN_LOG</code>. Someone writing the second adapter with the schema substrate's habits gets zero collisions and a passing gate.</p>
+  <p><b>2 — the container round-trip is safe by luck.</b> It rejoins the pair as <code>"{file}.{name}"</code> and re-splits on the <em>first</em> dot. Measured, no symbol contains a dot and no two files share a stem — so it works today, but a <code>check-ci-watched.sh</code> beside the <code>.py</code> would silently collapse two containers into one.</p>
+</div>
+
+<h3>The adapter also retires a hand-maintained list — measured</h3>
+
+<p>Backlog <span class="k">#143</span> is an older row: an inventory of four places where a small piece of parsing had been <em>copied</em> rather than shared. It was found by a person reading. The sharpest instance is almost comic — a plan's own Global Constraints say verbatim <em>“Never write a second splitter for a markdown table. <code>check-docs.py</code> owns <code>CELL_SPLIT</code>”</em>, and a file in the same family ships a byte-identical copy of exactly that object.</p>
+
+<p>Running the collision rule over <code>scripts/</code> with <span class="k">#143's own stems</span> finds its instances — <b>and one it does not name</b>:</p>
+
+<pre><code>CELL_SPLIT     3 files: check-docs, check-features, gen-backlog-page
+ANCHOR         4 files: check-anchors, check-features, gen-features-page, gen-goals-page
+REGISTRY_ROW   2 files: check-anchors, gen-goals-page</code></pre>
+
+<div class="box ok">
+  <p><code>gen-goals-page</code> appears <b>twice</b> and #143 names it <b>nowhere</b> (verified: zero occurrences in the row). <span class="k">That is the argument for a mechanism over an inventory</span> — an inventory is a snapshot taken by whoever happened to be reading that day.</p>
+  <p>⚠ <b>With its caveat, stated rather than hidden.</b> <code>gen-backlog-page</code>'s <code>CELL_SPLIT</code> is a <em>borrow</em>, not a copy — <code>:98</code> reads <code>CELL_SPLIT = _cell_split()</code>, which imports the real object from its owner. The adapter would flag a <span class="k">correct</span> implementation. That is what <code>ALLOWED</code> is for, and it means <b>the adapter reports candidates, not verdicts</b>.</p>
+</div>
+
+<p>So #167 is not only a guard against the <em>next</em> duplicate. It turns #143 from a list someone re-checks by hand into one a machine maintains. That link is <span class="k">PR #340</span>, still open.</p>
+
+<h2 id="f13">F13 — the grammar already drifted <span class="tag hi">HIGH</span></h2>
+
+<p class="lede">The strongest evidence in the review. <span class="k">It is now backlog <b>🟠 #170</b></span>, its own row, merged as <code>6a0974b3</code> — it used to be buried inside #166 where a severity scan could not see it.</p>
+
+<div class="box ok">
+  <span class="lbl">What #170 gained by standing alone</span>
+  <p>Two things the finding did not have while it lived inside another row:</p>
+  <ul style="margin:.4rem 0; padding-left:1.2rem; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.92rem">
+    <li><b>Its own falsifier.</b> Concatenate <code>banner-warnings.pre-backlog96.log</code> with <code>banner-warnings.log</code> and count <code>unarmed</code> in column 3. If the answer is not obviously wrong to a reader, nothing is marking the boundary.</li>
+    <li><b>A warning about its own numbers</b> — see the live-count caveat below. No figure in that row should be quoted without re-measuring.</li>
+  </ul>
+  <p>#166 carries a <em>pointer</em> to #170, not a copy of it. That is deliberate: a summary in two places is precisely the defect both rows describe.</p>
+</div>
+
+<p>Columns 3 and 4 of the banner warning log <span class="k">swapped meaning</span> between two generations of the same file. There is no version marker in any of them:</p>
+
+<div class="tw"><table>
+<thead><tr><th>File</th><th>col 3</th><th>col 4</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>banner-warnings.pre-backlog96.log</code><br><span class="sub">2026-09-04, 6 records</span></td><td><code>STEP 4 of 5</code></td><td><code>unarmed</code></td><td><b>detail, reason</b></td></tr>
+<tr><td><code>banner-warnings-archived-2026-09-06.log</code><br><span class="sub">2026-09-05, 16 records</span></td><td><code>unarmed</code></td><td><code>STEP 3 of 4</code></td><td><b>reason, detail</b></td></tr>
+<tr><td><code>banner-warnings.log</code><br><span class="sub">live, 76 records</span></td><td><code>unarmed</code></td><td><code>STEP 2 of 5</code></td><td>reason, detail</td></tr>
+</tbody>
+</table></div>
+
+<div class="box stop">
+  <span class="lbl">Why this is the whole argument</span>
+  <p>These four logs have <span class="k">four writers and zero readers</span>. Measured across every <code>*.py</code>, <code>*.sh</code>, <code>*.ts</code>, <code>*.js</code> and <code>*.yml</code> in the repo, the only code that touches each log is the script that writes it. <code>.github/</code> has zero hits.</p>
+  <p><span class="k">A grammar with no consumer has no falsifier.</span> Its columns can invert between two generations and no test, no guard and no reviewer can observe it. That is not a prediction — it already happened, and it took an adversarial search to notice, eighteen days later.</p>
+  <p>The consequence: the 76 live records and the 6 older ones <b>are not comparable</b>, and nothing anywhere says so. These logs exist precisely to be a denominator for a “should this guard be promoted to blocking?” decision.</p>
+</div>
+
+<p><span class="k">This changed the recommendation.</span> An earlier section of the review argued the log consolidation was cheap insurance on a grammar nothing depends on — true, and it reached the wrong conclusion. The case is not the injection hole; it is that <span class="k">the denominator is already unsound</span>, and the fix needs a version marker that none of the four producers has.</p>
+
+<h3>A live-count caveat, because the page would otherwise be wrong tomorrow</h3>
+
+<div class="box warn">
+  <p>The review recorded these logs as 76 / 45 / 5 / 5. Re-measured <b>twice</b> now, and the point makes itself:</p>
+  <pre style="margin:.6rem 0"><code>                                 review   1st build   this rebuild
+banner-warnings.log                 76         76            76
+banner-flush-observations.log       45         45            45
+ci-unwatched.log                     5         12            18   ← still climbing
+closing-table-warnings.log           5          5             5</code></pre>
+  <p><code>ci-unwatched.log</code> grows because <b>this session's own Stop hooks append to it</b> — it has gained six records in the hour since this page was first built. The counts are live, not stable.</p>
+  <p>That does <em>not</em> weaken F13: <span class="k">the column inversion is in files that are closed and no longer written</span>. But it is a working demonstration of why #170 carries a warning against quoting its own numbers.</p>
+</div>
+
+<h2 id="wrong">What I got wrong</h2>
+
+<p class="lede">Three claims in this review were wrong and are corrected in the document itself. If you are deciding whether to trust the rest, these are the relevant data.</p>
+
+<h3>1 — I told you backlog #164's worked example was wrong. It wasn't.</h3>
+
+<p>I claimed the row's example would in fact be caught by the existing guard. That rests on the step number being a <em>parameter</em>. In the real subject it is not:</p>
+
+<pre><code>def decide(texts: list[str] | None, armed: bool,
+           steps=_UNSET, edited: bool = False,
+           tool_uses: int = 0, paused: bool = False) -> tuple[int, str, str]:
+
+                                    — scripts/check-banner-armed.py:503</code></pre>
+
+<p>The banner rides <em>inside</em> <code>texts</code>. Re-measured against that signature with every other parameter varied, so nothing else can explain the verdict:</p>
+
+<pre><code>findings: []
+examined: ['decide.armed', 'decide.edited', 'decide.steps', 'decide.texts']</code></pre>
+
+<p>Non-vacuous — all four parameters discovered and judged — and zero findings. <span class="k">The row was right all along.</span></p>
+
+<p><span class="k">The error:</span> I ran the guard against a <em>synthetic</em> function I wrote for the purpose, where the step genuinely was a parameter, got a correct answer about that, and wrote a conclusion about a subject with a different shape. My run was correct about the fixture and silent about the real code. I never opened <code>decide</code>'s signature before publishing.</p>
+
+<h3>2 — I said no claim rested on agent output. Then the agents delivered.</h3>
+
+<p>The review's methodology section stated that three background searches had returned nothing and that every measurement was my own. That was true when written and stopped being true afterwards — three findings (F13, F14, F15) originate as leads from an agent that reported hours late. Each was re-measured before being written down, but the sentence claiming independence was left standing and had to be corrected. A claim about how a review was conducted is exactly the kind that gets believed without checking.</p>
+
+<h3>3 — I said nothing stated which duplicate-key rule was correct. Plenty does.</h3>
+
+<p>Two parsers of the same sentinel format disagree about which value wins when a key appears twice:</p>
+
+<pre><code>input: 'sha: first\nsha: second\n'
+
+  check-plan-progress.parse_sentinel -> 'second'   (LAST wins)
+  check-ci-watched.parse_sentinel    -> 'first'    (FIRST wins)</code></pre>
+
+<p>I wrote that nothing states which is correct. But the code says a great deal:</p>
+
+<pre><code># STRIP BEFORE APPEND, so a restatement leaves ONE pair rather than a growing stack. Last-wins
+# parsing made the stack harmless to READ, which is exactly why it went unnoticed for as long
+# as it did — the file was wrong in a way no reader complained about.
+
+                                                      — scripts/begin-plan.py:518-520</code></pre>
+
+<p>So the choice is <span class="k">between two known failure modes</span>, not between a right and a wrong answer. Last-wins masked a real writer defect — recorded, not speculative. First-wins would not have masked it but would pin a stale value. That is a materially stronger argument than “no basis for choosing”.</p>
+
+<h3>4 — and one more, caught by a guard an hour ago</h3>
+
+<p>While making the consolidation edits, I closed row #165 by setting its Status cell to ✅ — and left its description still leading with <span class="tag i">🟡</span>. I had <em>noticed</em> the inconsistency and not fixed it. <code>check-docs</code> refused the commit:</p>
+
+<pre><code>✗ docs/backlog.md:193: item #165 is CLOSED (its Status cell has ✅) but still leads
+  with 🟡 — a severity scan will count it as open. Write `✅ (was 🟡)` instead,
+  keeping the original severity in parentheses.</code></pre>
+
+<p>A severity scan would have counted a closed row as open. <span class="k">The guard found it, not me</span> — which is the same shape as everything else in this section, and a fair argument for why the instrument in #167 is worth more than another careful reader.</p>
+
+<div class="box warn">
+  <span class="lbl">The pattern worth noticing</span>
+  <p>All three corrections, and the strongest finding, arrived <b>after</b> I had declared the review complete — and every one came from asking an agent to <em>refute</em> a finding rather than confirm it. The one agent asked to confirm shipped a summary that contradicted its own data table: it concluded a citation list was “still accurate” while its own file inventory omitted the file in question.</p>
+</div>
+
+<h2 id="order">The recommended order</h2>
+
+<div class="box stop">
+  <span class="lbl">⟳ Revised 2026-09-23, prompted by your question about filing all six</span>
+  <p>This page originally recommended <b>#167 first</b>. That was <span class="tag i">INFERRED</span>, and it rested on an assumption I did not state: <em>that there would be a gap before anyone did the extraction work</em>. You said you would rather fix things while the memory is fresh. <span class="k">That changes the answer, and the new argument is concrete rather than a preference.</span></p>
+  <p><code>check-vocabulary-collisions</code> <b>fails on a stale <code>ALLOWED</code> entry</b> — “this stem no longer collides, delete its entry”. So:</p>
+  <table>
+    <tr><th>Order</th><th>What happens</th></tr>
+    <tr><td>Adapter first</td><td>You write <code>ALLOWED</code> entries for five collisions you are about to remove. Removing them turns the guard <b>red</b> until the entries are deleted too. Churn you paid for by ordering it this way.</td></tr>
+    <tr><td><b>Extract first</b></td><td>The adapter ships against the final state, with <b>one</b> true <code>ALLOWED</code> entry — <code>decide</code>, the shared verb that is not a defect.</td></tr>
+  </table>
+</div>
+
+<div class="tw"><table>
+<thead><tr><th class="num">#</th><th>Work</th><th>Closes</th><th class="num">Size</th></tr></thead>
+<tbody>
+<tr><td class="num"><b>1</b></td><td><b>#166 + #170 — one log-record owner.</b> Hoist <code>_col</code>, the shared column prefix, and <b>a version marker</b>. Three files, one new module, no open questions.</td><td>#166, #170, F5, F8, F13, F14</td><td class="num"><b>S</b></td></tr>
+<tr><td class="num"><b>2</b></td><td><b>#100 — one sentinel owner.</b> Population is the <em>grammar</em> — two sentinel files, not one. <span class="k">Needs a decision first</span>, not just typing: on a duplicate key the two readers disagree and both rules have a known failure mode here.</td><td>#100, #165, F4, F10, F12</td><td class="num">M</td></tr>
+<tr><td class="num"><b>3</b></td><td><b>#167 — the adapter.</b> Now against the post-extraction state. Fix the case-sensitivity false green and the dot round-trip while extracting. Also retires #143's hand-maintained list.</td><td>#143, #167, F1, F2, F3, F9</td><td class="num">M</td></tr>
+</tbody>
+</table></div>
+
+<div class="box">
+  <p><span class="k">Why 1 and 2 are one slice even though they are two rows.</span> Taken separately, the observer family gets a shared sentinel module and a shared log module by two independent choices. That is how a third arrives.</p>
+  <p><span class="k">The honest caveat on the flip.</span> The original argument — that the instrument is what makes extractions <em>stay</em> extracted — is still true, and it is why #167 must not be dropped, only resequenced. If the extraction work slips by weeks, the old order is the right one again.</p>
+  <p><span class="k">What not to do:</span> build a sibling guard for backlog #164. The gap belongs inside <code>check-fixture-variation.py</code> as an extension — a sibling would be a second independent reader of the same test suites, a fresh instance of the exact class #167 exists for.</p>
+</div>
+
+
+<div class="box ok">
+  <span class="lbl">Answered 2026-09-23 · &ldquo;so PR #340 and backlog #170 addresses all findings in this page?&rdquo;</span>
+
+  <p><b>No &mdash; and PR #340 addressed none of them.</b> Two different things are being conflated,
+  which is my fault for putting them near each other:</p>
+
+  <ul>
+    <li><b>PR #340</b> was <em>bookkeeping</em>: it closed #165 (whose review had run), linked
+    #143&nbsp;&harr;&nbsp;#167, and refreshed #164's status. <span class="k">It fixed no
+    code.</span></li>
+    <li><b>#170</b> is a backlog <em>row</em>, not a fix &mdash; it records the finding. The work is
+    in flight now.</li>
+  </ul>
+
+  <p><b>Where all fifteen actually stand, as of this answer:</b></p>
+
+  <table>
+    <tr><th>Finding</th><th>Owner</th><th>State</th></tr>
+    <tr><td>F6 &mdash; the five-not-six comment</td><td>#169</td><td><b>FIXED</b> &mdash; deleted with <code>_col</code></td></tr>
+    <tr><td>F7 &mdash; frozen payload / dashboard step</td><td>#168</td><td><b>FIXED</b> &mdash; in the refusal message and the workflow</td></tr>
+    <tr><td>F5 &mdash; 3 of 4 producers injectable</td><td>#166</td><td><b>IN FLIGHT</b> &mdash; all four now sanitise</td></tr>
+    <tr><td>F13 &mdash; the grammar already drifted</td><td>#170</td><td><b>IN FLIGHT</b> &mdash; version marker <code>v1</code></td></tr>
+    <tr><td>F14 &mdash; two timestamp spellings</td><td>#166</td><td><b>IN FLIGHT</b> &mdash; one <code>now()</code></td></tr>
+    <tr><td>F1, F2, F3, F9 &mdash; the cross-member instrument</td><td>#167</td><td>OPEN &mdash; not started</td></tr>
+    <tr><td>F4, F10, F12 &mdash; the sentinel owner</td><td>#100</td><td>OPEN &mdash; blocked on a decision</td></tr>
+    <tr><td>F11 &mdash; derived values at two inputs</td><td>#164</td><td>OPEN &mdash; row corrected, work not started</td></tr>
+    <tr><td><b>F8</b> &mdash; <code>session_id</code> used as a path component</td><td>&mdash;</td><td><b>OPEN, and NOT FILED</b></td></tr>
+    <tr><td><b>F15</b> &mdash; a citation to an instruction that does not exist</td><td>&mdash;</td><td><b>OPEN, and NOT FILED</b></td></tr>
+  </table>
+
+  <p>⛔ <b>Two findings have no backlog row at all</b>, and you should know that rather than
+  discover it later. <b>F8</b>: <code>check-banner-armed.py</code> interpolates the externally-sourced
+  <code>session_id</code> into filenames (<code>:903</code>, <code>:920</code>, <code>:924</code>)
+  with no validation &mdash; a contract hole, exploitability nil, same class as F5 in a more
+  consequential position. <b>F15</b>: <code>check-closing-table.py:846</code> justifies its whole
+  <code>turn</code> column by citing an instruction in <code>dev-process.md</code> that has
+  <b>zero</b> occurrences there, and backlog&nbsp;#149 repeats the citation.</p>
+
+  <p>So: <b>2 fixed, 3 landing now, 8 open, 2 of those unfiled.</b> Say the word and I will file the
+  two.</p>
+</div>
+
+<h2 id="evidence">Measured vs inferred</h2>
+
+<p>Everything on this page is one of the two. The difference is usually what you came for.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>#336 merged as <code>d99d9349</code>; #338 open and clean</td><td><span class="tag m">MEASURED</span></td><td><code>gh pr view</code> at 08:21 PDT</td></tr>
+<tr><td>#338 is +1010/−5 across 4 files</td><td><span class="tag m">MEASURED</span></td><td><code>git diff --stat origin/master...044a8d45</code></td></tr>
+<tr><td>The thrashing rule's wording</td><td><span class="tag m">MEASURED</span></td><td>quoted from <code>dev-process.md:108</code></td></tr>
+<tr><td>The class was named 2026-09-21; duplicate shipped 2026-09-22</td><td><span class="tag m">MEASURED</span></td><td>review file header + <code>git log -S "def log_line"</code></td></tr>
+<tr><td>Six guards over <code>scripts/</code>, all per-member</td><td><span class="tag m">MEASURED</span> population<br><span class="tag i">INFERRED</span> classification</td><td>grep for the population; the “one file” column is my reading of each guard, not a machine's</td></tr>
+<tr><td>Observer family 6,721 lines, zero shared modules</td><td><span class="tag m">MEASURED</span></td><td>re-run for this page</td></tr>
+<tr><td>Shared-module importer counts (6/5/6/5/3/1)</td><td><span class="tag m">MEASURED</span></td><td>re-run for this page</td></tr>
+<tr><td>Six collisions over 1,382 symbols, rule unchanged</td><td><span class="tag m">MEASURED</span></td><td>re-run; output pasted above verbatim</td></tr>
+<tr><td><code>warn_log</code> → 0 hits, <code>WARN_LOG</code> → 3</td><td><span class="tag m">MEASURED</span></td><td>re-run for this page</td></tr>
+<tr><td>F13 column inversion across three log generations</td><td><span class="tag m">MEASURED</span></td><td>files opened and first records printed</td></tr>
+<tr><td>Zero readers for all four logs</td><td><span class="tag m">MEASURED</span> over code<br><span class="tag i">INFERRED</span> completeness</td><td>grep over <code>*.py/sh/ts/js/yml</code> in <code>scripts/ .claude/ .github/</code>. A parser vendored inside <code>node_modules</code> would not be seen — unlikely, not excluded</td></tr>
+<tr><td>#164's example is a genuine miss in situ</td><td><span class="tag m">MEASURED</span></td><td><code>analyse</code> re-run against <code>decide</code>'s real signature; both outputs pasted above</td></tr>
+<tr><td>Duplicate-key divergence (last-wins vs first-wins)</td><td><span class="tag m">MEASURED</span></td><td>both real parsers imported and driven</td></tr>
+<tr><td>Live log counts 76 / 45 / 12 / 5</td><td><span class="tag m">MEASURED</span>, <b>unstable</b></td><td><code>wc -l</code> at 08:2x. <code>ci-unwatched</code> grows during this session</td></tr>
+<tr><td>Three PRs merged; #340 open</td><td><span class="tag m">MEASURED</span></td><td><code>gh pr list</code> + <code>git log origin/master</code> at rebuild time</td></tr>
+<tr><td>#170 on master; #166 carries a pointer; #165 closed only on the #340 branch</td><td><span class="tag m">MEASURED</span></td><td><code>git show origin/master:docs/backlog.md</code> vs the branch</td></tr>
+<tr><td>#143's stems: <code>CELL_SPLIT</code> 3, <code>ANCHOR</code> 4, <code>REGISTRY_ROW</code> 2</td><td><span class="tag m">MEASURED</span></td><td>rule re-run over an <code>ast</code> reading of <code>scripts/</code> for this rebuild</td></tr>
+<tr><td><code>gen-backlog-page</code> borrows rather than copies</td><td><span class="tag m">MEASURED</span></td><td><code>:98</code> reads <code>CELL_SPLIT = _cell_split()</code>; the copy is <code>check-features.py:156</code></td></tr>
+<tr><td>#143 does not name <code>gen-goals-page</code></td><td><span class="tag m">MEASURED</span></td><td>zero occurrences in the row on master</td></tr>
+<tr><td>Live counts moved 5 → 12 → 18</td><td><span class="tag m">MEASURED</span>, <b>unstable</b></td><td>three separate <code>wc -l</code> runs; still climbing</td></tr>
+<tr><td>“Merge #338” / “give F13 its own row”</td><td><span class="tag i">INFERRED</span> — <b>now decided</b></td><td>they were my recommendations; you took both</td></tr>
+<tr><td><b>The flipped order</b> — extract first, adapter third</td><td><span class="tag i">INFERRED</span></td><td>The stale-<code>ALLOWED</code> mechanism is measured (it is in the guard's code). That it <em>outweighs</em> the “instrument first” argument is my judgement, and it depends on your stated intent to do the work now. No experiment establishes it</td></tr>
+<tr><td>Motive attributed to the duplicate's author (“cheapest move”)</td><td><span class="tag m">MEASURED</span> as a quote<br><span class="tag i">INFERRED</span> as a cause</td><td>the docstring says it; that it is the <em>reason</em> naming failed is my argument</td></tr>
+</tbody>
+</table></div>
+
+<div class="foot">
+  <p><b>Rebuilt 2026-09-23 ~09:00 PDT as of <code>6a0974b3</code></b> (first built at <code>044a8d45</code>). Every measurement re-run against source for this rebuild rather than carried over. Source of record: <code>docs/reviews/architecture-review-2026-09-22-observer-family.md</code> — 856 lines, 15 findings, now <b>on master</b> via <code>71a32378</code>. The two answer boxes above are replies to questions asked through this page and are preserved across rebuilds.</p>
+</div>
+
+</div>
+
+<!-- No mode script here on purpose: the Ask tray owns #modechip and sets both its text and
+     colour (see the composed page). A second writer for one element is the duplicate-mechanism
+     defect this very page is about. The static "● checking…" above is the JS-disabled fallback. -->

@@ -930,3 +930,41 @@ plan listed this row and the commit did not contain it: `grep -n "velocity" docs
 returned nothing, so the evidence file was reachable only from its tombstone and the spec — not from
 the one index that routes readers here. Found by asking how this file is actually read, not by a gate.
 ⚠ **Nothing mechanises it:** no check requires a relocated document to acquire a read-trigger.
+
+
+## The rule that asked for permission a hook already enforced
+
+**Retired 2026-09-30** from `docs/dev-process.md`'s Human-in-the-Loop list, at the user's
+instruction: *"you don't need to ask me for git push. just do it when it is necessary."*
+
+⚠ **I removed it before knowing why it was there, and the user asked.** That question is the reason
+this entry exists: the outcome was right and the justification was missing — I argued from a
+contradiction between two lines of the spine rather than from the rule's purpose.
+
+**The original rationale, traced.** The line entered at `e09e1edf` (2026-07-12), the commit that
+codified Conditional AFK. Its message: *"Pull the human in only for unexpected situations …
+or an outward-facing/irreversible step like push/merge/deploy."* So the category was
+**outward-facing AND irreversible**, and push was grouped with merge and deploy.
+
+⭐ **The grouping is the defect. Those three are not one class:**
+
+| action | outward-facing | reversible |
+|---|---|---|
+| merge to master | yes | hard |
+| deploy | yes | hard |
+| **push a feature branch** | yes | **trivially — delete the branch** |
+
+⛔ **And the irreversible half of push is guarded by a MACHINE, not by that sentence.**
+`.claude/hooks/block-default-branch-push.sh` runs `PreToolUse` on every Bash call and blocks a push
+to the default branch, a bare `--force`/`-f`, and `--no-verify` (escapes are two separate flags,
+deliberately). So the prose was **redundant exactly where it mattered and over-broad where it did
+not**: it bought nothing the hook does not enforce, and cost a question on every safe push.
+
+**What it cost before being retired.** One session held 19 commits without pushing, asked three
+times, and closed several messages with *"nothing has left this machine"* — while the spine's own
+Phase 5 rule already said *"open the PR, notify, do not merge"*, making push the standard path.
+Specific beat general the whole time and the general list was read over it.
+
+⚠ **What did NOT change:** merging is still the human gate, and **a PR is a separate judgement** —
+opening one asserts the work is ready for that gate, so it is not opened for work that has not
+converged.

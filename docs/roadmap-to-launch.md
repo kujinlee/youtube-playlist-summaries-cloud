@@ -2177,6 +2177,97 @@ roadmap** while #167 and #184 were on it. That is what this section exists to st
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
 job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**
 
+## LLM recall matcher — backlog #191 — anchor `review-decides-itself` — 🟠 BUILT, REVIEWED **NINE TIMES**, **NOT CONVERGED**; Phase 6 review DONE 2026-09-30
+
+> ### ⟳ 2026-10-01 — NINE ROUNDS, AND THE REVIEW LOOP WAS STOPPED BY A SECOND Phase 6
+>
+> **Round 9 (Codex half filed; Claude half redirected — see the `REVIEW GAP:` in
+> `docs/reviews/coordinator/recall-llm-r9-coordinator.md`) returned 1 Blocking + 3 High, all ONE
+> class, and the coordinator reproduced all four by hand** with green before- and after-controls.
+> One of them is round 8's H4 verbatim — **recorded in the handoff as addressed, and it was not.**
+>
+> **The THRASHING arming condition fired** (round 8's Blocking in a file round 7's fold created;
+> round 9's in the call site round 8's fix created, while every other part of the fold converged).
+> Put to the human as a selection card; they chose a scoped architecture review over folding
+> per-instance. Verdict: `docs/reviews/architecture-review-2026-10-01.md`.
+>
+> ⛔ **The four r9 findings are NOT folded, deliberately** — they are the review's evidence, and
+> the review's own prediction is that folding them per-instance yields a twelfth instance within
+> two rounds.
+
+- [ ] **D1 — give `main` its world as a defaulted parameter**, in the three guards. ⭐ NOT a new
+      design: `scripts/check-ci-watched.py:860` already does it, for this exact reason, with the
+      mechanism in its docstring written BEFORE round 1 of this fold — and it is the only one of
+      36 `main`s the class has never touched. Measured for `check-ratchet-contract.py`: 4 edits +
+      2 cases; it catches round 9's Blocking (52/54) AND a `BASELINE` severance that #213's guard
+      demands no entry for. `check-surface-recall.py` is the expensive one — three defaulted rule
+      parameters must come out first.
+- [ ] **D2 — one bit per guard**: does the self-test drive `main()` over a world the case built?
+      ⛔ **Do not write it as drafted** — sub-condition 2 false-positives on
+      `check-fixture-variation.py`, which drives `main()` 14 times from `_self_test()` over
+      constructed paths passed through `argv`. It must admit argv-as-world. Exposure is **29 of
+      36**, not the 31 the review stated (coordinator re-derivation; drivers are 7, not 5).
+- [ ] **#213's `ast` guard is SUPERSEDED as the remedy** — implemented and run; its reach shrinks
+      at exactly the rate the repair proceeds. Row amended with the measurements.
+- [ ] **#216 filed** — a comment asserting a defence the code does not implement
+      (`check-surface-recall.py:686`, `_saved_m` assigned and never read). Verified by hand.
+- [ ] **The propagation half, which is the harder one.** Three structural lessons, three files, no
+      file has all three; and no ADR governs the verification stack at all, so there is no venue
+      where a decision about it can be made or protected. The review ranks a CONTEXT.md glossary
+      entry for *wiring* and an ADR for the verification stack **alongside** the code change.
+
+
+**Branch `semantic-recall-replication`, off `master` at `446025ab`. Pushed, no PR — deliberately, a
+PR asserts readiness for the human gate and this is not converged.** ⛔ Do not trust any commit
+count written here: run `git log --oneline master..HEAD`. This row exists because there was none —
+the work shipped a 2204-line script and a registered `PostToolUse` hook with the backlog row as its
+only home, and `dev-process.md` requires the roadmap layer too.
+
+- [x] **The matcher is built and live.** ONE model call per PLAN at arm time, cached; `--fire` is a
+      cache lookup. Caller is `PostToolUse(Bash, begin-plan.py)`, delivery via
+      `hookSpecificOutput.additionalContext`, confirmed by running it.
+- [x] **Two review rounds, both halves each, filed under `docs/reviews/{claude,codex}/`** with
+      testimony verdicts; `check-review-rounds.py` reports 0 silent gaps.
+- [x] **Phase 6 architecture review — `docs/reviews/architecture-review-2026-09-30-recall-matcher.md`.**
+      ⛔ It did **NOT** arm: `dev-process.md:108` needs two consecutive fix-caused rounds in ONE
+      component and round 2 was one such round across five. **It ran on the user's direction**
+      (2026-09-30, *"next session will start architecture review"*), and that is recorded rather
+      than dressed up as a trigger.
+      ⭐ **Verdict: the framing question was aimed at a fix already in place.** The rc contract has
+      one boundary (`Refusal` subclasses carry their own rc; `main` returns `exc.rc`). What has no
+      owner is CONSULTATION — and the mechanism is that `check-ratchet-contract.py`'s
+      `GUARD_PATH_RE` is `scripts/check-*.py`, so every mechanical protection stops at that
+      filename convention and the seams are where no gate has jurisdiction. The file itself
+      designates that region *"plumbing"* and covered it with a dated manual run.
+- [ ] **NOT CONVERGED — round 3 is owed.** Round 2 found 1 Blocking + 5 High and its fixes are
+      unreviewed. The Phase 6 review is a DESIGN gate and does not substitute for a defect round.
+- [ ] **`CONTEXT.md` has no vocabulary for this subsystem** — `recall`, `arm`, `fire`,
+      `plan verdict`, `rubric`, `situation` all absent. ⭐ **THIS IS THE THIRD INSTANCE OF ONE
+      REPAIR:** Architecture Review #7 (2026-09-03) added *Verification Stack* for exactly this
+      symptom, the review-verdict path (2026-09-23) added *Testimony* and *Review identity* for it
+      again, and both recorded the same cause — a component argued for N rounds in words the
+      glossary did not contain, so each round could only name the instance in front of it.
+- [ ] **No falsifier at the call site.** rc separates *cannot-run* from *nothing-fires*, but nothing
+      separates *correctly nothing* from *should have fired and did not*. The shipped rubric makes
+      all-NONE a CORRECT answer when the author already embodies the lesson, so a live all-NONE run
+      and a broken matcher are the same observation.
+- [x] **The code/hook seam had all its coverage on one side — `scripts/check-rc-contract.py` now
+      reads BOTH.** It refuses a code the matcher defines that no `case` arm names (#202's shape), a
+      dead arm, and an arm promising a `Detail:` it might not have (#201's shape); escapes are
+      written reasons, not flags. 22 cases, 5 mutations, a CI caller, a pinned declared count and a
+      pinned parameter-key set — four separate guards refused the file until each was satisfied.
+      ⚠ It does NOT give the hook a self-test or mutation entries of its own; what it gives is a
+      gate whose subject is the AGREEMENT, which is where both live defects were.
+- [ ] **An unowned number, asserted at four sites.** *"87 committed plans"* appears three times in
+      `recall-llm.py` and once in the hook; measured today it is 93 loose-unreadable of 96 tracked.
+      `CONTEXT.md`'s precedent is to REMOVE such a figure, not correct it — correcting it re-creates
+      the defect at the next commit.
+- [ ] **The seam measurement needs provenance.** *"15 of 19 at a seam (78%)"* does not reproduce —
+      the filed halves carry 16 Blocking+High. ⛔ The arithmetic is the lesser half: the split came
+      from a SINGLE classifier and was then quoted as a measurement. A second classifier is what it
+      needs, not a corrected denominator. ⚠ The conclusion is unaffected — the seam concentration is
+      overwhelming either way.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

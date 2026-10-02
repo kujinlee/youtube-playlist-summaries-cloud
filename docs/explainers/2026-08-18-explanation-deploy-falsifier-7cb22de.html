@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #112 — a deploy claim with no falsifier</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); --rule: var(--rule, #d3d9e2); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.74rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.74rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:.1em .5em;
+          border-radius:99px;border:1px solid var(--structure-br);margin-left:.4em}
+/* ---- ask tray ---- */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--structure-br);
+  background:var(--structure-bg);color:var(--structure);border-radius:99px;padding:.18em .6em;
+  cursor:pointer;z-index:40}
+#tray{position:fixed;right:0;bottom:0;left:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom));z-index:60;display:none;
+  box-shadow:0 -8px 26px rgba(0,0,0,.16)}
+#tray.on{display:block}
+#tray .inner{max-width:52rem;margin:0 auto}
+#tray .qt{font-family:var(--sans);font-size:.72rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#tray .qt b{color:var(--fg2)}
+#tray .row{display:flex;gap:.5rem;align-items:flex-start;flex-wrap:wrap}
+#qbox{flex:1 1 16rem;min-width:0;font-family:var(--sans);font-size:.9rem;padding:.5rem .65rem;
+  border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--fg);resize:vertical;min-height:2.6rem}
+#tray button.act{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;font-weight:650;padding:.5rem 1rem;
+  border-radius:8px;border:1px solid var(--structure);background:var(--structure);color:#fff;cursor:pointer}
+#tray button.sec{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;padding:.5rem .8rem;border-radius:8px;
+  border:1px solid var(--rule);background:var(--bg2);color:var(--fg2);cursor:pointer}
+#sentnote{font-family:var(--sans);font-size:.76rem;margin-top:.5rem;min-height:1.1em;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<h1>A deploy claim with no falsifier</h1>
+<p class="sub">PR&nbsp;#112 — <em>docs(backlog&nbsp;#53): the commit-drift residue, filed with a trigger not a date</em>, and its inseparable sibling PR&nbsp;#111.</p>
+
+<div class="hdr">
+<div><b>Change:</b>PR #112 (+ #111, merged 37s earlier — see §5)</div>
+<div><b>Base..Head:</b>a6ae4c9..7cb22de  (branch docs/backlog-53-commit-drift → master)</div>
+<div><b>Built:</b>2026-08-19T01:30:22Z</div>
+<div><b>Inspected:</b>12 files read, of which 10 were NOT in the diff, plus 2 live queries</div>
+<div><b>Not verified:</b>that commit drift has never occurred — see §6</div>
+</div>
+
+<div class="readthis">
+  <h4>Reading this page <span id="modechip">● served</span></h4>
+  <p style="margin:.2rem 0 .4rem">This page can answer back. Hover any heading — or select any text — and an
+  <b>ask</b> button appears; type a question, press <b>Send</b>, then say <em>"read my questions"</em> in the session.</p>
+  <ol>
+    <li>Stable URL: <code>http://127.0.0.1:7391/latest</code> — always the newest explainer. <code>/</code> lists them all.</li>
+    <li>If that URL does not load, the little server is not running. Start it with
+        <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and <b>a reboot stops it</b>.</li>
+    <li>A <code>file://</code> copy of this page still reads perfectly. It only loses the <b>Send</b> button.</li>
+  </ol>
+</div>
+
+<div class="stats">
+  <div class="stat steel"><div class="v">1</div><div class="l">line added by the squash</div></div>
+  <div class="stat steel"><div class="v">25</div><div class="l">lines as authored, 2 files</div></div>
+  <div class="stat defect"><div class="v">2</div><div class="l">version-drift incidents</div></div>
+  <div class="stat gap"><div class="v">0</div><div class="l">commit-drift incidents</div></div>
+  <div class="stat gap"><div class="v">0</div><div class="l">GIT_SHA matches in Dockerfile + fly.toml</div></div>
+  <div class="stat good"><div class="v">v7</div><div class="l">live on Fly, verified 01:30Z</div></div>
+</div>
+
+<div class="toc">
+  <b style="font-family:var(--sans);font-size:.78rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint)">Contents</b>
+  <ol>
+    <li><a href="#s1">Background — what a deploy claim is, and who checks it</a></li>
+    <li><a href="#s2">Intuition — two different drifts wearing one word</a></li>
+    <li><a href="#s3">Boundaries touched</a></li>
+    <li><a href="#s4">Decisions this change encodes</a></li>
+    <li><a href="#s5">Code map</a></li>
+    <li><a href="#s6">Assumptions and limits</a></li>
+    <li><a href="#s7">Conclusion</a></li>
+  </ol>
+</div>
+
+<h2 id="s1"><span class="num">§1</span>Background — what a deploy claim is, and who checks it</h2>
+
+<h3>The skippable version</h3>
+
+<p>This project keeps a long file called <code>docs/roadmap-to-launch.md</code>. Near the bottom it
+carries a line that says which build of the application is running in production:</p>
+
+<div class="codewrap">
+  <div class="codelabel"><span>docs/roadmap-to-launch.md:1239</span><span class="chip ctx">unchanged context</span></div>
+<pre><code><span class="ln">- <span class="k">**Deployed: release v7, 2026-08-18 04:35Z**</span> (`fly status`: web + worker both v7). Shipped the #36</span></code></pre>
+</div>
+
+<p>That line is a <em>claim about the world</em>, and it lives in a document. Documents do not update
+themselves. So the interesting question is not whether the line is currently right — it is
+<strong>what would ever tell you it had gone wrong</strong>.</p>
+
+<p>The project has a family of small Python scripts it calls <em>ratchets</em>, which run in CI and
+fail the build when a document contradicts something. There are ten of them in <code>scripts/</code>.
+Every one of them compares a document to another document, or to the source tree. Not one of them
+opens a network connection to production.</p>
+
+<h3>The narrow prerequisites</h3>
+
+<p>Three facts do the work in this change. Each was checked by a command, not recalled:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th style="width:34%">Fact</th><th>How it was established</th></tr></thead>
+<tbody>
+<tr><td><code>check-roadmap-consistency.py</code> compares the roadmap to <em>itself</em></td>
+    <td>Its only input is <code>ROADMAP = "docs/roadmap-to-launch.md"</code> (<code>scripts/check-roadmap-consistency.py:69</code>); it checks that the “next actions” prose does not name work whose own checkbox is already ticked. Both operands come from one file.</td></tr>
+<tr><td>The deployed image carries <strong>no</strong> commit identifier</td>
+    <td><code>grep -E 'GIT_SHA|COMMIT|BUILD_ID|SOURCE_SHA|VERSION' Dockerfile fly.toml</code> → <b>exit 1</b>, zero matches. The Dockerfile’s only build args are the two public Supabase values (<code>Dockerfile:37-38</code>).</td></tr>
+<tr><td>Fly knows a digest, not a commit</td>
+    <td><code>flyctl image show</code> returns <code>sha256:a654eb22…</code> and a deployment tag. Nothing in that output, or in <code>flyctl releases</code>, references git.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="s2"><span class="num">§2</span>Intuition — two different drifts wearing one word</h2>
+
+<p>Say the roadmap claims <em>“Deployed: release v7”</em>. There are two entirely different ways that
+sentence can be false, and they need different instruments.</p>
+
+<p><strong>Version drift</strong> is the easy one: the roadmap says v7 and production is actually
+running v6. Both numbers are readable — one from a file, one from a CLI — so a person or a script can
+put them side by side. This is the drift that has actually bitten, twice: production once ran
+<strong>eight days behind on a migration</strong> while every file on disk looked correct, and on the
+morning of 2026-08-18 a merged money-path fix sat undeployed because <em>merged</em> had been read as
+<em>shipped</em>.</p>
+
+<p><strong>Commit drift</strong> is the hard one: production really is on v7, and v7 really is the
+newest release — but the image that <em>became</em> v7 was built from a stale tree. Every visible
+number agrees. The claim <em>“v7 is live”</em> and the claim <em>“v7 contains commit
+<code>7cb22de</code>”</em> look like one sentence and are two, and only the first has anything that
+could contradict it.</p>
+
+<div class="fig">
+<div class="chainwrap">
+<div class="chain">
+  <div class="node"><div class="b">commit on master</div><div class="m">7cb22de</div></div>
+  <div class="link broken"><div class="bar"></div>severed</div>
+  <div class="node"><div class="b">docker build</div><div class="m">no GIT_SHA arg</div></div>
+  <div class="link broken"><div class="bar"></div>severed</div>
+  <div class="node"><div class="b">image digest</div><div class="m">sha256:a654eb22…</div></div>
+  <div class="link ok"><div class="bar"></div>readable</div>
+  <div class="node"><div class="b">release version</div><div class="m">v7 · flyctl releases</div></div>
+  <div class="link ok"><div class="bar"></div>comparable</div>
+  <div class="node"><div class="b">roadmap line</div><div class="m">“Deployed: release v7”</div></div>
+</div>
+</div>
+<div class="chainhint">← scroll the chain sideways on a narrow screen →</div>
+<div class="legend">
+  <span><i style="border-color:var(--good)"></i>both ends readable — a mismatch is observable</span>
+  <span><i style="border-color:var(--gap);border-top-style:dashed"></i>no link exists — nothing maps a digest back to a commit</span>
+</div>
+<div class="figcap"><b>The claim chain.</b> PR&nbsp;#111 wires up the right-hand half: <code>flyctl releases</code>
+against the roadmap line. The left-hand half is not merely unchecked — the information required to check
+it was never recorded at build time. Backlog&nbsp;#53 is that gap, written down.</div>
+</div>
+
+<h3>Why nothing caught it</h3>
+
+<p>The project’s own process document requires three layers to agree — git, the files on disk, and the
+running system. The instruments only ever covered two of them:</p>
+
+<div class="fig">
+<div class="layers">
+  <div class="layer doc"><span class="name">git history</span><span class="who">what was committed</span>
+    <span class="seen"><span>check-test-counts</span><span>check-arch-findings</span></span></div>
+  <div class="layer doc"><span class="name">files on disk</span><span class="who">roadmap, backlog, ADRs, specs</span>
+    <span class="seen"><span>check-docs</span><span>check-roadmap-consistency</span><span>check-producer-enumeration</span></span></div>
+  <div class="layer live"><span class="name">running system</span><span class="who">Fly release, live bundle</span>
+    <span class="seen"><span class="new">/brief step (#111)</span><span>check-deployed-bundle</span><span class="none">no ratchet</span></span></div>
+</div>
+<div class="figcap"><b>Three layers, and what looks at each.</b> The third lane was reachable — <code>flyctl</code>
+is installed, and <code>check-deployed-bundle.ts</code> already reads the live server — but no <em>step</em>
+told anyone to look. Production was in fact checked during both of 2026-08-18’s briefings, purely because a
+saved memory said Session Resume must read the running system. A memory is not a step list.</div>
+</div>
+
+<div class="note decide">
+<span class="tag">The pivot, in the reader's own words</span>
+<p>The change exists because of a question asked from a previous briefing page:
+<em>“how did you find the roadmap is out of sync? if you can find it whenever you need to know, that may
+be just enough.”</em></p>
+<p>That question dissolved the script that was about to be written. The answer was: one command. The
+capability was never missing. <strong>Only the trigger was.</strong></p>
+</div>
+
+<h2 id="s3"><span class="num">§3</span>Boundaries touched</h2>
+
+<p>This is a documentation change, so it crosses no <em>module</em> boundary — no function signature,
+no type, no storage seam moved. What it does cross is the boundary between what a document
+<em>asserts</em> and what a system <em>is</em>, which in this project has been the more expensive kind.
+Four rows, and the fourth is the one that would have bitten silently.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr>
+  <th style="width:17%">Boundary</th><th style="width:20%">What crosses it</th>
+  <th style="width:29%">What each side may assume</th><th style="width:34%">What happens when that assumption is violated</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td><span class="pill new">new</span> <code>/brief</code> skill ↔ Fly production</td>
+  <td>Two strings: the live release version from <code>flyctl releases</code>, and the roadmap’s <code>Deployed: release …</code> line.</td>
+  <td><b>Skill side:</b> <code>flyctl</code> is installed and already authenticated for this app.<br><b>Fly side:</b> assumes nothing — it is a read.</td>
+  <td>If <code>flyctl</code> is missing or unauthenticated the command errors and the step is skipped. Per the project’s own rule — <em>“cannot run” is a failure, never a pass</em> — that must be reported as NOT RUN, not omitted. <b>The skill text does not say this in so many words</b>; it inherits it from <code>CLAUDE.md</code>. See §6.</td>
+</tr>
+<tr>
+  <td>roadmap prose ↔ live release version</td>
+  <td>The claim <code>v7</code>.</td>
+  <td><b>Roadmap:</b> may assume it is read by a human who trusts it.<br><b>Reader:</b> may <em>not</em> assume it is fresh — it is hand-maintained.</td>
+  <td>The reader plans against a production that does not exist. Measured twice: eight days of an unapplied migration, and a merged-but-undeployed money-path fix. Nothing failed; things were simply believed.</td>
+</tr>
+<tr>
+  <td><span class="pill no">absent</span> image digest ↔ commit SHA</td>
+  <td>Nothing. There is no crossing — that is the finding.</td>
+  <td><b>Fly:</b> a digest identifies bytes, and it never claimed to identify a commit.<br><b>Everyone else:</b> assumes, without evidence, that the newest release was built from the newest tree.</td>
+  <td>A release built from a stale tree looks completely healthy: right version number, right timestamp, matching roadmap line. Nothing anywhere says otherwise. This is backlog&nbsp;#53, and it is deliberately <em>not</em> fixed.</td>
+</tr>
+<tr>
+  <td><code>docs/backlog.md</code> ↔ <code>check-docs.py</code></td>
+  <td>The single new table row, as text.</td>
+  <td><b>Row:</b> must be <code>| N | …</code>, must have a unique <code>N</code>, and — if its Status cell contains ✅ — must not lead with a bare severity marker.</td>
+  <td>A duplicate id or a closed-but-still-red row fails CI. Row #53 leads with 🟢 and its status is <b>OPEN</b>, so the marker rule does not fire. <b>This is the row’s real contract</b>, and it is enforced by a script added one PR earlier (#109) that found three violations a careful hand pass had missed.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="note gap">
+<span class="tag">The invariant worth writing down</span>
+<p><strong>A version number and a commit are different claims about a deploy, and only the first is
+currently checkable.</strong> Any future statement of the form “production has fix X” is an inference,
+not an observation — unless someone has separately re-run the behaviour against the live URL, which is
+exactly what was done for backlog&nbsp;#36 on 2026-08-18.</p>
+</div>
+
+<h2 id="s4"><span class="num">§4</span>Decisions this change encodes</h2>
+
+<h3>D1 — The missing thing was a trigger, not a capability</h3>
+
+<p>The detection was always one command away. What did not exist was a <em>moment</em> at which anyone
+was told to run it. So the fix is a step inside a skill that already runs at precisely the right moment
+— when a briefing is being written, which is when someone is about to trust the roadmap.</p>
+
+<div class="note good">
+<span class="tag">The rule this yields</span>
+<p><code>docs/dev-process.md</code> says: <em>“Before adding a rule here, ask whether it can be a
+script.”</em> This change produces its complement:</p>
+<p><strong>Before adding a script, ask whether the check already exists and merely lacks a moment to
+run.</strong></p>
+</div>
+
+<h3>D2 — Rejected: <code>check-deploy-freshness.py</code></h3>
+
+<p>The obvious move was a new ratchet. It was rejected on two independent grounds, both of which the
+project has paid for before:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th style="width:22%">Objection</th><th>Why it is fatal here</th></tr></thead>
+<tbody>
+<tr><td>It needs a hand-recorded deploy SHA</td>
+  <td>A script cannot derive the deployed commit today (§2), so the roadmap would have to carry it, written by a human at deploy time. That is the <em>“someone remembers to write state down”</em> class — the same class that produced three stale-state defects on 2026-08-17/18, two of which a careful hand pass missed entirely.</td></tr>
+<tr><td>It fires on every docs-only commit</td>
+  <td>Any “has master moved since the deploy?” check goes red the moment a README changes. A gate that cries wolf gets disabled — and worse, it teaches people to ignore the gates next to it, which are load-bearing.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>D3 — Filed with a trigger, not a date</h3>
+
+<p>Backlog #53 is not scheduled. It names two conditions instead:</p>
+
+<div class="codewrap">
+  <div class="codelabel"><span>docs/backlog.md:68 — row #53, excerpt</span><span class="chip after">added</span></div>
+<pre><code><span class="ln"><span class="k">BUILD IT WHEN</span> either</span>
+<span class="ln mark">  (a) commit drift actually occurs — a release demonstrably built from a</span>
+<span class="ln mark">      stale tree, which has never yet happened</span>
+<span class="ln">  <span class="p">or</span></span>
+<span class="ln mark">  (b) the Dockerfile/deploy path is being changed anyway, making the</span>
+<span class="ln mark">      build-arg nearly free.</span>
+<span class="ln"></span>
+<span class="ln"><span class="c">Until then the residual risk is: a deploy runs from an unexpected tree</span></span>
+<span class="ln"><span class="c">and nothing says so.</span></span></code></pre>
+</div>
+
+<p>Condition (b) is the honest one — a build arg costs three lines if you are already editing the
+Dockerfile, and a great deal of ceremony if you are not. The shape of the eventual fix is named too, so
+nobody redesigns it: embed the SHA as a Docker build arg, serve it from the app, and let a check derive
+<em>both</em> sides. <code>scripts/check-deployed-bundle.ts</code> already reads the live server over
+the network, so it is the natural home.</p>
+
+<h3>D4 — Record the rejected alternative <em>inside</em> the entry</h3>
+
+<p>The ⛔ paragraph in row #53 is not commentary; it is the deliverable. A backlog item that says only
+<em>what to build</em> invites the next reader to re-derive the cheap version and ship it. This project
+has a measured price for that: backlog&nbsp;#36 spent thirteen review rounds rediscovering a decision
+that was already written down in three places.</p>
+
+<div class="note decide">
+<span class="tag">ADR candidates</span>
+<p><strong>None.</strong> ADRs here record <em>architecture</em> decisions, and nothing structural moved.
+D1–D4 are process, and the repo has a home for exactly that.</p>
+<p>But D1 is a genuine candidate for <code>docs/portable-practices.md</code> — the project’s second
+deliverable, the measured and project-independent subset. It qualifies on both counts: it was measured
+(a script was designed, costed, and dropped), and it names no part of this codebase. It is currently
+recorded only as a blockquote inside one skill file, where it will be read by whoever next edits that
+skill and nobody else.</p>
+</div>
+
+<h2 id="s5"><span class="num">§5</span>Code map</h2>
+
+<div class="note">
+<span class="tag">Read this before diffing by hand</span>
+<p>The squash commit <code>7cb22de</code> shows <strong>one changed line</strong>, but the pull request
+was authored with <strong>two files and 25 additions</strong>. Both statements are true: the branch was
+stacked on PR&nbsp;#111, which merged 37 seconds earlier, so by the time #112 landed its skill-file half
+was already on master. <code>git show 7cb22de</code> alone under-reports the change; the pair is the unit
+of meaning.</p>
+</div>
+
+<h3>1 · The step that closes version drift — <code>.agents/skills/brief/SKILL.md:64-86</code></h3>
+
+<p>Added to the skill’s ground-truth phase, immediately after the ratchets and immediately before
+“reconcile the three layers against git” — the position matters, because the reconciliation sentence
+had always claimed three layers while the steps above it only produced two.</p>
+
+<div class="codewrap">
+  <div class="codelabel"><span>.agents/skills/brief/SKILL.md:64-71</span><span class="chip after">added by #111</span></div>
+<pre><code><span class="ln"><span class="k">**Then read the RUNNING SYSTEM, and compare it to what the roadmap claims.**</span> This is the third</span>
+<span class="ln">layer, and every check above is blind to it — the ratchets compare documents to documents, and</span>
+<span class="ln"><span class="s">`check-roadmap-consistency`</span> compares the roadmap to <span class="c">*itself*</span>.</span>
+<span class="ln"></span>
+<span class="ln mark"><span class="f">flyctl</span> releases <span class="p">--app</span> youtube-playlist-summaries <span class="p">|</span> <span class="f">head</span> <span class="p">-3</span>   <span class="c"># what is actually live</span></span>
+<span class="ln mark"><span class="f">grep</span> <span class="p">-n</span> <span class="s">'Deployed: release'</span> docs/roadmap-to-launch.md        <span class="c"># what the roadmap says is live</span></span></code></pre>
+</div>
+
+<p>The remainder of the block is a <code>&gt;</code> blockquote holding D1 and D2 — why this is a skill
+step rather than a gate, and the honest bound that it catches version drift only. That bound is what
+makes row #53 necessary rather than redundant.</p>
+
+<h3>2 · The residue, filed — <code>docs/backlog.md:68</code></h3>
+
+<p>One table row, id 53, severity 🟢, status <b>OPEN — deliberately NOT scheduled</b>. It states what is
+now covered (with the PR number), what is not, the measured evidence for the gap, the shape of the fix,
+the rejected alternative with reasons, and the two trigger conditions.</p>
+
+<h3>3 · What did <em>not</em> change, and should be noticed</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th style="width:30%">File</th><th>Why it is worth saying</th></tr></thead>
+<tbody>
+<tr><td><code>Dockerfile</code></td><td>Untouched. Its only <code>ARG</code>s remain the two public Supabase values (<code>:37-38</code>). Adding <code>ARG GIT_SHA</code> is the eventual fix and was consciously not taken.</td></tr>
+<tr><td><code>scripts/</code></td><td>No new ratchet. Ten remain; the count is the point of D2.</td></tr>
+<tr><td><code>.github/workflows/ci.yml</code></td><td>Untouched. The new check runs when a human asks for a briefing, never in CI — which is also why it cannot regress silently: nothing depends on it.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="s6"><span class="num">§6</span>Assumptions and limits</h2>
+
+<h3>Verified by command, in this session</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th style="width:44%">Claim</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>No commit identifier is embedded in the image</td><td><span class="pill ok">measured</span> <code>grep -E 'GIT_SHA|COMMIT|BUILD_ID|SOURCE_SHA|VERSION' Dockerfile fly.toml</code> → exit 1</td></tr>
+<tr><td>Production is on v7</td><td><span class="pill ok">measured</span> <code>flyctl releases</code> → <code>v7 · complete · 20h53m ago</code>; digest <code>sha256:a654eb22…</code></td></tr>
+<tr><td>The roadmap agrees</td><td><span class="pill ok">measured</span> <code>docs/roadmap-to-launch.md:1239</code> → “Deployed: release v7, 2026-08-18 04:35Z”. <b>No drift right now.</b></td></tr>
+<tr><td><code>check-roadmap-consistency</code> reads only the roadmap</td><td><span class="pill ok">measured</span> single input at <code>:69</code>; every self-test fixture supplies that one file</td></tr>
+<tr><td>The marker rule cannot fire on row #53</td><td><span class="pill ok">measured</span> <code>check-docs.py:290-306</code> requires ✅ in the Status cell; #53’s status is OPEN</td></tr>
+<tr><td><code>check-deployed-bundle.ts</code> already reads the live app</td><td><span class="pill ok">measured</span> <code>fetch</code> against <code>https://youtube-playlist-summaries.fly.dev/login</code>, with an explicit refuse-if-nothing-scanned guard</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Inferred, not measured</h3>
+
+<ul>
+<li><strong>That the ratchets are blind to production.</strong> I read the entry points of
+<code>check-roadmap-consistency.py</code> and <code>check-docs.py</code> and found no network call, and
+the other ratchets are described as document checks. I did not audit all ten line by line.</li>
+<li><strong>That <code>flyctl</code> is authenticated for every future reader.</strong> It is
+authenticated <em>here</em> — that is how v7 was read. Someone cloning this repo has neither the CLI
+nor the account, and the skill step does not say what they should do.</li>
+</ul>
+
+<div class="note defect">
+<span class="tag">The limit that deserves its own paragraph</span>
+<p>Row #53’s trigger (a) says <em>build it when commit drift actually occurs.</em> But commit drift is,
+by this entry’s own argument, <strong>the thing with no detector</strong>. The trigger is partly
+self-referential: it would fire only if the drift surfaced some other way — a bug that master had
+already fixed reappearing in production, say — which is detection by consequence, after the cost.</p>
+<p>This does not make the deferral wrong. Trigger (b) — “the deploy path is being touched anyway” — is
+observable and unambiguous, and carries the decision on its own. But the entry currently reads as if it
+has two independent triggers, and it has roughly one and a half. <b>That asymmetry is not stated in the
+row.</b></p>
+</div>
+
+<h3>Not checked at all</h3>
+
+<ul>
+<li>Whether any past release <em>was</em> in fact built from a stale tree. This is unknowable with the
+information recorded — which is the entire subject of the entry, and the reason the “0 commit-drift
+incidents” figure in the stat strip is an <em>absence of observation</em>, not a clean bill of health.</li>
+<li>The <code>/brief</code> skill step has not been run under failure — no one has confirmed what the
+briefing does when <code>flyctl</code> is absent or unauthenticated. Reasoning about it is in §3, row 1;
+observation of it is not.</li>
+</ul>
+
+<hr>
+
+<h2 id="s7"><span class="num">§7</span>Conclusion</h2>
+
+<div class="concl">
+<h3>Recommendation — merge as-is; it is already merged, and it was the right call</h3>
+<p>The pair does what a good deferral looks like: it closes the drift that has actually happened, names
+the one it has not, and records the cheaper alternative <em>with the reasons it was rejected</em> so the
+next reader does not re-derive it. There is nothing to change in the diff.</p>
+
+<p><strong>Two follow-ups, both small, neither urgent:</strong></p>
+<ol>
+  <li><b>Promote D1 to <code>docs/portable-practices.md</code></b> — <em>“before adding a script, ask
+  whether the check already exists and merely lacks a moment to run.”</em> It is measured and
+  project-independent, which is exactly that file’s admission test, and today it survives only as a
+  blockquote inside one skill file. This is the project’s second deliverable, so a rule stranded there
+  is a rule not shipped.</li>
+  <li><b>Amend row #53 with one sentence</b> noting that trigger (a) has no detector, so (b) is doing
+  the real work. Not a defect — an honesty bound of the same kind the entry already applies to
+  everything else.</li>
+</ol>
+
+<p><strong>Nothing is blocked, and nothing is waiting on you.</strong> Production is on v7 and the
+roadmap agrees, verified at the timestamp in the header rather than recalled.</p>
+</div>
+
+<p class="figcap" style="margin-top:2rem"><b>Start at §3, row 3</b> — the boundary that does not exist.
+Everything else on this page is either the evidence for it or the decision about what to do about it.</p>
+
+</div>
+
+<script>
+(function(){
+  var chip = document.getElementById('modechip');
+  if (!chip) return;
+  if (location.protocol === 'file:') { chip.textContent = '○ local file'; }
+  else { chip.textContent = '● served'; }
+})();
+</script>
+
+<div id="tray" role="dialog" aria-label="Ask a question">
+  <div class="inner">
+    <div class="qt" id="qt"></div>
+    <div class="row">
+      <textarea id="qbox" placeholder="Type your question, then press Send (or ⌘/Ctrl+Enter)…" rows="2"></textarea>
+      <button class="act" id="sendbtn" type="button">Send</button>
+      <button class="sec" id="closebtn" type="button">Close</button>
+    </div>
+    <div id="sentnote" aria-live="polite"></div>
+  </div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+<!-- probe 1787097109 -->
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

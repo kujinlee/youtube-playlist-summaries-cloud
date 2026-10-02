@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three findings from the slice A live verification — file or not?</title>
+<style>
+:root{
+  --bg:#fbfaf8; --bg2:#fff; --bg3:#f3f1ed;
+  --fg:#1a1a1a; --fg2:#3d3d3d; --fg3:#6b6b6b;
+  --rule:#dcd8d0;
+  --defect:#a8341f; --defect-bg:#fdf1ee; --defect-br:#e8bfb4;
+  --verified:#1e6b46; --verified-bg:#eef7f1; --verified-br:#b6d9c5;
+  --struct:#1f4f82; --struct-bg:#eef3f9; --struct-br:#b8cde3;
+  --structure:#1f4f82;
+  --decide:#6b3a8f; --decide-bg:#f5eefa; --decide-br:#d4bfe4;
+  --muted:#78716c; --muted-bg:#f4f2f0; --muted-br:#ddd8d2;
+  --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#16151a; --bg2:#1d1c22; --bg3:#26242c;
+  --fg:#eceaf0; --fg2:#c8c5cf; --fg3:#928e9c;
+  --rule:#38353f;
+  --defect:#f0937c; --defect-bg:#2e1c18; --defect-br:#5e332a;
+  --verified:#6fcf9a; --verified-bg:#132720; --verified-br:#2c5541;
+  --struct:#82b4ee; --struct-bg:#131f2e; --struct-br:#2b4666;
+  --structure:#82b4ee;
+  --decide:#c69bea; --decide-bg:#241a2e; --decide-br:#4a3560;
+  --muted:#9a938c; --muted-bg:#242229; --muted-br:#403c46;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--serif);
+  font-size:17px;line-height:1.62;-webkit-text-size-adjust:100%}
+.wrap{max-width:53rem;margin:0 auto;padding:2rem 1.15rem 6rem}
+h1{font-size:1.95rem;line-height:1.2;margin:.2rem 0 .5rem;letter-spacing:-.01em}
+h2{font-family:var(--sans);font-size:1.18rem;margin:3.2rem 0 .9rem;padding-top:1.1rem;
+  border-top:2px solid var(--rule);position:relative;letter-spacing:-.01em}
+h3{font-family:var(--sans);font-size:1.02rem;margin:1.9rem 0 .55rem;position:relative}
+h4{font-family:var(--sans);font-size:.9rem;margin:1.3rem 0 .4rem;color:var(--fg2)}
+p{margin:.75rem 0}
+a{color:var(--struct)}
+code{font-family:var(--mono);font-size:.855em;background:var(--bg3);padding:.1em .34em;
+  border-radius:3px;border:1px solid var(--rule)}
+strong{font-weight:700}
+.sub{color:var(--fg3);font-family:var(--sans);font-size:.95rem;margin:0 0 1.5rem}
+
+/* header block */
+.hdr{font-family:var(--mono);font-size:.775rem;background:var(--bg2);border:1px solid var(--rule);
+  border-radius:8px;padding:.85rem 1rem;margin:1.3rem 0 1.8rem;overflow-x:auto}
+.hdr div{display:flex;gap:.6rem;padding:.13rem 0;white-space:nowrap}
+.hdr b{color:var(--fg3);font-weight:400;min-width:8.5rem;display:inline-block;flex:none}
+.hdr span{color:var(--fg2)}
+
+/* stat strip */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem;margin:1.5rem 0 2rem}
+.stat{background:var(--bg2);border:1px solid var(--rule);border-radius:8px;padding:.7rem .8rem}
+.stat .n{font-family:var(--sans);font-size:1.5rem;font-weight:700;line-height:1.1;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .l{font-family:var(--sans);font-size:.72rem;color:var(--fg3);margin-top:.2rem;line-height:1.35}
+.stat.d .n{color:var(--defect)} .stat.v .n{color:var(--verified)}
+.stat.s .n{color:var(--struct)} .stat.m .n{color:var(--muted)}
+
+/* chips */
+.chip{display:inline-block;font-family:var(--sans);font-size:.7rem;font-weight:600;
+  padding:.12rem .45rem;border-radius:20px;border:1px solid;vertical-align:.09em;white-space:nowrap}
+.c-file{color:var(--defect);background:var(--defect-bg);border-color:var(--defect-br)}
+.c-ver{color:var(--verified);background:var(--verified-bg);border-color:var(--verified-br)}
+.c-str{color:var(--struct);background:var(--struct-bg);border-color:var(--struct-br)}
+.c-dec{color:var(--decide);background:var(--decide-bg);border-color:var(--decide-br)}
+.c-drop{color:var(--muted);background:var(--muted-bg);border-color:var(--muted-br)}
+
+/* tables */
+.tw{overflow-x:auto;margin:1.1rem 0;border:1px solid var(--rule);border-radius:8px;background:var(--bg2)}
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:.845rem}
+th{text-align:left;padding:.55rem .7rem;background:var(--bg3);border-bottom:1px solid var(--rule);
+  font-weight:600;font-size:.76rem;letter-spacing:.02em;text-transform:uppercase;color:var(--fg3);white-space:nowrap}
+td{padding:.55rem .7rem;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.45}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* callouts */
+.call{border-left:3px solid;border-radius:0 7px 7px 0;padding:.75rem .95rem;margin:1.2rem 0;
+  font-family:var(--sans);font-size:.88rem;line-height:1.55}
+.call .t{font-weight:700;font-size:.73rem;text-transform:uppercase;letter-spacing:.05em;
+  display:block;margin-bottom:.3rem}
+.call p{margin:.45rem 0} .call p:first-of-type{margin-top:0} .call p:last-child{margin-bottom:0}
+.k-d{border-color:var(--defect);background:var(--defect-bg)} .k-d .t{color:var(--defect)}
+.k-v{border-color:var(--verified);background:var(--verified-bg)} .k-v .t{color:var(--verified)}
+.k-s{border-color:var(--struct);background:var(--struct-bg)} .k-s .t{color:var(--struct)}
+.k-c{border-color:var(--decide);background:var(--decide-bg)} .k-c .t{color:var(--decide)}
+.k-m{border-color:var(--muted);background:var(--muted-bg)} .k-m .t{color:var(--muted)}
+
+/* code */
+.cb{margin:1.1rem 0;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--bg2)}
+.cb .cap{font-family:var(--mono);font-size:.71rem;color:var(--fg3);background:var(--bg3);
+  padding:.36rem .7rem;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;gap:1rem}
+.cb .cap b{font-weight:600;color:var(--fg2)}
+pre{margin:0;padding:.7rem 0;overflow-x:auto;background:var(--bg2)}
+pre code{background:none;border:none;padding:0;font-size:.795rem;line-height:1.62;white-space:pre;display:block}
+.ln{display:block;padding:0 .8rem;border-left:3px solid transparent}
+.ln .g{color:var(--fg3);display:inline-block;width:2.6rem;text-align:right;
+  margin-right:.9rem;user-select:none;font-variant-numeric:tabular-nums}
+.ln.hit{background:var(--defect-bg);border-left-color:var(--defect)}
+.ln.ok{background:var(--verified-bg);border-left-color:var(--verified)}
+.kw{color:#a02f8a} .st{color:#1c7a4a} .cm{color:var(--fg3);font-style:italic}
+.fn{color:#1f4f82} .nu{color:#9c5518} .ty{color:#7a4bab}
+@media (prefers-color-scheme:dark){
+  .kw{color:#e78ad0} .st{color:#7fd3a2} .fn{color:#84b6f0} .nu{color:#e0a56a} .ty{color:#c39bea}}
+
+/* the call-order figure */
+.flow{margin:1.3rem 0;font-family:var(--sans);font-size:.83rem}
+.frow{display:flex;align-items:stretch;gap:.55rem;margin-bottom:.45rem}
+.fnum{flex:none;width:3.1rem;font-family:var(--mono);font-size:.75rem;color:var(--fg3);
+  display:flex;align-items:center;justify-content:flex-end;padding-right:.2rem}
+.fbox{flex:1;border:1px solid var(--rule);border-radius:7px;padding:.5rem .75rem;background:var(--bg2)}
+.fbox b{font-family:var(--mono);font-size:.79rem;font-weight:600}
+.fbox .n{color:var(--fg3);font-size:.78rem;display:block;margin-top:.12rem;line-height:1.4}
+.fbox.pay{border-color:var(--defect-br);background:var(--defect-bg)}
+.fbox.pay b{color:var(--defect)}
+.fbox.rec{border-color:var(--verified-br);background:var(--verified-bg)}
+.fbox.rec b{color:var(--verified)}
+.fesc{flex:none;width:9.5rem;border:1px dashed var(--defect-br);border-radius:7px;
+  background:var(--defect-bg);color:var(--defect);padding:.5rem .6rem;font-size:.76rem;line-height:1.35}
+.fesc b{display:block;font-size:.71rem;text-transform:uppercase;letter-spacing:.04em}
+.skipped{opacity:.42}
+
+/* toc */
+.toc{background:var(--bg2);border:1px solid var(--rule);border-radius:8px;padding:.9rem 1.1rem;margin:1.8rem 0}
+.toc div{font-family:var(--sans);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--fg3);margin-bottom:.45rem;font-weight:600}
+.toc ol{margin:0;padding-left:1.25rem;font-family:var(--sans);font-size:.88rem}
+.toc li{margin:.2rem 0}
+.toc a{text-decoration:none;color:var(--fg2)} .toc a:hover{text-decoration:underline;color:var(--struct)}
+
+/* ask tray */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+.trow{display:flex;gap:.5rem;align-items:center;margin-top:.5rem;flex-wrap:wrap}
+.trow button{font-family:var(--sans);font-size:.82rem;padding:.36rem .95rem;border-radius:6px;
+  border:1px solid var(--structure);background:var(--structure);color:#fff;cursor:pointer;flex:none}
+.trow button#closebtn{background:transparent;color:var(--fg3);border-color:var(--rule)}
+#sentnote{font-size:.78rem;color:var(--verified)} #sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+.foot{margin-top:3.5rem;padding-top:1.1rem;border-top:2px solid var(--rule);
+  font-family:var(--mono);font-size:.74rem;color:var(--fg3);line-height:1.75}
+@media(max-width:620px){
+  body{font-size:16px} .wrap{padding:1.4rem .85rem 6rem} h1{font-size:1.55rem}
+  .frow{flex-wrap:wrap} .fesc{width:100%} .fnum{width:auto}
+  .hdr b{min-width:6.5rem}
+}
+</style></head><body>
+<div class="wrap">
+
+<h1>Three findings, and whether each becomes a backlog row</h1>
+<p class="sub">Everything below came out of one live press of the correction feature against production.
+One of the three does not survive a second reading — that one is the most useful page on this document.
+<span id="modechip"></span></p>
+
+<div class="hdr">
+  <div><b>Subject</b><span>3 findings from the backlog&nbsp;#23 slice&nbsp;A live verification</span></div>
+  <div><b>Decision asked</b><span>file / don't file, and at what severity</span></div>
+  <div><b>master</b><span>2e6330b &nbsp;·&nbsp; clean tree &nbsp;·&nbsp; prod release v10</span></div>
+  <div><b>Built</b><span>2026-08-24T23:23:15Z</span></div>
+  <div><b>Evidence</b><span>prod SQL via claude_ro (read-only) + source at file:line + 14 sampled Gemini rolls</span></div>
+  <div><b>Not verified</b><span>the burst/loop cost in §3 is arithmetic from measured unit cost, never executed</span></div>
+</div>
+
+<div class="stats">
+  <div class="stat d"><div class="n">2</div><div class="l">recommended to file</div></div>
+  <div class="stat m"><div class="n">1</div><div class="l">withdrawn on re-reading</div></div>
+  <div class="stat v"><div class="n">1¢</div><div class="l">recorded of the spend so far</div></div>
+  <div class="stat d"><div class="n">0¢</div><div class="l">recorded when a press FAILS</div></div>
+  <div class="stat s"><div class="n">96¢</div><div class="l">the per-owner daily bound<br>that only counts successes</div></div>
+</div>
+
+<div class="toc">
+  <div>On this page</div>
+  <ol>
+    <li><a href="#ctx">Where these came from</a></li>
+    <li><a href="#glance">The three verdicts at a glance</a></li>
+    <li><a href="#f1">Finding 1 — a failed correction pays and records nothing</a></li>
+    <li><a href="#f2">Finding 2 — withdrawn, and why that matters</a></li>
+    <li><a href="#f3">Finding 3 — the 500 shows the raw validator string</a></li>
+    <li><a href="#status">What is measured, what is only argued</a></li>
+    <li><a href="#rec">Recommendation</a></li>
+  </ol>
+</div>
+
+<h2 id="ctx">Where these came from</h2>
+
+<p>Release <b>v8</b> shipped backlog #23 slice A — corrections in the cloud — on 2026‑08‑24 with twelve
+tasks, four green gates, five spec rounds, dual adversarial review and 25 of 25 mutations caught. The
+first time anyone actually pressed the button in production, it returned <code>HTTP 500</code>.</p>
+
+<p>Fixing that (releases v9 and v10) took two code changes, and along the way the exercise turned up three
+further things. None of them is fixed. The question on this page is only whether each becomes a row in
+<code>docs/backlog.md</code>, and at what severity.</p>
+
+<div class="call k-s"><span class="t">The one rule this page follows</span>
+<p><b>Every claim carries its own verification status, inline, next to the claim.</b> Not in a footnote,
+not in a trailing “limits” section. Finding&nbsp;2 is exactly why: it read as solid, it was in my
+recommendation to you, and it dissolved the moment I opened the one file that consumes the field it was
+about. A page that presents an argued claim with the same confidence as a measured one is doing the
+opposite of its job.</p></div>
+
+<h2 id="glance">The three verdicts at a glance</h2>
+
+<div class="tw"><table>
+<thead><tr><th>#</th><th>Finding</th><th>Verdict</th><th>Severity</th><th>Basis</th></tr></thead>
+<tbody>
+<tr>
+  <td class="num">1</td>
+  <td>A failed correction pays Gemini and records nothing — so the spend caps never see it</td>
+  <td><span class="chip c-file">FILE</span></td>
+  <td><b style="color:var(--defect)">🟠</b></td>
+  <td><span class="chip c-ver">measured in prod</span></td>
+</tr>
+<tr>
+  <td class="num">2</td>
+  <td>The corrections text is stored before the correction is applied</td>
+  <td><span class="chip c-drop">WITHDRAWN</span></td>
+  <td><span style="color:var(--muted)">—</span></td>
+  <td><span class="chip c-drop">refuted by re-reading</span></td>
+</tr>
+<tr>
+  <td class="num">3</td>
+  <td>The 500 hands the user the raw structural-validator string</td>
+  <td><span class="chip c-file">FILE</span></td>
+  <td><b style="color:var(--struct)">🟡</b></td>
+  <td><span class="chip c-ver">observed in the browser</span></td>
+</tr>
+</tbody></table></div>
+
+<h2 id="f1">Finding 1 — a failed correction pays and records nothing</h2>
+
+<h3>The claim</h3>
+<p>When the paid Gemini call succeeds but anything afterwards throws, the request returns 500 and the
+money that was already spent is never recorded anywhere. The spend caps therefore cannot see it.</p>
+
+<h3>The call order, which is the whole finding</h3>
+
+<div class="flow">
+  <div class="frow"><div class="fnum">227</div>
+    <div class="fbox"><b>updateVideoAnnotations</b><span class="n">stores the corrections text the user typed</span></div>
+    <div class="fesc">&nbsp;</div></div>
+  <div class="frow"><div class="fnum">238</div>
+    <div class="fbox pay"><b>applyCorrection</b><span class="n">the paid Gemini call, then structural validation — <b>money leaves here</b></span></div>
+    <div class="fesc"><b>throws →</b>jumps to 312</div></div>
+  <div class="frow skipped"><div class="fnum">264</div>
+    <div class="fbox rec"><b>record_correction_spend</b><span class="n">increments the per-owner counter AND moves the global ledger</span></div>
+    <div class="fesc">never reached</div></div>
+  <div class="frow"><div class="fnum">312</div>
+    <div class="fbox"><b>return 500</b><span class="n">the catch — the spend is now invisible</span></div>
+    <div class="fesc">&nbsp;</div></div>
+</div>
+
+<div class="cb">
+  <div class="cap"><b>lib/corrections/regenerate-handlers.ts:237–244</b><span>current — unchanged by v9/v10</span></div>
+<pre><code><span class="ln"><span class="g">237</span><span class="kw">if</span> (trimmedCorrections) {</span><span class="ln hit"><span class="g">238</span>  <span class="kw">const</span> applied = <span class="kw">await</span> <span class="fn">applyCorrection</span>({   <span class="cm">// ← pays here</span></span><span class="ln"><span class="g">239</span>    md: mdContent,</span><span class="ln"><span class="g">240</span>    corrections: trimmedCorrections,</span><span class="ln"><span class="g">241</span>    tags: video.tags ?? [],</span><span class="ln"><span class="g">242</span>    signal: request.signal,</span><span class="ln"><span class="g">243</span>    caps: CORRECTION_CAPS,</span><span class="ln"><span class="g">244</span>  });</span></code></pre>
+</div>
+
+<div class="cb">
+  <div class="cap"><b>lib/corrections/regenerate-handlers.ts:264–266</b><span>current — only reached on success</span></div>
+<pre><code><span class="ln ok"><span class="g">264</span><span class="kw">if</span> (applied.actualCents != <span class="kw">null</span>) {          <span class="cm">// ← unreachable if 238 threw</span></span><span class="ln"><span class="g">265</span>  <span class="kw">const</span> { error: spendError } = <span class="kw">await</span> supabase.<span class="fn">rpc</span>(<span class="st">'record_correction_spend'</span>, {</span><span class="ln"><span class="g">266</span>    p_cents: applied.actualCents,</span></code></pre>
+</div>
+
+<div class="call k-v"><span class="t">Measured, not inferred</span>
+<p>After the failed press against v8, read from production through the read-only
+<code>claude_ro</code> credential:</p>
+<p><code>correction_spend</code> — <b>0 rows</b>. &nbsp;·&nbsp; <code>spend_ledger</code> — still <b>2298¢</b>.
+Both read <i>after</i> a Gemini call that completed and was billed.</p>
+<p>For contrast, the press that later <i>succeeded</i> produced <code>correction_spend</code> = 1 row
+(<code>calls=1, cents=1</code>) and moved the ledger 2298¢ → 2299¢.</p></div>
+
+<h3>Why this is more than bookkeeping</h3>
+
+<p><code>record_correction_spend</code> is not merely a log. It is the function that increments the
+per‑owner‑per‑day counter — the one migration <code>0026</code> sets to <code>ceiling=12</code>,
+<code>N=8</code>, i.e. 96¢ — <i>and</i> the write that moves the global <code>spend_ledger</code> that the
+5000¢ daily cap watches. Both of them only ever count <b>successes</b>.</p>
+
+<p>So a press that fails costs real money and moves neither number. And a correction can be made to fail
+on purpose: ask it to delete a section, and the structural validator refuses it every single time. That
+is a loop which spends without limit while every guardrail reads zero.</p>
+
+<div class="call k-d"><span class="t">The shape you have already treated as a defect</span>
+<p>This is backlog <b>#129</b> again — the 20 × 25¢ POST that could reach a 500¢ cap. Same family: a
+bound that a caller can walk around because the counter is incremented on the wrong side of the risk.</p></div>
+
+<div class="call k-s"><span class="t">Verification status of the sentence above</span>
+<p><span class="chip c-ver">measured</span> the unit cost (≈0.4¢ actual, recorded as 1¢), the empty
+<code>correction_spend</code> after a failure, and that a structural failure is reproducible.<br>
+<span class="chip c-str">argued, not executed</span> that a loop would therefore spend unbounded. Nobody
+ran that loop against production, and this page will not claim otherwise.</p></div>
+
+<h3>The fork — this part is genuinely yours</h3>
+
+<div class="tw"><table>
+<thead><tr><th>Option</th><th>What it costs</th><th>What it leaves</th></tr></thead>
+<tbody>
+<tr><td><b>A — new 🟠 row</b><br>surface <code>usage</code> on the throw path, record it in the <code>catch</code></td>
+    <td>an afternoon; no protocol, no migration</td>
+    <td>closes the leak; #61 still wanted later for pre‑authorisation</td></tr>
+<tr><td><b>B — amend #61</b> (slice C, money instruments)<br>add this as a firing trigger</td>
+    <td>a reserve/settle slice; this repo spends 5–7 review rounds on those</td>
+    <td>one mechanism instead of two, but the leak stays open until it ships</td></tr>
+</tbody></table></div>
+
+<div class="call k-c"><span class="t">I would take A</span>
+<p>A reservation taken <i>before</i> the call does dissolve this — the reservation lands whatever the
+outcome. But #61's own trigger is <i>“the ledger showing duplicate or burst correction traffic, or slice
+B shipping”</i>, and neither has happened, so it sits pending indefinitely. A is a small change that
+closes a live leak now; it does not compete with #61, it buys time for it.</p></div>
+
+<h2 id="f2">Finding 2 — withdrawn, and why that matters</h2>
+
+<div class="call k-m"><span class="t">What I told you first, which was wrong</span>
+<p>“The corrections text is stored before the correction is applied, so the row carries a correction the
+document does not have.”</p></div>
+
+<p>The first half is true and the second half does not follow. Both fields exist, and they say different
+things:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Field</th><th>What it actually means</th><th>After the failed press</th></tr></thead>
+<tbody>
+<tr><td><code>corrections</code></td><td>the instruction the <b>user typed</b></td>
+    <td class="num">“Fix 'Codeex' → 'Codex'…”</td></tr>
+<tr><td><code>mdCorrectionsHash</code></td><td>the claim that <b>this document carries them</b></td>
+    <td class="num">null</td></tr>
+</tbody></table></div>
+
+<p>So nothing ever claimed the document had been corrected. The field that makes that claim stayed
+<code>null</code>, which is precisely correct.</p>
+
+<h3>The consumer that settles it</h3>
+
+<p>There is exactly one place that interprets the hash, and it does the right thing with it:</p>
+
+<div class="cb">
+  <div class="cap"><b>lib/cloud-sync/reconcile-class-a.ts:8</b><span>unchanged context</span></div>
+<pre><code><span class="ln ok"><span class="g">8</span><span class="kw">const</span> <span class="fn">current</span> = (s: <span class="ty">ClassASignals</span>, cur: <span class="ty">string</span>): <span class="ty">boolean</span> =&gt; s.mdCorrectionsHash === cur;</span></code></pre>
+</div>
+
+<p>Sync compares the stored hash against the hash of the <i>current</i> corrections text and sets
+<code>needsRegen</code> when they differ. After the failure it would have concluded: this document is
+corrections‑stale and needs regenerating. Which is true.</p>
+
+<div class="call k-v"><span class="t">The ordering is fail-safe, not defective</span>
+<p>Storing the instruction first means the user does not lose what they typed when the apply fails — the
+panel is prefilled next time. Stamping the hash only on success means no consumer is ever misled. Write
+the user's input early, write the system's claim late: that is the correct order, and reversing it would
+be the actual bug.</p></div>
+
+<div class="call k-d"><span class="t">Why this belongs on the page rather than being quietly dropped</span>
+<p>The finding was wrong in a way that <b>looked exactly like the other two</b> — same phrasing, same
+confidence, same author, delivered in the same list. Nothing about its presentation marked it as weaker.
+What separated it was one action: opening the file that consumes the field.</p>
+<p>That is the argument for a distinct kind of document. An explainer about a <i>change</i> can put its
+caveats at the end, because the diff is the ground truth and it is right there. An explainer about
+<i>findings</i> cannot — each finding is an independent claim, so the verification status has to travel
+attached to each one or it protects nothing.</p></div>
+
+<h2 id="f3">Finding 3 — the 500 shows the raw validator string</h2>
+
+<p>The user pressed a button, was charged, and was shown this:</p>
+
+<div class="call k-d"><span class="t">What appeared in the panel</span>
+<p><code>corrected document does not start with a YAML frontmatter delimiter</code></p></div>
+
+<p>That is the internal message from <code>assertStructurePreserved</code>, passed through verbatim:</p>
+
+<div class="cb">
+  <div class="cap"><b>lib/corrections/regenerate-handlers.ts:312</b><span>current</span></div>
+<pre><code><span class="ln hit"><span class="g">312</span><span class="kw">return</span> NextResponse.<span class="fn">json</span>({ error: <span class="fn">errorSummary</span>(err) }, { status: <span class="nu">500</span> });</span></code></pre>
+</div>
+
+<p>The neighbouring 413 case already does this properly — it maps to <i>“This summary is too long to
+correct”</i> with a machine-readable <code>code</code>. And <code>StructuralValidationError</code> carries
+a typed <code>reason</code> field (<code>missing-frontmatter</code>, <code>section-title</code>,
+<code>section-timestamp</code>…) that is ready to be mapped the same way. The mechanism exists; this path
+just does not use it.</p>
+
+<div class="call k-s"><span class="t">Why 🟡 and not 🟠</span>
+<p>Nothing is lost or corrupted, and after the v9 fence fix these responses are rare. But when it does
+happen, the user has been charged and is then told something they cannot act on. It is a real defect in a
+paid path, at low severity — not a cosmetic nit.</p></div>
+
+<h2 id="status">What is measured, what is only argued</h2>
+
+<p>Per claim, so no reader has to take the page's word as a single undifferentiated block:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>A failed press leaves <code>correction_spend</code> empty and the ledger unmoved</td>
+    <td><span class="chip c-ver">MEASURED</span></td><td class="num">prod SQL, claude_ro, after the v8 failure</td></tr>
+<tr><td>A successful press records 1 row / 1¢ and moves the ledger to 2299¢</td>
+    <td><span class="chip c-ver">MEASURED</span></td><td class="num">prod SQL, after the v9 press</td></tr>
+<tr><td>The counter and the global cap only advance via that one RPC</td>
+    <td><span class="chip c-ver">MEASURED</span></td><td class="num">migration 0026 read + call sites grepped</td></tr>
+<tr><td>An unbounded failing loop could spend without any cap noticing</td>
+    <td><span class="chip c-str">ARGUED</span></td><td class="num">arithmetic from measured unit cost; never run</td></tr>
+<tr><td><code>mdCorrectionsHash</code> has exactly one interpreting consumer</td>
+    <td><span class="chip c-ver">MEASURED</span></td><td class="num">grep across lib/ app/ components/</td></tr>
+<tr><td>The raw validator string reaches the user</td>
+    <td><span class="chip c-ver">OBSERVED</span></td><td class="num">read from the live panel during the v8 press</td></tr>
+<tr><td>Finding 3 is “rare now” after the fence fix</td>
+    <td><span class="chip c-str">ARGUED</span></td><td class="num">6/8 → 0/6 sampled; no failure-rate monitoring exists</td></tr>
+</tbody></table></div>
+
+<h2 id="rec">Recommendation</h2>
+
+<div class="call k-c"><span class="t">File two rows, not three</span>
+<p><b>Finding 1 → 🟠</b>, worded around the bound-evasion rather than around “visibility”, with option A
+(record on the throw path) as its shape and a cross-reference to #61 as the durable fix.</p>
+<p><b>Finding 3 → 🟡</b>, mapping <code>StructuralValidationError.reason</code> to user-facing copy the way
+the 413 case already does.</p>
+<p><b>Finding 2 → do not file.</b> The behaviour is correct; my original framing of it was not.</p></div>
+
+<p>If you want them written, the roadmap tick rides in the same PR as the rows — that batching rule is
+already in <code>docs/dev-process.md</code> Phase&nbsp;5, and it is why these three have stayed unfiled
+rather than being appended to the backlog mid-investigation.</p>
+
+<div class="foot">
+  master 2e6330b · branch master · working tree clean<br>
+  prod release v10 · web + worker both on v10 · Step 3b prod smoke 6/6 green against v10<br>
+  correction_spend: 1 row / 1¢ · spend_ledger 2299¢ · read via claude_ro (read-only, session forced read-only)<br>
+  unit 2819 / 274 suites · tsc 0 · 10 ratchets exit 0<br>
+  built 2026-08-24T23:23:15Z · no network assets · renders offline
+</div>
+
+</div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div></div>
+
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body></html>

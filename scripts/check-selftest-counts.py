@@ -81,6 +81,12 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    "check-memory-link.py",
+    # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
+    # docstring is the only place its case count is stated, and a count nothing verifies is the
+    # drift this file exists to refuse — doing that on a brand-new file would be that shape one
+    # remove away.
+    "recall-llm.py",
     "check-python-pin.py",
 "check-backlog-closure.py",   # backlog #98 — the inverted row-vs-git check
     "begin-plan.py",                 # ⟳ 2026-09-04, task #224. Not a `check-*` guard, so the
@@ -100,6 +106,17 @@ POPULATION: frozenset[str] = frozenset({
                                      # never sees it — this is its only outside observer.
     # ⟳ 2026-09-12: gained a declared count when it gained its own manifest — the guard that
     # enforces R4 had exempted itself from it, because the escape regex matched its own docstring.
+    # ⟳ 2026-09-30, backlog #201/#202. Pinned in the SAME commit that creates it — a script
+    # declaring a count nothing verifies is the drift this file exists to refuse, and doing that on
+    # a brand-new guard would be the shape at one remove. This guard REFUSED it until it was pinned.
+    "check-rc-contract.py",
+    # ⟳ 2026-10-01, backlog #196. The HOOK'S own guard, pinned in the commit that creates it — for
+    # the reason this file keeps restating, and because #196's finding was that
+    # `.claude/hooks/surface-recall.sh` had NO self-test, NO mutation entry and NO reader. This
+    # gives it a suite and a reader; mutating the hook ITSELF still cannot be expressed, because
+    # `run_mutations` runs a mutation's `file` AS the suite (`check-plan-code.py`, `run_suite(d,
+    # fname)`), so a non-suite subject has no home. Filed rather than left implied.
+    "check-surface-recall.py",
     "check-ratchet-contract.py",
     "check-banner-armed.py",
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record, pinned in the

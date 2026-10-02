@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The instruments were the story — 2026-08-21</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.72rem;padding:.08rem .42rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.74rem;padding:.1rem .45rem;border:1px solid var(--line);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.74rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.74rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:99px;color:var(--ink-faint);background:var(--card);}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:.1em .5em;
+          border-radius:99px;border:1px solid var(--structure-br);margin-left:.4em}
+/* ---- ask tray ---- */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--structure-br);
+  background:var(--structure-bg);color:var(--structure);border-radius:99px;padding:.18em .6em;
+  cursor:pointer;z-index:40}
+#tray{position:fixed;right:0;bottom:0;left:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom));z-index:60;display:none;
+  box-shadow:0 -8px 26px rgba(0,0,0,.16)}
+#tray.on{display:block}
+#tray .inner{max-width:52rem;margin:0 auto}
+#tray .qt{font-family:var(--sans);font-size:.72rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#tray .qt b{color:var(--fg2)}
+#tray .row{display:flex;gap:.5rem;align-items:flex-start;flex-wrap:wrap}
+#qbox{flex:1 1 16rem;min-width:0;font-family:var(--sans);font-size:.9rem;padding:.5rem .65rem;
+  border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--fg);resize:vertical;min-height:2.6rem}
+#tray button.act{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;font-weight:650;padding:.5rem 1rem;
+  border-radius:8px;border:1px solid var(--structure);background:var(--structure);color:#fff;cursor:pointer}
+#tray button.sec{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;padding:.5rem .8rem;border-radius:8px;
+  border:1px solid var(--rule);background:var(--bg2);color:var(--fg2);cursor:pointer}
+#sentnote{font-family:var(--sans);font-size:.76rem;margin-top:.5rem;min-height:1.1em;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<span class="eyebrow">Status briefing · youtube-playlist-summaries</span>
+<h1>The instruments were the story</h1>
+<p class="lede">Nine PRs merged, production untouched, and the production smoke is green at 6/6 for
+the first time. Almost every defect found today was an instrument that <em>appeared</em> to be
+working and was not — including two of mine, and one you caught.</p>
+<div class="stamp">⬥ One decision is waiting on you — backlog #54, half (a)</div>
+
+<h2>Where it stands</h2>
+<div class="stats">
+  <div class="stat good"><span class="n">6/6</span><span class="k">prod smoke, live</span></div>
+  <div class="stat good"><span class="n">9</span><span class="k">PRs merged</span></div>
+  <div class="stat struct"><span class="n">2,722</span><span class="k">unit tests</span></div>
+  <div class="stat bad"><span class="n">11</span><span class="k">defects found</span></div>
+  <div class="stat warn"><span class="n">3</span><span class="k">backlog rows mismarked</span></div>
+</div>
+
+<p><strong>Production is at Fly v7 and was never touched today</strong> — every change was docs,
+scripts or tests. The roadmap's deploy line agrees with <code>flyctl</code>, so there is no version
+drift this time.</p>
+
+<h2>The shape: how today's defects were actually found</h2>
+<p>Eleven defects. Only one came from reading code. This is the uncomfortable number, and it is the
+argument for every executable gate in this repo.</p>
+
+<div class="chart">
+  <div class="row"><span class="lab">By running it</span>
+    <div class="bar" style="width:100%;background:var(--problem)" aria-label="Found by running it: 6"></div><span class="v">6</span></div>
+  <div class="row"><span class="lab">Comparing to a prior measurement</span>
+    <div class="bar" style="width:16.7%;background:var(--problem);opacity:.75" aria-label="Found by comparing to a prior measurement: 1"></div><span class="v">1</span></div>
+  <div class="row"><span class="lab">CI</span>
+    <div class="bar" style="width:16.7%;background:var(--measured)" aria-label="Found by CI: 1"></div><span class="v">1</span></div>
+  <div class="row"><span class="lab">A ratchet, while briefing</span>
+    <div class="bar" style="width:16.7%;background:var(--measured);opacity:.7" aria-label="Found by a ratchet while writing this brief: 1"></div><span class="v">1</span></div>
+  <div class="row"><span class="lab">You asked</span>
+    <div class="bar" style="width:16.7%;background:var(--pending)" aria-label="Found because the user asked: 1"></div><span class="v">1</span></div>
+  <div class="row"><span class="lab">By reading</span>
+    <div class="bar" style="width:16.7%;background:var(--structural)" aria-label="Found by reading: 1"></div><span class="v">1</span></div>
+</div>
+
+<h3>The three worth remembering</h3>
+<div class="note bad">
+  <span class="eyebrow">Failed open</span>
+  The new anon-exposure ratchet reported <strong>production clean while ten functions were
+  anon-callable</strong>. <code>boolean::text</code> yields <code>true</code>/<code>false</code>;
+  it compared against <code>t</code>. Its own <code>--self-test</code> was 16/16 green the whole
+  time, because the self-test drives the <em>rule</em> with fixtures — <strong>the rule was right and
+  the fetch was broken</strong>, and a rule/fetch split is structurally blind to that. Caught only
+  because a hand measurement disagreed.
+</div>
+<div class="note bad">
+  <span class="eyebrow">Never verified anything</span>
+  <code>CLAUDE_RO_DATABASE_URL</code> carries <code>sslmode=require</code>, which in pg 8 means
+  <strong>do not verify the server certificate</strong> — and it silently overrode the CA object
+  passed beside it. That credential had been crossing the network unverified. Now pinned to
+  Supabase's real root.
+</div>
+<div class="note warn">
+  <span class="eyebrow">You caught this one</span>
+  I wrote <em>"run the prod smoke after each deploy"</em> in chat and nowhere else. A grep found
+  <strong>zero</strong> mentions outside the spec. The spec's own open item said it had to be in the
+  deploy procedure "or it is a gate in name only" — I read that item and did not act on it. It is
+  now <code>docs/deploy.md</code> Step 3b.
+</div>
+
+<h2>What the prod smoke asserts, live</h2>
+<div class="tblwrap">
+<table>
+  <thead><tr><th>#</th><th>Check</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">1</td><td>Names the release it tested</td><td><span class="chip ok">v7</span></td></tr>
+    <tr><td class="mono">2</td><td>Deployed root serves the <em>cloud</em> app to a signed-in user</td><td><span class="chip ok">pass</span></td></tr>
+    <tr><td class="mono">3</td><td>Sidebar lists the playlist the <em>database</em> says exists</td><td><span class="chip ok">pass</span></td></tr>
+    <tr><td class="mono">4</td><td>Summary downloads, and the bytes are that video's document</td><td><span class="chip ok">pass</span></td></tr>
+    <tr><td class="mono">5</td><td><code>/dev-login</code> still 404; prod email sign-in still disabled</td><td><span class="chip ok">pass</span></td></tr>
+    <tr><td class="mono">6</td><td>Production spend ledger did not move</td><td><span class="chip ok">2,298¢ unmoved</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Thirteen seconds, free, read-only. Session cookies valid to <span class="mono">2027-09-25</span>.
+Before today, <strong>nothing had ever watched production's spend ledger.</strong></p>
+
+<h2>What is blocked</h2>
+<div class="tblwrap">
+<table>
+  <thead><tr><th>Item</th><th>Blocked on</th><th>Since</th></tr></thead>
+  <tbody>
+    <tr><td><strong>#54 half (a)</strong> — <code>alter default privileges</code> revoke</td>
+        <td><span class="chip dec">you</span> changes production grants</td><td class="mono">08-19</td></tr>
+    <tr><td>#25 — render addressing</td><td><span class="chip dec">you</span> needs a Phase 1 design pass</td><td class="mono">08-09</td></tr>
+    <tr><td>#45 — M3.1 round-5 residue</td><td><span class="chip dec">you</span> one item needs a decision</td><td class="mono">08-13</td></tr>
+    <tr><td>#23 — corrections as <code>{from,to}</code> pairs</td><td><span class="chip dec">you</span> design</td><td class="mono">08-05</td></tr>
+    <tr><td>#53 — commit drift</td><td><span class="chip st">dormant by design</span> trigger has 1 tick</td><td class="mono">08-18</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Nothing is blocked on a machine. Nothing is running.</p>
+
+<h2>The decision</h2>
+<div class="decision">
+<h3 style="margin-top:0">Backlog #54, half (a): revoke the default privileges in production</h3>
+
+<p><strong>Recommendation: do it.</strong> Supabase grants <code>EXECUTE</code> to <code>anon</code>
+at <code>CREATE FUNCTION</code> time, so today's safety record — 10 anon-callable
+<code>SECURITY DEFINER</code> functions, 8 guarded by <code>auth.uid()</code>, 2 read as benign — is
+<em>eight authors independently remembering</em>. The 27th function arrives exposed exactly as the
+others did.</p>
+
+<p><span class="eyebrow">The strongest argument against</span>
+It changes production grants, and the live exposure was measured as <strong>bounded — no exploitable
+path found</strong>. So it is not urgent. Worse, a default privilege is itself something a later
+<code>grant</code> can undo silently, which means (a) alone would re-commit the same defect one level
+up.</p>
+
+<p><span class="eyebrow">The answer to it</span>
+That objection was exactly right yesterday and is answered today: <strong>half (b) shipped</strong>.
+<code>check-anon-exposure.py</code> now enumerates the catalog, fails on any unlisted anon-callable
+definer function, and re-verifies each allow-list entry's stated reason against the live definition.
+So a silent later <code>grant</code> is now caught. <strong>(a) was unsafe without (b); (b) exists.</strong></p>
+
+<p style="margin-bottom:0"><span class="eyebrow">Cost</span> One migration, one <code>supabase db push</code>,
+and a re-run of the ratchet to confirm the number falls. The <code>TRUNCATE</code> baseline of 5 would
+drop with it.</p>
+</div>
+
+<h2>A finding from writing this page</h2>
+<div class="note warn">
+  <span class="eyebrow">Derived, not read</span>
+  Counting the backlog two ways disagreed. <strong>Rows #14, #34 and #35 are closed in their Status
+  cell but never got the <code>✅</code> item marker</strong>, so a severity scan counts them as open.
+  <code>check-docs</code> passes because its rule only fires when a <em>severity</em> marker survives
+  on a closed row — these lead with <code>**</code> or <code>⚠️</code>, so they slip through. Same
+  class as the defect that silently closed #46 and #50 two days ago, in the opposite direction.
+  <br><br><strong>True open count: 42.</strong> A severity scan will tell you 45.
+</div>
+
+<div class="foot">
+<b>master</b> 5e45814 · clean · 0 unpushed · 0 open PRs · only branch <code>master</code><br>
+<b>prod</b> Fly v7 (2026-08-18 04:35Z) — roadmap line 1273 agrees, no version drift<br>
+<b>this session</b> 342ac2e → 5e45814 · 9 PRs · 21 files · +1826 / −61<br>
+<b>gates</b> tsc clean · 2,722 unit / 268 suites · cloud e2e 9/9 · prod smoke 6/6<br>
+<b>ratchets</b> check-docs 0 · roadmap-consistency 0 · test-counts 0 · producer-enumeration 0 ·
+ratchet-contract 0 · arch-findings 0 · gate-falsifiability 0 · vocabulary-collisions 0<br>
+<b>ratchets red BY DECISION</b> sentinel-meanings 1 · guard-coverage 1 — both measure the
+<em>parked</em> blob-addressing schema; the red is ADR-0007's death certificate, not neglect.
+Do not "fix" by deleting entries.<br>
+<b>backlog</b> 52 rows · 42 open · 10 closed<br>
+&nbsp;&nbsp;12 🟠 / 21 🟡 / 8 🟢 / 0 🔴 = <b>41</b> — the 42nd is <b>#31</b>, which carries NO severity
+marker at all. An earlier version of this line printed the four counts beside “42 open” and they did
+not add up; found while listing the backlog, not by a check.<br>
+&nbsp;&nbsp;⚠ <b>#41 still reads OPEN</b> though its gate went 6/6 green today — its Status cell says
+“DESIGNED AND BUILT”, never ✅.<br>
+<b>prod anon exposure</b> 10 of 11 definer functions anon-EXECUTable, all allow-listed ·
+TRUNCATE 5/5 at baseline 5<br>
+<b>built</b> 2026-08-21 15:30 PDT — every figure above from a command run in this invocation
+</div>
+
+</div>
+
+<div id="tray" role="dialog" aria-label="Ask a question">
+  <div class="inner">
+    <div class="qt" id="qt"></div>
+    <div class="row">
+      <textarea id="qbox" placeholder="Type your question, then press Send (or ⌘/Ctrl+Enter)…" rows="2"></textarea>
+      <button class="act" id="sendbtn" type="button">Send</button>
+      <button class="sec" id="closebtn" type="button">Close</button>
+    </div>
+    <div id="sentnote" aria-live="polite"></div>
+  </div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+<!-- probe 1787097109 -->
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

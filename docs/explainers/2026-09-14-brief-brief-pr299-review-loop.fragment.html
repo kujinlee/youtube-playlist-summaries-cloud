@@ -1,0 +1,403 @@
+<title>PR #299 — fourteen rounds, and the last one found the gate failing open</title>
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+</style>
+<div class="wrap">
+
+<section>
+  <div class="eyebrow">Brief · PR #299 · record-review-topology</div>
+  <h1>Fourteen rounds, and the last one found the gate failing open</h1>
+  <span class="stamp"><span class="dot"></span>No decision waiting on you</span>
+  <p class="lede">The branch adds a rule that a review must have seen <strong>the code that actually
+  ships</strong>. Four review rounds ran today; each found its defect in the previous round's repair,
+  severity fell every time, and the last one found a <strong>fail-open in the gate itself</strong>.
+  All of it is fixed. What is left is mechanical: re-run the mutation gate, file round 14, run one
+  final round against a frozen tree, commit, merge.</p>
+  <p class="horizon">As of <code>dc9fe107</code> + the uncommitted delta · 2026-09-14 11:45 PDT</p>
+</section>
+
+<div class="howto">
+  <!-- STATIC and correct with JavaScript disabled; the tray's script sharpens it to
+       `● live — Send works` or `○ local file — Send unavailable`. The CSS and the JS for this
+       chip ship inside the lifted tray, but its MARKUP belongs to the fragment — a page that
+       omits it gets a styled, scripted element that never exists, which is a defect the delivery
+       contract records by name. -->
+  <span id="modechip">served → Send works · opened as a file → Send copies instead</span>
+  <span class="st">This page can answer back.</span> Live at
+  <span class="kbd">http://127.0.0.1:7391/latest</span> — always the newest page. Select any text, or
+  hover a heading, then click <b>ask</b>, type, and press <b>Send</b>; then say
+  <i>“read my questions”</i> in the session. If that URL does not load, run
+  <span class="kbd">python3 scripts/explainer-serve.py</span> (safe to run twice — <b>a reboot stops
+  it</b>). Opened as a plain file it still reads fine; only <b>Send</b> stops working.
+</div>
+
+<section>
+  <h2>Where it stands</h2>
+  <div class="stats">
+    <div class="stat acc"><span class="k">Rounds run</span><span class="v">14</span>
+      <span class="n">14 verdicts on disk</span></div>
+    <div class="stat ok"><span class="k">Findings, r14 Codex</span><span class="v">0</span>
+      <span class="n">CONVERGED — all severities</span></div>
+    <div class="stat bad"><span class="k">Findings, r14 Claude</span><span class="v">4</span>
+      <span class="n">0 B · 1 H · 2 M · 1 L — all fixed</span></div>
+    <div class="stat"><span class="k">Branch vs master</span><span class="v">43</span>
+      <span class="n">files · +3628 / −23</span></div>
+    <div class="stat warn"><span class="k">Uncommitted</span><span class="v">6+11</span>
+      <span class="n">modified + untracked, held on purpose</span></div>
+  </div>
+  <p class="caption">The uncommitted delta is deliberate, not drift. This branch's own practice is to
+  hold the last fixes uncommitted so the reviewer sees the state that will merge — so the tree in
+  front of the reviewers <em>is</em> the shipping state.</p>
+</section>
+
+<section>
+  <h2>The shape: severity collapsing, round by round</h2>
+  <div class="chart">
+    <div class="scale"><span>0 findings</span><span>21</span></div>
+
+    <div class="row">
+      <span class="lab"><b>r11</b> claude</span>
+      <div class="track">
+        <div class="bar" style="width:100%" role="img"
+             aria-label="Round 11, Claude half: 21 findings — 1 Blocking, 7 High, 6 Medium, 7 Low">
+          <div class="seg b" style="flex:1"></div><div class="seg h" style="flex:7"></div>
+          <div class="seg m" style="flex:6"></div><div class="seg l" style="flex:7"></div>
+        </div>
+        <span class="after">21</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r11</b> codex</span>
+      <div class="track">
+        <div class="bar" style="width:4.762%" role="img"
+             aria-label="Round 11, Codex half: 1 finding — 1 Blocking">
+          <div class="seg b" style="flex:1"></div>
+        </div>
+        <span class="after">1</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r12</b> claude</span>
+      <div class="track">
+        <div class="bar" style="width:14.286%" role="img"
+             aria-label="Round 12, Claude half: 3 findings — 1 High, 1 Medium, 1 Low">
+          <div class="seg h" style="flex:1"></div><div class="seg m" style="flex:1"></div>
+          <div class="seg l" style="flex:1"></div>
+        </div>
+        <span class="after">3</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r12</b> codex</span>
+      <div class="track">
+        <div class="bar" style="width:4.762%" role="img"
+             aria-label="Round 12, Codex half: 1 finding — 1 High, the same High the Claude half found">
+          <div class="seg h" style="flex:1"></div>
+        </div>
+        <span class="after">1</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r13</b> claude</span>
+      <div class="track">
+        <div class="bar" style="width:19.048%" role="img"
+             aria-label="Round 13, Claude half: 4 findings — 1 High, 2 Medium, 1 Low">
+          <div class="seg h" style="flex:1"></div><div class="seg m" style="flex:2"></div>
+          <div class="seg l" style="flex:1"></div>
+        </div>
+        <span class="after">4</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r13</b> codex</span>
+      <div class="track">
+        <div class="gapbar" role="img"
+             aria-label="Round 13, Codex half: did not run — the model timed out, gate_ran false, gap declared in writing">
+          <span>DID NOT RUN — timed out, gap declared</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r14</b> claude</span>
+      <div class="track">
+        <div class="bar" style="width:19.048%" role="img"
+             aria-label="Round 14, Claude half: 4 findings — 1 High, 2 Medium, 1 Low">
+          <div class="seg h" style="flex:1"></div><div class="seg m" style="flex:2"></div>
+          <div class="seg l" style="flex:1"></div>
+        </div>
+        <span class="after">4</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lab"><b>r14</b> codex</span>
+      <div class="track">
+        <div class="bar" style="width:0" role="img"
+             aria-label="Round 14, Codex half: zero findings at every severity — converged"></div>
+        <span class="after conv">0 — CONVERGED</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:var(--s-block)"></i>Blocking</span>
+      <span><i style="background:var(--s-high)"></i>High</span>
+      <span><i style="background:var(--s-med)"></i>Medium</span>
+      <span><i style="background:var(--s-low)"></i>Low</span>
+      <span><i style="background:var(--warn-bg);border:1px dashed var(--warn-br)"></i>did not run</span>
+    </div>
+  </div>
+  <p class="caption">Bars are scaled against the largest round (21 findings). Rounds 1–10 are not
+  plotted: they were Codex-only, every one carrying a written <code>REVIEW GAP: claude</code>,
+  because the branch was built by a worker fork that cannot spawn a second reviewer. Running the
+  owed Claude half is what produced r11's 21 findings — accumulated, not new.</p>
+  <p class="caption">Two things move together here. Severity falls, and the <em>subject</em> migrates
+  outward: this branch's new code → the fixes for it → inherited code from master → documentation.</p>
+</section>
+
+<section>
+  <h2>The three findings worth remembering</h2>
+
+  <div class="find blocking">
+    <span class="tag">r11 · Blocking</span>
+    <h3>The gate could be walked past</h3>
+    <p>A file held uncommitted for the reviewer, then <strong>reverted</strong>, left the compared
+    set entirely — so it was never checked against anything. A file reviewed as <code>GOOD</code> and
+    shipped as <code>BAD</code> passed with the gate printing <em>“the final tree was reviewed
+    by…”</em>. Reproduced end to end before it was fixed.</p>
+  </div>
+
+  <div class="find">
+    <span class="tag">r13 · High</span>
+    <h3>The round-12 repair could not fail</h3>
+    <p>Reverting the fix to its broken state left the entire mutation gate at
+    <strong>618 killed, 0 survivors</strong> — byte-identical to the repaired tree. The repair had no
+    falsifier at all, on a branch whose whole thesis is that a guard must be able to fail.</p>
+  </div>
+
+  <div class="find">
+    <span class="tag">r14 · High</span>
+    <h3>A fail-open in the thing being shipped</h3>
+    <p><code>git diff --name-only</code> has rename detection <strong>on by default</strong>, so a
+    guarded code file moved to a prose path vanished from the diff — and the gate reported
+    <em>“no guarded path changed”</em> over a <strong>deleted code file</strong>. Measured with a
+    control. This one was not in the new code; it was inherited, in two lines this branch had edited
+    one round earlier for a different flag.</p>
+  </div>
+
+  <div class="warnbox">
+    <b>One incident, recorded rather than buried.</b> A reviewer probing environment-variable
+    redirection ran the test suite under an exported <code>GIT_DIR</code> pointed at the live
+    worktree, and the suite's own fixture committed into the real repository — moving this branch's
+    ref onto a scratch commit. Recovered from the reflog; nothing was lost, the work was already
+    pushed. It turned that finding from <em>reasoned about</em> into <em>demonstrated</em>.
+  </div>
+</section>
+
+<section>
+  <h2>The two halves disagreed, and that is the useful part</h2>
+  <p class="prose">Round 14 split: the Claude half returned <strong>NOT CONVERGED</strong> with a
+  High; the Codex half returned <strong>CONVERGED</strong> with nothing at any severity. This repo
+  has a recorded pattern for exactly this — when the halves disagree, the half reporting a finding
+  has been right every time.</p>
+  <div class="note">
+    <b>Sharper than a split verdict.</b> One claim was tested by both halves and they reached
+    <em>opposite</em> conclusions. The coordinator had written that a certain mutation was
+    impossible to attribute. Codex tested it and <b>confirmed</b> the claim. The Claude half
+    <b>refuted</b> it — by finding the counter-example the confirmation had missed. That is the
+    strongest evidence on this page that the two reviewers are not redundant: same question, same
+    tree, opposite answers, and the refutation was correct.
+  </div>
+</section>
+
+<section>
+  <h2>What remains</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Item</th><th>Blocked on</th><th>Since</th></tr></thead>
+      <tbody>
+        <tr><td>Re-run the full mutation gate at 622 entries</td>
+            <td>—</td><td class="n">done 11:57 · 622/622/0</td></tr>
+        <tr><td>File round 14 (both halves + adjudication)</td>
+            <td>—</td><td class="n">done · round gate rc=0</td></tr>
+        <tr><td>Final round against the frozen tree</td>
+            <td>the two above</td><td class="n">queued</td></tr>
+        <tr><td>Commit, CI, merge</td>
+            <td>the round above</td><td class="n">queued</td></tr>
+        <tr><td>CI red at <code>dc9fe107</code></td>
+            <td>self-inflicted and expected — see below</td><td class="n">by design</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <b>The red CI is the branch refusing its own pull request.</b> Rounds 11–14's review documents and
+    verdicts are still uncommitted, so the very rule this branch adds looks at the PR and says the
+    reviewed code is not the code that would merge. It is the gate working, not a broken build.
+    Schema gates passed at the same commit.
+  </div>
+  <div class="warnbox">
+    <b>Closed at 11:57 PDT — this number is now measured.</b> The 622-entry run has been executed
+    against the frozen tree: <strong>44 files, 622 mutations, 622 killed, 622 attributed to the case
+    each names, 0 survivors</strong>. It had been flagged here as <em>declared, not measured</em>,
+    because the last completed run was 620 — taken before the final two entries and the
+    <code>diff_argv</code> unification. The gap is closed; 622 is no longer a claim.
+  </div>
+</section>
+
+<section>
+  <h2>Ground truth</h2>
+  <p class="caption">Every figure below came from a command run while writing this page, not from
+  memory. Exit codes, not prose summaries.</p>
+  <div class="foot">
+    <div class="grid">
+      <div><span class="kk">branch</span><span>record-review-topology</span></div>
+      <div><span class="kk">HEAD</span><span>dc9fe107</span></div>
+      <div><span class="kk">ahead of origin</span><span>0 — pushed</span></div>
+      <div><span class="kk">PR #299 mergeable</span><span class="pass">MERGEABLE</span></div>
+      <div><span class="kk">PR #299 state</span><span class="cannot">BLOCKED</span></div>
+      <div><span class="kk">uncommitted</span><span>6 mod · 11 untracked</span></div>
+      <div><span class="kk">uncommitted delta</span><span>6 files · +295 / −43</span></div>
+      <div><span class="kk">CI @ dc9fe107</span><span class="fail">failure — expected</span></div>
+      <div><span class="kk">Schema gates</span><span class="pass">success</span></div>
+      <div><span class="kk">check-docs</span><span class="pass">0</span></div>
+      <div><span class="kk">check-roadmap-consistency</span><span class="pass">0</span></div>
+      <div><span class="kk">check-producer-enumeration</span><span class="pass">0</span></div>
+      <div><span class="kk">check-test-counts</span><span class="cannot">1 — CANNOT RUN</span></div>
+      <div><span class="kk">deploy live</span><span>v10 · Aug 24 2026</span></div>
+      <div><span class="kk">roadmap claims</span><span class="pass">v10 — agrees</span></div>
+      <div><span class="kk">check-review-recorded</span><span class="pass">122 / 122</span></div>
+      <div><span class="kk">codex-review</span><span class="pass">85 / 85</span></div>
+      <div><span class="kk">check-plan-code</span><span class="pass">128 / 128</span></div>
+      <div><span class="kk">check-ratchet-contract</span><span class="pass">41 / 41</span></div>
+      <div><span class="kk">check-fixture-variation</span><span class="pass">60 / 60</span></div>
+      <div><span class="kk">check-selftest-counts</span><span class="pass">18 / 18</span></div>
+      <div><span class="kk">check-review-rounds</span><span class="pass">29 / 29</span></div>
+      <div><span class="kk">check-guard-coverage</span><span class="pass">37 / 37</span></div>
+      <div><span class="kk">EXPECTED_MUTATIONS</span><span>622 over 44 files</span></div>
+      <div><span class="kk">last measured run</span><span>622 — 622 killed, 0 survivors</span></div>
+    </div>
+    <p style="margin-top:1rem"><code>check-test-counts</code> returning <b>1</b> is the guard being
+    correctly loud: there is no <code>jest-results.json</code> in this worktree, so it refuses to
+    report a pass over an absent measurement. That is a CANNOT RUN, not a failure.</p>
+    <p>Six live gates additionally at <code>rc=0</code>: <code>check-selftest-counts</code>,
+    <code>check-fixture-variation</code>, <code>check-ratchet-contract</code>,
+    <code>check-docs</code>, <code>check-anchors</code>, <code>check-review-rounds</code>.</p>
+    <p class="horizon">Composed 2026-09-14 11:45 PDT · horizon <code>dc9fe107</code> + uncommitted
+    delta. The mutation total is the fastest-rotting figure here; everything else was read this
+    minute.</p>
+  </div>
+</section>
+
+</div>

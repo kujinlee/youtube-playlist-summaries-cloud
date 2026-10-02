@@ -12936,3 +12936,466 @@ reproduction of the High it was written for. #126 and #127 travel with it.
 
 Testimony preserved: 32 files restored from `origin/explainer-src-root-self-configures` by explicit path
 (`docs/reviews/{claude,codex,coordinator,verdicts}/`), verified to carry no code.
+
+## 2026-09-29
+The thing that did not work turned out to be the ruler, not the thing being measured.
+
+Yesterday ended with a puzzle. I had built something to make the project's memory speak up at the
+right moment, measured it, and found it did not work — it matched words, and words are not what
+makes two descriptions of the same moment the same. But the very last experiment of the night
+suggested the memory notes themselves were fine, and only the word-matching was broken. That was
+one run, and I had written both the questions and the answers, so it could not be trusted.
+
+**Today I repeated it properly, and it held up.**
+
+The rewording was done by an assistant who had never seen the memory notes, so it could not
+accidentally choose matching words. On those reworded situations the word-matcher got **3 out of
+20**. Matching by meaning got **20 out of 20** — on exactly the same sentences.
+
+⭐ **The more important half is the part I did not test yesterday.** A test that only asks "did you
+find the right one?" cannot be failed, because something asked to pick an answer always picks one.
+So I added sixty ordinary, unremarkable moments of engineering work that nothing in memory covers —
+adjusting padding, bumping a dependency, setting a timeout — and checked how often each approach
+spoke up when it should have stayed quiet.
+
+The word-matcher spoke up **7 times out of 60**, always nonsense: "stacking the settings form into
+one column" pulled up a note about stacked pull requests, because both contain the word "stack".
+Meaning-matching stayed quiet **60 times out of 60**, and on the near-misses it explained what it
+had considered and rejected.
+
+⛔ **One thing I got wrong and had to redo.** The first time I ran that check, I had left the answer
+sheet in the same folder I told the assistant to read from. It scored perfectly, and I could not
+prove it had not simply looked. I rebuilt it in an empty folder containing only the question paper
+and ran it again with a fresh assistant. Same result, so the answer stands — but I would not have
+been able to say that an hour ago.
+
+⚠ **What this does not say.** Sixty quiet moments is enough to say "wrong less than 5% of the time",
+not "never wrong". And the rewording and the matching were both done by the same kind of assistant,
+which is not the same as a person phrasing it their own way.
+
+Also today: the half-built word-matcher is no longer running on every command — it was spending
+time to print things that were mostly wrong.
+
+<!--tech-->
+**Backlog #191, C5.** Two branches. `c5-recall-matcher` (6 commits, **do not merge**) holds the
+refuted matcher, its round-1 review and the negative result. `semantic-recall-replication` (off
+`master` at `446025ab`) holds today's measurement.
+
+Four blind agents: a paraphraser shown only the situation strings; a negative author shown nothing
+at all; two matchers shown triggers and situations but never labels; one isolated re-run.
+Kill condition pre-registered at ≥8 false fires of 60.
+
+| arm | must-fire | negatives | false-fire |
+|---|---|---|---|
+| lexical top-1 | 3/20 | 53/60 | 11.7% |
+| semantic ×2 (33) | 20/20 | 13/13 | 0% |
+| semantic isolated (80 mixed) | 20/20 | 60/60 | 0% |
+
+Rule of three: 0 in 60 → **95% upper bound 5.0%**. Isolated run agreed with the contaminated one
+on 79/80, sole divergence inside a pre-declared `expect_any`.
+
+⛔ Also corrected today: `c5-recall-matcher`'s review doc claimed **B1 — fixed**. Unverifiable —
+`fe618a54` fixed B1 *and* turned the control red, and a red control collapses `check-plan-code.py
+--mutate .` to `NotMeasured` for all 54 scripts (`check-plan-code.py:2908` asserts it). Cannot run
+is a failure, never a pass. `master` unaffected.
+
+Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.
+
+## 2026-09-30
+The memory now speaks up at the right moment, and the thing I expected to limit it turns out not to.
+
+The matcher is built and working. When a plan is started, one question goes to the model covering
+every step at once, and the answer is kept. From then on each step costs nothing — a tenth of a
+second to look up what was already decided. You can see it working in tonight's own session: as I
+moved onto the measuring step, it surfaced the note about how a test that can only succeed proves
+nothing, which was exactly the right thing to be reminded of.
+
+⭐ **The question I set out to answer was "how big can the memory get before this stops working?"
+The answer is: bigger than I can currently test, and size is the wrong thing to worry about.**
+
+I padded the memory out with hundreds of invented lessons — to 300, then 600, then 1000 — and asked
+the same eighty questions each time. It kept finding the right note: twenty out of twenty, then
+nineteen, then twenty out of twenty again. **That it got BETTER at a thousand than at six hundred is
+the useful part** — a real decline cannot recover, so the wobble is ordinary run-to-run variation
+rather than the thing wearing out.
+
+⭐⭐ **What does limit it is something I was not looking at.** Two independent runs disagreed on
+five ordinary moments, and every disagreement was the same question: *if someone is already doing the
+right thing, should you tell them the rule anyway?* One run had invented an answer, the other had
+never considered it. About a fifth of everyday moments sit in that grey area. That is now written
+down as part of the question rather than left for each run to guess.
+
+And a bigger realisation behind it. As a memory grows to cover everything, almost nothing is
+genuinely uncovered any more — so "did it speak up wrongly?" stops being the right question and "was
+that worth interrupting me for?" becomes it. That is a judgement about worth, not correctness, and
+nothing I have built addresses it yet.
+
+⛔ **Three of my own measuring instruments were wrong tonight, and all three were caught.** I marked
+the matcher wrong for correct answers, because the filler I added to make the memory bigger genuinely
+covered some of the moments I had labelled as uncovered. I measured the wrong wording — my own
+paraphrase rather than the words the program actually sends — and had to redo it. And I nearly told
+you that a change I had just made cost accuracy; I tested it instead, and it turned out to change
+nothing at all.
+
+⚠ **One thing to hold lightly:** the extra lessons were invented, and invented ones are easier to
+tell apart than real ones. So these numbers are the best case, not the likely case.
+
+<!--tech-->
+**Backlog #191.** `semantic-recall-replication`, 4 commits, unmerged, off `master` at `446025ab`.
+
+`scripts/recall-llm.py` — ONE model call per PLAN at arm time (16.1s), cached; `--fire` is a lookup
+at 0.12s. Caller `PostToolUse(Bash, begin-plan.py)`, ~15 firings/day vs the refuted hook's ~275,
+deduped per (plan, step) by pure `should_surface`/`surface_marker`. Delivery via
+`hookSpecificOutput.additionalContext`, confirmed live. 128 cases, 53 mutations, and a 1087-mutation
+sweep at 0 survivors, all attributed.
+
+| run | corpus | recall (20) | true false fires (60) |
+|---|---|---|---|
+| probe-300 | 300 | 20/20 | 0 |
+| probe-600 | 600 | 19/20 | 0 |
+| probe-1000 | 1000 | 20/20 | 0 |
+| **shipped prompt** | 1000 | **19/20** | **0** |
+| shipped − rubric clause | 1000 | 19/20 | 0 |
+
+Non-monotonic recall ⇒ size is not the variable. 300 and 1000 chose identical entries on all 20
+positives. Binding variable is the already-embodied rubric boundary (5/60 disagreement, 11–12/60
+flagged borderline).
+
+⛔ Instrument corrections, all recorded in the review doc rather than quietly fixed: the scorer
+counted apt padding matches as false fires (`a-measurement-is-only-as-good-as-its-corpus`); the
+headline was measured against an agent brief, not `build_prompt`'s output
+(`a-mocked-boundary-tests-the-contract-you-imagined`); and a causal claim about the rubric clause was
+refuted by a one-variable control at 80/80 identical picks (`the-control-refuted-the-premise`).
+
+Full account: `docs/reviews/claude/semantic-recall-replication-2026-09-29.md`.
+
+## 2026-09-30 [resolved: 2026-09-30/3]
+The memory now speaks up at the right moment — and four reviewers spent the night proving how badly I fix things.
+
+The matcher is built, running, and reviewed twice. When a plan starts, one question goes to the
+model covering every step; each step afterwards costs a tenth of a second. You can watch it working
+in this session: it surfaced the note about writing messages for people right as I sat down to write
+this entry.
+
+**What the reviews actually found is more useful than the matcher.** Two rounds, four reviewers,
+twenty-eight findings. The severity didn't improve between rounds — one serious problem each time.
+But what *changed* is where the problems came from: in the first round they were all original
+mistakes; in the second, **nine of fourteen were caused by my own repairs from the first round.**
+Two of my fixes broke in exactly the way they were meant to prevent. One fixed nothing at all — it
+changed a comparison that cannot come out differently.
+
+⭐⭐ **And then the pattern showed itself.** I sorted every serious finding by where the problem
+actually sat, and **78% of them were not inside anything — they were between two things.** A check
+that exists but one caller never asks. A signal the program sends and the listener ignores. The same
+sentence, over and over: *the part that knows is not the part that decides*.
+
+That is why the next session starts somewhere different. Another review round would find the seventh
+example of a problem I have now diagnosed six times. The question worth asking instead is structural:
+**should the whole thing be arranged so a caller cannot skip the check?**
+
+⚠ **Worth knowing how little my own confidence was worth.** The test suite was green — 128 cases,
+then 164, then 185 — through every single one of these. Five different ways a passing test meant
+nothing. Every one was caught by a machine re-running the real thing, and not once by me reading my
+own work.
+
+⟳ **ANSWERED 2026-09-30 by the user, in their own words — *"next session will start architecture
+review"*.** The review ran the same day: `docs/reviews/architecture-review-2026-09-30-recall-matcher.md`.
+⚠ This entry stood as `[needs-you]` after the answer arrived, because nothing closes a `[needs-you]`
+when the reply comes in conversation — `an-escalation-has-no-closer`, in the live repo.
+
+<!--tech-->
+**Backlog #191.** `semantic-recall-replication`, off `master` at `446025ab`, **unmerged, PUSHED,
+no PR**. Tree clean. ⟳ **CORRECTED 2026-09-30: this said *18 commits* and *unpushed*; both were
+stale at the moment of writing** — `git log --oneline master..HEAD` gives 22 and `HEAD` equals
+`origin/semantic-recall-replication`. A count written into a file that keeps being committed is
+stale when written, so the command is named here instead of a number.
+
+| round | B | H | M | caused by a previous fix |
+|---|---|---|---|---|
+| 1 (concurrent) | 1 | 4 | 5 | 0 of 14 |
+| 2 (alternating) | 1 | 5 | 5 | **9 of 14** |
+
+Blocking+High by location: **15 of 19 at a seam (78%)** — 4× caller/callee, 3× code/hook, 2×
+cache/corpus, 2× mode/mode, plus file/file, test/code, test/gate, parser/caller. 4 internal.
+
+Gates at the tip: `recall-llm --self-test` 185/185 · `--mutate .` 1133 mutations, 1133 killed, 1133
+attributed, 0 survivors · twelve `check-*` entry points rc=0 including `check-fixture-variation`,
+which round 2 caught RED and which neither the self-test nor the sweep can see.
+
+⛔ NOT CONVERGED and the architecture review does **not** arm — `dev-process.md:108` needs two
+consecutive fix-caused rounds in ONE component; this is one such round across five. Recorded per
+finding in `docs/reviews/claude/recall-llm-r2-convergence.md`. The recommendation is an architecture
+review **on judgement**, with one concrete question: should the rc contract be enforced at a single
+boundary rather than at every raise site?
+
+Also landed: the memory corpus (146 entries) and the authored explainer pages moved INTO the repo
+per the user's ruling, with bootstrap symlinks, a CI guard and a README section — backlog #194.
+
+## 2026-09-30
+The review asked whether the structure was wrong. It was — but not in the place anyone was looking.
+
+Last night's conclusion was that most of the defects lived *between* things rather than inside them,
+and the question for today was whether the fix is to make callers unable to skip a check. **The
+answer is that the check was never the problem.** The one boundary everyone was worried about
+already exists and already works.
+
+⭐⭐ **What is actually wrong is that every automatic protection in this project stops at a file
+name.** The machinery that insists a safety script has tests, has no silent failure path, and is
+actually *called by something* only looks at files named `check-…`. The matcher is not named that.
+So the one rule that would have noticed its only caller is unprotected never looked at it — and that
+caller, a small shell script deciding what you get shown, has no tests, no coverage, and nothing
+anywhere that reads it. Three of the defects landed exactly there. **They were not careless work;
+that is the one place nothing was watching.**
+
+And the file predicted it. It says in as many words that every decision is a carefully tested
+function and *the rest is plumbing* — then notes that the plumbing holds the wiring, that miswired
+wiring is a defect this project has hit repeatedly, and that it checked the wiring **by running it
+once, by hand, on one day.** That run was real. It simply never runs again.
+
+⚠ **Two things I got wrong last night, found by re-deriving them rather than re-reading them.** The
+headline *"78% of problems were at seams"* does not reproduce — the real Blocking-and-High total is
+16, not 19. More importantly, that split came from **me** classifying my own findings and was then
+quoted as though measured; my second pass says 81–88%, which deserves no more trust than the first.
+The conclusion survives either way, and that is precisely why nobody audited the number. Separately,
+a figure baked into the code three times over — *"87 plans"* — is 93 today, and no check owns it.
+
+**Nothing was merged and nothing was opened as a pull request.** The work still owes a review round,
+so a PR would claim a readiness it does not have.
+
+<!--tech-->
+**Phase 6 architecture review — `docs/reviews/architecture-review-2026-09-30-recall-matcher.md`.**
+Subject: `scripts/recall-llm.py` (2204 lines), `scripts/begin-plan.py`,
+`.claude/hooks/surface-recall.sh`, on `semantic-recall-replication`. ⛔ It did **not** arm —
+`dev-process.md:108` needs two consecutive fix-caused rounds in ONE component — and ran on the
+user's direction, recorded as that rather than dressed up as a trigger.
+
+**Nine findings, every one verified by hand with its producing command recorded.** Filed as backlog
+**#195–#200**; the roadmap gained the section this work never had.
+
+| # | finding | lands as |
+|---|---|---|
+| F6+F7 | `GUARD_PATH_RE = scripts/check-*.py`, so rules R1–R3 never see the subsystem; the hook has 0 mutations, 0 cases, 0 readers | 🔴 #196 |
+| F1 | no falsifier at the call site — `NONE` is frequently CORRECT, so a live all-NONE run is unauditable | 🟠 #195 |
+| F3 | `CONTEXT.md` vocabulary absent — **third** instance of one prescribed repair (#7, review-verdict path, this) | 🟠 #198 |
+| F8 | *"15 of 19 (78%)"* does not reproduce — 16 B+H, and the split was one judge quoted as a measurement | 🟠 #199 |
+| F2 | *"87 committed plans"* at 4 sites; measured 93 of 96 tracked; no owner | 🟡 #197 |
+| F9 | Phase 6's `Explore` step informed 1 of 4 reviews; the partial-results remedy has now failed twice | 🟡 #200 |
+| F4 | no roadmap row for 22 commits and a registered live hook | ✅ fixed |
+| F5 | this file's own `[needs-you]` outlived its answer, and misstated commit count and push state | ✅ fixed |
+
+⛔ **All three `Explore` agents are recorded NOT RUN.** Dispatched with refutation mandates, all
+three went idle without reporting, and an explicit `SendMessage` resend went unanswered. The
+mechanism is already written down in the 2026-09-22 review — their replies are plain text, and plain
+text does not route to the coordinator. **Nothing in the review rests on them.**
+
+**Gates at this tree, all rc=0:** `recall-llm.py --self-test` 185/185 · `check-anchors` ·
+`check-docs` · `check-ratchet-contract` · `check-review-rounds` (0 silent gaps) ·
+`check-test-counts` · `check-roadmap-consistency` · `check-backlog-closure` ·
+`check-dashboard-entry`. **Convergence unchanged: NOT CONVERGED** — round 3 is still owed, and a
+design gate does not substitute for a defect round.
+
+## 2026-09-30
+I published a diagnosis this morning, asked three reviewers to destroy it, and they did. Here is the correction, and the two real bugs it led to.
+
+The architecture review I filed earlier had a headline answer: *the checks exist, and some callers
+just don't ask them*. I had dispatched three reviewers with instructions to demolish that idea
+rather than support it. They came back forty minutes after I had already committed and pushed it,
+and demolished it — every check in that file **is** asked, at every place that could ask. I
+re-derived it myself before believing them, and they were right.
+
+⭐⭐ **What is actually wrong is smaller and much more useful.** The program reports what happened
+with a numeric code, and one of those codes means two different things: *nothing applies here*
+(normal, and rightly silent) and *something applies but I could not reach it* (which you need to
+hear). A previous round had already spotted that exact confusion and fixed it — **for one half of
+the program.** Everyone then kept looking at the half that was fixed.
+
+**That reframing found two real bugs, both reproduced:**
+
+- Ask the same question twice with an unreadable plan, and from the second time onward you get a
+  message with its explanation stripped out — permanently, because the "don't repeat yourself"
+  marker never resets. Not silence, which would at least be honest; a sentence that ends in
+  "Detail:" and then stops.
+- Have a plan running, a valid cache, and the notes directory missing, and you get **nothing at
+  all** — indistinguishable from "no lesson applies". The program produces a perfectly clear
+  160-character explanation and the messenger drops it on the floor.
+
+⚠ **And the trigger for the second one was something I did to your machine this morning.** Fixing
+the notes so they stayed readable while I worked on another branch, I pointed them at a second copy
+of the repo. That is precisely the situation the second bug needs. Worse — there is a check for
+this, and when I finally ran *all* of them instead of the four I remembered, it refused my fix
+outright. So the arrangement is back to how it should be, the notes read fine, and the check is
+green.
+
+⚠ **Two other things I had shipped wrong and only found by running every check.** Six rows I filed
+this morning used a category name nothing in the project claims, which means **those rows could not
+be displayed at all** — silent in the file, loud in the build. And the review document said all
+three reviewers had failed to report, which stopped being true about an hour after I wrote it.
+
+**Nothing is merged and there is no pull request.** One branch still owes a review round; the other
+knows it does, and says so.
+
+<!--tech-->
+**Correcting the 2026-09-30 architecture review (backlog #191/#196) and filing what its agents
+found.** Branch `semantic-recall-replication`.
+
+⛔ **The primary verdict is REFUTED and corrected in place** — struck through in words, not deleted,
+in `docs/reviews/architecture-review-2026-09-30-recall-matcher.md` and in backlog **#196**, because
+both were pushed. Re-derived by AST, not relayed: five functions have N≥2 production call sites
+(`plan_verdict`, `should_surface`, `read_or_refuse` 4, `memory_dir`, `plan_steps` 3) and **all are
+consulted**; the one survivor is `decode_verdict`'s rc discarded at `:354`, where it is a constant.
+Route C: the proposed repair would have prevented **at most 1 of 6**, and for three the precondition
+is false. **Corrected verdict: the rc contract spans two languages, nothing reconciles emitted
+against handled codes, and `rc=2` carries a conjunction.**
+
+| # | filed | weight |
+|---|---|---|
+| **#201** | **LIVE** — repeated `rc=5` forwards a hollow message: 409 → 148 → 148 bytes, `Detail:` empty from call 2, marker persists | 🔴 |
+| **#202** | **LIVE** — armed + valid cache + corpus gone → **0 bytes** against a 290-byte control; B1's conflation on the corpus side | 🔴 |
+| #203 | `recall-llm.py:187` holds a second copy of a rule whose owner forbids copies; **3 of 6** inputs diverge | 🟠 |
+| #204 | `memory_dir`'s docstring promises a worktree finds its own corpus; it does not, **and `check-memory-link.py` refuses pointing it at one** | 🟡 |
+| #205 | `invocation_re` misses `sys.executable`; `brief-compose.py`'s green rests on `ci.yml:168`, not its three real callers | 🟡 |
+
+**F9 corrected, and the fix shape inverted.** Measured across all four reviews that dispatched
+`Explore` agents: the step has **never** failed to deliver entirely, but failed to deliver **in time
+in 3 of 4** — and in two of those, what arrived late changed the review. So the repair is not "make
+them deliver" but *mark the verdict PROVISIONAL until every dispatched agent reports*. The
+partial-results remedy has now failed twice, for the recorded reason (plain text does not route).
+
+⛔ **Ran ALL the document guards per `docs/CLAUDE.md` rule 1, taken from `ci.yml` rather than
+memory — 29 of them, and 4 came back non-zero.** Two were bare-invocation artefacts
+(`check-banner-armed` wants `--decide`, `check-plan-code` says NOT CHECKED). One was mine:
+`check-memory-link` rc=1 on the worktree symlink — **restored to the direct link, worktree removed,
+now rc=0 / 146 entries**. One is true and stays red: `check-review-recorded` reports guarded code
+committed after the last round — the mechanical form of NOT CONVERGED, and `NO-REVIEW:` would be
+the wrong answer to it.
+
+⚠ **Rows #195–#200 were filed with bundle `(tooling / backlog #191)` / `(process / backlog #191)`,
+which `docs/features.md` claims no node for** — `check-features.py` rc=1, *"its rows cannot appear"*.
+Corrected to `(tooling)` / `(process)`. Third gate-subset miss of the session, and the one rule in
+`docs/CLAUDE.md` written for exactly it.
+
+## 2026-10-01 [needs-you]
+Nine rounds of review kept finding the same bug, so we stopped reviewing and asked why.
+
+**Round 9 found four more of one defect, and one of them was round 8's, recorded as fixed and not
+fixed.** All four reproduced by hand before being believed. The pattern that mattered: each round's
+*correct* repair was what created the next round's bug. That triggers a rule written down months
+ago — stop fixing instances, go look at the design — and you chose to follow it.
+
+⭐ **The answer was already in this repository, in one file, written before any of this started.**
+Every one of these checking programs builds its world from settings buried in the file, so the
+outermost layer — the part that actually runs — is the one layer no test can drive. The standard
+repair pulls a piece *out* of that layer to make it testable, which means every correct fix shrinks
+the tested region's reach and leaves a fresh untested piece behind. One program of thirty-six was
+built the other way, deliberately, with the reasoning spelled out in its own notes. **It is the one
+program this bug has never touched in nine rounds.** So the fix is not a new idea to adopt; it is a
+fix already made here that never travelled to its neighbours.
+
+⚠ **I checked the review's own numbers and two were wrong** — in its favour, which is the direction
+that matters. It reported more exposure than exists, and the detector it proposed would have
+rejected the repository's single best example of the very thing it asks for. Both corrected before
+anything was filed.
+
+**Why nothing was fixed today, on purpose.** The review makes a falsifiable prediction: patch these
+four the old way and a twelfth instance appears within two rounds. Patching them destroys the only
+clean test of that. They are left as evidence.
+
+⛔ **The thing no tool here can see, and the one I would act on:** thirteen architecture decisions
+are written down, and **all thirteen are about the product. None is about the checking machinery
+itself.** So there has never been a place where "this is how we build a checker" could be *decided*
+rather than privately discovered — which is exactly why the one program that got it right got it
+right alone, and told nobody.
+
+<!--tech-->
+**Round 9 Codex half filed** (`docs/reviews/codex/recall-llm-r9-codex.md`, `gate_ran: true`);
+coordinator hand-verification in `docs/reviews/coordinator/recall-llm-r9-coordinator.md` with a
+written `REVIEW GAP: claude` recording that the second reader was redirected to the architecture
+review rather than skipped. **Full mutation gate re-run green at this tree: 57 files, 1177
+mutations, 1177 killed, 0 survivors** — and, for the first time in this fold, the gate's tree and
+the reviewer's subject are provably identical (all 57 mutated scripts `shasum -c` clean, the only
+delta a backlog row).
+
+**Phase 6 armed by THRASHING** (r8's Blocking in a file r7's fold created; r9's in the call site
+r8's fix created). Verdict: `docs/reviews/architecture-review-2026-10-01.md`. Mechanism: `main()`
+resolves its world from module globals, so no case can drive it over a constructed world; the
+extract-the-rule repair acts on the callee and relocates statements out of the covered region.
+**#213's AST guard SUPERSEDED as the remedy** — implemented and run: 108 entries repo-wide, misses
+the newest instance three ways, ≥1 unkillable, and its reach shrinks at exactly the rate the repair
+proceeds. Replaced by **D1** (give `main` its world as a defaulted parameter — the
+`check-ci-watched.py:860` shape, measured at 4 edits + 2 cases on `check-ratchet-contract.py`) and
+**D2** (one bit per guard: does the self-test drive `main()` over a built world?).
+
+⚠ **Coordinator corrections to the review:** drivers are 7 not 5, unreachable 29 not 31, and D2's
+sub-condition 2 as drafted false-positives on `check-fixture-variation.py`, which drives `main()`
+14 times from `_self_test()` through `argv` — a third route it must admit before being written.
+
+**Filed: #216** (a comment asserting a defence the code does not implement — `_saved_m` assigned,
+never read, verified). **#213 amended** with the measurements. Roadmap #191 section updated in the
+same turn. Four r9 findings deliberately unfolded. Nothing committed; nothing merge-blocking.
+
+⟳ **Both of those questions were answered the same evening, and the work is done.** The fix landed
+here rather than in a later slice, and the verification stack got its ADR — **ADR-0014, the first in
+this repository about the checking machinery rather than the product.** That absence was the
+review's sharpest finding: with no place to record such a decision, the one program that got this
+right got it right alone and told nobody.
+
+**What the fix does, in one line:** the outermost layer of a checking program now accepts its
+surroundings as an argument instead of looking them up, so a test can run the whole program against
+a situation the test invented. The bug round 9 found — where that program could be made to throw
+away its own answer and still report success — now makes two named tests fail instead.
+
+⚠ **A different guard rejected the first version of those tests, and was right.** They ran the
+program over only one situation, which means nothing could tell the new argument from a fixed
+value. The honest repair added a second situation — a clean one, proving the program reports
+success when it should and not merely failure always — rather than the cosmetic change that would
+have satisfied the counter.
+
+**Waiting on you: the merge.** Three lesser findings stay open and are written down as such; they
+are latent rather than live — the programs work, they are just not yet protected against one
+specific future mistake. Master has none of these checks at all, so this is a net gain over waiting
+for a perfect version.
+
+## 2026-09-30
+Both bugs from this morning's review are fixed, and the thing that let them exist now has a guard.
+
+The two real defects are closed. **A message that used to arrive with its explanation stripped
+out** now arrives either complete or with no explanation offered — never a sentence ending in
+"Detail:" and then nothing. And **the case that produced total silence** — a plan running, notes
+directory missing — now says so plainly: *"the plan is fine; the corpus is missing."* Measured both
+ways each time, against the same setups that exposed them.
+
+⭐ **But the useful part is why they were both possible.** The program reports outcomes as numbers;
+a small script reads those numbers and decides what you see. Two halves, two languages, and
+**nothing anywhere checked that the two lists agreed.** There is now a check that reads both and
+refuses three specific disagreements — a number the program can report that the script ignores, a
+number the script handles that the program never sends, and a message that promises a detail it
+might not have. Each of those is one of the bugs above, made impossible to reintroduce quietly.
+
+⚠ **Three of my own mistakes, all caught by the machinery rather than by me.** The coverage checker
+**refused to give a score at all** — not a low score, none — because one of its 1,138 checks could
+not be tied to the test it claimed to protect. One of my edits had silently unhooked an older check
+from the line it was watching. And one test crashed instead of failing, which quietly skipped every
+test after it.
+
+<!--tech-->
+**Fixes backlog #201 and #202, both LIVE, and adds `scripts/check-rc-contract.py`** — the gate the
+corrected architecture review prescribed. `2a8edba3` on `semantic-recall-replication`.
+
+| | |
+|---|---|
+| **#202** | `UNANSWERABLE = 6` + `class Unanswerable` + a hook arm. B1's conflation surviving on the corpus side: rc=2 meant *nothing armed* AND *armed but corpus gone*. Control 290 B → test **rc=6, 448 B** (was 0) |
+| **#201** | the `5)` arm's `Detail:` clause is conditional; the static sentence is not. 409 → **139 → 139 with the clause absent**. ⛔ Guarding the whole arm like its siblings would make a deduped rc=5 silent — B1 again |
+| **guard** | reads both files. 22 cases, 5 mutations, CI caller, pinned count, pinned key set — **four guards refused it until each was satisfied**, which is exactly what a `.sh` hook gets none of |
+
+⛔ **The sweep reported NOT MEASURED over 1137 of 1138 verdicts** rather than a tally, because one
+mutation was unattributable — an orphaned anchor (#202 changed the line it bound to) plus a case
+that raised `IndexError` under a mutation and truncated the suite. Both fixed; every manifest swept,
+not just the file edited. Re-run: **56 files, 1138 mutations, 1138 killed, 1138 attributed, 0
+survivors.**
+
+`recall-llm.py --self-test` **188/188** (was 185) and now non-ambient — `_armed_world` and its
+near-duplicate sibling both swap `CACHE_DIR`, after a case was found reading the live `.last-said`
+marker this session's own hook had written. Proven with the marker present and removed.
+
+⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
+convergence document's own recommendation.

@@ -300,6 +300,92 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
+    # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
+    # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not
+    # transcribed: six keys over four pure functions, `findings = []` on the first run.
+    # ⟳ 2026-10-01 — THREE KEYS RETIRED WITH THEIR SUBJECT, and this guard was right to demand
+    # the deletion be deliberate. `dangling_detail` is GONE, and `verdict` no longer takes
+    # `dangling`. R3 was four successive PROXIES for a semantic property — "does this sentence
+    # promise a detail it does not have?" — and each proxy had a boundary a later round found:
+    # adjacency (r3 M4), label spellings (r5 H1), the position of $OUT (r6 B1), render-invariance
+    # (the r6 repair, defeated the same day). Measured over one eleven-arm corpus: the label
+    # vocabulary caught 5 of 11, the render comparison that replaced it caught 3 — FEWER — and the
+    # equality that replaced both catches 11. So the rule is now `undeclared_render`: what the hook
+    # renders with no detail must EQUAL a hand-authored sentence in DECLARED_RENDER. No judgement
+    # is computed; it moved to a human in a diff, which is the only authority a semantic question
+    # has. The three keys below are its replacements.
+    "check-rc-contract.py": (
+        'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
+        'defined_codes.matcher_src', 'handled_codes.codes', 'handled_codes.hook_src',
+        'observe.hook_src', 'observe.out', 'observe.rc', 'verdict.dead',
+        'verdict.defined', 'verdict.handled'),
+
+    # ⟳ 2026-10-01, backlog #196 + round 7 B2 — THE HOOK'S OWN GUARD, pinned in the commit that
+    # creates it. R3 moved here from `check-rc-contract.py`, which is why THREE keys retired there
+    # in the same change: `dangling_detail.codes`, `dangling_detail.hook_src` and
+    # `verdict.dangling` — the keys a reader will actually see leaving, measured against HEAD.
+    # ⚠ ROUND 7 L2 — THE FIRST VERSION OF THIS COMMENT NAMED `undeclared_render.*` AND
+    # `verdict.undeclared`, which only ever existed in an intermediate uncommitted state during
+    # the fold. It described a retirement no reviewer could find in the diff. A comment about a
+    # change must be true of the change as it will be READ, not of a state it passed through.
+    # Why it moved: R3's subject is the HOOK'S RENDERED TEXT, so it was never a cross-file rule —
+    # every Blocking in rounds 3 to 7 landed on it while R1/R2 produced none. And the cross-file
+    # guard observed the hook by STAGING A MINIMAL TREE, a proxy for the repo; this one runs the
+    # REAL hook IN THE REAL REPO through one ARGV seam, so round 7 B2 (an arm branching
+    # on `.claude/settings.json` rendering a dangling `Detail:` while the guard said clean) cannot
+    # exist. DERIVED by running this module's own `analyse()` on the delivered source.
+    "check-surface-recall.py": (
+        'coverage.declared', 'coverage.defined', 'render.hook',
+        'render.out', 'render.rc', 'undeclared_render.declared',
+        'undeclared_render.hook'),
+
+    # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
+    # it. Its `tracked` parameter was flagged here as never-varied and two cases were added
+    # rather than an exemption taken — the comparison that reads it is now guarded.
+    "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
+    # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
+    # — this guard REFUSED the file until it was, the fifth time it has caught a new script
+    # arriving unmeasured. DERIVED by running `analyse()` on the delivered source AFTER the module
+    # was frozen, not transcribed: 33 keys, `findings = []`. Nine were findings on the first run
+    # (all six parameters of `cache_document`, plus `load_triggers.d` and `memory_files.d`) and
+    # every one was fixed by VARYING the value, never by an EXEMPT row — a second cache document
+    # differing in all six arguments, a second corpus directory and an empty one.
+    'recall-llm.py': (
+        'build_prompt.steps',
+        'build_prompt.triggers',
+        'cache_document.corpus_size',
+        'cache_document.picks',
+        'cache_document.plan',
+        'cache_document.plan_text',
+        'cache_document.triggers',
+        'cache_document.when',
+        'cache_path.slug',
+        'cache_verdict.cache',
+        'cache_verdict.plan_text',
+        'corpus_verdict.n_files',
+        'corpus_verdict.n_triggers',
+        'fire_output.entry',
+        'fire_output.trigger',
+        'first_unticked.plan_text',
+        'frontmatter_description.text',
+        'load_triggers.d',
+        'lookup.cache',
+        'lookup.step',
+        'memory_files.d',
+        'parse_cache.text',
+        'parse_response.step_numbers',
+        'parse_response.text',
+        'parse_response.valid_names',
+        'parse_trigger.description',
+        'paused.sentinel_text',
+        'plan_fingerprint.plan_text',
+        'plan_steps.plan_text',
+        'plan_verdict.steps',
+        'render.entry',
+        'render.trigger',
+        'sentinel_plan.sentinel_text',
+    ),
     # ⟳ 2026-09-23, backlog #166 + #170: the ONE owner of the observer-log record, pinned in the
     # commit that adds it — this guard refused the file until it was, which is now the fourth time
     # it has caught a new script arriving unmeasured. DERIVED by running `analyse()` on the final

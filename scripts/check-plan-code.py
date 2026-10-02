@@ -821,7 +821,7 @@ EXPECTED_MUTATIONS = {
     # first draft of THIS comment resurrected it as "the TENTH file" — the retired number walking
     # straight back in at the next opportunity. Derive it:
     #     git log -S'[FAIL] ' --reverse --format='%h %as %s' -- scripts/<file>
-    "scripts/check-ratchet-contract.py": 10,
+    "scripts/check-ratchet-contract.py": 16,
     # ⟳ 2026-09-23, folding review-identity-176 round 1: 12 -> 17, AND ONE EXISTING ENTRY WAS
     # RETARGETED — its anchor `if rec.get("gate_ran"):` was unbound by the restructure that added
     # the reverse clause, the exact *an anchor is unbound by ANY nearby edit* shape this repo has
@@ -1327,6 +1327,56 @@ EXPECTED_MUTATIONS = {
     "scripts/check-merge-ready.py": 16,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
+    # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
+    # creates it, over a file whose CENTRAL mechanism — a model call — cannot be mutated at all.
+    # That is why the mutations are dense everywhere else: the answer to an untestable core is to
+    # shrink it and cover everything it touches, not to accept the gap. SIX of them mutate the
+    # PROMPT TEXT rather than code, deliberately — the prompt is the measured artefact (20/20
+    # must-fire, 0/60 false fires, 2026-09-29), so deleting one of its five load-bearing clauses
+    # invalidates the measurement exactly as a code defect would.
+    # ⛔ M1, round 1: this comment SAID "41 entries" twice, beside the number it sits next to — and
+    # it was already 53 when the review read it. A count in prose has no owner and drifts from the
+    # literal below it; the only count that cannot is the literal, which the suite pins. So the
+    # figure is NOT restated here. The same rule is written at the top of EXPECTED_MUTATIONS and
+    # this comment was the counter-example to it.
+    # ⟳ 2026-09-30, review rounds 1 and 2 folded. ⛔ NO COUNT HERE — and the previous version of
+    # THIS line, added to fix round-1 M1, said "53 → 74" three lines after declaring that the
+    # figure is not restated. It was 80 by the time the reviewer read it. A rule stated and
+    # broken in the same comment is worse than one never stated: the literal below is the count.
+    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with the
+    # hook's `case` arms. Five entries, registered in the same commit that creates it — R4 refused
+    # the file until they existed, which is the population half of the contract doing its job on a
+    # guard added minutes earlier.
+    # ⟳ 2026-09-30, round 3 M1: 5 -> 9. The arm reader's indentation, the soundness check over
+    # unmodelled arm shapes, the structural-line string tracking, and the `case` block bound.
+    # ⟳⟳ 2026-09-30, THE ARMING CONDITION FIRED AND THIS IS THE ONE SANCTIONED RATCHET FALL:
+    # 16 -> 9. FOURTEEN entries were RETIRED WITH THEIR SUBJECT — the 114-line hand-rolled bash
+    # lexer (`case_block`, `structural_lines`, `unmodelled_quoting`, `arm_soundness`, and the
+    # lexical `handled_codes` / `unguarded_detail_arms`) is GONE, replaced by adjudicating the
+    # hook with bash itself. Every entry named code that no longer exists, so they are retired
+    # rather than orphaned. SEVEN were added against the observer. Reason at the retirement site
+    # in that file; the self-test count falls 51 -> 40 in the same commit for the same reason.
+    # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
+    # across two consecutive rounds, every one caused by the previous round's fix — which is
+    # `dev-process.md:108`'s condition, met for the first time in this fold.
+    "scripts/check-rc-contract.py": 15,
+    # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
+    # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
+    # contract: every Blocking in rounds 3-7 landed on R3 while R1/R2 produced none, and round 7
+    # B2 showed why — the cross-file guard observes the hook by STAGING A MINIMAL TREE, and a
+    # staged tree is a proxy for the repo. This guard runs the REAL hook IN THE REAL REPO through
+    # the one ARGV seam (`surface-recall.sh:60`), so there is no fabricated world to be unfaithful.
+    # Measured: an arm branching on `.claude/settings.json` renders a dangling `Detail:` for a
+    # reader — this guard returns [5], the staged observer returned [].
+    # ⚠ FOUR OF THE 11 ARE RELOCATED, NOT NEW — they came from `check-rc-contract`'s manifest with
+    # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
+    # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
+    "scripts/check-surface-recall.py": 19,
+    # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
+    # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
+    # alive on `--arm`, which is B1's error a third time.
+    "scripts/recall-llm.py": 96,
+    "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
     # then removed, because `mutate_delivered` copies ONLY `scripts/` into its temp tree
@@ -2973,6 +3023,7 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
@@ -2986,6 +3037,7 @@ def _self_test() -> int:
                                       # to it. A LIVE inventory entry, added with the manifest.
                                       "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
+                                      "scripts/check-rc-contract.py",
                                       "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
@@ -2995,6 +3047,7 @@ def _self_test() -> int:
                                       "scripts/check-sentinel-meanings.py",
                                       "scripts/check-storage-grant-pin.py",
 "scripts/check-storage-independence.py",
+                                      "scripts/check-surface-recall.py",
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
                                       "scripts/check-vocabulary-collisions.py",
@@ -3016,7 +3069,11 @@ def _self_test() -> int:
                                       "scripts/observer_log.py",
                                       "scripts/page_chrome.py",
                                       "scripts/page_markup.py",
-                                      "scripts/peer-sites.py"])
+                                      "scripts/peer-sites.py",
+                                      # ⟳ 2026-09-29, backlog #191: the LLM recall
+                                      # matcher. A LIVE inventory, so it grows with the
+                                      # manifest that ships beside the script.
+                                      "scripts/recall-llm.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
@@ -3745,7 +3802,82 @@ def _self_test() -> int:
     # Blocking and High — and the sum stayed at 1015 throughout, because an orphan keeps the count
     # while removing the coverage. CI caught it; `--self-test` cannot, because it loads the
     # manifests without resolving them. The split is on each file's own entry above.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1034)
+    # ⟳ 2026-09-30, backlog #201/#202: 1133 -> 1138, the +5 from `check-rc-contract`'s manifest.
+    # The figure is the guard's own — taken from its failure message, not counted by hand.
+    # ⟳ 2026-09-30, round 5 of the same fold: 1148 -> 1160, the +12 from `check-rc-contract`'s
+    # manifest going 10 -> 22. TWO of the twelve are RETARGETS, not additions: the rewrite of
+    # `dangling_detail` for round 5 H1 orphaned both of the entries that named its old lexer-era
+    # body, and the SUBJECT (R3, backlog #201) survives the rewrite — so they move to the new
+    # comparison rather than retiring, because an entry retired while its subject lives is a
+    # ratchet FALL dressed as bookkeeping. The other ten are new rules and new wiring.
+    # ⚠ FIVE of the ten are WIRING mutations, and that is round 5 H2's whole lesson: every rule
+    # had a case calling its function directly, `verdict(…, dead, …)` passed with a dead list
+    # while the CALL SITE had stopped passing one, and the suite stayed green at 43/43.
+    # ⟳ 2026-09-30, same fold, after `check-fixture-variation.py` refused the suite: 1160 -> 1162.
+    # The +2 are not new rules — they are the two parameters that guard found INDISTINGUISHABLE
+    # FROM CONSTANTS (`silent_codes(codes=…)` saw one value at both call sites; `main(argv=…)` saw
+    # `[]` at all of them, and its ONE argv-sensitive branch had no case at all). A parameter no
+    # case can vary means every clause reading it is unguarded, so the fix was variation plus a
+    # mutation each, not an EXEMPT row.
+    # ⟳ 2026-09-30, after the first sweep of this fold came back RED: 1162 -> 1161, and the -1 is
+    # a WITHDRAWAL WITH A REASON rather than a ratchet fall — the entry was added earlier in this
+    # same uncommitted fold and the committed baseline for that file is 10, so coverage rises
+    # 10 -> 23 overall.
+    # ⛔ WITHDRAWN: `the --self-test dispatch is removed, so the suite can never be reached through
+    # main`. NO SELF-TEST CASE CAN KILL IT, BY CONSTRUCTION — this harness detects a mutation by
+    # running `--self-test`, and removing that dispatch means the command runs the LIVE check and
+    # exits 0, so the harness observes a GREEN SUITE over a guard whose suite is unreachable. The
+    # mutation disables its own observer. Measured on a staged copy: zero "cases passed" lines,
+    # rc=0. ⚠ THE CLAUSE IS STILL COVERED, just not here: the case
+    # `main dispatches --self-test to the suite` stays, and the real observer is
+    # `check-selftest-counts.py`, which runs each pinned suite as a SUBPROCESS and matches
+    # `RATIO = \b(\d+)\s*(?:/|\s+of\s+)\s*(\d+)\b` against its output — with no ratio line it
+    # cannot confirm the declared count and fails. A mutation whose subject is the observer
+    # belongs to whoever is outside it.
+    # ⟳ 2026-09-30, folding round 6's Blocking: 1162 -> 1163. The +1 guards the REGRESSION, not a
+    # new rule — round 5 H1's fix asked WHERE $OUT sat, which is a payload-shape vocabulary and so
+    # the third appearance of one open set in this component (r3 M4 -> r5 H1 -> r6 B1). Three of
+    # the existing entries were RE-ANCHORED because the lines they named changed again.
+    # ⟳ 2026-10-01, R3 REPLACED BY AN EQUALITY: 1163 -> 1158, and the -5 is 25 -> 20 on
+    # `check-rc-contract` — SEVEN RETIRED WITH THEIR SUBJECT, FIVE RETARGETED, TWO ADDED.
+    # ⛔ THE RETIREMENTS ARE SANCTIONED BECAUSE THE CODE THEY NAME IS DELETED: `dangling_detail`,
+    # `silent_codes` and `MUST_NOT_BE_SILENT` are gone, replaced by `DECLARED_RENDER` plus
+    # `undeclared_render` — an EQUALITY against a hand-authored sentence rather than a proxy for a
+    # semantic property. Retiring an entry whose subject SURVIVES would be a ratchet fall dressed
+    # as bookkeeping; these name functions that no longer exist.
+    # ⚠ AND THE COMMITTED BASELINE FOR THAT FILE IS 10, so coverage rises 10 -> 20 overall.
+    # ⭐ WHY THE RULE CHANGED KIND, measured three ways over the same eleven-arm corpus: the
+    # committed LABEL vocabulary caught 5 of 11, the render-comparison that replaced it caught 3
+    # of 11 — FEWER, a lateral move between proxies that was shipped as a fix — and the equality
+    # catches 11 of 11 while the shipped hook passes all three. The corpus is now PINNED in the
+    # suite, so each round's discovery is inherited rather than rediscovered.
+    # ⟳ 2026-10-01, folding round 7's dual halves: 1163 -> 1167. +3 on the hook's guard (the
+    # dangling-promise net over the DECLARED LITERALS and its wiring — round 7 H1, the one property
+    # the relocation lost — plus the scrubbed environment, L1) and +1 on the cross-file guard (a
+    # bash FATAL ERROR is a refusal there too, H2: round 6 H1's repair had landed in only one of
+    # the two files and R1/R2 read a crash as silence for a whole round).
+    # ⟳ 2026-10-01, folding round 8: 1167 -> 1169. +1 on the hook's guard for `coverage`'s WIRING
+    # (round 8 B1 — the FOURTH instance of one class in this fold, and it was written while fixing
+    # the third) and +1 on `check-ratchet-contract` for the rule that a transient test FIXTURE in
+    # `.claude/hooks/` is not caller evidence (round 8 H1: with a guard's CI steps removed it
+    # reported `[R3_no_caller]`; add a fixture carrying an invocation and it reported OK).
+    # ⟳ 2026-10-01, folding round 8's CLAUDE half: 1169 -> 1177. +4 on the hook's guard (the
+    # ambient probe, the WITH-DETAIL polarity and its prefix form, and the allowlist reconciliation)
+    # and +4 on `check-ratchet-contract` (evaluate's wiring, caller_source_paths' wiring, the
+    # own-text exclusion, and the caller-corpus floor).
+    # ⛔ TWO OF THOSE EIGHT WERE BLOCKINGS, AND ONE OF THE TWO WAS THE FIX FOR ROUND 8's OWN H1 —
+    # severable the same way the defect it repaired was. The wiring class stands at SIX instances,
+    # four of them in code written while fixing the others. Backlog #213.
+    # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
+    # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
+    # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
+    # at a time, after the fact. This one is killed by a case that DRIVES `main()` over a built
+    # tree — reachable only because `main` now takes `root` as a parameter — so the same case also
+    # catches severances no manifest entry names, including `if len(other_v) > BASELINE:` which is
+    # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
+    # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
+    # found already in this repo at `check-ci-watched.py:860`.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1178)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

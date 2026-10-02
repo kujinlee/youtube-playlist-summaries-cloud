@@ -1,0 +1,167 @@
+[
+  {
+    "name": "a defined code with no arm stops being refused, so a new rc is swallowed as #202 was",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if code in handled:\n            continue\n",
+        "        if True:\n            continue\n"
+      ]
+    ],
+    "expect": "a defined code with NO arm and NO row is refused (rc 4, row removed)"
+  },
+  {
+    "name": "two rc tuples stop being a cannot-run, so the guard picks one and guesses",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    if len(found) != 1:",
+        "    if not found:"
+      ]
+    ],
+    "expect": "TWO rc tuples is a cannot-run \u2014 the guard must not pick one and guess"
+  },
+  {
+    "name": "handled_codes ignores the code set it is given, so a narrowed probe answers over everything",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    return {rc for rc in sorted(codes) if observe(hook_src, rc, _PROBE)}",
+        "    return {rc for rc in sorted({0, 2, 3, 4, 5, 6}) if observe(hook_src, rc, _PROBE)}"
+      ]
+    ],
+    "expect": "handled_codes honours a NARROWER code set \u2014 the parameter is read, not assumed"
+  },
+  {
+    "name": "silence is reported as output, so a code the hook DROPS counts as handled \u2014 #202's whole shape",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if not text:\n            return \"\"",
+        "        if not text:\n            return \"NOT-SILENT\""
+      ]
+    ],
+    "expect": "a silent code is NOT handled \u2014 #202 was a code the hook received and dropped"
+  },
+  {
+    "name": "the hook's non-zero exit is accepted instead of refused \u2014 a fail-open at the seam",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if proc.returncode != 0:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a hook that exits non-zero is a cannot-run"
+  },
+  {
+    "name": "output that is not the documented envelope is treated as silence rather than a cannot-run",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        except (json.JSONDecodeError, KeyError, TypeError) as exc:\n            raise CannotRun(f\"the hook printed something that is not its documented envelope at \"\n                            f\"rc={rc}: {text[:120]!r} ({exc})\") from exc",
+        "        except (json.JSONDecodeError, KeyError, TypeError):\n            return \"\""
+      ]
+    ],
+    "expect": "a hook that prints something other than its envelope is a cannot-run"
+  },
+  {
+    "name": "the dead-arm probe range goes back to 15, so a reachable arm above it passes as clean \u2014 round 5 H1",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "def dead_arms(hook_src: str, defined: set[int], probe_max: int = 255)",
+        "def dead_arms(hook_src: str, defined: set[int], probe_max: int = 15)"
+      ]
+    ],
+    "expect": "a dead arm at 16 is caught \u2014 round 5 H1, the old window stopped at 15"
+  },
+  {
+    "name": "the probe range stops including probe_max, so the top of the range is unguarded",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "    codes = [rc for rc in range(probe_max + 1) if rc not in defined]",
+        "    codes = [rc for rc in range(probe_max) if rc not in defined]"
+      ]
+    ],
+    "expect": "the probe range INCLUDES probe_max itself"
+  },
+  {
+    "name": "R1's wiring is cut: the call site passes every defined code as handled (anchored on the rule's own assignment: four entries cannot share one)",
+    "edits": [
+      [
+        "        handled = handled_codes(hook_src, codes)",
+        "        handled = set(defined.values())"
+      ]
+    ],
+    "expect": "R1 is WIRED \u2014 the missing 0) arm reaches the verdict",
+    "file": "scripts/check-rc-contract.py"
+  },
+  {
+    "name": "R2's wiring is cut: dead_arms still RUNS and its result is discarded \u2014 round 5 H2",
+    "edits": [
+      [
+        "    problems = verdict(defined, handled, dead)",
+        "    problems = verdict(defined, handled, [])"
+      ]
+    ],
+    "expect": "R2 is WIRED \u2014 dead_arms' result is still READ at the call site (round 5 H2)",
+    "file": "scripts/check-rc-contract.py"
+  },
+  {
+    "name": "the raw TARGET count stops being compared, so a target the reader drops lets the names bind to the wrong numbers \u2014 round 5 M3",
+    "edits": [
+      [
+        "        if not (len(tgt.elts) == len(names) == len(node.value.elts)",
+        "        if not (len(names) == len(names) == len(node.value.elts)"
+      ]
+    ],
+    "expect": "a target the reader drops is refused even when the VALUES line up",
+    "file": "scripts/check-rc-contract.py"
+  },
+  {
+    "name": "the DISTINCT-value count stops being compared, so two codes may share a value and the set arithmetic absorbs it \u2014 round 5 L4",
+    "edits": [
+      [
+        "                == len(vals) == len(set(vals))):",
+        "                == len(vals)):"
+      ]
+    ],
+    "expect": "two codes sharing a value are refused \u2014 round 5 L4",
+    "file": "scripts/check-rc-contract.py"
+  },
+  {
+    "name": "only a MISSING file is a refusal, so an unreadable one exits 1 with a traceback again \u2014 round 5 M2",
+    "edits": [
+      [
+        "    except OSError as exc:",
+        "    except FileNotFoundError as exc:"
+      ]
+    ],
+    "expect": "a path that exists and cannot be read is CannotRun, never a pass",
+    "file": "scripts/check-rc-contract.py"
+  },
+  {
+    "name": "the dead-arm cap never fires, so a forwarding catch-all arrives as hundreds of lines naming the wrong cause \u2014 round 5 L1",
+    "edits": [
+      [
+        "    if len(_dead) > 8:",
+        "    if len(_dead) > 10**9:"
+      ]
+    ],
+    "expect": "many dead arms collapse to ONE problem naming the catch-all \u2014 round 5 L1",
+    "file": "scripts/check-rc-contract.py"
+  },
+  {
+    "name": "a bash FATAL ERROR is read as silence again, so R1 and R2 cannot tell a crashing arm from a quiet one \u2014 round 7 H2",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "        if proc.stderr.strip():",
+        "        if False and proc.stderr.strip():"
+      ]
+    ],
+    "expect": "a hook that writes to STDERR is a cannot-run, never silence \u2014 round 7 H2"
+  }
+]

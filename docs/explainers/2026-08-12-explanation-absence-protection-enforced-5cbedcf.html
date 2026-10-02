@@ -1,0 +1,333 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explainer — make the absence protection enforced instead of accidental</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --fg:#22201d; --mut:#6b6660; --line:#e3ded6; --card:#fff;
+    --accent:#8a5a2b; --warn:#a8410f; --ok:#2f6b45; --code:#f4f1ec; --codefg:#2c2925;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#17161a; --fg:#e8e4dd; --mut:#a09a92; --line:#332f36; --card:#1e1d22;
+      --accent:#d9a066; --warn:#e8865a; --ok:#7fc79b; --code:#232128; --codefg:#e4e0d8;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.65 ui-serif,Georgia,'Iowan Old Style',serif;}
+  .wrap{max-width:46rem;margin:0 auto;padding:2.5rem 1.25rem 6rem}
+  h1{font-size:1.75rem;line-height:1.25;margin:0 0 .4rem;letter-spacing:-.01em}
+  h2{font-size:1.25rem;margin:3rem 0 .75rem;padding-top:1.25rem;border-top:1px solid var(--line)}
+  h3{font-size:1rem;margin:1.75rem 0 .4rem;color:var(--accent);
+    font-family:ui-sans-serif,system-ui,sans-serif;letter-spacing:.01em}
+  p{margin:.85rem 0}
+  a{color:var(--accent)}
+  .sub{color:var(--mut);font-size:.95rem;margin:0 0 1.5rem}
+  .meta{background:var(--card);border:1px solid var(--line);border-radius:8px;
+    padding:.85rem 1rem;font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--mut);overflow-x:auto}
+  .meta b{color:var(--fg);font-weight:600}
+  nav{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:1rem 1.25rem;margin:1.5rem 0}
+  nav ol{margin:.25rem 0 0;padding-left:1.2rem}
+  nav li{margin:.2rem 0}
+  nav a{text-decoration:none}
+  nav a:hover{text-decoration:underline}
+  pre{background:var(--code);color:var(--codefg);border:1px solid var(--line);border-radius:8px;
+    padding:.85rem 1rem;overflow-x:auto;white-space:pre;
+    font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{white-space:pre}
+  code{background:var(--code);color:var(--codefg);border-radius:4px;padding:.1em .35em;
+    font:.87em/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:none;padding:0}
+  .callout{border-left:3px solid var(--accent);background:var(--card);
+    padding:.8rem 1rem;margin:1.25rem 0;border-radius:0 8px 8px 0}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout.ok{border-left-color:var(--ok)}
+  .callout .lab{display:block;font:600 11px/1 ui-sans-serif,system-ui,sans-serif;
+    letter-spacing:.09em;text-transform:uppercase;color:var(--mut);margin-bottom:.45rem}
+  .scroll{overflow-x:auto;margin:1.25rem 0}
+  table{border-collapse:collapse;width:100%;font-size:.87rem;
+    font-family:ui-sans-serif,system-ui,sans-serif}
+  th,td{border:1px solid var(--line);padding:.55rem .7rem;text-align:left;vertical-align:top}
+  th{background:var(--card);font-weight:600;font-size:.8rem;letter-spacing:.02em}
+  .worlds{display:flex;gap:.85rem;flex-wrap:wrap;margin:1.25rem 0}
+  .world{flex:1 1 15rem;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:.9rem 1rem}
+  .world .t{font:600 12px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--mut);margin-bottom:.5rem}
+  .world .pay{font:600 13px/1.4 ui-sans-serif,system-ui,sans-serif;margin-top:.55rem}
+  .same{text-align:center;font:600 12px/1.4 ui-sans-serif,system-ui,sans-serif;
+    color:var(--warn);letter-spacing:.04em;margin:.2rem 0 0}
+  .flow{margin:1.25rem 0;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.85rem}
+  .step{display:flex;gap:.7rem;align-items:flex-start;padding:.5rem 0}
+  .step .n{flex:0 0 1.6rem;height:1.6rem;border-radius:50%;background:var(--card);
+    border:1px solid var(--line);display:grid;place-items:center;font-size:.75rem;font-weight:600}
+  .step.guard .n{border-color:var(--ok);color:var(--ok)}
+  .step.cost .n{border-color:var(--warn);color:var(--warn)}
+  .step .d{flex:1}
+  .step .k{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--mut);display:block}
+  .adr{border:1px dashed var(--warn);border-radius:8px;padding:.85rem 1rem;margin:1.25rem 0;background:var(--card)}
+  .adr .lab{font:700 11px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.09em;
+    color:var(--warn);display:block;margin-bottom:.45rem}
+  details{margin:.75rem 0;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:.6rem .9rem}
+  summary{cursor:pointer;font:600 .9rem/1.4 ui-sans-serif,system-ui,sans-serif}
+  summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .fine{color:var(--mut);font-size:.9rem}
+</style>
+
+<div class="wrap">
+
+<h1>Making the absence protection enforced instead of accidental</h1>
+<p class="sub">An explainer for <code>5cbedcf</code> — <i>fix(#34)</i>, merged as PR&nbsp;#78. Behaviour and decisions, not a line-by-line walkthrough.</p>
+
+<div class="meta">
+<b>Change:</b>        fix(#34): make the absence protection enforced instead of accidental (PR #78)<br>
+<b>Base..Head:</b>    cc49c31..5cbedcf<br>
+<b>Built:</b>         2026-08-12T11:31 PDT<br>
+<b>Inspected:</b>     13 files — 6 in the diff, <b>7 outside it</b> (blob-store.ts, serve-summary-core.ts,<br>
+&nbsp;                0007_storage_and_rpcs.sql, companion.ts, load-dig-for-serve.ts, and two callsite greps)<br>
+<b>Not verified:</b>  the hosted-Supabase measurement (6¢→12¢, attempt_count 1→2) is quoted from the<br>
+&nbsp;                commit and test prose; I did not re-run it against live infrastructure.
+</div>
+
+<nav>
+  <b style="font:600 12px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)">Contents</b>
+  <ol>
+    <li><a href="#bg">Background</a></li>
+    <li><a href="#int">Intuition — one 404, two worlds</a></li>
+    <li><a href="#bnd">Boundaries touched</a></li>
+    <li><a href="#dec">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#lim">Assumptions and limits</a></li>
+  </ol>
+</nav>
+
+<h2 id="bg">1 · Background</h2>
+
+<details>
+<summary>Skip if you already know how serving a summary works</summary>
+<p class="fine">When someone opens a summary in the cloud app, two blobs matter. The <b>summary markdown</b> is
+the source of truth — a Gemini call produced it once and it is never regenerated for free. The
+<b>magazine model</b> is a structured <code>{lead, bullets}</code> rendering of that markdown, used to
+draw the page. The model is a <i>derived-cache</i> blob in the glossary's terms: safe to lose, because
+it can be rebuilt from the markdown.</p>
+<p class="fine">"Safe to lose" is not "free to lose". Rebuilding the model costs a real Gemini call, so the
+serve path reserves money against the daily cap before generating one. Both blobs live side by side
+under the same folder: <code>&lt;owner-id&gt;/&lt;index-key&gt;/&lt;base&gt;.md</code> and
+<code>…/models/&lt;base&gt;.json</code>.</p>
+</details>
+
+<p>So the serve path asks one question before spending: <i>is the cached model already there?</i> If yes,
+serve it. If no, pay to rebuild it. Everything below is about how badly that question can be answered.</p>
+
+<p>The codebase already knew the general shape of the trap. <code>BlobStore</code> exposes two reads:
+the plain <code>get</code>, which returns <code>null</code>, and <code>tryGet</code>, which returns a
+tagged result so a caller can tell <i>absent</i> from <i>could not be read</i>. Its own doc comment
+explains why, and names the incident that bought it:</p>
+
+<pre><code>/** Like `get`, but distinguishes *absent* from *could not be read*.
+ *
+ *  **Use this instead of `get` before any irreversible or billable decision.** Treating an
+ *  unreadable read as "absent" is the defect class that produced a Blocking and three Highs in the
+ *  Stage 3 cloud-sync review, and a live double-charge on the serve path: a transient Storage 5xx
+ *  made an EXISTING magazine model look missing, so the serve path reserved and regenerated it —
+ *  6¢ → 12¢ for a model already in the bucket …</code></pre>
+
+<p>There is also a companion flag, <code>provesAbsence</code>, which a store sets to declare whether
+its "no bytes" answer is a fact. The local filesystem store sets it true — its <code>get</code> returns
+null only on <code>ENOENT</code> and rethrows every other errno. The Supabase store sets it false.</p>
+
+<p>That is the world before this change: the trap was known, an instrument existed, the serve path used
+it. The change is about a belief that instrument was carrying which turned out to be wrong.</p>
+
+<h2 id="int">2 · Intuition — one 404, two worlds</h2>
+
+<p>Supabase answers a request for an object that does not exist with a <code>404</code>-shaped error.
+It answers a request for an object that <i>does</i> exist but is hidden from you by row-level security
+with — the same thing. Not a similar thing. The same bytes:</p>
+
+<div class="worlds">
+  <div class="world">
+    <div class="t">World A — genuinely absent</div>
+    <pre><code>{message:"Object not found",
+ name:"StorageApiError",
+ status:400, statusCode:"404"}</code></pre>
+    <div class="pay" style="color:var(--ok)">Paying to rebuild is correct.</div>
+  </div>
+  <div class="world">
+    <div class="t">World B — exists, policy dropped</div>
+    <pre><code>{message:"Object not found",
+ name:"StorageApiError",
+ status:400, statusCode:"404"}</code></pre>
+    <div class="pay" style="color:var(--warn)">Paying rebuilds a model already in the bucket.</div>
+  </div>
+</div>
+<p class="same">↑ byte-identical — RLS makes the row invisible, so the API cannot say more</p>
+
+<p>This is why <code>provesAbsence</code> is <code>false</code> on the Supabase store. But the store's own
+comment had gone further than the evidence: it concluded <i>"so a 404 IS provable absence"</i> and listed
+RLS denial among the cases that come back as <code>unreadable</code>. Both halves were false, and the
+reason they survived is stated plainly in the new comment:</p>
+
+<div class="callout warn">
+<span class="lab">The shape of the mistake</span>
+<p style="margin:0">"the original claim was verified only against a missing object, never against a denied
+one. <b>Checking one direction of a two-directional question is how it survived.</b>"</p>
+</div>
+
+<p>So: was the application losing money? No — and the interesting part of this change is <i>why not</i>.
+Follow one request:</p>
+
+<div class="flow">
+  <div class="step guard"><div class="n">1</div><div class="d"><b>Read the summary markdown</b> — same store, same principal, same folder.
+    <span class="k">serve-summary-core.ts:66 — const mdBytes = await bundle.blobStore.get(principal, mdKey)</span></div></div>
+  <div class="step guard"><div class="n">2</div><div class="d"><b>Bail out if that read came back empty</b> — <code>409 "repair needed"</code>. The request ends here.
+    <span class="k">serve-summary-core.ts:67 — if (!mdBytes) return { ok:false, status:409, … }</span></div></div>
+  <div class="step"><div class="n">3</div><div class="d">Call <code>resolveMagazineModel</code>, passing the markdown body it just read.
+    <span class="k">serve-summary-core.ts:105</span></div></div>
+  <div class="step cost"><div class="n">4</div><div class="d">Probe for the cached model; on <code>absent</code>, <b>reserve money and call Gemini</b>.
+    <span class="k">serve-doc.ts — blobStore.tryGet(principal, MODEL_KEY(base))</span></div></div>
+</div>
+
+<p>If your permissions are broken, step&nbsp;1 fails, step&nbsp;2 ends the request, and step&nbsp;4 is never
+reached. The markdown read is the corroboration that makes the model's <code>absent</code> trustworthy —
+not because anything checks it, but because it happens <em>first</em> and fails closed.</p>
+
+<div class="callout warn">
+<span class="lab">The actual defect</span>
+<p style="margin:0 0 .5rem">That protection was <b>ordering</b>. No signature required it, no comment
+mentioned it, no test pinned it. Meanwhile the blob store's comment asserted the opposite — that a 404
+was proof — so a reader consulting the seam would have concluded no corroboration was needed at all.</p>
+<p style="margin:0">Measured directly against hosted Supabase with the owner policy dropped: calling
+<code>resolveMagazineModel</code> re-reserved and re-generated a model sitting in the bucket —
+<b>6¢ → 12¢, attempt_count 1 → 2</b>, a second live Gemini call.</p>
+</div>
+
+<p>So the change adds no new runtime check. It converts an accident into something a future change has to
+trip over.</p>
+
+<h2 id="bnd">3 · Boundaries touched</h2>
+
+<div class="scroll">
+<table>
+<tr><th>Boundary</th><th>What crosses it</th><th>What each side may assume</th><th>When that assumption is violated</th></tr>
+<tr>
+  <td><code>SupabaseBlobStore.tryGet</code> → <code>resolveMagazineModel</code></td>
+  <td>a <code>BlobRead</code>: <code>ok</code> | <code>{reason:'absent'}</code> | <code>{reason:'unreadable'}</code></td>
+  <td><b>Store:</b> <code>unreadable</code> is reliable (5xx, timeout, transport throw).<br>
+      <b>Caller may NOT assume</b> <code>absent</code> means absent — on this backend it means
+      <i>404-shaped</i>, i.e. absent <b>or</b> denied.</td>
+  <td>Spending on <code>absent</code> regenerates a paid artifact that already exists. Measured 6¢ → 12¢.</td>
+</tr>
+<tr>
+  <td><code>loadSummaryForServe</code> → <code>resolveMagazineModel</code></td>
+  <td><code>mdBody: string</code> — <b>now required</b>, was optional</td>
+  <td><b>Callee assumes:</b> supplying it asserts the caller already read this document's markdown
+      through <i>this</i> store with <i>this</i> principal, and failed closed if it could not.</td>
+  <td>A caller that fabricates <code>mdBody</code> without reading reaches the reserve unprotected.
+      A required parameter defends <b>omission</b>, never a wrong value of the right shape.</td>
+</tr>
+<tr>
+  <td>storage policy (migration&nbsp;0007) → the whole inference</td>
+  <td>read permission, granted on the <b>first path segment only</b>:
+      <code>split_part(name,'/',1) = auth.uid()</code></td>
+  <td><b>The serve path assumes</b> no policy can hide the model while revealing the markdown — both keys
+      share the owner segment, so one grant covers both.</td>
+  <td>If the grant ever becomes finer than the owner folder, step&nbsp;1 can succeed while the model stays
+      hidden, and the double charge is reachable again — with nothing failing.</td>
+</tr>
+</table>
+</div>
+
+<p>The third row is the one worth sitting with. The money guard is a property of a <b>migration</b>, and
+the migration does not know it.</p>
+
+<h2 id="dec">4 · Decisions this change encodes</h2>
+
+<h3>Make <code>mdBody</code> required rather than adding a new permission probe</h3>
+<p>The obvious alternative was an explicit "can I read this folder?" check just before the reserve. It was
+not taken: the caller has <i>already</i> performed exactly that read, and a second probe would be a second
+mechanism for the same concern — plus another round-trip on every serve. Instead the existing read is
+promoted into a precondition carried by the type system. The commit is unusually honest about what that
+does and does not buy:</p>
+<pre><code>REQUIRED as of 2026-08-11. It was optional "for back-compat with callers that pre-date this
+signal", which meant a new caller could reach the charging code without ever having read the
+markdown, and nothing would fail. Requiring it makes omission a compile error rather than a
+silent loss of the protection. It does NOT defend against a caller that passes a body it never
+read — a required parameter defends omission, never a wrong value of the right shape.</code></pre>
+
+<h3>Correct the comment rather than change <code>tryGet</code>'s contract</h3>
+<p><code>absent</code> keeps its meaning; what changed is the documented strength of that meaning
+("404-shaped", not "provably absent"). <code>provesAbsence</code> was already <code>false</code> on this
+store, so the type was right and only the prose was lying. Narrowing the contract would have churned every
+caller to fix one caller's belief.</p>
+
+<h3>Pin it with an integration test that asserts the <i>upstream</i> short-circuit</h3>
+<p>The new test does not assert that <code>resolveMagazineModel</code> is careful — it asserts that
+<code>loadSummaryForServe</code> returns 409 and that <code>generateMagazineModel</code> is never reached,
+with the Gemini mock throwing if it is. That tests the ordering, which is the actual guarantee. The test
+header states the failure mode for whoever meets it later: <i>"If someone later makes the markdown read
+tolerant of an empty result, the double charge becomes reachable, and this goes red."</i></p>
+
+<div class="adr">
+<span class="lab">ADR CANDIDATE: the serve-path money guard depends on storage-grant granularity</span>
+<p style="margin:0 0 .5rem">Hard to reverse (a policy change ships in a migration and applies globally),
+surprising without context (nothing in <code>0007_storage_and_rpcs.sql</code> hints that a money guard three
+files away rests on its grant being coarse), and a real trade-off (the coarse owner-segment grant is what
+makes the corroboration valid at all).</p>
+<p style="margin:0" class="fine"><b>Measured while writing this explainer:</b> grepping
+<code>supabase/migrations/0007_storage_and_rpcs.sql</code> for <i>serve / money / charge / reserve</i>
+returns only the words "preserves" and "preserved". <code>split_part</code> appears in that one migration
+and nowhere else. The dependency is recorded solely in a comment in
+<code>lib/html-doc/serve-doc.ts</code> — which a migration author has no reason to open. This is ADR-0005's
+lesson pointing the other way: there, code looked wrong without the ADR; here, the migration looks
+<i>fine</i>, and changing it would silently disarm a money guard.</p>
+</div>
+
+<h2 id="map">5 · Code map</h2>
+
+<div class="scroll">
+<table>
+<tr><th>Where</th><th>What, and why it is there</th></tr>
+<tr><td><code>lib/storage/supabase/supabase-blob-store.ts:36-60</code></td>
+    <td>The corrected seam doc. Records both measured payloads side by side and states the new limit:
+        <code>absent</code> means "404-shaped" = absent <b>or</b> denied.</td></tr>
+<tr><td><code>lib/html-doc/serve-doc.ts:49-71</code></td>
+    <td><code>mdBody</code> becomes required, and its doc gains the money-precondition clause.</td></tr>
+<tr><td><code>lib/html-doc/serve-doc.ts:86-108</code></td>
+    <td>The ⚠ block at the reserve: what makes the probe safe is the upstream read, not the probe.
+        Ends with the instruction for the next author — <i>"If you add a caller that reaches this function
+        without that read, restore the protection explicitly."</i></td></tr>
+<tr><td><code>tests/integration/serve-md-unreadable-no-charge.test.ts</code> <span class="fine">(new, +98)</span></td>
+    <td>The assertion. 409 short-circuit; Gemini mock throws if reached.</td></tr>
+<tr><td>4 other test files <span class="fine">(+63 net)</span></td>
+    <td>Mechanical: supply <code>mdBody</code> now that it is required. This is the compile-error surface
+        the decision bought.</td></tr>
+</table>
+</div>
+
+<h2 id="lim">6 · Assumptions and limits</h2>
+
+<ul>
+<li><b>Verified by reading.</b> The single production call site — <code>grep "resolveMagazineModel({"</code>
+across <code>lib/ app/ worker/ tests/</code> returns one non-test invocation,
+<code>serve-summary-core.ts:105</code>. The one-caller premise the whole guard rests on holds <i>today</i>.</li>
+<li><b>Verified by reading.</b> <code>serve-summary-core.ts:66-67</code> reads the markdown and returns 409
+on empty, before line 105. The ordering is as the comments describe.</li>
+<li><b>Verified by reading.</b> <code>0007_storage_and_rpcs.sql:13-16</code> grants on
+<code>split_part(name,'/',1)</code>, i.e. the owner segment.</li>
+<li><b>Not verified.</b> The 6¢→12¢ / attempt_count 1→2 measurement against hosted Supabase. Quoted from the
+commit and the test header; I did not re-run it, and it would cost real money to do so.</li>
+<li><b>Not verified.</b> That <code>get</code> (used at step&nbsp;1) and <code>tryGet</code> (step&nbsp;4)
+fail identically under a dropped policy. The argument assumes a permissions fault kills the
+<code>get</code>; I read the code but did not exercise it.</li>
+<li><b>Not examined.</b> The dig path (<code>lib/dig/cloud/load-dig-for-serve.ts</code>) references this
+money invariant in a comment. Whether it has the same corroboration property was out of scope here.</li>
+</ul>
+
+<p class="fine" style="margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--line)">
+Generated by the <code>explain-diff</code> skill, adapted from
+<a href="#" onclick="return false;">Geoffrey Litt's explain-diff</a>
+(gist <code>a29df1b5</code>), from the talk <i>Understanding is the new bottleneck</i>. Sections 3 and 4
+are this project's additions. This file is self-contained and offline; the link above is inert by design.
+</p>
+
+</div>

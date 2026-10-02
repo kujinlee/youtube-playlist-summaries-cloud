@@ -25,7 +25,17 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # ⟳ 2026-10-01: 15 -> 30. NOT a flake and NOT a slow runner — the job was CANCELLED
+    # mid-sweep at 15m15s while the ten runs before it finished in 9m46-11m45. This branch
+    # adds two SUBPROCESS-HEAVY guards whose suites the mutation sweep re-runs once per
+    # mutation. Measured locally: `check-rc-contract --self-test` 29.1s x 15 mutations and
+    # `check-surface-recall --self-test` 18.9s x 19 — roughly 13 minutes between them,
+    # against a budget set before either guard existed. `check-ratchet-contract` is 0.12s,
+    # so the cost is the subprocess probes, not the suite count.
+    # ⚠ THIS BUYS HEADROOM, IT DOES NOT FIX THE SHAPE — backlog #217. A timeout raised
+    # once is prudence; raised twice it is a budget nobody is keeping, so the row records
+    # the measurement and the split that would actually pay it down.
+    timeout-minutes: 30
 
     steps:
       # fetch-depth: 0 is REQUIRED by the dashboard entry ratchet, which diffs
@@ -215,6 +225,43 @@ jobs:
 
       - name: check-anchors self-test
         run: python3 scripts/check-anchors.py --self-test
+
+      # The memory corpus moved into docs/memory/ on 2026-09-30 (backlog #194) so teammates could
+      # obtain it — 146 files, measured at 86% project-or-craft knowledge against 14% personal
+      # preference, previously readable on ONE machine with no remote. The harness still reads a
+      # DERIVED path, so scripts/bootstrap-memory.sh symlinks it at the repo. ⛔ The failure this
+      # catches is SILENT: with no symlink the harness creates a fresh empty directory and every
+      # recall reads a corpus of zero entries, so "nothing fires" and "there is no corpus" become
+      # indistinguishable. On a CI runner the link is legitimately absent, which the guard reports
+      # as an advisory rc=0 — what fails here is a link pointing somewhere WRONG.
+      - name: Memory corpus link
+        run: python3 scripts/check-memory-link.py
+
+      - name: check-memory-link self-test
+        run: python3 scripts/check-memory-link.py --self-test
+
+      # ⛔ THE ONLY GATE THAT READS BOTH SIDES OF THE MATCHER/HOOK SEAM, and it exists because two
+      # LIVE defects lived there with 188 self-test cases and 91 mutations on the python side alone
+      # (backlog #201, #202). The matcher defines the exit codes; `.claude/hooks/surface-recall.sh`
+      # interprets them; nothing reconciled the two lists, and the hook is outside every other
+      # guard's population — `check-ratchet-contract`'s is `scripts/check-*.py`, so it cannot see a
+      # `.sh` file at all.
+      - name: rc contract — the matcher and its hook agree
+        run: python3 scripts/check-rc-contract.py
+
+      - name: check-rc-contract self-test
+        run: python3 scripts/check-rc-contract.py --self-test
+
+      # ⟳ 2026-10-01, backlog #196 — THE HOOK'S OWN GUARD, and this step is its CALLER.
+      # `.claude/hooks/surface-recall.sh` had no self-test, no mutation entry and no reader, which
+      # is why both live defects (#201, #202) survived 188 green cases on the python side. It runs
+      # the REAL hook in THIS repo through the one `RECALL_MATCHER` seam, so unlike the staged-tree
+      # observer it replaced there is no fabricated world to be unfaithful (round 7 B2).
+      - name: Reader sentences the hook actually renders
+        run: python3 scripts/check-surface-recall.py
+
+      - name: Reader sentences guard self-test
+        run: python3 scripts/check-surface-recall.py --self-test
 
       # The feature tree behind /features, which answers "what does this system do, and what does
       # it deliberately not do". The page is DERIVED from docs/features.md, so the tree is the only

@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Row-Level Security — youtube-playlist-summaries-cloud</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ask tray */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<h1>Row-Level Security, as this project actually uses it</h1>
+<p class="sub">Which tables have it, what the policies say, and the four things it does <em>not</em> protect</p>
+<p class="stamp">2026-08-27 · youtube-playlist-summaries-cloud · master @ 5e01745 · every number below read from a live catalog, both local and production</p>
+
+<div class="howto">
+  <p><span id="modechip">served → Send works · opened as a local file → Send copies instead</span></p>
+  <p><b>This page is live at</b> <code>http://127.0.0.1:7391/latest</code> — that URL always points at the newest explainer, so a bookmark never goes stale.</p>
+  <p><b>To ask a question:</b> select any text, or hover a heading, then click <b>ask</b> → type → <b>Send</b>. Then say <i>“read my questions”</i> in the session.</p>
+  <p><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to run twice. <b>A reboot stops the server</b>, which is exactly when you will need this line.</p>
+  <p>A saved <code>file://</code> copy still reads fine; it only loses the Send button.</p>
+</div>
+
+<div class="toc">
+  <h4>Contents</h4>
+  <ol>
+    <li><a href="#short">The short answer</a></li>
+    <li><a href="#roles">The cast: three roles, and which of them RLS can even see</a></li>
+    <li><a href="#inventory">Every table, measured</a></li>
+    <li><a href="#families">Two families: policied, and deny-all</a></li>
+    <li><a href="#shapes">The three policy shapes, in the order they were written</a></li>
+    <li><a href="#gaps">⚠ Four ways past RLS that are open in this database</a></li>
+    <li><a href="#subject">Local and production disagree — and production is the exposed one</a></li>
+    <li><a href="#enforced">What is mechanically enforced</a></li>
+    <li><a href="#rules">If you change anything: the checklist</a></li>
+    <li><a href="#provenance">Where each number came from, and what I did not check</a></li>
+  </ol>
+</div>
+
+<h2 id="short">1. The short answer</h2>
+
+<p class="lead">Every one of the <strong>18 tables</strong> in <code>public</code> has RLS <strong>enabled and forced</strong>. Only <strong>11</strong> carry a policy; the other <strong>7</strong> carry none at all, which is deliberate — forced RLS with zero policies means <em>no session client can read or write a single row</em>, and those tables belong exclusively to the trusted server.</p>
+
+<p>The policies themselves are almost boringly uniform. Nearly every one says a version of <em>“the row is yours if you own it”</em>, and there are exactly three ways this codebase spells that. The interesting material is not in the policies — it is in the <strong>four mechanisms that route around them</strong>, all of which are live in this database right now, all of which are known and filed, and all of which you need in your head before you touch a migration.</p>
+
+<div class="box measured">
+  <h4>Measured, not recalled</h4>
+  <p>Read <strong>2026-08-27</strong> from <code>pg_class</code>, <code>pg_policies</code>, <code>pg_proc</code> and <code>information_schema.role_table_grants</code> on two subjects: the <strong>local</strong> Supabase container, and <strong>production</strong> over the read-only <code>claude_ro</code> role. They agree on the table state and <em>disagree sharply</em> on function exposure — §7.</p>
+</div>
+
+<h2 id="roles">2. The cast: three roles, and which of them RLS can even see</h2>
+
+<p>Supabase issues every browser request under one of two Postgres roles, chosen by the JWT the request carries. A third role exists for trusted server code. RLS is only a meaningful control over the first two.</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Role</th><th>Who arrives as it</th><th><code>BYPASSRLS</code></th><th>What actually confines it</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong><code>anon</code></strong></td>
+      <td>An unauthenticated browser — and, by design, a real anonymous guest session on the <code>/try</code> path</td>
+      <td class="yes">no</td>
+      <td>RLS policies. With no session, <code>auth.uid()</code> is <code>NULL</code>, so <code>owner_id = auth.uid()</code> evaluates to <code>UNKNOWN</code> → the row is denied. Denial-by-NULL is the workhorse here.</td>
+    </tr>
+    <tr>
+      <td><strong><code>authenticated</code></strong></td>
+      <td>A signed-in browser, via <code>lib/supabase/client.ts</code> or <code>server.ts</code> — both use the <em>anon key</em> plus the session cookie</td>
+      <td class="yes">no</td>
+      <td>RLS policies, keyed on <code>auth.uid()</code>.</td>
+    </tr>
+    <tr>
+      <td><strong><code>service_role</code></strong></td>
+      <td>The worker and trusted server routes, via <code>lib/supabase/service.ts</code></td>
+      <td class="no">YES</td>
+      <td><strong>Not RLS at all.</strong> It walks through every policy. Its confinement is an <em>import-graph scan</em> in CI (§8), plus <code>import 'server-only'</code> and a runtime <code>typeof window</code> throw.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>Two subtleties in that table are worth stating outright, because they are the ones people get wrong.</p>
+
+<h3><code>force row level security</code> is not decoration</h3>
+
+<p>Plain <code>enable row level security</code> exempts the table’s <em>owner</em>. In Supabase the owner is <code>postgres</code>, and various maintenance paths run as it, so an owner exemption is a real hole. Every table in this repo therefore gets both lines, together, in the same breath:</p>
+
+<pre><code>alter table videos enable row level security;
+alter table videos force  row level security;</code></pre>
+
+<p><strong>But <code>force</code> does not touch <code>BYPASSRLS</code>.</strong> Measured on the live cluster: <code>postgres</code> and <code>service_role</code> both have <code>rolbypassrls = true</code>; <code>anon</code> and <code>authenticated</code> do not. So forcing RLS closes the owner path and leaves the service path wide open — which is intended, and is why the service path is guarded somewhere else entirely.</p>
+
+<h3>RLS <em>filters</em>; <code>GRANT</code> <em>admits</em>. You need both</h3>
+
+<p>This one is written into <code>0006_grants.sql</code> as a comment, because it cost real debugging time. RLS only narrows the rows a role can already reach. Without a base-table <code>GRANT</code>, PostgREST returns <code>42501 permission denied</code> — a hard error, not an empty result. The two gates compose like this:</p>
+
+<div class="flow">request  ──▶  GRANT on the table      ──▶  RLS policies        ──▶  rows
+              (may I touch it at all?)     (which rows are mine?)
+
+  no GRANT        →  42501 permission denied     ← an ERROR, loud
+  GRANT, no policy →  0 rows                     ← SILENT, and safe
+  GRANT + policy   →  the rows the policy admits</div>
+
+<p>Read that middle line again: <strong>a granted table with forced RLS and no policy returns zero rows, quietly.</strong> That is a legitimate design (it is exactly what the seven deny-all tables do) and it is also a trap — §6 has the case where it silently broke a working feature.</p>
+
+<h2 id="inventory">3. Every table, measured</h2>
+
+<p>All 18 rows below were read from <code>pg_class</code> on <strong>both</strong> local and production, and the two agree exactly — including that migration <code>0027</code> <em>is</em> applied in production.</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Table</th><th>Introduced</th><th>RLS</th><th>Forced</th><th>Policies</th><th>What session roles get</th></tr></thead>
+  <tbody>
+    <tr><td class="mono"><strong>profiles</strong></td><td class="mono">0001</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own row, all verbs</td></tr>
+    <tr><td class="mono"><strong>playlists</strong></td><td class="mono">0001</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own rows, all verbs</td></tr>
+    <tr><td class="mono"><strong>videos</strong></td><td class="mono">0001</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own rows, all verbs</td></tr>
+    <tr><td class="mono"><strong>jobs</strong></td><td class="mono">0008</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own rows; <code>SELECT</code> only — <code>INSERT</code> was revoked in 0011, lifecycle is RPC-only</td></tr>
+    <tr><td class="mono"><strong>usage_counters</strong></td><td class="mono">0011</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own rows, <code>SELECT</code> only — the UI reads “X of N remaining”</td></tr>
+    <tr><td class="mono"><strong>quota_allowance</strong></td><td class="mono">0011</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td><strong>every row</strong>, <code>SELECT</code> only — <code>using (true)</code>; allowances are not secret</td></tr>
+    <tr><td class="mono"><strong>workspaces</strong></td><td class="mono">0027</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own row, <code>SELECT</code> only</td></tr>
+    <tr><td class="mono"><strong>workspace_videos</strong></td><td class="mono">0027</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own workspace, <code>SELECT</code> only</td></tr>
+    <tr><td class="mono"><strong>video_generations</strong></td><td class="mono">0027</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own workspace, <code>SELECT</code> only</td></tr>
+    <tr><td class="mono"><strong>video_artifacts</strong></td><td class="mono">0027</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own workspace, <code>SELECT</code> only</td></tr>
+    <tr><td class="mono"><strong>video_artifact_sources</strong></td><td class="mono">0027</td><td class="yes">on</td><td class="yes">on</td><td class="num">1</td><td>own workspace, <code>SELECT</code> only</td></tr>
+    <tr><td class="mono">spend_ledger</td><td class="mono">0011</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+    <tr><td class="mono">guardrail_config</td><td class="mono">0011</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+    <tr><td class="mono">serve_model_charge</td><td class="mono">0012</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+    <tr><td class="mono">share_tokens</td><td class="mono">0013</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+    <tr><td class="mono">serve_owner_budget</td><td class="mono">0014</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+    <tr><td class="mono">ledger_audit</td><td class="mono">0020</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+    <tr><td class="mono">correction_spend</td><td class="mono">0026</td><td class="yes">on</td><td class="yes">on</td><td class="zero">0</td><td class="zero">nothing</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Plus two policies outside <code>public</code>, on <code>storage.objects</code>, covering the private <code>artifacts</code> bucket.</p>
+
+<h2 id="families">4. Two families: policied, and deny-all</h2>
+
+<ol class="layers">
+  <li>
+    <h3>The eleven policied tables — user data</h3>
+    <p>Playlists, videos, jobs, quotas, and the whole <code>0027</code> artifact stack. A signed-in user reaches their own rows and nobody else’s. This is the part RLS is genuinely doing the work for.</p>
+  </li>
+  <li>
+    <h3>The seven deny-all tables — money and infrastructure</h3>
+    <p>Forced RLS, <em>zero</em> policies, and <code>GRANT</code>s only to <code>service_role</code>. Every one of them is a spend ledger, a budget, a rate-limit config, or a share-token secret. A browser cannot read one byte of any of them, no matter what JWT it presents, because there is no policy that could ever admit a row. The migrations say so in-line:</p>
+    <pre><code>alter table ledger_audit enable row level security;
+alter table ledger_audit force  row level security;   -- no policies → no session-client access at all
+grant select, insert on ledger_audit to service_role;  -- the ONLY grant; mirrors spend_ledger</code></pre>
+    <p><strong>This is the strongest shape in the schema</strong>, and it is worth recognising: when a table has no legitimate client reader, the safest policy is no policy.</p>
+  </li>
+</ol>
+
+<h2 id="shapes">5. The three policy shapes, in the order they were written</h2>
+
+<h3>Shape A — direct ownership (2026-07, <code>0002</code> and <code>0008</code>)</h3>
+
+<pre><code>create policy playlists_owner on playlists for all
+  using (owner_id = auth.uid())  with check (owner_id = auth.uid());</code></pre>
+
+<p><code>using</code> governs which existing rows you can <em>see</em> (and therefore update or delete); <code>with check</code> governs what you are allowed to <em>write</em>. Both clauses matter, and the pairing is what stops the classic attack: without <code>with check</code>, a user could <code>UPDATE</code> their own row and reassign <code>owner_id</code> to someone else, handing their data away — or worse, hand themselves someone else’s. The integration suite exercises exactly that (<code>tests/integration/rls-isolation.test.ts</code>).</p>
+
+<p>Note these have <strong>no <code>TO</code> clause</strong>, so they apply to <code>PUBLIC</code> — including <code>anon</code>. That is safe because <code>anon</code>’s <code>auth.uid()</code> is <code>NULL</code> and <code>owner_id = NULL</code> is <code>UNKNOWN</code>, never true.</p>
+
+<h3>Shape B — ownership through the workspace (2026-08, <code>0027</code>)</h3>
+
+<pre><code>create policy video_artifacts_owner_read on video_artifacts for select to authenticated
+  using (workspace_id in (select id from workspaces where owner_id = (select auth.uid())));</code></pre>
+
+<p>Three deliberate differences from Shape A, each of which you should copy if you add a table here:</p>
+
+<ul class="plain">
+  <li><strong><code>for select</code>, not <code>for all</code>.</strong> Clients read this stack; only <code>service_role</code> writes it, through RPCs. Writes are not merely unpoliced, they are ungranted.</li>
+  <li><strong><code>to authenticated</code>.</strong> Explicitly excludes <code>anon</code> from the policy even though <code>anon</code> holds the <code>SELECT</code> grant. The grant admits; the policy then produces zero rows for <code>anon</code>.</li>
+  <li><strong><code>(select auth.uid())</code>, wrapped in a subquery.</strong> Not cosmetic: the wrapping lets the planner evaluate it <em>once per statement</em> instead of once per row. On a table scanned per artifact lookup that is the difference between a fast and an unusable query. Shape A’s bare <code>auth.uid()</code> is the older idiom.</li>
+</ul>
+
+<p>Ownership is indirected through <code>workspaces.owner_id</code> rather than compared to a path segment. The migration is emphatic about why: the workspace id currently <em>equals</em> the owner id by construction, and nothing is permitted to depend on that, so that multi-workspace users can ship later without re-authorising anything.</p>
+
+<h3>Shape C — the storage path segment (<code>0007</code>)</h3>
+
+<pre><code>create policy "artifacts_owner_rw" on storage.objects
+  for all to authenticated, anon
+  using      (bucket_id = 'artifacts' and split_part(name, '/', 1) = auth.uid()::text)
+  with check (bucket_id = 'artifacts' and split_part(name, '/', 1) = auth.uid()::text);</code></pre>
+
+<p>Blob keys look like <code>&lt;owner_id&gt;/&lt;playlist_key&gt;/&lt;key&gt;</code>, so the first path segment <em>is</em> the tenant. <code>anon</code> is listed intentionally — guest sessions write under their own anonymous uid, and an unsigned request still fails on the <code>NULL</code>.</p>
+
+<div class="box caution">
+  <h4>⚠ This policy is pinned, and a money guard depends on its width</h4>
+  <p>An object hidden by RLS returns a <strong>404 byte-identical</strong> to one that was never there. The serve path decides whether to pay for a fresh model by asking storage whether the cached one exists — so an over-narrow policy makes a present object look absent and the code re-pays. Measured: <strong>6¢ → 12¢</strong> and a second live Gemini call, with every test green. <code>scripts/check-storage-grant-pin.py</code> is a tripwire on the policy <em>text</em>; if you edit it, the check fails and asks you to read <code>docs/adr/</code> ADR-0008 first. It cannot tell a widening from a narrowing — that judgement is yours.</p>
+</div>
+
+<h2 id="gaps">6. ⚠ Four ways past RLS that are open in this database</h2>
+
+<p>This is the section that matters. None of these is a secret or an unreported bug — all four are filed, bounded and understood. But every one of them is a path where a correct-looking policy provides no protection at all.</p>
+
+<ol class="layers">
+  <li>
+    <h3><code>SECURITY DEFINER</code> functions do not run RLS — and <code>anon</code> can call most of them</h3>
+    <p>A <code>security definer</code> function executes as its creator, so <em>policies do not apply inside it</em>. It must do its own authorization. This repo has <strong>22</strong> of them.</p>
+    <p>Now the sharp edge. Every migration in the repo writes this pair, which <em>reads</em> as “anon excluded”:</p>
+    <pre><code>revoke all on function f(...) from public;
+grant execute on function f(...) to authenticated, service_role;</code></pre>
+    <p><strong>It is not.</strong> <code>PUBLIC</code> is a pseudo-role; <code>anon</code> is a <em>named</em> role, and Supabase grants it <code>EXECUTE</code> separately at <code>CREATE FUNCTION</code> time through <code>pg_default_acl</code>. Revoking <code>PUBLIC</code> leaves the named grant untouched.</p>
+    <p class="mono">Measured on <strong>production</strong>, 2026-08-27: <strong>26 of 44</strong> functions in <code>public</code> are <code>anon</code>-executable — <strong>10 of them <code>SECURITY DEFINER</code></strong>.</p>
+    <p>What keeps that safe today is that <strong>8 of those 10 check <code>auth.uid()</code></strong>, which is <code>NULL</code> for <code>anon</code>, and the remaining two (<code>handle_new_user</code>, <code>reserve_serve_model_meta</code>) were read in full and are benign. That is a safety <em>record</em>, produced by eight authors independently remembering — not a mechanism. Filed as <strong>backlog #33</strong> (the one-time revoke) and <strong>#54</strong> (the durable default). <code>scripts/check-anon-exposure.py</code> is the detection half.</p>
+    <p><strong>The fix pattern already exists and is visibly working.</strong> Every <code>0027</code> function writes <code>revoke all … from public, anon, authenticated, service_role</code> — and not one of them appears in the production exposure list.</p>
+  </li>
+
+  <li>
+    <h3><code>TRUNCATE</code> walks past RLS <em>and</em> past row triggers</h3>
+    <p>Supabase’s <code>pg_default_acl</code> hands the session roles <code>arwdDxtm</code> on every table <code>postgres</code> creates in <code>public</code>. The <code>D</code> is <code>TRUNCATE</code>, and a bare <code>grant select</code> afterwards is <em>additive</em> — it narrows nothing.</p>
+    <p class="mono">Measured, identical on local and production: <code>anon</code> holds <code>TRUNCATE</code> on <strong>13 of the 18</strong> tables — including <code>spend_ledger</code>, <code>ledger_audit</code>, <code>serve_model_charge</code>, <code>share_tokens</code> and <code>correction_spend</code>.</p>
+    <p><code>TRUNCATE</code> fires neither RLS nor a row trigger, so it would walk straight past both the policy and the append-only trigger that is <code>0027</code>’s central invariant. During review, <code>anon</code> truncated <code>video_artifacts</code> to zero rows in a test.</p>
+    <div class="box measured">
+      <h4>The bound — state it whenever you state the hazard</h4>
+      <p><strong>PostgREST exposes no <code>TRUNCATE</code> verb.</strong> Reaching this needs a direct Postgres connection with the <code>anon</code> role, which the Data API does not provide. It is a latent privilege, not a reachable exploit — which is why it is an orange backlog row and not an incident.</p>
+    </div>
+    <p>The remedy is the <strong>revoke-before-grant</strong> discipline, and you can see it land in the catalog: the five <code>0027</code> tables carry <code>SELECT</code> and nothing else; the thirteen older ones still carry <code>TRUNCATE</code>, <code>REFERENCES</code> and <code>TRIGGER</code>.</p>
+    <pre><code>-- 0027, and this is the pattern to copy:
+revoke all on video_artifacts from public, anon, authenticated, service_role;
+grant select, insert, update, delete on video_artifacts to service_role;
+grant select on video_artifacts to authenticated, anon;</code></pre>
+    <p>Revoking first makes the resulting privileges a property of <em>the migration file</em> instead of a property of whichever cluster it happened to run on.</p>
+  </li>
+
+  <li>
+    <h3><code>service_role</code> bypasses everything, and the database does not stop it</h3>
+    <p><code>service_role</code> has <code>BYPASSRLS</code>. It reads and writes every row of every table, including the seven deny-all ones. <code>BYPASSRLS</code> does <em>not</em> bypass table <code>GRANT</code>s, which is why <code>0006</code> grants it explicitly — but it does bypass every policy on this page.</p>
+    <p>So the boundary is not in Postgres. It is that <strong>the service key must never reach the browser</strong>, and that is enforced by three things in the application: <code>import 'server-only'</code> at the top of <code>lib/supabase/service.ts</code>, a runtime <code>typeof window !== 'undefined'</code> throw, and an <strong>import-graph scan in CI</strong> (<code>npm run check:confinement</code>) that walks every import edge — including side-effect imports, re-exports, dynamic <code>import()</code> and <code>require()</code> — to prove no client-reachable module can pull it in.</p>
+    <p>When you are reasoning about whether some code path is safe, the first question is not “what does the policy say?” but <strong>“which client is this — <code>createClient</code>, <code>createServerSupabase</code>, or <code>createServiceClient</code>?”</strong> Only the first two are subject to RLS at all.</p>
+  </li>
+
+  <li>
+    <h3>A <code>security_invoker</code> view needs a policy on <em>every</em> base table it touches</h3>
+    <p>The three <code>current</code> views (<code>video_summary_current</code>, <code>video_artifacts_current</code>, <code>video_generations_collectable</code>) are all <code>security_invoker=true</code>, meaning they run as the <em>reader</em>, not the view owner. That is the safe setting — but it has a cost that is easy to miss.</p>
+    <p>The reader now needs <code>SELECT</code> <em>and a policy</em> on every base table the view joins. During review, adding <code>force row level security</code> without adding the matching policies produced <code>permission denied for table workspace_videos</code>: the security fix made the serve path unusable.</p>
+    <p>The subtler version is worse, because it does not error. On <code>video_artifact_sources</code>, a missing policy would have made a <code>not exists</code> probe inside the view <strong>vacuously true</strong> for an authenticated owner and false for <code>service_role</code> — the same manifest ranked <em>differently depending on who asked</em>. The migration says it plainly: <em>“force RLS plus zero policies is the shape that produces it.”</em></p>
+    <p><strong>So: forced-RLS-with-no-policy is safe as a table-level decision and dangerous as an accident.</strong> If a client-readable view reads the table, the table needs a policy.</p>
+  </li>
+</ol>
+
+<h2 id="subject">7. Local and production disagree — and production is the exposed one</h2>
+
+<p>This is the single most important operational fact on this page. The two databases <strong>agree completely on tables and policies</strong> and <strong>diverge badly on function exposure</strong>, because their <code>pg_default_acl</code> histories differ.</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Measured 2026-08-27</th><th class="num">Local container</th><th class="num">Production</th><th>Agree?</th></tr></thead>
+  <tbody>
+    <tr><td>Tables in <code>public</code></td><td class="num">18</td><td class="num">18</td><td class="yes">✓</td></tr>
+    <tr><td>RLS enabled <em>and</em> forced</td><td class="num">18 / 18</td><td class="num">18 / 18</td><td class="yes">✓</td></tr>
+    <tr><td>Tables with ≥1 policy</td><td class="num">11</td><td class="num">11</td><td class="yes">✓</td></tr>
+    <tr><td>Tables where <code>anon</code> holds <code>TRUNCATE</code></td><td class="num">13</td><td class="num">13</td><td class="yes">✓</td></tr>
+    <tr><td><code>SECURITY DEFINER</code> functions</td><td class="num">22</td><td class="num">22</td><td class="yes">✓</td></tr>
+    <tr><td><strong>Functions <code>anon</code> may EXECUTE</strong></td><td class="num">7</td><td class="num"><strong>26</strong></td><td class="no">✗</td></tr>
+    <tr><td><strong>…of which <code>SECURITY DEFINER</code></strong></td><td class="num">5</td><td class="num"><strong>10</strong></td><td class="no">✗</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>A check pointed at the local container would report green over the environment nobody is worried about. That is why <code>scripts/check-anon-exposure.py</code> <strong>defaults to production</strong> over the read-only <code>CLAUDE_RO_DATABASE_URL</code>, and prints which subject it read <em>before</em> any verdict. The project’s own phrasing for the failure it avoids: <em>a green check over the wrong subject is an assertion in better packaging.</em></p>
+
+<p><strong>Practical consequence:</strong> when you want to know what is exposed, never answer from the local stack. Read production read-only.</p>
+
+<h2 id="enforced">8. What is mechanically enforced</h2>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Check</th><th>What it would catch</th><th>Subject</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">scripts/check-anon-exposure.py</td><td>A new <code>public</code> object arriving <code>anon</code>-accessible; an allow-listed definer function losing its <code>auth.uid()</code> guard</td><td><strong>production</strong> by default; <code>--local</code> opts in</td></tr>
+    <tr><td class="mono">scripts/check-storage-grant-pin.py</td><td>Any edit to the <code>artifacts_owner_rw</code> policy text</td><td>the migration file</td></tr>
+    <tr><td class="mono">scripts/check-schema-gates.sh</td><td>All 15 schema gates in one command — including the live-catalog comparison and 104 executable assertions</td><td>local Postgres + live</td></tr>
+    <tr><td class="mono">npm run check:confinement</td><td>Any import edge from client-reachable code to <code>lib/supabase/service.ts</code></td><td>the repo; runs in CI</td></tr>
+    <tr><td class="mono">tests/integration/rls-isolation.test.ts</td><td>Cross-tenant read (0 rows, not error), cross-tenant update/delete (0 rows), <code>with check</code> violation on owner reassignment, cross-owner FK injection</td><td>local stack; <code>npm run test:integration</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="box caution">
+  <h4>Not in CI</h4>
+  <p>The integration suite and the schema gates both need a live database, so <strong>CI does not run them</strong>. CI runs <code>tsc --noEmit</code>, the unit suite, and the <code>service_role</code> confinement scan. If you change a policy, the isolation tests are on you to run locally — a merge can go green without them.</p>
+</div>
+
+<h2 id="rules">9. If you change anything: the checklist</h2>
+
+<ol class="layers">
+  <li>
+    <h3>Adding a table</h3>
+    <p><code>enable</code> <em>and</em> <code>force</code> RLS. Then <strong><code>revoke all … from public, anon, authenticated, service_role</code> BEFORE any grant</strong> — otherwise the platform’s defaults survive and your <code>grant select</code> narrows nothing. Then grant exactly what is needed. Then decide, explicitly, whether this table has a legitimate client reader; if not, write no policy and say so in a comment.</p>
+  </li>
+  <li>
+    <h3>Adding a policy</h3>
+    <p>Prefer Shape B: <code>for select to authenticated</code>, ownership indirected through <code>workspaces.owner_id</code>, and <code>(select auth.uid())</code> wrapped. If the policy admits writes, it needs <code>with check</code> as well as <code>using</code> — and a test that a user cannot reassign <code>owner_id</code>.</p>
+  </li>
+  <li>
+    <h3>Adding a function</h3>
+    <p>Ask first whether it needs <code>security definer</code> at all — <code>security invoker</code> lets RLS do the authorization for you, and most of this repo’s functions are invoker for that reason. If it must be definer, it does its <em>own</em> ownership check, and you write <code>revoke all … from public, anon, authenticated, service_role</code>, naming <code>anon</code> explicitly. <code>from public</code> alone does nothing to <code>anon</code>.</p>
+    <p>Also pin <code>set search_path</code>. An unpinned helper reached from inside a <code>security definer set search_path = ''</code> function fails at runtime, from a constraint, three files away.</p>
+  </li>
+  <li>
+    <h3>Adding or editing a view</h3>
+    <p>Set <code>security_invoker=true</code>, then confirm every base table it joins has both a <code>SELECT</code> grant <em>and</em> a policy for the reading role. Check specifically for <code>not exists</code> / <code>not in</code> subqueries: those go vacuously true when RLS hides the rows, and they fail silently rather than erroring.</p>
+  </li>
+  <li>
+    <h3>Before you believe it works</h3>
+    <p>Run <code>./scripts/check-schema-gates.sh</code> and <code>npm run test:integration</code> locally. Then ask the question this project keeps having to re-learn: <strong>a privilege is not a capability.</strong> <code>has_table_privilege</code> saying <code>INSERT</code> is granted has already coexisted with the insert failing, because a <code>CHECK</code> runs as the writing role. Assert by <em>performing</em> the operation as the role in question, not by asking the catalog whether it is allowed.</p>
+  </li>
+</ol>
+
+<h2 id="provenance">10. Where each number came from, and what I did not check</h2>
+
+<p><strong>Read directly, at 2026-08-27:</strong></p>
+<ul class="plain">
+  <li><strong>Local</strong> — <code>supabase_db_youtube-playlist-summaries-cloud</code> as <code>postgres</code>: <code>pg_class</code>, <code>pg_policies</code>, <code>pg_proc</code>, <code>pg_roles</code>, <code>information_schema.role_table_grants</code>.</li>
+  <li><strong>Production</strong> — over <code>CLAUDE_RO_DATABASE_URL</code> as <code>claude_ro</code>, <strong>read-only, catalog queries only</strong>. Nothing was written to production.</li>
+  <li><strong>Source</strong> — <code>supabase/migrations/0001</code>–<code>0027</code>, <code>lib/supabase/*.ts</code>, <code>scripts/check-anon-exposure.py</code>, <code>scripts/check-storage-grant-pin.py</code>, <code>docs/backlog.md</code> rows 33 and 54.</li>
+</ul>
+
+<p><strong>What I did not verify, stated so you do not assume I did:</strong></p>
+<ul class="plain">
+  <li>I did not <em>execute</em> a cross-tenant attack against production. Every claim about what <code>anon</code> can and cannot do is read from privileges and policy predicates — which, by this project’s own hard-won rule, is weaker evidence than performing the operation.</li>
+  <li>I did not run the integration suite or the schema gates in this session, so this page reports what they <em>assert</em>, not that they are currently green.</li>
+  <li>I read the two ungated definer functions’ <em>names and <code>auth.uid()</code> usage</em> from the catalog; I relied on backlog #54’s record that they were read in full and found benign, rather than re-reading them.</li>
+  <li>The <code>0027</code> hazards quoted from migration comments are the authors’ measurements, not mine. I confirmed the resulting catalog state matches.</li>
+</ul>
+
+<hr class="end">
+<p class="foot">Ask anything above — select the passage, click <b>ask</b>, then say <i>“read my questions”</i>. Answers get written back into this page under the section you asked from, and it live-reloads.</p>
+
+</div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body></html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

@@ -33,7 +33,12 @@ Pull the human back in only for an **unexpected situation**:
   correct; going silent is not;
 - a **blocker**: missing access/credentials, an external dependency down, a gate that will not go green;
 - anything that would **move the goal** (change the spec) rather than approach it;
-- an **outward-facing or hard-to-reverse action** — push, merge, deploy, delete, spend.
+- an **outward-facing or hard-to-reverse action** — merge, deploy, delete, spend.
+  ⟳ **2026-09-30: `push` REMOVED at the user's instruction.** Merge is still the gate; a PR
+  remains a separate judgement and is not opened for work that is NOT CONVERGED. Why the
+  original grouping was wrong, and what guards the irreversible half instead:
+  [`process-rationale.md`](process-rationale.md) → *The rule that asked for permission a
+  hook already enforced*.
 
 **Notification is mandatory whenever you actually need the human** (`PushNotification` — one line,
 lead with the decision needed). Silently "waiting" without notifying wastes their time. Do **not**

@@ -95,6 +95,13 @@ playwright/.auth/
 # list is neither — it is per-machine execution state, like the two sentinels above.
 .claude/plans/
 
+# Recall answers cached by scripts/recall-llm.py --arm, one file per plan. DERIVED from two things
+# neither of which is committed: a `.claude/plans/` file (ignored just above) and the memory corpus
+# under ~/.claude/projects/<slug>/memory, which lives outside this repository entirely. So a cache
+# here can be neither reproduced nor checked by anyone else, and `--arm` rewrites it whenever the
+# plan's situations change. Ignored for the same reason as the plan it is keyed to.
+.claude/recall-cache/
+
 # Warn-only firings of scripts/check-banner-armed.py — one tab-separated line per turn that
 # announced `## ▶ STEP i of N` with nothing armed. Per-machine evidence, not a shared record: it
 # exists so the decision to promote that check from warning to blocking rests on a COUNT rather
@@ -131,3 +138,27 @@ playwright/.auth/
 # SESSION-LOCAL, never source: it churns on every stop, would conflict between branches,
 # and carries session ids. It was tracked for exactly one commit by a `git add -A`.
 .claude/banner-turn-state/
+
+# ── Explainer pages (backlog #194) ────────────────────────────────────────────────────────────
+# `docs/explainers/` is TRACKED: the authored topic/brief pages have no source in git — the HTML
+# IS the artifact, so losing it loses the work. `~/explainers` is symlinked here by
+# `scripts/bootstrap-explainers.sh` so the server and the generators keep their hardcoded path.
+#
+# ⛔ BUT THE DERIVED PAGES MUST NOT BE TRACKED, and that is not a size argument. `gen-dashboard`,
+# `gen-goals-page`, `gen-backlog-page` and `gen-features-page` rebuild these from sources already
+# in the repo — measured 2026-09-30 at 21.1s for all four, with every input tracked and `gh`
+# optional (it fails loudly and the page still writes). A committed copy is stale the moment its
+# source moves, which is precisely the defect the `regen-*` hooks exist to prevent: a
+# confident-looking page describing a world that has moved on. They are also 1–1.6MB of generated
+# HTML, so every branch touching `docs/backlog.md` would conflict on them.
+docs/explainers/dashboard.html
+docs/explainers/dashboard.fragment.html
+docs/explainers/goals.html
+docs/explainers/goals.fragment.html
+docs/explainers/backlog-table.html
+docs/explainers/backlog-table.fragment.html
+docs/explainers/features.html
+docs/explainers/features.fragment.html
+# The server's own runtime droppings — it writes these into whatever it serves.
+docs/explainers/.serve.log
+docs/explainers/.serve.pid

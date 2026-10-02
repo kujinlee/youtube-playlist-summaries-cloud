@@ -49,6 +49,17 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(*begin-plan.py*)",
+            "command": "bash .claude/hooks/surface-recall.sh",
+            "statusMessage": "Any recorded lesson for this step?"
+          }
+        ]
+      },
+      {
         "matcher": "Write",
         "hooks": [
           {

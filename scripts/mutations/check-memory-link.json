@@ -1,0 +1,90 @@
+[
+ {
+  "name": "a MISSING link stops being advisory and falls through, so a fresh clone is reported as a misconfiguration nobody made",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "    if not link_exists:\n        return OK, (\"WARNING: the harness memory path does not exist",
+    "    if False:\n        return OK, (\"WARNING: the harness memory path does not exist"
+   ]
+  ],
+  "expect": "a MISSING link says the path does not EXIST, not that a directory is in the way"
+ },
+ {
+  "name": "the missing-link message stops naming the bootstrap script, so the reader is told it is broken and not how to fix it",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "\"corpus here. Run `./scripts/bootstrap-memory.sh`. (Advisory: this is the \"",
+    "\"corpus here. (Advisory: this is the \""
+   ]
+  ],
+  "expect": "...and it names the one command that fixes it"
+ },
+ {
+  "name": "a REAL directory sitting at the harness path is accepted as correct, so a LOCAL uncommitted corpus reads as the shared one",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "    if not is_symlink:\n        return OK, (\"WARNING: a REAL directory sits",
+    "    if False:\n        return OK, (\"WARNING: a REAL directory sits"
+   ]
+  ],
+  "expect": "a REAL directory in the way is advisory"
+ },
+ {
+  "name": "that warning stops saying the local corpus may be uncommitted, which is the whole risk it exists to name",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "\"reading a LOCAL corpus and not the one tracked in this repo. Its contents may \"\n                    \"never have been committed.",
+    "\"reading a LOCAL corpus and not the one tracked in this repo.\"\n                    \""
+   ]
+  ],
+  "expect": "...and it warns the local corpus may never have been committed"
+ },
+ {
+  "name": "a symlink pointing at ANOTHER corpus is accepted, so recall silently reads someone else's memory",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "    if target != tracked:\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a link to the WRONG place is a failure"
+ },
+ {
+  "name": "the misconfiguration message quotes only the wrong target, so the reader cannot see which side moved",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "f\"not to this repo's {tracked!r}. Recall is reading another corpus.\")",
+    "f\"which is not this repo's. Recall is reading another corpus.\")"
+   ]
+  ],
+  "expect": "...and it quotes BOTH paths, so the reader sees which side moved"
+ },
+ {
+  "name": "a correct link resolving to ZERO entries reports OK, which is the vacuous pass this guard exists to refuse",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "    if n_entries == 0:\n        return MISCONFIGURED, (\"MISCONFIGURED: the link is correct",
+    "    if False:\n        return MISCONFIGURED, (\"MISCONFIGURED: the link is correct"
+   ]
+  ],
+  "expect": "a correct link resolving to ZERO entries is a failure, not silence"
+ },
+ {
+  "name": "slug_for stops replacing dots, so a repo path containing one derives a slug the harness never uses",
+  "file": "scripts/check-memory-link.py",
+  "edits": [
+   [
+    "    return re.sub(r\"[^A-Za-z0-9]\", \"-\", str(repo))",
+    "    return re.sub(r\"[^A-Za-z0-9.]\", \"-\", str(repo))"
+   ]
+  ],
+  "expect": "slug_for replaces every non-alphanumeric, including dots and slashes"
+ }
+]

@@ -1,0 +1,37 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 6759 chars"
+  ],
+  "dirty": {
+    ".claude/hooks/surface-recall.sh": "100755 ad580de9d9d8db884f56802d6ae7b4748bb4a2ee",
+    ".github/workflows/ci.yml": "100644 2365c2439a182e302f2947246e760ea6523493b7",
+    "docs/backlog.md": "100644 7e3b99e8b0ed6d20c946c802c2d9c320d624126e",
+    "docs/reviews/claude/recall-llm-r5-claude.md": "100644 0702376795a1de986bfd6c221c9b318a94ae08ea",
+    "docs/reviews/claude/recall-llm-r6-claude.md": "100644 78bbdd84de1f9a5d310ac7e714630f61881ab9b2",
+    "docs/reviews/claude/recall-llm-r7-claude.md": "100644 1f4c61cbeee1d3966d810011aa155dbdde61c535",
+    "docs/reviews/codex/recall-llm-r5-codex.md": "100644 150d9e8fe6fa72699a6df8a57751c31fabcff576",
+    "docs/reviews/codex/recall-llm-r6-codex.md": "100644 f341fe5b41136ec94e176cc424dbfc4c69b2c80a",
+    "docs/reviews/codex/recall-llm-r7-codex.md": "100644 8a248d448a32bbf4af0e16c11db0e47fa0a561ea",
+    "docs/reviews/verdicts/recall-llm-r5-codex.verdict.json": "100644 9bddb1f3c3411d36620d589a9d3aae814b21a97e",
+    "docs/reviews/verdicts/recall-llm-r6-codex.verdict.json": "100644 3a77e724adaa8d36c33e8d9455306f20da21baff",
+    "docs/reviews/verdicts/recall-llm-r7-codex.verdict.json": "100644 6f70f8d1197ac227e18b846b6bdf2764cd40b586",
+    "scripts/check-fixture-variation.py": "100644 085bf5ae91c0b4211864b3e9d6a1bdf2a9a059f6",
+    "scripts/check-plan-code.py": "100644 1ba634a46579c71319b27dc7a8955465aaa9bec5",
+    "scripts/check-rc-contract.py": "100644 300eef68551bbe1446a1fe8e686caf23417fc5fe",
+    "scripts/check-selftest-counts.py": "100644 bee41a1856fab0205330e97be77cf7c20331f21f",
+    "scripts/check-surface-recall.py": "100644 03940ea60c82604cefb87858237b161083e2fa95",
+    "scripts/mutations/check-rc-contract.json": "100644 c6d1b35113e90785d21deb6a7ad2521454044474",
+    "scripts/mutations/check-surface-recall.json": "100644 613e9a1689038efbf21b525290dc0d7d54ae1e3a"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f7ea33f5e357afcf55eee7464af563e4a38e71d9",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/3ec470a2-f8d2-4bcf-a148-5d8613ce092b/scratchpad/r8-brief.md",
+  "reason": "6759 chars",
+  "refused": false,
+  "review": "recall-llm-r8-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

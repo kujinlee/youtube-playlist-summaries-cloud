@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slice A closed — nothing waiting on you</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ask tray */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+</style>
+</head>
+<body>
+
+
+<div class="b-wrap">
+
+<div class="b-mast">
+  <span class="b-stamp">Nothing is waiting on you</span>
+  <h1>Slice A shipped, broke in production, and is now fixed and verified live</h1>
+  <p>Backlog #23 slice A — corrections in the cloud — went out as release <b>v8</b> this afternoon
+  and failed on the first real press. Two defects found, both fixed and deployed (<b>v10</b>), the
+  one corrupted document repaired, and the residue filed as #62 and #63. Six PRs merged, no open PRs,
+  clean tree, nothing blocked on a person.</p>
+</div>
+
+<h2>The numbers</h2>
+<div class="b-stats">
+  <div class="b-stat w"><div class="n">2</div><div class="l">defects that reached production in a
+    feature with 2,819 passing tests</div></div>
+  <div class="b-stat g"><div class="n">6/6</div><div class="l">prod smoke against the live release
+    <span class="b-vol">re-run just now</span></div></div>
+  <div class="b-stat s"><div class="n">6</div><div class="l">PRs merged (#137–#142)</div></div>
+  <div class="b-stat g"><div class="n">11/13</div><div class="l">ratchets green; 2 red are
+    pre-existing<span class="b-vol">parked schema, not today</span></div></div>
+  <div class="b-stat s"><div class="n">~16¢</div><div class="l">total spend to find and prove
+    all of it</div></div>
+</div>
+
+<h2>The shape — what one live press changed</h2>
+
+<div class="b-chart">
+  <h3>Correction attempts rejected by the structural validator</h3>
+  <p class="cap">Sampled against the real <code>gemini-2.5-flash</code> on one production document,
+  one paid call per roll. The model wraps the returned document in a markdown code fence about three
+  times in four; unwrapped, the validator rejects it and the paid correction is discarded. The
+  correction itself was applied correctly in <b>8 of 8</b> rolls — only the packaging was wrong.</p>
+
+  <div class="b-bar">
+    <span class="lab">Before (release v8)</span>
+    <div class="track" role="img" aria-label="Before the fix: 6 of 8 sampled attempts rejected, 75 percent">
+      <div class="fill bad" style="width:75%">6 of 8 rejected</div>
+    </div>
+  </div>
+  <div class="b-bar">
+    <span class="lab">After (release v9)</span>
+    <div class="track" role="img" aria-label="After the fix: 0 of 6 sampled attempts rejected, 0 percent">
+      <div class="fill good" style="width:3%"></div>
+    </div>
+  </div>
+  <p class="cap" style="margin:.55rem 0 0">0 of 6 — the bar is empty because nothing was rejected.</p>
+</div>
+
+<div class="b-line">
+  <div class="b-rel bad"><b>v8</b><span class="t">21:18Z</span>
+    <span class="d">Slice A ships. 12 tasks, 4 green gates, 25/25 mutations. Fails on the first
+    real press.</span></div>
+  <div class="b-rel"><b>v9</b><span class="t">22:48Z</span>
+    <span class="d">Fence unwrapped at the transport seam. The press succeeds — and silently
+    corrupts a <code>▶</code> URL the validator accepts.</span></div>
+  <div class="b-rel now"><b>v10</b><span class="t">23:01Z</span>
+    <span class="d">The <code>▶</code> guard compares the line, not two numbers parsed out of it.
+    Live now; both machines on 10.</span></div>
+</div>
+
+<h2>What is blocked</h2>
+
+<div class="b-tw"><table>
+<thead><tr><th>Item</th><th>Blocked on</th><th>State</th></tr></thead>
+<tbody>
+<tr><td>Anything at all requiring you</td><td>—</td><td><span class="pill p-g">nothing</span></td></tr>
+<tr><td><b>#62</b> a failed correction pays and records nothing — bound evasion</td>
+    <td>nobody; filed and ready</td><td><span class="pill p-c">not started</span></td></tr>
+<tr><td><b>#63</b> a charged press can show the raw validator string</td>
+    <td>nobody; filed and ready</td><td><span class="pill p-c">not started</span></td></tr>
+<tr><td>task #144 — <code>check-test-counts</code> passes against a stale results file</td>
+    <td>nobody</td><td><span class="pill p-c">not started</span></td></tr>
+<tr><td><code>check-guard-coverage</code>, <code>check-sentinel-meanings</code> red</td>
+    <td>the <b>parked</b> blob-addressing schema</td><td><span class="pill p-w">red, pre-existing</span></td></tr>
+<tr><td>3 commits merged since the deploy</td>
+    <td>nothing — <b>0 runtime files</b> among them</td><td><span class="pill p-g">no action</span></td></tr>
+</tbody></table></div>
+
+<h2>Stable blob addressing (the stable-id goal) — ⏸ parked, and measured today</h2>
+
+<p><b>Parked by your decision on 2026-08-11. Not abandoned, not blocked, and not decaying.</b> The
+design is finished and merged — <b>ADR-0006</b>, <b>ADR-0007</b> and the coordination implementation,
+behind seventeen adversarial review rounds. What was never done is the migration.</p>
+
+<div class="b-tw"><table>
+<thead><tr><th>Question</th><th>Measured just now</th></tr></thead>
+<tbody>
+<tr><td>Has the schema ever run?</td>
+    <td class="m"><b>No.</b> 0 of 26 migrations define <code>video_artifacts</code> /
+    <code>video_generations</code></td></tr>
+<tr><td>Do those tables exist in production?</td><td class="m"><b>0 tables</b> (information_schema)</td></tr>
+<tr><td>Where does it live?</td>
+    <td class="m">spec DDL only —<br><code>docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/</code></td></tr>
+<tr><td>Prod / repo migration head</td><td class="m">both <code>0026</code>, in step</td></tr>
+</tbody></table></div>
+
+<div class="b-note"><b class="t">This explains the two red ratchets above</b>
+<code>check-guard-coverage</code> and <code>check-sentinel-meanings</code> both read that spec
+directory — <b>not</b> the shipped schema. They are red about the parked design's own bookkeeping
+(unclassified guards, stale nullable-column entries), and they cannot describe anything the running
+product does. Nothing today touched them: 0 files under <code>supabase/</code> changed since this
+session began.
+</div>
+
+<p><b>The unpark trigger, unchanged:</b> when backlog #17/#19 (conditional-write on
+<code>persist_summary</code>) becomes the next slice, or when a real caller is about to reach
+<code>record_artifact</code> for a paid kind. <b>Backlog #26 must close first</b> in that case —
+ADR-0007 removed the only per-kind attempt bound on the money path, so shipping without that decision
+silently promotes a summary from 1 paid attempt to 5.</p>
+
+<p>Worth knowing: the <i>naming</i> half of the stable-id problem did ship and is live — ADR-0009's
+logical-Unicode / physical-ASCII encoder (backlog #36, release v7). That is why non-ASCII titles no
+longer destroy a paid summary. It does <b>not</b> unpark this; the spec records that explicitly.</p>
+
+<div class="b-note" style="border-left-color:var(--warn);background:var(--warn-bg)">
+<b class="t" style="color:var(--warn)">One stale line found while checking this</b>
+The parked block says <i>"prod and master both end at <code>0025</code>"</i>. Both now end at
+<code>0026</code> — shipped today by slice A. The load-bearing claim (the schema has never run) is
+still true and re-measured above; only the parenthetical version numbers have moved. A one-line fix,
+not yet made.
+</div>
+
+<h2>The decision — there isn't one, and that is the finding</h2>
+
+<p>Every thread from today is closed: merged, deployed, verified against the running system, and the
+residue filed with severities. <b>I am not going to manufacture a decision to fill this slot.</b></p>
+
+<p>What exists instead is a <i>choice of next thing</i>, which you can make whenever you like:</p>
+
+<div class="b-tw"><table>
+<thead><tr><th>Candidate</th><th>Case for</th><th>Case against</th></tr></thead>
+<tbody>
+<tr><td><b>#62</b> — record spend on the throw path</td>
+    <td>A live money leak on a shipped path, bounded, an afternoon's work. Its row already records
+    that the obvious fix is incomplete, so the trap is documented before anyone starts.</td>
+    <td>Overlaps #61, which would dissolve it properly via reserve-before-call. Doing #62 first means
+    touching this code twice.</td></tr>
+<tr><td><b>task #144</b> — freshness bound on the test-count check</td>
+    <td>I worked around it by hand four times today. This repo's own rule says that is a script's
+    job, not a habit's.</td>
+    <td>It has never actually produced a wrong claim in CI — CI regenerates the file every run. It is
+    a local-only footgun.</td></tr>
+<tr><td><b>Stop here</b></td>
+    <td>Production is healthy, verified live an hour ago and again just now. Nothing is degrading.</td>
+    <td>#62 is a spend path a caller can walk around today.</td></tr>
+</tbody></table></div>
+
+<div class="b-note"><b class="t">The one thing worth carrying forward</b>
+Six claims were checked today and four of them were mine and wrong: that the feature was shipped,
+that a third finding was a defect, that I knew the production blob's path, and that agents need a
+skill to catch a false finding. Each dissolved on contact with the thing it described — a live press,
+one <code>grep</code>, a dry-run refusal, a control run. None of the checks were clever; they were
+all just looking at the subject instead of reasoning about it.
+</div>
+
+<div class="b-foot">
+  master 7e91995 · branch master · 0 ahead of upstream · working tree clean · 0 open PRs<br>
+  unit 2,819 / 2,819 · 274 suites · tsc 0 · 13 ratchets run, 11 green<br>
+  red: check-guard-coverage, check-sentinel-meanings — subjects are video_artifacts lease/reserve
+  columns (parked blob-addressing schema); 0 files under supabase/ changed since 44740fc<br>
+  live: release v10, web 28654674b19d78 + worker 7811d65df64328 both on v10 · roadmap claims v10 — no version drift<br>
+  deployed tree 43e9fb6; 3 commits merged since, 0 of them runtime files<br>
+  prod spend: correction_spend 1 row / 1¢ · spend_ledger 2299¢ · ledger_audit 2 (claude_ro, read-only)<br>
+  prod smoke: 6/6 green, re-run in this invocation against v10, ledger unmoved
+</div>
+
+</div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body></html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

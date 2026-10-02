@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #299 — where the day actually went</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<section>
+  <h1>PR #299 — where the day actually went</h1>
+  <p class="lede">Seventeen review rounds, about seven hours of machine time, and roughly three of
+  those hours bought nothing. This is the accounting, and the reason the round counter kept moving.</p>
+
+  <div class="reading">
+    <b>Read as:</b> <i>why the wall-clock cost what it did, and why the rounds did not stop sooner.</i>
+    This is not a summary of what the branch shipped — that is the PR body, and it is good. This page
+    is about the <b>cost</b>, which nothing in the repo recorded until now.
+  </div>
+
+  <p class="horizon">As of <code>816c553f</code> (merged) · numbers re-derived 2026-09-14 · times from
+  file mtimes, not recall</p>
+</section>
+
+<div class="howto">
+  <!-- STATIC and correct with JavaScript disabled; the tray's script sharpens it to
+       `● live — Send works` or `○ local file — Send unavailable`. -->
+  <span id="modechip">served → Send works · opened as a file → Send copies instead</span>
+  <span class="st">This page can answer back.</span> Live at
+  <span class="kbd">http://127.0.0.1:7391/latest</span> — always the newest page. Select any text, or
+  hover a heading, then click <b>ask</b>, type, and press <b>Send</b>; then say
+  <i>“read my questions”</i> in the session. If that URL does not load, run
+  <span class="kbd">python3 scripts/explainer-serve.py</span> (safe to run twice — <b>a reboot stops
+  it</b>). Opened as a plain file it still reads fine; only <b>Send</b> stops working.
+</div>
+
+<section>
+  <h2>The short answer</h2>
+
+  <div class="answer">
+    <p><b>The reviews were not the expensive part.</b> All seven Codex rounds together cost about
+    <b>1 hour 20 minutes</b>. The mutation gate cost <b>3 hours 45 minutes</b> — nearly three times
+    as much — and a single hung process cost <b>1 hour 53 minutes</b> on its own.</p>
+
+    <p><b>The rounds kept coming because the stopping condition was misread.</b> The coordinator
+    tracked <i>severity</i>, saw it falling, and predicted round 15 would close the loop. Severity was
+    never the variable. <b>What each round was pointed at</b> was: rounds aimed at the instrument
+    found instrument defects, and <b>every single round aimed at the deliverable found a fail-open in
+    it</b> — four times out of four, including the last one before the human called a halt.</p>
+
+    <p><b>About three of the seven hours were pure waste</b>, and they were not review time. They were
+    1h53m watching a process that had already finished its work, and ~1h15m re-running a 25-minute
+    mutation gate that had correctly refused to answer.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Where the hours went</h2>
+
+  <p>Four consumers, measured. The bars are to scale against each other.</p>
+
+  <div class="bars">
+    <div class="bar">
+      <div class="lbl"><b>Mutation gate</b>9 runs × ~25 min</div>
+      <div class="track"><div class="fill mut" style="width:100%">~3 h 45 m</div></div>
+    </div>
+    <div class="bar">
+      <div class="lbl"><b>One hung process</b>after it had succeeded</div>
+      <div class="track"><div class="fill hang" style="width:50.2%">1 h 53 m</div></div>
+    </div>
+    <div class="bar">
+      <div class="lbl"><b>Codex review rounds</b>7 rounds, 10–24 min each</div>
+      <div class="track"><div class="fill rev" style="width:35.6%">~1 h 20 m</div></div>
+    </div>
+    <div class="bar">
+      <div class="lbl"><b>Claude review halves</b>6 halves, concurrent</div>
+      <div class="track"><div class="fill ghost" style="width:14%">overlapped</div></div>
+    </div>
+  </div>
+
+  <p class="barnote">The Claude halves ran as concurrent subagents overlapping the Codex rounds, so
+  they add little wall-clock and are not summed. The fix / adjudicate / file cycles between rounds are
+  real time and were never separately measured — they are the honest gap in this accounting.</p>
+
+  <h3>The surprise, stated plainly</h3>
+  <p>The intuition going in is that a seventeen-round review is slow <i>because of the reviewing</i>.
+  It was not. <b>Verifying each fix cost 2.8× what finding the defects cost.</b> Every accepted
+  finding triggered a ~25-minute mutation run, and a round that produced one High therefore cost
+  roughly fifteen minutes of review and twenty-five of proof.</p>
+</section>
+
+<section>
+  <h2>Why there were seventeen rounds at all</h2>
+
+  <p>Ten of them were already spent before the interesting part began, and for a structural reason
+  rather than a bad one.</p>
+
+  <p>The branch was built by a <b>worker fork</b>, and a worker fork <b>cannot spawn a second
+  reviewer</b>. This project's gate requires two independent halves — Codex and Claude. So rounds 1
+  through 10 ran <b>Codex-only</b>, and each one wrote the shortfall down in its own document:</p>
+
+<pre><code><span class="ln">REVIEW GAP: claude</span></code></pre>
+
+  <p>Ten times. That is the process working — the gap was declared, not hidden — but it also means the
+  branch reached round 10 with <b>one entire reviewer's worth of debt outstanding</b>. When the owed
+  half finally ran as round 11, it was discharged as <i>one whole-branch review against the shipping
+  tree</i> rather than ten retroactive ones, because re-reviewing superseded trees would violate the
+  very rule the branch was shipping.</p>
+
+  <div class="call bad">
+    <span class="ttl">And the first thing the owed half found was a working evasion of the rule.</span>
+    Round 11's Blocking: a <b>reverted dirty overlay</b> was compared by nobody. Under the documented
+    practice — hold your fixes uncommitted so the reviewer sees what merges — the reviewer's copy is
+    not the committed one. Drop that fix and the path stops counting as “changed since the round” and
+    quietly leaves the comparison set. Reviewed as <code>GOOD</code>, merged as <code>BAD</code>,
+    <code>exit 0</code> under the message <i>“the final tree was reviewed by…”</i>
+  </div>
+
+  <p>Running the owed half five more times found three more ways past. That is rounds 11 through 16.
+  Round 17 was a verification pass, not a review.</p>
+</section>
+
+<section>
+  <h2>The variable was aim, not round number</h2>
+
+  <p>This is the part worth carrying to the next branch. Here is every round from 11 on, with its
+  severity counts <i>and</i> what it was pointed at.</p>
+
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr><th>Round</th><th>B/H/M/L</th><th>Aimed at</th><th>What it found</th></tr>
+    </thead>
+    <tbody>
+      <tr class="deliv"><td class="n">r11 claude</td><td class="n"><span class="sev b">1</span>/7/6/7</td>
+        <td><span class="aim-d">the deliverable</span></td><td>a working evasion of the rule</td></tr>
+      <tr><td class="n">r11 codex</td><td class="n"><span class="sev b">1</span>/0/0/0</td>
+        <td><span class="aim-i">the new manifests</span></td><td>they were unmeasurable</td></tr>
+      <tr><td class="n">r12</td><td class="n">0/<span class="sev h">1</span>/1/1</td>
+        <td><span class="aim-i">the instrument</span></td><td>one of two printers fixed</td></tr>
+      <tr><td class="n">r13</td><td class="n">0/<span class="sev h">1</span>/2/1</td>
+        <td><span class="aim-i">the instrument</span></td><td>the r12 repair could not fail</td></tr>
+      <tr class="deliv"><td class="n">r14</td><td class="n">0/<span class="sev h">1</span>/2/1</td>
+        <td><span class="aim-d">the deliverable</span></td><td>rename-detection fail-open</td></tr>
+      <tr class="deliv"><td class="n">r15</td><td class="n">0/<span class="sev h">1</span>/1/1</td>
+        <td><span class="aim-d">the deliverable</span></td><td><code>docs/</code> holds two live schema gates</td></tr>
+      <tr class="deliv"><td class="n">r16</td><td class="n">0/<span class="sev h">1</span>/2/1</td>
+        <td><span class="aim-d">the deliverable</span></td><td>r15's own anti-drift check compared a copy to a copy</td></tr>
+      <tr class="verif"><td class="n">r17</td><td class="n"><span class="sev z">0/0/0/0</span></td>
+        <td><span class="aim-v">verification</span></td><td>CONVERGED</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Read the severity column alone and it looks like convergence: one Blocking, then a flat run of
+  single Highs, trailing off. Read the <b>aim</b> column and a different fact appears — the four rows
+  tinted red are every round that looked at the deliverable, and <b>all four found a fail-open</b>.
+  Zero for four is not a trend towards clean.</p>
+
+  <div class="call">
+    <span class="ttl">⚠ The coordinator got this wrong, in writing, and then corrected it in writing.</span>
+    The round-14 adjudication argued that severity was falling and findings were migrating <i>away</i>
+    from the deliverable, and predicted round 15 would close the loop. Round 15 then produced the two
+    most serious defects since round 11 — both fail-opens, both in the gate itself. The correction is
+    recorded at the top of <code>record-review-topology-r15-coordinator.md</code>, <i>before</i> the
+    findings, and it says: <b>“The trend was read off severity labels rather than off what the rounds
+    were looking at. The variable was never the round number.”</b>
+  </div>
+
+  <p>The reviewers split on this too — and the split was informative. On round 15 Codex reported
+  <b>0 findings, CONVERGED</b>, and every claim it made was true; it had reviewed the <i>repair</i>.
+  Claude reviewed the <i>deliverable</i> and found the High. That made the finding-reviewer right
+  <b>five times out of five</b> on this branch.</p>
+</section>
+
+<section>
+  <h2>The four fail-opens, and what they had in common</h2>
+
+  <p>All four were in <code>scripts/check-review-recorded.py</code> — the gate the branch exists to
+  ship. Each one was sitting <b>inside a sentence an earlier round had already declared clean</b>.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Round</th><th>The fail-open</th></tr></thead>
+    <tbody>
+      <tr><td class="n">r11</td><td>A <b>reverted dirty overlay</b> left the compared set entirely. Reviewed as GOOD, merged as BAD, <code>exit 0</code>.</td></tr>
+      <tr><td class="n">r14</td><td><code>git diff --name-only</code> with <b>rename detection on by default</b> — a guarded file moved to a prose path simply vanished, and the gate reported <i>“no guarded path changed”</i> over a deleted code file.</td></tr>
+      <tr><td class="n">r15</td><td><b><code>docs/</code> is not prose in this repository.</b> It holds two of the fifteen schema gates. Both halves of the gate went silent over executable CI gate code.</td></tr>
+      <tr><td class="n">r16</td><td>The r15 anti-drift falsifier was fed a <b>transcription</b> of the workflow's globs, and <code>main</code> never called it at all.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>r15 is the one that shows the pattern</h3>
+
+  <p>The classifier held <code>PROSE_DIRS = ("docs/",)</code> — everything under <code>docs/</code> is
+  documentation, therefore harmless, therefore no review round owed. Two of the project's fifteen
+  schema gates live there. Verified on the current tree, not quoted from the review:</p>
+
+<pre><code><span class="ln">$ ls -l docs/superpowers/specs/2026-08-03-stable-blob-addressing/</span>
+<span class="ln">-rwxr-xr-x  73157  mutate-schema.py     &lt;- schema gate 2 of 15</span>
+<span class="ln">-rwxr-xr-x  14988  verify-schema.sh     &lt;- schema gate 1 of 15</span></code></pre>
+
+  <p>Mode <code>755</code>. Run by <code>check-schema-gates.sh</code>. Listed as path-filter triggers
+  by <code>.github/workflows/schema-gates.yml</code> — <b>the workflow itself declares them gate
+  subjects.</b> A branch that weakened a mutation in <code>mutate-schema.py</code> could have merged
+  with no review round and no declaration.</p>
+
+  <div class="call bad">
+    <span class="ttl">⭐ And round 11 had explicitly checked this and said it was fine.</span>
+    The r11 Claude half states, in writing, that it <i>“searched <code>docs/</code> for executable or
+    consumed artefacts that would be wrongly exempt: everything found is <code>*.md</code> and
+    <code>docs/reviews/verdicts/*.json</code>.”</i> Two exist. The branch's own first review wrote the
+    sentence that hid the defect for four more rounds — and round 15 found it only by
+    <b>re-deriving that claim instead of inheriting it</b>. The identical move had found r14's
+    rename fail-open one round earlier.
+  </div>
+
+  <h3>r16 is the one that should be uncomfortable</h3>
+
+  <p>Round 15 did the right thing. Having found that the exemption list could drift from what CI
+  actually treats as gate code, it <b>built a guard against exactly that</b>:
+  <code>prose_exceptions_cover(globs)</code>, pure, taking the workflow's globs as an argument.</p>
+
+  <p>Round 16 found that the guard's own test fed it a <b>hand-typed copy</b> of the workflow's globs.
+  There were three copies in play, and it was comparing the wrong two:</p>
+
+  <div class="chain">
+    <span class="c orig">#1 the workflow — the original</span>
+    <span class="ar">→</span>
+    <span class="c cmp">#2 CODE_UNDER_PROSE</span>
+    <span class="ar">→</span>
+    <span class="c cmp">#3 the test case</span>
+    <span class="ar">·</span>
+    <span class="c">compared: #3 vs #2</span>
+  </div>
+
+  <p>Neither side of the comparison was the original. Add a new gate directory to CI and the
+  anti-drift guard would report everything fine. <b>And <code>main</code> never called it at all.</b>
+  Verified on the merged tree — both halves of that are now fixed:</p>
+
+<pre><code><span class="ln">$ grep -n "prose_exceptions_cover" scripts/check-review-recorded.py</span>
+<span class="ln">213:  def prose_exceptions_cover(workflow_globs: list[str]) -&gt; list[str]:</span>
+<span class="ln">899:      _uncovered = prose_exceptions_cover(_globs)          &lt;- main calls it now</span>
+<span class="ln">1012:     prose_exceptions_cover(workflow_docs_globs(_WF or "")), [])  &lt;- reads the REAL file</span></code></pre>
+
+  <div class="call">
+    <span class="ttl">The shape, in one sentence.</span>
+    <b>The mechanism built to prevent the defect rebuilt the defect.</b> Round 15's fix was a second
+    copy of a path set, and its falsifier was a third copy — so the guard was structurally incapable
+    of noticing the thing it was built to notice.
+  </div>
+</section>
+
+<section>
+  <h2>The 1 h 53 m, which was not review time</h2>
+
+  <p>The single largest block of wasted wall-clock on this branch was a <b>waiter watching the wrong
+  thing</b>.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Time</th><th>What was true</th><th>What the session reported</th></tr></thead>
+    <tbody>
+      <tr><td class="n">12:50</td><td>Codex wrote the r16 review (2,923 chars) <b>and</b> its verdict. Its work was done.</td><td>“still running”</td></tr>
+      <tr><td class="n">13:xx</td><td>Both files on disk, unchanged.</td><td>“still running”</td></tr>
+      <tr><td class="n">14:44</td><td>Process finally killed by hand.</td><td>“still running”</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The waiter looped on <code>pgrep -f "r16-prompt"</code> — it polled the <b>process</b>. The
+  deliverable was a <b>file</b>, and the file had existed for nearly two hours. Three status reports
+  said “still running” over a completed review.</p>
+
+  <div class="call bad">
+    <span class="ttl">⛔ The rule against this already existed, and is loaded into every session.</span>
+    <code>docs/plugins.md</code> says: <i>“never passively wait on a background review … within ~2–3
+    minutes, read the actual Codex task output file … treat as a hang → fall back.”</i> That file is
+    imported by <code>CLAUDE.md</code>. It was <b>broken three times in one session</b> — reconstructed
+    from recall at the moment of use rather than read. This is the same shape as the selection-card
+    rule that went 1-for-3 while written down in three places.
+  </div>
+
+  <p>The falsifier nobody ran was <b>one <code>stat</code></b>: <i>does the output file exist while the
+  waiter still says running?</i> It would have caught this on the first status report.</p>
+
+  <p>Filed as <b>backlog #115</b> (the waiter) and <b>#116</b> (the hang itself — a wrapper that stays
+  alive after succeeding, <b>cause undiagnosed and recorded as such</b>, because this branch had
+  already spent a day paying for confident sentences about causes nobody measured).</p>
+</section>
+
+<section>
+  <h2>The three refusals that cost ~1 h 15 m and were worth every minute</h2>
+
+  <p>The mutation gate ran nine times. <b>Three came back refusing to answer.</b> Each refusal cost a
+  ~25-minute run and each one was correct.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Run</th><th>Entries</th><th>Verdict</th><th>Cause</th></tr></thead>
+    <tbody>
+      <tr><td class="n">mutate4</td><td class="n">626</td><td class="n"><b>NOT MEASURED</b> — 625 of 626</td><td>r15's fix rewrote <code>second_question</code>'s body; <b>anchors bind by text</b></td></tr>
+      <tr><td class="n">mutate7</td><td class="n">629</td><td class="n"><b>CANNOT RUN</b> — control red 138/139</td><td>a new case read <code>schema-gates.yml</code>, which <code>HARNESS_TREE</code> did not stage</td></tr>
+      <tr><td class="n">mutate8</td><td class="n">629</td><td class="n"><b>NOT MEASURED</b> — 628 of 629</td><td>a fix rewrote another body <b>and</b> renamed a case an entry named</td></tr>
+      <tr><td class="n">mutate9</td><td class="n">629</td><td class="n"><span class="sev z">629 killed · 629 attributed · 0 survivors</span></td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="call good">
+    <span class="ttl">Why a refusal beats the pass it eventually gave.</span>
+    <code>625 of 626</code> is exactly the shape that reads as success if you only look at the kill
+    count. The harness <b>refused</b> rather than reporting 625 kills, because one declared mutation
+    had silently stopped applying — and an unapplied mutation's “caught” verdict is meaningless. A
+    green tally would have hidden it.
+  </div>
+
+  <h3>The mechanism: an entry binds to its target twice</h3>
+
+  <p>A mutation entry names its target by <b>anchor text</b> (the code it patches) <i>and</i> by
+  <b>case name</b> (the test it expects to go red). A fix that rewrites a function body breaks the
+  first. A fix that renames a test breaks the second.</p>
+
+  <p><b>A pre-flight that checks one binding passes exactly when the other breaks.</b> That is the
+  finding, and it is filed as backlog #115's companion shape. Two 25-minute runs died to teach it.</p>
+</section>
+
+<section>
+  <h2>A demonstration, produced while writing this page</h2>
+
+  <p>The branch's headline instruction is <b>re-derive, do not inherit</b>, and its most-repeated
+  failure is <i>a weaker stand-in disagreeing with its subject</i>. Both reproduced in two commands
+  while checking the numbers on this page.</p>
+
+  <p>To confirm the mutation total, a regex was written to read
+  <code>EXPECTED_MUTATIONS</code> out of <code>check-plan-code.py</code>:</p>
+
+<pre><code><span class="ln">regex stand-in  ->  files: 59   sum: 3067</span>
+<span class="ln">                    (confident, specific, and wrong by 5x — it swept up</span>
+<span class="ln">                     numbers from elsewhere in the file)</span></code></pre>
+
+  <p>Importing the module and reading its own constant instead:</p>
+
+<pre><code><span class="ln">import importlib.util, sys</span>
+<span class="ln">spec = importlib.util.spec_from_file_location("cpc", "scripts/check-plan-code.py")</span>
+<span class="ln">m = importlib.util.module_from_spec(spec)</span>
+<span class="ln">sys.modules["cpc"] = m            # dataclasses needs the module registered</span>
+<span class="ln">spec.loader.exec_module(m)</span>
+<span class="ln"></span>
+<span class="ln">files: 44   sum: 629</span>
+<span class="ln">scripts/check-review-recorded.py -> 43</span>
+<span class="ln">scripts/codex-review.py          -> 12</span></code></pre>
+
+  <p>Which matches the PR body exactly. The repo's own rule — <i>import the subject's function, never
+  re-derive it</i> — was written because of defects like the one above, and it took about ninety
+  seconds to reproduce it by ignoring the rule.</p>
+</section>
+
+<section>
+  <h2>What would actually have made this faster</h2>
+
+  <p>Counterfactuals with numbers attached, cheapest first.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Change</th><th>Saves</th><th>Cost / status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Poll the artifact, not the process</b> — <code>[ -f "$OUT" ] || [ -f "$VERDICT" ]</code> with a hard deadline of budget + slack</td>
+        <td class="n"><b>1 h 53 m</b></td>
+        <td>~10 min as a convention in <code>portable-practices.md</code>; ~1 h as a script, most of it ratchet compliance. Backlog #115, undecided</td>
+      </tr>
+      <tr>
+        <td><b>Pre-flight both mutation bindings</b> — anchor text <i>and</i> case name — before spending 25 minutes</td>
+        <td class="n">~<b>50 m</b></td>
+        <td>Not yet built. The shape is recorded; the check must test both or it is useless</td>
+      </tr>
+      <tr>
+        <td><b>Pass <code>--timeout</code> on every dispatch</b>. r13 was dispatched without it, took the 900 s default, and timed out — costing 15 minutes <i>and</i> a whole round to a declared gap</td>
+        <td class="n">~<b>15 m</b> + 1 round</td>
+        <td>Free. ⚠ <code>--timeout</code> is <b>per-attempt</b> (<code>codex-review.py:666</code>), applied per candidate model</td>
+      </tr>
+      <tr>
+        <td><b>Run both review halves from round 1</b>, which would have front-loaded the r11 Blocking by ten rounds</td>
+        <td class="n">unknown, likely large</td>
+        <td><b>Not available.</b> A worker fork cannot spawn a second reviewer — this is a topology constraint, not an oversight</td>
+      </tr>
+      <tr>
+        <td><b>Aim rounds at the deliverable, not the repair</b> — the r12/r13 pair attacked the instrument and found instrument defects</td>
+        <td class="n">possibly 2 rounds</td>
+        <td>Judgement, not mechanism. But the aim column above is now a written signal</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The largest single saving is the cheapest fix on the list, and the rule for it was already
+  written down.</p>
+</section>
+
+<section>
+  <h2>Did the seventeen rounds earn their cost?</h2>
+
+  <p>On the evidence: <b>yes, and the last useful round was the second-to-last one.</b></p>
+
+  <ul>
+    <li><b>Nothing shipped broken.</b> Four fail-opens in a gate whose entire purpose is to refuse
+    unreviewed code — every one found, every one fixed, none merged.</li>
+    <li><b>The rounds never went quiet.</b> r16 — the final review round, run under a human
+    pre-commitment to merge afterwards regardless — still returned a High. There is no round at which
+    stopping would have been obviously safe.</li>
+    <li><b>But the stopping rule had to come from outside.</b> The human made the call that round 16
+    was the last, with the trade-off stated in full: on this branch <b>a fix generated the next
+    round's defect five times out of six</b>. A convergence rule based on “no findings” would still
+    be running.</li>
+  </ul>
+
+  <div class="call good">
+    <span class="ttl">The merge-time measurement, re-run on the current tree for this page.</span>
+<pre><code><span class="ln">check-review-recorded  --self-test    139/139   rc=0</span>
+<span class="ln">codex-review           --self-test     85/85   rc=0</span>
+<span class="ln">check-plan-code        --self-test    128/128   rc=0</span>
+<span class="ln">EXPECTED_MUTATIONS     44 files, 629 mutations, 0 survivors</span></code></pre>
+    <p style="margin-bottom:0">And the branch declined the escape hatch: <code>NO-REVIEW:</code> would
+    have cleared both of its own questions in one line. A branch whose subject is <i>“a review must
+    have seen the code that ships”</i> merging under a waiver of that exact question would have been
+    the cheapest possible refutation of itself.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Measured vs. inferred</h2>
+
+  <p>The difference between these two columns is usually what a reader came for.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Per-round Codex wall-clock (10–24 min); r13 timed out at 15 min</td><td><b>Measured</b></td><td>File mtimes: prompt written → review written. An earlier version of this table was <b>wrong</b> because it was estimated from the chat timeline instead</td></tr>
+      <tr><td>9 mutation runs at ~25 min ≈ 3 h 45 m</td><td><b>Measured</b> (count) / <b>inferred</b> (per-run duration)</td><td>Run count and the three refusal verdicts are recorded; ~25 min is the harness's typical duration, not timed on each run</td></tr>
+      <tr><td>The 1 h 53 m hang: output at 12:50, process alive at 14:44</td><td><b>Measured</b></td><td>Both timestamps recorded in backlog #116 at the time</td></tr>
+      <tr><td>Two schema gates live under <code>docs/</code>, mode 755</td><td><b>Measured</b></td><td><code>ls -l</code> run against the merged tree while writing this page</td></tr>
+      <tr><td><code>prose_exceptions_cover</code> is now called from <code>main</code></td><td><b>Measured</b></td><td><code>grep</code> — line 899, on the merged tree</td></tr>
+      <tr><td><code>--timeout</code> is per-attempt</td><td><b>Measured</b></td><td><code>codex-review.py:666</code>, the argparse help string itself</td></tr>
+      <tr><td>629 mutations / 44 files / three self-test counts</td><td><b>Measured</b></td><td>Module imported and self-tests executed for this page — see the demonstration section</td></tr>
+      <tr><td>Severity counts and the “aimed at” column</td><td><b>Measured</b></td><td>Read from the 19 review documents under <code>docs/reviews/</code></td></tr>
+      <tr><td>“~3 hours were pure waste”</td><td><b>Inferred</b></td><td>1 h 53 m hang + ~1 h 15 m of re-runs after refusals. Arithmetic over measured parts, but “waste” is a judgement — the refusals bought real information</td></tr>
+      <tr><td>Fix / adjudicate / file time between rounds</td><td><b>Not measured</b></td><td>Never timed. This is the acknowledged gap in the accounting above</td></tr>
+      <tr><td>Cause of the 1 h 53 m hang</td><td><b>Not diagnosed</b></td><td>Deliberately. A plausible story exists and is explicitly <b>not</b> recorded as the cause (backlog #116)</td></tr>
+      <tr><td>“Running both halves from round 1 would have saved a lot”</td><td><b>Speculation</b></td><td>Unfalsifiable — the counterfactual branch does not exist</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>The three sentences worth keeping</h2>
+
+  <ol>
+    <li><b>Re-derive, do not inherit.</b> Every round that re-checked a previous “we looked, it's
+    clean” found something. Two of the four fail-opens were sitting inside such a sentence, one of
+    them written by this branch's own first review.</li>
+    <li><b>Track what a round is aimed at, not what severity it returned.</b> Severity said
+    converging; aim said zero-for-four on the deliverable. Aim was right.</li>
+    <li><b>Wait on the artifact, never on the process.</b> One <code>stat</code> was the difference
+    between a two-minute check and 1 h 53 m.</li>
+  </ol>
+</section>
+
+<div class="foot">
+  Sources: 19 review documents under <code>docs/reviews/{claude,codex,coordinator}/record-review-topology-r1[1-7]-*</code>
+  · the PR #299 merge record · <code>docs/dashboard-entries.md</code> 2026-09-14
+  · <code>docs/backlog.md</code> #114–#116 · <code>~/explainers/2026-09-14-pr299-timing-notes.md</code>
+  for the wall-clock figures, which existed nowhere else.
+  Live checks re-run against <code>816c553f</code> on 2026-09-14.
+</div>
+
+</div>
+
+<div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><span class="chrome-when">generated <time>2026-09-14 15:42 · 36de1958</time></span></div>
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

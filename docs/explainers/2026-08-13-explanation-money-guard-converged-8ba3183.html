@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The money guard that could not see itself — PR #98</title>
+<style>
+:root{
+  --serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+  --sans:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+
+  --bg:#fbfaf7; --bg2:#ffffff; --bg3:#f2efe9;
+  --fg:#1f1d1a; --fg2:#55504a; --fg3:#847d74;
+  --rule:#ded8ce;
+
+  /* colour carries meaning, everywhere */
+  --defect:#b3261e;      --defect-bg:#fdeceb;   --defect-br:#f0c4c0;
+  --verified:#1a6b45;    --verified-bg:#e8f5ee;  --verified-br:#b8ddc8;
+  --structure:#1b4d8f;   --structure-bg:#e9f0f9; --structure-br:#bcd0e8;
+  --decision:#8a5200;    --decision-bg:#fbf1e0;  --decision-br:#ecd6ae;
+
+  --kw:#8a2f8a; --str:#1a6b45; --com:#8b857c; --call:#1b4d8f; --num:#a35200; --typ:#0f6b78;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a; --bg2:#1d1c22; --bg3:#26242c;
+    --fg:#eceaf2; --fg2:#b6b1bf; --fg3:#8b8695;
+    --rule:#3a3742;
+    --defect:#ff9b90;    --defect-bg:#3a1f1d;   --defect-br:#6b3630;
+    --verified:#79dfa9;  --verified-bg:#16301f; --verified-br:#2f5f42;
+    --structure:#9cc4f5; --structure-bg:#18263a; --structure-br:#33507a;
+    --decision:#f0c47a;  --decision-bg:#332612; --decision-br:#6b5227;
+    --kw:#e39ae3; --str:#79dfa9; --com:#8b8695; --call:#9cc4f5; --num:#f0b070; --typ:#6fd3de;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --bg2:#ffffff; --bg3:#f2efe9; --fg:#1f1d1a; --fg2:#55504a; --fg3:#847d74;
+  --rule:#ded8ce;
+  --defect:#b3261e; --defect-bg:#fdeceb; --defect-br:#f0c4c0;
+  --verified:#1a6b45; --verified-bg:#e8f5ee; --verified-br:#b8ddc8;
+  --structure:#1b4d8f; --structure-bg:#e9f0f9; --structure-br:#bcd0e8;
+  --decision:#8a5200; --decision-bg:#fbf1e0; --decision-br:#ecd6ae;
+  --kw:#8a2f8a; --str:#1a6b45; --com:#8b857c; --call:#1b4d8f; --num:#a35200; --typ:#0f6b78;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --bg2:#1d1c22; --bg3:#26242c; --fg:#eceaf2; --fg2:#b6b1bf; --fg3:#8b8695;
+  --rule:#3a3742;
+  --defect:#ff9b90; --defect-bg:#3a1f1d; --defect-br:#6b3630;
+  --verified:#79dfa9; --verified-bg:#16301f; --verified-br:#2f5f42;
+  --structure:#9cc4f5; --structure-bg:#18263a; --structure-br:#33507a;
+  --decision:#f0c47a; --decision-bg:#332612; --decision-br:#6b5227;
+  --kw:#e39ae3; --str:#79dfa9; --com:#8b8695; --call:#9cc4f5; --num:#f0b070; --typ:#6fd3de;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--serif);
+     font-size:18px;line-height:1.65;overflow-x:hidden}
+.wrap{max-width:52rem;margin:0 auto;padding:2rem 1.25rem 6rem}
+h1,h2,h3,h4{font-family:var(--sans);line-height:1.25;letter-spacing:-0.015em}
+h1{font-size:2.1rem;margin:.2em 0 .3em;font-weight:750}
+h2{font-size:1.5rem;margin:2.6em 0 .6em;padding-top:.7em;border-top:1px solid var(--rule);font-weight:700}
+h3{font-size:1.15rem;margin:2em 0 .4em;font-weight:670}
+h4{font-size:1rem;margin:1.5em 0 .3em;font-weight:650;color:var(--fg2)}
+p{margin:.9em 0}
+a{color:var(--structure)}
+strong{font-weight:650}
+em{font-style:italic}
+code{font-family:var(--mono);font-size:.86em;background:var(--bg3);
+     padding:.1em .34em;border-radius:4px;overflow-wrap:break-word}
+.subtitle{font-family:var(--sans);font-size:1.06rem;color:var(--fg2);margin:0 0 1.6em;line-height:1.5}
+
+/* ---- header block ---- */
+.hdr{font-family:var(--mono);font-size:.78rem;line-height:1.9;background:var(--bg2);
+     border:1px solid var(--rule);border-radius:10px;padding:.9rem 1.1rem;margin:0 0 1.5rem;
+     overflow-x:auto}
+.hdr div{white-space:pre;color:var(--fg2)}
+.hdr b{color:var(--fg);font-weight:600}
+
+/* ---- stat strip ---- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.2rem,1fr));gap:.6rem;margin:1.4rem 0 2rem}
+.stat{background:var(--bg2);border:1px solid var(--rule);border-radius:10px;padding:.7rem .8rem}
+.stat .n{font-family:var(--sans);font-size:1.5rem;font-weight:730;line-height:1.1;display:block}
+.stat .l{font-family:var(--sans);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;
+         color:var(--fg3);display:block;margin-top:.25rem;line-height:1.3}
+.stat.d .n{color:var(--defect)} .stat.v .n{color:var(--verified)}
+.stat.s .n{color:var(--structure)} .stat.k .n{color:var(--decision)}
+
+/* ---- how-to block ---- */
+.howto{background:var(--structure-bg);border:1px solid var(--structure-br);border-radius:10px;
+       padding:1rem 1.15rem;margin:0 0 2rem;font-family:var(--sans);font-size:.86rem;line-height:1.6}
+.howto h4{margin:0 0 .5em;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--structure)}
+.howto ul{margin:.4em 0;padding-left:1.1em}
+.howto li{margin:.3em 0}
+.howto code{background:rgba(127,127,127,.16)}
+#modechip{display:inline-block;font-family:var(--mono);font-size:.72rem;padding:.1em .5em;
+          border-radius:99px;border:1px solid var(--structure-br);margin-left:.4em}
+
+/* ---- TOC ---- */
+nav.toc{background:var(--bg2);border:1px solid var(--rule);border-radius:10px;padding:.9rem 1.2rem;margin:0 0 2.4rem}
+nav.toc h4{margin:0 0 .4em;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--fg3)}
+nav.toc ol{margin:0;padding-left:1.3em;font-family:var(--sans);font-size:.9rem;line-height:1.85}
+nav.toc a{text-decoration:none} nav.toc a:hover{text-decoration:underline}
+
+/* ---- callouts ---- */
+.call{border-left:3px solid;border-radius:0 8px 8px 0;padding:.85rem 1.05rem;margin:1.4em 0;
+      background:var(--bg2);font-size:.96em}
+.call .tag{font-family:var(--sans);font-size:.68rem;font-weight:700;text-transform:uppercase;
+           letter-spacing:.08em;display:block;margin-bottom:.35em}
+.call p:first-of-type{margin-top:0} .call p:last-child{margin-bottom:0}
+.call.defect{border-color:var(--defect);background:var(--defect-bg)} .call.defect .tag{color:var(--defect)}
+.call.verified{border-color:var(--verified);background:var(--verified-bg)} .call.verified .tag{color:var(--verified)}
+.call.structure{border-color:var(--structure);background:var(--structure-bg)} .call.structure .tag{color:var(--structure)}
+.call.decision{border-color:var(--decision);background:var(--decision-bg)} .call.decision .tag{color:var(--decision)}
+
+/* ---- code ---- */
+figure.code{margin:1.5em 0}
+figure.code figcaption{font-family:var(--mono);font-size:.72rem;color:var(--fg3);
+   padding:.35rem .6rem;background:var(--bg3);border:1px solid var(--rule);border-bottom:none;
+   border-radius:8px 8px 0 0;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+figure.code figcaption .st{font-family:var(--sans);font-size:.63rem;font-weight:700;text-transform:uppercase;
+   letter-spacing:.06em;padding:.08em .45em;border-radius:99px;border:1px solid}
+.st.before{color:var(--defect);border-color:var(--defect-br);background:var(--defect-bg)}
+.st.after{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.st.ctx{color:var(--fg3);border-color:var(--rule);background:var(--bg2)}
+pre{margin:0;background:var(--bg2);border:1px solid var(--rule);border-radius:0 0 8px 8px;
+    padding:.85rem 0;overflow-x:auto;font-size:.8rem;line-height:1.65}
+pre code{background:none;padding:0;font-size:inherit;white-space:pre;display:block}
+pre .ln{display:block;padding:0 1rem;border-left:3px solid transparent}
+pre .ln.hl{background:var(--decision-bg);border-left-color:var(--decision)}
+pre .ln.bad{background:var(--defect-bg);border-left-color:var(--defect)}
+pre .ln.good{background:var(--verified-bg);border-left-color:var(--verified)}
+.kw{color:var(--kw)} .str{color:var(--str)} .com{color:var(--com);font-style:italic}
+.call2{color:var(--call)} .num{color:var(--num)} .typ{color:var(--typ)}
+
+/* ---- tables ---- */
+.tablewrap{overflow-x:auto;margin:1.5em 0;border:1px solid var(--rule);border-radius:10px;background:var(--bg2)}
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:.84rem;min-width:36rem}
+th,td{text-align:left;padding:.6rem .75rem;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.5}
+th{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg3);
+   background:var(--bg3);font-weight:700;position:sticky;top:0}
+tr:last-child td{border-bottom:none}
+td code,th code{font-size:.8em}
+
+/* ---- cascade diagram ---- */
+.cascade{margin:1.8em 0;display:flex;flex-direction:column;gap:0}
+.casrow{display:grid;grid-template-columns:4.6rem 1fr;gap:.8rem;align-items:stretch}
+.casrow .rnd{font-family:var(--sans);font-size:.7rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--fg3);padding-top:.85rem;text-align:right}
+.casbox{border:1px solid var(--rule);border-radius:10px;padding:.7rem .9rem;background:var(--bg2)}
+.casbox .pos{font-family:var(--mono);font-size:.82rem;font-weight:600;color:var(--fg)}
+.casbox .blind{font-family:var(--sans);font-size:.8rem;color:var(--defect);margin-top:.3rem;line-height:1.45}
+.casbox .blind b{color:var(--defect)}
+.casbox.final{border-color:var(--verified-br);background:var(--verified-bg)}
+.casbox.final .blind{color:var(--verified)}
+.arrow{grid-column:2;justify-self:start;margin:.1rem 0 .1rem 1.4rem;width:2px;height:1.1rem;background:var(--rule);position:relative}
+.arrow::after{content:'';position:absolute;bottom:-1px;left:-3px;border:4px solid transparent;border-top-color:var(--rule)}
+
+/* ---- freshness diagram ---- */
+.flow{display:grid;gap:.7rem;margin:1.8em 0}
+.flowrow{display:grid;grid-template-columns:1fr auto 1fr;gap:.7rem;align-items:center}
+@media(max-width:640px){.flowrow{grid-template-columns:1fr;text-align:center}}
+.node{border:1px solid var(--rule);border-radius:10px;padding:.65rem .85rem;background:var(--bg2);
+      font-family:var(--mono);font-size:.78rem;line-height:1.5}
+.node .cap{font-family:var(--sans);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;
+           color:var(--fg3);display:block;margin-bottom:.25rem}
+.node.bad{border-color:var(--defect-br);background:var(--defect-bg);color:var(--defect)}
+.node.good{border-color:var(--verified-br);background:var(--verified-bg);color:var(--verified)}
+.op{font-family:var(--sans);font-size:1.1rem;color:var(--fg3);text-align:center;font-weight:700}
+.verdict{font-family:var(--sans);font-size:.85rem;font-weight:650;padding:.55rem .8rem;border-radius:8px;text-align:center}
+.verdict.bad{background:var(--defect-bg);color:var(--defect);border:1px solid var(--defect-br)}
+.verdict.good{background:var(--verified-bg);color:var(--verified);border:1px solid var(--verified-br)}
+
+/* ---- reviewer grid ---- */
+.rounds{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem;margin:1.6em 0}
+.rcard{border:1px solid var(--rule);border-radius:10px;padding:.7rem .8rem;background:var(--bg2);font-family:var(--sans)}
+.rcard .rl{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg3)}
+.rcard .rv{font-size:.95rem;font-weight:700;margin-top:.2rem}
+.rcard .rd{font-size:.74rem;color:var(--fg2);margin-top:.3rem;line-height:1.4}
+.rcard.solo{border-color:var(--defect-br)} .rcard.solo .rv{color:var(--defect)}
+.rcard.dual{border-color:var(--verified-br)} .rcard.dual .rv{color:var(--verified)}
+
+.chip{display:inline-block;font-family:var(--sans);font-size:.66rem;font-weight:700;
+      text-transform:uppercase;letter-spacing:.06em;padding:.12em .5em;border-radius:99px;border:1px solid;
+      vertical-align:.08em}
+.chip.d{color:var(--defect);border-color:var(--defect-br);background:var(--defect-bg)}
+.chip.v{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.chip.s{color:var(--structure);border-color:var(--structure-br);background:var(--structure-bg)}
+.chip.k{color:var(--decision);border-color:var(--decision-br);background:var(--decision-bg)}
+
+/* ---- ask tray ---- */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--structure-br);
+  background:var(--structure-bg);color:var(--structure);border-radius:99px;padding:.18em .6em;
+  cursor:pointer;z-index:40}
+#tray{position:fixed;right:0;bottom:0;left:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom));z-index:60;display:none;
+  box-shadow:0 -8px 26px rgba(0,0,0,.16)}
+#tray.on{display:block}
+#tray .inner{max-width:52rem;margin:0 auto}
+#tray .qt{font-family:var(--sans);font-size:.72rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#tray .qt b{color:var(--fg2)}
+#tray .row{display:flex;gap:.5rem;align-items:flex-start;flex-wrap:wrap}
+#qbox{flex:1 1 16rem;min-width:0;font-family:var(--sans);font-size:.9rem;padding:.5rem .65rem;
+  border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--fg);resize:vertical;min-height:2.6rem}
+#tray button.act{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;font-weight:650;padding:.5rem 1rem;
+  border-radius:8px;border:1px solid var(--structure);background:var(--structure);color:#fff;cursor:pointer}
+#tray button.sec{flex:0 0 auto;font-family:var(--sans);font-size:.82rem;padding:.5rem .8rem;border-radius:8px;
+  border:1px solid var(--rule);background:var(--bg2);color:var(--fg2);cursor:pointer}
+#sentnote{font-family:var(--sans);font-size:.76rem;margin-top:.5rem;min-height:1.1em;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+h2,h3{position:relative}
+footer{margin-top:4rem;padding-top:1.2rem;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:.78rem;color:var(--fg3);line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>The money guard that could not see itself</h1>
+<p class="subtitle">PR&nbsp;#98 — five review rounds on a test that promises to spend nothing, and the
+one-token fixture typo that made the promise hollow the whole time.</p>
+
+<div class="hdr">
+<div><b>Change:</b>       test(M3.1): the money guard leaves every project, and the fixture that made it inert (#98)</div>
+<div><b>Base..Head:</b>   9df4d94..8ba3183  (squash merge, 7 commits on <span class="mono">docs/m31-review-round-2</span>)</div>
+<div><b>Built:</b>        2026-08-14T02:26:20Z</div>
+<div><b>Inspected:</b>    34 files read, of which <b>22 were not in the diff</b></div>
+<div><b>Not verified:</b> the X-Magazine-Stale assertion is unmutated (no run has seen the header</div>
+<div>               present); UI/watch-mode behaviour is read from the runner source, not executed;</div>
+<div>               a rung-2 flake reproduced once and was not diagnosed.</div>
+</div>
+
+<div class="stats">
+  <div class="stat d"><span class="n">2</span><span class="l">Blockings found</span></div>
+  <div class="stat d"><span class="n">1</span><span class="l">fail-open guard, found by neither reviewer</span></div>
+  <div class="stat s"><span class="n">5</span><span class="l">review rounds</span></div>
+  <div class="stat s"><span class="n">3</span><span class="l">rounds missing a reviewer</span></div>
+  <div class="stat v"><span class="n">4</span><span class="l">mutations run</span></div>
+  <div class="stat k"><span class="n">6¢</span><span class="l">real Gemini spend, deliberate</span></div>
+  <div class="stat v"><span class="n">7</span><span class="l">rungs passing (was 6)</span></div>
+  <div class="stat k"><span class="n">1</span><span class="l">token that caused all of it</span></div>
+</div>
+
+<div class="howto">
+  <h4>Reading this page <span id="modechip">● checking…</span></h4>
+  <ul>
+    <li><b>Stable link:</b> <code>http://127.0.0.1:7391/latest</code> always opens the newest explainer.
+        <code>http://127.0.0.1:7391/</code> lists them all.</li>
+    <li><b>To ask a question:</b> select any text (or hover a heading) → click <b>ask</b> → type →
+        <b>Send</b>. Then say <em>“read my questions”</em> in the session if nothing comes back.</li>
+    <li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> in the
+        repo — safe to run twice. <b>A reboot stops the server</b>, which is the one moment you will
+        need this line.</li>
+    <li><b>Opened as a <code>file://</code> copy?</b> Everything reads fine; only <b>Send</b> is lost,
+        and the tray falls back to copying the question to your clipboard.</li>
+  </ul>
+</div>
+
+<nav class="toc">
+  <h4>Contents</h4>
+  <ol>
+    <li><a href="#bg">Background — what the suite promised</a></li>
+    <li><a href="#intuition">Intuition — two independent failures</a></li>
+    <li><a href="#boundaries">Boundaries touched</a></li>
+    <li><a href="#decisions">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#limits">Assumptions and limits</a></li>
+  </ol>
+</nav>
+
+<h2 id="bg">1 · Background — what the suite promised</h2>
+
+<h3>The skippable version</h3>
+
+<p>This project has two front ends sharing one codebase: a local single-user tool, and a hosted cloud
+app. The cloud app charges real money, because turning a YouTube video into a readable summary means
+calling Gemini, and Gemini bills per call.</p>
+
+<p>In August a browser-level end-to-end test was added for the cloud app — a “journey” that signs a
+user in, lists their playlists, ingests a new one, opens a summary, downloads it, and signs out. The
+appeal of such a test is that it runs unattended, on every change, for free.</p>
+
+<p><em>For free</em> is the load-bearing word. A test that quietly spends six cents a run is a test
+nobody can afford to run on every commit, and worse, it is a test whose cost nobody notices until the
+bill arrives. So the suite carries a <strong>money guard</strong>: it reads the spend ledger before
+the run and again afterwards, and fails if anything moved.</p>
+
+<h3>The prerequisites for this change</h3>
+
+<p>Three pieces of the system matter here, and the project’s glossary already names all three
+precisely.</p>
+
+<div class="call structure">
+  <span class="tag">Definitions — from CONTEXT.md</span>
+  <p><strong>Daily cap</strong> — the <em>global</em> (all-owners) dollar kill-switch per UTC day.
+  “The hard money ceiling: once the day’s reserved+actual hits it, every enqueue is refused.”</p>
+  <p><strong>Magazine model</strong> — the structured per-section <code>{lead, bullets}</code>
+  representation the rendered HTML doc is built from, produced by a capped Gemini call. It is
+  <em>lazily materialized</em> and <em>version/drift-gated</em>: regenerated on view whenever it is
+  absent, unparseable, or <strong>drifted</strong> — defined in the glossary as
+  <em>“its <code>sourceSections</code> no longer match the MD’s section titles.”</em></p>
+  <p><strong>Envelope</strong> — the stored JSON wrapper
+  <code>{sourceMd, generatedAt, sourceSections, model}</code> whose <code>model</code> field carries
+  the magazine model. Distinct from the model itself.</p>
+</div>
+
+<p>Hold onto that definition of <em>drifted</em>. The glossary wrote down the exact failure mode of
+this change a month before it happened.</p>
+
+<p>The other prerequisite is a piece of Playwright’s architecture. A Playwright config declares
+<em>projects</em>, and a project may declare <code>dependencies</code> on another. Here the
+<code>cloud</code> project depends on a <code>setup</code> project that creates a fresh owner, seeds
+their data, signs in, and writes the session to disk.</p>
+
+<figure class="code">
+  <figcaption><span class="st ctx">unchanged</span> playwright.cloud.config.ts — the project graph</figcaption>
+<pre><code><span class="ln">  <span class="kw">projects</span>: [</span>
+<span class="ln">    { <span class="kw">name</span>: <span class="str">'setup'</span>, <span class="kw">testMatch</span>: /cloud\.setup\.ts$/ },</span>
+<span class="ln">    {</span>
+<span class="ln">      <span class="kw">name</span>: <span class="str">'cloud'</span>,</span>
+<span class="ln hl">      <span class="kw">dependencies</span>: [<span class="str">'setup'</span>],   <span class="com">// ← if setup fails, this project never runs</span></span>
+<span class="ln">      <span class="kw">use</span>: { <span class="kw">storageState</span>: <span class="str">'playwright/.auth/cloud-user.json'</span> },</span>
+<span class="ln">    },</span>
+<span class="ln">  ],</span>
+</code></pre>
+</figure>
+
+<h2 id="intuition">2 · Intuition — two independent failures, stacked</h2>
+
+<p>It is tempting to describe this change as “fixing the money guard”. That undersells it, because
+there were two entirely separate defects sitting on top of one another, and each one hid the other.</p>
+
+<h3>Failure one: the guard kept standing in blind spots</h3>
+
+<p>A guard is only as good as the window it can observe. This one moved four times, and each position
+was blind to something the previous position had made visible. That is not incompetence; it is what
+happens when each fix is reviewed only against the defect it was written for.</p>
+
+<div class="cascade">
+  <div class="casrow"><div class="rnd">Round 0</div>
+    <div class="casbox"><div class="pos">a 6th <code>test()</code> in the journey</div>
+      <div class="blind"><b>Blind to:</b> any failing rung. <code>describe.serial</code> aborts the
+      remaining tests once one fails — so the money check was skipped precisely when a rung had spent.</div></div></div>
+  <div class="arrow"></div>
+  <div class="casrow"><div class="rnd">Round 1</div>
+    <div class="casbox"><div class="pos"><code>test.afterAll</code> in the journey</div>
+      <div class="blind"><b>Blind to:</b> the setup project. The baseline was read in the
+      <code>cloud</code> project’s <code>beforeAll</code>, which fires only <em>after</em> setup
+      finished — so everything setup did was already inside the baseline.</div></div></div>
+  <div class="arrow"></div>
+  <div class="casrow"><div class="rnd">Round 2</div>
+    <div class="casbox"><div class="pos">baseline in <code>setup</code>, assertion still in <code>cloud</code></div>
+      <div class="blind"><b>Blind to:</b> a setup <em>failure</em>. Playwright does not schedule a
+      project whose dependency failed, so a setup that spent money and then threw took the guard down
+      with it — the exact window round 1 had moved the baseline to cover.</div></div></div>
+  <div class="arrow"></div>
+  <div class="casrow"><div class="rnd">Round 3–5</div>
+    <div class="casbox final"><div class="pos"><code>globalSetup</code> returning a teardown closure</div>
+      <div class="blind"><b>Outside every project.</b> Survives setup failure, an unscheduled project,
+      <code>--max-failures</code>, <code>-x</code>, and SIGINT. Still cannot see: SIGKILL, a global
+      timeout, a webServer that never starts, or UI/watch mode — and now says so.</div></div></div>
+</div>
+
+<p>The mechanism that makes the final position work is a small, slightly obscure Playwright
+affordance: a function returned from <code>globalSetup</code> is registered as the run’s teardown.
+Reading the runner source shows <em>why</em> it survives failures — the teardown task is queued the
+moment the setup task <em>starts</em>, before anything can go wrong.</p>
+
+<figure class="code">
+  <figcaption><span class="st ctx">unchanged</span> node_modules/playwright/lib/runner/index.js — <code>createGlobalSetupTask</code></figcaption>
+<pre><code><span class="ln">    <span class="kw">setup</span>: <span class="kw">async</span> ({ config }) =&gt; {</span>
+<span class="ln">      <span class="kw">const</span> setupHook = <span class="kw">await</span> <span class="call2">loadGlobalHook</span>(config, file);</span>
+<span class="ln">      globalSetupResult = <span class="kw">await</span> <span class="call2">setupHook</span>(config.config);</span>
+<span class="ln">    },</span>
+<span class="ln hl">    <span class="kw">teardown</span>: <span class="kw">async</span> () =&gt; {</span>
+<span class="ln hl">      <span class="kw">if</span> (<span class="kw">typeof</span> globalSetupResult === <span class="str">"function"</span>)</span>
+<span class="ln hl">        <span class="kw">await</span> <span class="call2">globalSetupResult</span>();      <span class="com">// ← the money guard lives here</span></span>
+<span class="ln">    },</span>
+</code></pre>
+</figure>
+
+<div class="call verified">
+  <span class="tag">Measured, not argued</span>
+  <p>A mutation made the setup project insert a <code>ledger_audit</code> row and then throw. Result:
+  <code>1 failed</code>, <code>7 did not run</code> — the cloud project never scheduled, exactly as
+  predicted — <strong>and the guard still fired</strong> with
+  <code>ledger_audit max(id) 306 → 307</code>, exit 1. Under the round-1 code it would have been
+  silently absent.</p>
+</div>
+
+<h3>Failure two: the fixture the guard was protecting had never worked</h3>
+
+<p>Here is the part worth the reader’s attention, because it is the one no amount of reasoning about
+Playwright would have found.</p>
+
+<p>The serve path renders a summary as a magazine-styled HTML document. To do that it needs a
+<em>magazine model</em>, and if one is not present <em>and fresh</em>, it reserves spend and calls
+Gemini. So the test setup pre-seeds an envelope, precisely so the serve path finds one and returns
+for free.</p>
+
+<p>Freshness is decided by comparing the envelope’s stored <code>sourceSections</code> against the
+section titles the serve path derives from the markdown. And deriving those titles is not the
+identity function:</p>
+
+<figure class="code">
+  <figcaption><span class="st ctx">unchanged</span> lib/html-doc/parse.ts:53–56 — the transformation nobody applied</figcaption>
+<pre><code><span class="ln">    <span class="kw">const</span> headingLine = current.heading.<span class="call2">trim</span>();</span>
+<span class="ln">    <span class="kw">const</span> ord = headingLine.<span class="call2">match</span>(/^(\d+)\.\s+(.*)$/);</span>
+<span class="ln">    <span class="kw">const</span> numeral = ord ? ord[<span class="num">1</span>] : <span class="kw">null</span>;</span>
+<span class="ln hl">    <span class="kw">const</span> title = ord ? ord[<span class="num">2</span>].<span class="call2">trim</span>() : headingLine;  <span class="com">// '2. Encoder' → 'Encoder'</span></span>
+</code></pre>
+</figure>
+
+<p>The ordinal is split off into a separate <code>numeral</code> field. The title that survives is
+bare. The fixture, however, stored the heading verbatim:</p>
+
+<div class="flow">
+  <div class="flowrow">
+    <div class="node"><span class="cap">seeded markdown</span>## 2. Encoder</div>
+    <div class="op">→</div>
+    <div class="node good"><span class="cap">what serve-doc derives</span>['Encoder']</div>
+  </div>
+  <div class="flowrow">
+    <div class="node"><span class="cap">seeded envelope</span>sourceSections</div>
+    <div class="op">→</div>
+    <div class="node bad"><span class="cap">what the fixture stored</span>['2. Encoder']</div>
+  </div>
+  <div class="verdict bad">sameTitles → false · isFresh → false · <strong>permanently drifted</strong> ·
+  reserve spend → call Gemini → 6–12¢ every render</div>
+</div>
+
+<p>The comparison is element-wise and unforgiving:</p>
+
+<figure class="code">
+  <figcaption><span class="st ctx">unchanged</span> lib/html-doc/read-model.ts:16–17 — <code>sameTitles</code></figcaption>
+<pre><code><span class="ln">  <span class="kw">return</span> envelope.sourceSections.length === titles.length &amp;&amp;</span>
+<span class="ln hl">    envelope.sourceSections.<span class="call2">every</span>((t, i) =&gt; t === titles[i]);</span>
+</code></pre>
+</figure>
+
+<div class="call defect">
+  <span class="tag">The circular part</span>
+  <p>The rung that would have exposed this — opening a video and asserting its rendered summary — was
+  <strong>skipped</strong>. And the reason recorded in the skip comment was that each attempt to
+  diagnose the regeneration <em>cost 6–12¢ of real Gemini spend</em>, with 24¢ already burned
+  guessing.</p>
+  <p>So the bug funded its own concealment: it made the rung expensive, the expense justified the
+  skip, and the skip removed the only thing that would have caught it. Meanwhile three comments in
+  three files asserted the protection worked.</p>
+</div>
+
+<p>The old skip comment even contained the correct hypothesis — <em>“most likely
+<code>sourceSections</code> not matching the titles its own parser derives”</em> — and then declined
+to spend a minute confirming it, on the grounds that each <em>attempt</em> cost money. It was three
+lines in two files. A sibling fixture, <code>share-route.test.ts</code>, had been seeding
+<code>## 1. Intro</code> against <code>['Intro']</code> correctly the whole time.</p>
+
+<div class="call verified">
+  <span class="tag">Outcome</span>
+  <p>With the seed corrected, <strong>rung 4 is un-skipped and passes with the ledger unmoved</strong>
+  — 7 passed. The magazine render is now exercised in a browser on every run, for free, for the first
+  time.</p>
+</div>
+
+<h3>Failure three, which neither reviewer found</h3>
+
+<p>One more, discovered by hand while reading the guard rather than by any review round. The ledger
+read destructured <code>data</code> and ignored <code>error</code>:</p>
+
+<figure class="code">
+  <figcaption><span class="st before">before</span> tests/e2e/cloud-fixture.ts — the fail-open read</figcaption>
+<pre><code><span class="ln bad">  <span class="kw">const</span> [{ data: audit }, { data: ledger }] = <span class="kw">await</span> Promise.<span class="call2">all</span>([ … ]);</span>
+<span class="ln bad">  <span class="kw">return</span> {</span>
+<span class="ln bad">    <span class="kw">auditMaxId</span>: <span class="typ">Number</span>(audit?.[<span class="num">0</span>]?.id ?? <span class="num">0</span>),   <span class="com">// error → data is null → 0</span></span>
+<span class="ln bad">    <span class="kw">centsTotal</span>: (ledger ?? []).<span class="call2">reduce</span>(…, <span class="num">0</span>),  <span class="com">// error → 0</span></span>
+<span class="ln bad">  };</span>
+</code></pre>
+</figure>
+
+<p>An unreadable ledger returns zero for the baseline <em>and</em> zero for the final read. Two unread
+ledgers compare equal, so the guard reports “no money moved” having read nothing at all. This is the
+project’s own house rule — <em>cannot run is a FAILURE, never a pass</em> — violated inside the very
+mechanism written to enforce it.</p>
+
+<div class="call verified">
+  <span class="tag">Measured both ways</span>
+  <p>With the error check in place, a typo’d table name fails the run. With the check disabled, the
+  same typo yields <strong><code>6 passed</code></strong> — a completely green suite reading nothing.</p>
+</div>
+
+<h3>Why the process mattered more than any single fix</h3>
+
+<p>The project requires a <em>dual</em> review: Codex and Claude, independently, both completing before
+a task is done. Rounds 2, 3 and 4 were Codex-only. Nobody noticed, because the severity curve looked
+exactly like convergence.</p>
+
+<div class="rounds">
+  <div class="rcard solo"><div class="rl">Round 2 · Codex only</div><div class="rv">1B 1H 2M 1L</div>
+    <div class="rd">Guard blind to setup failure</div></div>
+  <div class="rcard solo"><div class="rl">Round 3 · Codex only</div><div class="rv">0B 0H 1M 2L</div>
+    <div class="rd">Comment precision</div></div>
+  <div class="rcard solo"><div class="rl">Round 4 · Codex only</div><div class="rv">0B 0H 0M 3L</div>
+    <div class="rd">Comment precision</div></div>
+  <div class="rcard dual"><div class="rl">Round 4 · Claude</div><div class="rv">1B 1H 4M 5L</div>
+    <div class="rd">The inert fixture</div></div>
+  <div class="rcard dual"><div class="rl">Round 5 · both</div><div class="rv">0B 2H 4M 7L</div>
+    <div class="rd">Both Highs in the round-4 <em>fix</em></div></div>
+</div>
+
+<p>Three consecutive rounds of decaying severity from one reviewer is not evidence that the artifact
+is converging. It is evidence that <em>that reviewer</em> is running out of altitude. The two halves
+drift in different directions: Codex toward comment precision inside the changed lines and library
+internals; Claude toward the fixture, the callers, and what the suite does not cover. The Blocking sat
+in a file Codex had read four times.</p>
+
+<div class="call decision">
+  <span class="tag">And the reviewer corrected itself</span>
+  <p>Round 5’s first High was that a change made in round 4 — pinning <code>guardrail_config</code> —
+  was a money regression, <em>and that its justification came from the same reviewer’s own round-4
+  Low, which was wrong</em>. The claim was that a leftover tight cap would make a render rung “go
+  green having proved nothing”. It does not: <code>at_capacity</code> returns 503 and the rung asserts
+  200 first, so it goes <strong>red, and free</strong>.</p>
+  <p>The pin converted a free red into a <em>paid</em> red — and raised the local stack’s daily
+  kill-switch from its $5 default to $50, permanently, with nothing to restore it. A fixture widening
+  a money control, inside the suite built because a fixture caused live Gemini calls.</p>
+</div>
+
+<h2 id="boundaries">3 · Boundaries touched</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Boundary</th><th>What crosses it</th><th>What each side may assume</th><th>When that assumption is violated</th></tr></thead>
+<tbody>
+<tr>
+  <td><b>Test fixture → serve path</b><br><span class="chip d">the Blocking</span></td>
+  <td>The stored envelope’s <code>sourceSections: string[]</code>, compared against titles the serve
+      path derives from the markdown.</td>
+  <td><b>Fixture side</b> assumed the array is “the section headings”.<br>
+      <b>Serve side</b> guarantees only that it compares against
+      <code>parsed.sections.map(s =&gt; s.title)</code> — <em>post-transformation</em>, ordinal stripped.</td>
+  <td>The envelope is permanently <b>drifted</b>. Every render reserves spend and calls Gemini. No
+      error, no warning — just a bill and prose that reads slightly differently than what was seeded.
+      <b>Now closed by construction:</b> the fixture derives the array through the real parser.</td>
+</tr>
+<tr>
+  <td><b>Playwright project graph → the guard</b><br><span class="chip d">round-2 Blocking</span></td>
+  <td>Whether the assertion code is ever scheduled to run.</td>
+  <td><b>Guard side</b> assumed <code>afterAll</code> means “always”.<br>
+      <b>Runner side</b> guarantees only that hooks run for projects it <em>schedules</em>, and a
+      project whose dependency failed is never scheduled.</td>
+  <td>A setup that spends money and then fails takes the guard down with it — absent exactly when
+      needed. <b>Now:</b> the guard lives in <code>globalSetup</code>’s teardown, outside every project.</td>
+</tr>
+<tr>
+  <td><b>PostgREST → the guard</b><br><span class="chip d">fail-open</span></td>
+  <td><code>{ data, error }</code> from two table reads.</td>
+  <td><b>Guard side</b> read <code>data</code> and assumed absence meant “empty”.<br>
+      <b>PostgREST side</b> signals every failure through <code>error</code> with
+      <code>data === null</code> — indistinguishable from an empty table.</td>
+  <td>Baseline 0, final 0, equal, green. The guard reports success having read nothing.
+      <b>Now:</b> both errors throw, and a run that cannot read the ledger fails loudly.</td>
+</tr>
+<tr>
+  <td><b>Two tables → one “snapshot”</b><br><span class="chip s">structural</span></td>
+  <td><code>ledger_audit</code> max id and <code>spend_ledger</code> cents, read as separate REST calls.</td>
+  <td><b>Guard side</b> wanted an instant.<br>
+      <b>PostgREST side</b> offers no cross-table snapshot; two calls can straddle a write.</td>
+  <td>A baseline describing a state that never existed → a spurious failure with no money moved.
+      A guard that fails spuriously gets disabled. <b>Now:</b> read the pair until two consecutive
+      passes agree; if it never settles, fail and say <em>treat this as NOT RUN</em>.</td>
+</tr>
+<tr>
+  <td><b>CLI runner vs test server</b><br><span class="chip d">round-4 High</span></td>
+  <td>Whether <code>globalSetup</code> runs per invocation or per session.</td>
+  <td><b>Comment side</b> claimed “every invocation”.<br>
+      <b>Runner side</b> runs it once per <em>session</em> on the test-server path, and
+      <code>runTests</code> contains no global-setup task at all.</td>
+  <td>In UI/watch mode the fixture is never deleted, so the suite can pass green against a previous
+      session’s owner. <b>Now:</b> narrowed to the CLI in writing — see the open question in §4.</td>
+</tr>
+<tr>
+  <td><b>Test fixture → shared <code>guardrail_config</code></b><br><span class="chip k">added then removed</span></td>
+  <td>A singleton row that <em>every</em> reserve on the stack reads.</td>
+  <td><b>Fixture side</b> assumed pinning it was housekeeping.<br>
+      <b>Stack side</b> treats <code>daily_cap_cents</code> as the global money kill-switch.</td>
+  <td>The ceiling stays raised after the run, for that developer, until something else writes the
+      row. <b>Now:</b> deleted, and the local row restored to 500/60 by hand.</td>
+</tr>
+<tr>
+  <td><b>Sidebar → YouTube Data API</b><br><span class="chip s">pre-existing, now bounded</span></td>
+  <td>An automatic <code>backfillPlaylistTitles()</code> whenever a listed playlist has no title.</td>
+  <td><b>Suite side</b> intercepts <code>POST /api/jobs</code> and calls that the only outbound path.<br>
+      <b>Component side</b> fires this one on mount, unintercepted, with <em>no ledger row of any
+      kind</em> — so the money guard is structurally blind to it.</td>
+  <td>A seeded playlist whose title update silently failed would make the suite call a real external
+      API. <b>Now:</b> both title updates are error-checked; the header states the second path exists
+      rather than claiming there is only one.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="decisions">4 · Decisions this change encodes</h2>
+
+<h3>Decided: the money guard belongs outside the project graph</h3>
+<p>Rejected: keeping it as a hook inside the spec, which is the conventional place. The trade is that
+<code>globalSetup</code> is a less obvious home and its teardown semantics need a paragraph of
+explanation. Accepted because every in-project position has a window it cannot see, and the whole
+point of the guard is that it runs when things go wrong.</p>
+
+<div class="call decision">
+  <span class="tag">ADR candidate</span>
+  <p><code>ADR CANDIDATE:</code> <b>Run-level money guards for cost-bearing test suites.</b> Hard to
+  reverse (every future cloud suite inherits the placement), surprising without context (a hook in
+  <code>globalSetup</code> is not where anyone looks for an assertion), and the result of a real
+  trade-off (obviousness versus coverage). Four positions were tried; the reasoning is currently
+  preserved only as a comment in <code>tests/e2e/cloud-global.ts</code>.</p>
+</div>
+
+<h3>Decided: identity by construction, not by stamp</h3>
+<p>The fixture files live outside <code>outputDir</code> so Playwright’s wipe cannot take them — which
+is what made a stale baseline reachable. Rejected: adding a run-id and checking it. Chosen: delete
+both files at the start of every run, so a fixture can only exist if <em>this</em> run wrote it.
+There is no id to check because there is nothing stale to check against.</p>
+
+<div class="call defect">
+  <span class="tag">Open question — the reviewer argued back, and the argument is good</span>
+  <p>This decision is <strong>only true on the CLI</strong>. In UI and watch mode
+  <code>globalSetup</code> runs once per session, so nothing is deleted between runs and the suite can
+  pass against a previous session’s owner. The branch answered by narrowing the claim and declaring UI
+  mode unsupported.</p>
+  <p>The counter-argument, filed as <b>backlog #45(a)</b>: <em>detection is the deliverable</em>. A
+  stamp is three lines, redundant on the CLI and the only signal on the path where deletion never
+  happens — and “detect but not prevent” is the standing of every other guard in this suite,
+  including the money guard itself. <b>This one is genuinely undecided.</b></p>
+</div>
+
+<h3>Decided: derive the fixture’s titles, do not type them</h3>
+<p>Correcting <code>['2. Encoder']</code> to <code>['Encoder']</code> fixed the instance and left the
+class: two literals in one file that must agree under a rule defined in a third, checked by nothing.
+The seed now runs the markdown through the real parser.</p>
+
+<figure class="code">
+  <figcaption><span class="st after">after</span> tests/e2e/cloud.setup.ts — the class, closed</figcaption>
+<pre><code><span class="ln good">      <span class="kw">sourceSections</span>: <span class="call2">parseSummaryMarkdown</span>(summaryMd).sections.<span class="call2">map</span>((s) =&gt; s.title),</span>
+</code></pre>
+</figure>
+
+<p>The trade, stated because it is real: the fixture can no longer catch a change in the parser. That
+is correct here — the fixture’s job is to <em>be fresh</em>, and the parser’s own contract is pinned by
+the unit suite. A tautological <em>assertion</em> is a defect; a tautological <em>fixture</em> is a
+fixture that cannot be wrong.</p>
+
+<p>This follows the project’s own recorded rule: <em>sort a check’s config by what happens when it goes
+stale — hardcode what announces its own wrongness, derive the rest.</em> A stale
+<code>sourceSections</code> fails <em>expensively and mutely</em>: the rung says “text not visible”,
+the guard says “the ledger moved”, and neither says “the seed”.</p>
+
+<h3>Decided: <code>at_capacity</code> is the brake, not an obstacle</h3>
+<p>Briefly, a fix pinned <code>guardrail_config</code> to guarantee headroom. Reverted. When the cap is
+tight the serve returns 503 and the rung fails <em>red and free</em>; with headroom restored the same
+drift reaches the reserve and calls Gemini. The pin converted a free failure into a paid one, and
+removed the last fail-closed brake between a fixture regression and a live model call.</p>
+
+<h3>Decided: state the guard’s gaps as a list, not as “always”</h3>
+<p>Four rounds were spent narrowing one sentence. The guard now enumerates what it cannot see: SIGKILL,
+a global timeout (the teardown inherits the already-expired deadline), a webServer that never starts,
+a <code>globalTeardown</code> file, in-flight requests, and UI mode. The general lesson is in the
+distinction it draws: <em>a non-zero exit is not the same as a guard that fired.</em></p>
+
+<h2 id="map">5 · Code map</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>File</th><th>Why it changed</th></tr></thead>
+<tbody>
+<tr><td><code>tests/e2e/cloud-global.ts</code> <span class="chip s">new, 164 lines</span></td>
+    <td>The whole mechanism. Asserts a loopback Supabase URL, deletes both fixture files, reads the
+        baseline, returns the teardown closure. The bulk is the comment enumerating what it cannot see.</td></tr>
+<tr><td><code>tests/e2e/cloud-fixture.ts</code></td>
+    <td><code>readLedger</code> rewritten: errors throw, and the pair is read until two consecutive
+        passes agree. <code>ledgerBaseline</code> removed from the fixture type — the baseline is a
+        closure variable now, so no stale copy can exist on disk.</td></tr>
+<tr><td><code>tests/e2e/cloud.setup.ts</code></td>
+    <td>The Blocking: <code>sourceSections</code> derived through <code>parseSummaryMarkdown</code>.
+        Both playlist-title updates error-checked. The guardrail pin added and then removed, with the
+        reasoning kept as a warning.</td></tr>
+<tr><td><code>tests/e2e/cloud-journey.spec.ts</code></td>
+    <td>Rung 4 un-skipped and given an <code>x-magazine-stale</code> assertion so it proves
+        <em>which</em> path served it. The <code>afterAll</code> guard deleted. Headers corrected:
+        the witness is narrower than “no money path was reached”, and the main pane is never mounted.</td></tr>
+<tr><td><code>playwright.cloud.config.ts</code></td>
+    <td>Wires <code>globalSetup</code>; its comment reduced to a pointer after the two files drifted
+        into contradicting each other.</td></tr>
+<tr><td><code>docs/reviews/*.md</code> <span class="chip s">907 lines</span></td>
+    <td>Six review documents — the audit trail the process requires.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">6 · Assumptions and limits</h2>
+
+<h4>Verified by execution</h4>
+<ul>
+  <li>The guard fires when the setup project spends and then fails —
+      <code>1 failed / 7 did not run</code>, <code>ledger_audit 306 → 307</code>, exit 1.</li>
+  <li>The guard fires on a <em>real</em> Gemini call — forced a stale envelope,
+      <code>ledger_audit 307 → 308</code>, <code>spend_ledger 642 → 648</code>. This cost <b>6¢</b>.</li>
+  <li>The fail-open read: with the error check, a typo’d table fails; without it, <code>6 passed</code>.</li>
+  <li>The loopback gate fires <em>before</em> deletion — fixture files survived, exit 1.</li>
+  <li>Rung 4 with the corrected seed: 7 passed, ledger unmoved.</li>
+  <li><code>FullConfig.projects</code> reports <code>["setup","cloud"]</code> under
+      <code>--project=cloud --no-deps</code> — a partial-run check built on it could never fire.</li>
+  <li><code>tsc --noEmit</code> clean; 2,703 unit tests / 267 suites green; CI green on master.</li>
+</ul>
+
+<h4>Read, not executed</h4>
+<ul>
+  <li>All UI/watch-mode claims come from reading <code>playwright@1.60.0</code>’s runner source
+      (<code>runGlobalSetup</code>, <code>runTests</code>, <code>doNotRunDepsOutsideProjectFilter</code>).
+      No UI session was actually driven.</li>
+  <li>The teardown-vs-global-timeout claim is read from <code>TaskRunner.runDeferCleanup</code> passing
+      the same <code>deadline</code> to cleanup. Not reproduced.</li>
+</ul>
+
+<h4>Not verified — stated plainly</h4>
+<ul>
+  <li><b>The <code>x-magazine-stale</code> assertion is unmutated.</b> No run has observed that header
+      <em>present</em>, so “always absent” and “never looked” are not yet distinguishable. Reaching the
+      stale branch needs <code>owner_over_budget</code>, not <code>at_capacity</code>; two attempts
+      failed and both are recorded at the assertion.</li>
+  <li><b>A rung-2 flake.</b> It failed once and passed on an identical re-run. Cause unknown, not
+      investigated — in a serial suite where rung 2 gates rungs 3–6. Filed as backlog #45(c).</li>
+  <li><b>Round 5 did not converge.</b> Its two Highs were fixed and verified; its four Mediums and
+      seven Lows were filed as backlog #45 rather than fixed, per the process rule that Mediums are
+      presented for a decision. <b>No round 6 ran before merge.</b> The unreviewed delta is: deleting
+      the pin, deriving the seed, one import swap, and four comment corrections.</li>
+  <li>The main pane (<code>PlaylistLibrary</code>, <code>VideoList</code>, delete, share, dig, PDF) is
+      never mounted by any rung — every rung opens <code>/</code> with no <code>?playlist</code>.
+      Filed as backlog #44.</li>
+</ul>
+
+<div class="call structure">
+  <span class="tag">One thing worth carrying out of this</span>
+  <p>Backlog #43 already contained the correct diagnosis, in writing, the day before the fix — <em>“the
+  resolver’s <code>titles</code> almost certainly drop the numeric prefix”</em>. It sat unread while
+  four review rounds ran over the same files.</p>
+  <p>Filing a good diagnosis is not the same as acting on one, and <strong>a backlog is not a
+  reviewer</strong>.</p>
+</div>
+
+<footer>
+  Generated by <code>/explain-diff</code> for PR&nbsp;#98 (squash <code>8ba3183</code>).
+  Self-contained: no network, no fonts, no images. Questions go to
+  <code>~/explainers/questions.md</code>; the session is watching it while it is alive.
+</footer>
+
+</div>
+
+<div id="tray" role="dialog" aria-label="Ask a question">
+  <div class="inner">
+    <div class="qt" id="qt"></div>
+    <div class="row">
+      <textarea id="qbox" placeholder="Type your question, then press Send (or ⌘/Ctrl+Enter)…" rows="2"></textarea>
+      <button class="act" id="sendbtn" type="button">Send</button>
+      <button class="sec" id="closebtn" type="button">Close</button>
+    </div>
+    <div id="sentnote" aria-live="polite"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

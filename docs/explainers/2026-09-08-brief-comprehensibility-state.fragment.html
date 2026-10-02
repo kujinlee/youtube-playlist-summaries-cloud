@@ -1,0 +1,491 @@
+<title>Where the comprehensibility work stands — 2026-09-08</title>
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+</style>
+<div class="bw">
+
+<header class="mast">
+  <div class="wrap">
+    <span class="eyebrow">Status briefing · built by a forked agent · backlog #89 — all tasks complete</span>
+    <h1>The experiment is over, and it changed how this page gets made</h1>
+    <p class="lede">Three goals are closed. The last one was an experiment about how these pages are
+    built, and this page <b>was</b> the experiment. It has a verdict, you have accepted it, and every
+    finding it turned up is now written down. What remains is one piece of real work whose reason for
+    waiting has expired.</p>
+    <div class="horizon">
+      <span><b>as of</b> master <span class="m">36aa30fe</span></span>
+      <span><b>clock</b> 2026-09-08 11:20 PDT · third revision</span>
+      <span><b>tree</b> clean · 0 open PRs · nothing armed</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="stamp">
+    <span class="k">You are<br>needed</span>
+    <span class="v"><b>Nothing on this page is waiting for a decision you have not already made.</b>
+    The split is adopted, all six findings are filed, and both pull requests are merged. One thing is
+    worth your attention when you have appetite for it: <b>#91 was parked to make room for the work
+    that just finished</b>, so its reason for waiting no longer exists. It is the most serious open
+    item and nothing is stopping it.</span>
+  </div>
+
+  <div class="howto">
+    <span class="eyebrow">How to ask a question inside this page</span>
+    <ol>
+      <li>This page lives at <span class="url">http://127.0.0.1:7391/latest</span> — that URL always
+      points at the newest page.</li>
+      <li>Select any text, or hover a heading, then press <b>ask</b> → type → <b>Send</b>. Then say
+      <b>“read my questions”</b> in the session.</li>
+      <li>If the URL will not load, run <code>python3 scripts/explainer-serve.py</code> — safe to run
+      twice. <b>A reboot stops it</b>, which is the one moment you will need this line.</li>
+      <li>A <code>file://</code> copy still reads fine. It only loses the <b>Send</b> button.</li>
+    </ol>
+  </div>
+
+  <section>
+    <div class="sh"><span class="tick">01 ——</span><h2>The numbers that characterise it</h2></div>
+  </section>
+</div>
+
+<div class="bleed">
+  <div class="rail">
+    <div class="stat good">
+      <span class="fig num">6 / 6</span>
+      <span class="cap">findings from this run, all filed — <span class="m">#102</span> to
+      <span class="m">#106</span>, plus one folded into <span class="m">#90</span> as evidence rather
+      than opened as a seventh row</span>
+    </div>
+    <div class="stat good">
+      <span class="fig num">17 → 0</span>
+      <span class="cap">mutation-manifest debt, burned down over 17 commits.
+      <span class="m">ratchet contract OK</span></span>
+    </div>
+    <div class="stat fact">
+      <span class="fig num">2,819</span>
+      <span class="cap">unit tests across 274 suites — the roadmap’s stated figure and the suite’s
+      actual figure agree, checked just now</span>
+    </div>
+    <div class="stat warn">
+      <span class="fig num">51–64</span>
+      <span class="flag">uncomfortable</span>
+      <span class="cap">open backlog items. <b>Not a range for effect — three parsers of the same 106
+      rows genuinely disagree on 22 of them.</b> This page refuses to print a single number it cannot
+      defend</span>
+    </div>
+    <div class="stat warn">
+      <span class="fig num">1 / 33</span>
+      <span class="flag">uncomfortable</span>
+      <span class="cap">briefing pages carrying the source needed to answer a question tomorrow.
+      <b>This one.</b> The other 32 still cannot be answered once their session ends</span>
+    </div>
+    <div class="stat good">
+      <span class="fig num">786k → 2k</span>
+      <span class="cap">tokens spent inside the fork, against roughly 2,000 <i>words</i> that reached
+      the main session — the saving the split exists for, now measured across three builds</span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="cap-note"><span class="vm ran">ran</span> Every figure above came from a command executed
+  while writing this page, or was measured in a real browser by the verifying session. <b>The open-item
+  range is the honest form of a number this project has been printing as exact.</b> See section 05.</p>
+</div>
+
+<div class="wrap">
+  <section>
+    <div class="sh"><span class="tick">02 ——</span><h2>What the experiment found, and what you decided</h2></div>
+    <p>The design under test splits page-building in two: a forked agent researches and writes, the
+    main session executes the finished page in a browser and only then hands it over. The claim was
+    that the second half cannot be delegated. That claim was <b>argued</b> when this page began. It is
+    <b>measured</b> now, and you have accepted the verdict.</p>
+
+    <div class="stack" style="margin-top:1.15rem">
+      <div class="callout warn">
+        <strong>This page shipped a defect that only execution could reveal.</strong> In light theme
+        its body text rendered at <b>1.03:1</b> contrast — effectively invisible. The palette declared
+        some colour tokens but not the page background, so the theme toggle flipped the text and left
+        the background pinned to the operating system. Nothing in the source looks wrong.
+        <b>A fork that had also verified its own work would have reported success.</b>
+      </div>
+      <div class="callout">
+        <strong>Fixed, then confirmed twice independently.</strong> The page now measures
+        <b>16.47:1</b> body and <b>8.69:1</b> body-copy in light, <b>15.15:1</b> and <b>8.77:1</b> in
+        dark. Computed from the built file by one participant, re-measured in Chrome by the other;
+        they agree exactly.
+      </div>
+      <div class="callout">
+        <strong>A prediction failed, which is also a result.</strong> The builder expected the heading
+        “ask” buttons to collapse into one corner. Executed, all <b>8 sat at 8 distinct positions and
+        all 8 were reachable</b>. Only running the page could show that.
+      </div>
+      <div class="callout">
+        <strong>The concurrency question is answered — narrowly, and the first attempt was thrown
+        away.</strong> The test was whether a page build can run beside a code review. The first run
+        reported a clean result over a window that <i>contained no page write at all</i> — the write
+        landed 87 seconds after the review finished. It was recorded as void rather than counted. The
+        second run placed a write inside the window and came back clean. <b>But the honest claim is
+        small:</b> the detector only watches two directories inside the repository, and a page build
+        writes to neither, so it could never have failed. It says nothing about the other ways two
+        agents collide.
+      </div>
+    </div>
+
+    <p style="margin-top:1.15rem"><span class="vm ran">decided</span> <b>Your verdict, 2026-09-08.</b>
+    Keep the split; treat the trial as passed; verification stays with the main session. That is now
+    the default rather than an option, and it is written into the shared procedure the four
+    page-building skills read, so it governs the next page as well as this one.</p>
+  </section>
+
+  <section>
+    <div class="sh"><span class="tick">03 ——</span><h2>The shape: paying a debt that found ten defects</h2></div>
+    <p>Seventeen guard scripts each owed a <i>mutation manifest</i> — a set of deliberate code
+    breakages, each of which must make the guard fail via the specific test case it names. Without one,
+    a guard can be green because it is correct, or green because it cannot fail. Nothing distinguishes
+    those two from outside.</p>
+  </section>
+</div>
+
+<div class="bleed">
+  <div class="chartbox">
+    <div class="chart" role="img" aria-label="Burn-down of mutation-manifest debt from 17 remaining to 0 across 17 commits on 2026-09-07 and 2026-09-08. Ten of the seventeen commits also reported a defect found inside the guard being covered.">
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:94%" aria-label="after sentinel-meanings: 16 remaining"></div><span class="xl">sentinel-meanings</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:88%"></div><span class="xl">guard-coverage</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:82%"></div><span class="xl">gate-falsifiability</span></div>
+      <div class="col"><span class="dot none"></span><div class="bar" style="height:76%"></div><span class="xl">anchors</span></div>
+      <div class="col"><span class="dot none"></span><div class="bar" style="height:70%"></div><span class="xl">storage-grant-pin</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:64%"></div><span class="xl">function-revokes</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:58%"></div><span class="xl">money-trigger</span></div>
+      <div class="col"><span class="dot none"></span><div class="bar" style="height:52%"></div><span class="xl">producer-enumeration</span></div>
+      <div class="col"><span class="dot none"></span><div class="bar" style="height:47%"></div><span class="xl">backlog-shape</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:41%"></div><span class="xl">catalog-coverage</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:35%"></div><span class="xl">plan-task-order</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:29%"></div><span class="xl">ci-watched</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:23%"></div><span class="xl">roadmap-consistency</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:18%"></div><span class="xl">review-rounds</span></div>
+      <div class="col hit"><span class="dot"></span><div class="bar" style="height:12%"></div><span class="xl">test-counts</span></div>
+      <div class="col"><span class="dot none"></span><div class="bar" style="height:6%"></div><span class="xl">anon-exposure</span></div>
+      <div class="col zero"><span class="dot none"></span><div class="bar" style="height:2%"></div><span class="xl">live-schema → 0</span></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--steel-soft);border:1px solid var(--steel)"></i>debt remaining</span>
+      <span><i style="background:var(--amber)"></i>a defect was found inside this guard</span>
+      <span><i style="background:var(--verdigris-soft);border:1px solid var(--verdigris)"></i>zero reached</span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <p class="cap-note"><span class="vm ran">ran</span> Bar heights are the debt counter each commit
+  message carries in its own subject line (<span class="m">17 → 16</span>, <span class="m">16 → 15</span>, …).
+  <span class="vm inf">read</span> The amber marks are a reading of those subject lines: <b>10 of the
+  17</b> report a defect found inside the guard being covered. Every one of those guards was passing
+  before, and stayed passing after. Mutation found them; reading did not.</p>
+  <div class="callout">
+    <strong>Why this matters more than the zero.</strong> The debt is paid, but the lesson is that a
+    green check is evidence about the checker as much as about the code. Ten of seventeen instruments
+    were partly blind while reporting success. <b>Section 05 has a fresh instance of exactly that</b>,
+    found today.
+  </div>
+</div>
+
+<div class="wrap">
+  <section>
+    <div class="sh"><span class="tick">04 ——</span><h2>What is blocked, and on what</h2></div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Item</th><th>Blocked on</th><th>Since</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>#91</b> — the coverage verdict has no interface <span class="pill crit">critical</span></td>
+            <td><b>You, and the reason has expired.</b> Spec approved, Phase 2 plan never written. You
+            parked it on 2026-09-04 <i>explicitly to make room for the comprehensibility work</i> —
+            which finished today. It is the highest-severity open row and nothing else stands in
+            front of it.</td>
+            <td class="w">2026-09-04</td>
+          </tr>
+          <tr>
+            <td><b>#90</b> — stories and tasks share one table <span class="pill you">you</span></td>
+            <td><b>You, when you want it.</b> Needs a decision before any work; you said “later” and
+            that stands. It now carries the measurement in section 05.</td>
+            <td class="w">2026-09-03</td>
+          </tr>
+          <tr>
+            <td><b>#89</b> — the whole execution-mode goal <span class="pill ok">done</span></td>
+            <td><b>Nothing.</b> All five tasks run, results recorded, decision taken, two pull requests
+            merged.</td>
+            <td class="w">closed today</td>
+          </tr>
+          <tr>
+            <td>Deploying master to production</td>
+            <td><b>Nothing, and there is nothing to ship.</b> Product code has not changed since
+            <b>2026-08-24</b>. The 124 commits since then touch documentation, scripts, tests and
+            infrastructure — <b>zero</b> touch <code>app/</code>, <code>lib/</code>,
+            <code>components/</code> or <code>worker/</code>.</td>
+            <td class="w">n/a</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap-note"><span class="vm inf">not verifiable</span> An earlier version of this page said
+    production was “122 commits behind”. <b>That number cannot be reproduced</b> — there is no release
+    tag and no recorded commit for what is deployed, so drift against the live release is unmeasurable
+    from this repository. That gap is itself a filed item (<span class="m">#53</span>). The row above
+    states only what <i>is</i> checkable: product code has not moved.</p>
+  </section>
+
+  <section>
+    <div class="sh"><span class="tick">05 ——</span><h2>Findings — all six are now filed</h2></div>
+    <p style="margin-bottom:1.15rem">This run turned up six things. <b>Every one is written down</b>,
+    five as new backlog rows and one folded into an existing row as the evidence it had been missing.
+    Nothing here is waiting on you.</p>
+    <div class="stack">
+      <div class="callout warn">
+        <strong>The guard against exactly this page’s defect watches one page in five.</strong>
+        <span class="pill ok">#102</span> There is a check for colour-token coverage, and it reads a
+        single generated page without saying so anywhere. Four other pages — including this kind — sit
+        outside it, because their palette is written fresh at build time and never exists as a file the
+        guard could read. An adversarial review corrected the fix: the enforcement point is the
+        compose step, which already refuses other malformed input.
+      </div>
+      <div class="callout warn">
+        <strong>Reader questions were being answered five times over.</strong>
+        <span class="pill ok">#103</span> Five question-watchers from earlier sessions were still
+        running against the shared question file. Sessions end; the watchers they start do not. Four
+        were stopped by hand. The shared procedure had a sentence asserting the opposite — that
+        watchers die with their session — and <b>that sentence has been corrected</b>, because it was
+        the reason nobody checked.
+      </div>
+      <div class="callout warn">
+        <strong>Rebuilding a page produces a different page each time.</strong>
+        <span class="pill ok">#106</span> Five rebuilds from identical input produced five different
+        files, each larger than the last, because the build takes part of its scaffolding from
+        whichever page is newest — which, after the first rebuild, is itself. Since answering a reader’s
+        question rebuilds the page, a page that gets <i>used</i> grows every time.
+      </div>
+      <div class="callout">
+        <strong>A process gate blocked this page from being built at all.</strong>
+        <span class="pill ok">#104</span> A sentinel armed on 2026-09-05 refused the first attempt to
+        start the fork. The plan it named had shipped and closed three days earlier — by a stronger
+        route than the one the gate demands. The gate can only be cleared by that one route, so a plan
+        that ships any other way leaves its sentinel armed indefinitely.
+      </div>
+      <div class="callout">
+        <strong>The backlog cannot be counted mechanically.</strong>
+        <span class="pill ok">#90</span> Filed as evidence on the existing row rather than as a new
+        one, because that row already said the status column was doing too many jobs — what it lacked
+        was proof. Three parsers over the same 106 rows return <b>64</b>, <b>62</b> and <b>51</b> open
+        and <b>disagree on 22 rows</b>. Status cells run to 3,889 characters and are append-only, so
+        the current verdict sits at the <i>end</i>: one row reads open in its first line and
+        <span class="m">✅ CLOSED</span> in its last. <b>That is why the headline above is a range.</b>
+      </div>
+      <div class="callout">
+        <strong>A shared comment is true one token at a time and misleading as a whole.</strong>
+        <span class="pill ok">#105</span> The styling layer describes itself as supplying “only what
+        nobody supplied”, which invites an author to declare part of a palette. Declaring part is
+        exactly what produced the 1.03:1 defect — and is worse than declaring none.
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="bleed">
+  <div class="dec">
+    <div class="hd">Settled today · and the next one, when you want it</div>
+    <div class="bd">
+      <div>
+        <h3>What you decided</h3>
+        <p class="rec">Keep the split. A fork researches and writes; the main session executes the
+        finished page and only then hands it over. <b>The step that must stay undelegated is
+        verification</b> — that is what earned its keep. Recorded in the design and in the shared
+        procedure, so it governs future pages, not just this one.</p>
+      </div>
+      <div>
+        <h3>What the decision deliberately does not say</h3>
+        <p>Not that every page must be forked — a small page written in one pass is fine. And not that
+        the cost is settled forever: the benefit is context saved, and that number moves as models
+        change. The design carries an explicit expiry note telling a future reader to re-measure before
+        assuming today’s figures still hold, rather than treating this as permanent.</p>
+      </div>
+      <div>
+        <h3>The next decision, not urgent</h3>
+        <p><b>#91 — the coverage verdict has no interface.</b> Its spec is approved and its plan was
+        never written. You parked it to make room for the work that just finished, so the reason is
+        spent. It is the item behind the pattern section 03 describes: seven consecutive review rounds
+        each finding a defect inside the previous round’s fix. Nothing forces it today, and it is the
+        obvious next thing.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section class="foot">
+    <div class="sh"><span class="tick">06 ——</span><h2>Ground truth</h2></div>
+    <div class="grid2">
+      <div class="kv">
+        <div><span>branch</span><span>master</span></div>
+        <div><span>head</span><span>36aa30fe</span></div>
+        <div><span>working tree</span><span>clean</span></div>
+        <div><span>open PRs</span><span>0</span></div>
+        <div><span>armed plans</span><span>0</span></div>
+        <div><span>commits 09-07 / 09-08</span><span>21 / 12</span></div>
+      </div>
+      <div class="kv">
+        <div><span>guards / manifests</span><span>28 / 31</span></div>
+        <div><span>ratchet contract</span><span>OK</span></div>
+        <div><span>unit tests</span><span>2,819</span></div>
+        <div><span>test suites</span><span>274</span></div>
+        <div><span>review documents</span><span>886</span></div>
+        <div><span>anchors registered</span><span>11</span></div>
+      </div>
+      <div class="kv">
+        <div><span>backlog rows</span><span>106</span></div>
+        <div><span>open (3 parsers)</span><span>51–64</span></div>
+        <div><span>parsers disagree on</span><span>22 rows</span></div>
+        <div><span>product code changed</span><span>2026-08-24</span></div>
+        <div><span>commits since, product</span><span>0 of 124</span></div>
+        <div><span>prod schema</span><span>0027</span></div>
+      </div>
+      <div class="kv">
+        <div><span>explainer files</span><span>49</span></div>
+        <div><span>pages with a source</span><span>3 of 49</span></div>
+        <div><span>briefings with one</span><span>1 of 33</span></div>
+        <div><span>worst contrast, light</span><span>8.69:1</span></div>
+        <div><span>worst contrast, dark</span><span>8.77:1</span></div>
+        <div><span>findings unfiled</span><span>0</span></div>
+      </div>
+    </div>
+
+    <p class="cap-note" style="margin-top:1.6rem !important"><span class="vm ran">now sourced</span>
+    <b>One thing this page used to admit it could not check, and no longer needs to.</b> Whether
+    migration <span class="m">0027</span> is applied to production: it is, and the record was in the
+    repository all along — applied 2026-08-27 at 14:01 UTC, verified at the time by executing the
+    schema check against production across all 161 objects. The earlier version of this page listed it
+    as unverifiable, which was wrong; it was simply unlooked-for.</p>
+
+    <p class="cap-note"><span class="vm inf">not verified</span> <b>What remains genuinely
+    unchecked.</b> Drift between master and the running release, because nothing records which commit
+    is deployed (filed as <span class="m">#53</span>). And the ask-button geometry on <i>this</i>
+    revision — it was verified on the previous build, but the browser tab was not being rendered when
+    this one was checked, and a hidden tab has no geometry to measure. It is recorded as not run
+    rather than assumed to have passed.</p>
+
+    <p class="cap-note"><span class="vm ran">ran</span> <b>Method.</b> Every number here came from a
+    command run while composing this page: <code>git</code> for history and drift, <code>gh</code> for
+    pull-request state, the guard scripts executed directly for their exit codes, and three
+    independently written parsers for the backlog count. Nothing was taken from a summary or from
+    recall.</p>
+  </section>
+</div>
+
+</div>

@@ -1,0 +1,1300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #152 — the gate that stopped remembering</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}
+#tray #qbox::placeholder{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}
+#tray #qbox:focus{outline:2px solid var(--structural);outline-offset:1px}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}
+/* ---- Ask tray, extracted verbatim ---- */
+/* ask tray */
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<h1>The gate that stopped remembering</h1>
+<p class="sub">PR #152 replaces a hand-written inventory of 29 schema objects with 161 derived by
+executing the schema and reading Postgres&rsquo; own catalog.</p>
+
+<div class="hdr">
+  <dl>
+    <dt>Change:</dt><dd>feat(M4): the live gate checks all 161 objects, from a derived manifest (#152)</dd>
+    <dt>Base..Head:</dt><dd>1706930..903004d (squash-merged to master)</dd>
+    <dt>Built:</dt><dd>2026-08-25T23:40Z</dd>
+    <dt>Inspected:</dt><dd>19 files read, of which <b>13 were not in the diff</b></dd>
+    <dt>Not verified:</dt><dd>that <code>supabase db push --linked</code> is atomic; that the manifest
+      generated from this repo&rsquo;s baseline equals what production would produce; anything about
+      a real production database (none was touched)</dd>
+  </dl>
+</div>
+
+<div class="instr">
+  <b>This page is served, and it can talk back.</b> The stable URL
+  <code>http://127.0.0.1:7391/latest</code> always points at the newest explainer.
+  <ol>
+    <li><b>To ask a question:</b> select any text, or hover a heading, and press <b>ask</b> → type →
+      <b>Send</b>. Then say <em>&ldquo;read my questions&rdquo;</em> in the session.</li>
+    <li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code>. Safe to
+      run twice. <b>A reboot stops it</b> — that is the one moment you will need this line.</li>
+    <li>A <code>file://</code> copy still reads perfectly; it only loses the <b>Send</b> button.</li>
+  </ol>
+</div>
+
+<div class="strip">
+  <div class="stat d"><b>29</b><span>objects the old gate named</span></div>
+  <div class="stat v"><b>161</b><span>objects it names now</span></div>
+  <div class="stat d"><b>18%</b><span>previous coverage</span></div>
+  <div class="stat v"><b>5/5</b><span>mutations caught</span></div>
+  <div class="stat s"><b>521</b><span>lines added (code only)</span></div>
+  <div class="stat k"><b>0</b><span>automated callers, today</span></div>
+</div>
+
+<div class="toc">
+  <ol>
+    <li><a href="#bg">Background — what a schema gate is for</a></li>
+    <li><a href="#int">Intuition — remembering vs. looking</a></li>
+    <li><a href="#bnd">Boundaries touched</a></li>
+    <li><a href="#dec">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#lim">Assumptions and limits</a></li>
+  </ol>
+</div>
+
+<div class="note n-dec" id="qa">
+  <span class="lbl">Answered — asked from the masthead, 16:58</span>
+  <p><b>&ldquo;Explain the overall goal. Is it that after this execution, objects got their concrete
+  stable id?&rdquo;</b></p>
+  <p><b>No — and the question is pointing at a real ambiguity in how this was written.</b> Two
+  different things in this project carry the word <em>stable</em>, and this PR is the smaller one.</p>
+  <div class="scroll" style="margin:.9rem 0">
+  <table>
+  <thead><tr><th style="width:22%"></th><th>The M4 milestone</th><th>This PR (#152)</th></tr></thead>
+  <tbody>
+  <tr><td><b>Goal</b></td>
+      <td><b>Stable blob addressing.</b> A summary&rsquo;s storage address stops moving when its
+          title or serial number changes.</td>
+      <td><b>Make the checker honest.</b> The script that will verify M4 landed should check
+          everything M4 creates, not 18% of it.</td></tr>
+  <tr><td><b>Touches</b></td>
+      <td>the database schema, and eventually production data</td>
+      <td><b>nothing that runs.</b> Three scripts and a text file</td></tr>
+  <tr><td><b>&ldquo;Objects&rdquo;</b></td>
+      <td>artifacts — summaries, digs, PDFs</td>
+      <td><b>schema objects</b> — tables, columns, triggers, indexes, constraints</td></tr>
+  <tr><td><b>Status</b></td>
+      <td>not applied anywhere. <code>0027</code> does not exist yet</td>
+      <td>merged</td></tr>
+  </tbody>
+  </table>
+  </div>
+  <p><b>So nothing received an id here.</b> The 161 entries are not identifiers — they are the
+  <em>names of things Postgres created</em>, written down so a later check can ask &ldquo;are all of
+  these here?&rdquo; The list replaced a shorter list somebody had typed by hand.</p>
+  <p><b>Why it was worth a PR at all:</b> the hand-typed list named 29 of those 161. A database could
+  therefore have its tables but be missing every rule that makes those tables append-only, and the
+  checker would say <em>&ldquo;M4 is PRESENT as expected&rdquo;</em> and exit 0. That is measured, not
+  hypothetical — §2 shows the exact output. This PR closes that, and nothing else.</p>
+  <p style="margin-bottom:0"><b>The stable-id work you are thinking of is still ahead.</b> It arrives
+  when migration <code>0027</code> is created and applied — the step this gate exists to check.</p>
+</div>
+
+<div class="note n-def" id="example">
+  <span class="lbl">Answered — &ldquo;show examples, I am still not understanding the motivation&rdquo;</span>
+  <p>Fair. Here it is as a story about one user&rsquo;s data, <b>run against a real database</b>, not
+  described. Alice pays for one summary. It is stored, and its address contains the generation that
+  produced it:</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-ctx">setup</span> one paid summary, stored</div>
+<pre><code><span class="ln"><span class="num">00000000-0000-0000-0000-0000000000a1</span>/videos/vid_k8s_talk/<span class="str">gen_001</span>/summary.md</span>
+</code></pre>
+</div>
+
+  <p><b>Now two bugs come along.</b> A cleanup job tries to delete her paid row, and something tries
+  to rename the stored file. Note the rename changes <em>only the filename</em>, so every
+  <code>CHECK</code> constraint is still satisfied — the guard trigger is the only thing standing in
+  the way.</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-after">case A</span> the migration applied COMPLETELY — all 161 objects</div>
+<pre><code><span class="ln"><span class="com">-- delete her paid row</span></span>
+<span class="ln hot">ERROR: video_artifacts is append-only: cannot DELETE recorded paid row (slot summary, gen gen_001)</span>
+<span class="ln"><span class="com">-- rename the stored blob</span></span>
+<span class="ln hot">ERROR: video_artifacts: the ADDRESS of a recorded paid row is immutable (slot summary, gen gen_001)</span>
+<span class="ln"></span>
+<span class="ln">Alice still has <span class="num">1</span> row, at …/gen_001/summary.md</span>
+</code></pre>
+</div>
+
+  <p>Both refused. That is the schema doing its job — a paid artifact cannot be deleted, and its
+  address cannot move. <b>Now the same database, except the seven guard triggers never landed.</b>
+  Every table, every column, every function, every index is still present. Only the rules are gone:</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-before">case B</span> the SAME migration, guards missing — same two bugs</div>
+<pre><code><span class="ln"><span class="com">-- rename the stored blob</span></span>
+<span class="ln bad">Alice's summary now points at: …/gen_001/<span class="str">tampered.md</span></span>
+<span class="ln"><span class="com">-- delete her paid row</span></span>
+<span class="ln bad">Alice's rows remaining: <span class="num">0</span>   ← her paid summary is GONE. No error. No warning.</span>
+</code></pre>
+</div>
+
+  <p><b>That is the whole motivation.</b> Case B is not a broken-looking database. It reads and writes
+  perfectly; it has simply lost the rules that make a paid artifact permanent. And until this PR, the
+  gate whose entire job is to answer <em>&ldquo;did the migration land?&rdquo;</em> said this about
+  Case B:</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-ctx">measured</span> both gates, pointed at the Case-B database</div>
+<pre><code><span class="ln bad">OLD gate   checked  36 objects  ->  0 missing  ->  PASS  "M4 is PRESENT as expected"  exit 0</span>
+<span class="ln hot">NEW gate   checks  161 objects  ->  8 missing  ->  FAIL, by name:</span>
+<span class="ln hot">             ✗ trg:video_artifacts.video_artifacts_append_only_trg</span>
+<span class="ln hot">             ✗ trg:video_artifacts.video_artifacts_generation_complete_trg</span>
+<span class="ln hot">             ✗ trg:video_generations.video_generations_freeze_trg</span>
+<span class="ln hot">             ✗ trg:video_generations.forbid_collecting_current_trg</span>
+<span class="ln hot">             ✗ trg:video_artifact_sources.video_artifact_sources_append_only_trg</span>
+<span class="ln hot">             ✗ trg:video_artifact_sources.video_artifact_sources_insert_once_trg</span>
+<span class="ln hot">             ✗ trg:video_artifact_sources.art_summary_has_no_source_trg</span>
+<span class="ln hot">             ✗ con:video_artifact_sources.art_summary_has_no_source_trg</span>
+</code></pre>
+</div>
+
+  <p style="margin-bottom:0"><b>So the PR buys one thing:</b> if the M4 migration ever half-lands on
+  production, somebody finds out from a red gate — instead of finding out from a user whose paid
+  summary quietly disappeared.</p>
+</div>
+
+<h2 id="bg">1. Background — what a schema gate is for</h2>
+
+<h3>The skippable version</h3>
+
+<p>This project is preparing a large database change, called <b>M4</b>. It introduces the
+<b>Workspace</b> — in this codebase&rsquo;s vocabulary, <em>the immutable container a video&rsquo;s
+artifacts are addressed under</em> — so that a blob&rsquo;s address stops moving when a title or a
+serial number changes.</p>
+
+<p>The change is big: five new tables, three views, seventy new columns, fourteen triggers. Most of
+those triggers are not conveniences. They are <b>guards</b>: they make the artifact tables
+append-only, freeze a <b>Generation</b> once its run completes, and forbid overwriting a current
+row. In this system a generation is <em>&ldquo;one production run of a paid artifact, and everything
+that run produced&rdquo;</em> — so &ldquo;append-only&rdquo; is not tidiness, it is the property that
+stops one run&rsquo;s card from describing another run&rsquo;s body.</p>
+
+<p>Before that schema reaches production, somebody has to answer one question:
+<b>did it actually apply?</b> That is what the gate in this PR is for.</p>
+
+<h3>The prerequisites for this change</h3>
+
+<p>An architecture review in August found that five of the project&rsquo;s six schema gates never read
+a live database at all. They rebuild the schema from the <code>.sql</code> spec files inside their
+own rolled-back transaction. That makes them excellent at one question — <em>is the spec internally
+consistent?</em> — and structurally incapable of the other: <em>did the migration land?</em></p>
+
+<div class="note n-str">
+  <span class="lbl">Structural fact</span>
+  <p>The project calls this the <b>SUBJECT axis</b>: built-from-source versus introspected-from-live.
+  A gate can be rigorous, fast and green while pointed at the wrong subject entirely.</p>
+</div>
+
+<p><code>check-live-schema.py</code> was written to close that gap. It opens a connection to the real
+database and asks the catalog what exists. It has two polarities:
+<code>--expect-absent</code> before the migration (and after a rollback), and
+<code>--expect-present</code> after it.</p>
+
+<p>The defect this PR fixes is not that the gate looked in the wrong place. It looked in exactly the
+right place — and then <b>compared what it saw against a list somebody had typed in</b>.</p>
+
+<h2 id="int">2. Intuition — remembering vs. looking</h2>
+
+<p>Imagine taking inventory of a warehouse. You walk in with a clipboard listing five crates, and you
+find those five crates. You write &ldquo;all present&rdquo; and leave. The warehouse also contains a
+hundred and thirty-two other things, and the clipboard has never heard of them. Anything could have
+happened to those.</p>
+
+<p>That was the shape of the old gate. Here is what it knew about, kind by kind. The dark bar is
+what it checked; the pale bar is what it could not see.</p>
+
+<div class="covrow">
+  <div class="lab"><span>tables</span><span>5 of 5</span></div>
+  <div class="cov"><i class="seen" style="width:100%"></i></div>
+</div>
+<div class="covrow">
+  <div class="lab"><span>functions</span><span>13 of 13</span></div>
+  <div class="cov"><i class="seen" style="width:100%"></i></div>
+</div>
+<div class="covrow">
+  <div class="lab"><span>triggers</span><span><b>7 of 14</b></span></div>
+  <div class="cov"><i class="seen" style="width:50%"></i><i class="blind" style="width:50%"></i></div>
+</div>
+<div class="covrow">
+  <div class="lab"><span>columns</span><span>3 of 70</span></div>
+  <div class="cov"><i class="seen" style="width:4.3%"></i><i class="blind" style="width:95.7%"></i></div>
+</div>
+<div class="covrow">
+  <div class="lab"><span>views · indexes · policies · constraints</span><span><b>0 of 58</b></span></div>
+  <div class="cov"><i class="blind" style="width:100%"></i></div>
+</div>
+
+<p>The trigger row is the one that bites, and it bites for a reason that looked like good design at
+the time. The old list held a tuple named <code>M4_LIVE_TRIGGERS</code>, and it deliberately
+contained only the seven triggers that sit on <em>pre-existing</em> tables — <code>profiles</code>,
+<code>playlists</code>, <code>videos</code>, <code>jobs</code>. That was a considered choice: those
+seven survive a <code>drop table</code>, so they are the ones that turn a botched rollback into an
+outage. The other seven sit on M4&rsquo;s own tables and die with them.</p>
+
+<p>Correct reasoning for the <em>absent</em> direction. Silently wrong for the <em>present</em> one.</p>
+
+<div class="note n-def">
+  <span class="lbl">Measured, not argued</span>
+  <p>Take a database with M4 applied. Drop all seven guard triggers — every append-only rule, the
+  generation freeze, the immutability check. Leave every table, column and function untouched. Then
+  ask the old gate:</p>
+</div>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-before">before</span> the 29-object gate, on a database with no guards</div>
+<pre><code><span class="ln">$ python3 scripts/check-live-schema.py --expect-present</span>
+<span class="ln bad">live schema: M4 is PRESENT as expected (5 tables, 3 columns,</span>
+<span class="ln bad">             7 live triggers, 13 functions, 1 type)</span>
+<span class="ln">$ echo $?</span>
+<span class="ln bad">0</span>
+</code></pre>
+</div>
+
+<p>Exit zero. &ldquo;As expected.&rdquo; The tables are all there, so writes succeed — and every write
+the design forbids now succeeds too. This is worse than a missing table, which would fail loudly on
+first use. It is a database that looks correct and has quietly lost its rules.</p>
+
+<h3>The fix, in one sentence</h3>
+
+<p>Stop typing the list. Build the schema for real, ask Postgres what appeared, and keep that.</p>
+
+<div class="flow">
+  <div class="step"><div class="n">1</div><div class="b">
+    <b>Read the baseline.</b> Take the full catalog of the current pre-M4 database — every table,
+    view, column, trigger, function, type, index, policy and constraint.</div></div>
+  <div class="arrow">↓</div>
+  <div class="step"><div class="n">2</div><div class="b">
+    <b>Clone it into a throwaway database</b> and apply the schema that
+    <code>build-m4-schema.py</code> emits. Nothing shared is touched.</div></div>
+  <div class="arrow">↓</div>
+  <div class="step"><div class="n">3</div><div class="b">
+    <b>Read the catalog again</b>, and subtract: <code>after EXCEPT before</code>. What remains is
+    exactly what M4 creates — <b>161 objects</b>.</div></div>
+  <div class="arrow">↓</div>
+  <div class="step"><div class="n">4</div><div class="b">
+    <b>Write it down as data</b>, one <code>kind:name</code> per line, and drop the scratch database.
+    The gate now compares a live catalog against <em>that</em>.</div></div>
+</div>
+
+<p>With the expected set and the live set both plain collections of strings, the whole comparison
+collapses into two lines of set algebra:</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-after">after</span> scripts/check-live-schema.py:82</div>
+<pre><code><span class="ln"><span class="kw">def</span> <span class="call">verdict</span>(live: <span class="typ">set</span>[<span class="typ">str</span>], manifest: <span class="typ">set</span>[<span class="typ">str</span>], mode: <span class="typ">str</span>) -&gt; <span class="typ">bool</span>:</span>
+<span class="ln">    <span class="kw">if</span> live &amp; ADR0011_REMOVED:</span>
+<span class="ln">        <span class="kw">return</span> <span class="kw">False</span></span>
+<span class="ln hot">    <span class="kw">if</span> mode == <span class="str">"absent"</span>:</span>
+<span class="ln hot">        <span class="kw">return</span> <span class="kw">not</span> (live &amp; manifest)</span>
+<span class="ln hot">    <span class="kw">return</span> manifest &lt;= live</span>
+</code></pre>
+</div>
+
+<p><code>manifest &lt;= live</code> is a subset test: every object M4 creates must be present. There is
+no room for a kind to be forgotten, because no kind is enumerated — the manifest is whatever the
+database said, and the gate compares all of it.</p>
+
+<div class="note n-ver">
+  <span class="lbl">Same database, same mutation, after the change</span>
+<div class="blk" style="margin:.7rem 0 0">
+  <div class="cap"><span class="tag t-after">after</span> mutation 4 of scripts/mutate-live-schema-check.sh</div>
+<pre><code><span class="ln">═══ mutation 4 ⭐⭐ r3 B2: DROP EVERY OWN-TABLE GUARD TRIGGER ═══</span>
+<span class="ln">  ✓ M4 applied to the guard scratch db -&gt; --expect-present passes</span>
+<span class="ln hot">  ✓ ALL SEVEN own-table guards dropped -&gt; --expect-present FAILS</span>
+<span class="ln">     tables and columns are all still there; only the guards are gone —</span>
+<span class="ln">     that is precisely the state the 29-object gate blessed with exit 0.</span>
+</code></pre>
+</div>
+</div>
+
+<h2 id="bnd">3. Boundaries touched</h2>
+
+<p><b>Start here — row 3 is the one to read first.</b> It is the only boundary in the change whose two
+sides disagree about something, and that disagreement is the reason the whole approach is safe.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th style="width:15%">Boundary</th><th style="width:20%">What crosses it</th>
+<th style="width:32%">What each side may assume</th><th style="width:33%">When that assumption is violated</th></tr></thead>
+<tbody>
+<tr>
+  <td><b>1.</b> gate ↔ manifest file</td>
+  <td>161 lines of <code>kind:name</code> text</td>
+  <td><b>Gate side:</b> the file exists, is non-empty, and describes the current schema.<br>
+      <b>File side:</b> written only by the generator; never hand-edited.</td>
+  <td><b>Missing or empty → exit 2, &ldquo;treat this as NOT RUN&rdquo;.</b> Explicit, because an empty
+      expected set makes <code>manifest &lt;= live</code> <em>vacuously true</em> — the gate would
+      pass over any database on earth. <br>
+      <b>Stale → the gate silently asserts yesterday&rsquo;s shape.</b> Nothing detects this except
+      <code>gen-m4-manifest.py --check</code>, which is not yet run by anything automatically.</td>
+</tr>
+<tr>
+  <td><b>2.</b> generator ↔ live baseline DB</td>
+  <td>the pre-M4 catalog, as the subtrahend of a diff</td>
+  <td><b>Generator side:</b> the baseline has <em>no</em> M4 objects.<br>
+      <b>DB side:</b> makes no promise at all — it is whatever the developer&rsquo;s stack happens to be.</td>
+  <td>If <code>0027</code> is already applied, <code>after EXCEPT before</code> is empty or partial and
+      the generator writes a manifest asserting almost nothing — <b>reproducing the exact bug it was
+      built to fix</b>. It refuses instead, naming the rollback script to run first.</td>
+</tr>
+<tr style="background:var(--struct-bg)">
+  <td><b>3. ⭐</b> gate ↔ live database</td>
+  <td>catalog rows, over <code>docker exec … psql</code></td>
+  <td><b>Gate side:</b> assumes <em>nothing</em> about the schema. It names no table it expects to
+      query, reads no application row, and requires no ordering.<br>
+      <b>DB side:</b> must merely be reachable and answer nine <code>select</code>s.</td>
+  <td><b>This asymmetry is the point.</b> The old gate embedded beliefs about the schema; a belief
+      that drifts is invisible. This one holds none — the only way it can be wrong is if the
+      <em>manifest</em> is wrong, which is now a single auditable file with a regeneration command.
+      Unreachable database → exit 2, never 0.</td>
+</tr>
+<tr>
+  <td><b>4.</b> generator ↔ <code>build-m4-schema.py</code></td>
+  <td>the post-ADR-0011 SQL text, on stdout</td>
+  <td><b>Generator side:</b> a zero exit means the builder&rsquo;s end-state assertions held.<br>
+      <b>Builder side:</b> owes a schema with corrections removed per ADR-0011.</td>
+  <td>Builder exits non-zero → generator exits 2. The manifest can therefore never be derived from a
+      schema the builder itself rejected. (The builder&rsquo;s own end-state predicate was found blind
+      to two edits one round earlier; that is fixed and its self-test grew 14 → 22.)</td>
+</tr>
+<tr>
+  <td><b>5.</b> gate ↔ its callers</td>
+  <td>an exit code: 0 pass, 1 fail, 2 cannot-run</td>
+  <td><b>Caller side:</b> would like to treat 0 as &ldquo;the schema is right&rdquo;.<br>
+      <b>Gate side:</b> promises only &ldquo;the 161 manifest objects are all present / all absent&rdquo;.</td>
+  <td><b>Today there are no automated callers</b> — see §6. The suite
+      <code>check-schema-gates.sh</code> still chains 1/6…6/6 and does not mention this gate. Wiring
+      it in is a plan step that has not run.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="dec">4. Decisions this change encodes</h2>
+
+<h3>Derive the expected set; never write it down</h3>
+
+<p>The alternative on the table was cheaper: keep the 29-object gate, delete the claim that it was
+sufficient, and separately verify that <code>supabase db push --linked</code> applies a migration in
+one transaction — which would make a partial apply impossible rather than merely detectable.</p>
+
+<p>That was rejected because the atomicity property is <em>currently unverified</em>. Building the
+safety argument on an unverified premise is what the project&rsquo;s own notes call an unfalsifiable
+guard. Deriving the manifest costs one script and rests on nothing.</p>
+
+<div class="note n-dec">
+  <span class="lbl">ADR candidate</span>
+  <p><code class="adr">ADR CANDIDATE:</code> <b>Gate expectations are derived from execution, not
+  transcribed from source.</b> Hard to reverse (every future schema check inherits the convention),
+  surprising without context (a committed 161-line generated file looks like duplication), and the
+  result of a real trade-off (a generated artifact must be kept fresh; a hand list must be kept
+  correct — this trades a <em>staleness</em> problem, which a script can detect, for a
+  <em>completeness</em> problem, which nothing can).</p>
+</div>
+
+<h3>Derive it from the catalog, not from the SQL text</h3>
+
+<p>&ldquo;Derived&rdquo; could have meant parsing the <code>.sql</code> files. That was rejected, and
+the reason is a measurement rather than a preference.</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-ctx">unchanged</span> the counting problem, measured on the real schema</div>
+<pre><code><span class="ln">$ grep -c <span class="str">"^create trigger"</span> &lt;built schema&gt;</span>
+<span class="ln bad">13</span>
+<span class="ln">$ <span class="com"># … but the catalog reports</span></span>
+<span class="ln hot">14</span>
+</code></pre>
+</div>
+
+<p>The missing one is <code>art_summary_has_no_source_trg</code>, declared as
+<code>create <b>constraint</b> trigger</code>. It is a trigger in every sense that matters; it simply
+does not match a pattern written by someone thinking of ordinary triggers. <b>Any inventory built by
+reading the text inherits whatever its author&rsquo;s pattern did not know about.</b> The catalog has
+no such blind spot — it reports what Postgres built, not what a reader expected it to build.</p>
+
+<h3>Fail closed when the baseline is already migrated</h3>
+
+<p>A small decision with a large blast radius. Because the manifest is a <em>difference</em>, running
+the generator against a database that already has M4 would produce a near-empty file — and a
+near-empty manifest is a gate that passes over anything. The generator checks for
+<code>workspaces</code> and refuses.</p>
+
+<div class="note n-str">
+  <span class="lbl">Invariant</span>
+  <p>An expected-set file may be wrong about <em>which</em> objects. It must never be
+  <em>empty</em>, because emptiness converts the gate from &ldquo;checks 161 things&rdquo; to
+  &ldquo;checks nothing&rdquo; without changing its exit code. Both the generator and the loader
+  enforce this independently.</p>
+</div>
+
+<h3>Keep a second, separate list that must never appear</h3>
+
+<p>The manifest describes what M4 <em>should</em> create. It cannot, by construction, say anything
+about objects an earlier decision <em>deleted</em> — ADR-0011 removed corrections from the workspace
+container, and the manifest simply has no line for them. So a small hard-coded set survives, and it
+is checked in <b>both</b> polarities.</p>
+
+<div class="blk">
+  <div class="cap"><span class="tag t-after">after</span> scripts/check-live-schema.py:58 — the one list still written by hand, and why</div>
+<pre><code><span class="ln">ADR0011_REMOVED = {</span>
+<span class="ln hot">    <span class="str">"trg:videos.videos_corrections_sync_ins_trg"</span>,</span>
+<span class="ln hot">    <span class="str">"trg:videos.videos_corrections_sync_upd_trg"</span>,</span>
+<span class="ln">    <span class="str">"fn:sync_corrections_to_workspace_video()"</span>,</span>
+<span class="ln">    <span class="str">"col:workspace_videos.corrections"</span>,</span>
+<span class="ln">    <span class="str">"col:workspace_videos.corrections_hash"</span>,</span>
+<span class="ln">}</span>
+</code></pre>
+</div>
+
+<p>A surviving <code>videos_corrections_sync_*</code> trigger is not cosmetic: it fires on every video
+insert and update, calling a column that no longer exists.</p>
+
+<h2 id="map">5. Code map</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Group</th><th>Files</th><th class="num">Δ</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><b>Shared vocabulary</b></td><td><code>scripts/m4_catalog.py</code></td><td class="num">+100</td>
+  <td>One definition of the catalog query and of what &ldquo;an M4 object&rdquo; means. Both the
+  generator and the gate import it — a second copy would be a second definition of the thing they
+  exist to agree about.</td></tr>
+<tr><td><b>Derivation</b></td><td><code>scripts/gen-m4-manifest.py</code></td><td class="num">+179</td>
+  <td>Clone → apply → <code>after EXCEPT before</code> → write. <code>--check</code> regenerates and
+  fails if the committed file differs, naming what appeared and what vanished.</td></tr>
+<tr><td><b>The expected set</b></td><td><code>docs/…/m4/live-manifest.txt</code></td><td class="num">+175</td>
+  <td>161 data lines plus a header saying how to regenerate it and forbidding hand edits.</td></tr>
+<tr><td><b>The gate</b></td><td><code>scripts/check-live-schema.py</code></td><td class="num">+137/−212</td>
+  <td>Five <code>M4_*</code> tuples deleted; <code>verdict</code>/<code>residue</code>/
+  <code>forbidden</code> reduced to set operations over flat string sets. Self-test 16 → 20.</td></tr>
+<tr><td><b>The falsifier</b></td><td><code>scripts/mutate-live-schema-check.sh</code></td><td class="num">+36</td>
+  <td>Mutation 4: apply M4 to a scratch DB, drop all seven own-table guards, assert
+  <code>--expect-present</code> goes red.</td></tr>
+<tr><td><b>The record</b></td><td><code>docs/…/m4-promote-the-schema-v2.md</code></td><td class="num">+50/−19</td>
+  <td>Task 3&rsquo;s coverage section rewritten from &ldquo;UNRESOLVED&rdquo; to the resolution, with
+  the bound stated.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="lim">6. Assumptions and limits</h2>
+
+<h3>What I ran</h3>
+<ul class="tight">
+  <li><code>check-live-schema.py --self-test</code> → <b>20/20</b>, on master after the merge.</li>
+  <li><code>build-m4-schema.py --self-test</code> → <b>22/22</b>, on master.</li>
+  <li><code>gen-m4-manifest.py --check</code> → manifest current, 161 objects.</li>
+  <li><code>mutate-live-schema-check.sh</code> → <b>5/5</b> mutations caught.</li>
+  <li><code>check-live-schema.py --expect-absent</code> against the real local stack → exit 0,
+    <em>&ldquo;checked all 161 objects&rdquo;</em>.</li>
+</ul>
+
+<h3>Three things this page asserts that are worth doubting</h3>
+
+<div class="note n-def">
+  <span class="lbl">The gate has no automated caller — verified by search, not by reading</span>
+  <p><code>grep -rn "check-live-schema"</code> across the repo returns the plan, the manifest header,
+  the rollback&rsquo;s comments, its own mutation harness, and
+  <code>scripts/run-schema-assertions.sh</code> — which is itself hand-invoked.
+  <b><code>scripts/check-schema-gates.sh</code> does not mention it</b>; that suite still prints
+  <code>1/6</code>…<code>6/6</code>. Nothing in <code>.github/</code>, <code>.claude/hooks/</code> or
+  <code>package.json</code> refers to it. <b>So the strongest schema gate in the repo currently runs
+  only when a human types its name.</b> Wiring it in is Task 3 Step 7 of the plan, which has not been
+  executed.</p>
+</div>
+
+<div class="note n-def">
+  <span class="lbl">This PR left three stale references behind</span>
+  <p>The rewrite deleted every <code>M4_*</code> tuple, but the plan still cites them at
+  <code>:646</code> (<code>M4_LIVE_TRIGGERS</code>) and <code>:77</code>, <code>:706</code>
+  (<code>M4_FUNCTIONS</code>). Harmless to execution, wrong for a reader. It is also the same
+  &ldquo;fixed at one of two sites&rdquo; shape the project has now counted four times in a single
+  day — a symbol was removed without grepping for the things that name it.</p>
+</div>
+
+<div class="note n-str">
+  <span class="lbl">The bound the coverage number does not carry</span>
+  <p>161 of 161 sounds total. It is not a proof that a partial apply <em>cannot happen</em> — only
+  that one would now be <em>detected</em>. The one-transaction property of
+  <code>supabase db push --linked</code> remains <b>NOT VERIFIED</b>, and it is the other half of the
+  option that was rejected. Detection and prevention are different guarantees.</p>
+</div>
+
+<h3>Not verified</h3>
+<ul class="tight">
+  <li><b>That the manifest matches production.</b> It was generated from this repo&rsquo;s local
+    baseline. Production is believed to be at the same migration (<code>0026</code>), but no
+    production database was read for this page.</li>
+  <li><b>Constraint- and index-name determinism.</b> The manifest includes 38 constraints and 12
+    indexes by name. Postgres derives those names from the DDL, so identical DDL should give identical
+    names — <em>argued from how Postgres works, not measured across two machines</em>.</li>
+  <li><b>The generator&rsquo;s behaviour without Docker.</b> The cannot-run paths are written and
+    reachable by inspection; only the reachable-Docker path was executed.</li>
+  <li><b>Anything about ADR-0011&rsquo;s correctness.</b> This change consumes that decision; it does
+    not re-examine it.</li>
+</ul>
+
+</div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body></html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>
+
+</body>
+</html>

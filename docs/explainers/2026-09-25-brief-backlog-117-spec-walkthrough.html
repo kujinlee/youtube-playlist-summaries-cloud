@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backlog #117 — the round record stops being hand-parsed</title>
+
+<style>:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#8a857c; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#8a857c; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#7e7a72; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#7e7a72; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+/* SIZE carries hierarchy. Headings are LIGHTER than body-bold, not heavier. */
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h)}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+/* BOLD IS A LABEL, NOT A SHOUT — weight only, a neutral tone, never a hue */
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+/* TERMINAL TEXTURE — inline code is a raised pill, and it carries the visual variety */
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+:root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+<header class="top">
+  <p class="kicker">Phase 1 spec · awaiting your gate</p>
+  <h1>The round record stops being hand-parsed</h1>
+  <p class="sub">Backlog <strong>#117</strong> · branch <code>backlog-117-parser-substrate</code> · anchor <code>review-decides-itself</code></p>
+  <p class="lede">This page exists so the gate is a conversation rather than a yes/no. <strong>Highlight any passage and press Ask</strong> — the question reaches my session with the section and the text you selected, and I answer here.</p>
+</header>
+
+<div class="box warn">
+  <span class="lbl">Status — read this first</span>
+  <p>Two rounds have run, four halves, and neither converged. Nothing is
+  implemented. I am <em>not</em> asking you to approve this — I am asking you to interrogate it, and
+  a third round is owed regardless of what you decide here.</p>
+  <p class="note">r1 — 4 Blocking, 6 High, 8 Medium, 4 Low. r2 — 4 Blocking, 6 High, 6 Medium, 3 Low,
+  17 of 19 caused by the previous round's own fix. r3 Codex — 2 Blocking, 2 High, and the
+  pre-committed architecture review fired, reported, and narrowed the spec.</p>
+</div>
+
+<h2><span class="n">1</span>What the problem actually is</h2>
+
+<p><code>scripts/check-review-decision.py</code> decides whether another review round is owed, whether
+a branch has converged, and whether an architecture review is armed. It reads that evidence out of a
+YAML block at the top of each round document — using <strong>hand-written regular expressions</strong>.</p>
+
+<p>That parser has seven recorded defects. Five of them share one shape: <strong>something absent was
+read as something fine.</strong> A missing <code>findings:</code> key parsed as a clean round, and a
+clean round is convergence. Two go the other way and refuse valid input.</p>
+
+<div class="box bad">
+  <span class="lbl">The tool filed this against itself, and it is still true today</span>
+<pre><code>$ python3 scripts/check-review-decision.py        # on review-decision-procedure
+ARCHITECTURE_REVIEW — thrashing: 'parse-header' carried fix-induced findings in r6 and r7</code></pre>
+  <p>That verdict has stood since <strong>15 September</strong> and was never actioned. Backlog #117
+  is its record, and #117 does not leave the question open: <em>“the decision is which authoring cost
+  to pay, not whether the parser is wrong.”</em></p>
+</div>
+
+<p>It surfaced because a <em>different</em> spec — a soundness check for the same decision card — ran two
+rounds and produced three Blockings that were <strong>one defect, one layer deeper each time</strong>.
+All three because it was adding another hand-written reader to this same component. That spec is now
+parked behind this one.</p>
+
+<h2><span class="n">2</span>What approving this commits you to</h2>
+
+<div class="two">
+  <div class="card">
+    <p><span class="pill yes">Yes to</span></p>
+    <ul>
+      <li>Round records become <strong>JSON instead of YAML</strong>, permanently. Every future round header changes shape.</li>
+      <li>The old parser is <strong>deleted with no fallback</strong>.</li>
+      <li>The <strong>~31 existing readable documents get rewritten</strong> in the same PR.</li>
+      <li>A branch in flight carrying YAML headers must run the converter before it merges.</li>
+      <li>The <code>--self-test</code> suite is substantially reworked; its case count may move either way.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <p><span class="pill no">Not yes to</span></p>
+    <ul>
+      <li>Any change to <strong>what the decision rules decide</strong>. A verdict that moves is a migration defect.</li>
+      <li>The 42 unreadable documents becoming readable. They do not.</li>
+      <li>Header <em>honesty</em> — <code>fix_induced</code>, <code>component</code> and <code>aim</code> stay judgements. Backlog #186 and #188 remain open.</li>
+      <li><em>(Changed in r2)</em> <code>disposition</code> <strong>is</strong> widened here after all — see below.</li>
+      <li>Giving the script a caller — that is #184, deliberately untouched.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="box acc">
+  <span class="lbl">Why this gate matters more than it looks</span>
+  <p><code>docs/dev-process.md</code>: <em>“the <strong>spec is the human gate</strong>… Once approved
+  the goal is fixed, and plan (Phase 2) and implementation (Phase 3) proceed
+  autonomously.”</em></p>
+  <p>It is not one checkpoint among several — it is the only one. After it I build without asking again.</p>
+</div>
+
+<h2><span class="n">3</span>The decision, and the three options that lost</h2>
+
+<p>#117 enumerated three reshapings; I found a fourth. You picked the first. Here is what each costs,
+measured rather than argued.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Option</th><th>What it does</th><th>Why it lost / won</th></tr>
+<tr>
+  <td><strong>A — fenced <code>json</code></strong><br><span class="pill yes">chosen</span></td>
+  <td>Header becomes a JSON block read by <code>json.loads</code>. Stdlib. Deletes 109 lines.</td>
+  <td><strong>Malformed text cannot be misread as valid</strong> — <code>json.loads</code> raises where a
+  hand-written parser returns a partial result. No dependency surface.</td>
+</tr>
+<tr>
+  <td>B — vendor a YAML subset</td>
+  <td>Write a small, tidy YAML parser and keep authoring identical.</td>
+  <td>Still a hand-written parser with the same failure mode available, so it <strong>resets #117's
+  clock rather than discharging it</strong> — and it is the only option that <em>adds</em> code to a
+  file already carrying five backlog rows.</td>
+</tr>
+<tr>
+  <td>C — adopt <code>pyyaml</code></td>
+  <td>A real, maintained parser. Authoring unchanged. Strictly better than B on correctness.</td>
+  <td>Measured: <strong>there is no <code>requirements.txt</code>, <code>pyproject.toml</code> or
+  <code>setup.py</code> anywhere</strong> — every script is stdlib-only by construction. Adopting it
+  means a dependency mechanism across two CI workflows and every machine. <strong>Bigger than the
+  defect.</strong></td>
+</tr>
+<tr>
+  <td>D — drop the header</td>
+  <td>Pass the counts on the command line instead. Removes the parser entirely.</td>
+  <td>Moves bookkeeping to the caller — and backlog #184 establishes <strong>there is no caller</strong>,
+  so “the caller” is a human retyping counts. That is the failure the header exists to prevent.</td>
+</tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">A correction you should have — I gave you a wrong number</span>
+  <p>When you asked about option A, I said the JSON header was “14 lines today, 13 as JSON —
+  one line shorter.” That was false. My JSON rendered only the fields the parser returns and
+  silently dropped <code>subject</code> and <code>halves</code>.</p>
+  <p>A faithful conversion is longer in 31 of 31 headers, median +1 line. That was
+  the one place I answered #117's actual question — <em>which authoring cost to pay</em> — and I got
+  the <strong>sign</strong> wrong.</p>
+  <p>The case for A now reads: <em>malformed input becomes impossible to misread, at a cost of about a
+  line per document</em> — not <em>free and shorter</em>. B and C do not improve on the correctness
+  argument, which is why I still think A holds. But you should push on that rather than take
+  my word twice.</p>
+</div>
+
+<h2><span class="n">4</span>The mechanism — three layers, and why that number matters</h2>
+
+<p>The first draft said there were two: <code>json.loads</code> handles structure,
+<code>_validate</code> handles values. Both review halves independently found that wrong, as a
+Blocking. The checks that refuse an <em>absent or wrong-typed top-level key</em> are neither
+— they are <em>schema</em>, and all of them live inside the region being deleted.</p>
+
+<div class="box bad">
+  <span class="lbl">The design as first written fired its own falsifier</span>
+<pre><code>decide([{"round": 1, "fixes_nontrivial": false}], "one-round", True)
+  -> ('STOP', 'converged — 1 round(s) with no Blocking/High ...')</code></pre>
+  <p>Well-formed JSON with no <code>findings</code> key reaching <strong>STOP</strong> is the r3
+  Blocking — <em>“a missing key is a silence”</em> — restored verbatim.</p>
+</div>
+
+<div class="scroll">
+<table>
+<tr><th>Layer</th><th>Mechanism</th><th>Status</th></tr>
+<tr><td><strong>1 · syntax</strong></td><td><code>json.loads</code> — malformed text raises</td><td><span class="pill yes">replaces the regexes</span></td></tr>
+<tr><td><strong>2 · schema</strong></td><td>Required top-level keys <code>round</code> (int), <code>fixes_nontrivial</code> (bool), <code>findings</code> (list) — refusing on absence <em>and</em> wrong type</td><td><span class="pill mid">new — must be built</span></td></tr>
+<tr><td><strong>3 · values</strong></td><td><code>_validate</code> — a finding with <code>severity: "Wrong"</code> still raises</td><td><span class="pill yes">kept unchanged</span></td></tr>
+</table>
+</div>
+
+<p class="note">Layer 2 is backlog #185's seam falling out of the redesign: the decision rules stop
+being reachable only through the reader.</p>
+
+<h2><span class="n">5</span>The migration, and the falsifier that took three attempts</h2>
+
+<p>The real hazard is not the substrate — it is that <strong>the converter reads through the broken
+parser</strong>. If that parser misread a document, the conversion preserves the misreading faithfully.
+One last <em>absence reads as a pass</em>, on the way out.</p>
+
+<div class="scroll">
+<table>
+<tr><th>Attempt</th><th>Proposed</th><th>What the review found</th></tr>
+<tr><td>1st (spec)</td><td>Verdict invariance + finding-count parity</td><td><span class="pill no">could not fire</span> Parity is enforced by the parser already — <strong>0 disagreements across 30</strong>. A test that cannot fail, written in the paragraph being careful about that.</td></tr>
+<tr><td>2nd (r1 fold)</td><td>A field-level text diff</td><td><span class="pill no">could not be built</span> Knowing that <code>component: "check-docs, check-backlog"</code> is <em>one</em> field requires a YAML parser — the thing being deleted, reintroduced inside its own falsifier.</td></tr>
+<tr><td>3rd (r2 fold)</td><td>Converter emits per-document side-by-side tables; a human reads them</td><td><span class="pill no">audited itself</span> The <em>source</em> column was produced by the broken reader — so the table <strong>matches on precisely the case it exists to catch.</strong></td></tr>
+<tr><td>4th (current)</td><td>Same tables, but <strong>the left column is the verbatim source text</strong>, raw bytes, no parse. Written to a committed artifact; the PR records who read them.</td><td><span class="pill mid">not yet reviewed</span> A human compares text no machine interpreted against text a machine produced. A comparator cannot, because it would have to decide what a field is.</td></tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">This page flagged that worry — and it was the Blocking</span>
+  <p>The version of this page you may have read an hour ago asked: <em>“if the converter truncates a
+  value, does its own table show the truncation — or the truncated value, self-consistently and
+  wrongly?”</em> <strong>The latter.</strong> The review demonstrated it on the exact shape:</p>
+<pre><code>source:  component: "check-docs, check-backlog"
+table:   component | source: 'check-docs' | json: 'check-docs'  -> MATCH</code></pre>
+  <p>Truncated in both columns, so the check passes. Fixed by one sentence — the left column is raw
+  source text.</p>
+  <p>And that fix is not free, which I would rather you heard from me than found.
+  Raw source text makes it a <em>whole-header</em> read, not the field-level one §5 advertises: the
+  reader does the field alignment themselves — precisely the work the previous fold argued a human
+  should not have to do. I think it is the right trade. It is still a trade.</p>
+</div>
+
+<div class="box bad">
+  <span class="lbl">⛔⛔ It fired — read this before anything else on the page</span>
+  <p>When you left, this box said: <em>“if a fourth falsifier design fails a fourth way, the
+  architecture review is convened unconditionally — no further argument.”</em>
+  Round 3 produced a fourth design, and it failed a fourth way.</p>
+  <p>The left column is now raw source text, which fixes the self-audit — but the right column renders
+  only the fields the converter <em>produced</em>, so a dropped key produces no mismatch row at
+  all. There is nothing to line it up against. The check catches a value that <em>changed</em>
+  and is blind to one that <em>vanished</em> — which is this component's founding defect,
+  <em>absence reads as a pass</em>, arriving inside the check built to detect it.</p>
+  <p><strong>Four designs, four distinct failure modes, one component.</strong> That is no longer a run
+  of mistakes; it is evidence the thing is being approached wrongly. So I have convened the review and
+  deliberately left the falsifier unfixed — patching it a fifth time is exactly what
+  the pre-commitment exists to prevent.</p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">The review reported — and the answer is the wrong problem</span>
+  <p>The falsifier could not be built well because the operation it guarded was never owed.
+  #117's stated work names three reshapings and <em>no corpus</em>. The corpus question is a different
+  row — <strong>#119</strong> — and it was decided on 15 September:</p>
+  <p style="margin-left:14px"><em>“<strong>WORK:</strong> none required if old branches simply drain.”</em><br>
+  <em>“Backfilling was considered and rejected by the user … the reason is filed here
+  so it is not re-proposed as an obvious cleanup.”</em></p>
+  <p>I re-proposed it under a different word, never cited that row, and spent three rounds guarding it.
+  <span class="note">(In fairness to the design: converting existing headers is not literally
+  backfilling — it rewrites claims already made rather than inventing claims never made. That
+  distinction is real. It does not rescue it, because the first sentence disposes of it anyway.)</span></p>
+</div>
+
+<div class="box bad">
+  <span class="lbl">And the record being protected has almost no reader</span>
+  <p><code>rounds_for</code> keys on the <strong>branch name</strong>, so a round document counts only
+  while a branch of exactly its subject name is checked out. Measured:</p>
+<pre><code>parseable coordinator documents : 32
+reachable by rounds_for         :  4
+unreachable                     : 28</code></pre>
+  <p><strong>This branch is the proof.</strong> It is called <code>backlog-117-parser-substrate</code>
+  while its own records are <code>round-record-substrate-*</code> — so the decision card returns
+  zero rounds for the very loop that produced them, and has done the whole time.</p>
+</div>
+
+<div class="card">
+  <p><strong>What survived, and what was cut</strong></p>
+  <table>
+  <tr><th>Survives</th><th>Cut</th></tr>
+  <tr>
+    <td>The substrate decision (fenced <code>json</code>); §1's four layers; the type-trap fixes; the template change.</td>
+    <td>The converter. The human-read artifact. <code>--calibrate</code>. The nine-key carry-through. The in-PR <code>disposition</code> widening. <strong>All four falsifier designs.</strong></td>
+  </tr>
+  </table>
+  <p>⭐ <strong>Replaced by one invariant:</strong> a ~20-line comparator over a committed
+  fixture pair — a source header beside its expected JSON. Prototyped by the review: it
+  catches an omitted key, an altered value <em>and</em> a dropped finding, including the omission class
+  design 4 was blind to.</p>
+  <p>Every one of the four dead designs asserted something about a <em>live corpus</em>. That is why
+  each failed differently, and why a fifth would have failed a fifth way — the rule you had me file an
+  hour ago, arriving through its sixth surface.</p>
+</div>
+
+<h2><span class="n">6</span>What I got wrong, listed rather than buried</h2>
+
+<p>Four rounds of review have faulted my own measurements repeatedly. Two failed the same way — the
+pattern did not match what the claim was about.</p>
+
+<div class="scroll">
+<table>
+<tr><th>I claimed</th><th>Truth</th><th>Cause</th></tr>
+<tr><td>“0 headers use a YAML comment”</td><td><strong>1 does</strong></td><td>regex was <code>^\s*#</code> — line-start only; the real one is inline</td></tr>
+<tr><td>“no reference to <code>halves</code>”</td><td>defines <strong><code>HALVES</code></strong>, uses it twice</td><td>grep was lowercase, case-sensitive</td></tr>
+<tr><td>“121 lines deleted”</td><td><strong>109</strong></td><td>measured a set that included the function the spec keeps</td></tr>
+<tr><td>“30 parseable” beside “33 of 33”</td><td><strong>73 files, 34 with a block, 31 parseable</strong></td><td>two different populations in adjacent sentences</td></tr>
+<tr><td>“one line shorter”</td><td><strong>longer in 31 of 31</strong></td><td>compared full YAML against JSON of a partial projection</td></tr>
+</table>
+</div>
+
+<div class="box acc">
+  <span class="lbl">And a pattern worth knowing about — it has now failed twice</span>
+  <p>Each fold repaired the headline and left <strong>downstream copies</strong> still asserting the
+  premise the correction had removed. I swept eight such sites, then the sweep missed a ninth — and
+  then round 2 found three more, including a denominator error <em>inside the table
+  I had written to fix denominator confusion</em>.</p>
+  <p>⭐ <strong>The lesson is not “sweep harder.”</strong> Three of those four were <em>derived</em>
+  values — a denominator, a pinned count, a line number — and each moves when its source moves.
+  A document cannot hold a derived value honestly; only the rule that produces it.
+  That is the same finding this branch has now made about corpus counts, line counts and the test
+  total: one defect, four surfaces.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">7</span>Three things I would like you to weigh</h2>
+
+<div class="q">
+  <h4>1 · Is “no fallback” right, or is it a slogan?</h4>
+  <p>Keeping a YAML reader as a fallback means the parser is not deleted, the seven defect shapes stay
+  reachable, and #117 is <em>postponed behind a flag</em> rather than discharged. That is my argument.
+  The counter is that it makes the cutover riskier than it needs to be — a branch in flight goes from
+  decidable to refusing until it converts. <strong>I chose strictness; you may reasonably not.</strong></p>
+</div>
+
+<div class="q">
+  <h4>2 · Is the human-read falsifier enough?</h4>
+  <p>~31 documents is a bounded read. But it is <em>me</em> reading tables generated by the component
+  under suspicion. If you want an independent check here, say so — it changes the sizing.</p>
+</div>
+
+<div class="q">
+  <h4>3 · Is this even the right next thing?</h4>
+  <p>Backlog <strong>#186</strong> (<code>fix_induced</code> defined twice, disagreeing at round 1) is
+  small and independent of this, and could go first. The argument for #117 first is that #185, #188 and
+  the parked spec all wait on it — an argument about unblocking, not about value.</p>
+  <p class="note"><strong>#187 stopped being optional.</strong> r2 found that deferring it, combined
+  with the new CI refusal, would make 5 committed documents permanently red —
+  unconvertible <em>and</em> refused, with no action available to anyone. Two folds of one commit, each
+  pricing its cost against a world the other removes. So <code>disposition</code> widens in this PR and
+  #187 closes as a side effect.</p>
+</div>
+
+<div class="q">
+  <h4>4 · One commit contradicted itself, and you should know the shape</h4>
+  <p>§2 authorised the converter to parse <strong>because it is deleted</strong>. The cutover section —
+  added in the <em>same commit</em> — made it survive, so branches in flight could run
+  it. Both cannot be true, and the surviving one is the fact the whole design rests on.</p>
+  <p>Resolved by correcting the <em>warrant</em> rather than the fact: the converter survives, is never
+  in the decision path, and therefore owes the full ratchet — self-test, declared count, mutation
+  entries. A surviving script with a parser in it is exactly what this project's guard population is
+  for, and the first draft would have smuggled one past by calling it temporary.</p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">What happens after you decide</span>
+  <p><strong>Approve</strong> → I write the implementation plan, it gets its own dual review to
+  convergence, then it gets built — autonomously, per the process. Push back → I fold
+  your objection like a review finding and we go again. Redirect → #117 parks and I
+  take #186 or #187 instead.</p>
+  <p class="note">Either way, highlight anything on this page and press Ask. That is what it is for.</p>
+</div>
+
+</div>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-09-25 19:27 · 01b0b1dc</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

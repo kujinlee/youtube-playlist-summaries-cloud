@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #96 — a test that lied about its own cost</title>
+<style>
+:root{
+  --bg:#fcfbf9; --panel:#fff; --ink:#191817; --ink2:#4a4640; --ink3:#7d766c;
+  --rule:#e6e1d8; --rule2:#d3ccbf;
+  --amber:#b26a12; --amber-bg:#fdf3e3; --amber-br:#f0d5a8;
+  --teal:#0f6f5c;  --teal-bg:#e8f6f2;  --teal-br:#a9ddd0;
+  --crim:#b02a37;  --crim-bg:#fdeef0;  --crim-br:#f3c2c8;
+  --indigo:#3f4fa8;--indigo-bg:#eef0fc;--indigo-br:#c3caf2;
+  --violet:#7a3f9d;--violet-bg:#f7eefc;--violet-br:#e0c4f0;
+  --code-bg:#f6f3ed; --code-br:#e6e1d8;
+  --c-key:#a03c8a; --c-str:#0f6f5c; --c-com:#96907f; --c-fn:#3f4fa8; --c-num:#b26a12; --c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07),0 6px 18px rgba(60,50,30,.05);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#131318; --panel:#1b1b22; --ink:#eceaf2; --ink2:#b9b4c2; --ink3:#8a8496;
+  --rule:#2e2d38; --rule2:#413f4e;
+  --amber:#e8a860; --amber-bg:#2a2015; --amber-br:#4d3a1e;
+  --teal:#5cc7ab;  --teal-bg:#12241f;  --teal-br:#1e463b;
+  --crim:#f08c96;  --crim-bg:#2a1519;  --crim-br:#4e2229;
+  --indigo:#98a5f5;--indigo-bg:#191c33;--indigo-br:#2e3560;
+  --violet:#c99bea;--violet-bg:#241734;--violet-br:#412a5c;
+  --code-bg:#1e1e26; --code-br:#2e2d38;
+  --c-key:#e08ccd; --c-str:#7fd6b8; --c-com:#726c80; --c-fn:#98a5f5; --c-num:#e8a860; --c-typ:#6cc4e0;
+  --shadow:none;
+}}
+:root[data-theme="dark"]{
+  --bg:#131318; --panel:#1b1b22; --ink:#eceaf2; --ink2:#b9b4c2; --ink3:#8a8496;
+  --rule:#2e2d38; --rule2:#413f4e;
+  --amber:#e8a860; --amber-bg:#2a2015; --amber-br:#4d3a1e;
+  --teal:#5cc7ab;  --teal-bg:#12241f;  --teal-br:#1e463b;
+  --crim:#f08c96;  --crim-bg:#2a1519;  --crim-br:#4e2229;
+  --indigo:#98a5f5;--indigo-bg:#191c33;--indigo-br:#2e3560;
+  --violet:#c99bea;--violet-bg:#241734;--violet-br:#412a5c;
+  --code-bg:#1e1e26; --code-br:#2e2d38;
+  --c-key:#e08ccd; --c-str:#7fd6b8; --c-com:#726c80; --c-fn:#98a5f5; --c-num:#e8a860; --c-typ:#6cc4e0;
+  --shadow:none;
+}
+:root[data-theme="light"]{
+  --bg:#fcfbf9; --panel:#fff; --ink:#191817; --ink2:#4a4640; --ink3:#7d766c;
+  --rule:#e6e1d8; --rule2:#d3ccbf;
+  --amber:#b26a12; --amber-bg:#fdf3e3; --amber-br:#f0d5a8;
+  --teal:#0f6f5c;  --teal-bg:#e8f6f2;  --teal-br:#a9ddd0;
+  --crim:#b02a37;  --crim-bg:#fdeef0;  --crim-br:#f3c2c8;
+  --indigo:#3f4fa8;--indigo-bg:#eef0fc;--indigo-br:#c3caf2;
+  --violet:#7a3f9d;--violet-bg:#f7eefc;--violet-br:#e0c4f0;
+  --code-bg:#f6f3ed; --code-br:#e6e1d8;
+  --c-key:#a03c8a; --c-str:#0f6f5c; --c-com:#96907f; --c-fn:#3f4fa8; --c-num:#b26a12; --c-typ:#0d6b8a;
+  --shadow:0 1px 3px rgba(60,50,30,.07),0 6px 18px rgba(60,50,30,.05);
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:400 17.5px/1.68 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:50rem;margin:0 auto;padding:2rem 1.25rem 6rem}
+.mast{border:1px solid var(--rule);border-radius:14px;background:var(--panel);box-shadow:var(--shadow);
+  padding:1.6rem 1.5rem;margin-bottom:1.6rem;background-image:linear-gradient(180deg,var(--crim-bg),transparent 42%)}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--crim);font-weight:700;margin:0 0 .55rem}
+h1{font-size:2.3rem;line-height:1.12;margin:0 0 .5rem;letter-spacing:-.022em;font-weight:600}
+.dek{color:var(--ink2);font-size:1.06rem;margin:0;line-height:1.55}
+.meta{margin-top:1.2rem;padding-top:1rem;border-top:1px dashed var(--rule2);display:grid;
+  grid-template-columns:max-content 1fr;gap:.32rem 1.1rem;font-family:ui-monospace,Menlo,monospace;
+  font-size:.745rem;line-height:1.5}
+.meta dt{color:var(--ink3);white-space:nowrap} .meta dd{margin:0;color:var(--ink2)} .meta dd b{color:var(--ink)}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.2rem,1fr));gap:.6rem;margin:0 0 1.6rem}
+.stat{border:1px solid var(--rule);border-radius:10px;background:var(--panel);padding:.7rem .8rem;box-shadow:var(--shadow)}
+.stat .v{font-family:ui-monospace,monospace;font-size:1.32rem;font-weight:700;line-height:1.1;letter-spacing:-.02em}
+.stat .l{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.075em;color:var(--ink3);margin-top:.24rem;line-height:1.35}
+.stat.a .v{color:var(--amber)} .stat.t .v{color:var(--teal)} .stat.c .v{color:var(--crim)}
+.stat.i .v{color:var(--indigo)} .stat.v2 .v{color:var(--violet)}
+.howto{border:1px solid var(--violet-br);background:var(--violet-bg);border-radius:11px;padding:.8rem 1rem;
+  margin:0 0 2rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.82rem;line-height:1.55;color:var(--ink2)}
+.howto b{color:var(--violet)}
+.howto .u{display:block;font-family:ui-monospace,monospace;font-size:.9rem;font-weight:700;color:var(--violet);
+  background:var(--panel);border:1px solid var(--violet-br);border-radius:7px;padding:.45rem .65rem;
+  margin:.5rem 0;word-break:break-all}
+.howto code{background:var(--panel);border:1px solid var(--violet-br);padding:.06em .34em;border-radius:4px;font-size:.88em}
+.howto ol{margin:.4rem 0 0;padding-left:1.2rem} .howto li{margin:.22rem 0}
+.howto .mode{font-family:ui-monospace,monospace;font-size:.68rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;padding:.1rem .4rem;border-radius:5px;border:1px solid}
+.howto .mode.live{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.howto .mode.flat{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+nav.toc{border:1px solid var(--rule);border-left:4px solid var(--indigo);border-radius:0 12px 12px 0;
+  background:var(--panel);padding:1rem 1.2rem;margin:0 0 2.6rem;box-shadow:var(--shadow)}
+nav.toc .h{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--indigo);font-weight:700;margin-bottom:.55rem}
+nav.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:t;font-size:.94rem}
+nav.toc li{counter-increment:t;margin:.32rem 0;padding-left:2rem;position:relative}
+nav.toc li::before{content:counter(t);position:absolute;left:0;top:.12rem;font-family:ui-monospace,monospace;
+  font-size:.7rem;font-weight:700;color:var(--indigo);background:var(--indigo-bg);border:1px solid var(--indigo-br);
+  border-radius:5px;width:1.35rem;height:1.35rem;display:flex;align-items:center;justify-content:center}
+nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover{border-bottom-color:var(--indigo)}
+h2{font-size:1.5rem;line-height:1.25;margin:3.4rem 0 1rem;letter-spacing:-.017em;font-weight:600;
+  padding-bottom:.45rem;border-bottom:2px solid var(--rule)}
+h2 .num{display:inline-block;font-family:ui-monospace,monospace;font-size:.82rem;font-weight:700;color:var(--crim);
+  background:var(--crim-bg);border:1px solid var(--crim-br);border-radius:6px;padding:.1rem .45rem;
+  margin-right:.55rem;vertical-align:.16em}
+h3{font-size:1.14rem;margin:2.1rem 0 .6rem;font-weight:600;letter-spacing:-.008em}
+h4{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.79rem;text-transform:uppercase;letter-spacing:.075em;
+  color:var(--ink3);margin:1.6rem 0 .5rem;font-weight:700}
+p{margin:0 0 1.05rem} a{color:var(--amber)} ul,ol{margin:0 0 1.1rem;padding-left:1.35rem} li{margin:.34rem 0}
+code,kbd{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+p code,li code,td code,dd code{font-size:.845em;background:var(--code-bg);border:1px solid var(--code-br);
+  padding:.06em .34em;border-radius:4px;color:var(--ink)}
+.codewrap{margin:0 0 1.35rem;border:1px solid var(--code-br);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.codehead{font-family:ui-monospace,monospace;font-size:.685rem;color:var(--ink3);background:var(--code-bg);
+  padding:.42rem .85rem;border-bottom:1px solid var(--code-br);display:flex;justify-content:space-between;
+  gap:1rem;align-items:center}
+.codehead .tag{font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:.63rem;white-space:nowrap}
+.tag.new{color:var(--teal)} .tag.del{color:var(--crim)} .tag.un{color:var(--ink3)} .tag.aft{color:var(--amber)}
+pre{background:var(--code-bg);padding:.9rem 1rem;overflow-x:auto;white-space:pre;margin:0;-webkit-overflow-scrolling:touch}
+pre code{white-space:pre;font-size:.808rem;line-height:1.62;display:block;background:none;border:0;padding:0}
+.k{color:var(--c-key);font-weight:600} .s{color:var(--c-str)} .c{color:var(--c-com);font-style:italic}
+.f{color:var(--c-fn)} .n{color:var(--c-num)} .t{color:var(--c-typ)} .m{color:var(--ink3)}
+.hi{background:var(--amber-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--amber)}
+.hid{background:var(--crim-bg);display:inline-block;width:100%;box-shadow:inset 3px 0 0 var(--crim)}
+.call{border:1px solid var(--rule);border-left:4px solid var(--amber);border-radius:0 10px 10px 0;
+  background:var(--amber-bg);padding:.85rem 1.05rem;margin:0 0 1.35rem}
+.call .lab{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.665rem;text-transform:uppercase;
+  letter-spacing:.09em;font-weight:700;color:var(--amber);display:block;margin-bottom:.35rem}
+.call p:last-child{margin-bottom:0}
+.call.bad{border-left-color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)} .call.bad .lab{color:var(--crim)}
+.call.good{border-left-color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)} .call.good .lab{color:var(--teal)}
+.call.info{border-left-color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)} .call.info .lab{color:var(--indigo)}
+.chip{display:inline-block;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.635rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;padding:.12rem .42rem;border-radius:5px;border:1px solid;
+  vertical-align:.09em;white-space:nowrap}
+.chip.hi2{color:var(--crim);background:var(--crim-bg);border-color:var(--crim-br)}
+.chip.md{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+.chip.lo{color:var(--indigo);background:var(--indigo-bg);border-color:var(--indigo-br)}
+.chip.ok{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.chip.adr{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-br);font-family:ui-monospace,monospace}
+figure{margin:0 0 1.7rem}
+figcaption{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.775rem;color:var(--ink3);margin-top:.6rem;
+  line-height:1.5;padding-left:.7rem;border-left:2px solid var(--rule2)}
+/* journey ladder */
+.ladder{display:flex;flex-direction:column;gap:.42rem;margin:0 0 1.5rem}
+.rung{display:grid;grid-template-columns:2.5rem 1fr;gap:.7rem;align-items:stretch}
+.rung .no{border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,monospace;
+  font-weight:700;font-size:.85rem;border:1px solid}
+.rung.pass .no{color:var(--teal);background:var(--teal-bg);border-color:var(--teal-br)}
+.rung.skip .no{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-br)}
+.rung.star .no{color:#fff;background:var(--teal);border-color:var(--teal)}
+.rung .body{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:.55rem .8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;font-size:.82rem;line-height:1.5}
+.rung.star .body{border-color:var(--teal-br);background:var(--teal-bg)}
+.rung.skip .body{border-color:var(--amber-br);background:var(--amber-bg)}
+.rung .body em{color:var(--ink3);font-style:normal;font-size:.76rem;display:block;margin-top:.15rem}
+/* lesson cards */
+.lessons{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.6rem;margin:0 0 1.5rem}
+.lesson{border:1px solid var(--rule);border-top:3px solid var(--crim);border-radius:9px;background:var(--panel);
+  padding:.65rem .8rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.79rem;line-height:1.5;box-shadow:var(--shadow)}
+.lesson b{display:block;font-family:ui-monospace,monospace;font-size:.72rem;color:var(--crim);margin-bottom:.3rem;
+  text-transform:uppercase;letter-spacing:.05em}
+.tw{overflow-x:auto;margin:0 0 1.4rem;border:1px solid var(--rule);border-radius:10px;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.815rem;
+  line-height:1.5;min-width:36rem;background:var(--panel)}
+th,td{padding:.6rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+th{background:var(--code-bg);font-size:.665rem;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);
+  font-weight:700;border-bottom:2px solid var(--rule2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--code-bg) 45%,transparent)}
+td .side{display:block;margin-bottom:.32rem} td .side:last-child{margin-bottom:0} td .side b{color:var(--indigo)}
+.consq{color:var(--crim)}
+.foot{margin-top:4.5rem;padding-top:1.1rem;border-top:2px solid var(--rule);font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.775rem;color:var(--ink3);line-height:1.7}
+.askbtn{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.66rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br);
+  border-radius:5px;padding:.1rem .4rem;cursor:pointer;vertical-align:.2em;margin-left:.5rem;opacity:0;transition:opacity .12s}
+h2:hover .askbtn,h3:hover .askbtn,h2 .askbtn:focus,h3 .askbtn:focus{opacity:1}
+@media (hover:none){.askbtn{opacity:.75}}
+#selask{position:absolute;z-index:60;display:none;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.72rem;
+  font-weight:700;color:#fff;background:var(--violet);border:0;border-radius:6px;padding:.3rem .6rem;cursor:pointer;
+  box-shadow:0 3px 10px rgba(0,0,0,.25)}
+#tray{position:fixed;right:1rem;bottom:1rem;z-index:70;width:min(24rem,calc(100vw - 2rem));max-height:min(30rem,70vh);
+  display:none;flex-direction:column;background:var(--panel);border:1px solid var(--violet-br);border-radius:12px;
+  box-shadow:0 8px 30px rgba(0,0,0,.18);overflow:hidden}
+#tray[data-open]{display:flex}
+#trayhead{display:flex;align-items:center;gap:.5rem;padding:.55rem .75rem;background:var(--violet-bg);
+  border-bottom:1px solid var(--violet-br);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.72rem;
+  font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--violet)}
+#trayhead .grow{flex:1}
+#trayhead button{font:inherit;text-transform:none;letter-spacing:0;color:var(--violet);background:none;
+  border:1px solid var(--violet-br);border-radius:5px;padding:.12rem .4rem;cursor:pointer}
+#traylist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:.6rem .7rem;display:flex;flex-direction:column;gap:.6rem}
+.qitem{border:1px solid var(--rule);border-radius:8px;background:var(--bg);padding:.5rem .6rem}
+.qitem .where{font-family:ui-monospace,monospace;font-size:.65rem;color:var(--violet);font-weight:700;
+  display:flex;gap:.4rem;align-items:baseline}
+.qitem .where .x{margin-left:auto;cursor:pointer;color:var(--ink3);border:0;background:none;font-size:.8rem;line-height:1}
+.qitem blockquote{margin:.35rem 0;padding-left:.5rem;border-left:2px solid var(--rule2);font-size:.74rem;
+  color:var(--ink3);font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.45;max-height:4.2rem;overflow:hidden}
+.qitem textarea{width:100%;min-height:2.6rem;resize:vertical;font:inherit;font-size:.8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--panel);
+  border:1px solid var(--rule2);border-radius:6px;padding:.35rem .45rem;margin-top:.25rem}
+.qitem .row{display:flex;gap:.4rem;align-items:center;margin-top:.3rem}
+.qitem .row button{flex:0 0 auto;white-space:nowrap;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.68rem;
+  font-weight:700;color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br);
+  border-radius:5px;padding:.25rem .55rem;cursor:pointer}
+.qitem .row button[data-done]{color:#fff;background:var(--teal);border-color:var(--teal)}
+.qitem .row .kbd{flex:1;font-size:.63rem;color:var(--ink3);text-align:right}
+#sentnote{display:none;margin:.6rem .7rem;padding:.6rem .7rem;border-radius:8px;border:1px solid var(--teal-br);
+  background:var(--teal-bg);color:var(--teal);font-family:ui-sans-serif,system-ui,sans-serif;font-size:.8rem;
+  line-height:1.5;font-weight:600}
+#sentnote[data-show]{display:block}
+#traybar{flex:0 0 auto;padding:.55rem .7rem;border-top:1px solid var(--rule);display:flex;flex-direction:column;
+  gap:.4rem;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.68rem;color:var(--ink3)}
+#traybar button{font:inherit;font-size:.78rem;font-weight:700;color:#fff;background:var(--violet);border:0;
+  border-radius:6px;padding:.45rem .7rem;cursor:pointer;width:100%;flex:0 0 auto;white-space:nowrap}
+#traybar button.secondary{color:var(--violet);background:var(--violet-bg);border:1px solid var(--violet-br)}
+#traybar button[data-done]{background:var(--teal)}
+#fab{position:fixed;right:1rem;bottom:1rem;z-index:69;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.74rem;
+  font-weight:700;color:#fff;background:var(--violet);border:0;border-radius:999px;padding:.55rem .9rem;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.2);display:none}
+#fab[data-show]{display:block}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:80;font-family:ui-sans-serif,system-ui,sans-serif;
+  font-size:.78rem;color:#fff;background:#222;padding:.5rem .9rem;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s}
+#toast[data-show]{opacity:.95}
+@media print{.askbtn,#tray,#fab,#selask,#toast{display:none!important}}
+@media (max-width:36rem){
+  body{font-size:16.5px} .wrap{padding:1.3rem .85rem 4rem}
+  h1{font-size:1.72rem} h2{font-size:1.28rem}
+  .meta{grid-template-columns:1fr;gap:.12rem} .meta dt{margin-top:.4rem}
+  .rung{grid-template-columns:2rem 1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Explainer · M3.1-A</p>
+  <h1>A test that lied about its own cost</h1>
+  <p class="dek">The last M3 item: a browser-level cloud journey that runs unattended. It works — and while building it, it spent real money on every run while its own header promised it spent none.</p>
+  <dl class="meta">
+    <dt>Change</dt><dd><b>PR #96</b> — test(M3.1-A): a browser-level cloud journey that runs unattended and spends nothing</dd>
+    <dt>Base..Head</dt><dd>e024f19..70f7ab1</dd>
+    <dt>Built</dt><dd>2026-08-13T22:41Z</dd>
+    <dt>Inspected</dt><dd><b>27 files</b> read, of which <b>19 were not in the diff</b></dd>
+    <dt>Not verified</dt><dd>Step 4 is skipped and its root cause is <em>inferred</em>, not proven. Suite has never run in CI. See §6</dd>
+  </dl>
+</header>
+
+<div class="strip">
+  <div class="stat t"><div class="v">7</div><div class="l">journey steps<br>passing</div></div>
+  <div class="stat c"><div class="v">24¢</div><div class="l">real spend before<br>the leak was found</div></div>
+  <div class="stat a"><div class="v">5</div><div class="l">false beliefs<br>the build corrected</div></div>
+  <div class="stat i"><div class="v">406</div><div class="l">lines added,<br>0 production code</div></div>
+  <div class="stat v2"><div class="v">1</div><div class="l">latent bug fixed<br>in a shared loader</div></div>
+</div>
+
+<div class="howto" id="howto">
+  <span class="mode flat" id="howtomode">checking…</span>
+  <b>Read this at</b>
+  <span class="u">http://127.0.0.1:7391/latest</span>
+  <span id="howtobody">Always redirects to the newest explainer — bookmark it once and no filename ever needs copying again. <code>/</code> lists them all.</span>
+  <ol>
+    <li><b>To ask a question:</b> select any text (or hover a heading) → <b>ask</b> → type → <b>Send</b>, then tell the session <i>&ldquo;read my questions&rdquo;</i>.</li>
+    <li><b>If that URL does not load</b>, the little server is not running. Start it from the repo:
+        <code>python3 scripts/explainer-serve.py</code> — safe to run twice, and it keeps serving until you
+        <code>--stop</code> it or reboot. <b>A reboot stops it</b>, which is the one time you will need this line again.</li>
+    <li><b>Opened as a plain file instead?</b> Everything still reads; only <b>Send</b> is unavailable, because a
+        <code>file://</code> page has nothing to send to. Copy to the clipboard and say <i>&ldquo;read my question&rdquo;</i>.</li>
+  </ol>
+</div>
+
+<nav class="toc">
+  <div class="h">Contents</div>
+  <ol>
+    <li><a href="#bg">Background — what M3.1 asked for, and why it was impossible</a></li>
+    <li><a href="#intuition">Intuition — the journey, and the leak</a></li>
+    <li><a href="#boundaries">Boundaries touched <span class="chip lo">start here</span></a></li>
+    <li><a href="#decisions">Decisions this change encodes</a></li>
+    <li><a href="#map">Code map</a></li>
+    <li><a href="#limits">Assumptions and limits</a></li>
+  </ol>
+</nav>
+
+<h2 id="bg"><span class="num">1</span>Background</h2>
+
+<h3>The skippable version</h3>
+<p>
+This repo contains two applications behind one URL. Visiting <code>/</code> runs a server component that
+reads <code>STORAGE_BACKEND</code> at request time and renders either <strong>LocalApp</strong> (the original
+single-user tool, reading the filesystem) or <strong>CloudApp</strong> (Supabase, auth, a job queue). The
+existing Playwright suite only ever exercised the local one.
+</p>
+<p>
+M3 is the acceptance milestone. Its second half, 3.2, was a manual pass against the deployed release —
+it passed, and found two real defects. Its first half, 3.1, asked for the same journey <em>automated</em>.
+</p>
+
+<h3>The narrow prerequisites</h3>
+<p>
+The plan already existed, and had for months. <code>tests/e2e/cloud-library.spec.ts</code> is a
+<code>describe.skip</code> whose header names exactly what was missing:
+</p>
+<div class="codewrap">
+  <div class="codehead"><span>tests/e2e/cloud-library.spec.ts:17</span><span class="tag un">unchanged — the standing plan</span></div>
+<pre><code><span class="c">*   1. A SECOND Playwright web server running the dev server with</span>
+<span class="c">*      `STORAGE_BACKEND=supabase` on a distinct port, plus a `projects: [{ name:'cloud',</span>
+<span class="c">*      use:{ baseURL } }]` entry in playwright.config.ts. (The default project runs the</span>
+<span class="c">*      LOCAL app; without this the spec would hit LocalApp, not CloudApp — plan T16/H4.)</span>
+<span class="c">*   2. An authenticated browser session: seed a user + playlist + videos via the admin</span>
+<span class="c">*      client, sign in via Supabase to obtain the session cookies, and inject them into</span>
+<span class="c">*      the Playwright context so middleware.ts admits the cloud routes.</span></code></pre>
+</div>
+
+<div class="call info">
+  <span class="lab">Why "against the deployed URL" could not be done</span>
+  <p>
+  The roadmap says 3.1 runs against the deployed URL. It cannot, and the reason is a security property
+  working as intended: <code>/dev-login</code> returns <strong>404 in production</strong> — a gate that
+  requires both <code>DEV_LOGIN_ENABLED</code> and a local Supabase URL, failing closed on either — and
+  Google OAuth cannot be driven by Playwright. Automating against prod would mean either opening that
+  gate or hand-refreshing a captured session forever. Split into <strong>A</strong> (this, unattended,
+  local) and <strong>B</strong> (a prod read-only smoke, deferred), by decision.
+  </p>
+</div>
+
+<h2 id="intuition"><span class="num">2</span>Intuition — the journey, and the leak</h2>
+
+<p>
+The suite is a ladder. Each rung is one <code>test</code>, they share a page, and they run in order —
+because rung 3 asserts something about the state rung 2 left behind.
+</p>
+
+<figure>
+<div class="ladder">
+  <div class="rung pass"><div class="no">1</div><div class="body">The signed-in root renders <b>CloudApp</b>, not LocalApp<em>A real first-deploy defect: the page was prerendered with STORAGE_BACKEND absent, and a signed-in cloud user got the filesystem tool.</em></div></div>
+  <div class="rung pass"><div class="no">2</div><div class="body">The sidebar lists the owner's playlists</div></div>
+  <div class="rung star"><div class="no">★</div><div class="body"><b>3 · An ingested playlist appears with NO reload</b><em>backlog #37, fixed the same morning. Until this rung ran, every claim about that fix rested on jsdom.</em></div></div>
+  <div class="rung skip"><div class="no">4</div><div class="body">The magazine HTML renders <span class="chip md">skipped</span><em>Not a defect — a cost. See §4, decision 3.</em></div></div>
+  <div class="rung pass"><div class="no">5</div><div class="body">The summary downloads as markdown, and the bytes <i>are</i> the summary<em>Free by design: the md path never resolves a model.</em></div></div>
+  <div class="rung pass"><div class="no">6</div><div class="body">The whole journey moved <b>no money</b><em>The header's cost claim, as an assertion against spend_ledger.</em></div></div>
+  <div class="rung pass"><div class="no">7</div><div class="body">Signing out returns the browser to <code>/login</code></div></div>
+</div>
+<figcaption>Seven rungs, one skipped. Rung 3 is the reason the suite exists; rung 6 exists because the file used to lie.</figcaption>
+</figure>
+
+<h3>The leak</h3>
+<p>
+The header of the spec file said, in capitals, that no money was spent. Then rung 4 failed on an
+assertion about the seeded prose, and the document that came back contained this instead:
+</p>
+
+<div class="codewrap">
+  <div class="codehead"><span>what the server actually returned</span><span class="tag del">not the seeded text</span></div>
+<pre><code>Encoder (2:12–2:20) This section outlines the initial setup for the
+end-to-end journey within the encoder component. The prose provided
+serves as the starting point for the entire end-to-end journey…</code></pre>
+</div>
+
+<p>
+The seed said <code>Seeded prose for the e2e journey.</code> What came back is a paraphrase of it — a
+language model had rewritten it. The serve path had called Gemini. The ledger confirmed it:
+</p>
+
+<div class="codewrap">
+  <div class="codehead"><span>spend_ledger, local stack</span><span class="tag del">during the build</span></div>
+<pre><code>    day     | reserved_cents | actual_cents |          updated_at
+<span class="hid"> 2026-08-13 |             12 |            0 | 2026-08-13 22:06:35+00</span></code></pre>
+</div>
+
+<div class="call bad">
+  <span class="lab">⚑ The point, and it is not "there was a bug"</span>
+  <p>
+  The claim was <em>written from intent</em> and nothing checked it. It could have stayed false
+  indefinitely: the suite would have gone green on every run while quietly spending, and the only
+  witness was a paraphrase that happened to look wrong to a human reading the failure output.
+  </p>
+  <p>
+  So the fix is not "seed the model and move on". The fix is that <strong>rung 6 now reads
+  <code>spend_ledger</code> before and after the journey and fails if it moved</strong>. Verified:
+  24¢ before a full run, 24¢ after. A cost claim nothing measures is a wish.
+  </p>
+</div>
+
+<div class="codewrap">
+  <div class="codehead"><span>tests/e2e/cloud-journey.spec.ts</span><span class="tag new">new — the claim, as a test</span></div>
+<pre><code><span class="k">async function</span> <span class="f">reservedCentsToday</span>(): <span class="t">Promise</span>&lt;<span class="t">number</span>&gt; {
+  <span class="k">const</span> { data, error } = <span class="k">await</span> <span class="f">adminClient</span>()
+    .<span class="f">from</span>(<span class="s">'spend_ledger'</span>).<span class="f">select</span>(<span class="s">'reserved_cents, actual_cents'</span>);
+  <span class="k">if</span> (error) <span class="k">throw</span> error;
+  <span class="k">return</span> (data ?? []).<span class="f">reduce</span>(
+    (n, r) => n + <span class="t">Number</span>(r.reserved_cents ?? <span class="n">0</span>) + <span class="t">Number</span>(r.actual_cents ?? <span class="n">0</span>), <span class="n">0</span>);
+}
+<span class="k">let</span> ledgerAtStart = <span class="n">0</span>;
+test.<span class="f">beforeAll</span>(<span class="k">async</span> () => { ledgerAtStart = <span class="k">await</span> <span class="f">reservedCentsToday</span>(); });
+
+<span class="c">// …six steps later, LAST so it covers all of them…</span>
+<span class="hi"><span class="f">expect</span>(<span class="k">await</span> <span class="f">reservedCentsToday</span>()).<span class="f">toBe</span>(ledgerAtStart);</span></code></pre>
+</div>
+
+<h3>Five beliefs the build corrected</h3>
+<p>Each was held confidently, each was wrong, and each was corrected by running something rather than by re-reading.</p>
+
+<div class="lessons">
+  <div class="lesson"><b>Two dev servers</b>Next refuses two <code>next dev</code> servers in one project directory, <em>whatever ports</em> they are given. The obvious one-config-two-servers shape fails outright.</div>
+  <div class="lesson"><b>Cookie injection</b>Hand-writing the <code>@supabase/ssr</code> session cookie asserts a <em>format</em>, not a behaviour. Sign in through <code>/dev-login</code> instead and let the app write it.</div>
+  <div class="lesson"><b>The env loader</b><code>supabase status -o env</code> emits quoted values; the shared loader kept the quotes. Invisible to jest forever, because <code>next/jest</code> loads <code>.env.local</code> first.</div>
+  <div class="lesson"><b>Node 20</b>No native WebSocket, so supabase-js dies inside a constructor with a message that reads like a library bug. CI already pinned 22.</div>
+  <div class="lesson"><b>"Absent" playlists</b>A pre-seeded playlist is <em>not</em> absent from the sidebar — it lists them all at mount. The first rung 3 asserted an absence that was never true.</div>
+</div>
+
+<h2 id="boundaries"><span class="num">3</span>Boundaries touched</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th style="width:18%">Boundary</th><th style="width:19%">What crosses it</th><th style="width:30%">What each side may assume</th><th>When that assumption is violated</th></tr></thead>
+<tbody>
+<tr>
+  <td>The suite → <code>spend_ledger</code><br><span class="chip hi2">the leak</span></td>
+  <td>Nothing, deliberately. The journey must leave the table untouched.</td>
+  <td><span class="side"><b>Suite:</b> assumed it was read-only because it never asked to generate anything.</span>
+      <span class="side"><b>Serve path:</b> materialises a magazine model on first view, by design — the owner-pays-once contract.</span></td>
+  <td class="consq"><strong>12¢ per run, silently.</strong> The asymmetry is the whole lesson: "I did not ask to spend" and "nothing spent" are different statements, and only one of them is checkable. Rung 6 now checks it.</td>
+</tr>
+<tr>
+  <td>Playwright → the app's auth<br><span class="chip ok">deliberately indirect</span></td>
+  <td>A real form submission at <code>/dev-login</code>, not a fabricated cookie.</td>
+  <td><span class="side"><b>Test:</b> may assume only that a browser which submits valid credentials ends up signed in.</span>
+      <span class="side"><b>App:</b> owns the cookie's name, chunking and encoding entirely — <code>@supabase/ssr</code> has changed all three across versions.</span></td>
+  <td class="consq">A hand-written cookie would keep passing after the real format changed, and start failing when nothing was wrong. It would assert a format while claiming to assert a session.</td>
+</tr>
+<tr>
+  <td><code>tests/integration/setup.ts</code> → any runner<br><span class="chip hi2">latent for months</span></td>
+  <td>Environment variables parsed from <code>.env.test.local</code>.</td>
+  <td><span class="side"><b>Loader:</b> assumed it was the only source, and assigned gap-fillingly (<code>!process.env[k]</code>).</span>
+      <span class="side"><b>jest:</b> silently loads <code>.env.local</code> first via <code>next/jest</code>, so the loader's values never won and never had to be correct.</span></td>
+  <td class="consq">The quoted values (<code>API_URL="http://…"</code>) produced an invalid URL the moment a <em>non-jest</em> runner reused the loader. A bug can hide for months behind a caller that makes it unreachable — and the second caller is when you find out.</td>
+</tr>
+<tr>
+  <td>Seeded fixture → the routes</td>
+  <td>A <code>videoId</code>, a summary blob, and a model envelope.</td>
+  <td><span class="side"><b>Seed helper:</b> defaults <code>videoId</code> to <code>v-${randomUUID()}</code>, 38 chars.</span>
+      <span class="side"><b>Routes:</b> run <code>assertVideoId</code>, which requires ≤20 chars of <code>[A-Za-z0-9_-]</code>.</span></td>
+  <td class="consq">Every route 400s, with a message about an invalid id rather than about a malformed fixture. Caught by reading the integration fixtures, which carry the constraint as a comment — not by running into it.</td>
+</tr>
+<tr>
+  <td>The `md` path → the model resolver</td>
+  <td>Nothing — and that absence is the contract.</td>
+  <td><span class="side"><b>Both sides:</b> <code>serve-summary-core.ts:28</code> states the md path "must read the blob and return WITHOUT ever calling resolveMagazineModel".</span></td>
+  <td>This is why rung 5 is free and rung 4 is not. The one boundary in this change where the assumption was written down in advance, and the only one that behaved as expected first time.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="decisions"><span class="num">4</span>Decisions this change encodes</h2>
+
+<h3>1 · Two configs, because one cannot work</h3>
+<p>
+<strong>Decided:</strong> a separate <code>playwright.cloud.config.ts</code>, mirroring the existing
+<code>jest.config</code> / <code>jest.integration.config</code> split.
+<strong>Rejected:</strong> one config with two <code>webServer</code> entries — tried first, and it fails
+outright: Next refuses two <code>next dev</code> servers in the same project directory whatever ports
+they are given. Splitting makes the conflict impossible rather than intermittent.
+</p>
+
+<h3>2 · The cost claim is a test, not a comment</h3>
+<p>
+<strong>Decided:</strong> rung 6 reads <code>spend_ledger</code> before and after.
+<strong>Rejected:</strong> seeding the model and restoring the "no money" sentence — which would have
+left the property true and unguarded, exactly as it was when it was false.
+</p>
+<div class="call">
+  <span class="lab"><span class="chip adr">ADR CANDIDATE:</span></span>
+  <p>Hard to reverse (removing it returns the file to an unverified promise), surprising without context (a UI test asserting on a billing table looks like a category error), and a real trade-off (the assertion couples the e2e suite to the money schema, so a ledger refactor breaks a browser test). Worth an ADR if a second suite adopts the pattern — the general rule being <em>a test that claims to be free must prove it against the thing that would charge</em>.</p>
+</div>
+
+<h3>3 · Rung 4 is skipped for a cost, not a defect</h3>
+<p>
+The setup pre-seeds <code>models/{base}.json</code> so the resolver should find one, and the blob
+<em>is</em> written — confirmed in <code>storage.objects</code>. It still regenerates. Each guess at why
+costs 6–12¢, and today's debugging put 24¢ through the ledger before this was understood.
+</p>
+<p>
+<strong>Decided:</strong> stop, and write the reason into the skip.
+<strong>Rejected:</strong> tuning the envelope until it goes green — trial and error on a money path is
+the wrong way to learn a contract, and each iteration bills.
+</p>
+<div class="call good">
+  <span class="lab">The contract, now read rather than guessed</span>
+  <p>
+  Written after the skip: <code>serve-doc.ts:78</code> calls <code>readFreshMagazineModel({…, titles})</code>,
+  and <code>read-model.ts:37</code> gates on <code>isFresh(existing, titles)</code>. The comment at
+  <code>read-model.ts:45</code> is explicit that <code>sameTitles</code> compares <strong>the envelope's
+  <code>sourceSections</code> against the caller's <code>titles</code></strong>. The seed sets
+  <code>sourceSections: ['2. Encoder']</code>; the resolver's <code>titles</code> almost certainly differ
+  in the numeric prefix. So un-skipping is now a named, bounded edit rather than an open question —
+  which is what a skip should leave behind.
+  </p>
+</div>
+
+<h3>4 · One request is faked, and only one</h3>
+<p>
+<code>POST /api/jobs</code> is intercepted in rung 3, because a real one calls the YouTube Data API and
+enqueues paid work. The id it returns belongs to a row that genuinely exists, created moments earlier —
+so the refetch, the API response and the render are all real. <strong>Rejected:</strong> a real ingest
+(network-dependent and billable) and a fully mocked sidebar (which would test nothing about #37).
+</p>
+
+<h2 id="map"><span class="num">5</span>Code map</h2>
+<ul>
+  <li><strong>The second config.</strong> <code>playwright.cloud.config.ts</code> — one <code>webServer</code> with <code>STORAGE_BACKEND=supabase DEV_LOGIN_ENABLED=true</code> on :3001, a <code>setup</code> project and a <code>cloud</code> project that depends on it.</li>
+  <li><strong>The first config, narrowed.</strong> <code>playwright.config.ts</code> gains <code>testIgnore: /cloud[.-]/</code> so the cloud specs cannot run against LocalApp.</li>
+  <li><strong>The session.</strong> <code>tests/e2e/cloud.setup.ts</code> — creates an owner, seeds a playlist, a video, a summary blob and a model envelope, then drives <code>/dev-login</code> and saves <code>storageState</code>.</li>
+  <li><strong>The contract between them.</strong> <code>tests/e2e/cloud-fixture.ts</code> — a plain module, because Playwright refuses to let one test file import another.</li>
+  <li><strong>The journey.</strong> <code>tests/e2e/cloud-journey.spec.ts</code> — seven rungs, one skipped, each carrying what it would catch.</li>
+  <li><strong>The latent fix.</strong> <code>tests/integration/setup.ts</code> — strips surrounding quotes. The only file here that other suites also depend on.</li>
+</ul>
+
+<h2 id="limits"><span class="num">6</span>Assumptions and limits</h2>
+
+<h4>Verified by reading the code</h4>
+<ul>
+  <li>The md path never resolves a model — <code>serve-summary-core.ts:28</code>, stated as a requirement.</li>
+  <li>Freshness compares <code>sourceSections</code> to <code>titles</code> — <code>read-model.ts:37,45</code>.</li>
+  <li><code>/dev-login</code> requires both the flag and a local Supabase URL, failing closed — <code>lib/supabase/dev-login.ts:9-16</code>.</li>
+  <li>The standing harness plan, unchanged since Stage 2a T16 — <code>tests/e2e/cloud-library.spec.ts:17</code>.</li>
+  <li><code>next/jest</code> loads <code>.env.local</code> — <code>jest.config.ts:1</code>, <code>jest.integration.config.ts:1</code>, which is why the quote bug stayed invisible.</li>
+</ul>
+
+<h4>Verified by running something</h4>
+<ul>
+  <li>Full suite: <strong>7 passed, 2 skipped</strong>.</li>
+  <li><strong>Ledger unmoved across a full run</strong> — 24¢ before, 24¢ after, read directly from Postgres.</li>
+  <li>The leak itself: 12¢ appeared at 22:06:35 during a single earlier run.</li>
+  <li>The model blob is written — <code>storage.objects</code> lists <code>…/models/e2emss2nfxy.json</code>.</li>
+  <li><code>tsc --noEmit</code> clean; <strong>2703 unit / 267 suites</strong> unaffected.</li>
+  <li>Node 22 has native WebSocket, Node 20 does not — checked directly before pinning.</li>
+</ul>
+
+<h4>Not verified</h4>
+<ul>
+  <li><strong>The rung-4 root cause is INFERRED.</strong> The <code>sourceSections</code>/<code>titles</code> mismatch is the best reading of <code>read-model.ts</code>; nothing has been run to confirm which value the resolver derives. Labelled as such in the skip.</li>
+  <li><strong>The suite has never run in CI</strong>, and is not wired there — it needs a live Supabase stack, the same reason <code>test:integration</code> is absent. So "runs unattended" means "runs unattended <em>on a laptop</em>".</li>
+  <li><strong>Rung 7's sign-out uses a fallback selector chain</strong> (<code>.catch()</code> onto a second locator). It passes, but a chain that tries two selectors can pass for the wrong reason, and it has not been mutation-checked.</li>
+  <li><strong>No adversarial review round has run on this branch.</strong> Every other change this week went through at least one; this one has had none.</li>
+  <li><strong>The middleware deprecation is unaddressed</strong> — Next prints "The <code>middleware</code> file convention is deprecated, use <code>proxy</code>" on every start, and <code>AGENTS.md</code> says to heed deprecation notices. Out of scope here, unfiled at the time of writing.</li>
+</ul>
+
+<div class="foot">
+  Companion: <strong>M3.1-B</strong> (a prod read-only smoke with a hand-captured session) is deferred and unfiled.<br>
+  Predecessors this week: PR #91 (backlog #37, the defect rung 3 guards) · PR #94 (the counts gate) · PR #95 (portable-practices §9)<br>
+  Generated by <code>/explain-diff</code>, adapted from Geoffrey Litt's skill.
+</div>
+
+</div>
+
+<button id="selask" type="button">💬 ask about this</button>
+<button id="fab" type="button">💬 <span id="fabn">0</span> questions</button>
+<div id="tray" role="complementary" aria-label="Questions">
+  <div id="trayhead"><span class="grow">Questions for this session</span>
+    <button type="button" id="trayclear">clear</button>
+    <button type="button" id="traymin">–</button></div>
+  <div id="traylist"></div>
+  <div id="sentnote" role="status"></div>
+  <div id="traybar">
+    <button type="button" id="traysend">⇧ Send to session</button>
+    <button type="button" class="secondary" id="traycopy">or copy to clipboard</button>
+    <span class="hint" id="trayhint"></span>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<script>
+(function(){
+  var DOC = "PR #96 explainer — M3.1-A cloud e2e (e024f19..70f7ab1)";
+  var items = [], seq = 0;
+  var tray=document.getElementById('tray'), list=document.getElementById('traylist'),
+      fab=document.getElementById('fab'), fabn=document.getElementById('fabn'),
+      sel=document.getElementById('selask'), toast=document.getElementById('toast');
+  var SERVED = location.protocol === 'http:' || location.protocol === 'https:';
+  var sendBtn=document.getElementById('traysend'), hint=document.getElementById('trayhint');
+  (function(){
+    var m=document.getElementById('howtomode'), b=document.getElementById('howtobody');
+    if(SERVED){
+      m.textContent='● live — Send works'; m.className='mode live';
+      b.innerHTML='You are reading the served copy, so <b>Send</b> posts straight to the session. This URL always redirects to the newest explainer — bookmark it once. <code>/</code> lists them all.';
+      hint.innerHTML='<b>Send</b> posts straight to the session — then say <i>&ldquo;read my questions&rdquo;</i>. <b>Enter</b> copies one question; <b>Shift+Enter</b> is a newline.';
+    } else {
+      m.textContent='○ local file — Send unavailable'; m.className='mode flat';
+      b.innerHTML='You opened this as a <code>file://</code> page, so there is nothing to send to and <b>Send</b> is hidden. Start the server (step 2) and reopen at the URL above for one-click Send.';
+      sendBtn.style.display='none';
+      document.getElementById('traycopy').textContent='Copy questions — then paste in your session';
+      hint.innerHTML='Clipboard is the channel here; say <i>&ldquo;read my question&rdquo;</i> after copying. <b>Enter</b> copies one; <b>Shift+Enter</b> is a newline.';
+    }
+  })();
+  function say(m){toast.textContent=m;toast.setAttribute('data-show','');
+    setTimeout(function(){toast.removeAttribute('data-show');},2200);}
+  function trim(t){t=(t||'').replace(/\s+/g,' ').trim();return t.length>420?t.slice(0,420)+'…':t;}
+  function sectionOf(node){
+    while(node && node!==document.body){
+      if(node.previousElementSibling){node=node.previousElementSibling;
+        if(/^H[23]$/.test(node.tagName)) return node.textContent.replace(/ask$/,'').trim();
+      } else node=node.parentNode;
+    }
+    return 'the page';
+  }
+  function toMarkdown(l){
+    var out='Question'+(l.length>1?'s':'')+' on the '+DOC+'\n\n';
+    l.forEach(function(it,i){
+      out+=(l.length>1?(i+1)+'. ':'')+'**'+it.where+'**\n';
+      if(it.quote)out+='   > '+it.quote+'\n';
+      out+='   Q: '+(it.q.trim()||'(no question typed)')+'\n\n';
+    });
+    return out;
+  }
+  function toClipboard(txt,msg){
+    var done=function(){say(msg);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done,function(){fb(txt,done);});
+    } else fb(txt,done);
+    function fb(t,ok){
+      var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');ok();}catch(_e){say('Could not copy automatically');}
+      document.body.removeChild(ta);
+    }
+  }
+  function flash(btn,label){
+    if(!btn)return; var old=btn.textContent;
+    btn.textContent=label; btn.setAttribute('data-done','');
+    setTimeout(function(){btn.textContent=old;btn.removeAttribute('data-done');},2000);
+  }
+  function copyOne(it,btn){
+    if(!it.q.trim()){say('Type a question first');return;}
+    toClipboard(toMarkdown([it]),'✓ copied — paste into the session');
+    flash(btn,'✓ copied — now paste');
+  }
+  function post(txt,cb){
+    var x=new XMLHttpRequest();
+    x.open('POST','/questions',true);
+    x.setRequestHeader('Content-Type','application/json');
+    x.onload=function(){cb(x.status===200);};
+    x.onerror=function(){cb(false);};
+    x.send(JSON.stringify({doc:DOC,text:txt}));
+  }
+  function render(){
+    list.innerHTML='';
+    items.forEach(function(it){
+      var d=document.createElement('div'); d.className='qitem';
+      var w=document.createElement('div'); w.className='where';
+      w.appendChild(document.createTextNode(it.where));
+      var x=document.createElement('button'); x.className='x'; x.type='button'; x.textContent='×';
+      x.onclick=function(){items=items.filter(function(o){return o.id!==it.id;});render();};
+      w.appendChild(x); d.appendChild(w);
+      if(it.quote){var q=document.createElement('blockquote');q.textContent=it.quote;d.appendChild(q);}
+      var cb=document.createElement('button'); cb.type='button'; cb.textContent='Copy this';
+      var ta=document.createElement('textarea');
+      ta.placeholder='What do you want to ask about this?'; ta.value=it.q||'';
+      ta.oninput=function(){it.q=ta.value;};
+      ta.onkeydown=function(ev){
+        if(ev.key==='Enter'&&!ev.shiftKey&&!ev.isComposing){ev.preventDefault();copyOne(it,cb);}
+      };
+      d.appendChild(ta);
+      var row=document.createElement('div'); row.className='row';
+      cb.onclick=function(){copyOne(it,cb);};
+      var kb=document.createElement('span'); kb.className='kbd'; kb.textContent='Enter to copy';
+      row.appendChild(cb); row.appendChild(kb); d.appendChild(row);
+      list.appendChild(d);
+    });
+    fabn.textContent=items.length;
+    if(items.length){fab.setAttribute('data-show','');}else{fab.removeAttribute('data-show');tray.removeAttribute('data-open');}
+  }
+  function add(where,quote){
+    var note=document.getElementById('sentnote'); if(note) note.removeAttribute('data-show');
+    items.push({id:++seq,where:where,quote:quote,q:''});
+    render(); tray.setAttribute('data-open',''); fab.removeAttribute('data-show');
+    var tas=list.querySelectorAll('textarea'); if(tas.length)tas[tas.length-1].focus();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('h2,h3'),function(h){
+    if(h.closest('#tray'))return;
+    var b=document.createElement('button'); b.type='button'; b.className='askbtn'; b.textContent='ask';
+    b.onclick=function(e){e.preventDefault();add(h.textContent.replace(/ask$/,'').trim(),'');};
+    h.appendChild(b);
+  });
+  document.addEventListener('mouseup',function(e){
+    if(e.target.closest&&e.target.closest('#tray'))return;
+    var s=window.getSelection(), t=s?String(s):'';
+    if(t.trim().length<12){sel.style.display='none';return;}
+    var r=s.getRangeAt(0).getBoundingClientRect();
+    sel.style.display='block';
+    sel.style.top=(window.scrollY+r.bottom+6)+'px';
+    sel.style.left=(window.scrollX+r.left)+'px';
+    sel.onclick=function(){
+      var node=s.anchorNode&&s.anchorNode.nodeType===3?s.anchorNode.parentNode:s.anchorNode;
+      add(sectionOf(node), trim(t)); sel.style.display='none'; s.removeAllRanges();
+    };
+  });
+  document.addEventListener('scroll',function(){sel.style.display='none';},{passive:true});
+  document.getElementById('traymin').onclick=function(){tray.removeAttribute('data-open');
+    if(items.length)fab.setAttribute('data-show','');};
+  fab.onclick=function(){tray.setAttribute('data-open','');fab.removeAttribute('data-show');};
+  document.getElementById('trayclear').onclick=function(){items=[];render();};
+  sendBtn.onclick=function(){
+    if(!items.length){say('No questions yet — select some text, or use an "ask" button.');return;}
+    var n=items.length;
+    post(toMarkdown(items),function(ok){
+      if(ok){
+        // DO NOT let render() close the tray here. Clearing items makes render() drop
+        // data-open, which took the confirmation off screen with it — a Send that worked
+        // looked like a no-op, and the window just vanished (reported 2026-08-13).
+        items=[]; render();
+        var note=document.getElementById('sentnote');
+        note.textContent='✓ Sent '+n+' question'+(n>1?'s':'')+' to the session. Now say "read my questions".';
+        note.setAttribute('data-show','');
+        tray.setAttribute('data-open',''); fab.removeAttribute('data-show');
+      }
+      else  { toClipboard(toMarkdown(items),'Send failed — copied instead, please paste');
+              flash(sendBtn,'✗ send failed — copied instead'); }
+    });
+  };
+  document.getElementById('traycopy').onclick=function(){
+    if(!items.length){say('No questions yet — select some text, or use an "ask" button.');return;}
+    toClipboard(toMarkdown(items),'✓ copied '+items.length+' question(s) — paste into the session');
+    flash(document.getElementById('traycopy'),'✓ copied — now paste');
+  };
+})();
+</script>
+</body>
+</html>
