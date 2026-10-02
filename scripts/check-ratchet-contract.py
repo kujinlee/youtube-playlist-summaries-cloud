@@ -27,13 +27,16 @@ work exists to remove.
 
 Usage:
     python3 scripts/check-ratchet-contract.py
-    python3 scripts/check-ratchet-contract.py --self-test  # 41 cases
+    python3 scripts/check-ratchet-contract.py --self-test  # 56 cases
 """
 from __future__ import annotations
 
 import ast
 import re
 import sys
+import contextlib
+import io
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,6 +114,11 @@ def fail_open_handlers(text: str) -> list[int]:
 
 
 GUARD_PATH_RE = re.compile(r"scripts/check-[\w.-]+\.py")
+
+# The fixture name `check-surface-recall.py` writes into `.claude/hooks/` and this file excludes
+# from caller evidence. One convention, two files; a case over there refuses a divergence, because
+# a consistent rename would silently restore round 8 H1's false green — round 8 M2.
+FIXTURE_PREFIX = "_selftest-"
 # ⚠ SAME LINE, deliberately: `\s*` would cross the newline and adopt the NEXT
 # LINE of the docstring as the written reason, turning the opt-out into a rubber
 # stamp for any guard whose docstring happens to continue.
@@ -162,6 +170,29 @@ def discover_guards(script_paths: list[str]) -> list[str]:
     are evadable the same way. The filesystem cannot be evaded by omission.
     """
     return sorted(p for p in script_paths if GUARD_PATH_RE.fullmatch(p))
+
+
+def caller_source_paths(root: Path, ci_path: Path) -> list[Path]:
+    """-> every file whose text may evidence a CALLER, for the tree it is GIVEN.
+
+    ⛔ EXTRACTED SO THE FIXTURE RULE BELOW IS TESTABLE — round 8 H1. The collection used to live
+    inline in `main`, so the one thing worth asserting about it could not be reached by a case:
+    this repo's own `separate-the-rule-from-the-fetch` lesson, in the guard that enforces R3.
+
+    ⛔ `_selftest-*` IS NOT CALLER EVIDENCE. `.claude/hooks/` is globbed whole, and
+    `check-surface-recall.py`'s suite writes `_selftest-<pid>.sh` into it ON PURPOSE — the hook
+    derives `REPO_ROOT` from `${BASH_SOURCE[0]}`, so a fixture under /tmp observes a repo that does
+    not exist. Reproduced by the round-8 reviewer: with that guard's two CI steps removed this file
+    reported `[R3_no_caller]` and exited 1; add a fixture carrying an invocation and it exited 0
+    with `ratchet contract OK`. A transient test fixture satisfying R3 is the exact false green R3
+    exists to catch, arriving through the directory R3 trusts most.
+    """
+    out = [ci_path]
+    out += sorted((root / "scripts").glob("*.sh"))
+    out += sorted(q for q in (root / ".claude" / "hooks").glob("*")
+                  if not q.name.startswith(FIXTURE_PREFIX))
+    out += sorted((root / "scripts").glob("*.py"))
+    return out
 
 
 def check_caller(path: str, text: str, caller_blob: str) -> list[Violation]:
@@ -811,6 +842,181 @@ def self_test() -> int:
          {"scripts/check-w.py": NO_SELF_TEST}, {"scripts/check-w.py": "python3 scripts/check-w.py"},
          ["R1_no_self_test", "R4_no_mutation_manifest"]),
     ]
+    # ⛔ ROUND 8 H1 — A TRANSIENT TEST FIXTURE IS NOT CALLER EVIDENCE, and these four cases are the
+    # only thing that can see it. The collection lived INLINE in `main` until the fix extracted it,
+    # so the one assertion worth making about it was unreachable — `separate-the-rule-from-the-fetch`
+    # in the guard that enforces R3.
+    # ⚠ THE LAST CASE IS THE ADJACENT NEGATIVE: the exclusion must be a PREFIX test, not a
+    # substring one, or a legitimately-named hook disappears from the population and every guard it
+    # calls silently loses its caller.
+    SOURCE_SCOPE_CASES = [
+        ("a real hook IS caller evidence", "real.sh", True),
+        ("a _selftest- fixture is NOT caller evidence", "_selftest-12345.sh", False),
+        ("...nor is its marker", "_selftest-12345.marker", False),
+        ("a hook merely CONTAINING the token is still evidence", "my_selftest-helper.sh", True),
+    ]
+    with tempfile.TemporaryDirectory() as _td:
+        _rt = Path(_td)
+        (_rt / ".claude" / "hooks").mkdir(parents=True)
+        (_rt / "scripts").mkdir()
+        _ci = _rt / "ci.yml"
+        _ci.write_text("")
+        for _name, _fname, _want in SOURCE_SCOPE_CASES:
+            _f = _rt / ".claude" / "hooks" / _fname
+            _f.write_text("python3 scripts/check-anything.py\n")
+            _got = _fname in {q.name for q in caller_source_paths(_rt, _ci)}
+            _f.unlink()
+            if _got != _want:
+                print(f"[FAIL] {_name}\n       expected {_want}\n       got      {_got}")
+                failures += 1
+        # ⚠ `root` AND `ci_path` ARE VARIED, and `check-fixture-variation.py` refused this suite
+        # until they were: one value at every call site means no case can tell the parameter from a
+        # literal, so every clause reading it is unguarded.
+        # ⛔ THEY ARE REAL ENTRIES NOW, NOT PADDING — round 8 L3. The first version APPENDED dummy
+        # tuples (`("name", "", True)`) to SOURCE_SCOPE_CASES purely to make the total arithmetic
+        # work, while the assertions happened in separate `if` blocks. The tuples were appended
+        # AFTER the loop that consumes the list, so nothing ever compared them: the declared count
+        # claimed two cases that did not exist. A padded count is the drift this file's own siblings
+        # exist to refuse.
+        _other_ci = _rt / "other-ci.yml"
+        _other_ci.write_text("")
+        SOURCE_PARAM_CASES: list[tuple[str, object, object]] = [
+            ("the ci_path given is always included",
+             {q.name for q in caller_source_paths(_rt, _other_ci)}, {"other-ci.yml"}),
+        ]
+        with tempfile.TemporaryDirectory() as _td2:
+            _rt2 = Path(_td2)
+            (_rt2 / "scripts").mkdir()
+            (_rt2 / "scripts" / "peer.sh").write_text("x")
+            _names2 = {q.name for q in caller_source_paths(_rt2, _ci)}
+            SOURCE_PARAM_CASES.append(
+                ("a DIFFERENT root yields that root's files, not this one's",
+                 ("peer.sh" in _names2, "real.sh" in _names2), (True, False)))
+        for _name, _got, _want in SOURCE_PARAM_CASES:
+            if _got != _want:
+                print(f"[FAIL] {_name}\n       expected {_want!r}\n       got      {_got!r}")
+                failures += 1
+
+    # ⛔ THE WIRING CASES FOR `assess` — ROUND 8's TWO BLOCKINGS, ONE MEDIUM AND ONE LOW.
+    # Everything above drives `evaluate` and `caller_source_paths` DIRECTLY, so all of it stayed
+    # green while three call sites inside `main` were severable. These drive the whole chain over a
+    # staged tree, which is the only way the wiring is observable.
+    # ⚠ THE KNOWN POSITIVE IS ASSERTED FIRST: if the staged tree produced no violation to begin
+    # with, every "severed" result below would be vacuously equal to it.
+    ASSESS_WIRING_CASES: list[tuple[str, object, object]] = []
+    with tempfile.TemporaryDirectory() as _ta:
+        _r = Path(_ta)
+        (_r / "scripts" / "mutations").mkdir(parents=True)
+        (_r / ".claude" / "hooks").mkdir(parents=True)
+        (_r / ".github" / "workflows").mkdir(parents=True)
+        _aci = _r / ".github" / "workflows" / "ci.yml"
+        _aci.write_text("jobs:\n  x:\n    steps:\n"
+                        "      - run: python3 scripts/check-called.py\n")
+        (_r / "scripts" / "called.sh").write_text("x\n")
+        _atexts = {"scripts/check-called.py": SELF_TEST_OK,
+                   "scripts/check-orphan.py": SELF_TEST_OK}
+        for _rel, _txt in _atexts.items():
+            (_r / _rel).write_text(_txt)
+            (_r / "scripts" / "mutations" / (Path(_rel).stem + ".json")).write_text("[]")
+        # ⚠ A FIXTURE IS PLANTED, and without it the B2 mutation SURVIVED: severing
+        # `caller_source_paths` only changes the answer when the directory CONTAINS something the
+        # exclusion would have removed. The staged tree had no fixture, so both versions agreed.
+        (_r / ".claude" / "hooks" / f"{FIXTURE_PREFIX}999999.sh").write_text(
+            "python3 scripts/check-orphan.py\n")
+        _arat = ["scripts/check-called.py", "scripts/check-orphan.py"]
+        _av = assess(_r, _aci, _atexts, _arat)
+        ASSESS_WIRING_CASES.append((
+            "the KNOWN POSITIVE fires: an uncalled guard in a staged tree is R3_no_caller",
+            sorted({v.rule for v in (_av or [])}), ["R3_no_caller"]))
+        ASSESS_WIRING_CASES.append((
+            "...and it names the ORPHAN, not the called one",
+            sorted({v.script for v in (_av or [])}), ["scripts/check-orphan.py"]))
+        # ⛔ AND MAIN ITSELF — the layer `assess`'s own extraction left uncovered (round 9 B1).
+        # Driven over the SAME staged tree, so the world costs nothing new. ⚠ TWO assertions, not
+        # one: `main` can also return 1 through the R4 manifest-baseline branch, so an rc-only case
+        # would pass for a reason that has nothing to do with the wiring. The second pins the
+        # OUTPUT, which only the violation path can produce.
+        _mbuf = io.StringIO()
+        with contextlib.redirect_stdout(_mbuf):
+            _mrc = main([], root=_r)
+        _mout = _mbuf.getvalue()
+        ASSESS_WIRING_CASES.append((
+            "main is WIRED - a violation `assess` finds reaches main's EXIT CODE", _mrc, 1))
+        ASSESS_WIRING_CASES.append((
+            "...and main PRINTS it, naming the orphan AND the rule",
+            ("scripts/check-orphan.py" in _mout and "R3_no_caller" in _mout), True))
+        # ⚠ AND THE CLEAN POLARITY, over a DIFFERENT root — `check-fixture-variation` refused the
+        # pair above until this existed, and it was right: with one call site no case can tell
+        # `root` from a constant, so every clause reading it is unguarded. The variation is also
+        # the better test. A `main` that returns 1 on a violating tree proves little if it returns
+        # 1 on every tree; this pins that a clean tree reaches the OK path and rc 0.
+        with tempfile.TemporaryDirectory() as _tc:
+            _r2 = Path(_tc)
+            (_r2 / "scripts" / "mutations").mkdir(parents=True)
+            (_r2 / ".github" / "workflows").mkdir(parents=True)
+            (_r2 / ".github" / "workflows" / "ci.yml").write_text(
+                "jobs:\n  x:\n    steps:\n      - run: python3 scripts/check-called.py\n")
+            (_r2 / "scripts" / "called.sh").write_text("x\n")
+            (_r2 / "scripts" / "also.sh").write_text("y\n")
+            (_r2 / "scripts" / "check-called.py").write_text(SELF_TEST_OK)
+            (_r2 / "scripts" / "mutations" / "check-called.json").write_text("[]")
+            _cbuf = io.StringIO()
+            with contextlib.redirect_stdout(_cbuf):
+                _crc = main([], root=_r2)
+            _cout = _cbuf.getvalue()
+            ASSESS_WIRING_CASES.append((
+                "...and a CLEAN tree reaches main's OK path - rc 0, not 1 for every tree",
+                (_crc, "ratchet contract OK" in _cout), (0, True)))
+        # ⛔ AND `argv`'s ONLY CLAUSE — the `--self-test` dispatch. ⚠ NOT varied with a second
+        # ignored flag: both values would take the SAME branch, which satisfies a variation counter
+        # while testing nothing, and this repo has paid for exactly that shape. The true branch
+        # cannot be driven directly (`main(["--self-test"])` re-enters this suite, unbounded), so
+        # `self_test` is rebound to a sentinel for the length of one call — the same `globals()[…]`
+        # idiom the two sibling guards use. That makes the dispatch observable AND varies `argv`
+        # honestly, which is why no EXEMPT row is owed here.
+        _orig_st = globals()["self_test"]
+        globals()["self_test"] = lambda: 4242
+        try:
+            _disp = main(["--self-test"], root=_r)
+        finally:
+            globals()["self_test"] = _orig_st
+        ASSESS_WIRING_CASES.append((
+            "main DISPATCHES --self-test to the suite instead of running the checks", _disp, 4242))
+        # M1 — the own-text exclusion. Every guard names itself in its own usage docstring, so
+        # including its own text would satisfy R3 for the entire population.
+        # ⚠ THE SELF-NAMING TEXT GOES TO THE FILE, not only to the `texts` dict, and the M1
+        # mutation SURVIVED until it did: the own-text exclusion filters `caller_sources`, which
+        # are files READ FROM DISK, so changing the dict alone left the exclusion with nothing to
+        # exclude. A case that does not build the world the rule reads cannot test that rule.
+        _self_named = dict(_atexts)
+        _selftext = SELF_TEST_OK + '\n"""run: python3 scripts/check-orphan.py"""\n'
+        _self_named["scripts/check-orphan.py"] = _selftext
+        (_r / "scripts" / "check-orphan.py").write_text(_selftext)
+        _av2 = assess(_r, _aci, _self_named, _arat)
+        ASSESS_WIRING_CASES.append((
+            "a guard that merely NAMES ITSELF does not satisfy R3 — the own-text exclusion",
+            sorted({v.rule for v in (_av2 or [])}), ["R3_no_caller"]))
+        # L2 — the caller-corpus floor is a REFUSAL, not an empty pass.
+        with tempfile.TemporaryDirectory() as _tb:
+            _bare = Path(_tb)
+            ASSESS_WIRING_CASES.append((
+                "a tree with almost no executable sources is a refusal, never a clean pass",
+                assess(_bare, _bare / "nope.yml", _atexts, _arat), None))
+        # ⚠ `ratchets` IS VARIED, and the first version of this case ASSERTED THE WRONG PROPERTY.
+        # I expected narrowing it to exempt the other guard. It does not: `ratchets` builds
+        # `blob_for`, while `evaluate` iterates `texts` — so a guard dropped from `ratchets` gets NO
+        # caller blob and reports R3_no_caller rather than passing. That is FAIL-CLOSED, and it is
+        # the property worth pinning: you cannot exempt a guard by leaving it out of the population
+        # this function is handed. Measured, not assumed — the case failed and the code was right.
+        ASSESS_WIRING_CASES.append((
+            "dropping a guard from `ratchets` does NOT exempt it — it loses its blob and reports",
+            sorted({v.rule for v in (assess(_r, _aci, _atexts, ["scripts/check-called.py"]) or [])}),
+            ["R3_no_caller"]))
+    for _name, _got, _want in ASSESS_WIRING_CASES:
+        if _got != _want:
+            print(f"[FAIL] {_name}\n       expected {_want!r}\n       got      {_got!r}")
+            failures += 1
+
     # Empty on purpose: the stub guards have no manifest, so R4 fires unless a case opts out.
     manifests: set[str] = set()
     for name, texts, blobs, expected in wiring:
@@ -823,16 +1029,72 @@ def self_test() -> int:
              + len(POPULATION_CASES) + len(WIDENED_POP_CASES)
              + len(ESCAPE_CASES) + len(WIDENED_DRIFT_CASES) + len(wiring)
              + len(SELF_EXEMPTION_CASES) + len(SCOPE_CASES)
-             + len(MANIFEST_BRANCH_CASES))
+             + len(MANIFEST_BRANCH_CASES) + len(SOURCE_SCOPE_CASES)
+             + len(SOURCE_PARAM_CASES)
+             + len(ASSESS_WIRING_CASES))
     print(f"self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
 
-def main(argv: list[str]) -> int:
+def assess(root: Path, ci_path: Path, texts: dict[str, str],
+           ratchets: list[str]) -> list[Violation] | None:
+    """-> every violation for the tree GIVEN, or None when the caller corpus is too small.
+
+    ⛔ EXTRACTED TO MAKE THE WIRING TESTABLE — round 8's two Blockings, and it closes a Medium
+    with the same move. All three were severable call sites inside `main`, which takes no root and
+    so could not be driven over a staged tree:
+      B1  `violations = evaluate(texts, blob_for, manifest_stems)` — severing it switched off
+          R1, R2, R3 AND R4 across all 43 guards. Measured over a tree carrying a real
+          `R3_no_caller` (known positive first, rc 1): the live run printed `ratchet contract OK`
+          rc 0 with the suite at 47/47. The widest blast radius of any instance so far.
+      B2  `caller_sources = caller_source_paths(...)` — THE FIX FOR ROUND 8's OWN H1, reverted to
+          the inline globs it replaced: the function still ran, its result was discarded, and a
+          planted fixture satisfied R3 again. Three probes: no fixture -> red; fixture + fix ->
+          red; fixture + severed call site -> GREEN. All six new cases stayed green through it.
+      M1  the own-text exclusion below — removing it makes R3 vacuous for every guard, because
+          each one names itself in its own usage docstring.
+    ⚠ The count in backlog #213 is therefore SIX, not four, and two of the six were written while
+    fixing the others.
+    """
+    caller_sources: list[Path] = caller_source_paths(root, ci_path)
+    if len(caller_sources) < 3:
+        return None
+
+    blob_for: dict[str, str] = {}
+    for rel in ratchets:
+        # ⚠ A guard's OWN text is excluded. Every one of these scripts names
+        # itself in its usage docstring, so including it would let each guard
+        # satisfy R3 by describing how to run it — measured on
+        # check-producer-enumeration.py, whose only three mentions anywhere in
+        # the repo are its own docstring and its own print().
+        blob_for[rel] = "\n".join(
+            q.read_text(errors="ignore") for q in caller_sources
+            if q.is_file() and str(q.relative_to(root)) != rel)
+
+    # THE FETCH, kept out of the rule: check_manifest is pure and takes this set.
+    manifest_stems = {q.stem for q in (root / 'scripts/mutations').glob('*.json')}
+    return evaluate(texts, blob_for, manifest_stems)
+
+
+def main(argv: list[str], root: Path = ROOT) -> int:
+    """The CLI, with its WORLD as a parameter rather than read from module globals.
+
+    ⛔ `root` IS A PARAMETER BECAUSE MAIN COULD NOT OTHERWISE BE TESTED — round 9's Blocking.
+    `violations = assess(...)` was severable to `[]` with all 52 cases green and the live guard
+    printing `ratchet contract OK` over a real `R3_no_caller`. Extracting `assess` (round 8) made
+    its INTERNALS testable and moved the wiring ONE LEVEL OUT; extracting `evaluate` before that
+    did the same. Each correct repair relocates a statement into the layer no case can reach,
+    because `main` resolved its own world and nothing could point it elsewhere.
+
+    ⚠ The default IS the old global, so behaviour is unchanged: `__main__` binds the real repo and
+    a case binds a constructed one. Same shape and same reason as `check-ci-watched.py:860`, which
+    has been the only guard of 36 built this way — and the only one this defect class has never
+    touched. See `docs/reviews/architecture-review-2026-10-01.md`.
+    """
     if "--self-test" in argv:
         return self_test()
 
-    ci_path = ROOT / ".github/workflows/ci.yml"
+    ci_path = root / ".github/workflows/ci.yml"
     if not ci_path.exists():
         print("FAILED: .github/workflows/ci.yml not found — ratchets could not be discovered.")
         print("Treat this as NOT RUN.")
@@ -846,8 +1108,8 @@ def main(argv: list[str]) -> int:
     # measured, on the first run, which is why the debt is pinned by IDENTITY: a cardinality
     # ceiling would have read an empty corpus as "no violations" and passed.
     texts = {}
-    for p in sorted((ROOT / "scripts").glob("*.py")):
-        rel = str(p.relative_to(ROOT))
+    for p in sorted((root / "scripts").glob("*.py")):
+        rel = str(p.relative_to(root))
         try:
             texts[rel] = p.read_text(errors="ignore")
         except OSError:
@@ -865,28 +1127,10 @@ def main(argv: list[str]) -> int:
     # Executable sources only. `docs/` is deliberately absent: a row in a table
     # headed "What is mechanically enforced" is a CLAIM about a caller, not one,
     # and reading it as a caller is the exact defect R3 exists to catch.
-    caller_sources: list[Path] = [ci_path]
-    caller_sources += sorted((ROOT / "scripts").glob("*.sh"))
-    caller_sources += sorted((ROOT / ".claude" / "hooks").glob("*"))
-    caller_sources += sorted((ROOT / "scripts").glob("*.py"))
-    if len(caller_sources) < 3:
+    violations = assess(root, ci_path, texts, ratchets)
+    if violations is None:
         print("FAILED: found almost no executable sources to search for callers. NOT RUN.")
         return 1
-
-    blob_for: dict[str, str] = {}
-    for rel in ratchets:
-        # ⚠ A guard's OWN text is excluded. Every one of these scripts names
-        # itself in its usage docstring, so including it would let each guard
-        # satisfy R3 by describing how to run it — measured on
-        # check-producer-enumeration.py, whose only three mentions anywhere in
-        # the repo are its own docstring and its own print().
-        blob_for[rel] = "\n".join(
-            p.read_text(errors="ignore") for p in caller_sources
-            if p.is_file() and str(p.relative_to(ROOT)) != rel)
-
-    # THE FETCH, kept out of the rule: check_manifest is pure and takes this set.
-    manifest_stems = {q.stem for q in (ROOT / 'scripts/mutations').glob('*.json')}
-    violations = evaluate(texts, blob_for, manifest_stems)
 
     print(f"guards discovered ({len(ratchets)}): " + ", ".join(ratchets))
     if not violations:

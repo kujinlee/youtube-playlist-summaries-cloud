@@ -304,11 +304,41 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
     # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not
     # transcribed: six keys over four pure functions, `findings = []` on the first run.
+    # ⟳ 2026-10-01 — THREE KEYS RETIRED WITH THEIR SUBJECT, and this guard was right to demand
+    # the deletion be deliberate. `dangling_detail` is GONE, and `verdict` no longer takes
+    # `dangling`. R3 was four successive PROXIES for a semantic property — "does this sentence
+    # promise a detail it does not have?" — and each proxy had a boundary a later round found:
+    # adjacency (r3 M4), label spellings (r5 H1), the position of $OUT (r6 B1), render-invariance
+    # (the r6 repair, defeated the same day). Measured over one eleven-arm corpus: the label
+    # vocabulary caught 5 of 11, the render comparison that replaced it caught 3 — FEWER — and the
+    # equality that replaced both catches 11. So the rule is now `undeclared_render`: what the hook
+    # renders with no detail must EQUAL a hand-authored sentence in DECLARED_RENDER. No judgement
+    # is computed; it moved to a human in a diff, which is the only authority a semantic question
+    # has. The three keys below are its replacements.
     "check-rc-contract.py": (
-        'dangling_detail.codes', 'dangling_detail.hook_src', 'dead_arms.defined',
-        'dead_arms.hook_src', 'dead_arms.probe_max', 'defined_codes.matcher_src',
-        'handled_codes.codes', 'handled_codes.hook_src', 'observe.hook_src', 'observe.out',
-        'observe.rc', 'verdict.dangling', 'verdict.dead', 'verdict.defined', 'verdict.handled'),
+        'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
+        'defined_codes.matcher_src', 'handled_codes.codes', 'handled_codes.hook_src',
+        'observe.hook_src', 'observe.out', 'observe.rc', 'verdict.dead',
+        'verdict.defined', 'verdict.handled'),
+
+    # ⟳ 2026-10-01, backlog #196 + round 7 B2 — THE HOOK'S OWN GUARD, pinned in the commit that
+    # creates it. R3 moved here from `check-rc-contract.py`, which is why THREE keys retired there
+    # in the same change: `dangling_detail.codes`, `dangling_detail.hook_src` and
+    # `verdict.dangling` — the keys a reader will actually see leaving, measured against HEAD.
+    # ⚠ ROUND 7 L2 — THE FIRST VERSION OF THIS COMMENT NAMED `undeclared_render.*` AND
+    # `verdict.undeclared`, which only ever existed in an intermediate uncommitted state during
+    # the fold. It described a retirement no reviewer could find in the diff. A comment about a
+    # change must be true of the change as it will be READ, not of a state it passed through.
+    # Why it moved: R3's subject is the HOOK'S RENDERED TEXT, so it was never a cross-file rule —
+    # every Blocking in rounds 3 to 7 landed on it while R1/R2 produced none. And the cross-file
+    # guard observed the hook by STAGING A MINIMAL TREE, a proxy for the repo; this one runs the
+    # REAL hook IN THE REAL REPO through one ARGV seam, so round 7 B2 (an arm branching
+    # on `.claude/settings.json` rendering a dangling `Detail:` while the guard said clean) cannot
+    # exist. DERIVED by running this module's own `analyse()` on the delivered source.
+    "check-surface-recall.py": (
+        'coverage.declared', 'coverage.defined', 'render.hook',
+        'render.out', 'render.rc', 'undeclared_render.declared',
+        'undeclared_render.hook'),
 
     # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
     # it. Its `tracked` parameter was flagged here as never-varied and two cases were added

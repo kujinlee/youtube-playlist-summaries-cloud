@@ -13274,6 +13274,87 @@ which `docs/features.md` claims no node for** — `check-features.py` rc=1, *"it
 Corrected to `(tooling)` / `(process)`. Third gate-subset miss of the session, and the one rule in
 `docs/CLAUDE.md` written for exactly it.
 
+## 2026-10-01 [needs-you]
+Nine rounds of review kept finding the same bug, so we stopped reviewing and asked why.
+
+**Round 9 found four more of one defect, and one of them was round 8's, recorded as fixed and not
+fixed.** All four reproduced by hand before being believed. The pattern that mattered: each round's
+*correct* repair was what created the next round's bug. That triggers a rule written down months
+ago — stop fixing instances, go look at the design — and you chose to follow it.
+
+⭐ **The answer was already in this repository, in one file, written before any of this started.**
+Every one of these checking programs builds its world from settings buried in the file, so the
+outermost layer — the part that actually runs — is the one layer no test can drive. The standard
+repair pulls a piece *out* of that layer to make it testable, which means every correct fix shrinks
+the tested region's reach and leaves a fresh untested piece behind. One program of thirty-six was
+built the other way, deliberately, with the reasoning spelled out in its own notes. **It is the one
+program this bug has never touched in nine rounds.** So the fix is not a new idea to adopt; it is a
+fix already made here that never travelled to its neighbours.
+
+⚠ **I checked the review's own numbers and two were wrong** — in its favour, which is the direction
+that matters. It reported more exposure than exists, and the detector it proposed would have
+rejected the repository's single best example of the very thing it asks for. Both corrected before
+anything was filed.
+
+**Why nothing was fixed today, on purpose.** The review makes a falsifiable prediction: patch these
+four the old way and a twelfth instance appears within two rounds. Patching them destroys the only
+clean test of that. They are left as evidence.
+
+⛔ **The thing no tool here can see, and the one I would act on:** thirteen architecture decisions
+are written down, and **all thirteen are about the product. None is about the checking machinery
+itself.** So there has never been a place where "this is how we build a checker" could be *decided*
+rather than privately discovered — which is exactly why the one program that got it right got it
+right alone, and told nobody.
+
+<!--tech-->
+**Round 9 Codex half filed** (`docs/reviews/codex/recall-llm-r9-codex.md`, `gate_ran: true`);
+coordinator hand-verification in `docs/reviews/coordinator/recall-llm-r9-coordinator.md` with a
+written `REVIEW GAP: claude` recording that the second reader was redirected to the architecture
+review rather than skipped. **Full mutation gate re-run green at this tree: 57 files, 1177
+mutations, 1177 killed, 0 survivors** — and, for the first time in this fold, the gate's tree and
+the reviewer's subject are provably identical (all 57 mutated scripts `shasum -c` clean, the only
+delta a backlog row).
+
+**Phase 6 armed by THRASHING** (r8's Blocking in a file r7's fold created; r9's in the call site
+r8's fix created). Verdict: `docs/reviews/architecture-review-2026-10-01.md`. Mechanism: `main()`
+resolves its world from module globals, so no case can drive it over a constructed world; the
+extract-the-rule repair acts on the callee and relocates statements out of the covered region.
+**#213's AST guard SUPERSEDED as the remedy** — implemented and run: 108 entries repo-wide, misses
+the newest instance three ways, ≥1 unkillable, and its reach shrinks at exactly the rate the repair
+proceeds. Replaced by **D1** (give `main` its world as a defaulted parameter — the
+`check-ci-watched.py:860` shape, measured at 4 edits + 2 cases on `check-ratchet-contract.py`) and
+**D2** (one bit per guard: does the self-test drive `main()` over a built world?).
+
+⚠ **Coordinator corrections to the review:** drivers are 7 not 5, unreachable 29 not 31, and D2's
+sub-condition 2 as drafted false-positives on `check-fixture-variation.py`, which drives `main()`
+14 times from `_self_test()` through `argv` — a third route it must admit before being written.
+
+**Filed: #216** (a comment asserting a defence the code does not implement — `_saved_m` assigned,
+never read, verified). **#213 amended** with the measurements. Roadmap #191 section updated in the
+same turn. Four r9 findings deliberately unfolded. Nothing committed; nothing merge-blocking.
+
+⟳ **Both of those questions were answered the same evening, and the work is done.** The fix landed
+here rather than in a later slice, and the verification stack got its ADR — **ADR-0014, the first in
+this repository about the checking machinery rather than the product.** That absence was the
+review's sharpest finding: with no place to record such a decision, the one program that got this
+right got it right alone and told nobody.
+
+**What the fix does, in one line:** the outermost layer of a checking program now accepts its
+surroundings as an argument instead of looking them up, so a test can run the whole program against
+a situation the test invented. The bug round 9 found — where that program could be made to throw
+away its own answer and still report success — now makes two named tests fail instead.
+
+⚠ **A different guard rejected the first version of those tests, and was right.** They ran the
+program over only one situation, which means nothing could tell the new argument from a fixed
+value. The honest repair added a second situation — a clean one, proving the program reports
+success when it should and not merely failure always — rather than the cosmetic change that would
+have satisfied the counter.
+
+**Waiting on you: the merge.** Three lesser findings stay open and are written down as such; they
+are latent rather than live — the programs work, they are just not yet protected against one
+specific future mistake. Master has none of these checks at all, so this is a net gain over waiting
+for a perfect version.
+
 ## 2026-09-30
 Both bugs from this morning's review are fixed, and the thing that let them exist now has a guard.
 

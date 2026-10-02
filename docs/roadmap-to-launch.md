@@ -2177,7 +2177,45 @@ roadmap** while #167 and #184 were on it. That is what this section exists to st
 rounds were rework; GitHub runs the sweep ~2× faster than this machine (8m08s for the whole `verify`
 job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost and not the largest.**
 
-## LLM recall matcher — backlog #191 — anchor `review-decides-itself` — 🟠 BUILT, REVIEWED TWICE, **NOT CONVERGED**; Phase 6 review DONE 2026-09-30
+## LLM recall matcher — backlog #191 — anchor `review-decides-itself` — 🟠 BUILT, REVIEWED **NINE TIMES**, **NOT CONVERGED**; Phase 6 review DONE 2026-09-30
+
+> ### ⟳ 2026-10-01 — NINE ROUNDS, AND THE REVIEW LOOP WAS STOPPED BY A SECOND Phase 6
+>
+> **Round 9 (Codex half filed; Claude half redirected — see the `REVIEW GAP:` in
+> `docs/reviews/coordinator/recall-llm-r9-coordinator.md`) returned 1 Blocking + 3 High, all ONE
+> class, and the coordinator reproduced all four by hand** with green before- and after-controls.
+> One of them is round 8's H4 verbatim — **recorded in the handoff as addressed, and it was not.**
+>
+> **The THRASHING arming condition fired** (round 8's Blocking in a file round 7's fold created;
+> round 9's in the call site round 8's fix created, while every other part of the fold converged).
+> Put to the human as a selection card; they chose a scoped architecture review over folding
+> per-instance. Verdict: `docs/reviews/architecture-review-2026-10-01.md`.
+>
+> ⛔ **The four r9 findings are NOT folded, deliberately** — they are the review's evidence, and
+> the review's own prediction is that folding them per-instance yields a twelfth instance within
+> two rounds.
+
+- [ ] **D1 — give `main` its world as a defaulted parameter**, in the three guards. ⭐ NOT a new
+      design: `scripts/check-ci-watched.py:860` already does it, for this exact reason, with the
+      mechanism in its docstring written BEFORE round 1 of this fold — and it is the only one of
+      36 `main`s the class has never touched. Measured for `check-ratchet-contract.py`: 4 edits +
+      2 cases; it catches round 9's Blocking (52/54) AND a `BASELINE` severance that #213's guard
+      demands no entry for. `check-surface-recall.py` is the expensive one — three defaulted rule
+      parameters must come out first.
+- [ ] **D2 — one bit per guard**: does the self-test drive `main()` over a world the case built?
+      ⛔ **Do not write it as drafted** — sub-condition 2 false-positives on
+      `check-fixture-variation.py`, which drives `main()` 14 times from `_self_test()` over
+      constructed paths passed through `argv`. It must admit argv-as-world. Exposure is **29 of
+      36**, not the 31 the review stated (coordinator re-derivation; drivers are 7, not 5).
+- [ ] **#213's `ast` guard is SUPERSEDED as the remedy** — implemented and run; its reach shrinks
+      at exactly the rate the repair proceeds. Row amended with the measurements.
+- [ ] **#216 filed** — a comment asserting a defence the code does not implement
+      (`check-surface-recall.py:686`, `_saved_m` assigned and never read). Verified by hand.
+- [ ] **The propagation half, which is the harder one.** Three structural lessons, three files, no
+      file has all three; and no ADR governs the verification stack at all, so there is no venue
+      where a decision about it can be made or protected. The review ranks a CONTEXT.md glossary
+      entry for *wiring* and an ADR for the verification stack **alongside** the code change.
+
 
 **Branch `semantic-recall-replication`, off `master` at `446025ab`. Pushed, no PR — deliberately, a
 PR asserts readiness for the human gate and this is not converged.** ⛔ Do not trust any commit

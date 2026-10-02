@@ -1,0 +1,29 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 5423 chars"
+  ],
+  "dirty": {
+    "docs/backlog.md": "100644 6e197e6eb8eb6e1bfe8ab2b6f57dc9e6d1ffa0b6",
+    "docs/reviews/claude/recall-llm-r5-claude.md": "100644 0702376795a1de986bfd6c221c9b318a94ae08ea",
+    "docs/reviews/claude/recall-llm-r6-claude.md": "100644 78bbdd84de1f9a5d310ac7e714630f61881ab9b2",
+    "docs/reviews/codex/recall-llm-r5-codex.md": "100644 150d9e8fe6fa72699a6df8a57751c31fabcff576",
+    "docs/reviews/codex/recall-llm-r6-codex.md": "100644 f341fe5b41136ec94e176cc424dbfc4c69b2c80a",
+    "docs/reviews/verdicts/recall-llm-r5-codex.verdict.json": "100644 9bddb1f3c3411d36620d589a9d3aae814b21a97e",
+    "docs/reviews/verdicts/recall-llm-r6-codex.verdict.json": "100644 3a77e724adaa8d36c33e8d9455306f20da21baff",
+    "scripts/check-fixture-variation.py": "100644 b0a7a52e0928dabc8821b0b6032d8fe831b23fe5",
+    "scripts/check-plan-code.py": "100644 ce9d53836dc76fa26347e4546f7a1de059445c85",
+    "scripts/check-rc-contract.py": "100644 3522b0944b369ff448ecf8d3fba8a57fae2062d9",
+    "scripts/mutations/check-rc-contract.json": "100644 93a439cce220f7823c7219c38e9b6bfabe250484"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f7ea33f5e357afcf55eee7464af563e4a38e71d9",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/3ec470a2-f8d2-4bcf-a148-5d8613ce092b/scratchpad/r7-brief.md",
+  "reason": "5423 chars",
+  "refused": false,
+  "review": "recall-llm-r7-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

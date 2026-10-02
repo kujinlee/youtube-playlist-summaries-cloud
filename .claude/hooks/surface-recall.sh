@@ -39,7 +39,25 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MATCHER="$REPO_ROOT/scripts/recall-llm.py"
+# ⭐ THE ONE SEAM, AND IT EXISTS SO THIS HOOK CAN BE TESTED WHERE IT SHIPS.
+# ⛔ IT IS ARGV, NOT AN ENVIRONMENT VARIABLE, AND THAT WAS ROUND 7 M1. The first version read
+# `${RECALL_MATCHER:-…}`, which any ambient variable in the session could set — giving either
+# SILENT TOTAL DISABLEMENT (rc=0, no output, no diagnostic) or arbitrary text in
+# `additionalContext` at every step transition. An env var is also invisible to a diff, so
+# `git status`, the guards and CI were all blind to it. `.claude/settings.json:57` invokes this
+# file as `bash .claude/hooks/surface-recall.sh` and passes NO argument, so `$1` is unreachable in
+# production BY CONSTRUCTION rather than by convention — and the guard that must override it is a
+# caller, which is exactly who should be able to.
+# ⛔ WHY A SEAM RATHER THAN A STAGED COPY — round 7 B2, measured. `check-rc-contract.py` used to
+# observe this hook by staging a MINIMAL tree (this file plus a stub matcher) and running it there.
+# A staged tree is a PROXY FOR THE REPO, and the set of things a shell script can read — files,
+# env, $HOME, tools on PATH — is open, so the proxy has a boundary like every other. Reproduced: an
+# arm branching on `$REPO_ROOT/.claude/settings.json` rendered a dangling `Detail:` in the real repo
+# while the guard reported CLEAN, because the staged tree had no settings.json. Staging more files
+# is the same enumeration trap one layer down.
+# ⭐ So `scripts/check-surface-recall.py` runs THIS FILE, IN THIS REPO, and substitutes only the
+# matcher through this variable. There is no fabricated world left to be unfaithful.
+MATCHER="${1:-$REPO_ROOT/scripts/recall-llm.py}"
 [ -f "$MATCHER" ] || exit 0
 
 OUT="$(python3 "$MATCHER" --fire 2>&1)"; RC=$?

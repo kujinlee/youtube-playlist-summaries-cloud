@@ -110,6 +110,13 @@ POPULATION: frozenset[str] = frozenset({
     # declaring a count nothing verifies is the drift this file exists to refuse, and doing that on
     # a brand-new guard would be the shape at one remove. This guard REFUSED it until it was pinned.
     "check-rc-contract.py",
+    # ⟳ 2026-10-01, backlog #196. The HOOK'S own guard, pinned in the commit that creates it — for
+    # the reason this file keeps restating, and because #196's finding was that
+    # `.claude/hooks/surface-recall.sh` had NO self-test, NO mutation entry and NO reader. This
+    # gives it a suite and a reader; mutating the hook ITSELF still cannot be expressed, because
+    # `run_mutations` runs a mutation's `file` AS the suite (`check-plan-code.py`, `run_suite(d,
+    # fname)`), so a non-suite subject has no home. Filed rather than left implied.
+    "check-surface-recall.py",
     "check-ratchet-contract.py",
     "check-banner-armed.py",
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record, pinned in the

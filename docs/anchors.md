@@ -38,7 +38,7 @@ failure, not a placeholder — allocate the name when the first document needs i
 | `prod-smoke` | — | Every deploy is proven by machine to serve the real application, against the deployed URL. |
 | `status-visibility` | — | A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript. |
 | `explanation-on-demand` | — | A person working now can have a subject they choose — a change, a concept, or a set of findings — explained in a page they can read and ask questions inside. |
-| `review-decides-itself` | — | A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs. |
+| `review-decides-itself` | 0014 | A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs. |
 | `feature-map` | — | Anyone can find what the system does today, what it is missing on purpose, and every fragment that defines each — without searching. |
 
 ## Declaring the anchor in a document

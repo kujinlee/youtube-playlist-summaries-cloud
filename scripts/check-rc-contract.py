@@ -38,9 +38,9 @@ WHAT IT CHECKS
       silently drops is exactly #202, and adding a seventh is the obvious next instance.
   R2  Every `case` arm in the hook names a code the matcher can actually emit. An arm for a
       retired code is dead, and dead arms are how a reader concludes a path is covered.
-  R3  No arm interpolates `$OUT` into a LABELLED clause without guarding on `[ -n "$OUT" ]`
-      first — the #201 shape. An arm may forward unconditionally (rc=5 must never be silent) and
-      it may use `$OUT`; what it may not do is promise a detail it might not have.
+  ⛔ R3 WAS HERE AND IS NOW `scripts/check-surface-recall.py`'s. It asked what the READER sees,
+      which is a property of the hook alone — see the pointer above the DELIBERATELY_UNHANDLED
+      table for why that relocation closed round 7 B2 by construction.
 
 ⛔ IT READS BOTH FILES, WHICH IS THE WHOLE POINT. A guard that parsed only the python would have
 passed through both live defects, and one that parsed only the bash could not know which codes
@@ -57,18 +57,25 @@ FAILS IF
 --------
   * a defined rc is neither handled nor declared unhandled with a reason;
   * an arm names a code no constant defines;
-  * an arm interpolates `$OUT` into a labelled clause with no `-n` guard;
-  * either file is missing or unparseable -> exit 2, CANNOT RUN, never a pass.
+  * an arm interpolates `$OUT` after other text with no `-n` guard;
+
+DOES NOT CHECK (round 5 L2 — stated, because an undeclared gap reads as covered)
+  * THE THIRD DIRECTION: a status the matcher can EMIT that no constant DEFINES. python's own
+    `1` from an uncaught exception and `127` from a missing `python3` both reach the hook, and
+    nothing here reconciles them — R1 reads defined->handled and R2 reads arm->defined, so a
+    status that is neither is invisible to both. Backlog row owed.
+  * either file is missing, UNREADABLE or unparseable -> exit 2, CANNOT RUN, never a pass.
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 40 cases
+    python3 scripts/check-rc-contract.py --self-test  # 55 cases
 """
 from __future__ import annotations
 
 import ast
+import concurrent.futures
 import json
-import re
+import os
 import subprocess
 import sys
 import tempfile
@@ -123,6 +130,21 @@ DELIBERATELY_UNHANDLED: dict[int, str] = {
        "this entry is what will be silently wrong.",
 }
 
+# ⛔ R3 LIVES IN `scripts/check-surface-recall.py` NOW, AND THIS IS A POINTER, NOT A COPY.
+# `DECLARED_RENDER` and the equality that enforces it moved there on 2026-10-01. The reason is
+# structural and it explains four rounds of history: R3's subject is THE HOOK'S RENDERED TEXT —
+# this file's matcher entered only as the source of the code set — so R3 was never a cross-file
+# rule, and every Blocking in rounds 3 to 7 landed on it while R1 and R2 produced none.
+# ⭐ AND IT FIXED ROUND 7 B2 BY CONSTRUCTION. This file observes the hook by STAGING A MINIMAL
+# TREE, which is a proxy for the repo; the hook's own guard runs the REAL hook IN THE REAL REPO
+# through the ARGV seam, so there is no fabricated world left to be unfaithful.
+# Measured: an arm branching on `$REPO_ROOT/.claude/settings.json` renders a dangling `Detail:`
+# in the real repo — the new guard returns [5], this file's observer returned [].
+# ⚠ THE SAME FIDELITY GAP STILL AFFECTS R1 AND R2 BELOW, and it is filed rather than hidden: an
+# arm that acts only in the real repo can leave a dead arm invisible here. See backlog #209.
+# ⚠ A SECOND COPY OF THE DECLARATION HERE WOULD DRIFT — the most-measured failure in this
+# repository (17 instances, `check-vocabulary-collisions.py`). There is exactly one.
+
 # ⛔ ROUND 3 M1 — THIS WAS `^\s{2}(\d+)\)`, WHICH MATCHED ONLY TWO-SPACE INDENTATION, AND THE
 # GUARD BUILT TO CATCH SILENT WRONGNESS WAS SILENTLY WRONG. Reproduced by the reviewer: a `4)` arm
 # indented FOUR spaces is invisible, so `handled_codes` returns {0,3,5,6}, `unguarded_detail_arms`
@@ -161,8 +183,31 @@ def defined_codes(matcher_src: str) -> dict[str, int]:
             continue
         vals = [int(v.value) for v in node.value.elts
                 if isinstance(v, ast.Constant) and isinstance(v.value, int)]
-        if len(names) != len(vals):
-            raise CannotRun("the rc tuple assignment has mismatched names and values")
+        # ⛔ ROUND 5 M3 + L4 — THE RAW COUNTS, NEVER THE FILTERED ONES. `len(names) != len(vals)`
+        # compared the two lists AFTER each had independently dropped what it did not recognise,
+        # so a drop at DIFFERENT indices on each side left the lengths equal and `zip` bound every
+        # name to the wrong number. Measured: `OK, mod.X, CANNOT_RUN, … = 0,2,3,4,5,6,'s'` returned
+        # exactly the live-looking {0,2,3,4,5,6} while python assigns `CANNOT_RUN=3 … ='s'` — 5 of
+        # 6 misbound, and the whole guard then printed `rc contract OK` over it. ⚠ This was the ONE
+        # branch of this function that failed WRONG while the other three failed closed, and the
+        # docstring above asserts the opposite, which is why it earns a row despite needing a
+        # source no plausible refactor produces.
+        # ⚠ `len(set(vals))` is L4: two names sharing a value made `verdict`'s set arithmetic
+        # report `rc contract OK` over five distinct codes while claiming six, or — worse — blame a
+        # LIVE hook arm as a dead one. The matcher's own suite catches it cross-file, so this is
+        # the diagnosis being wrong rather than the defect shipping.
+        # ⚠ IT ACCEPTS THE REAL MATCHER TODAY, and that is the falsifier this repair owed:
+        # measured at HEAD, raw targets=6 names=6 raw values=6 ints=6 distinct=6.
+        if not (len(tgt.elts) == len(names) == len(node.value.elts)
+                == len(vals) == len(set(vals))):
+            raise CannotRun(
+                f"the rc tuple assignment is not readable without guessing: "
+                f"{len(tgt.elts)} target element(s) of which {len(names)} are plain names, "
+                f"{len(node.value.elts)} value(s) of which {len(vals)} are ints, "
+                f"{len(set(vals))} of those distinct. Every count must agree, because pairing "
+                f"two independently filtered lists by POSITION is how a name binds to the wrong "
+                f"number — round 5 M3/L4."
+            )
         found.append(dict(zip(names, vals)))
     if len(found) != 1:
         raise CannotRun(
@@ -239,11 +284,34 @@ def observe(hook_src: str, rc: int, out: str) -> str:
     with tempfile.TemporaryDirectory() as td:
         hook = _stub_tree(hook_src, rc, out, td)
         try:
-            proc = subprocess.run(["bash", str(hook)], capture_output=True, text=True, timeout=30)
+            # ⛔ A SCRUBBED ENVIRONMENT — ROUND 8 H2, AND IT IS A REGRESSION I INTRODUCED. Round
+            # 7 L1 fixed exactly this in the hook's own guard and round 7 H2 copied only the STDERR
+            # REFUSAL back here — so this observer gained a refusal it could trip on its own
+            # ambient noise. Measured: `PYTHONVERBOSE=1 python3 scripts/check-rc-contract.py
+            # --self-test` exited 1 with "the hook wrote to STDERR ... NOT RUN". A guard whose
+            # verdict depends on the caller's environment is backlog #56's shape — the reason a
+            # gate gets switched off. Fixing an instance in one file and not its sibling is the
+            # class this fold keeps paying for.
+            _env = {k: v for k, v in os.environ.items() if k in SUBPROCESS_ENV_KEYS}
+            proc = subprocess.run(["bash", str(hook)], capture_output=True, text=True,
+                                  timeout=30, env=_env)
         except FileNotFoundError as exc:
             raise CannotRun(f"no `bash` on PATH, so the hook cannot be adjudicated ({exc})") from exc
         except subprocess.TimeoutExpired as exc:
             raise CannotRun(f"the hook did not finish within 30s at rc={rc}") from exc
+        # ⛔ STDERR IS A REFUSAL HERE TOO — ROUND 7 H2. Round 6 H1's repair landed in
+        # `check-surface-recall.render` and NOT here, so R1 and R2 went on reading a bash FATAL
+        # ERROR as silence: the hook is `set -uo pipefail` with no `-e` and `exit 0`s by design,
+        # so a misspelled tool inside an arm cannot be seen in its exit status. Measured on the
+        # shipped hook: 12 of 12 invocations across six codes write EMPTY stderr, so refusing on
+        # any stderr costs nothing here and converts an invisible failure into a cannot-run.
+        # ⚠ Backlog #209 said the repair was owed; it did not say a working copy already existed
+        # 400 lines away, which is why this sat unfixed through a whole round.
+        if proc.stderr.strip():
+            raise CannotRun(
+                f"the hook wrote to STDERR at rc={rc}, which it cannot report through its exit "
+                f"status: {proc.stderr.strip()[:200]!r}. Round 6 H1 / round 7 H2 — NOT RUN."
+            )
         if proc.returncode != 0:
             raise CannotRun(f"the hook exited {proc.returncode} at rc={rc}, which it documents it "
                             f"never does ('NEVER BLOCKS, NEVER FAILS THE CALL')")
@@ -258,6 +326,11 @@ def observe(hook_src: str, rc: int, out: str) -> str:
 
 
 # A payload the hook cannot mistake for empty, used as the "there IS detail" probe.
+# ⛔ ONE ALLOWLIST, NAMED, AND ITS SIBLING RECONCILES AGAINST IT BY A CASE — ROUND 8 H1. The scrub
+# was hand-copied between this file and `check-surface-recall.py` with nothing comparing the two:
+# the fix for a DRIFT defect was a second copy of itself.
+SUBPROCESS_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG")
+
 _PROBE = "PROBE-DETAIL-TEXT"
 
 
@@ -271,41 +344,50 @@ def handled_codes(hook_src: str, codes: set[int]) -> set[int]:
     return {rc for rc in sorted(codes) if observe(hook_src, rc, _PROBE)}
 
 
-def dangling_detail(hook_src: str, codes: set[int]) -> list[int]:
-    """-> codes whose payload promises a detail the hook does not have. Backlog #201's shape.
-
-    Observed, not parsed: run each code with NO output from the matcher and look for a label with
-    nothing after it. That is exactly what a reader saw from the second firing onward, so it is
-    what this asks about.
-    """
-    bad = []
-    for rc in sorted(codes):
-        payload = observe(hook_src, rc, "")
-        if not payload:
-            continue
-        for label in ("Detail:", "detail:"):
-            head, sep, tail = payload.partition(label)
-            if sep and not tail.strip():
-                bad.append(rc)
-                break
-    return bad
-
-
-def dead_arms(hook_src: str, defined: set[int], probe_max: int = 15) -> list[int]:
+def dead_arms(hook_src: str, defined: set[int], probe_max: int = 255) -> list[int]:
     """-> codes the hook acts on that the matcher cannot emit. A dead arm reads as coverage.
 
-    ⚠ BOUNDED, AND THE BOUND IS THE HONEST PART: codes 0..`probe_max` are probed. An arm for a
-    code above that is invisible here. The contract's codes are single digits and adding a
-    two-digit one would be a deliberate act, so the bound is stated rather than defended as
-    complete.
+    ⛔ ROUND 5 H1 — THIS PROBED 0..15 AND CALLED THE BOUND HONEST, WHICH IT WAS, AND A FAIL-OPEN,
+    WHICH IT ALSO WAS. The reviewer put a `16)` arm in a hook and the guard reported agreement
+    while `observe(hook, 16, …)` returned its payload: real, reachable, undefined executable code
+    passing as clean. R2's contract — "every arm names a code the matcher can actually emit" — was
+    not being met for anything above 15.
+
+    ⭐ AND THE REPAIR IS NOT A BIGGER SAMPLE, IT IS NOTICING THE DOMAIN IS FINITE. A shell exit
+    status is EIGHT BITS: measured, `bash -c 'exit 300'` reports 44, and a Python `sys.exit(300)`
+    through bash reports 44 as well. So 0..255 is not a wider window — it is the WHOLE observable
+    domain, and an arm written as `300)` is unreachable by construction rather than unsampled.
+    Bounded black-box sampling became exhaustive enumeration, which is the difference between
+    "I looked at some of it" and "there is no more of it to look at".
+
+    ⚠ COST, MEASURED: 76 ms per probe serial, so 256 of them is ~20s. Run concurrently instead —
+    each probe is an independent subprocess in its own temporary tree, so there is no shared state
+    to serialise, and the wall clock comes back to a few seconds. `probe_max` stays a parameter
+    because a case exercises a narrowed range, and because a parameter no case varies is one no
+    case can tell from a constant.
     """
-    return [rc for rc in range(probe_max + 1)
-            if rc not in defined and observe(hook_src, rc, _PROBE)]
+    codes = [rc for rc in range(probe_max + 1) if rc not in defined]
+    if not codes:
+        return []
+    found: list[int] = []
+    # ⚠ `max_workers` is modest on purpose: each probe spawns bash plus two short-lived pythons,
+    # and oversubscribing a CI runner to save two seconds is a bad trade.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for rc, payload in zip(codes, pool.map(lambda c: observe(hook_src, c, _PROBE), codes)):
+            if payload:
+                found.append(rc)
+    return sorted(found)
 
 
-def verdict(defined: dict[str, int], handled: set[int], dangling: list[int],
-            dead: list[int] | None = None) -> list[str]:
-    """PURE. -> the list of problems, empty when the two languages agree."""
+def verdict(defined: dict[str, int], handled: set[int], dead: list[int]) -> list[str]:
+    """PURE. -> the list of problems, empty when the two languages agree.
+
+    ⛔ NO PARAMETER HAS A DEFAULT — round 5 H2. `dead` carried `| None = None`, so deleting ONE
+    argument at the ONE call site switched R2 off entirely while the suite stayed green and the
+    live run stayed rc=0 over a real `7)` dead arm. The case meant to cover it called this
+    function directly and passed either way; the defect was in the WIRING, which is why each rule
+    also has an end-to-end case through `main` over a staged tree that is wrong on purpose.
+    """
     problems: list[str] = []
     for name, code in sorted(defined.items(), key=lambda kv: kv[1]):
         if code in handled:
@@ -317,18 +399,39 @@ def verdict(defined: dict[str, int], handled: set[int], dangling: list[int],
             f"it is not listed in DELIBERATELY_UNHANDLED with a reason. The hook's catch-all will "
             f"swallow it — which is backlog #202 exactly."
         )
-    for code in sorted(dead or []):
+    # ⚠ ROUND 5 L1 — CAPPED, AND THE CAP CARRIES THE DIAGNOSIS. A forwarding `*)` catch-all makes
+    # EVERY unmatched status look like an arm, so the honest-but-useless output was ~250 lines each
+    # naming an individual code, none of them the cause. One line that names the real shape beats
+    # 250 that name the symptom.
+    _dead = sorted(dead)
+    if len(_dead) > 8:
         problems.append(
-            f"the hook ACTS on rc {code} and no matcher constant has that value — a dead arm, "
-            f"which reads as coverage and is not. Observed by running the hook at that code."
+            f"the hook ACTS on {len(_dead)} different codes the matcher cannot emit "
+            f"(e.g. {_dead[:4]} … {_dead[-2:]}) — at this volume the cause is a catch-all that "
+            f"FORWARDS rather than one that is silent, which also makes R1 vacuous by making "
+            f"every defined code look handled. Fix the `*)` arm, not the codes."
         )
-    for code in dangling:
-        problems.append(
-            f"at rc {code} the hook forwards a payload whose `Detail:` label has nothing after "
-            f"it when the matcher printed no detail — OBSERVED by running it. That is what a "
-            f"reader saw from the second firing onward, forever — backlog #201."
-        )
+    else:
+        for code in _dead:
+            problems.append(
+                f"the hook ACTS on rc {code} and no matcher constant has that value — a dead arm, "
+                f"which reads as coverage and is not. Observed by running the hook at that code."
+            )
     return problems
+
+
+def _read_or_refuse(path: Path) -> str:
+    """-> the file's text, or CannotRun. Round 5 M2.
+
+    `is_file()` establishes EXISTENCE, never READABILITY, and the header promised exit 2 for
+    "missing or unparseable" while a permission-denied file exited 1 with a PermissionError
+    traceback — a false sentence in the one file whose whole job is policing false sentences.
+    Reproduced at `chmod 000`. Every OSError is the same answer: NOT RUN, never a pass.
+    """
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise CannotRun(f"{path.name} exists but cannot be read ({exc.__class__.__name__})") from exc
 
 
 def main(argv: list[str]) -> int:
@@ -339,26 +442,28 @@ def main(argv: list[str]) -> int:
             print(f"FAILED: {f.relative_to(ROOT)} not found — treat this as NOT RUN.")
             return 2
     try:
-        defined = defined_codes(MATCHER.read_text(encoding="utf-8", errors="replace"))
+        defined = defined_codes(_read_or_refuse(MATCHER))
+        hook_src = _read_or_refuse(HOOK)
     except CannotRun as exc:
         print(f"FAILED: {exc}. Treat this as NOT RUN.")
         return 2
-    hook_src = HOOK.read_text(encoding="utf-8", errors="replace")
     # ⛔ ADJUDICATED BY RUNNING, NOT BY READING — see the observer section for why, and for the
     # arming condition that produced it. Every `CannotRun` here is a refusal, never a pass.
     try:
         codes = set(defined.values())
         handled = handled_codes(hook_src, codes)
-        dangling = dangling_detail(hook_src, codes)
+        # ⚠ THE INERT-HOOK REFUSAL MOVED UP HERE, and it is not cosmetic: it used to sit after
+        # `dead_arms`, so an inert hook paid for 256 probes (measured 2.93s) before being refused,
+        # and its self-test case cost the same. Refuse on the cheapest evidence that settles it.
+        if not handled:
+            print("FAILED: the hook acted on NONE of the matcher's codes, which cannot be right "
+                  "— either the stub tree is wrong or the hook is inert. Treat this as NOT RUN.")
+            return 2
         dead = dead_arms(hook_src, codes)
     except CannotRun as exc:
         print(f"FAILED: {exc}. Treat this as NOT RUN.")
         return 2
-    if not handled:
-        print("FAILED: the hook acted on NONE of the matcher's codes, which cannot be right — "
-              "either the stub tree is wrong or the hook is inert. Treat this as NOT RUN.")
-        return 2
-    problems = verdict(defined, handled, dangling, dead)
+    problems = verdict(defined, handled, dead)
     print(f"rc contract: {len(defined)} code(s) defined, {len(handled)} handled by an arm, "
           f"{len(DELIBERATELY_UNHANDLED)} declared unhandled")
     if problems:
@@ -366,8 +471,8 @@ def main(argv: list[str]) -> int:
         for p in problems:
             print(f"  ✗ {p}")
         return 1
-    print("rc contract OK — every defined code is handled or declared, and no arm promises a "
-          "detail it might not have")
+    print("rc contract OK — every defined code is handled or declared, and no arm is dead. "
+          "What the READER sees is check-surface-recall.py's rule, not this one")
     return 0
 
 
@@ -445,19 +550,18 @@ def _self_test() -> int:
          handled_codes(CANON, CODES), {0, 3, 5, 6})
     case("a silent code is NOT handled — #202 was a code the hook received and dropped",
          2 in handled_codes(CANON, CODES), False)
-    case("the canonical hook promises no detail it lacks", dangling_detail(CANON, CODES), [])
-    case("and it has no dead arm", dead_arms(CANON, CODES), [])
+    # ⛔ ROUND 7 H2 — A BASH FATAL ERROR IS A REFUSAL HERE TOO. Round 6 H1's repair landed only
+    # in the hook's own guard, so R1 and R2 went a whole round still reading a fatal error as
+    # silence. The hook exits 0 by design, so stderr is the only channel that can carry it.
+    raises("a hook that writes to STDERR is a cannot-run, never silence — round 7 H2",
+           lambda: observe(_hook('  5) echo "boom" >&2\n     PAYLOAD="x" ;;\n'), 5, _PROBE),
+           CannotRun)
 
-    # ⛔ #201's SHAPE, OBSERVED: a label with nothing after it when the matcher printed nothing.
-    DANGLE = _hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n'
-                   '  5) PAYLOAD="unreadable. Detail: $OUT" ;;\n')
-    case("an unconditional Detail: label is caught by running the hook — backlog #201",
-         dangling_detail(DANGLE, CODES), [5])
-    # ⚠ THE ADJACENT NEGATIVE: the same arm, guarded, is fine.
-    case("...and the guarded form is not flagged",
-         dangling_detail(_hook('  5) PAYLOAD="unreadable."\n'
-                               '     [ -n "$OUT" ] && PAYLOAD="$PAYLOAD Detail: $OUT" ;;\n'),
-                         CODES), [])
+    # ⛔ R3'S CASES AND ITS ELEVEN-ARM CORPUS MOVED WITH THE RULE to
+    # `scripts/check-surface-recall.py`, which observes the REAL hook in the REAL repo.
+    # They are not deleted, they are RELOCATED — a retirement whose subject survives
+    # elsewhere would be a ratchet fall dressed as bookkeeping, and the count is recorded
+    # at both sites.
 
     # ⛔ ROUND 4 B2 — THE ARM THAT FORWARDS EVERY MATCH. There is no escape row for rc 0 any more,
     # so deleting its arm must be refused rather than excused.
@@ -465,8 +569,7 @@ def _self_test() -> int:
     case("deleting the 0) arm is observed as unhandled — round 4 B2",
          0 in handled_codes(NO_ZERO, CODES), False)
     case("...and the verdict refuses it, because rc 0 has no escape row",
-         len(verdict(defined_codes(RC), handled_codes(NO_ZERO, CODES),
-                     dangling_detail(NO_ZERO, CODES), [])) >= 1, True)
+         len(verdict(defined_codes(RC), handled_codes(NO_ZERO, CODES), [])) >= 1, True)
 
     # ⛔ THE FIVE QUOTING FORMS THAT DEFEATED THE LEXER ACROSS TWO ROUNDS. Each hook below claims a
     # `5)` arm in TEXT and has none in CODE; bash sends rc 5 to the catch-all, and so must this.
@@ -496,8 +599,26 @@ def _self_test() -> int:
     case("an arm for a code the matcher cannot emit is a dead arm",
          dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  7) PAYLOAD="dead" ;;\n'),
                    CODES), [7])
-    case("...and the probe range is stated rather than assumed",
-         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  7) PAYLOAD="dead" ;;\n'),
+    # ⛔ ROUND 5 H1 — AN ARM ABOVE THE OLD 15-CODE WINDOW. Real, reachable, undefined executable
+    # code that passed as clean while `observe` returned its payload.
+    case("a dead arm at 16 is caught — round 5 H1, the old window stopped at 15",
+         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  16) PAYLOAD="dead" ;;\n'),
+                   CODES), [16])
+    # ⚠ THE RANGE IS INCLUSIVE OF `probe_max`, pinned cheaply rather than by a 256-probe sweep —
+    # `range(probe_max + 1)` is exactly the kind of off-by-one worth a case of its own.
+    case("the probe range INCLUDES probe_max itself",
+         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  6) PAYLOAD="dead" ;;\n'),
+                   {0, 2, 3, 4, 5}, probe_max=6), [6])
+    # ⭐ WHY 0..255 IS EXHAUSTIVE RATHER THAN A WIDER SAMPLE, pinned by ONE probe instead of 256:
+    # a shell exit status is eight bits, so `exit 300` ARRIVES AS 44 and an arm written `300)` can
+    # never be reached. That makes the enumeration complete, not merely large — and the truth of
+    # it is bash's, observed here, not an assumption of mine.
+    case("an exit above 255 truncates, so an arm above 255 is unreachable by construction",
+         observe(_hook('  44) PAYLOAD="truncated-300-lands-here" ;;\n'), 300, _PROBE).strip(),
+         "truncated-300-lands-here")
+    # ⚠ `probe_max` is still a parameter and still varied, so no clause reading it is unguarded.
+    case("a narrowed probe range is honoured",
+         dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  16) PAYLOAD="dead" ;;\n'),
                    CODES, probe_max=6), [])
 
     # ⛔ A HOOK THAT FAILS OR TALKS NONSENSE IS A CANNOT-RUN, NEVER A SILENT PASS.
@@ -518,8 +639,6 @@ def _self_test() -> int:
          handled_codes(CANON, {0, 3}), {0, 3})
     case("...and an empty code set observes nothing at all",
          handled_codes(CANON, set()), set())
-    case("dangling_detail honours a narrower set too",
-         dangling_detail(DANGLE, {0, 3}), [])
     case("dead_arms with a DIFFERENT defined set reclassifies the same hook",
          dead_arms(_hook('  0) [ -n "$OUT" ] && PAYLOAD="$OUT" ;;\n  7) PAYLOAD="x" ;;\n'),
                    {0, 7}), [])
@@ -534,11 +653,11 @@ def _self_test() -> int:
 
     # ── verdict — pure, and unchanged in shape by the redesign ──────────────────────────────
     D = defined_codes(RC)
-    case("the live shape agrees", verdict(D, {0, 3, 5, 6}, [], []), [])
+    case("the live shape agrees", verdict(D, {0, 3, 5, 6}, []), [])
     case("a defined code with no arm and no row is refused — #202's shape",
-         len(verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [], [])), 1)
+         len(verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [])), 1)
     case("...and the message names the code and the row it needs",
-         any("rc 7 (SEVENTH)" in x for x in verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [], [])),
+         any("rc 7 (SEVENTH)" in x for x in verdict({**D, "SEVENTH": 7}, {0, 3, 5, 6}, [])),
          True)
     # ⛔ EVERY ESCAPE ROW IS FALSIFIABLE BY REMOVAL — round 4 B2. The suite used to pop one row,
     # and the row it never popped was the one whose premise was false.
@@ -547,15 +666,122 @@ def _self_test() -> int:
         try:
             _saved = DELIBERATELY_UNHANDLED.pop(_code)
             case(f"a defined code with NO arm and NO row is refused (rc {_code}, row removed)",
-                 len(verdict(D, {0, 3, 5, 6} - {_code}, [], [])) >= 1, True)
+                 len(verdict(D, {0, 3, 5, 6} - {_code}, [])) >= 1, True)
         finally:
             if _saved is not None:
                 DELIBERATELY_UNHANDLED[_code] = _saved
-    case("a dead arm is refused", len(verdict(D, {0, 3, 5, 6}, [], [9])), 1)
-    case("a dangling detail is refused even when every code is handled",
-         len(verdict(D, {0, 3, 5, 6}, [5], [])), 1)
+    case("a dead arm is refused", len(verdict(D, {0, 3, 5, 6}, [9])), 1)
+    case("many dead arms collapse to ONE problem naming the catch-all — round 5 L1",
+         len(verdict(D, {0, 3, 5, 6}, list(range(20, 60)))), 1)
+    case("...and that one problem names the COUNT and the real cause, not a code",
+         all(t in verdict(D, {0, 3, 5, 6}, list(range(20, 60)))[0]
+             for t in ("40 different codes", "catch-all that FORWARDS")), True)
+    case("...while a handful are still listed individually",
+         len(verdict(D, {0, 3, 5, 6}, [9, 11])), 2)
+
     case("every DELIBERATELY_UNHANDLED row names a defined code",
          sorted(set(DELIBERATELY_UNHANDLED) - set(D.values())), [])
+    # ⛔ THE LABEL LOOP, THE SHAPE LOOP AND THE WHOLE R4 BLOCK ARE RETIRED HERE, WITH THEIR
+    # SUBJECT. They tested `dangling_detail` and `silent_codes`, two functions that no longer
+    # exist: `_CORPUS` above contains the same arms (every label and every shape among them)
+    # and asserts the stronger property, and silence is just "not the declared sentence" now.
+    # ⚠ A retirement whose subject survives would be a ratchet FALL dressed as bookkeeping;
+    # these are recorded at both sites with the count and the reason.
+
+    # ── M2 — EXISTENCE IS NOT READABILITY ───────────────────────────────────────────────────
+    with tempfile.TemporaryDirectory() as _td:
+        raises("a path that exists and cannot be read is CannotRun, never a pass",
+               lambda: _read_or_refuse(Path(_td)), CannotRun)
+
+    # ── M3 / L4 — THE FALSIFIER THIS REPAIR OWED, IN BOTH DIRECTIONS ────────────────────────
+    _TUPLE = "OK, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, UNREADABLE_PLAN, UNANSWERABLE"
+    raises("a target the reader cannot pair is refused, not guessed — round 5 M3",
+           lambda: defined_codes("OK, mod.X, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, "
+                                 "UNREADABLE_PLAN, UNANSWERABLE = 0, 2, 3, 4, 5, 6, 's'"),
+           CannotRun)
+    # ⚠ THIS CASE EXISTS BECAUSE THE ONE BELOW DID NOT DISCRIMINATE. The sweep reported the
+    # raw-TARGET mutation as a SURVIVOR: with 7 targets AND 7 values the mutated chain still
+    # failed on `len(node.value.elts) != len(vals)`, so both versions raised and no case could
+    # tell them apart. Here the VALUES line up with the NAMES (7 targets, 6 values), which is the
+    # only shape where the target count is the sole thing standing between a reader and a guess.
+    raises("a target the reader drops is refused even when the VALUES line up",
+           lambda: defined_codes("OK, mod.X, CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, "
+                                 "UNREADABLE_PLAN, UNANSWERABLE = 0, 2, 3, 4, 5, 6"),
+           CannotRun)
+    raises("...and a subscript target is the same shape",
+           lambda: defined_codes("OK, D['k'], CANNOT_RUN, STALE_CACHE, BAD_RESPONSE, "
+                                 "UNREADABLE_PLAN, UNANSWERABLE = 0, 2, 3, 4, 5, 6, 's'"),
+           CannotRun)
+    raises("two codes sharing a value are refused — round 5 L4",
+           lambda: defined_codes(f"{_TUPLE} = 0, 2, 3, 4, 5, 5"), CannotRun)
+    raises("...including when the collision lands on a code with no arm",
+           lambda: defined_codes(f"{_TUPLE} = 0, 2, 3, 2, 5, 6"), CannotRun)
+    case("...and the REAL matcher at HEAD still reads clean — the control that makes the four "
+         "refusals above mean something",
+         defined_codes(MATCHER.read_text(encoding="utf-8", errors="replace")),
+         {"OK": 0, "CANNOT_RUN": 2, "STALE_CACHE": 3, "BAD_RESPONSE": 4,
+          "UNREADABLE_PLAN": 5, "UNANSWERABLE": 6})
+
+    # ── H2's WIRING — ONE end-to-end run of `main` over a tree that is wrong FOUR WAYS ───────
+    # ⛔ THIS IS THE CASE CLASS ROUND 5 H2 PROVED WAS MISSING. Every rule above is checked by
+    # calling its function directly, and `verdict(…, dead, …)` passed with a dead list while the
+    # CALL SITE in `main` had stopped passing one — 43/43 green, live rc=0, clean over a real
+    # dead arm. A rule with no wiring case is a rule a refactor can silently detach.
+    # ⚠ It costs one full `main()` — 256 concurrent probes — so all four rules share ONE tree.
+    def _main_over(hook_src: str, matcher_src: str) -> tuple[int, str]:
+        import contextlib
+        import io as _io
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "scripts").mkdir()
+            (root / ".claude" / "hooks").mkdir(parents=True)
+            m = root / "scripts" / "recall-llm.py"
+            m.write_text(matcher_src)
+            h = root / ".claude" / "hooks" / "surface-recall.sh"
+            h.write_text(hook_src)
+            saved = (globals()["ROOT"], globals()["MATCHER"], globals()["HOOK"])
+            globals()["ROOT"], globals()["MATCHER"], globals()["HOOK"] = root, m, h
+            try:
+                buf = _io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc = main([])
+                return rc, buf.getvalue()
+            finally:
+                globals()["ROOT"], globals()["MATCHER"], globals()["HOOK"] = saved
+
+    _WRONG_FOUR_WAYS = _hook(
+        '  3) PAYLOAD="stale. Reason: $OUT" ;;\n'              # R3: unguarded, novel label
+        '  5) [ -n "$OUT" ] && PAYLOAD="unreadable. Detail: $OUT" ;;\n'  # R4: silent at rc 5
+        '  6) PAYLOAD="no corpus." ;;\n'
+        '  7) PAYLOAD="dead arm" ;;\n')                        # R2: rc 7 is emitted by nothing
+    _rc, _out = _main_over(_WRONG_FOUR_WAYS, RC)               # R1: no `0)` arm, and no row
+    case("main refuses a tree that is wrong four ways", _rc, 1)
+    case("R1 is WIRED — the missing 0) arm reaches the verdict",
+         "rc 0 (OK) is defined" in _out, True)
+    case("R2 is WIRED — dead_arms' result is still READ at the call site (round 5 H2)",
+         "ACTS on rc 7" in _out, True)
+
+    # ⚠ THE CONTROL STAGES THE REAL HOOK, NOT CANON, AND THE REASON IS THE NEW RULE: `main`
+    # consults the module-global DECLARED_RENDER, which approves the SHIPPED sentences. A synthetic
+    # fixture renders different text, so R3 would fire on every code and the control would be red
+    # for a reason that has nothing to do with wiring. Observed while writing this: rc=1, 6 of 6
+    # codes "undeclared". The declaration and the hook are one unit; a control must stage both.
+    _rc_ok, _out_ok = _main_over(_read_or_refuse(HOOK), RC)
+    case("...and the SAME wiring reports a correct tree as OK — the control", _rc_ok, 0)
+    _INERT, _ = _main_over(_hook('  *) : ;;\n'), RC)
+    case("an inert hook is NOT RUN, never a pass — and is refused before the 256 probes",
+         _INERT, 2)
+    # ⚠ `main`'s ONE argv-sensitive branch had no case at all, and argv was `[]` at every call
+    # site — so `check-fixture-variation.py` was right that nothing could tell it from a literal.
+    # The suite is stubbed out rather than re-entered, because `main(["--self-test"])` for real is
+    # unbounded recursion; `main` resolves `_self_test` from module globals at call time.
+    _saved_st = globals()["_self_test"]
+    globals()["_self_test"] = lambda: 99
+    try:
+        case("main dispatches --self-test to the suite", main(["--self-test"]), 99)
+        case("...and an argv WITHOUT it does not reach the suite", main(["--nope"]) != 99, True)
+    finally:
+        globals()["_self_test"] = _saved_st
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

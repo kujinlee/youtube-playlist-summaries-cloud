@@ -1,0 +1,25 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 6078 chars"
+  ],
+  "dirty": {
+    "docs/backlog.md": "100644 6e197e6eb8eb6e1bfe8ab2b6f57dc9e6d1ffa0b6",
+    "docs/reviews/claude/recall-llm-r5-claude.md": "100644 0702376795a1de986bfd6c221c9b318a94ae08ea",
+    "docs/reviews/codex/recall-llm-r5-codex.md": "100644 150d9e8fe6fa72699a6df8a57751c31fabcff576",
+    "docs/reviews/verdicts/recall-llm-r5-codex.verdict.json": "100644 9bddb1f3c3411d36620d589a9d3aae814b21a97e",
+    "scripts/check-plan-code.py": "100644 37f49eed7f2cb5c0321fafff70973759ca580949",
+    "scripts/check-rc-contract.py": "100644 34606335c62b2dc011e62cf0646ed5b1b2b44e52",
+    "scripts/mutations/check-rc-contract.json": "100644 01fd4c07c928317e096fd0c1870ec81bd4481882"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f7ea33f5e357afcf55eee7464af563e4a38e71d9",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/3ec470a2-f8d2-4bcf-a148-5d8613ce092b/scratchpad/r6-brief.md",
+  "reason": "6078 chars",
+  "refused": false,
+  "review": "recall-llm-r6-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

@@ -108,5 +108,71 @@
       ]
     ],
     "expect": "an UNPARSEABLE file does not exempt — a docstring we cannot read is not a declaration"
+  },
+  {
+    "name": "the _selftest- exclusion is removed, so a transient test FIXTURE in .claude/hooks/ satisfies R3 and a guard with no real caller reads as called — round 8 H1",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "if not q.name.startswith(FIXTURE_PREFIX))",
+        "if True or q.name.startswith(FIXTURE_PREFIX))"
+      ]
+    ],
+    "expect": "a _selftest- fixture is NOT caller evidence"
+  },
+  {
+    "name": "evaluate's result is discarded at the call site, switching off R1, R2, R3 AND R4 across every guard in the population — round 8 B1, the widest instance of the class",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    return evaluate(texts, blob_for, manifest_stems)",
+        "    return []"
+      ]
+    ],
+    "expect": "the KNOWN POSITIVE fires: an uncalled guard in a staged tree is R3_no_caller"
+  },
+  {
+    "name": "caller_source_paths' result is discarded and the inline globs come back, so a transient fixture satisfies R3 again — round 8 B2, the fix for round 8 H1 severed",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    caller_sources: list[Path] = caller_source_paths(root, ci_path)",
+        "    caller_sources: list[Path] = ([ci_path]\n                                  + sorted((root / \"scripts\").glob(\"*.sh\"))\n                                  + sorted((root / \".claude\" / \"hooks\").glob(\"*\"))\n                                  + sorted((root / \"scripts\").glob(\"*.py\")))"
+      ]
+    ],
+    "expect": "the KNOWN POSITIVE fires: an uncalled guard in a staged tree is R3_no_caller"
+  },
+  {
+    "name": "the own-text exclusion is removed, so every guard satisfies R3 by naming itself in its own usage docstring — round 8 M1",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "            if q.is_file() and str(q.relative_to(root)) != rel)",
+        "            if q.is_file())"
+      ]
+    ],
+    "expect": "a guard that merely NAMES ITSELF does not satisfy R3 — the own-text exclusion"
+  },
+  {
+    "name": "the caller-corpus floor returns an empty violation list instead of refusing, so a tree with no executable sources reads as clean — round 8 L2",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    if len(caller_sources) < 3:\n        return None",
+        "    if len(caller_sources) < 3:\n        return []"
+      ]
+    ],
+    "expect": "a tree with almost no executable sources is a refusal, never a clean pass"
+  },
+  {
+    "name": "main's consumption of `assess` is severed — the rule still RUNS and its result is discarded, which is round 9's Blocking and the eighth instance of the wiring class",
+    "file": "scripts/check-ratchet-contract.py",
+    "edits": [
+      [
+        "    violations = assess(root, ci_path, texts, ratchets)",
+        "    violations = assess(root, ci_path, texts, ratchets)\n    violations = []"
+      ]
+    ],
+    "expect": "main is WIRED - a violation `assess` finds reaches main's EXIT CODE"
   }
 ]
