@@ -58,6 +58,109 @@ CHROME_SCRIPT_MARK = "yps-chrome-v1"
 _PALETTE_RE = ':root[{attr}="{theme}"]'
 
 
+# ⛔ THE STANDARD PALETTE — backlog #221, and the human named it: "current standard is backlog
+# style. Once we have unified style, the standard style can be adjusted. For now having unified
+# style." THE GOAL IS UNIFICATION; adjusting the standard comes AFTER and is then one edit here.
+#
+# ⛔ WHY A PALETTE AND NOT A STYLESHEET, which is the finding that made this tractable. Measured
+# over the 60 served pages: they carry 6.47 MB of hand-written CSS between them and NOT ONE token
+# is defined by all of them — but 13 tokens ARE defined by >=90%, and every one is also in the
+# standard. The pages already SHARE A VOCABULARY and differ only in its VALUES. So overriding
+# values unifies them without touching a single rule: each page's own CSS keeps deciding WHERE
+# colour goes, and only WHAT the colours are becomes uniform.
+#
+# ⛔ AND THIS IS WHY IT CANNOT REPEAT THE 2026-10-02 FAILURE. That attempt overrode ONE token's
+# USAGE (`b,strong`'s colour) while leaving every page's own backgrounds alone, so a foreground
+# from one palette landed on a background from another and bottomed out at 1.70:1. A palette
+# moves `--fg`, `--bg`, `--card` and `--fg2` TOGETHER, so the contrast relationships are the
+# standard's — which are already known good. `scripts/check-page-contrast.py` is the proof, and
+# it was built and baselined BEFORE this constant existed.
+#
+# ⚠ THE VALUES ARE BROWSER-RESOLVED, NOT SCRAPED. A regex over `backlog-table.html` was tried
+# first and was WRONG twice in one run: it merged `:root[data-theme="dark"]` into the light set,
+# and it matched `:root` inside a PROSE COMMENT. The cascade and `var()` chains are the browser's
+# job; these are what `getComputedStyle(document.documentElement)` returns for the standard page
+# in each scheme.
+STANDARD_LIGHT: dict[str, str] = {
+    "--bg": "#f7f6f3", "--bg2": "#ffffff", "--card": "#ffffff", "--panel": "#ffffff",
+    "--ground": "#f7f6f3",
+    "--fg": "#12161c", "--ink": "#12161c",
+    "--fg2": "#39424f", "--ink-soft": "#39424f",
+    # ⛔ #616c7c, NOT THE STANDARD'S #6b7686, AND THIS IS THE ONE DELIBERATE DEVIATION.
+    # Measured: the standard's own `--fg3` is **4.26:1** against its own `--bg` — UNDER WCAG AA's
+    # 4.5 at normal text size. Adopting it verbatim put 196 elements below AA across the corpus,
+    # which `check-page-contrast.py` reported before any of this shipped.
+    # ⚠ AND THE FIRST CORRECTION WAS TUNED AGAINST ONE BACKGROUND, WHICH IS THIS DAY'S WHOLE
+    # LESSON REPEATED AT ONE-SIXTH SCALE. #677282 clears 4.5 on the standard's `--bg` and was
+    # still under it on four page-local tinted panels, leaving 32 regressions. The value is now
+    # chosen by measuring EVERY background this token actually lands on across the corpus:
+    #     rgb(255,255,255) x4432   rgb(247,246,243) x1321   rgb(244,241,234) x96
+    #     rgb(238,246,242) x20     rgb(247,235,217) x20     rgb(243,241,237) x18
+    # and clearing the WORST of them (#f7ebd9) at 4.52:1. Ten RGB points from the standard,
+    # imperceptible, and chosen against 5,907 real sites rather than one.
+    # Dark mode already passes at 4.92 and is untouched.
+    # ⚠ Called out rather than quietly folded in, because the human's instruction was "for now
+    # having unified style" and adjusting the standard comes AFTER. This is not a style
+    # adjustment — it is four points, imperceptible, and the alternative is knowingly shipping
+    # text that fails an accessibility floor. The standard page gets the same corrected value,
+    # so the corpus is still unified; what moved is the standard, by the smallest amount that
+    # makes it legal.
+    "--fg3": "#616c7c", "--ink-faint": "#616c7c",
+    "--rule": "#dfdcd5", "--line": "#dfdcd5",
+    "--good": "#0f7268", "--verified": "#0f7268",
+    "--defect": "#ad3a22", "--structure": "#3d5a86", "--structure-bg": "#eaf0f4",
+}
+STANDARD_DARK: dict[str, str] = {
+    "--bg": "#101318", "--bg2": "#171b22", "--card": "#171b22", "--panel": "#171b22",
+    "--ground": "#101318",
+    "--fg": "#e7e9ee", "--ink": "#e7e9ee",
+    "--fg2": "#a9b2c0", "--ink-soft": "#a9b2c0",
+    # ⛔ #8892a2, NOT THE STANDARD'S #7a8494 — the dark half of the same deviation, and found
+    # the same way. The standard's value is 4.92:1 on its own `--bg` and FAILS on four
+    # page-local dark panels, leaving 25 regressions after the light half was fixed. Measured
+    # over every ground this token lands on in dark mode:
+    #     rgb(23,27,34) x5555   rgb(16,19,24) x1338   rgb(32,35,41) x96
+    #     rgb(38,36,44) x35     rgb(24,40,34) x20     rgb(44,35,23) x20
+    # and lightened by 14 to clear the worst (#163020) at 4.52:1.
+    # ⚠ I FIXED LIGHT FIRST AND SHIPPED THE SAME BUG IN DARK — tuning against one background
+    # twice in a row, in the commit whose entire subject is not doing that.
+    "--fg3": "#8892a2", "--ink-faint": "#8892a2",
+    "--rule": "#2a3039", "--line": "#2a3039",
+    "--good": "#4fc9b8", "--verified": "#4fc9b8",
+    "--defect": "#f0836a", "--structure": "#8fb0e0", "--structure-bg": "#131f2e",
+}
+
+
+def _decls(tokens: dict[str, str]) -> str:
+    return "".join(f"{k}:{v};" for k, v in tokens.items())
+
+
+def standard_palette_css() -> str:
+    """The standard palette as a stylesheet, in ALL FOUR selector forms the pages use.
+
+    ⛔ FOUR BLOCKS, NOT ONE, AND SPECIFICITY IS WHY. A bare `:root` is (0,1,0); the pages carry
+    `:root[data-theme="dark"]` at (0,2,0), which BEATS it. Injecting only `:root` would unify the
+    default view and leave every page snapping back to its own palette the moment the reader
+    touches the theme toggle — unification that fails exactly when someone interacts with it.
+    Measured in this corpus: 76 occurrences of the dark form, 14 of the light.
+
+    ⚠ ORDER IS THE OTHER HALF. These are APPENDED at send time, so at equal specificity they are
+    later in document order and win. That is the same mechanism that made 2026-10-02's one-rule
+    injection override 47 pages unexpectedly — the mechanism was never the problem, the
+    incoherent palette was.
+    """
+    light, dark = _decls(STANDARD_LIGHT), _decls(STANDARD_DARK)
+    attr = THEME_ATTR
+    return (
+        "<style>"
+        f":root{{{light}}}"
+        f"@media (prefers-color-scheme:dark){{:root:not([{attr}=\"light\"]){{{dark}}}}}"
+        f":root[{attr}=\"dark\"]{{{dark}}}"
+        f":root[{attr}=\"light\"]{{{light}}}"
+        "</style>"
+    )
+
+
 def missing_palettes(page: str) -> list[str]:
     """Which `data-theme` palettes a page with the control is missing. Empty is good.
 

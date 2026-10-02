@@ -33,7 +33,7 @@ USAGE
 says TREAT THIS AS NOT RUN. A contrast gate that goes quiet when it cannot see is worse than none,
 because the silence is indistinguishable from "everything is readable".
 
-    python3 scripts/check-page-contrast.py --self-test  # 61 cases
+    python3 scripts/check-page-contrast.py --self-test  # 64 cases
 """
 from __future__ import annotations
 
@@ -46,6 +46,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling modules, e.g. page_chrome
 PAGES_DIR = ROOT / "docs" / "explainers"
 
 # WCAG 2.1: 4.5:1 for normal text, 3.0:1 for large text (>=18.66px bold, or >=24px).
@@ -131,27 +132,29 @@ def threshold_for(px: float, weight: float) -> float:
 # ── PURE: the verdict ───────────────────────────────────────────────────────────────────────────
 
 def sample_key(s: dict) -> str:
-    """Stable identity for one measured STYLE COMBINATION, so a baseline survives content edits.
+    """Stable identity for one measured SITE, so a baseline survives the change it guards.
 
-    ⛔ THE STYLE, NOT THE ELEMENT, AND THE FIRST VERSION HAD THIS WRONG. Keyed on the element's
-    TEXT, the backlog page alone produced 10,626 rows — one per table cell — so the baseline was
-    enormous, slow, and invalidated by adding a single backlog row. Contrast is a property of a
-    (foreground, background, size, weight) COMBINATION; an element is just an instance of one.
-    Collapsing to combinations took that page from 10,626 rows to a few dozen and made the
-    baseline stable against every edit that does not change the design.
+    ⛔ IT MUST NOT CONTAIN A COLOUR, AND THE FIRST TWO VERSIONS BOTH DID THE WRONG THING. Keyed on
+    element TEXT, one page produced 10,626 rows and any content edit invalidated the baseline.
+    Keyed on (fg, bg, size, weight) it was compact and stable — until the first real use, a
+    palette change, altered every fg and bg, so NO key matched and all 196 affected elements were
+    reported as "NEW" instead of compared. **A baseline keyed on the thing under test cannot
+    measure a change to that thing.** The key is now page, scheme, selector path, size, weight —
+    every component of WHERE the text is, and none of HOW it is coloured.
 
-    ⚠ The exemplar text is carried for the HUMAN, never for identity — it is what lets a failure
-    message say which words went invisible.
+    ⚠ Two sites can share a key and differ in colour (the same selector path inside a verified
+    box and a defect box). `collapse` keeps the WORST ratio for a key, which is conservative in
+    the only direction that matters: it can over-report a regression, never hide one.
     """
-    return (f"{s['page']}|{s['scheme']}|{s['fg']}|{s['bg']}|"
-            f"{s['px']:.1f}|{int(s['weight'])}")
+    return f"{s['page']}|{s['scheme']}|{s['selector']}|{s['px']:.1f}|{int(s['weight'])}"
 
 
 def collapse(rows: list[dict]) -> list[dict]:
-    """PURE. Many measured elements -> one sample per distinct style combination.
+    """PURE. Many measured elements -> one sample per site, carrying its WORST ratio.
 
-    Keeps the first text seen as the exemplar and counts how many elements share the combination,
-    so a regression message can say "and 412 others like it" rather than printing 412 lines.
+    ⛔ WORST, NOT FIRST OR MEAN. Sites sharing a key can differ in colour, and a baseline that
+    recorded the first or the average would let the worst of them degrade unseen. Over-reporting
+    a regression costs a reader one line; hiding one costs the thing this harness exists for.
     """
     out: dict[str, dict] = {}
     for r in rows:
@@ -161,6 +164,11 @@ def collapse(rows: list[dict]) -> list[dict]:
             out[k] = {**r, "instances": 1}
         else:
             hit["instances"] += 1
+            if r["ratio"] < hit["ratio"]:
+                hit["ratio"] = r["ratio"]
+                hit["text"] = r["text"]
+                hit["fg"] = r["fg"]
+                hit["bg"] = r["bg"]
     return list(out.values())
 
 
@@ -266,6 +274,7 @@ def measure(pages: list[Path], schemes=("light", "dark"), extra_css: str = "",
             samples.append({
                 "page": raw["page"],
                 "scheme": raw["scheme"],
+                "selector": raw["selector"],
                 "text": raw["text"],
                 "fg": raw["color"],
                 "bg": raw["bg"],
@@ -397,9 +406,10 @@ def _self_test() -> int:
 
     # ── the verdict ratchet ──
     def s(ratio, page="p.html", scheme="light", text="hello", thr=AA_NORMAL,
-          fg="rgb(0, 0, 0)", bg="rgb(255, 255, 255)", px=16.0, weight=400.0):
-        return {"page": page, "scheme": scheme, "text": text, "fg": fg, "bg": bg,
-                "px": px, "weight": weight, "ratio": ratio, "threshold": thr}
+          fg="rgb(0, 0, 0)", bg="rgb(255, 255, 255)", px=16.0, weight=400.0, selector="body>p"):
+        return {"page": page, "scheme": scheme, "selector": selector, "text": text,
+                "fg": fg, "bg": bg, "px": px, "weight": weight,
+                "ratio": ratio, "threshold": thr}
 
     # ── collapse: the element -> style-combination step ──
     # ⛔ WHY IT EXISTS: keyed on element text, the backlog page alone produced 10,626 rows and the
@@ -410,10 +420,16 @@ def _self_test() -> int:
          collapse([s(5.0, text="a"), s(5.0, text="b")])[0]["instances"], 2)
     case("...keeping the FIRST text as the exemplar, so a message can name real words",
          collapse([s(5.0, text="first"), s(5.0, text="second")])[0]["text"], "first")
-    case("a different FOREGROUND is a different combination",
-         len(collapse([s(5.0), s(5.0, fg="rgb(1, 1, 1)")])), 2)
-    case("a different BACKGROUND is a different combination",
-         len(collapse([s(5.0), s(5.0, bg="rgb(254, 254, 254)")])), 2)
+    # ⛔ COLOUR IS NOT PART OF IDENTITY — this is the property the palette change required, and
+    # the version that lacked it reported all 196 affected elements as NEW instead of comparing.
+    case("a different FOREGROUND is the SAME site, so a palette change can be compared",
+         len(collapse([s(5.0), s(4.0, fg="rgb(1, 1, 1)")])), 1)
+    case("...and the survivor carries the WORST ratio, never the first",
+         collapse([s(5.0), s(4.0, fg="rgb(1, 1, 1)")])[0]["ratio"], 4.0)
+    case("...in either order, so it is a minimum and not a last-write",
+         collapse([s(4.0, fg="rgb(1, 1, 1)"), s(5.0)])[0]["ratio"], 4.0)
+    case("a different SELECTOR is a different site",
+         len(collapse([s(5.0), s(5.0, selector="body>h1")])), 2)
     case("a different SIZE is a different combination — it changes the threshold",
          len(collapse([s(5.0, px=16.0), s(5.0, px=24.0)])), 2)
     case("a different WEIGHT is too, for the same reason",
@@ -423,8 +439,11 @@ def _self_test() -> int:
     case("...and in a different SCHEME",
          len(collapse([s(5.0), s(5.0, scheme="dark")])), 2)
     # ⚠ THE PROPERTY THE WHOLE REDESIGN RESTS ON: changing only the TEXT must not change identity.
-    case("the key is independent of the TEXT, which is what makes a baseline survive an edit",
+    case("the key is independent of the TEXT, so a content edit does not invalidate a baseline",
          sample_key(s(5.0, text="before")), sample_key(s(5.0, text="after a content edit")))
+    case("the key is independent of COLOUR, so a PALETTE change can be compared at all",
+         sample_key(s(5.0, fg="rgb(0,0,0)", bg="rgb(255,255,255)")),
+         sample_key(s(5.0, fg="rgb(9,9,9)", bg="rgb(250,250,250)")))
 
     base = {"samples": {sample_key(s(8.0)): 8.0}}
     case("unchanged is silent", verdict([s(8.0)], base), [])
@@ -443,10 +462,10 @@ def _self_test() -> int:
     # ⚠ NOVELTY IS A STYLE, NOT A WORD. The first version of these two cases used
     # `text="brand new"` and failed once the key stopped depending on text — correctly, and the
     # red is the evidence that the redesign took effect. A new COMBINATION is a new colour.
-    got3 = verdict([s(2.0, fg="rgb(9, 9, 9)")], base)
+    got3 = verdict([s(2.0, selector="body>aside")], base)
     case("a NEW failing combination is reported rather than admitted silently", len(got3), 1)
     case("...and says NEW", "NEW" in (got3[0] if got3 else ""), True)
-    case("a NEW passing combination is silent", verdict([s(9.0, fg="rgb(9, 9, 9)")], base), [])
+    case("a NEW passing combination is silent", verdict([s(9.0, selector="body>aside")], base), [])
     # ⚠ A key built from the index would renumber on any edit; this one must not.
     case("the sample key is independent of ORDER",
          sample_key(s(8.0)) == sample_key(s(3.0)), True)
@@ -497,8 +516,11 @@ def main(argv: list[str], root: Path = ROOT) -> int:
     ap.add_argument("--against", metavar="PATH")
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--extra-css", metavar="PATH",
-                    help="inject this stylesheet into every page before measuring — how a "
+                    help="inject this stylesheet INSTEAD of the standard palette — how a "
                          "proposed change is measured BEFORE it ships")
+    ap.add_argument("--raw", action="store_true",
+                    help="measure the files as they sit on disk, WITHOUT the standard palette. "
+                         "What a saved copy looks like, not what a reader sees")
     args = ap.parse_args(argv)
 
     if args.self_test:
@@ -506,7 +528,19 @@ def main(argv: list[str], root: Path = ROOT) -> int:
 
     try:
         pages = corpus(root / "docs" / "explainers")
-        extra = Path(args.extra_css).read_text(encoding="utf-8") if args.extra_css else ""
+        # ⛔ THE STANDARD PALETTE BY DEFAULT, BECAUSE THAT IS WHAT A READER SEES. The pages on
+        # disk do not carry it — `explainer-serve` injects it at send time, so a harness that
+        # measured the bare files would be measuring a view nobody has. Backlog #221.
+        # ⚠ This was NOT the first design, and the first design was wrong in the usual
+        # direction: it measured the artefact rather than the rendering, which is the same
+        # mistake as verifying a rule on two pages and asserting it of sixty.
+        if args.extra_css:
+            extra = Path(args.extra_css).read_text(encoding="utf-8")
+        elif args.raw:
+            extra = ""
+        else:
+            import page_chrome
+            extra = re.sub(r"</?style>", "", page_chrome.standard_palette_css())
         samples = measure(pages, extra_css=extra)
     except CannotRun as exc:
         print(f"FAILED: {exc}")

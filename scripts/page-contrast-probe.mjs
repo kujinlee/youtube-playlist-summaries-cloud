@@ -38,7 +38,19 @@ const PROBE = () => {
       n = n.parentElement;
     }
     const hb = getComputedStyle(document.body).backgroundColor;
-    return opaque(hb) ? hb : getComputedStyle(document.documentElement).backgroundColor;
+    if (opaque(hb)) return hb;
+    const hr = getComputedStyle(document.documentElement).backgroundColor;
+    if (opaque(hr)) return hr;
+    // ⛔ NOTHING OPAQUE ANYWHERE — fall back to WHAT THE BROWSER ACTUALLY PAINTS, not to
+    // `transparent`. Measured: 316 sites resolved to `rgba(0, 0, 0, 0)` and were scored at
+    // 1.00:1 against nothing, which is noise in the absolute count. The UA canvas is white
+    // unless the document opts into a dark `color-scheme`, in which case Chromium paints
+    // #121212. ⚠ An APPROXIMATION of the UA default, and labelled as one — the alternative is
+    // a number computed against a colour no reader ever sees.
+    const cs = getComputedStyle(document.documentElement).colorScheme || '';
+    const prefersDark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = cs.includes('dark') && (!cs.includes('light') || prefersDark);
+    return dark ? 'rgb(18, 18, 18)' : 'rgb(255, 255, 255)';
   };
   const sel = (el) => {
     const bits = [];

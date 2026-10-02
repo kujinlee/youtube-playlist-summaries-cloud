@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 202 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 211 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1221,7 +1221,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  ".svg": "image/svg+xml", ".png": "image/png"}[resolved.suffix.lower()]
         body = resolved.read_bytes()
         if resolved.suffix.lower() == ".html":
-            body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
+            # ⛔ THE STANDARD PALETTE FIRST, THEN THE RELOAD CLIENT — backlog #221. Both are
+            # APPENDED, so a page that lacks `</body>` still gets them, and both reach pages
+            # ALREADY ON DISK, which is the whole reason this is injected rather than generated:
+            # 60 served pages are historical artefacts and most cannot be regenerated.
+            # ⚠ `file://` gets neither, deliberately and unchanged — a saved copy stays the
+            # self-contained artifact it was. Unification is a property of being SERVED.
+            body += page_chrome.standard_palette_css().encode() + RELOAD_JS.encode()
         return self._send(200, body, ctype)
 
     def _regenerate(self, payload: dict) -> None:
@@ -1653,6 +1659,65 @@ def _self_test() -> int:
             os.utime(rev_file, (9_999, 9_999))
             return revision(rev_file) != rev_before
         case("revision changes when the file is rewritten later", _rewrite_later)
+
+        # ⛔⛔ THE PALETTE INJECTION, DRIVEN THROUGH THE REAL `do_GET` — backlog #221. Adding the
+        # injection left this suite at 202/202, which is the wiring class: the rule exists and
+        # nothing proves the server sends it. Four separate instances of that shape were found in
+        # this repository on 2026-10-02 alone, three of them inside the fix for the previous one.
+        # ⚠ A `BytesIO` ON `wfile`, NOT A STUBBED `_send`. A stub cannot see the body write —
+        # measured the same day, when severing `self.wfile.write(body)` left a suite fully green
+        # while the server wrote empty bodies to every response. `object.__new__` skips the
+        # socket-wanting `__init__`; nothing in `_send` touches the wire except through `wfile`.
+        def _wire_of(url_path: str) -> bytes:
+            saved_root = globals()["ROOT"]
+            with tempfile.TemporaryDirectory() as _td:
+                _sb = pathlib.Path(_td)
+                (_sb / "probe.html").write_bytes(b"<p>SENTINEL</p>")
+                try:
+                    globals()["ROOT"] = _sb
+                    h = object.__new__(Handler)
+                    h.path = url_path
+                    h.wfile = io.BytesIO()
+                    h.rfile = io.BytesIO(b"")
+                    h.requestline = f"GET {url_path} HTTP/1.1"
+                    h.request_version = "HTTP/1.1"
+                    h.command = "GET"
+                    h.client_address = ("127.0.0.1", 0)
+                    h.server = None
+                    h.close_connection = True
+                    h.log_message = lambda *a, **k: None  # type: ignore[method-assign]
+                    Handler.do_GET(h)
+                    return h.wfile.getvalue()
+                finally:
+                    globals()["ROOT"] = saved_root
+
+        _served = _wire_of("/probe.html")
+        case("do_GET puts the STANDARD PALETTE on the wire, not merely defines it",
+             lambda: b"--fg:#12161c" in _served)
+        case("...and the dark half, so the toggle is unified too",
+             lambda: b"--fg:#e7e9ee" in _served)
+        case("...and the live-reload client still rides with it",
+             lambda: b"/_rev?p=" in _served)
+        case("...and the page's own bytes survive both",
+             lambda: b"<p>SENTINEL</p>" in _served)
+
+        # The palette is a STRING constant too, so its contract is assertable without a browser.
+        # ⛔ ALL FOUR SELECTOR FORMS. `:root` alone is (0,1,0) and the pages carry
+        # `:root[data-theme="dark"]` at (0,2,0), which beats it — unification that collapses the
+        # moment a reader touches the theme toggle is not unification.
+        case("the palette covers the bare :root",
+             lambda: ":root{" in page_chrome.standard_palette_css())
+        case("...the OS dark preference, excluding an explicit light choice",
+             lambda: ':root:not([data-theme="light"])' in page_chrome.standard_palette_css())
+        case("...and BOTH explicit theme choices, at the specificity the pages use",
+             lambda: ':root[data-theme="dark"]{' in page_chrome.standard_palette_css()
+                     and ':root[data-theme="light"]{' in page_chrome.standard_palette_css())
+        # ⚠ fg2 SOFTER THAN fg IS THE PROPERTY THE HUMAN ASKED FOR, in both schemes, and it is
+        # the one a future palette edit could silently lose.
+        case("in light, --fg2 is lighter than --fg — emphasis reads as a change of tone",
+             lambda: page_chrome.STANDARD_LIGHT["--fg2"] > page_chrome.STANDARD_LIGHT["--fg"])
+        case("...and in dark, --fg2 is DIMMER than --fg, which is the same property inverted",
+             lambda: page_chrome.STANDARD_DARK["--fg2"] < page_chrome.STANDARD_DARK["--fg"])
 
         # The client is a STRING constant, so its guards can be asserted without a browser. These
         # are shape checks, not behaviour — the behaviour was driven in a real browser on 2026-08-18.
