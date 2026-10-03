@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 71,
+    "scripts/check-main-drivable.py": 77,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3948,7 +3948,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1249)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1255)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

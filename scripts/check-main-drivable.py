@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 199 cases
+    python3 scripts/check-main-drivable.py --self-test   # 210 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -834,7 +834,7 @@ def subprocess_self_calls(tree: ast.Module,
                 built = any(kw.arg in WORLD_KWARGS
                             and _element_is_constructed(kw.value, fn, tree, 0, world)
                             for kw in node.keywords) or any(
-                    _element_is_constructed(el, fn, tree, 0, guard_world)
+                    _element_is_constructed(el, fn, tree, 0, world)
                     for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])
                     if not any(isinstance(x, ast.Name) and x.id in ("__file__", "sys")
                                for x in ast.walk(el)))
@@ -888,6 +888,28 @@ def _passes_extra_world(call: ast.Call, main_fn: ast.AST, fn: ast.AST | None = N
                for kw in call.keywords)
 
 
+def _own_scope(fn: ast.AST | None) -> list[ast.AST]:
+    """Every node of this function EXCEPT the bodies of functions and classes nested inside it.
+
+    ⚠ `ast.walk` has no notion of scope. A name bound inside a nested `def` is not bound in the
+    enclosing one, and reading it as though it were is round 4's Blocking, half one.
+    """
+    if fn is None:
+        return []
+    out: list[ast.AST] = []
+    stack = [fn]
+    first = True
+    while stack:
+        node = stack.pop()
+        if not first and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                           ast.Lambda, ast.ClassDef)):
+            continue
+        first = False
+        out.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
 def _bound_values(name: str, fn: ast.AST | None) -> list[tuple[int, ast.AST | None]]:
     """Every value this case binds to `name`, in source order. PURE.
 
@@ -899,8 +921,12 @@ def _bound_values(name: str, fn: ast.AST | None) -> list[tuple[int, ast.AST | No
     A `for` target's value is the ITERABLE, which is an over-approximation stated rather than
     hidden: iterating a built list yields built elements, and that is the direction that matters.
     """
+    # ⛔ ROUND 4 BLOCKING, HALF ONE: `ast.walk` descends into NESTED FUNCTIONS, so
+    # `p = ROOT` followed by `def inner(): p = tempfile.mkdtemp()` resolved `p` to the tempdir —
+    # a binding in a scope `main` never sees. A nested `def`, `lambda` or class body is a
+    # different scope and its bindings are not this case's.
     out: list[tuple[int, ast.AST | None]] = []
-    for node in ast.walk(fn) if fn is not None else ():
+    for node in _own_scope(fn):
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 for a, b in _unpack(tgt, node.value):
@@ -921,6 +947,14 @@ def _bound_values(name: str, fn: ast.AST | None) -> list[tuple[int, ast.AST | No
             for x, y in _unpack(node.target, node.iter):
                 if isinstance(x, ast.Name) and x.id == name:
                     out.append((node.lineno, y))
+        elif isinstance(node, ast.Match):
+            # ⚠ ROUND 4 MEDIUM, the half worth taking: a PEP 634 capture IS a binding form, so it
+            # belongs with `=`, `with` and `for` rather than in a list of node kinds. The subject
+            # matched is the value every capture in it binds.
+            for case_ in node.cases:
+                for sub_node in ast.walk(case_.pattern):
+                    if isinstance(sub_node, ast.MatchAs) and sub_node.name == name:
+                        out.append((node.lineno, node.subject))
     return sorted(out, key=lambda t: t[0])
 
 
@@ -987,20 +1021,35 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         expr = expr.value
     if isinstance(expr, ast.Constant):
         return INERT
+    # ⛔ ROUND 4 HIGH: an expression with NO name and NO attribute anywhere in it is a literal,
+    # whatever arithmetic is wrapped around it — `flag = "--" + "self-test"` was reaching BUILT
+    # through the "not a Constant, not a Name" fall-through and earning the argv route for a flag
+    # vector. Checked by SHAPE of the whole expression rather than by enumerating the operators
+    # that can combine constants.
+    if not any(isinstance(n, (ast.Name, ast.Attribute)) for n in ast.walk(expr)):
+        return INERT
 
     if isinstance(expr, ast.Name):
         if expr.id == "__file__" or expr.id in world:
             return LIVE
-        bound = _last_assigned_value(expr.id, fn)
-        if bound is not None:
-            inner = world_class(bound, fn, tree, world, depth + 1)
-            if inner is LIVE:
+        # ⛔ ROUND 4 BLOCKING, HALF TWO: reading only the LAST binding credited
+        # `if c: p = ROOT else: p = mkdtemp()` as BUILT, when the run may pass the live repository.
+        # EVERY binding is read, and LIVE dominates — the same dominance the leaf rule already
+        # applies inside one expression, now applied across a name's bindings. A case whose world
+        # depends on a branch is not evidence that `main` was driven over a built one.
+        bindings = [v for _, v in _bound_values(expr.id, fn) if v is not None]
+        if bindings:
+            classes = [world_class(v, fn, tree, world, depth + 1) for v in bindings]
+            if LIVE in classes:
                 return LIVE
-            # ⛔ INERT DOES NOT BECOME BUILT JUST BECAUSE A NAME HOLDS IT: `flag = "--self-test"`
-            # is a literal with a name on it, and crediting that was round 1's High.
-            if inner is BUILT:
-                return BUILT
-            return INERT if isinstance(bound, (ast.Constant, ast.Name)) else BUILT
+            # ⛔ THE NAME'S CLASS IS ITS BINDINGS' CLASS, FULL STOP. An earlier draft ended with
+            # `return INERT if isinstance(bound, (Constant, Name)) else BUILT` — promoting anything
+            # that merely LOOKED computed — and round 4's High is what that cost:
+            # `flag = "--" + "self-test"` earned the argv route for a flag vector. The promotion
+            # was also dead weight: a world the case built reaches BUILT through the Call branch on
+            # its own (`tempfile.mkdtemp()`, `Path(td)`), so nothing ever needed promoting. Deleted
+            # — the third clause this rule has lost rather than gained.
+            return BUILT if BUILT in classes else INERT
         idx = _param_index(fn, expr.id)
         if idx is not None and _constructed_at_call_sites(tree, fn, idx, expr.id, depth, world):
             return BUILT
@@ -1478,6 +1527,7 @@ def _self_test() -> int:                                      # noqa: C901 — a
             "def main(argv=None, root=ROOT):\n"
             "    return root\n"
             "def _self_test():\n"
+            "    tmp = tempfile.mkdtemp()\n"
             "    _r = tmp / 'tree'\n"
             "    case('x', main([], root=_r), 0)\n")
     # ⚠ `_r` IS ASSIGNED NOW. The first version passed a bare `_r` from nowhere, and round 1's
@@ -1951,6 +2001,83 @@ def _self_test() -> int:                                      # noqa: C901 — a
          classify(_wired(SUBPROC_OTHER)).routes, frozenset())
     case("...and a subprocess call outside the suite's reach earns nothing",
          classify(SUBPROC_OK.replace("def _self_test():", "def _orphan():")).routes, frozenset())
+
+    # ── ROUND 4: the rewrite's own round, and the falsifier it was watching for ───────────────
+    # ⭐ ROUND 4 FOUND NO DEFECT WHOSE FIX IS "ADD A NODE KIND TO A LIST", which is the
+    # pre-committed falsifier the architecture review wrote down. All four were provenance, scope,
+    # a call site and a plain name error — and three of the four fixes DELETED or GENERALISED a
+    # rule rather than extending one.
+    _R4 = ("from pathlib import Path\nimport os, tempfile, subprocess, sys\nROOT = Path('/repo')\n"
+           "def main(argv=None, root=ROOT):\n"
+           "    if '--self-test' in argv:\n"
+           "        return _self_test()\n"
+           "    return root\n"
+           "def _self_test():\n")
+    R4_BRANCH = _R4 + ("    if True:\n"
+                       "        p = ROOT\n"
+                       "    else:\n"
+                       "        p = tempfile.mkdtemp()\n"
+                       "    case('x', main([], root=p), 0)\n")
+    case("⛔ a name bound LIVE in one branch and BUILT in another is LIVE (r4 Blocking)",
+         classify(R4_BRANCH).routes, frozenset())
+    case("...while both branches building earns the route",
+         classify(R4_BRANCH.replace("        p = ROOT", "        p = tempfile.mkdtemp()")).routes,
+         frozenset({PARAM}))
+    R4_NESTED = _R4 + ("    p = ROOT\n"
+                       "    def inner():\n"
+                       "        p = tempfile.mkdtemp()\n"
+                       "    case('x', main([], root=p), 0)\n")
+    case("⛔ ...and a binding inside a NESTED def is a different scope, not this case's "
+         "(r4 Blocking)", classify(R4_NESTED).routes, frozenset())
+    # ⛔ THE FIXTURE WHERE SCOPE IS THE ONLY DECIDER, and the sweep is what demanded it: with `p`
+    # bound LIVE outside and BUILT inside, LIVE-dominance already answers the question, so the
+    # mutation reverting `_own_scope` to `ast.walk` SURVIVED. Here `p` is bound ONLY inside the
+    # nested def — the outer scope never binds it at all — so nothing but the scope rule decides.
+    R4_ONLY_NESTED = _R4 + ("    def inner():\n"
+                            "        p = tempfile.mkdtemp()\n"
+                            "    case('x', main([], root=p), 0)\n")
+    case("⛔ a name bound ONLY inside a nested def is unresolvable out here, not built",
+         classify(R4_ONLY_NESTED).routes, frozenset())
+    case("...which is what _own_scope answers, and ast.walk does not",
+         (len([n for n in _own_scope(ast.parse(R4_NESTED).body[-1])
+               if isinstance(n, ast.Name) and n.id == "p"]),
+          len([n for n in ast.walk(ast.parse(R4_NESTED).body[-1])
+               if isinstance(n, ast.Name) and n.id == "p"])), (2, 3))
+    R4_FLAG = _R4 + ("    flag = '--' + 'self-test'\n"
+                     "    case('x', main([flag]), 0)\n")
+    case("⛔ a literal is a literal however it is computed — no name, no attribute, no credit "
+         "(r4 High)", classify(R4_FLAG).routes, frozenset())
+    # ⛔ AND THE SHAPE WHERE THAT CHECK IS THE ONLY DECIDER. A BinOp of constants reaches INERT
+    # through the children path anyway, so the mutation severing the no-name check SURVIVED. A
+    # CALL is the one leaf-less shape that reaches BUILT — and a call whose callee is a LAMBDA has
+    # no Name and no Attribute anywhere in it, so only this check refuses it.
+    case("...and a call with a LAMBDA callee over literals is a literal in a wrapper",
+         world_class(ast.parse("(lambda: 1)()").body[0].value, None, None, frozenset()), INERT)
+    case("...while the same shape with a NAMED callee is a value the case made",
+         world_class(ast.parse("Path('/tmp/fixed')").body[0].value, None, None, frozenset()),
+         BUILT)
+    R4_SUBPROC = _R4 + ("    p = tempfile.mkdtemp()\n"
+                        "    subprocess.run([sys.executable, __file__, p])\n"
+                        "    case('x', 1, 1)\n")
+    # ⛔ A FIFTH DYING CASE, and the sweep caught this one too: the mutation that re-introduces
+    # the NameError makes `classify` RAISE, and an exception escaping the suite prints no `[FAIL]`
+    # line — so the sweep sees a red suite with nothing to attribute it to and refuses the kill.
+    # Five of these now. The rule is mechanical: a case whose subject can raise catches and
+    # REPORTS, because a case that dies from its own subject's defect attributes nothing.
+    try:
+        _r4_sub = classify(R4_SUBPROC).routes
+    except Exception as exc:                            # noqa: BLE001 — see above
+        _r4_sub = f"RAISED {type(exc).__name__}"
+    case("⛔ the subprocess EXTRA-ARGV path returns a verdict instead of raising (r4 High) — "
+         "207 cases and 71 mutations all passed over a line that crashed",
+         _r4_sub, frozenset({SUBPROC}))
+    R4_MATCH = _R4 + ("    match tempfile.mkdtemp():\n"
+                      "        case p:\n"
+                      "            case('x', main([], root=p), 0)\n")
+    case("a PEP 634 capture is a binding form, so the resolver reads it (r4 Medium)",
+         classify(R4_MATCH).routes, frozenset({PARAM}))
+    case("...and the same capture over the LIVE world earns nothing",
+         classify(R4_MATCH.replace("match tempfile.mkdtemp():", "match ROOT:")).routes, frozenset())
 
     # ── ROUND 2's FOUR FINDINGS, every one a FALSE CREDIT but the last ───────────────────────
     R2_NO_DISPATCH = ("X = 1\n"

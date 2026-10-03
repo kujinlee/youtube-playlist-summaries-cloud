@@ -758,8 +758,8 @@
   "name": "\u2b50\u2b50 ROUND 3 BLOCKING. Resolving a local name stops re-entering the live-world test, so every direct form round 2 refused comes back the moment it is bound to a variable first",
   "edits": [
    [
-    "            inner = world_class(bound, fn, tree, world, depth + 1)",
-    "            inner = BUILT"
+    "            classes = [world_class(v, fn, tree, world, depth + 1) for v in bindings]",
+    "            classes = [BUILT for v in bindings]"
    ]
   ],
   "expect": [
@@ -771,8 +771,8 @@
   "name": "\u2b50 ROUND 3 MEDIUM. A name the case BOUND stops shadowing the live-world vocabulary, so a tempdir called `home` is refused as though it were the user's home directory",
   "edits": [
    [
-    "        bound = _last_assigned_value(expr.id, fn)",
-    "        bound = None"
+    "        bindings = [v for _, v in _bound_values(expr.id, fn) if v is not None]",
+    "        bindings = []"
    ]
   ],
   "expect": [
@@ -911,15 +911,93 @@
   "file": "scripts/check-main-drivable.py"
  },
  {
-  "name": "a name bound to a literal becomes BUILT, so `flag = '--self-test'` is credited as a world the case made",
+  "name": "\u2b50\u2b50 ROUND 4 BLOCKING, HALF ONE. LIVE stops dominating across a name's bindings, so a name bound LIVE in one branch and BUILT in another is credited \u2014 the run may hand main the live repository",
   "edits": [
    [
-    "            return INERT if isinstance(bound, (ast.Constant, ast.Name)) else BUILT",
-    "            return BUILT"
+    "            if LIVE in classes:\n                return LIVE",
+    "            if False:\n                return LIVE"
    ]
   ],
   "expect": [
-   "\u26d4 a literal reached through a local name is still a literal (r1 High)"
+   "\u26d4 a name bound LIVE in one branch and BUILT in another is LIVE (r4 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 BLOCKING, HALF TWO. The resolver walks into NESTED functions again, so a binding in a scope main never sees resolves the name",
+  "edits": [
+   [
+    "    for node in _own_scope(fn):",
+    "    for node in ast.walk(fn) if fn is not None else ():"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a name bound ONLY inside a nested def is unresolvable out here, not built"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the scope walker stops pruning nested defs, so _own_scope becomes ast.walk by another name",
+  "edits": [
+   [
+    "        if not first and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,\n                                           ast.Lambda, ast.ClassDef)):\n            continue",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": [
+   "...which is what _own_scope answers, and ast.walk does not"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 HIGH. A literal computed by concatenation stops being a literal, so `flag = '--' + 'self-test'` earns the argv route for a flag vector",
+  "edits": [
+   [
+    "    if not any(isinstance(n, (ast.Name, ast.Attribute)) for n in ast.walk(expr)):\n        return INERT",
+    "    if False:\n        return INERT"
+   ]
+  ],
+  "expect": [
+   "...and a call with a LAMBDA callee over literals is a literal in a wrapper"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 HIGH. The subprocess EXTRA-ARGV path reaches an undefined name again \u2014 a crash where a verdict belongs, on the one route branch no case covered",
+  "edits": [
+   [
+    "                    _element_is_constructed(el, fn, tree, 0, world)\n                    for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])",
+    "                    _element_is_constructed(el, fn, tree, 0, guard_world)\n                    for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the subprocess EXTRA-ARGV path returns a verdict instead of raising (r4 High) \u2014 207 cases and 71 mutations all passed over a line that crashed"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 4 MEDIUM. The resolver stops reading PEP 634 captures, so a world bound by `match \u2026 case p` is unresolvable",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.Match):",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "a PEP 634 capture is a binding form, so the resolver reads it (r4 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a name's class stops being its bindings' class: an INERT binding is promoted to BUILT again, which is the clause round 4's High cost us",
+  "edits": [
+   [
+    "            return BUILT if BUILT in classes else INERT",
+    "            return BUILT if BUILT in classes else (INERT if isinstance(bindings[-1], (ast.Constant, ast.Name)) else BUILT)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a literal is a literal however it is computed \u2014 no name, no attribute, no credit (r4 High)"
   ],
   "file": "scripts/check-main-drivable.py"
  }
