@@ -310,10 +310,20 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         # `globals_aliases` (the alias Blocking), `suite_reachable` (the dead-call Blocking), and
         # `computed_argv`'s `fn`/`tree` (the helper-parameter hop). Each was unvaried on arrival
         # and this guard said so before the sweep ran.
+        # ⟳ round 2: 21 -> 23, the two rules that round added — `dispatches_a_suite` (the
+        # fallback's precondition) and `note_globals_imports` (the imported spelling).
         "argv_forwarders.tree", "assess.debt", "assess.texts", "assess.whole",
         "classify.path", "classify.text",
         "computed_argv.expr", "computed_argv.fn", "computed_argv.tree",
-        "global_writes.fn", "globals_aliases.fn",
+        "computed_argv.guard_globals",
+        "dispatches_a_suite.tree",
+        "global_writes.aliased", "global_writes.fn",
+        "globals_aliases.aliased", "globals_aliases.fn",
+        "live_substitutions.aliased",
+        "note_globals_imports.tree",
+        # ⟳ round 2's Claude half: the alias spellings and the guard's own globals became
+        # PARAMETERS rather than module state, so they join the examined set with the rules.
+        "reads_the_live_world.expr", "reads_the_live_world.guard_globals",
         "live_substitutions.fn", "live_substitutions.lineno", "live_substitutions.writes",
         "main.argv", "main.root", "module_globals.tree", "suite_main_calls.tree",
         "suite_reachable.tree", "world_names.start", "world_names.tree",

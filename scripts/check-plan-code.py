@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 40,
+    "scripts/check-main-drivable.py": 61,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3893,6 +3893,24 @@ def _self_test() -> int:
     # a module-level call has no enclosing function — so the clause was dead, measured at 0 of
     # 44 verdicts changed, and its mutation SURVIVED because no case could tell it from its
     # absence. The code is deleted; the entry goes with it rather than being left orphaned.
+    # ⟳ 2026-10-02, D2 review round 2: 1218 -> 1227. `check-main-drivable` 40 -> 49, and all
+    # four findings were again the FALSE-CREDIT direction: a suite nothing dispatches, a
+    # subprocess over the live process state, an alias rebound to a plain dict, plus one
+    # lost-credit spelling. ⚠ The ninth entry guards the SUITE'S OWN fixtures: round 2's rule
+    # failed 35 cases on arrival because they were fragments with no dispatch, and the helper
+    # that wires them is now itself mutated — a fixture-shaping helper with no mutation is a
+    # place where every case can quietly stop modelling anything.
+    # ⟳⟳ 2026-10-02, round 2's CLAUDE half: 1227 -> 1239, `check-main-drivable` 49 -> 61.
+    # ⭐⭐ Its Blocking is the deepest defect the rule has had and the three entries at the top
+    # of the new twelve all guard it: the rule asked *is this value COMPUTED* when the
+    # question is *is this a world the case BUILT*, so `Path(__file__).parent.parent`,
+    # `os.getcwd()` and `str(ROOT)` were all credited — on three routes, through ONE shared
+    # decision point. ⛔ And the shape of the miss is the lesson worth the entry: round 1's
+    # Medium fixed `root=ROOT` and round 2's Codex High fixed `cwd=ROOT`, each by comparing
+    # the NAME the reviewer wrote, while the property went unasserted. Two fixes aimed at a
+    # spelling. ⚠ TWELVE existing anchors were orphaned by this fold and retargeted; the
+    # check that caught them now also refuses an anchor that does not start at a LINE
+    # BOUNDARY, after one matched mid-indentation and left a function with no return.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3902,7 +3920,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1218)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1239)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
