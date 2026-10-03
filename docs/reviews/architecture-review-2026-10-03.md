@@ -143,7 +143,39 @@ the only verdict movement in the repository, and it is a gain.
 
 ⭐ **The pre-committed falsifier was: *any future round fixing a defect in this by adding a node kind
 to a list inside it.* All three of the above went the other way** — one added a traversal of a
-category the grammar already defines, two deleted clauses. There is no node list left to extend.
+category the grammar already defines, two deleted clauses.
+
+> ## ⛔⛔ THE FALSIFIER LANDED — this section said "There is no node list left to extend", and that
+> was false when it was committed.
+>
+> Round 4's Claude half found it, hours later: the recursion filtered children with
+> `isinstance(c, ast.expr)`, **and that IS the node-kind list.** It was two grammar categories
+> short — `ast.arguments`, which holds lambda defaults, and `ast.comprehension`, which holds a
+> comprehension's `iter` and `ifs`. Measured over 20 wrappers × 6 worlds: **15 of 120 cells wrong
+> and 5 of 20 rows giving the same verdict for all six worlds**, against the 0 of 90 and 0/15
+> claimed above. All five bad rows were those two categories and nothing else:
+>
+> ```
+> (lambda z=ROOT: z)()            -> credited over the live repository
+> next(z for z in [ROOT])         -> credited
+> next(z for z in ['a'] if ROOT)  -> credited
+> [z for z in [mkdtemp()]][0]     -> refused
+> ```
+>
+> ⭐ **And the minimal fix for each was literally to add two kinds to that list, which is the
+> falsifier in the exact words it was written in.** Worse, the paragraph above cites adding
+> `ast.keyword` to that same filter as *evidence the falsifier could not land* — so the section
+> convicted itself with its own example.
+>
+> ⟳ **What the rule's survival actually rests on:** the CONVERGING fix deletes the list rather than
+> extending it. `_expr_children` descends through any non-expression node — `arguments`,
+> `comprehension`, `keyword`, whatever the grammar adds next — and collects the expressions beneath
+> it without naming a kind. The explicit `keywords` line added as proof is subsumed and gone, and
+> its mutation retired with it. **The claim that belongs here is the narrower one: the rule no
+> longer decides by node kind, and the one place it still named kinds has been removed.**
+>
+> ⚠ This correction is written in place rather than appended as a footnote, because a falsifier
+> that fires and is quietly re-stated is worth less than no falsifier at all.
 
 ---
 
@@ -209,6 +241,12 @@ whether D2 should be answered by running is a different one.
   it. That would mean propagation is not actually delegated to the grammar and the subject is
   irreducibly enumerative — in which case changing nothing was right, because an enumerative rule
   with 198 cases beats a fresh one with none.
+  ⛔ **FIRED ONCE, 2026-10-03, hours after this was written** — see the correction above. The
+  judgement it forces is NOT that the rewrite was wrong: it is that *"no list left to extend"* is a
+  claim about the code as it stands and cannot be asserted about the code as it will stand. The
+  honest form of this falsifier is therefore **"a defect whose only fix is to extend a list, where
+  removing the list is not available"** — the 2026-10-03 instance had removal available and took
+  it. If removal is ever unavailable, the subject is enumerative and this review was wrong.
 - **The claim that the two defects were masking each other:** a measurement showing false credits do
   NOT rise when the import conflation is fixed alone.
 - **The claim that today's verdicts were sound:** a guard among the 10 whose credited call site

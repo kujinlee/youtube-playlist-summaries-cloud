@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 210 cases
+    python3 scripts/check-main-drivable.py --self-test   # 222 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -896,13 +896,23 @@ def _own_scope(fn: ast.AST | None) -> list[ast.AST]:
     """
     if fn is None:
         return []
+    # ⛔ ROUND 4, CLAUDE HIGH: a nested function CAN write the enclosing scope — `nonlocal p` —
+    # so pruning every nested def credited `p = mkdtemp()` beside
+    # `def inner(): nonlocal p; p = ROOT`, while the run hands `main` the live repository. A nested
+    # scope that DECLARES itself able to write out here is not pruned.
+    writes_out: set[int] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+                isinstance(k, (ast.Nonlocal, ast.Global)) for k in ast.walk(node)):
+            writes_out.add(id(node))
     out: list[ast.AST] = []
     stack = [fn]
     first = True
     while stack:
         node = stack.pop()
-        if not first and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
-                                           ast.Lambda, ast.ClassDef)):
+        if (not first and id(node) not in writes_out
+                and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                      ast.Lambda, ast.ClassDef))):
             continue
         first = False
         out.append(node)
@@ -958,13 +968,48 @@ def _bound_values(name: str, fn: ast.AST | None) -> list[tuple[int, ast.AST | No
     return sorted(out, key=lambda t: t[0])
 
 
-def _last_assigned_value(name: str, fn: ast.AST | None) -> ast.AST | None:
-    """The value of the LAST binding of `name` inside this case, or None if there is none."""
-    found = _bound_values(name, fn)
-    return found[-1][1] if found else None
-
 
 LIVE, BUILT, INERT = "live", "built", "inert"
+
+
+def _expr_children(node: ast.AST) -> list[ast.expr]:
+    """Every expression DIRECTLY beneath `node`, descending through non-expression nodes. PURE.
+
+    ⛔⛔ THIS EXISTS BECAUSE THE PRE-COMMITTED FALSIFIER LANDED, and the honest record of it is
+    worth more than the fix. The architecture review's rewrite claimed *"there is no node list left
+    to extend"*, and round 4's Claude half refuted it: the recursion filtered children with
+    `isinstance(c, ast.expr)`, which IS a node-kind list, and it was two grammar categories short.
+
+        (lambda z=ROOT: z)()              -> credited   (`ast.arguments` holds lambda defaults)
+        next(z for z in [ROOT])           -> credited   (`ast.comprehension` holds iter and ifs)
+        next(z for z in ['a'] if ROOT)    -> credited
+        [z for z in [mkdtemp()]][0]       -> refused
+
+    Measured over 20 wrappers × 6 worlds: **15 of 120 cells wrong, and 5 of 20 rows gave the same
+    verdict for all six worlds** — against the commit's claim of 0 of 90 and 0/15. All five bad
+    rows were those two categories and nothing else.
+
+    ⭐ AND THE MINIMAL FIX WAS LITERALLY TO ADD TWO KINDS TO THAT LIST, which is the falsifier in
+    the exact words it was written in. ⟳ So the rule survives only because the CONVERGING fix is to
+    DELETE the list rather than extend it: descend through any non-expression node — `arguments`,
+    `comprehension`, `keyword`, whatever the grammar adds next — and collect the expressions
+    beneath it without naming a single kind. The earlier explicit `keywords` line, added as proof
+    the falsifier could not land, is subsumed and gone with it.
+
+    ⚠ CALLED ONLY ON AN EXPRESSION, and that is the contract rather than a check. A first draft
+    refused to descend into `ast.stmt` "to keep this a rule about expressions" — and its mutation
+    SURVIVED the sweep, because an `ast.expr` has no statement children, so the clause guarded an
+    input the function never receives. That is the fourth defensive clause this rule has shed for
+    the same reason; a guard no case can reach is a rule that only looks like one. If a caller ever
+    hands this a statement it will walk into its body, and the caller's type is what prevents that.
+    """
+    out: list[ast.expr] = []
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.expr):
+            out.append(child)
+        else:
+            out.extend(_expr_children(child))
+    return out
 
 
 def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = None,
@@ -1062,13 +1107,7 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             return LIVE
         return world_class(expr.value, fn, tree, world, depth + 1)
 
-    # ⚠ `ast.keyword` IS NOT AN `ast.expr`, so a plain child walk SKIPS keyword arguments — and
-    # that was the whole of the residual false-credit class: `dict(a=w)["a"]` over the live world
-    # was credited three times out of three, because `w` was never visited. Keyword values are
-    # unwrapped explicitly rather than trusted to the walk.
-    children = [c for c in ast.iter_child_nodes(expr) if isinstance(c, ast.expr)]
-    children += [k.value for k in getattr(expr, "keywords", []) or []]
-    kids = [world_class(c, fn, tree, world, depth + 1) for c in children]
+    kids = [world_class(c, fn, tree, world, depth + 1) for c in _expr_children(expr)]
     if LIVE in kids:
         return LIVE
     if BUILT in kids:
@@ -2001,6 +2040,83 @@ def _self_test() -> int:                                      # noqa: C901 — a
          classify(_wired(SUBPROC_OTHER)).routes, frozenset())
     case("...and a subprocess call outside the suite's reach earns nothing",
          classify(SUBPROC_OK.replace("def _self_test():", "def _orphan():")).routes, frozenset())
+
+    # ── ROUND 4's CLAUDE HALF: ⛔⛔ THE PRE-COMMITTED FALSIFIER LANDED ─────────────────────────
+    # The rewrite claimed "there is no node list left to extend". `isinstance(c, ast.expr)` WAS the
+    # list, two grammar categories short, and the minimal fix was literally to add two kinds to it.
+    # The rule survives only because the converging fix DELETES the list — `_expr_children`.
+    # Every case below is a cell that was wrong when that claim was committed.
+    _wcl = lambda s: world_class(ast.parse(s).body[0].value, None, None, frozenset({"ROOT"}))
+    case("⛔ a LAMBDA DEFAULT holding the live world is the live world (r4 falsifier)",
+         (_wcl("(lambda z=ROOT: z)()"), _wcl("(lambda z=mkdtemp(): z)()")), (LIVE, BUILT))
+    case("⛔ ...and so is a COMPREHENSION's iterable (r4 falsifier)",
+         (_wcl("next(z for z in [ROOT])"), _wcl("next(z for z in [mkdtemp()])")), (LIVE, BUILT))
+    case("⛔ ...and a comprehension's CONDITION (r4 falsifier)",
+         _wcl("next(z for z in ['a'] if ROOT)"), LIVE)
+    case("...and a built world inside a list comprehension is still built",
+         _wcl("[z for z in [mkdtemp()]][0]"), BUILT)
+    # ⚠ `dict(a=ROOT)` yields TWO: the callee `dict` and, through the non-expression `keyword`,
+    # the value `ROOT`. Reaching the second without naming `ast.keyword` is the point.
+    case("_expr_children descends through a non-expression node without naming its kind",
+         (len(_expr_children(ast.parse("(lambda z=ROOT: z)()").body[0].value)),
+          [ast.unparse(e) for e in _expr_children(ast.parse("dict(a=ROOT)").body[0].value)]),
+         (1, ["dict", "ROOT"]))
+    # ⚠ `x` TWICE — once as the element, once as the comprehension's own target. The duplicate is
+    # the evidence that the machinery itself was reached, not just the element.
+    case("...and reaches the expressions inside a comprehension's own machinery",
+         sorted(ast.unparse(e) for e in
+                _expr_children(ast.parse("[x for x in y if z]").body[0].value)),
+         ["x", "x", "y", "z"])
+
+    # ⛔ ROUND 4, CLAUDE HIGH: the reachability floor had a SECOND SITE and no mutation anchored it.
+    # A helper nothing calls, passing a tempdir, earned the param route while every reachable call
+    # passed the live world. Round 1's Blocking, at the site the class search did not reach.
+    R4_UNREACHED_HELPER = (
+        "from pathlib import Path\nimport tempfile\nROOT = Path('/repo')\n"
+        "def main(argv=None, root=ROOT):\n"
+        "    if '--self-test' in argv:\n"
+        "        return _self_test()\n"
+        "    return root\n"
+        "def _drive(root):\n"
+        "    return main([], root=root)\n"
+        "def _never_called():\n"
+        "    return _drive(tempfile.mkdtemp())\n"
+        "def _self_test():\n"
+        "    case('x', _drive(ROOT), 0)\n")
+    case("⛔ a helper NOTHING calls cannot supply the world at a reachable call site (r4 High)",
+         classify(R4_UNREACHED_HELPER).routes, frozenset())
+    case("...while making that helper reachable earns the route",
+         classify(R4_UNREACHED_HELPER.replace("def _never_called():",
+                                              "def _also(): pass\ndef _never_called():")
+                  .replace("    case('x', _drive(ROOT), 0)",
+                           "    _never_called()\n    case('x', _drive(ROOT), 0)")).routes,
+         frozenset({PARAM}))
+
+    # ⛔ ROUND 4, CLAUDE HIGH: `nonlocal` writes the ENCLOSING scope, so pruning every nested def
+    # credited a tempdir that a nested `nonlocal p; p = ROOT` overwrites at runtime.
+    _R4C = ("from pathlib import Path\nimport tempfile\nROOT = Path('/repo')\n"
+            "def main(argv=None, root=ROOT):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return root\n"
+            "def _self_test():\n")
+    R4_NONLOCAL = _R4C + ("    p = tempfile.mkdtemp()\n"
+                         "    def inner():\n"
+                         "        nonlocal p\n"
+                         "        p = ROOT\n"
+                         "    case('x', main([], root=p), 0)\n")
+    case("⛔ a nested def that declares `nonlocal` is NOT a separate scope (r4 High)",
+         classify(R4_NONLOCAL).routes, frozenset())
+    case("...while without the declaration it is",
+         classify(R4_NONLOCAL.replace("        nonlocal p\n", "")).routes, frozenset({PARAM}))
+
+    # ⛔ ROUND 4, CLAUDE q8: two branches no case reached. A mutation cannot prove anything about a
+    # line the suite never executes — which is how the subprocess NameError survived 71 mutations.
+    case("a BARE NAME in the live-reader vocabulary is the live world (q8: uncased branch)",
+         world_class(ast.parse("getcwd()").body[0].value, None, None, frozenset()), LIVE)
+    case("...and an ANNOTATED or AUGMENTED module assignment is the guard's world (q8)",
+         (sorted(guard_world_globals(ast.parse("X: int = 1\n"))),
+          sorted(guard_world_globals(ast.parse("Y = 0\nY += 1\n")))), (["X"], ["Y"]))
 
     # ── ROUND 4: the rewrite's own round, and the falsifier it was watching for ───────────────
     # ⭐ ROUND 4 FOUND NO DEFECT WHOSE FIX IS "ADD A NODE KIND TO A LIST", which is the

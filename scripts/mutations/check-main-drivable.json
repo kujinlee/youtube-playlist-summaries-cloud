@@ -859,19 +859,6 @@
   "file": "scripts/check-main-drivable.py"
  },
  {
-  "name": "\u2b50 keyword arguments stop being traversed, so the live world hides in one \u2014 `dict(a=ROOT)['a']` is credited, which was the whole residual false-credit class when the leaf rule was first measured",
-  "edits": [
-   [
-    "    children += [k.value for k in getattr(expr, \"keywords\", []) or []]",
-    "    children += []"
-   ]
-  ],
-  "expect": [
-   "a keyword argument is traversed, so the live world cannot hide in one"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
   "name": "\u2b50 BUILT stops dominating-and-being-dominated correctly: a BUILT leaf wins over a LIVE one, so an expression mixing a tempdir with the live repository is credited",
   "edits": [
    [
@@ -940,7 +927,7 @@
   "name": "the scope walker stops pruning nested defs, so _own_scope becomes ast.walk by another name",
   "edits": [
    [
-    "        if not first and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,\n                                           ast.Lambda, ast.ClassDef)):\n            continue",
+    "        if (not first and id(node) not in writes_out\n                and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,\n                                      ast.Lambda, ast.ClassDef))):\n            continue",
     "        if False:\n            continue"
    ]
   ],
@@ -998,6 +985,71 @@
   ],
   "expect": [
    "\u26d4 a literal is a literal however it is computed \u2014 no name, no attribute, no credit (r4 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 THE PRE-COMMITTED FALSIFIER, GUARDED. `_expr_children` goes back to filtering children with `isinstance(c, ast.expr)` \u2014 the node-kind list the rewrite claimed did not exist \u2014 and the live world hides in a lambda default or a comprehension again",
+  "edits": [
+   [
+    "        if isinstance(child, ast.expr):\n            out.append(child)\n        else:\n            out.extend(_expr_children(child))",
+    "        if isinstance(child, ast.expr):\n            out.append(child)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a LAMBDA DEFAULT holding the live world is the live world (r4 falsifier)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 CLAUDE HIGH. The reachability floor's SECOND SITE is severed, so a helper nothing calls supplies the world at a reachable call site",
+  "edits": [
+   [
+    "                and node.name in reachable):",
+    "                ):"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a helper NOTHING calls cannot supply the world at a reachable call site (r4 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 CLAUDE HIGH. A nested def that declares `nonlocal` is pruned again, so a tempdir the nested scope overwrites with the live world is credited",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(\n                isinstance(k, (ast.Nonlocal, ast.Global)) for k in ast.walk(node)):\n            writes_out.add(id(node))",
+    "        if False:\n            writes_out.add(id(node))"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a nested def that declares `nonlocal` is NOT a separate scope (r4 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the bare-name live-reader branch is severed, so `getcwd()` imported directly reads as a world the case built",
+  "edits": [
+   [
+    "        if expr.id in LIVE_WORLD_READERS:\n            return LIVE",
+    "        if False:\n            return LIVE"
+   ]
+  ],
+  "expect": [
+   "a BARE NAME in the live-reader vocabulary is the live world (q8: uncased branch)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the guard's world stops reading annotated and augmented module assignments, so ROOT declared with a type annotation is not the guard's world",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                out |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}",
+    "        if isinstance(node, ast.Assign):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                out |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}"
+   ]
+  ],
+  "expect": [
+   "...and an ANNOTATED or AUGMENTED module assignment is the guard's world (q8)"
   ],
   "file": "scripts/check-main-drivable.py"
  }

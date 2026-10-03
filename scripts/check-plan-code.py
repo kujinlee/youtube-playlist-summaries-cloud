@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 77,
+    "scripts/check-main-drivable.py": 81,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3938,7 +3938,27 @@ def _self_test() -> int:
     # The rule is now three leaf classes (LIVE / BUILT / INERT) recursing over whatever the
     # grammar hands it: 45 of 90 matrix cells wrong -> 0, world-blind rows 15/15 -> 0/15, the
     # compliance set identical, and `check-ratchet-contract.py` regains the param credit D1
-    # earned it. ⚠ The read estimated 14 orphaned anchors by text-matching; MEASURED 16.
+    # earned it. ⚠ The read estimated 14 orphaned anchors by text-matching; MEASURED 16, then
+    # 19 once a redundant `seen` set was deleted too — a count nobody re-derives, again.
+    # ⟳ ROUNDS 4 AND ITS CLAUDE HALF, 2026-10-03: 1249 -> 1255 -> 1260; `check-main-drivable`
+    # 66 -> 71 -> 77 -> 82, with FOUR retirements-with-subject along the way.
+    # ⛔⛔ THE REWRITE'S PRE-COMMITTED FALSIFIER LANDED, and one of the newest entries exists
+    # to keep it landed. Round 4's commit claimed *"there is no node list left to extend"* and
+    # cited adding `ast.keyword` to that list as proof it could not — but the list WAS the
+    # `isinstance(c, ast.expr)` child filter, two grammar categories short: `ast.arguments`
+    # (lambda defaults) and `ast.comprehension` (iter/ifs). Measured over 20 wrappers x 6
+    # worlds: 15 of 120 cells wrong, 5 of 20 rows world-blind, against a claimed 0 of 90 and
+    # 0/15. ⟳ The rule survives only because the CONVERGING fix DELETES the list —
+    # `_expr_children` descends through any non-expression node without naming a kind — and the
+    # explicit `keywords` line added as proof is subsumed and retired with it.
+    # ⚠ Also from that half: the reachability floor had a SECOND SITE no mutation anchored, a
+    # nested `nonlocal` could overwrite a credited world, and `_last_assigned_value` had ZERO
+    # callers while still implementing the last-binding-wins rule the rewrite had replaced.
+    # ⟳ 82 -> 81, a FIFTH retirement-with-subject, same cause as the other four: the new
+    # `_expr_children` refused to descend into `ast.stmt`, its mutation SURVIVED, and an
+    # `ast.expr` HAS no statement children — so the clause guarded an input the function never
+    # receives. Deleted; the caller's type is the contract. ⭐ Every defensive clause this rule
+    # has shed was found the same way: by a mutation that could not die.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3948,7 +3968,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1255)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1259)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
