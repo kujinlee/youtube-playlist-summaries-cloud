@@ -1052,5 +1052,31 @@
    "...and an ANNOTATED or AUGMENTED module assignment is the guard's world (q8)"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 5 MEDIUM. The hop's KEYWORD branch is dropped, so a world handed to a helper by keyword at the call site stops resolving \u2014 the line was unexercised and could rot in silence",
+  "edits": [
+   [
+    "            arg = sub.args[idx] if len(sub.args) > idx else next(\n                (k.value for k in sub.keywords if k.arg == param), None)",
+    "            arg = sub.args[idx] if len(sub.args) > idx else None"
+   ]
+  ],
+  "expect": [
+   "the hop resolves a helper's parameter supplied BY KEYWORD at the call site (r5 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 5 MEDIUM. computed_argv's non-list precondition is dropped, so a non-list argv crashes the rule instead of being refused",
+  "edits": [
+   [
+    "    if not isinstance(expr, (ast.List, ast.Tuple)):\n        return False\n    return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)",
+    "    return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)"
+   ]
+  ],
+  "expect": [
+   "...and an opaque argv variable is not evidence of a built world"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]

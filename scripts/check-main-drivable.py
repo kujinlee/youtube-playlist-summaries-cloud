@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 222 cases
+    python3 scripts/check-main-drivable.py --self-test   # 225 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -1149,7 +1149,14 @@ def _element_is_constructed(el: ast.AST, fn: ast.AST | None,
 def computed_argv(expr: ast.AST | None, fn: ast.AST | None = None,
                   tree: ast.Module | None = None,
                   world: frozenset[str] = frozenset()) -> bool:
-    """-> True when the argv list holds an element the case BUILT. The ARGV route."""
+    """-> True when the argv list holds an element the case BUILT. The ARGV route.
+
+    ⚠ ROUND 5 MEDIUM, and it is a REPORTING defect rather than a rule one: severing the
+    `List`/`Tuple` precondition raises `AttributeError: 'Name' object has no attribute 'elts'`
+    after 36 `[ok]` lines and ZERO `[FAIL]` lines — the mutation is red and unattributed, which the
+    sweep rightly refuses. The seventh case in this slice to die rather than report. The precondition
+    stays exactly as it is; what changed is the CASE below, which now catches and reports.
+    """
     if not isinstance(expr, (ast.List, ast.Tuple)):
         return False
     return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)
@@ -1606,6 +1613,22 @@ def _self_test() -> int:                                      # noqa: C901 — a
                     "    case('x', _drive(io.StringIO()), 0)\n")
     case("...and a world arriving as a HELPER'S PARAMETER is resolved at its call site",
          classify(_wired(P_VIA_HELPER)).routes, frozenset({PARAM}))
+    # ⛔ ROUND 5 MEDIUM: the hop's KEYWORD branch was never exercised — deleting the
+    # `next(k.value for k in sub.keywords ...)` fallback left the suite 222/222 green, so the line
+    # could rot and a world supplied by keyword at the call site would stop resolving.
+    P_HOP_KW = ("from pathlib import Path\nimport tempfile\nROOT = Path('/repo')\n"
+                "def main(argv=None, root=ROOT):\n"
+                "    if '--self-test' in argv:\n"
+                "        return _self_test()\n"
+                "    return root\n"
+                "def _drive(root):\n"
+                "    return main([], root=root)\n"
+                "def _self_test():\n"
+                "    case('x', _drive(root=tempfile.mkdtemp()), 0)\n")
+    case("the hop resolves a helper's parameter supplied BY KEYWORD at the call site (r5 Medium)",
+         classify(P_HOP_KW).routes, frozenset({PARAM}))
+    case("...and refuses it when the keyword hands over the guard's own world",
+         classify(P_HOP_KW.replace("root=tempfile.mkdtemp()", "root=ROOT")).routes, frozenset())
     case("...while the same helper called with None earns nothing",
          classify(P_VIA_HELPER.replace("_drive(io.StringIO())", "_drive(None)")).routes,
          frozenset())
@@ -1677,8 +1700,17 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...and neither does main(['--self-test']) — the live false pass this rule exists for",
          classify(_wired(A_SELFTEST)).routes, frozenset())
     A_OPAQUE = A_CALL.replace("main([str(_f)])", "main(argv)")
+    # ⛔ THE EIGHTH DYING CASE, and the one the sweep pointed at twice. This fixture is the FIRST
+    # in the suite whose argv is not a list, so when `computed_argv`'s precondition is severed it
+    # is this call that raises — not the direct `computed_argv(...)` case further down, which I
+    # wrapped first and which the interpreter never reaches. A case that dies attributes nothing,
+    # and the fix belongs where the crash actually happens.
+    try:
+        _opaque = classify(_wired(A_OPAQUE)).routes
+    except Exception as exc:                            # noqa: BLE001 — see above
+        _opaque = f"RAISED {type(exc).__name__}"
     case("...and an opaque argv variable is not evidence of a built world",
-         classify(_wired(A_OPAQUE)).routes, frozenset())
+         _opaque, frozenset())
 
     # ── route: rebind ────────────────────────────────────────────────────────────────────────
     R_OK = ("MATCHER = 1\n"
@@ -1974,6 +2006,15 @@ def _self_test() -> int:                                      # noqa: C901 — a
           computed_argv(_gg, None, None, frozenset())), (False, True))
     case("computed_argv with NO enclosing case still refuses a literal",
          (computed_argv(_lit, None), computed_argv(_built, None)), (False, True))
+    # ⛔ THE SEVENTH DYING CASE (r5 Medium). Severing the `List`/`Tuple` precondition makes this
+    # raise `AttributeError` instead of returning, and an exception escaping the suite prints no
+    # `[FAIL]` line — so the sweep sees red with nothing to attribute. Caught and reported.
+    try:
+        _nonlist = computed_argv(ast.parse("argv").body[0].value, None, None, frozenset())
+    except Exception as exc:                            # noqa: BLE001 — see above
+        _nonlist = f"RAISED {type(exc).__name__}"
+    case("...and an argv that is not a list at all is refused, not crashed into",
+         _nonlist, False)
     case("...and given the case and the tree it resolves a helper's parameter",
          computed_argv(ast.parse("[p]").body[0].value, _acase, _acall), False)
     case("...and an unresolvable name earns nothing rather than the benefit of the doubt",

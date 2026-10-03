@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 81,
+    "scripts/check-main-drivable.py": 83,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3959,6 +3959,11 @@ def _self_test() -> int:
     # `ast.expr` HAS no statement children — so the clause guarded an input the function never
     # receives. Deleted; the caller's type is the contract. ⭐ Every defensive clause this rule
     # has shed was found the same way: by a mutation that could not die.
+    # ⟳ 2026-10-03, ROUND 5 against the FROZEN tree: 1259 -> 1261, 81 -> 83. ⭐ TWO Mediums and
+    # BOTH ABOUT THE SUITE RATHER THAN THE RULE — an unexercised keyword branch in the
+    # parameter hop, and a seventh case that died rather than reported. The rule's logic went
+    # unchanged for the first time in five rounds, and the falsifier did NOT land again: the
+    # grammar-category traversal held against the reviewer's adversarial cells.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3968,7 +3973,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1259)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1261)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
