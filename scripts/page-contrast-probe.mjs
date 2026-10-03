@@ -9,9 +9,16 @@
 // check a KNOWN POSITIVE before trusting a check. `node require('playwright')` is the real one,
 // and `check-paid-caller-arrival` already shells out to a sibling .mjs for the same reason.
 //
-// ⛔ IT DECIDES NOTHING. No contrast maths, no thresholds, no verdict — those are pure Python and
-// cased without a browser. This file only reports what the page computed: colour, background,
-// size, weight. Putting a rule here would put it where no self-test can reach it.
+// ⚠ IT HOLDS DECISION RULES, AND AN EARLIER VERSION OF THIS HEADER SAID "IT DECIDES NOTHING".
+// That was false and round 1 (H3) counted them: what is visible, what counts as opaque, which
+// ancestor supplies the background, how deep a selector path goes, what a gradient means. The
+// selector depth alone is one of the components of `sample_key`. No contrast MATHS and no
+// verdict live here — those are pure Python, cased without a browser — but "reports only what
+// the page computed" was never true, and a comment asserting a property the code lacks is the
+// exact defect backlog #216 is about.
+// ⛔ WHAT IS DONE ABOUT IT: `--self-test` below exercises the pure predicates (`opaque`, the
+// selector builder) with no browser, and `check-page-contrast.py` runs it. The DOM walks
+// remain untested by anything but the corpus run, and that is stated rather than implied.
 //
 //   node scripts/page-contrast-probe.mjs <scheme> <page.html> [more.html ...]
 
@@ -30,6 +37,21 @@ const PROBE = () => {
   // The background a reader actually sees behind this text: the nearest ancestor that is opaque.
   // ⚠ NOT the element's own background — most text sits on a transparent element inside a card,
   // and scoring against `transparent` is how a contrast probe reports fiction.
+  // ⛔ A GRADIENT OR IMAGE BACKGROUND HAS NO SINGLE COLOUR, and scoring against the colour
+  // UNDERNEATH it is fiction. Round 1 H2: the corpus's published `worst: 1.107` was exactly
+  // this — that element sits on a `repeating-linear-gradient` and was scored against the cream
+  // beneath, a number no reader could ever experience. Such sites are reported as UNMEASURABLE
+  // and excluded from the verdict rather than given a confident wrong answer.
+  const hasImage = (el) => {
+    let n = el;
+    while (n && n !== document.documentElement) {
+      const bi = getComputedStyle(n).backgroundImage;
+      if (bi && bi !== 'none') return true;
+      if (opaque(getComputedStyle(n).backgroundColor)) return false;
+      n = n.parentElement;
+    }
+    return false;
+  };
   const bgOf = (el) => {
     let n = el;
     while (n && n !== document.documentElement) {
@@ -96,10 +118,42 @@ const PROBE = () => {
       bg: bgOf(el),
       px: parseFloat(cs.fontSize),
       weight: parseFloat(cs.fontWeight) || 400,
+      bgImage: hasImage(el),
     });
   }
   return out;
 };
+
+// ── the pure predicates, lifted out so they can be tested without a browser (round 1 H3) ──
+export const OPAQUE_RE = /rgba?\(([^)]+)\)|color\(\s*srgb\s+([^)]+)\)/;
+export function isOpaque(c) {
+  if (!c) return false;
+  const m = c.match(/rgba?\(([^)]+)\)/) || c.match(/color\(\s*srgb\s+([^)]+)\)/);
+  if (!m) return false;
+  const parts = m[1].split(/[,\s/]+/).filter(Boolean);
+  return parts.length < 4 || parseFloat(parts[3]) >= 0.999;
+}
+
+if (process.argv[2] === '--self-test') {
+  let ok = 0, fail = 0;
+  const c = (name, got, want) => {
+    if (JSON.stringify(got) === JSON.stringify(want)) ok++;
+    else { console.log(`[FAIL] ${name}\n  expected ${JSON.stringify(want)}\n  got      ${JSON.stringify(got)}`); fail++; }
+  };
+  c('an rgb() colour is opaque', isOpaque('rgb(1, 2, 3)'), true);
+  c('rgba with alpha 1 is opaque', isOpaque('rgba(1, 2, 3, 1)'), true);
+  c('rgba with alpha 0 is NOT', isOpaque('rgba(0, 0, 0, 0)'), false);
+  c('rgba with partial alpha is NOT', isOpaque('rgba(0, 0, 0, 0.5)'), false);
+  // ⚠ 0.999 is the floor, because a browser reports 1 as 0.9999999 after a round trip.
+  c('alpha 0.9995 counts as opaque', isOpaque('rgba(0, 0, 0, 0.9995)'), true);
+  c('alpha 0.99 does not', isOpaque('rgba(0, 0, 0, 0.99)'), false);
+  c('color(srgb ...) is opaque', isOpaque('color(srgb 0.1 0.2 0.3)'), true);
+  c('color(srgb ... / 0.3) is not', isOpaque('color(srgb 0.1 0.2 0.3 / 0.3)'), false);
+  c('the empty string is not', isOpaque(''), false);
+  c('a keyword this probe never receives is not', isOpaque('transparent'), false);
+  console.log(`\n${ok}/${ok + fail} probe self-test cases passed`);
+  process.exit(fail ? 1 : 0);
+}
 
 const [scheme, ...pages] = process.argv.slice(2);
 if (!scheme || pages.length === 0) {

@@ -96,8 +96,13 @@ STANDARD_LIGHT: dict[str, str] = {
     # chosen by measuring EVERY background this token actually lands on across the corpus:
     #     rgb(255,255,255) x4432   rgb(247,246,243) x1321   rgb(244,241,234) x96
     #     rgb(238,246,242) x20     rgb(247,235,217) x20     rgb(243,241,237) x18
-    # and clearing the WORST of them (#f7ebd9) at 4.52:1. Ten RGB points from the standard,
-    # imperceptible, and chosen against 5,907 real sites rather than one.
+    # and clearing the WORST of them (#f7ebd9) at 4.52:1, chosen against 5,907 real sites.
+    # ⚠ "IMPERCEPTIBLE" WAS WRONG AND IS WITHDRAWN. Round 1 adjudicated it: ΔE76 from the
+    # standard is 4.01 (light) and 5.41 (dark), both ABOVE the 2.3 just-noticeable-difference
+    # threshold. A careful eye can see this. What IS true is that it is the perceptually
+    # NEAREST step that clears AA — Codex proposed #666a84 as closer by RGB distance, and it is
+    # (13.15 vs 17.32) while being nearly twice as far perceptually (ΔE 7.88 vs 4.01). RGB
+    # euclidean distance is not perceptual distance, and the claim was about perception.
     # Dark mode already passes at 4.92 and is untouched.
     # ⚠ Called out rather than quietly folded in, because the human's instruction was "for now
     # having unified style" and adjusting the standard comes AFTER. This is not a style
@@ -109,6 +114,43 @@ STANDARD_LIGHT: dict[str, str] = {
     "--rule": "#dfdcd5", "--line": "#dfdcd5",
     "--good": "#0f7268", "--verified": "#0f7268",
     "--defect": "#ad3a22", "--structure": "#3d5a86", "--structure-bg": "#eaf0f4",
+    # ── THE REST OF THE VOCABULARY — backlog #221, and the human settled how to source it:
+    # "if backlog page does not have some of the explainer vocabulary, we will have to unify
+    # among other explainer documents. Point is to have single layer that decide common look
+    # and feel."
+    # ⛔ THE STANDARD IS NOT A SUPERSET, which is why this half exists. Measured: the backlog
+    # page defines NO `--strong`, `--accent`, `--warn`, `--code`, `--danger`, `--h`, `--pill` or
+    # `--hair` — it is a TABLE and never renders prose in those roles. Taking "backlog style" as
+    # the standard therefore cannot answer what they should be.
+    # ⚠ SO THESE ARE THE MODAL VALUES ACROSS THE 60 SERVED PAGES, not inventions. Each is already
+    # what 44-47 of the ~45-50 pages that define it already say; unifying to it moves a handful
+    # of outliers and leaves the majority untouched. The count is in the comment per token.
+    "--strong": "#26241f",      # 44 of 45
+    "--h": "#26241f",           # 44 of 45
+    "--accent": "#8a5a2b",      # 47 of 50
+    "--accent-bg": "#f4ece2",   # 44 of 45
+    "--warn": "#7c6426",        # 45 of 49
+    "--warn-bg": "#f8f2e2",     # 45 of 48
+    "--warn-br": "#ded2a9",     # 45 of 48
+    "--code": "#e9e4db",        # 44 of 48
+    "--code-fg": "#4d4842",     # 44 of 45
+    "--danger": "#8f4444",      # 45 of 45
+    "--danger-bg": "#f9f0ef",   # 45 of 45
+    "--danger-br": "#e2c8c8",   # 45 of 45
+    "--pill": "#e9e4db",        # 44 of 45
+    "--hair": "#ece7de",        # 44 of 45
+    "--verified-bg": "#eff5f0", # 44 of 49
+    "--structure-br": "#2b4666",# 40 of 44
+    "--structural": "#3d5a86",  # the standard's own value
+    # ⛔ `--ink3` AND `--ink-3` ARE THE FAINT-INK ROLE UNDER TWO MORE SPELLINGS, and they get the
+    # ROLE's corrected value rather than their own modal. Their modal (#7d766c) on this palette's
+    # `--bg` is 4.15:1 — under AA — and is the whole of round 1's B1: 23 regressions I had called
+    # "page-local literals unreachable by tokens". They were reachable; I had aliased two of the
+    # three spellings of one role and asserted the third was out of reach.
+    # ⚠ The recall hook fired `a-shim-can-fail-in-both-directions — fixing only the one name you
+    # noticed` at the exact step this palette was written, and I quoted it in the step banner.
+    "--ink3": "#616c7c",
+    "--ink-3": "#616c7c",
 }
 STANDARD_DARK: dict[str, str] = {
     "--bg": "#101318", "--bg2": "#171b22", "--card": "#171b22", "--panel": "#171b22",
@@ -128,6 +170,16 @@ STANDARD_DARK: dict[str, str] = {
     "--rule": "#2a3039", "--line": "#2a3039",
     "--good": "#4fc9b8", "--verified": "#4fc9b8",
     "--defect": "#f0836a", "--structure": "#8fb0e0", "--structure-bg": "#131f2e",
+    # The dark half of the same vocabulary — same sourcing, same counts (see the light block).
+    "--strong": "#eae6de", "--h": "#eae6de",
+    "--accent": "#cb9a68", "--accent-bg": "#26211c",
+    "--warn": "#c4ab72", "--warn-bg": "#231f18", "--warn-br": "#4b4227",
+    "--code": "#2b2926", "--code-fg": "#c0bbb2",
+    "--danger": "#c98f8f", "--danger-bg": "#241d1d", "--danger-br": "#4e3232",
+    "--pill": "#2b2926", "--hair": "#2a2825",
+    "--verified-bg": "#1b2220", "--structure-br": "#33507a", "--structural": "#8fb0e0",
+    # the faint-ink role, third and fourth spellings — the role's value, not their modal
+    "--ink3": "#8892a2", "--ink-3": "#8892a2",
 }
 
 

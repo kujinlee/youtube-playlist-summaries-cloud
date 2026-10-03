@@ -29,15 +29,22 @@ USAGE
     python3 scripts/check-page-contrast.py --against docs/contrast-baseline.json
     python3 scripts/check-page-contrast.py --report           # measure and print, no verdict
 
+⚠ THE LIVE GATE IS NOT WIRED TO ANYTHING. CI runs `--self-test` only (no browser on the runner).
+Nothing runs `--against` automatically — not CI, not a hook, not a script. It is a command a human
+types. Round 1 M1 found an earlier comment claiming it was "listed with the other two in
+docs/dev-process.md"; THERE IS NO SUCH ENTRY and the claim was invented. Until something runs it,
+this guard protects nothing on its own, and saying so is the only honest state.
+
 ⛔ NOT A PASS WHEN IT CANNOT RUN. No Chromium, no pages, or a page that fails to load is rc=2 and
 says TREAT THIS AS NOT RUN. A contrast gate that goes quiet when it cannot see is worse than none,
 because the silence is indistinguishable from "everything is readable".
 
-    python3 scripts/check-page-contrast.py --self-test  # 64 cases
+    python3 scripts/check-page-contrast.py --self-test  # 75 cases
 """
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import re
@@ -134,42 +141,48 @@ def threshold_for(px: float, weight: float) -> float:
 def sample_key(s: dict) -> str:
     """Stable identity for one measured SITE, so a baseline survives the change it guards.
 
-    ⛔ IT MUST NOT CONTAIN A COLOUR, AND THE FIRST TWO VERSIONS BOTH DID THE WRONG THING. Keyed on
-    element TEXT, one page produced 10,626 rows and any content edit invalidated the baseline.
-    Keyed on (fg, bg, size, weight) it was compact and stable — until the first real use, a
-    palette change, altered every fg and bg, so NO key matched and all 196 affected elements were
-    reported as "NEW" instead of compared. **A baseline keyed on the thing under test cannot
-    measure a change to that thing.** The key is now page, scheme, selector path, size, weight —
-    every component of WHERE the text is, and none of HOW it is coloured.
+    ⛔ IT MUST NOT CONTAIN A COLOUR, and two earlier versions got this wrong in opposite ways.
+    Keyed on element TEXT, one page produced 10,626 rows and any content edit invalidated the
+    baseline. Keyed on (fg, bg, size, weight) it was compact and stable — until the first real
+    use, a palette change, altered every fg and bg so NO key matched and 196 affected sites were
+    reported as "NEW" instead of compared. A baseline keyed on the thing under test cannot
+    measure a change to that thing.
 
-    ⚠ Two sites can share a key and differ in colour (the same selector path inside a verified
-    box and a defect box). `collapse` keeps the WORST ratio for a key, which is conservative in
-    the only direction that matters: it can over-report a regression, never hide one.
+    ⛔⛔ AND IT MUST DISTINGUISH SIBLINGS, which is round 1's H1 and was Blocking. Page + scheme
+    + selector path + size + weight collapsed `Copy` (2.221:1) and `Close` (5.492:1) — two
+    buttons with the same ancestry — onto ONE key. `collapse` kept the worse, so `Close` could
+    crash from passing to 3.0:1 and the verdict would see no change at all. Measured: 4,410
+    duplicate keys in this corpus and 25 of them already mix a passing and a failing site, so
+    the masking surface was real and not hypothetical.
+    ⤳ `ordinal` is the site's index among its duplicate-key siblings, assigned in document
+    order by `collapse`. It is stable under a palette change (which is the point), and under a
+    content edit it shifts only for siblings AFTER an insertion — a far smaller blast radius
+    than keying on text, which the first version paid for.
     """
-    return f"{s['page']}|{s['scheme']}|{s['selector']}|{s['px']:.1f}|{int(s['weight'])}"
+    return (f"{s['page']}|{s['scheme']}|{s['selector']}|{s['px']:.1f}|{int(s['weight'])}"
+            f"|{s.get('ordinal', 0)}")
 
 
 def collapse(rows: list[dict]) -> list[dict]:
-    """PURE. Many measured elements -> one sample per site, carrying its WORST ratio.
+    """PURE. Measured elements -> one sample per SITE, siblings kept apart by ordinal.
 
-    ⛔ WORST, NOT FIRST OR MEAN. Sites sharing a key can differ in colour, and a baseline that
-    recorded the first or the average would let the worst of them degrade unseen. Over-reporting
-    a regression costs a reader one line; hiding one costs the thing this harness exists for.
+    ⛔ THE PREVIOUS VERSION'S DOCSTRING CLAIMED it "can over-report a regression, never hide
+    one". That was FALSE and round 1 refuted it with a real pair from this corpus. Siblings
+    sharing a selector path were merged and only the worst ratio survived, so a passing sibling
+    could cross below AA invisibly behind a failing one.
+
+    Now each element gets an `ordinal` within its (page, scheme, selector, px, weight) group, so
+    siblings stay distinct and the earlier guarantee is finally true — because nothing is merged
+    away. `instances` stays 1 and is kept for message compatibility.
     """
-    out: dict[str, dict] = {}
+    counter: dict[str, int] = {}
+    out: list[dict] = []
     for r in rows:
-        k = sample_key(r)
-        hit = out.get(k)
-        if hit is None:
-            out[k] = {**r, "instances": 1}
-        else:
-            hit["instances"] += 1
-            if r["ratio"] < hit["ratio"]:
-                hit["ratio"] = r["ratio"]
-                hit["text"] = r["text"]
-                hit["fg"] = r["fg"]
-                hit["bg"] = r["bg"]
-    return list(out.values())
+        base = f"{r['page']}|{r['scheme']}|{r['selector']}|{r['px']:.1f}|{int(r['weight'])}"
+        n = counter.get(base, 0)
+        counter[base] = n + 1
+        out.append({**r, "ordinal": n, "instances": 1})
+    return out
 
 
 def verdict(samples: list[dict], baseline: dict | None) -> list[str]:
@@ -185,6 +198,30 @@ def verdict(samples: list[dict], baseline: dict | None) -> list[str]:
     if baseline is None:
         return problems
     prior = {k: v for k, v in baseline.get("samples", {}).items()}
+    # ⛔ A KEY THAT VANISHED IS NOT A KEY THAT PASSED — round 1's B2, and it was Blocking in both
+    # halves. This loop only ever walked the CURRENT samples, so a baselined site that stopped
+    # being measured disappeared in silence. Measured: 496 of 6,664 baseline keys belong to four
+    # GITIGNORED standing pages, and in a clean `git archive` checkout the gate exited 0 while
+    # 7.4% of its own subject was absent. A ratchet that cannot tell "fixed" from "gone" is not
+    # a ratchet.
+    # ⚠ REPORTED, NOT SILENTLY TOLERATED, and deliberately not fatal on its own: the four pages
+    # are derived artefacts a fresh clone legitimately lacks. The caller decides; what is
+    # forbidden is not knowing.
+    # ⚠ A SITE WHOSE BACKGROUND IS A GRADIENT IS NOT SCORED — its ratio is not a fact about
+    # what a reader sees. It still counts as MEASURED for the vanishing check, so excluding it
+    # cannot be used to make a baselined site disappear quietly.
+    seen = {sample_key(s) for s in samples}
+    samples = [s for s in samples if not s.get("bg_uncertain")]
+    vanished = sorted(k for k in prior if k not in seen)
+    if vanished:
+        by_page: dict[str, int] = {}
+        for k in vanished:
+            by_page[k.split("|")[0]] = by_page.get(k.split("|")[0], 0) + 1
+        where = ", ".join(f"{p} x{n}" for p, n in sorted(by_page.items(), key=lambda kv: -kv[1])[:5])
+        problems.append(
+            f"VANISHED — {len(vanished)} baselined site(s) were not measured this run "
+            f"({where}). A site that is gone is not a site that improved; re-baseline "
+            f"deliberately, or restore what is missing. TREAT THE VERDICT AS PARTIAL.")
     for s in samples:
         k = sample_key(s)
         was = prior.get(k)
@@ -213,14 +250,46 @@ def verdict(samples: list[dict], baseline: dict | None) -> list[str]:
     return problems
 
 
+def load_baseline(path: Path) -> dict:
+    """Read a baseline, gzipped or plain. PURE apart from the one read.
+
+    ⛔ GZIPPED BECAUSE THE HONEST BASELINE IS BIG. Round 1's H1 fix stopped merging siblings, so
+    the corpus went from 6,664 collapsed groups to 65,508 individual sites — 5.16 MB of JSON,
+    rewritten on every style change. Gzip takes that to **0.20 MB with no fidelity lost**, which
+    is why there is no threshold here: the alternative considered was keeping only sites below
+    some ratio, and that is a judgement about how far a future change might move a colour. A
+    26x win needs no such guess.
+    """
+    raw = path.read_bytes()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))
+
+
+def dump_baseline(obj: dict, path: Path) -> int:
+    """Write a baseline gzipped. -> bytes written."""
+    blob = gzip.compress(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode(), 9)
+    path.write_bytes(blob)
+    return len(blob)
+
+
 def summarise(samples: list[dict]) -> dict:
-    """PURE. -> the headline numbers, so a report cannot disagree with its own detail."""
-    below = [s for s in samples if s["ratio"] < s["threshold"]]
+    """PURE. -> the headline numbers, so a report cannot disagree with its own detail.
+
+    ⛔ GRADIENT-BACKED SITES ARE COUNTED BUT NOT SCORED — round 1 H2. Their ratio is computed
+    against whatever opaque colour lies beneath an image, which is not what a reader sees; the
+    old published `worst: 1.107` was one such site. Reporting them as unmeasurable is honest;
+    folding them into `worst` was not.
+    """
+    scored = [s for s in samples if not s.get("bg_uncertain")]
+    below = [s for s in scored if s["ratio"] < s["threshold"]]
     return {
         "elements": len(samples),
+        "scored": len(scored),
+        "unmeasurable": len(samples) - len(scored),
         "pages": len({s["page"] for s in samples}),
         "below_aa": len(below),
-        "worst": min((s["ratio"] for s in samples), default=float("nan")),
+        "worst": min((s["ratio"] for s in scored), default=float("nan")),
     }
 
 
@@ -282,6 +351,10 @@ def measure(pages: list[Path], schemes=("light", "dark"), extra_css: str = "",
                 "weight": float(raw["weight"]),
                 "ratio": round(contrast(lit, bg), 3),
                 "threshold": threshold_for(raw["px"], raw["weight"]),
+                # ⛔ round 1 H2: text over a gradient or image has NO single background colour.
+                # The ratio above is computed against whatever opaque colour sits beneath, which
+                # is not what a reader sees — the corpus's old `worst: 1.107` was exactly that.
+                "bg_uncertain": bool(raw.get("bgImage")),
             })
     return collapse(samples)
 
@@ -411,40 +484,47 @@ def _self_test() -> int:
                 "fg": fg, "bg": bg, "px": px, "weight": weight,
                 "ratio": ratio, "threshold": thr}
 
-    # ── collapse: the element -> style-combination step ──
-    # ⛔ WHY IT EXISTS: keyed on element text, the backlog page alone produced 10,626 rows and the
-    # baseline was invalidated by adding one table row. Contrast is a property of a combination.
-    case("identical style combinations collapse to ONE sample",
-         len(collapse([s(5.0, text="a"), s(5.0, text="b"), s(5.0, text="c")])), 1)
-    case("...and the survivor counts how many it stands for",
-         collapse([s(5.0, text="a"), s(5.0, text="b")])[0]["instances"], 2)
-    case("...keeping the FIRST text as the exemplar, so a message can name real words",
-         collapse([s(5.0, text="first"), s(5.0, text="second")])[0]["text"], "first")
-    # ⛔ COLOUR IS NOT PART OF IDENTITY — this is the property the palette change required, and
-    # the version that lacked it reported all 196 affected elements as NEW instead of comparing.
-    case("a different FOREGROUND is the SAME site, so a palette change can be compared",
-         len(collapse([s(5.0), s(4.0, fg="rgb(1, 1, 1)")])), 1)
-    case("...and the survivor carries the WORST ratio, never the first",
-         collapse([s(5.0), s(4.0, fg="rgb(1, 1, 1)")])[0]["ratio"], 4.0)
-    case("...in either order, so it is a minimum and not a last-write",
-         collapse([s(4.0, fg="rgb(1, 1, 1)"), s(5.0)])[0]["ratio"], 4.0)
+    # ── collapse: elements -> sites, siblings kept APART ──
+    # ⛔ ROUND 1 H1 WAS BLOCKING AND THIS IS THE REPAIR. The previous version merged siblings
+    # sharing a selector path and kept the worst ratio, so a PASSING sibling could cross below
+    # AA invisibly behind a failing one. Real pair from this corpus:
+    #     …|dark|div.in>div.trow>button|13.1|400  ->  'Copy' 2.221  and  'Close' 5.492
+    case("siblings sharing a selector path stay DISTINCT, they are not merged",
+         len(collapse([s(5.0, text="a"), s(5.0, text="b"), s(5.0, text="c")])), 3)
+    case("...and are numbered in document order, so the numbering is reproducible",
+         [r["ordinal"] for r in collapse([s(5.0), s(5.0), s(5.0)])], [0, 1, 2])
+    # ⭐ THE MASKING CASE ITSELF, with the measured pair. Before the fix these collapsed to one
+    # sample at 2.221 and `Close` could crash to 3.0 unseen.
+    _mask = collapse([s(2.221, text="Copy"), s(5.492, text="Close")])
+    case("the Copy/Close pair that proved the masking now yields TWO samples", len(_mask), 2)
+    case("...and the passing sibling keeps its own ratio rather than the worse one",
+         sorted(r["ratio"] for r in _mask), [2.221, 5.492])
+    case("...so their keys differ and a regression on either is visible",
+         sample_key(_mask[0]) != sample_key(_mask[1]), True)
+    # ⛔ AND THE PROPERTY THE ORDINAL MUST NOT BREAK: a palette change alters every colour, and
+    # the keys must still line up or the baseline cannot compare anything. Same sites, new
+    # colours, same key sequence.
+    _before = collapse([s(5.0, fg="rgb(0,0,0)"), s(6.0, fg="rgb(0,0,0)", text="b")])
+    _after = collapse([s(4.4, fg="rgb(9,9,9)"), s(5.1, fg="rgb(9,9,9)", text="b")])
+    case("a palette change leaves every key unchanged, which is what makes a baseline work",
+         [sample_key(r) for r in _before], [sample_key(r) for r in _after])
     case("a different SELECTOR is a different site",
-         len(collapse([s(5.0), s(5.0, selector="body>h1")])), 2)
-    case("a different SIZE is a different combination — it changes the threshold",
-         len(collapse([s(5.0, px=16.0), s(5.0, px=24.0)])), 2)
-    case("a different WEIGHT is too, for the same reason",
-         len(collapse([s(5.0, weight=400), s(5.0, weight=700)])), 2)
-    case("the same combination on a different PAGE stays separate",
-         len(collapse([s(5.0), s(5.0, page="q.html")])), 2)
+         len({sample_key(r) for r in collapse([s(5.0), s(5.0, selector="body>h1")])}), 2)
+    case("the same site on a different PAGE stays separate",
+         len({sample_key(r) for r in collapse([s(5.0), s(5.0, page="q.html")])}), 2)
     case("...and in a different SCHEME",
-         len(collapse([s(5.0), s(5.0, scheme="dark")])), 2)
-    # ⚠ THE PROPERTY THE WHOLE REDESIGN RESTS ON: changing only the TEXT must not change identity.
+         len({sample_key(r) for r in collapse([s(5.0), s(5.0, scheme="dark")])}), 2)
     case("the key is independent of the TEXT, so a content edit does not invalidate a baseline",
          sample_key(s(5.0, text="before")), sample_key(s(5.0, text="after a content edit")))
     case("the key is independent of COLOUR, so a PALETTE change can be compared at all",
          sample_key(s(5.0, fg="rgb(0,0,0)", bg="rgb(255,255,255)")),
          sample_key(s(5.0, fg="rgb(9,9,9)", bg="rgb(250,250,250)")))
 
+    # ── the VERDICT's own cases ──
+    # ⛔ THIS WHOLE BLOCK WAS DELETED BY A CARELESS SPLICE while fixing H1, and the suite then
+    # reported "47/47 passed" over a gate whose entire verdict logic had become untested. The
+    # only thing that noticed was the declared-count mismatch. Restored, and recorded here
+    # because "the tests still pass" was true and worthless at that moment.
     base = {"samples": {sample_key(s(8.0)): 8.0}}
     case("unchanged is silent", verdict([s(8.0)], base), [])
     case("improving is silent", verdict([s(12.0)], base), [])
@@ -458,20 +538,55 @@ def _self_test() -> int:
     got2 = verdict([s(1.2)], low)
     case("...but already-failing and WORSE is reported", len(got2), 1)
     case("...and says WORSENED, not CROSSED", "WORSENED" in (got2[0] if got2 else ""), True)
-    case("an already-failing element that IMPROVES is silent", verdict([s(2.6)], low), [])
-    # ⚠ NOVELTY IS A STYLE, NOT A WORD. The first version of these two cases used
-    # `text="brand new"` and failed once the key stopped depending on text — correctly, and the
-    # red is the evidence that the redesign took effect. A new COMBINATION is a new colour.
-    got3 = verdict([s(2.0, selector="body>aside")], base)
-    case("a NEW failing combination is reported rather than admitted silently", len(got3), 1)
+    case("an already-failing site that IMPROVES is silent", verdict([s(2.6)], low), [])
+    # ⚠ THE BASELINED SITE IS KEPT IN EACH RUN BELOW — omit it and the run no longer measures
+    # it, which is now correctly reported as VANISHED.
+    got3 = verdict([s(8.0), s(2.0, selector="body>aside")], base)
+    case("a NEW failing site is reported rather than admitted silently", len(got3), 1)
     case("...and says NEW", "NEW" in (got3[0] if got3 else ""), True)
-    case("a NEW passing combination is silent", verdict([s(9.0, selector="body>aside")], base), [])
-    # ⚠ A key built from the index would renumber on any edit; this one must not.
-    case("the sample key is independent of ORDER",
-         sample_key(s(8.0)) == sample_key(s(3.0)), True)
-    case("...but distinguishes the colour scheme",
-         sample_key(s(8.0, scheme="light")) != sample_key(s(8.0, scheme="dark")), True)
+    case("a NEW passing site is silent", verdict([s(8.0), s(9.0, selector="body>aside")], base), [])
     case("no baseline means no verdict — a first run cannot fail", verdict([s(1.0)], None), [])
+
+    # ── the baseline's own encoding ──
+    # ⛔ A ROUND TRIP IS NOT A DETAIL HERE: the baseline IS the gate's memory, and a lossy or
+    # unreadable one fails silently as "everything improved". 5.16 MB plain -> 0.20 MB gzipped.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        _obj = {"samples": {"a|light|body>p|16.0|400|0": 4.321}, "summary": {"below_aa": 1}}
+        _gz = Path(_td) / "b.json.gz"
+        dump_baseline(_obj, _gz)
+        case("a gzipped baseline round-trips EXACTLY — ratios included", load_baseline(_gz), _obj)
+        case("...and is actually compressed, not just renamed", _gz.read_bytes()[:2], b"\x1f\x8b")
+        # ⚠ PLAIN JSON MUST STILL READ. A baseline written before this change, or by hand, is
+        # not a reason to report that every site vanished.
+        _plain = Path(_td) / "b.json"
+        _plain.write_text(json.dumps(_obj), encoding="utf-8")
+        case("a PLAIN json baseline still reads, so an older one is not silently empty",
+             load_baseline(_plain), _obj)
+        # ⛔ A SECOND, DISTINCT OBJECT AND PATH — `check-fixture-variation` refused the first
+        # version for passing `dump_baseline` one object at one path, so a `dump_baseline` that
+        # ignored both arguments and wrote a constant would have passed. Third time this guard
+        # has caught that shape in one day.
+        _obj2 = {"samples": {"z|dark|body>h1|24.0|700|3": 19.9}, "summary": {"below_aa": 0}}
+        _gz2 = Path(_td) / "other.json.gz"
+        dump_baseline(_obj2, _gz2)
+        case("a DIFFERENT baseline round-trips to its own content, not the first one's",
+             load_baseline(_gz2), _obj2)
+        case("...and lands at the path it was given, not a remembered one",
+             (_gz2.exists(), load_baseline(_gz) == _obj), (True, True))
+
+    # ── a key that VANISHES from the run — round 1's B2, Blocking in both halves ──
+    # ⛔ Measured before the fix: 496 of 6,664 baselined keys belong to GITIGNORED pages, and on
+    # a clean checkout the gate exited 0 while 7.4% of its own subject was simply absent.
+    gone = verdict([], base)
+    case("a baselined site NOT measured this run is reported", len(gone), 1)
+    case("...and says VANISHED, so it cannot be read as an improvement",
+         "VANISHED" in (gone[0] if gone else ""), True)
+    case("...and names the page, so a derived artefact is distinguishable from a deletion",
+         "p.html" in (gone[0] if gone else ""), True)
+    case("...while a run that measures everything says nothing about vanishing",
+         any("VANISHED" in x for x in verdict([s(8.0)], base)), False)
+    case("no baseline means no vanishing verdict either", verdict([], None), [])
 
     # ── is_served_page: the corpus rule, and it took three attempts ──
     case("a page declaring a viewport is a served page",
@@ -493,6 +608,27 @@ def _self_test() -> int:
     # ⚠ TWO DISTINCT INPUTS, because `check-fixture-variation` refused the first version of this
     # for passing `samples` one value at the only call site — a `summarise` that ignored its
     # argument would have passed. The repo's `exercise-the-producer-at-two-distinct-inputs`.
+    # ⛔ GRADIENT-BACKED SITES ARE COUNTED BUT NOT SCORED — round 1 H2, and the mutation that
+    # reverts this SURVIVED until these cases existed. The corpus's old `worst: 1.107` was one
+    # such site: text on a `repeating-linear-gradient`, scored against the cream beneath it.
+    def g(ratio, **kw):
+        d = s(ratio, **kw); d["bg_uncertain"] = True; return d
+
+    case("a gradient-backed site is not counted as below AA, however bad its nominal ratio",
+         summarise([g(1.1), s(9.0, selector="body>h1")])["below_aa"], 0)
+    case("...and is excluded from WORST, which is where the fiction used to surface",
+         summarise([g(1.1), s(9.0, selector="body>h1")])["worst"], 9.0)
+    case("...but is still COUNTED, and reported as unmeasurable rather than hidden",
+         (summarise([g(1.1), s(9.0)])["elements"], summarise([g(1.1), s(9.0)])["unmeasurable"]),
+         (2, 1))
+    case("...and an ordinary site is still scored normally beside it",
+         summarise([g(1.1), s(3.0, selector="body>h1")])["below_aa"], 1)
+    # ⚠ AND IT MUST NOT BECOME A HIDING PLACE: a baselined site that turns up gradient-backed
+    # still counts as MEASURED, so it cannot be used to make a key vanish quietly.
+    _b = {"samples": {sample_key(s(8.0)): 8.0}}
+    case("a site that becomes gradient-backed does NOT read as vanished",
+         any("VANISHED" in x for x in verdict([g(8.0)], _b)), False)
+
     case("summarise counts what is below ITS OWN threshold",
          summarise([s(3.0), s(9.0, text="b"), s(3.2, text="c", thr=AA_LARGE)])["below_aa"], 1)
     case("...and a different corpus gives a different answer",
@@ -514,7 +650,9 @@ def main(argv: list[str], root: Path = ROOT) -> int:
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--write-baseline", metavar="PATH")
     ap.add_argument("--against", metavar="PATH")
-    ap.add_argument("--report", action="store_true")
+    ap.add_argument("--report", action="store_true",
+                    help="also list the worst sites, so a human can see WHICH text is failing "
+                         "rather than only how many do")
     ap.add_argument("--extra-css", metavar="PATH",
                     help="inject this stylesheet INSTEAD of the standard palette — how a "
                          "proposed change is measured BEFORE it ships")
@@ -547,19 +685,25 @@ def main(argv: list[str], root: Path = ROOT) -> int:
         return 2
 
     sm = summarise(samples)
-    print(f"contrast: {sm['elements']} text element(s) across {sm['pages']} page(s), both schemes")
-    print(f"  below AA: {sm['below_aa']}   worst: {sm['worst']:.2f}:1")
+    # ⚠ "sites", not "elements x schemes" — round 1 L1. Each sample is ONE (page, scheme, site)
+    # triple, so "6,664 across 60 pages, both schemes" read as 13,328 to a reasonable reader.
+    print(f"contrast: {sm['elements']} measured site(s) (page x scheme x element) "
+          f"across {sm['pages']} page(s)")
+    print(f"  below AA: {sm['below_aa']} of {sm['scored']} scored   worst: {sm['worst']:.2f}:1"
+          + (f"   ⚠ {sm['unmeasurable']} NOT SCORED (text over a gradient or image — no single "
+             f"background colour exists, so any ratio would be fiction)"
+             if sm["unmeasurable"] else ""))
 
     if args.write_baseline:
         out = {"samples": {sample_key(s): s["ratio"] for s in samples}, "summary": sm}
-        Path(args.write_baseline).write_text(json.dumps(out, indent=1, sort_keys=True) + "\n",
-                                             encoding="utf-8")
-        print(f"  baseline written: {args.write_baseline} ({len(out['samples'])} keys)")
+        n = dump_baseline(out, Path(args.write_baseline))
+        print(f"  baseline written: {args.write_baseline} "
+              f"({len(out['samples'])} keys, {n/1048576:.2f} MB gzipped)")
         return 0
 
     if args.against:
         try:
-            base = json.loads(Path(args.against).read_text(encoding="utf-8"))
+            base = load_baseline(Path(args.against))
         except OSError as exc:
             print(f"FAILED: baseline {args.against} cannot be read ({exc.__class__.__name__}). "
                   f"TREAT THIS AS NOT RUN.")
@@ -575,6 +719,16 @@ def main(argv: list[str], root: Path = ROOT) -> int:
         print("  OK — no element crossed below AA and none already failing got worse")
         return 0
 
+    # ⚠ `--report` WAS A DECLARED NO-OP — round 1 L2. The flag was documented in the usage block
+    # and parsed, and did nothing at all; a reader who passed it got the summary they would have
+    # got anyway. A documented switch that does nothing is a false claim with a help string.
+    if args.report:
+        worst = sorted(samples, key=lambda s: s["ratio"])[:25]
+        print("\n  worst sites (ratio, threshold, scheme, page, text):")
+        for s in worst:
+            flag = "✗" if s["ratio"] < s["threshold"] else " "
+            print(f"  {flag} {s['ratio']:>6.2f} / {s['threshold']:<4} [{s['scheme']:<5}] "
+                  f"{s['page'][:46]:<48} {s['text'][:42]!r}")
     return 0
 
 

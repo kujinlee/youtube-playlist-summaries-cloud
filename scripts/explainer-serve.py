@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 211 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 215 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1718,6 +1718,26 @@ def _self_test() -> int:
              lambda: page_chrome.STANDARD_LIGHT["--fg2"] > page_chrome.STANDARD_LIGHT["--fg"])
         case("...and in dark, --fg2 is DIMMER than --fg, which is the same property inverted",
              lambda: page_chrome.STANDARD_DARK["--fg2"] < page_chrome.STANDARD_DARK["--fg"])
+        # ⛔ THE TWO SCHEMES MUST COVER THE SAME ROLES. A token defined in light and missing in
+        # dark leaves that role resolving to the PAGE's own value in one scheme only — the
+        # corpus half-unified, and visible only to a reader who toggles. Nothing asserted this
+        # until round 1; the invariant was written in a comment and enforced by nothing.
+        case("light and dark define exactly the same role set",
+             lambda: set(page_chrome.STANDARD_LIGHT) == set(page_chrome.STANDARD_DARK))
+        # ⛔ ONE ROLE, ONE VALUE, ACROSS ALL ITS SPELLINGS — round 1's B1. The faint ink is
+        # spelled `--fg3`, `--ink-faint`, `--ink3` and `--ink-3` across this corpus. Aliasing
+        # two of four and calling the rest unreachable cost 23 regressions.
+        case("every spelling of the faint-ink role carries ONE value, in light",
+             lambda: len({page_chrome.STANDARD_LIGHT[t]
+                          for t in ("--fg3", "--ink-faint", "--ink3", "--ink-3")}) == 1)
+        case("...and in dark",
+             lambda: len({page_chrome.STANDARD_DARK[t]
+                          for t in ("--fg3", "--ink-faint", "--ink3", "--ink-3")}) == 1)
+        # ⚠ THE VOCABULARY IS THE POINT, not the count — the human: "Point is to have single
+        # layer that decide common look and feel." These are the roles a reader most notices.
+        case("the palette covers the emphasis and semantic roles the pages actually use",
+             lambda: {"--strong", "--h", "--code", "--accent", "--danger", "--warn"}
+                     <= set(page_chrome.STANDARD_LIGHT))
 
         # The client is a STRING constant, so its guards can be asserted without a browser. These
         # are shape checks, not behaviour — the behaviour was driven in a real browser on 2026-08-18.

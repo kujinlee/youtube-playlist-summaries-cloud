@@ -63,7 +63,7 @@
     "            if False:"
    ]
   ],
-  "expect": "a NEW failing combination is reported rather than admitted silently"
+  "expect": "a NEW failing site is reported rather than admitted silently"
  },
  {
   "name": "the corpus rule accepts fragments, so chromeless files with no palette are measured",
@@ -77,14 +77,36 @@
   "expect": "a chromeless fragment is NOT"
  },
  {
-  "name": "collapse stops counting instances, so a regression message cannot say how many elements share the combination it names",
+  "name": "a baselined site that vanished from the run passes silently again",
   "file": "scripts/check-page-contrast.py",
   "edits": [
    [
-    "            hit[\"instances\"] += 1",
-    "            pass"
+    "    vanished = sorted(k for k in prior if k not in seen)",
+    "    vanished = []"
    ]
   ],
-  "expect": "...and the survivor counts how many it stands for"
+  "expect": "a baselined site NOT measured this run is reported"
+ },
+ {
+  "name": "siblings are merged again, so a passing one can cross below AA behind a failing one",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        counter[base] = n + 1",
+    "        counter[base] = n"
+   ]
+  ],
+  "expect": "...and are numbered in document order, so the numbering is reproducible"
+ },
+ {
+  "name": "gradient-backed text is scored against the colour beneath, which no reader sees",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    scored = [s for s in samples if not s.get(\"bg_uncertain\")]",
+    "    scored = list(samples)"
+   ]
+  ],
+  "expect": "a gradient-backed site is not counted as below AA, however bad its nominal ratio"
  }
 ]
