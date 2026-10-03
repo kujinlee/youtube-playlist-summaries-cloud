@@ -301,36 +301,48 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     "check-main-drivable.py": (
-        # ⟳ 2026-10-02: ADR-0014's rule D2, pinned in the commit that creates it. Asking this
-        # file's question of it found SIX unvaried parameters before it shipped — `tree` passed
-        # one parse twice, `start`/`path`/`writes` never passed at all, and `main.argv` collapsed
-        # to a single expression by a `_driven(args)` helper, which is the indirection this
-        # guard's own docstring records rejecting for the same reason.
-        # ⟳ 2026-10-02, review round 1: 16 -> 21. The new keys are the round's own fixes —
-        # `globals_aliases` (the alias Blocking), `suite_reachable` (the dead-call Blocking), and
-        # `computed_argv`'s `fn`/`tree` (the helper-parameter hop). Each was unvaried on arrival
-        # and this guard said so before the sweep ran.
-        # ⟳ round 2: 21 -> 23, the two rules that round added — `dispatches_a_suite` (the
-        # fallback's precondition) and `note_globals_imports` (the imported spelling).
-        "argv_forwarders.tree", "assess.debt", "assess.texts", "assess.whole",
-        "classify.path", "classify.text",
-        "computed_argv.expr", "computed_argv.fn", "computed_argv.tree",
-        # ⟳ round 3: `case_locals` (which names what the case binds) and
-        # `reads_the_live_world.locals_` (which lets a local shadow the live-world vocabulary).
-        "case_locals.fn",
-        "computed_argv.guard_globals",
+        # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
+        # `case_locals` are GONE, deliberately: the review measured that the rule
+        # dispatched on an expression's TOP NODE and defaulted to True — 21 of 21
+        # element-level credits on disk exited that default without a child being
+        # examined — so the whole expression rule was replaced by `world_class`, three
+        # leaf classes recursing over the grammar. Those keys retire WITH their
+        # functions and `world_class`'s own parameters take their place.
+        # ⚠ DERIVED BY RUNNING `analyse()`, not edited by hand: a first attempt added
+        # `_bound_values` and `guard_world_globals`, which this guard does not examine
+        # because the suite does not drive them at two call sites — and it said so.
+        "argv_forwarders.tree",
+        "assess.debt",
+        "assess.texts",
+        "assess.whole",
+        "classify.path",
+        "classify.text",
+        "computed_argv.expr",
+        "computed_argv.fn",
+        "computed_argv.tree",
+        "computed_argv.world",
         "dispatches_a_suite.tree",
-        "global_writes.aliased", "global_writes.fn",
-        "globals_aliases.aliased", "globals_aliases.fn",
+        "global_writes.aliased",
+        "global_writes.fn",
+        "globals_aliases.aliased",
+        "globals_aliases.fn",
         "live_substitutions.aliased",
+        "live_substitutions.fn",
+        "live_substitutions.lineno",
+        "live_substitutions.writes",
+        "main.argv",
+        "main.root",
+        "module_globals.tree",
         "note_globals_imports.tree",
-        # ⟳ round 2's Claude half: the alias spellings and the guard's own globals became
-        # PARAMETERS rather than module state, so they join the examined set with the rules.
-        "reads_the_live_world.expr", "reads_the_live_world.guard_globals",
-        "reads_the_live_world.locals_",
-        "live_substitutions.fn", "live_substitutions.lineno", "live_substitutions.writes",
-        "main.argv", "main.root", "module_globals.tree", "suite_main_calls.tree",
-        "suite_reachable.tree", "world_names.start", "world_names.tree",
+        "suite_main_calls.tree",
+        "suite_reachable.tree",
+        "world_class.depth",
+        "world_class.expr",
+        "world_class.fn",
+        "world_class.tree",
+        "world_class.world",
+        "world_names.start",
+        "world_names.tree",
     ),
     # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file

@@ -3,7 +3,7 @@
   "name": "the literal-argv discrimination is dropped, so a flag vector run over the LIVE repository counts as a constructed world and every pinned guard silently 'complies'",
   "edits": [
    [
-    "    return any(_element_is_constructed(el, fn, tree, 0, guard_globals) for el in expr.elts)",
+    "    return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)",
     "    return True"
    ]
   ],
@@ -277,7 +277,7 @@
   "name": "\u2b50 ROUND 1 BLOCKING, THE FOURTH ROUTE. A guard that drives its own entry point as a subprocess over built stdin is pinned as debt again",
   "edits": [
    [
-    "    if subprocess_self_calls(tree, guard_globals):",
+    "    if subprocess_self_calls(tree, guard_world):",
     "    if False:"
    ]
   ],
@@ -342,7 +342,7 @@
   "name": "\u2b50 ROUND 1 MEDIUM. The PARAM route drops its literal discrimination, so a bare `None` in the world position earns the route",
   "edits": [
    [
-    "        if any(_element_is_constructed(a, fn, tree, 0, guard_globals) for a in call.args[1:]):",
+    "        if any(_element_is_constructed(a, fn, tree, 0, world) for a in call.args[1:]):",
     "        if True:"
    ]
   ],
@@ -355,7 +355,7 @@
   "name": "the PARAM keyword route drops its literal discrimination, so handing main the SAME global it would have read earns the route",
   "edits": [
    [
-    "    return any(kw.arg in declared_world\n               and _element_is_constructed(kw.value, fn, tree, 0, guard_globals)\n               for kw in call.keywords)",
+    "    return any(kw.arg in declared_world\n               and _element_is_constructed(kw.value, fn, tree, 0, world)\n               for kw in call.keywords)",
     "    return any(kw.arg in declared_world for kw in call.keywords)"
    ]
   ],
@@ -368,8 +368,8 @@
   "name": "the helper-parameter hop is dropped, so a world arriving as a helper's parameter is unresolvable and ADR-0014's own exemplar guard is pinned as debt",
   "edits": [
    [
-    "                return _constructed_at_call_sites(tree, fn, idx, el.id, depth, guard_globals)",
-    "                return False"
+    "        if idx is not None and _constructed_at_call_sites(tree, fn, idx, expr.id, depth, world):\n            return BUILT",
+    "        if False:\n            return BUILT"
    ]
   ],
   "expect": [
@@ -459,8 +459,8 @@
   "name": "module_globals stops reading augmented assignment, so an `X += 1` module global stops being a global",
   "edits": [
    [
-    "        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):",
-    "        if isinstance(node, (ast.Assign, ast.AnnAssign)):"
+    "        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                names |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}",
+    "        if isinstance(node, (ast.Assign, ast.AnnAssign)):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                names |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}"
    ]
   ],
   "expect": [
@@ -550,7 +550,7 @@
   "name": "\u2b50 ROUND 2 HIGH. The subprocess world keyword stops being inspected, so `stdin=sys.stdin` \u2014 the live process state \u2014 counts as a world the case built",
   "edits": [
    [
-    "                built = any(kw.arg in WORLD_KWARGS\n                            and _element_is_constructed(kw.value, fn, tree, 0, guard_globals)\n                            for kw in node.keywords) or any(",
+    "                built = any(kw.arg in WORLD_KWARGS\n                            and _element_is_constructed(kw.value, fn, tree, 0, world)\n                            for kw in node.keywords) or any(",
     "                built = any(kw.arg in WORLD_KWARGS\n                            for kw in node.keywords) or any("
    ]
   ],
@@ -563,12 +563,12 @@
   "name": "\u2b50 ROUND 2 H2. An ATTRIBUTE is read as constructed whatever its base, so any `module.thing` passed as a world earns credit",
   "edits": [
    [
-    "    if isinstance(el, ast.Attribute):\n        base = el",
-    "    if False:\n        base = el"
+    "        return world_class(expr.value, fn, tree, world, depth + 1)",
+    "        return BUILT"
    ]
   ],
   "expect": [
-   "...and an attribute whose base the case never built earns nothing"
+   "...and so is `__file__`, and a reader of the ambient world"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -641,12 +641,12 @@
   "name": "\u2b50\u2b50 ROUND 2 BLOCKING. The live-world test is removed, so the repository itself counts as a constructed world on three routes at once \u2014 the deepest defect this rule has had",
   "edits": [
    [
-    "    if reads_the_live_world(el, set(guard_globals), case_locals(fn)):\n        return False",
-    "    if False:\n        return False"
+    "        if expr.id == \"__file__\" or expr.id in world:\n            return LIVE",
+    "        if False:\n            return LIVE"
    ]
   ],
   "expect": [
-   "\u26d4 the live repository computed is STILL the live repository \u2014 `__file__` (r2 Blocking)"
+   "...and so is `__file__`, and a reader of the ambient world"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -654,12 +654,12 @@
   "name": "the guard's own globals stop counting as the live world, so handing main the global it would have read anyway earns the route",
   "edits": [
    [
-    "    if names & (LIVE_WORLD_NAMES | guard_globals):",
-    "    if names & LIVE_WORLD_NAMES:"
+    "        if expr.id == \"__file__\" or expr.id in world:",
+    "        if expr.id == \"__file__\":"
    ]
   ],
   "expect": [
-   "reads_the_live_world names the guard's own globals as the live world"
+   "the guard's own world global is LIVE however it is wrapped"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -667,12 +667,12 @@
   "name": "the live-world READERS list stops being consulted, so `os.getcwd()` reads as a world the case built",
   "edits": [
    [
-    "    return bool(attrs & LIVE_WORLD_READERS) or bool(names & LIVE_WORLD_READERS)",
-    "    return False"
+    "        if expr.attr in LIVE_WORLD_READERS:\n            return LIVE",
+    "        if False:\n            return LIVE"
    ]
   ],
   "expect": [
-   "...and so is `os.getcwd()` on the argv route"
+   "...and so is `__file__`, and a reader of the ambient world"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -758,8 +758,8 @@
   "name": "\u2b50\u2b50 ROUND 3 BLOCKING. Resolving a local name stops re-entering the live-world test, so every direct form round 2 refused comes back the moment it is bound to a variable first",
   "edits": [
    [
-    "        return _element_is_constructed(value, fn, tree, depth, guard_globals, onward)",
-    "        return True"
+    "            inner = world_class(bound, fn, tree, world, depth + 1)",
+    "            inner = BUILT"
    ]
   ],
   "expect": [
@@ -768,54 +768,15 @@
   "file": "scripts/check-main-drivable.py"
  },
  {
-  "name": "the resolution cycle guard is dropped, so `p = q; q = p` recurses until the interpreter stops it",
-  "edits": [
-   [
-    "        if el.id in seen:\n            return False",
-    "        if False:\n            return False"
-   ]
-  ],
-  "expect": [
-   "...and a resolution CYCLE terminates instead of hanging the guard"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
   "name": "\u2b50 ROUND 3 MEDIUM. A name the case BOUND stops shadowing the live-world vocabulary, so a tempdir called `home` is refused as though it were the user's home directory",
   "edits": [
    [
-    "    names = names - locals_",
-    "    names = names"
+    "        bound = _last_assigned_value(expr.id, fn)",
+    "        bound = None"
    ]
   ],
   "expect": [
    "a built world named `home` is a built world (r3 Medium \u2014 the lost-credit half)"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
-  "name": "case_locals stops reading import aliases, so a name bound by an import neither shadows the vocabulary nor kills a globals alias",
-  "edits": [
-   [
-    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            out |= {(x.asname or x.name).split(\".\")[0] for x in node.names}",
-    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            pass"
-   ]
-  ],
-  "expect": [
-   "case_locals names what the case binds, and NOT what it declares `global`"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
-  "name": "case_locals stops excluding `global`-declared names, so a name the case writes INTO the guard's world shadows the live-world vocabulary instead",
-  "edits": [
-   [
-    "    return frozenset(out - declared)",
-    "    return frozenset(out)"
-   ]
-  ],
-  "expect": [
-   "case_locals names what the case binds, and NOT what it declares `global`"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -855,6 +816,110 @@
   ],
   "expect": [
    "...and a subscript write through the alias is NOT a rebinding, which is what makes the broad rule safe"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 THE ARCHITECTURE REVIEW's OWN SUBJECT. `guard_world_globals` goes back to `module_globals`, which counts IMPORTS \u2014 so `Path`, `tempfile` and `os` are the guard's own world again and the rule refuses 8 of 10 spellings of the repair ADR-0014 demands",
+  "edits": [
+   [
+    "    guard_world = guard_world_globals(tree)",
+    "    guard_world = frozenset(module_globals(tree))"
+   ]
+  ],
+  "expect": [
+   "...and COMPLIES by the argv route \u2014 the false positive this rule was corrected for"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the resolver stops reading `with \u2026 as`, so ADR-0014's Decision block \u2014 `with tempfile.TemporaryDirectory() as td` \u2014 leaves `td` unresolvable and the ADR's own idiom cannot be judged at all",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.withitem) and node.optional_vars is not None:",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "the resolver reads `with \u2026 as`, `for \u2026 in` and `=` alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the resolver stops reading `for \u2026 in` targets",
+  "edits": [
+   [
+    "        elif isinstance(node, (ast.For, ast.AsyncFor)):\n            for x, y in _unpack(node.target, node.iter):",
+    "        elif isinstance(node, (ast.For, ast.AsyncFor)) and False:\n            for x, y in _unpack(node.target, node.iter):"
+   ]
+  ],
+  "expect": [
+   "the resolver reads `with \u2026 as`, `for \u2026 in` and `=` alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 keyword arguments stop being traversed, so the live world hides in one \u2014 `dict(a=ROOT)['a']` is credited, which was the whole residual false-credit class when the leaf rule was first measured",
+  "edits": [
+   [
+    "    children += [k.value for k in getattr(expr, \"keywords\", []) or []]",
+    "    children += []"
+   ]
+  ],
+  "expect": [
+   "a keyword argument is traversed, so the live world cannot hide in one"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 BUILT stops dominating-and-being-dominated correctly: a BUILT leaf wins over a LIVE one, so an expression mixing a tempdir with the live repository is credited",
+  "edits": [
+   [
+    "    if LIVE in kids:\n        return LIVE\n    if BUILT in kids:\n        return BUILT",
+    "    if BUILT in kids:\n        return BUILT\n    if LIVE in kids:\n        return LIVE"
+   ]
+  ],
+  "expect": [
+   "...and a LIVE leaf dominates a BUILT one in the same expression"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the depth bound is removed, so an unfollowable chain recurses instead of failing closed",
+  "edits": [
+   [
+    "    if depth > 8:\n        return INERT",
+    "    if False:\n        return INERT"
+   ]
+  ],
+  "expect": [
+   "a chain deeper than the bound is INERT, not credited and not a crash"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a CALL over nothing live stops counting as a value the case made, so `io.StringIO()` and the stub stream `_S(True, \u2026)` lose their credit \u2014 the second of these cost check-ci-watched.py its param route once already",
+  "edits": [
+   [
+    "    if isinstance(expr, ast.Call):\n        return BUILT\n    return INERT",
+    "    if isinstance(expr, ast.Call):\n        return INERT\n    return INERT"
+   ]
+  ],
+  "expect": [
+   "...and so does a call over literals \u2014 it is still not the live repository"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a name bound to a literal becomes BUILT, so `flag = '--self-test'` is credited as a world the case made",
+  "edits": [
+   [
+    "            return INERT if isinstance(bound, (ast.Constant, ast.Name)) else BUILT",
+    "            return BUILT"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a literal reached through a local name is still a literal (r1 High)"
   ],
   "file": "scripts/check-main-drivable.py"
  }

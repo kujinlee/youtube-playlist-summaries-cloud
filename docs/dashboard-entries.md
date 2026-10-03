@@ -13433,3 +13433,45 @@ targets (false negative on `check-plan-file-tags.py`, and `check-rc-contract.py`
 wrong call site), and substitution-vs-restore (false credit on `check-dashboard-entry.py`, whose
 `FLAG` swap is restored 1,160 lines before its `main` call). Backlog #222 (entry-point scope) and
 #223 (relative hook paths, fail-open) filed. Wired as two CI steps in the `verify` job.
+
+## 2026-10-03
+The safety check built yesterday was reviewed three times, each review found that the previous
+fix had been aimed at the wrong thing, and so the project's own rule for that situation fired: stop
+patching and ask whether the design is wrong. You chose that, and then chose to act on what it
+found. It was wrong, in a way worth writing down plainly.
+
+The check has to look at a test and decide one thing: when this test runs the script, is it pointing
+it at a **fake copy** of the project or at the **real one**? It turns out the check was not deciding
+that at all. Of the twenty-one times it said "yes, that's a fake copy", all twenty-one came from a
+branch that simply says yes without looking at anything. Every part of it that did look only ever
+said **no** — including saying no to the exact example written in the decision record it exists to
+enforce, and saying no to the one script that record had actually been applied to. The giveaway
+measurement: fifteen different ways of writing an expression, six different worlds, and in all
+fifteen cases the answer was the same for every world. The check's answer never depended on the
+thing it was supposed to be about.
+
+It now works from the inside of an expression outward instead of the outside in, which means there
+is no longer a list of shapes to keep extending — and that was the point, because the three reviews
+had been extending one. Every number improved and none got worse: of ninety test combinations,
+forty-five were wrong before and none are now; the five canonical ways of writing the repair all
+pass where none did; the verdicts on all forty-four scripts are unchanged; and it is twenty-five
+lines shorter. The one script whose verdict moved, moved in the right direction — it regained credit
+for a repair it had genuinely made.
+
+**Waiting on you:** the pull request, which is the only thing that needs your hand. Two questions
+were written down rather than decided: whether this check should ask about scripts whose entry point
+is not called `main`, and a sharper one — the decision record asks its question about *running* a
+test, while the check answers it by *reading* the test's source. Nobody had noticed that difference,
+and three rounds of review argued about its consequences without naming it.
+<!--tech-->
+Scoped Phase 6 review, armed by THRASHING: `docs/reviews/architecture-review-2026-10-03.md`.
+Mechanism: `_element_is_constructed` matched 6 of Python's 29 expression kinds and defaulted to
+`return True`; instrumented, 21 of 21 element-level credits exited that branch. Second defect:
+`guard_globals = module_globals(tree)` counts imports, so `Path`/`tempfile`/`os` read as the guard's
+own world — 8 of 10 canonical ADR-0014 repairs refused, live on `check-ratchet-contract.py:941,965,980`.
+The two masked each other (fixing imports alone: false refusals 4→0, false credits 15→18).
+Replaced by `world_class` — three leaf classes LIVE/BUILT/INERT recursing over the grammar.
+90-cell matrix 45→0 wrong, world-blind rows 15/15→0/15, 191→166 lines, compliance set identical
+(10/27/7), `check-ratchet-contract.py` rebind → param+rebind. 198 cases, 71 mutations (8 added, 19
+retargeted, 3 retired with their subject). Rounds 1–3: 19 findings, all folded, four commits.
+Backlog #224 (the run-vs-text fork), #222 (entry-point scope). `--mutate .` in flight at write time.

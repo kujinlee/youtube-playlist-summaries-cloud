@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 66,
+    "scripts/check-main-drivable.py": 71,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3927,6 +3927,18 @@ def _self_test() -> int:
     # round 2's live-world test ran on the ELEMENT, so every form it refused came back one
     # local assignment later. The repair is the RECURSION, which is why there is no third
     # spelling to find — and why its entry severs the recursive call rather than a name list.
+    # ⟳⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW's recommendation, chosen by the human over a
+    # fourth fold: 1244 -> 1250. `check-main-drivable` 66 -> 72 — 8 added, 14 RETARGETED and
+    # 2 RETIRED WITH THEIR SUBJECT (`case_locals` is gone). ⭐ What the review measured and what
+    # the rewrite answers: **21 of the 21 element-level credits on disk exited through an
+    # un-recursed `return True` that examined nothing**, while the rules that did examine
+    # produced only refusals — including of ADR-0014's own Decision block, live on
+    # `check-ratchet-contract.py`, the one file D1 was applied to. The verdict was a function of
+    # the expression's TOP NODE: 15 of 15 wrapper rows gave the same answer for all six worlds.
+    # The rule is now three leaf classes (LIVE / BUILT / INERT) recursing over whatever the
+    # grammar hands it: 45 of 90 matrix cells wrong -> 0, world-blind rows 15/15 -> 0/15, the
+    # compliance set identical, and `check-ratchet-contract.py` regains the param credit D1
+    # earned it. ⚠ The read estimated 14 orphaned anchors by text-matching; MEASURED 16.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3936,7 +3948,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1244)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1249)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

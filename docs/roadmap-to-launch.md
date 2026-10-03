@@ -2228,6 +2228,29 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       ⤳ **#222 filed, NOT folded:** D2 asks about `main()`, and the same wiring class turned up four
       times the same afternoon in `explainer-serve.py`'s `do_GET` and `_send`. Widening the subject
       to *the shipped entry point* is a decision about an accepted ADR, not an implementation detail.
+- [x] **THREE adversarial rounds, then a SCOPED ARCHITECTURE REVIEW — armed by thrashing, chosen by
+      the human over a fourth fold (2026-10-03).** Rounds 1–3 produced **19 findings**, and each
+      round found the previous round's fix had been aimed at the SPELLING a reviewer wrote rather
+      than at the property: `root=ROOT` → `cwd=ROOT` → `str(ROOT)`; four binding forms → five more;
+      eleven wrappers → seventeen. ⭐ **What the review measured, and it is the number that decides
+      everything: of the 21 element-level credits on disk, 21 exited through an un-recursed
+      `return True` that examined nothing — ZERO came from a rule that examined the expression** —
+      while the rules that did examine produced only refusals, including of **ADR-0014's own
+      Decision block**, live on `check-ratchet-contract.py`, the one guard D1 was applied to in
+      #360. The verdict was a function of the expression's TOP NODE: **15 of 15 wrapper rows gave
+      the same answer for all six worlds.** ⛔ And the two defects were MASKING each other — fixing
+      the import conflation alone takes false refusals to 0 and pushes false credits UP.
+      ⤳ **Rewritten as three leaf classes recursing over the grammar:** 90-cell matrix **45 wrong →
+      0**, world-blind rows **15/15 → 0/15**, canonical ADR repairs **0 of 5 → 5 of 5**, compliance
+      set IDENTICAL, 191 lines → 166, and `check-ratchet-contract.py` regains the `param` credit D1
+      earned it. 198 cases, 71 mutations. ⭐ Its pre-committed falsifier is *a future round adding a
+      node kind to a list inside it*; all three defects found while building it went the other way —
+      one added a grammar category, two DELETED a clause.
+      Review: [`docs/reviews/architecture-review-2026-10-03.md`](reviews/architecture-review-2026-10-03.md).
+      ⤳ **#224 filed, NOT resolved:** ADR-0014 asks D2 about a RUN and the implementation answers
+      about SOURCE TEXT — a fork written down nowhere, which three rounds argued the consequences
+      of. The dynamic reading was costed (87s over 44 guards, 7 compliant) and is blind to 3 of the
+      10 current credits, so the honest proposal is a dynamic half BESIDE the static rule.
 - [x] **#213's `ast` guard SUPERSEDED as the remedy (done in #360)** — implemented and run; its reach shrinks
       at exactly the rate the repair proceeds. Row amended with the measurements.
 - [x] **#216 filed (in #360)** — a comment asserting a defence the code does not implement
