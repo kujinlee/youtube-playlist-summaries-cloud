@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 18,
+    "scripts/check-main-drivable.py": 40,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3880,6 +3880,19 @@ def _self_test() -> int:
     # severable the same way the defect it repaired was. The wiring class stands at SIX instances,
     # four of them in code written while fixing the others. Backlog #213.
     # ⟳ 2026-10-02, D2: 1178 -> 1196. The new guard `check-main-drivable.py` arrives with 18.
+    # ⟳⟳ 2026-10-02, D2 review round 1: 1196 -> 1219. `check-main-drivable` 18 -> 41, and the
+    # shape of the 23 is the finding: TWO Blockings, THREE Highs and TWO Mediums were all the
+    # FALSE-CREDIT direction — a dead call, a dead branch, a `g = globals()` alias, a fourth
+    # route nothing could reach, a restore rule that called a modified copy a restore, and a
+    # PARAM route with no literal discrimination at all. Four of the five guards the round
+    # found misjudged were COMPLIANT and pinned as debt, so the debt fell 29 -> 27 by review
+    # alone. ⚠ Every entry was anchor-checked against the DELIVERED file before being written;
+    # one earlier anchor was orphaned by a same-session refactor and the sweep refused it.
+    # ⟳⟳⟳ 1219 -> 1218, AND THIS IS THE SANCTIONED KIND OF FALL: the `__main__`-exclusion
+    # entry is RETIRED WITH ITS SUBJECT. Round 1's reachability rule subsumes that clause —
+    # a module-level call has no enclosing function — so the clause was dead, measured at 0 of
+    # 44 verdicts changed, and its mutation SURVIVED because no case could tell it from its
+    # absence. The code is deleted; the entry goes with it rather than being left orphaned.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3889,7 +3902,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1196)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1218)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

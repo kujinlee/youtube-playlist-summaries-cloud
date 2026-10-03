@@ -306,11 +306,17 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         # one parse twice, `start`/`path`/`writes` never passed at all, and `main.argv` collapsed
         # to a single expression by a `_driven(args)` helper, which is the indirection this
         # guard's own docstring records rejecting for the same reason.
+        # ⟳ 2026-10-02, review round 1: 16 -> 21. The new keys are the round's own fixes —
+        # `globals_aliases` (the alias Blocking), `suite_reachable` (the dead-call Blocking), and
+        # `computed_argv`'s `fn`/`tree` (the helper-parameter hop). Each was unvaried on arrival
+        # and this guard said so before the sweep ran.
         "argv_forwarders.tree", "assess.debt", "assess.texts", "assess.whole",
-        "classify.path", "classify.text", "global_writes.fn",
+        "classify.path", "classify.text",
+        "computed_argv.expr", "computed_argv.fn", "computed_argv.tree",
+        "global_writes.fn", "globals_aliases.fn",
         "live_substitutions.fn", "live_substitutions.lineno", "live_substitutions.writes",
         "main.argv", "main.root", "module_globals.tree", "suite_main_calls.tree",
-        "world_names.start", "world_names.tree",
+        "suite_reachable.tree", "world_names.start", "world_names.tree",
     ),
     # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file

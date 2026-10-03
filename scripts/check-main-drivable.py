@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 79 cases
+    python3 scripts/check-main-drivable.py --self-test   # 134 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -33,8 +33,14 @@ not a floor, it is a bug with a baseline. The three admitted routes:
             `main([], root=_r)`              `main(["--decide"], stream)`
     argv    the argv list contains an element the case COMPUTED, not a literal
             `main([str(_f)])`                `main(["--mutate", str(_r)])`
-    rebind  the enclosing case substitutes a module global that `main` transitively READS
-            `globals()["DECLARED_RENDER"] = {...}` then `main([])`
+    rebind  the enclosing case substitutes a module global that `main` transitively READS, and
+            has NOT restored it by the call's line — `globals()["X"] = {...}` then `main([])`,
+            and `g = globals()` then `g["collect"] = …` is the same thing (round 1 Blocking)
+    subproc the case re-launches THIS FILE as a subprocess over a world it built — round 1's other
+            Blocking: `subprocess.run([sys.executable, __file__], input=data)` at
+            `check-selection-card.py:454`, whose `main()` takes no parameters at all, so no other
+            route could ever reach it. It is the clearest *observe the shipped entry point* in the
+            repo and the rule pinned it as debt
 
 ⛔ AND A LITERAL-ONLY `argv` EARNS NO CREDIT, WHICH IS THE WHOLE DISCRIMINATION. Measured on this
 repo: `check-dashboard-entry.py:1445` calls `main(["--base", "master"])` and
@@ -118,7 +124,6 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-arch-findings.py",
     "scripts/check-backlog-closure.py",
     "scripts/check-catalog-coverage.py",
-    "scripts/check-dashboard-entry.py",
     "scripts/check-docs.py",
     "scripts/check-explainer-delivery.py",
     "scripts/check-features.py",
@@ -135,7 +140,6 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-review-recorded.py",
     "scripts/check-review-rounds.py",
     "scripts/check-roadmap-consistency.py",
-    "scripts/check-selection-card.py",
     "scripts/check-selftest-counts.py",
     "scripts/check-sentinel-meanings.py",
     "scripts/check-storage-independence.py",
@@ -144,7 +148,9 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-vocabulary-collisions.py",
 })
 
-PARAM, ARGV, REBIND = "param", "argv", "rebind"
+PARAM, ARGV, REBIND, SUBPROC = "param", "argv", "rebind", "subproc"
+SPAWNERS = {"run", "Popen", "check_output", "check_call", "call"}
+WORLD_KWARGS = ("input", "env", "cwd", "stdin")
 
 
 @dataclass(frozen=True)
@@ -175,11 +181,6 @@ class Verdict:
 # ── THE RULE, IN PIECES THAT A CASE CAN REACH ────────────────────────────────────────────────
 # `separate-the-rule-from-the-fetch`: every function below takes source TEXT or an AST and returns
 # data. The only thing that touches disk is `main`, which is also the only thing that needs a root.
-
-
-def _is_main_guard(node: ast.If) -> bool:
-    """-> True for `if __name__ == "__main__":`. Its call to main is the PRODUCTION entry point."""
-    return any(isinstance(x, ast.Name) and x.id == "__name__" for x in ast.walk(node.test))
 
 
 def module_globals(tree: ast.Module) -> set[str]:
@@ -271,17 +272,131 @@ def argv_forwarders(tree: ast.Module) -> dict[str, int]:
     return out
 
 
+SUITE_ENTRY_NAMES = ("_self_test", "self_test")   # measured on disk: 67 and 25 occurrences
+
+
+def _all_functions(tree: ast.Module) -> dict[str, ast.AST]:
+    """Every function DEFINED anywhere in the module, nested ones included, by name.
+
+    ⚠ Flat by name, so two nested helpers sharing a name collapse. That over-approximates
+    reachability — the generous direction — and it is why the reachability rule below is a floor
+    rather than a call graph.
+    """
+    out: dict[str, ast.AST] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.setdefault(node.name, node)
+    return out
+
+
+def _mentions_self_test(test: ast.AST) -> bool:
+    """-> True for every spelling of the flag test this repo uses. Measured across 43 guards:
+    `a.self_test` (9), `args.self_test` (5), `"--self-test" in argv` (6), `… in sys.argv` (6)."""
+    if "self_test" in ast.dump(test):
+        return True
+    return any(isinstance(n, ast.Constant) and n.value == "--self-test" for n in ast.walk(test))
+
+
+def suite_entries(tree: ast.Module) -> set[str]:
+    """The functions `--self-test` ACTUALLY DISPATCHES TO. PURE.
+
+    ⛔ ROUND 1, CLAUDE BLOCKING, second cause. Hard-coding the entry as `_self_test`/`self_test`
+    missed `check-dashboard-entry.py`'s SECOND suite: `main` runs `pure, impure = _self_test(),
+    _impure_self_test()` at `:1481` — both always, deliberately, so a red pure suite cannot hide
+    the cannot-run cases — and every `main`-driving case in that file lives in the impure half. The
+    guard therefore saw ZERO suite calls in a file with two.
+
+    ⚠ The name-contains shortcut was tried and REJECTED: it would admit
+    `check-ratchet-contract.discover_self_tested_nonguards` and `check-selftest-counts.run_self_test`,
+    which are a RULE and a subprocess helper, not suites. Reading the dispatch branch is both
+    narrower and the rule's own sentence — *does its `--self-test` invoke main()*.
+    """
+    funcs = _all_functions(tree)
+    out: set[str] = set()
+    top_main = next((n for n in tree.body
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     and n.name == "main"), None)
+    if top_main is not None:
+        for node in ast.walk(top_main):
+            if isinstance(node, ast.If) and _mentions_self_test(node.test):
+                for sub in ast.walk(node):
+                    if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                            and sub.func.id in funcs and sub.func.id != "main"):
+                        out.add(sub.func.id)
+    out |= {n for n in SUITE_ENTRY_NAMES if n in funcs}
+    return out
+
+
+def suite_reachable(tree: ast.Module) -> set[str]:
+    """Functions reachable from the `--self-test` entry point. PURE.
+
+    ⛔ ROUND 1, CODEX BLOCKING. Without this the walker called every non-skipped subtree "the
+    SUITE", so a call in a function NOTHING invokes earned a route. Demonstrated:
+
+        def unused():
+            return main([str(tmp)])
+        def _self_test():
+            case("literal only", main(["--flag"]), 0)
+
+    classified `argv`. The rule's own sentence is "does its `--self-test` invoke main() over a world
+    the case constructed", and a dead call satisfies no part of that — it makes a guard look
+    compliant while its suite cannot observe `main`'s wiring at all. This is the false-credit
+    direction, which is the dangerous one.
+    """
+    funcs = _all_functions(tree)
+    entries = sorted(suite_entries(tree))
+    if not entries:
+        return set()
+    seen: set[str] = set()
+    stack = list(entries)
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        fn = funcs.get(name)
+        if fn is None:
+            continue
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in funcs and node.func.id not in seen:
+                    stack.append(node.func.id)
+    return seen
+
+
+def _dead_branch_ids(tree: ast.Module) -> set[int]:
+    """Bodies no interpreter will ever enter — `if False:`, `if 0:`, `while False:`.
+
+    ⛔ ROUND 1, CODEX BLOCKING, second half: `if False: main([str(tmp)])` inside the suite was
+    credited. A statically-false branch is the cheapest possible way to fake compliance, and the
+    cheapest to refuse.
+    """
+    out: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.If, ast.While)) and isinstance(node.test, ast.Constant):
+            if not node.test.value:
+                for stmt in node.body:
+                    out.add(id(stmt))
+    return out
+
+
 def _skip_ids(tree: ast.Module) -> set[int]:
     """`main`'s own body and the `__main__` block — the two regions that are not the SUITE.
 
     A recursive call inside `main` is not a case driving it, and the production entry point is the
     thing under test, not evidence about it.
     """
+    # ⟳ ROUND 1: THE `if __name__ == "__main__"` CLAUSE IS GONE, AND SO IS `_is_main_guard`.
+    # Round 1's reachability rule subsumes it and is strictly stronger: a call in a `__main__`
+    # block is at MODULE level, so it has no enclosing function and can never be in the set
+    # reachable from the suite entry. MEASURED BEFORE DELETING — removing the clause changes the
+    # verdict or the call count of **0 of 44** guards on disk, and its mutation SURVIVED precisely
+    # because no case could tell the clause from its absence. It read like a rule doing something,
+    # which is what Claude's L1 said about the two dead `ast.Attribute` probes deleted in the same
+    # round. Its manifest entry retires WITH it, 41 -> 40.
     skip: set[int] = set()
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "main":
-            skip.add(id(node))
-        elif isinstance(node, ast.If) and _is_main_guard(node):
             skip.add(id(node))
     return skip
 
@@ -291,8 +406,9 @@ def suite_main_calls(tree: ast.Module) -> list[tuple[ast.Call, ast.AST | None, s
 
     `kind` is "direct" or "forwarded"; the enclosing function is where a rebind would live.
     """
-    skip = _skip_ids(tree)
+    skip = _skip_ids(tree) | _dead_branch_ids(tree)
     fwd = argv_forwarders(tree)
+    reachable = suite_reachable(tree)
     found: list[tuple[ast.Call, ast.AST | None, str]] = []
 
     def rec(node: ast.AST, fn: ast.AST | None) -> None:
@@ -301,10 +417,14 @@ def suite_main_calls(tree: ast.Module) -> list[tuple[ast.Call, ast.AST | None, s
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             fn = node
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id == "main":
-                found.append((node, fn, "direct"))
-            elif node.func.id in fwd:
-                found.append((node, fn, "forwarded"))
+            # ⛔ The enclosing function must be one the suite can actually reach. `fn is None` is a
+            # module-level call, which runs on import and is not a case either.
+            named = fn.name if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) else None
+            if named in reachable:
+                if node.func.id == "main":
+                    found.append((node, fn, "direct"))
+                elif node.func.id in fwd:
+                    found.append((node, fn, "forwarded"))
         for child in ast.iter_child_nodes(node):
             rec(child, fn)
 
@@ -313,7 +433,32 @@ def suite_main_calls(tree: ast.Module) -> list[tuple[ast.Call, ast.AST | None, s
     return found
 
 
-def _global_target_names(target: ast.AST, declared: set[str]) -> set[str]:
+def globals_aliases(fn: ast.AST | None) -> set[str]:
+    """Local names bound to `globals()` itself — `g = globals()`. PURE.
+
+    ⛔ ROUND 1, CLAUDE BLOCKING, and it was a FALSE NEGATIVE on a live guard.
+    `check-dashboard-entry.py:1437-1447` writes `g = globals()`, substitutes
+    `g["collect"] = lambda base: …`, drives `main(["--base", "master"])` over it and restores in a
+    `finally` AFTER the call. That is the rebind route exactly; spelling it `g["x"]` instead of
+    `globals()["x"]` — the same operation, four lines apart — hid it completely. The guard pinned a
+    COMPLIANT file as debt, and the regression case I wrote about that file asserted the wrong
+    verdict for a reason that was also wrong. An alias is not an edge case: it is how the better
+    half of this repo spells it.
+    """
+    out: set[str] = set()
+    if fn is None:
+        return out
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            f = node.value.func
+            if isinstance(f, ast.Name) and f.id == "globals" and not node.value.args:
+                out |= {n.id for tgt in node.targets for n in ast.walk(tgt)
+                        if isinstance(n, ast.Name)}
+    return out
+
+
+def _global_target_names(target: ast.AST, declared: set[str],
+                         aliases: frozenset[str] = frozenset()) -> set[str]:
     """The module-global names one assignment TARGET writes. PURE.
 
     ⛔ IT WALKS TUPLES, and the first version did not — which is not a cosmetic miss. The two
@@ -325,30 +470,41 @@ def _global_target_names(target: ast.AST, declared: set[str]) -> set[str]:
     `_self_test` stub instead of the tree it actually builds — the right answer for the wrong
     reason, which survives review and then stops being right.
     """
+    # ⚠ NO `ast.Attribute` SPECIAL CASE — round 1, Claude L1: both probes were DEAD. `ast.walk`
+    # already descends into the `globals()["x"]` Subscript inside `globals()["x"].run = …`, so
+    # unwrapping the Attribute first added nothing and merely looked like it handled a case.
     out: set[str] = set()
     for node in ast.walk(target):
-        # globals()["X"] = …   /   globals()["X"].attr = …
-        probe = node.value if isinstance(node, ast.Attribute) else node
-        if (isinstance(probe, ast.Subscript) and isinstance(probe.value, ast.Call)
-                and isinstance(probe.value.func, ast.Name) and probe.value.func.id == "globals"
-                and isinstance(probe.slice, ast.Constant) and isinstance(probe.slice.value, str)):
-            out.add(probe.slice.value)
-        # a name declared `global` in this function
-        base = node.value if isinstance(node, ast.Attribute) else node
-        if isinstance(base, ast.Name) and base.id in declared:
-            out.add(base.id)
+        if (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)):
+            base = node.value
+            via_call = (isinstance(base, ast.Call) and isinstance(base.func, ast.Name)
+                        and base.func.id == "globals" and not base.args)
+            via_alias = isinstance(base, ast.Name) and base.id in aliases
+            if via_call or via_alias:
+                out.add(node.slice.value)
+        if isinstance(node, ast.Name) and node.id in declared:
+            out.add(node.id)
     return out
 
 
-def _reads_global(value: ast.AST, name: str) -> bool:
-    """-> True when this expression READS global `name` — `name`, `dict(name)`, `globals()[name]`."""
+def _reads_global(value: ast.AST, name: str, aliases: frozenset[str] = frozenset()) -> bool:
+    """-> True when this expression READS global `name` — `name`, `dict(name)`, `g[name]`.
+
+    ⚠ The alias form matters as much here as on the target side: `real_collect = g["collect"]` is
+    what makes `real_collect` a SAVED name, and without it the matching restore reads as a second
+    substitution.
+    """
     for node in ast.walk(value):
         if isinstance(node, ast.Name) and node.id == name:
             return True
-        if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Name) and node.value.func.id == "globals"
-                and isinstance(node.slice, ast.Constant) and node.slice.value == name):
-            return True
+        if (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant)
+                and node.slice.value == name):
+            base = node.value
+            if (isinstance(base, ast.Call) and isinstance(base.func, ast.Name)
+                    and base.func.id == "globals") or (isinstance(base, ast.Name)
+                                                       and base.id in aliases):
+                return True
     return False
 
 
@@ -358,10 +514,21 @@ def global_writes(fn: ast.AST | None) -> list[tuple[int, str, bool]]:
     ⛔ THE `is_restore` BIT IS THE WHOLE POINT, and without it the rebind route hands out FALSE
     CREDIT. A repo suite is one long `_self_test()` holding many save/substitute/restore blocks, so
     "this function substitutes a global somewhere" is true of almost every one of them.
-    `check-dashboard-entry.py` substitutes `globals()["FLAG"]` at :1276 and restores it at :1282 —
-    1,160 lines before the `main(["--base", "master"])` at :1445, which runs over the LIVE
-    repository. Crediting that call for this route would be crediting a substitution that had been
-    undone before it ran.
+    `check-dashboard-entry.py` substitutes `globals()["FLAG"]` at `:1276` and restores it at
+    `:1282` — **163 lines** before the `main(["--base", "master"])` at `:1445`. Crediting that call
+    for THAT substitution would credit one that had been undone before it ran.
+
+    ⚠ AND THE NUMBER HERE WAS WRONG: this paragraph said "1,160 lines", which is 1445 − 285 and
+    corresponds to nothing. All three line numbers were right and the distance derived from them
+    was off by seven times — found by round 1's Claude half, which re-derived it. A figure nobody
+    can check while reading is where this repo has been bitten before; the three line numbers are
+    the evidence and the subtraction is now done correctly or not at all.
+
+    ⛔ AND THAT FILE IS NO LONGER AN EXAMPLE OF THIS RULE REFUSING CREDIT — round 1 Blocking. It
+    substitutes `g["collect"]` through a `g = globals()` alias at `:1437-1442`, drives
+    `main(["--base", "master"])` over it, and restores in a `finally` AFTER the call. It COMPLIES.
+    The `FLAG` block above is a real restored substitution in the same file; it is simply not the
+    only one, and judging the file by it was judging a file by its first block.
 
     A RESTORE is recognisable without dataflow: it puts back a value that was SAVED FROM THAT SAME
     GLOBAL. `_real_flag = globals()["FLAG"]` makes `_real_flag` a saved name, so
@@ -378,13 +545,15 @@ def global_writes(fn: ast.AST | None) -> list[tuple[int, str, bool]]:
     for node in ast.walk(fn):
         if isinstance(node, ast.Global):
             declared |= set(node.names)
+    aliases = frozenset(globals_aliases(fn))
 
-    stmts: list[tuple[int, list[ast.AST], ast.AST]] = []
+    stmts: list[tuple[int, ast.AST, ast.AST]] = []
     for node in ast.walk(fn):
         if isinstance(node, ast.Assign):
-            stmts.append((node.lineno, list(node.targets), node.value))
+            for tgt in node.targets:
+                stmts += [(node.lineno, a, b) for a, b in _unpack(tgt, node.value)]
         elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and node.value is not None:
-            stmts.append((node.lineno, [node.target], node.value))
+            stmts += [(node.lineno, a, b) for a, b in _unpack(node.target, node.value)]
 
     # ⛔ THE CANDIDATE SET IS BUILT ONCE. It used to be a set comprehension over every statement,
     # re-evaluated inside the loop over every statement AND every target — cubic in the size of the
@@ -394,35 +563,95 @@ def global_writes(fn: ast.AST | None) -> list[tuple[int, str, bool]]:
     # switched off (backlog #56's measured verdict), and #217 already records the sweep paying
     # per-mutation suite time.
     candidates = set(declared)
-    for _, targets, _ in stmts:
-        candidates |= _global_target_names_any(targets)
+    for _, tgt, _ in stmts:
+        candidates |= _global_target_names(tgt, set(), aliases)
 
     # Which locals hold a saved copy of which global. Built over the WHOLE case first, because a
     # save can be written after the substitution it protects.
     saved: dict[str, set[str]] = {}
-    for _, targets, value in stmts:
-        target_names = {n.id for tgt in targets for n in ast.walk(tgt) if isinstance(n, ast.Name)}
+    for _, tgt, value in stmts:
+        target_names = {n.id for n in ast.walk(tgt) if isinstance(n, ast.Name)}
         for g in candidates:
-            if _reads_global(value, g):
+            if _reads_global(value, g, aliases):
                 saved.setdefault(g, set()).update(target_names)
 
     writes: list[tuple[int, str, bool]] = []
-    for line, targets, value in stmts:
-        for t in targets:
-            for g in _global_target_names(t, declared):
+    for line, tgt, value in stmts:
+        for g in _global_target_names(tgt, declared, aliases):
+            writes.append((line, g, _is_restore_value(value, saved.get(g, set()))))
+    # ⛔ `g.update(saved)` IS A WRITE — round 1, Claude M2. A bulk restore through a globals alias
+    # wrote nothing at all under the target-based rule, so a substitution it undid stayed "live"
+    # for the rest of the case. The keys are not knowable statically, so it is recorded against
+    # EVERY candidate: a bulk restore ends every substitution, which is the conservative reading.
+    for node in ast.walk(fn):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "update" and node.args):
+            continue
+        recv = node.func.value
+        hits_globals = (isinstance(recv, ast.Name) and recv.id in aliases) or (
+            isinstance(recv, ast.Call) and isinstance(recv.func, ast.Name)
+            and recv.func.id == "globals")
+        if hits_globals:
+            # ⚠ A BULK RESTORE IS JUDGED MORE LOOSELY THAN A SINGLE ONE, on purpose. The keys of
+            # `g.update(x)` are not knowable statically, so the question cannot be "is this value
+            # exactly the saved one" — it is "does this put a saved value back", and both
+            # `g.update(keep)` and `g.update({"collect": real})` do. A bulk update that mentions no
+            # saved value at all is a substitution.
+            for g in candidates:
                 holders = saved.get(g, set())
-                value_names = {n.id for n in ast.walk(value) if isinstance(n, ast.Name)}
-                is_restore = bool(value_names) and value_names <= holders
-                writes.append((line, g, is_restore))
+                mentions_saved = any(isinstance(n, ast.Name) and n.id in holders
+                                     for n in ast.walk(node.args[0]))
+                writes.append((node.lineno, g, mentions_saved))
     return sorted(writes)
 
 
-def _global_target_names_any(targets: list[ast.AST]) -> set[str]:
-    """Names written through `globals()[…]` by these targets — used to seed the save table."""
-    out: set[str] = set()
-    for t in targets:
-        out |= _global_target_names(t, set())
-    return out
+COPIERS = {"dict", "list", "set", "tuple", "frozenset", "copy", "deepcopy"}
+
+
+def _is_restore_value(value: ast.AST, holders: set[str]) -> bool:
+    """-> True when this value PUTS BACK something saved from that global. PURE.
+
+    ⛔ ROUND 1, CLAUDE HIGH, and it cost a live guard its credit. The rule was
+    `value_names <= holders` — every Name in the value had to be a saved name — which calls
+    `globals()["DECLARED_RENDER"] = {**_saved_decl, 5: _saved_decl[5] + " Detail:"}` a RESTORE.
+    That is `check-surface-recall.py:652`, one of this repo's three best constructed-world blocks:
+    it builds a MODIFIED copy of the real declaration, which is the substitution. Mentioning the
+    saved value is how you derive a new one; a restore ASSIGNS it.
+
+    Admitted restore shapes, deliberately narrow: the bare saved name, a shallow copy of it
+    (`dict(saved)`), and a dict display that is exactly `{**saved}`. Anything else is a
+    substitution — and the failure direction of that choice is a lost credit, never a false one.
+    """
+    if isinstance(value, ast.Name):
+        return value.id in holders
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id in COPIERS and len(value.args) == 1 and not value.keywords):
+        inner = value.args[0]
+        return isinstance(inner, ast.Name) and inner.id in holders
+    if isinstance(value, ast.Dict) and len(value.keys) == 1 and value.keys[0] is None:
+        inner = value.values[0]
+        return isinstance(inner, ast.Name) and inner.id in holders
+    return False
+
+
+def _unpack(target: ast.AST, value: ast.AST) -> list[tuple[ast.AST, ast.AST]]:
+    """Split a tuple assignment into (target, value) pairs, POSITIONALLY. PURE.
+
+    ⛔ ROUND 1, CODEX MEDIUM. Judging each target against the WHOLE right-hand side is wrong for a
+    tuple: `KNOWN_UNVARIED, EXAMINED_KEYS = _svK, _svF` put both saved names in the value set of
+    each target, and neither target's own holder set contained both — so a RESTORE read as a
+    substitution. Measured live: `check-fixture-variation.py:1881`'s `main(["/nonexistent/nope.py"])`
+    — the unreadable-population case, nobody's constructed world — was credited `rebind`. It did not
+    change that file's verdict, which complies through `argv` anyway, so the damage was to the route
+    ACCOUNTING; a file whose only shape this was would have been credited outright.
+    """
+    if (isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List))
+            and len(target.elts) == len(value.elts)):
+        out: list[tuple[ast.AST, ast.AST]] = []
+        for tgt, val in zip(target.elts, value.elts):
+            out += _unpack(tgt, val)
+        return out
+    return [(target, value)]
 
 
 def live_substitutions(fn: ast.AST | None, lineno: int,
@@ -443,6 +672,57 @@ def live_substitutions(fn: ast.AST | None, lineno: int,
     return live
 
 
+def subprocess_self_calls(tree: ast.Module) -> list[tuple[int, ast.AST | None]]:
+    """Calls that re-launch THIS GUARD as a subprocess over a world the case built. PURE.
+
+    ⛔ ROUND 1, CLAUDE BLOCKING — THE FOURTH ROUTE, and it is the same mistake the review's own
+    ⛔ Corrections section caught in D2's draft, one layer out. `check-selection-card.py:454` does:
+
+        subprocess.run([sys.executable, __file__], input=data, capture_output=True).returncode
+
+    eight times, over constructed stdin — and its `main()` takes no parameters at all, so none of
+    the three routes could ever have credited it. It is the single clearest instance in the repo of
+    *the suite observing what the shipped entry point produces*, which is what ADR-0014 is FOR, and
+    the guard pinned it as debt. Exactly one guard on disk has this shape; a rule that refuses the
+    one worked example of its own purpose is not a floor.
+
+    ⚠ The world must be CONSTRUCTED here too: a bare `subprocess.run([sys.executable, __file__])`
+    runs the real guard over the real repository and earns nothing. Credit needs `input=`/`env=`/
+    `cwd=`/`stdin=`, or a computed extra argv element — the same discrimination as every other route.
+    """
+    out: list[tuple[int, ast.AST | None]] = []
+    reachable = suite_reachable(tree)
+    skip = _skip_ids(tree) | _dead_branch_ids(tree)
+
+    def rec(node: ast.AST, fn: ast.AST | None) -> None:
+        if id(node) in skip:
+            return
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fn = node
+        named = fn.name if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) else None
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in SPAWNERS and named in reachable):
+            argv = node.args[0] if node.args else None
+            names_self = any(
+                isinstance(x, ast.Name) and x.id == "__file__"
+                for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])
+                for x in ast.walk(el))
+            if names_self:
+                built = any(kw.arg in WORLD_KWARGS for kw in node.keywords) or any(
+                    _element_is_constructed(el, fn, tree)
+                    for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])
+                    if not any(isinstance(x, ast.Name) and x.id in ("__file__", "sys")
+                               for x in ast.walk(el)))
+                if built:
+                    out.append((node.lineno, fn))
+        for child in ast.iter_child_nodes(node):
+            rec(child, fn)
+
+    for top in tree.body:
+        rec(top, None)
+    return out
+
+
 def _argv_expr(call: ast.Call, kind: str, fwd: dict[str, int]) -> ast.AST | None:
     """The expression that becomes `main`'s argv at this call site, or None if absent."""
     if kind == "forwarded":
@@ -456,27 +736,128 @@ def _argv_expr(call: ast.Call, kind: str, fwd: dict[str, int]) -> ast.AST | None
     return None
 
 
-def _passes_extra_world(call: ast.Call, argv_param: str | None) -> bool:
-    """-> True when the call supplies a parameter of `main` OTHER than argv. The PARAM route."""
-    if len(call.args) > 1:
+def _passes_extra_world(call: ast.Call, main_fn: ast.AST, fn: ast.AST | None = None,
+                        tree: ast.Module | None = None) -> bool:
+    """-> True when the call supplies a parameter `main` DECLARES, other than argv. PARAM route.
+
+    ⛔ ROUND 1, CODEX HIGH. The first version credited any second positional or any non-`argv`
+    keyword, so `def main(argv=None)` driven as `main([], root=tmp)` classified `param` — a call
+    that raises `TypeError` the moment it runs. Crediting a guard for a call that cannot execute is
+    the purest form of the false green this whole family of gates exists to refuse. The world
+    parameter must be DECLARED, which is ADR-0014's D1 shape: `def main(argv, root=ROOT)`.
+    """
+    args = main_fn.args                                    # type: ignore[attr-defined]
+    positional = [a.arg for a in args.posonlyargs + args.args]
+    kwonly = [a.arg for a in args.kwonlyargs]
+    # ⛔ ROUND 1, CLAUDE MEDIUM — THE ASYMMETRY WAS LIVE. ARGV refuses a literal and PARAM credited
+    # on arity alone, so `main(["--clear"], None)` at `check-ci-watched.py:735` earned the route off
+    # a bare `None`, and `main([], root=ROOT)` earned it by passing the guard the SAME global it
+    # would have read anyway. A world argument has to be a world the case BUILT, on both routes.
+    if len(call.args) > 1 and len(positional) > 1:
+        if any(_element_is_constructed(a, fn, tree) for a in call.args[1:]):
+            return True
+    declared_world = set(positional[1:]) | set(kwonly)
+    return any(kw.arg in declared_world and _element_is_constructed(kw.value, fn, tree)
+               for kw in call.keywords)
+
+
+def _last_assigned_value(name: str, fn: ast.AST | None) -> ast.AST | None:
+    """The value of the last assignment to `name` inside this case, or None if there is none."""
+    if fn is None:
+        return None
+    found: list[tuple[int, ast.AST]] = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                for a, b in _unpack(tgt, node.value):
+                    if isinstance(a, ast.Name) and a.id == name:
+                        found.append((node.lineno, b))
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and node.value is not None:
+            if isinstance(node.target, ast.Name) and node.target.id == name:
+                found.append((node.lineno, node.value))
+    return sorted(found, key=lambda x: x[0])[-1][1] if found else None
+
+
+def _param_index(fn: ast.AST | None, name: str) -> int | None:
+    """Position of `name` among this function's positional parameters, if it is one."""
+    if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
+    names = [a.arg for a in fn.args.posonlyargs + fn.args.args]
+    return names.index(name) if name in names else None
+
+
+def _constructed_at_call_sites(tree: ast.Module | None, fn: ast.AST | None, idx: int,
+                              param: str, depth: int) -> bool:
+    """-> True when some reachable call to `fn` passes a CONSTRUCTED value in that position.
+
+    ⛔ ROUND 1, and this one was found by folding rather than by either half: once PARAM demanded a
+    constructed value (Claude M1), `check-ci-watched.py` — the ONE guard ADR-0014 names as having
+    solved this before anyone else — went to DEBT, because its only `main` call is
+    `main(["--decide"], stream)` inside a helper, and `stream` is that helper's PARAMETER. A
+    parameter has no value to inspect at its own site; it has one at the call sites. Resolving one
+    hop keeps the guard honest about helpers without pretending to do dataflow.
+    """
+    if tree is None or depth > 0 or not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    reachable = suite_reachable(tree)
+    for node in ast.walk(tree):
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in reachable):
+            continue
+        for sub in ast.walk(node):
+            if not (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                    and sub.func.id == fn.name):
+                continue
+            arg = sub.args[idx] if len(sub.args) > idx else next(
+                (k.value for k in sub.keywords if k.arg == param), None)
+            if arg is not None and _element_is_constructed(arg, node, tree, depth + 1):
+                return True
+    return False
+
+
+def _element_is_constructed(el: ast.AST, fn: ast.AST | None,
+                            tree: ast.Module | None = None, depth: int = 0) -> bool:
+    """-> True when this argv element is a value the case BUILT rather than a literal. PURE.
+
+    ⛔ ROUND 1, CODEX HIGH. The first version read "not a Constant" as "constructed", so
+
+        flag = "--self-test"
+        case("x", main([flag]), 0)
+
+    earned the ARGV route — the literal-only discrimination defeated by one local variable, which
+    is the same dangerous direction wearing a disguise. A bare name is now RESOLVED to its last
+    assignment in the case: a string literal is still a literal, and an unresolvable name earns
+    nothing (conservative, so the failure direction is more pinned debt rather than a false green).
+    """
+    if isinstance(el, ast.Starred):
+        el = el.value
+    if isinstance(el, ast.Constant):
+        return False
+    if isinstance(el, ast.Name):
+        value = _last_assigned_value(el.id, fn)
+        if value is None:
+            idx = _param_index(fn, el.id)
+            if idx is not None:
+                return _constructed_at_call_sites(tree, fn, idx, el.id, depth)
+            return False
+        if isinstance(value, ast.Constant):
+            return False
+        if isinstance(value, (ast.List, ast.Tuple)):
+            return any(_element_is_constructed(x, fn, tree, depth) for x in value.elts)
         return True
-    return any(kw.arg not in (None, argv_param) for kw in call.keywords)
+    return True
 
 
-def computed_argv(expr: ast.AST | None) -> bool:
+def computed_argv(expr: ast.AST | None, fn: ast.AST | None = None,
+                  tree: ast.Module | None = None) -> bool:
     """-> True when the argv list holds an element the case COMPUTED. The ARGV route.
 
     A list of constants is a flag vector over the live repository — see discrimination 2 in the
-    docstring. `*spread` counts: the elements came from somewhere the case decided.
+    module docstring — and so is a list of names that merely hold constants.
     """
     if not isinstance(expr, (ast.List, ast.Tuple)):
         return False
-    for el in expr.elts:
-        if isinstance(el, ast.Starred):
-            return True
-        if not isinstance(el, ast.Constant):
-            return True
-    return False
+    return any(_element_is_constructed(el, fn, tree) for el in expr.elts)
 
 
 def classify(text: str, path: str = "<memory>") -> Verdict:
@@ -491,18 +872,18 @@ def classify(text: str, path: str = "<memory>") -> Verdict:
         return Verdict(path, frozenset(), 0, has_main=False)
 
     m = funcs["main"]
-    positional = [a.arg for a in m.args.posonlyargs + m.args.args]
-    argv_param = positional[0] if positional else None
     world = world_names(tree)
     fwd = argv_forwarders(tree)
     calls = suite_main_calls(tree)
 
     routes: set[str] = set()
+    if subprocess_self_calls(tree):
+        routes.add(SUBPROC)
     writes_by_case: dict[int, list[tuple[int, str, bool]]] = {}
     for call, fn, kind in calls:
-        if kind == "direct" and _passes_extra_world(call, argv_param):
+        if kind == "direct" and _passes_extra_world(call, m, fn, tree):
             routes.add(PARAM)
-        if computed_argv(_argv_expr(call, kind, fwd)):
+        if computed_argv(_argv_expr(call, kind, fwd), fn, tree):
             routes.add(ARGV)
         if id(fn) not in writes_by_case:
             writes_by_case[id(fn)] = global_writes(fn)
@@ -574,12 +955,14 @@ def summarise(verdicts: dict[str, Verdict]) -> str:
     the shape this project has been burned by four times."""
     with_main = [v for v in verdicts.values() if v.has_main]
     outside = len(verdicts) - len(with_main)
-    by_route = {r: sum(1 for v in with_main if r in v.routes) for r in (PARAM, ARGV, REBIND)}
+    by_route = {r: sum(1 for v in with_main if r in v.routes)
+                for r in (PARAM, ARGV, REBIND, SUBPROC)}
     complying = sum(1 for v in with_main if v.complies)
     return (f"{len(verdicts)} guards on disk · {outside} without main() (outside the population) · "
             f"{len(with_main)} in population\n"
             f"  {complying} drive main() over a constructed world — "
-            f"param {by_route[PARAM]}, argv {by_route[ARGV]}, rebind {by_route[REBIND]} "
+            f"param {by_route[PARAM]}, argv {by_route[ARGV]}, rebind {by_route[REBIND]}, "
+            f"subproc {by_route[SUBPROC]} "
             f"(a guard may take more than one route, so these need not sum)\n"
             f"  {len(with_main) - complying} pinned as ADR-0014 identity debt")
 
@@ -607,8 +990,20 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
               f"pass. Treat this as NOT CHECKED.", file=sys.stderr)
         return 2
 
-    texts = {str(p.relative_to(root)) if p.is_absolute() and p.is_relative_to(root) else str(p):
-             p.read_text() for p in targets}
+    # ⛔ ROUND 1, CLAUDE MEDIUM: this was a bare `p.read_text()`, and `is_file()` is True for a
+    # `chmod 000` file — so an unreadable guard crashed with a `PermissionError` traceback at rc 1,
+    # which reads as "the gate failed" rather than "the gate could not run". A subject this guard
+    # cannot read is NOT CHECKED, and says so.
+    texts: dict[str, str] = {}
+    for q in targets:
+        key = str(q.relative_to(root)) if q.is_absolute() and q.is_relative_to(root) else str(q)
+        try:
+            texts[key] = q.read_text()
+        except OSError as exc:
+            print(f"CANNOT RUN — {key} cannot be read ({exc.strerror}), so the population is "
+                  f"incomplete. A verdict over a partial population is not a pass. NOT CHECKED.",
+                  file=sys.stderr)
+            return 2
     # The pins name the guards of THIS repo, so they reconcile only against its whole population.
     whole = not a.paths and root == ROOT
     problems, verdicts = assess(texts, MAIN_DEBT, whole=whole)
@@ -630,8 +1025,14 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
         for p in problems:
             print(p)
         return 1
-    print("D2 OK — every guard with a main() either drives it over a constructed world or is "
-          "pinned.")
+    # ⛔ ROUND 1, CLAUDE HIGH: "every guard" was a FALSE UNIVERSAL whenever the population was a
+    # subset — and severing `whole` to False left the suite green and this line printing anyway.
+    if whole:
+        print("D2 OK — every guard with a main() either drives it over a constructed world or is "
+              "pinned.")
+    else:
+        print(f"D2 OK over the {len(verdicts)} guard(s) read — NOT the whole population, so this "
+              f"is not a verdict about the repository.")
     return 0
 
 
@@ -719,18 +1120,33 @@ def _self_test() -> int:                                      # noqa: C901 — a
          ({"DEEP"}, set()))
 
     # ── which calls are the SUITE's ──────────────────────────────────────────────────────────
-    PROD_ONLY = ("def main(argv=None):\n"
-                 "    return 0\n"
+    PROD_ONLY = ("ROOT = 1\n"
+                 "def main(argv=None):\n"
+                 "    return ROOT\n"
+                 "def _self_test():\n"
+                 "    case('x', main(['--flag']), 0)\n"
                  "if __name__ == '__main__':\n"
-                 "    raise SystemExit(main())\n")
+                 "    raise SystemExit(main([str(_f)]))\n")
+    # ⚠ THE SUITE EXISTS HERE ON PURPOSE: the production call in the `__main__` block must not be
+    # credited even when the rest of the file is perfectly reachable. It is excluded because a
+    # module-level call has no enclosing function — not by a clause naming `__main__`.
     case("the __main__ block is the production entry point, not a case driving main",
-         suite_main_calls(ast.parse(PROD_ONLY)), [])
-    RECURSE = ("def main(argv=None):\n"
+         [c.lineno for c, _, _ in suite_main_calls(ast.parse(PROD_ONLY))], [5])
+    case("...so the production call's built path earns the file nothing",
+         classify(PROD_ONLY).routes, frozenset())
+    # ⚠ WITH A SUITE THAT CALLS main. Without one, nothing was reachable and the main-body skip
+    # was masked by the reachability rule — the mutation severing it SURVIVED. `main` becomes
+    # reachable the moment a case drives it, and then its own recursive call would be counted.
+    RECURSE = ("ROOT = 1\n"
+               "def main(argv=None):\n"
                "    if argv is None:\n"
-               "        return main([])\n"
-               "    return 0\n")
-    case("...and main calling itself is not a case either",
-         suite_main_calls(ast.parse(RECURSE)), [])
+               "        return main([str(_f)])\n"
+               "    return ROOT\n"
+               "def _self_test():\n"
+               "    case('x', main(['--flag']), 0)\n")
+    case("...and main calling ITSELF over a built path is not a case driving it",
+         [c.lineno for c, _, _ in suite_main_calls(ast.parse(RECURSE))], [7])
+    case("...so the recursion earns no route", classify(RECURSE).routes, frozenset())
     case("...while a call inside _self_test is", len(suite_main_calls(ast.parse(PLAIN))), 1)
 
     # ── route: param ─────────────────────────────────────────────────────────────────────────
@@ -738,13 +1154,63 @@ def _self_test() -> int:                                      # noqa: C901 — a
             "def main(argv=None, root=ROOT):\n"
             "    return root\n"
             "def _self_test():\n"
+            "    _r = tmp / 'tree'\n"
             "    case('x', main([], root=_r), 0)\n")
-    case("the PARAM route: a keyword supplies main's world", classify(P_KW).routes, frozenset({PARAM}))
+    # ⚠ `_r` IS ASSIGNED NOW. The first version passed a bare `_r` from nowhere, and round 1's
+    # Medium is that an unresolvable world argument proves nothing — so a fixture that does not
+    # BUILD the world it hands over no longer models what it claims.
+    case("the PARAM route: a keyword supplies a world the case built",
+         classify(P_KW).routes, frozenset({PARAM}))
+    P_REALGLOBAL = ("ROOT = 1\n"
+                    "def main(argv=None, root=ROOT):\n"
+                    "    return root\n"
+                    "def _self_test():\n"
+                    "    case('x', main([], root=ROOT), 0)\n")
+    case("⛔ ...but handing main the SAME global it would have read earns nothing (r1 Medium)",
+         classify(P_REALGLOBAL).routes, frozenset())
+    P_LITERAL = ("def main(argv=None, stream=None):\n"
+                 "    return stream\n"
+                 "def _self_test():\n"
+                 "    case('x', main(['--clear'], None), 0)\n")
+    case("...and neither does a bare None in the world position",
+         classify(P_LITERAL).routes, frozenset())
     P_POS = ("def main(argv=None, stream=None):\n"
              "    return stream\n"
              "def _self_test():\n"
+             "    stream = io.StringIO()\n"
              "    case('x', main(['--decide'], stream), 0)\n")
-    case("...and so does a second positional argument", classify(P_POS).routes, frozenset({PARAM}))
+    case("...and so does a constructed second positional argument",
+         classify(P_POS).routes, frozenset({PARAM}))
+    # ⛔ THE HELPER-PARAMETER HOP. Once PARAM demanded a constructed value, `check-ci-watched.py`
+    # went to DEBT — its only main call is inside a helper and the world is that helper's
+    # PARAMETER. ADR-0014 names that file as the ONE guard which solved this class before anyone
+    # else, so a rule that pins it is wrong about the rule, not about the file.
+    P_VIA_HELPER = ("def main(argv=None, stream=None):\n"
+                    "    return stream\n"
+                    "def _drive(stream):\n"
+                    "    return main(['--decide'], stream)\n"
+                    "def _self_test():\n"
+                    "    case('x', _drive(io.StringIO()), 0)\n")
+    case("...and a world arriving as a HELPER'S PARAMETER is resolved at its call site",
+         classify(P_VIA_HELPER).routes, frozenset({PARAM}))
+    case("...while the same helper called with None earns nothing",
+         classify(P_VIA_HELPER.replace("_drive(io.StringIO())", "_drive(None)")).routes,
+         frozenset())
+    # ⚠ ONE HOP, AND THE BOUND IS ASSERTED. Two helpers deep, the world is a parameter of a
+    # parameter — resolution stops, deliberately, because following it indefinitely is dataflow
+    # and this guard does not do dataflow. Without the bound this fixture is credited and the
+    # recursion has nothing stopping it; the mutation severing `depth > 0` SURVIVED until this
+    # case existed.
+    P_TWO_HOPS = ("def main(argv=None, stream=None):\n"
+                  "    return stream\n"
+                  "def _inner(stream):\n"
+                  "    return main(['--decide'], stream)\n"
+                  "def _outer(stream):\n"
+                  "    return _inner(stream)\n"
+                  "def _self_test():\n"
+                  "    case('x', _outer(io.StringIO()), 0)\n")
+    case("...and resolution stops after ONE hop — two helpers deep earns nothing",
+         classify(P_TWO_HOPS).routes, frozenset())
     P_ARGVKW = ("ROOT = 1\n"
                 "def main(argv=None):\n"
                 "    return ROOT\n"
@@ -765,12 +1231,21 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # `path` VARIED — it is what every finding is addressed to, and 30 other calls default it.
     case("...and the verdict carries the path it was given, which is what the findings name",
          classify(A_MIX, "scripts/check-named.py").path, "scripts/check-named.py")
+    # ⛔ THIS CASE ASSERTED THE HOLE, and round 1's High is what the hole was: `_p` is never
+    # assigned here, so nothing says it holds a path rather than "--self-test". It earns nothing
+    # now, and the name-that-DOES-hold-a-computed-path case is `H2_NAMED_PATH` below.
     A_NAME = A_CALL.replace("main([str(_f)])", "main([_p])")
-    case("...a bare local name counts", classify(A_NAME).routes, frozenset({ARGV}))
+    case("...a bare local name whose value cannot be resolved counts for nothing",
+         classify(A_NAME).routes, frozenset())
     A_FSTR = A_CALL.replace("main([str(_f)])", "main([f'{_d}/t.py'])")
     case("...an f-string counts", classify(A_FSTR).routes, frozenset({ARGV}))
     A_STAR = A_CALL.replace("main([str(_f)])", "main([*_args])")
-    case("...and a spread counts", classify(A_STAR).routes, frozenset({ARGV}))
+    case("...and an unresolvable spread counts for nothing either",
+         classify(A_STAR).routes, frozenset())
+    A_STAR_OK = A_CALL.replace("    case('x', main([str(_f)]), 0)",
+                               "    _args = [str(_f)]\n    case('x', main([*_args]), 0)")
+    case("...while a spread of a list the case BUILT does count",
+         classify(A_STAR_OK).routes, frozenset({ARGV}))
     A_LIT = A_CALL.replace("main([str(_f)])", "main(['/nonexistent/nope.py'])")
     case("...but a hard-coded path literal does NOT — discrimination 2, stated in the docstring",
          classify(A_LIT).routes, frozenset())
@@ -831,9 +1306,15 @@ def _self_test() -> int:                                      # noqa: C901 — a
                "    globals()['ROOT'], globals()['MATCHER'] = saved\n")
     case("a TUPLE of globals()[…] targets is a substitution — check-rc-contract.py:743's shape",
          classify(R_TUP_G).routes, frozenset({REBIND}))
+    # ⚠ `_self_test` calls `_drive` — and the first version of this fixture had NO suite entry,
+    # which round 1's reachability rule then correctly refused. The real file
+    # (`check-plan-file-tags.py`) reaches `_drive_main` from `self_test`, so the fixture was wrong
+    # about the shape it claimed to model, not the rule.
     R_TUP_D = ("ROOT = 1\nDOCS = 2\n"
                "def main(argv=None):\n"
                "    return ROOT, DOCS\n"
+               "def _self_test():\n"
+               "    case('x', _drive(tmp), 0)\n"
                "def _drive(tmp):\n"
                "    global ROOT, DOCS\n"
                "    keep_root, keep_docs = ROOT, DOCS\n"
@@ -846,6 +1327,23 @@ def _self_test() -> int:                                      # noqa: C901 — a
          classify(R_TUP_D).routes, frozenset({REBIND}))
     case("...a restore AFTER the call does not undo the credit",
          [r for _, _, r in global_writes(ast.parse(R_TUP_D).body[-1])], [False, False, True, True])
+
+    R_MODIFIED = ("DECLARED = 1\n"
+                  "def main(argv=None):\n"
+                  "    return DECLARED\n"
+                  "def _self_test():\n"
+                  "    _saved = dict(DECLARED)\n"
+                  "    globals()['DECLARED'] = {**_saved, 5: _saved[5] + ' Detail:'}\n"
+                  "    case('x', main([]), 0)\n"
+                  "    globals()['DECLARED'] = _saved\n")
+    case("⛔ a MODIFIED copy of the real world is a SUBSTITUTION, not a restore (r1 High)",
+         classify(R_MODIFIED).routes, frozenset({REBIND}))
+    case("...and the plain put-back beside it IS a restore",
+         [r for _, _, r in global_writes(ast.parse(R_MODIFIED).body[-1])], [False, True])
+    R_COPY_RESTORE = R_MODIFIED.replace("globals()['DECLARED'] = _saved\n",
+                                        "globals()['DECLARED'] = dict(_saved)\n")
+    case("...and so is a shallow copy of the saved value",
+         [r for _, _, r in global_writes(ast.parse(R_COPY_RESTORE).body[-1])], [False, True])
 
     R_RESTORED = ("FLAG = 1\n"
                   "def main(argv=None):\n"
@@ -901,6 +1399,42 @@ def _self_test() -> int:                                      # noqa: C901 — a
          (len(_reads), len(suite_main_calls(ast.parse(MULTI))), _multi.routes),
          (1, 3, frozenset({REBIND})))
 
+    # ── H3: eight rules the suite EXECUTED and never asserted. Six get a case here ───────────
+    # ⛔ Round 1, Claude High: severed one at a time, all eight left the suite 79/79 green. One of
+    # them — the `argv=` keyword branch — was the ONLY code granting a route, so it could have
+    # rotted and taken a whole route with it silently. ADR-0014's consequence 2 says the obligations
+    # do not shrink, their KIND changes: these are cases, not manifest entries.
+    H3_ARGVKW = ("ROOT = 1\n"
+                 "def main(argv=None):\n"
+                 "    return ROOT\n"
+                 "def _self_test():\n"
+                 "    case('x', main(argv=[str(_f)]), 0)\n")
+    case("argv passed BY KEYWORD still reaches the argv route — the only code that grants it",
+         classify(H3_ARGVKW).routes, frozenset({ARGV}))
+    H3_TUPLE_ARGV = ("ROOT = 1\n"
+                     "def main(argv=None):\n"
+                     "    return ROOT\n"
+                     "def _self_test():\n"
+                     "    case('x', main((str(_f),)), 0)\n")
+    case("...and a TUPLE argv counts, not only a list", classify(H3_TUPLE_ARGV).routes,
+         frozenset({ARGV}))
+    # ⚠ ONLY the augmented form — the first fixture had `X = 1` as well, so dropping AugAssign
+    # support left the case green on the plain assignment. A premise is not a branch.
+    H3_AUG = ("X += 1\n"
+              "def main(argv=None):\n"
+              "    return X\n")
+    case("an augmented module-level assignment still makes the name a global",
+         "X" in module_globals(ast.parse(H3_AUG)), True)
+    H3_KWARGS = ("ROOT = 1\n"
+                 "def main(**ROOT):\n"
+                 "    return ROOT\n")
+    case("...and a **kwargs parameter shadows a global of the same name",
+         world_names(ast.parse(H3_KWARGS)), set())
+    H3_STAR = ("ROOT = 1\n"
+               "def main(*ROOT):\n"
+               "    return ROOT\n")
+    case("...as does a *args parameter", world_names(ast.parse(H3_STAR)), set())
+
     # ── the forwarder, which is how check-plan-code drives main ──────────────────────────────
     F_OK = ("ROOT = 1\n"
             "def main(argv=None):\n"
@@ -918,8 +1452,154 @@ def _self_test() -> int:                                      # noqa: C901 — a
     F_LIT = F_OK.replace("_main_rc([str(_t)])", "_main_rc(['--flag'])")
     case("...while a forwarder called with literals is still debt", classify(F_LIT).routes, frozenset())
 
+    # ── ROUND 1's FOUR FINDINGS, each with the case that refuses it ──────────────────────────
+    # All four were the FALSE-CREDIT direction, which is the dangerous one: every single one made a
+    # guard look compliant while its suite could not observe `main`'s wiring.
+    B1_DEAD = ("ROOT = 1\n"
+               "def main(argv=None):\n"
+               "    return ROOT\n"
+               "def unused():\n"
+               "    return main([str(tmp)])\n"
+               "def _self_test():\n"
+               "    case('literal only', main(['--flag']), 0)\n")
+    case("⛔ a main call in a function NOTHING invokes earns no route (r1 Blocking)",
+         classify(B1_DEAD).routes, frozenset())
+    B1_DEADBRANCH = ("ROOT = 1\n"
+                     "def main(argv=None):\n"
+                     "    return ROOT\n"
+                     "def _self_test():\n"
+                     "    if False:\n"
+                     "        main([str(tmp)])\n"
+                     "    case('x', main(['--flag']), 0)\n")
+    case("...and neither does one inside `if False:` — the cheapest possible fake",
+         classify(B1_DEADBRANCH).routes, frozenset())
+    B1_REACHED = ("ROOT = 1\n"
+                  "def main(argv=None):\n"
+                  "    return ROOT\n"
+                  "def _helper(d):\n"
+                  "    return main([str(d)])\n"
+                  "def _self_test():\n"
+                  "    case('x', _helper(tmp), 0)\n")
+    case("...while a helper the suite DOES call is reached, two names deep",
+         classify(B1_REACHED).routes, frozenset({ARGV}))
+    case("...and suite_reachable over a module with no suite entry is empty",
+         suite_reachable(ast.parse(PLAIN.replace("_self_test", "_not_a_suite"))), set())
+    case("...so that module earns nothing either",
+         classify(PLAIN.replace("_self_test", "_not_a_suite")).routes, frozenset())
+
+    H1_UNDECLARED = ("ROOT = 1\n"
+                     "def main(argv=None):\n"
+                     "    return ROOT\n"
+                     "def _self_test():\n"
+                     "    case('x', main([], root=_r), 0)\n")
+    case("⛔ a keyword main does NOT declare earns no param route — the call would raise "
+         "(r1 High)", classify(H1_UNDECLARED).routes, frozenset())
+    H1_POS_ONLY = ("def main(argv=None):\n"
+                   "    return 0\n"
+                   "def _self_test():\n"
+                   "    case('x', main(['--f'], extra), 0)\n")
+    case("...and neither does a second positional on a one-parameter main",
+         classify(H1_POS_ONLY).routes, frozenset())
+
+    H2_NAMED_LITERAL = ("ROOT = 1\n"
+                        "def main(argv=None):\n"
+                        "    return ROOT\n"
+                        "def _self_test():\n"
+                        "    flag = '--self-test'\n"
+                        "    case('x', main([flag]), 0)\n")
+    case("⛔ a literal reached through a local name is still a literal (r1 High)",
+         classify(H2_NAMED_LITERAL).routes, frozenset())
+    H2_NAMED_PATH = ("ROOT = 1\n"
+                     "def main(argv=None):\n"
+                     "    return ROOT\n"
+                     "def _self_test():\n"
+                     "    p = str(tmp / 'x.py')\n"
+                     "    case('x', main([p]), 0)\n")
+    case("...while a name holding a COMPUTED path still counts",
+         classify(H2_NAMED_PATH).routes, frozenset({ARGV}))
+    # `computed_argv`'s two optional parameters, varied: the enclosing case decides whether a NAME
+    # resolves, and the tree decides whether a helper's parameter can be followed to its call site.
+    _acall = ast.parse(A_CALL)
+    _acase = [n for n in ast.walk(_acall) if isinstance(n, ast.FunctionDef)][-1]
+    _lit = ast.parse("['--self-test']").body[0].value
+    _built = ast.parse("[str(_f)]").body[0].value
+    case("computed_argv with NO enclosing case still refuses a literal",
+         (computed_argv(_lit, None), computed_argv(_built, None)), (False, True))
+    case("...and given the case and the tree it resolves a helper's parameter",
+         computed_argv(ast.parse("[p]").body[0].value, _acase, _acall), False)
+    case("...and an unresolvable name earns nothing rather than the benefit of the doubt",
+         _element_is_constructed(ast.parse("x").body[0].value,
+                                 ast.parse("def f():\n    return 0\n").body[0]), False)
+
+    M1_TUPLE_RESTORE = ("A = 1\nB = 2\n"
+                        "def main(argv=None):\n"
+                        "    return A, B\n"
+                        "def _self_test():\n"
+                        "    global A, B\n"
+                        "    _sa, _sb = A, B\n"
+                        "    globals()['A'], globals()['B'] = _x, _y\n"
+                        "    case('x', parse(), 0)\n"
+                        "    A, B = _sa, _sb\n"
+                        "    case('y', main(['--flag']), 0)\n")
+    case("⛔ a TUPLE restore is recognised as a restore, so the call after it earns nothing "
+         "(r1 Medium)", classify(M1_TUPLE_RESTORE).routes, frozenset())
+    case("...and _unpack pairs a tuple assignment positionally rather than whole-RHS",
+         [(ast.unparse(a), ast.unparse(b)) for a, b in
+          _unpack(ast.parse("p, q = r, s").body[0].targets[0],
+                  ast.parse("p, q = r, s").body[0].value)],
+         [("p", "r"), ("q", "s")])
+    case("...while a tuple assignment of UNEQUAL length is not paired, it is judged whole",
+         len(_unpack(ast.parse("p, q = r").body[0].targets[0],
+                     ast.parse("p, q = r").body[0].value)), 1)
+
+    # ── the two routes round 1 added, synthetically ───────────────────────────────────────────
+    ALIAS = ("collect = 1\n"
+             "def main(argv=None):\n"
+             "    return collect\n"
+             "def _self_test():\n"
+             "    g = globals()\n"
+             "    real = g['collect']\n"
+             "    g['collect'] = lambda base: ([], False, 'boom')\n"
+             "    try:\n"
+             "        case('x', main(['--base', 'master']), 2)\n"
+             "    finally:\n"
+             "        g['collect'] = real\n")
+    case("⛔ `g = globals()` is globals() — the alias that hid a COMPLIANT guard (r1 Blocking)",
+         classify(ALIAS).routes, frozenset({REBIND}))
+    case("...and globals_aliases names the local it was bound to",
+         globals_aliases(ast.parse(ALIAS).body[-1]), {"g"})
+    case("...while a case that never binds globals() has no alias",
+         globals_aliases(ast.parse(PLAIN).body[-1]), set())
+    case("...and a None case has none either, rather than raising",
+         globals_aliases(None), set())
+    ALIAS_BULK = ALIAS.replace("        g['collect'] = real", "        g.update({'collect': real})")
+    case("...and a bulk `g.update(...)` restore is a write, so it ends the substitution",
+         any(r for _, _, r in global_writes(ast.parse(ALIAS_BULK).body[-1])), True)
+    SUBPROC_OK = ("def main(argv=None):\n"
+                  "    return 0\n"
+                  "def _self_test():\n"
+                  "    data = card().encode()\n"
+                  "    rc = subprocess.run([sys.executable, __file__], input=data).returncode\n"
+                  "    case('a bad card EXITS 2', rc, 2)\n")
+    case("⛔ the SUBPROC route: the shipped entry point over built stdin (r1 Blocking)",
+         classify(SUBPROC_OK).routes, frozenset({SUBPROC}))
+    SUBPROC_BARE = SUBPROC_OK.replace(", input=data", "")
+    case("...but re-running the real guard over the real repo earns nothing",
+         classify(SUBPROC_BARE).routes, frozenset())
+    SUBPROC_OTHER = SUBPROC_OK.replace("__file__", "'scripts/other.py'")
+    case("...and spawning a DIFFERENT file is not driving this guard's entry point",
+         classify(SUBPROC_OTHER).routes, frozenset())
+    case("...and a subprocess call outside the suite's reach earns nothing",
+         classify(SUBPROC_OK.replace("def _self_test():", "def _orphan():")).routes, frozenset())
+
     # ── assess: the three findings ───────────────────────────────────────────────────────────
     POP = {"scripts/check-a.py": PLAIN, "scripts/check-b.py": A_CALL}
+    # the detail ternary: a guard with calls and a guard with none say different things
+    probs_nc, _ = assess({"scripts/check-nc.py": ("ROOT = 1\n"
+                                                  "def main(argv=None):\n"
+                                                  "    return ROOT\n")}, frozenset())
+    case("a guard whose suite never reaches main says so",
+         any("no suite call reaches main()" in x for x in probs_nc), True)
     probs, _ = assess(POP, frozenset())
     case("assess names an unpinned guard that cannot be driven",
          [p.split("]")[0] + "]" for p in probs], ["[D2_main_not_drivable]"])
@@ -929,6 +1609,8 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # dies from its own subject's defect attributes nothing. `check-fixture-variation.py` had
     # already written this rule down for itself; it did not travel, which is ADR-0014's second
     # mechanism happening to ADR-0014's own guard.
+    case("...while one with calls that do not build a world says how many there were",
+         any("1 suite call(s) to main()" in x for x in probs), True)
     case("...and the message names the file so it can be found",
          any("scripts/check-a.py" in x for x in probs), True)
     probs2, _ = assess(POP, frozenset({"scripts/check-a.py"}))
@@ -998,6 +1680,37 @@ def _self_test() -> int:                                      # noqa: C901 — a
         case("...the ARGV route works on this guard too — a path override needs no root",
              (rc_argv, "1 guards on disk" in out_argv), (0, True))
 
+        # ⛔ H1 — `whole` COMPUTED INSIDE main, which no `assess`-level case can see. Severing
+        # `whole = not a.paths and root == ROOT` to `False` left the suite 79/79 green and the live
+        # gate printing `D2 OK` at rc 0, with pin reconciliation silently switched off. To reach the
+        # whole-population branch over a BUILT tree, both halves of that conjunction must hold — so
+        # the case substitutes `ROOT` as well as passing `root=`, which is also the only thing that
+        # exercises the `root == ROOT` clause at all.
+        _real_root, _real_debt = globals()["ROOT"], globals()["MAIN_DEBT"]
+        try:
+            globals()["ROOT"] = world
+            globals()["MAIN_DEBT"] = frozenset({"scripts/check-absent.py"})
+            rc_stale, out_stale = _driven_at_root([], world)
+        finally:
+            globals()["ROOT"] = _real_root
+            globals()["MAIN_DEBT"] = _real_debt
+        case("a WHOLE run reconciles the pins, so an absent pinned name is reported",
+             (rc_stale, "[D2_pin_stale]" in out_stale), (1, True))
+        case("...and it names the pin that can never be paid",
+             "scripts/check-absent.py" in out_stale, True)
+
+        # ...while a SUBSET says so on both the gate path and the report path, which is H1's only
+        # mitigation and was itself unasserted.
+        _sub_rc, _sub_out = _driven_at_root([], world)
+        case("a subset run says the pin reconciliation was SKIPPED (gate path)",
+             "pin reconciliation SKIPPED" in _sub_out, True)
+        _rep_rc, _rep_out = _driven_at_root(["--report"], world)
+        case("...and so does the report path", "pin reconciliation SKIPPED" in _rep_out, True)
+        case("...and the pass line does NOT claim 'every guard' over a subset",
+             "every guard" in _sub_out, False)
+        case("...while the route breakdown is printed either way",
+             all(w in _sub_out for w in ("param", "argv", "rebind", "subproc")), True)
+
         empty = world / "nothing"
         empty.mkdir()
         rc2, _ = _driven_at_root([], empty)
@@ -1005,6 +1718,33 @@ def _self_test() -> int:                                      # noqa: C901 — a
         _b2 = io.StringIO()
         with contextlib.redirect_stdout(_b2), contextlib.redirect_stderr(_b2):
             rc3 = main([str(world / "scripts/absent.py"), "--report"])
+    # ⛔ M3 — `is_file()` is True for a `chmod 000` file, so this path used to raise a bare
+    # `PermissionError` at rc 1, which a reader takes for "the gate failed" rather than "the gate
+    # could not run". A subject this guard cannot READ is NOT CHECKED.
+    with tempfile.TemporaryDirectory() as td2:
+        locked = Path(td2) / "scripts"
+        locked.mkdir()
+        bad = locked / "check-locked.py"
+        bad.write_text(PLAIN)
+        bad.chmod(0o000)
+        try:
+            # ⛔ THE RAISE IS CAUGHT AND REPORTED AS A VALUE. Letting it propagate is what the
+            # mutation severing this refusal DOES, and a case that dies from its own subject's
+            # defect prints no `[FAIL]` line and no summary — the sweep then sees a red suite with
+            # nothing to attribute it to and refuses the kill. Same lesson as `probs[0]`, one
+            # round later, in the same file.
+            _b3 = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(_b3), contextlib.redirect_stderr(_b3):
+                    rc_locked = main([str(bad)])
+            except Exception as exc:                        # noqa: BLE001 — see above
+                rc_locked = f"RAISED {type(exc).__name__}"
+            case("an UNREADABLE guard is CANNOT RUN with rc 2, not a traceback (r1 Medium)",
+                 rc_locked, 2)
+            case("...and it says NOT CHECKED rather than naming a verdict",
+                 "NOT CHECKED" in _b3.getvalue(), True)
+        finally:
+            bad.chmod(0o644)
         case("...and an unreadable override is CANNOT RUN too", rc3, 2)
 
     # ── the live population, read from disk ──────────────────────────────────────────────────
@@ -1016,8 +1756,11 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # ⛔ ASSERTED AS A SET, and both members are load-bearing: the param case is the one that
     # exercises `root=`, the argv case the one that needs no root at all. Asserting membership
     # alone would stay green if one of the two kinds of case were deleted.
-    case("...and satisfies its OWN rule, by BOTH the param and argv routes",
-         classify(me.read_text()).routes, frozenset({PARAM, ARGV}))
+    # ⚠ THREE ROUTES NOW, and the third arrived with round 1's H1 case: substituting `ROOT` and
+    # `MAIN_DEBT` to reach the whole-population branch is itself the rebind route. Asserted as the
+    # exact set, so deleting any one KIND of case here goes red rather than passing on the others.
+    case("...and satisfies its OWN rule by the param, argv AND rebind routes",
+         classify(me.read_text()).routes, frozenset({PARAM, ARGV, REBIND}))
     case("...so it is not in its own debt set", "scripts/check-main-drivable.py" in MAIN_DEBT, False)
 
     exemplar = live_root / "scripts/check-fixture-variation.py"
@@ -1025,18 +1768,42 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...and COMPLIES by the argv route — the false positive this rule was corrected for",
          ARGV in classify(exemplar.read_text()).routes, True)
 
-    # ⛔ THE THREE FILES THIS RULE JUDGED WRONGLY ON ITS FIRST LIVE RUN. Each is a regression case
-    # for one defect: a false negative from unwalked tuple targets, a near-miss credited from the
-    # wrong call site, and a false credit from a substitution that had been restored.
+    # ⛔ EVERY FILE THIS RULE HAS JUDGED WRONGLY, PINNED BY NAME. Each line is one defect's
+    # regression case, and the list grew in round 1 because four of the five were found by a
+    # reviewer rather than by me:
+    #   plan-file-tags   false NEGATIVE — unwalked tuple assignment targets
+    #   rc-contract      right answer, WRONG REASON — credited from an unrelated stub
+    #   dashboard-entry  false NEGATIVE — a `g = globals()` alias, invisible to the target rule
+    #   selection-card   false NEGATIVE — drives the entry point as a SUBPROCESS, a fourth route
+    #   ci-watched       false NEGATIVE — its world arrives as a HELPER'S PARAMETER
+    # ⚠ dashboard-entry was asserted as DEBT here one commit ago, by a case that named the right
+    # verdict for the wrong reason and then turned out to have the wrong verdict too.
     for name, want, why in (
             ("check-plan-file-tags.py", True, "drives main over a tmp root under `global ROOT, DOCS`"),
             ("check-rc-contract.py", True, "substitutes ROOT/MATCHER/HOOK as a tuple at :743"),
-            ("check-dashboard-entry.py", False, "its FLAG substitution is restored before main runs"),
+            ("check-dashboard-entry.py", True, "substitutes g['collect'] through a globals() ALIAS"),
+            ("check-selection-card.py", True, "re-launches __file__ as a subprocess over built stdin"),
+            ("check-ci-watched.py", True, "its world is a helper's parameter, resolved at the call site"),
     ):
         f = live_root / "scripts" / name
         case(f"{name} is on disk", f.is_file(), True)
         case(f"...and {'complies' if want else 'is DEBT'} — {why}",
              classify(f.read_text()).complies, want)
+
+    # ⛔ THE LIVE CONSEQUENCE of the tuple-restore defect, pinned on the real file. Before the fix,
+    # `main(["/nonexistent/nope.py"])` at `check-fixture-variation.py:1881` — its unreadable-
+    # population case, nobody's constructed world — was credited `rebind`, because
+    # `KNOWN_UNVARIED, EXAMINED_KEYS = _svK, _svF` was not recognised as a restore.
+    _fvt = ast.parse(exemplar.read_text())
+    _fwd = argv_forwarders(_fvt)
+    _overcredited = [c.lineno for c, f, k in suite_main_calls(_fvt)
+                     if not computed_argv(_argv_expr(c, k, _fwd), f)
+                     and live_substitutions(f, c.lineno) & world_names(_fvt)
+                     and isinstance(_argv_expr(c, k, _fwd), (ast.List, ast.Tuple))
+                     and all(isinstance(e, ast.Constant) for e in _argv_expr(c, k, _fwd).elts)
+                     and any(e.value for e in _argv_expr(c, k, _fwd).elts)]
+    case("...and its literal-path call is NOT credited rebind by a stale substitution",
+         _overcredited, [])
 
     discovered = sorted(live_root.glob(GUARD_GLOB))
     case("the live population is non-empty", len(discovered) > 0, True)
