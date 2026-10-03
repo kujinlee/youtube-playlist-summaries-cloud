@@ -2210,11 +2210,24 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       2 cases; it catches round 9's Blocking (52/54) AND a `BASELINE` severance that #213's guard
       demands no entry for. `check-surface-recall.py` is the expensive one — three defaulted rule
       parameters must come out first.
-- [ ] **D2 — one bit per guard**: does the self-test drive `main()` over a world the case built?
-      ⛔ **Do not write it as drafted** — sub-condition 2 false-positives on
-      `check-fixture-variation.py`, which drives `main()` 14 times from `_self_test()` over
-      constructed paths passed through `argv`. It must admit argv-as-world. Exposure is **29 of
-      36**, not the 31 the review stated (coordinator re-derivation; drivers are 7, not 5).
+- [x] **D2 — one bit per guard — BUILT 2026-10-02 as `scripts/check-main-drivable.py`** (74 cases,
+      18 mutations, two CI steps). It admits **three** routes — a world parameter, an `argv` that
+      names a computed path, and a global substitution that is still LIVE at the call — so the
+      drafted false positive never shipped: `check-fixture-variation.py` passes on `argv+rebind`.
+      ⭐ **Measured exposure 29 of 37, pinned by name in `MAIN_DEBT`** and reconciled in both
+      directions; the set came from the tool's own run, not from a list written beside it, and the
+      hand-written list it replaced was wrong about two files. ⛔ **Three defects the first live run
+      found in the rule itself**, each now a named regression case: an order-dependent single-route
+      verdict (the ADR's exemplar reported `rebind`, not the `argv` it is cited for); unwalked tuple
+      assignment targets (false NEGATIVE on `check-plan-file-tags.py`, and `check-rc-contract.py`
+      credited from the wrong call site — right answer, wrong reason); and substitution-without-
+      restore (false CREDIT on `check-dashboard-entry.py`, whose `FLAG` swap is restored 1,160 lines
+      before its `main` call). ⚠ Plus one performance defect worth the row: the rule was accidentally
+      cubic (1.99s on one file, 29s of CPU under a single mutation, sweep unfinishable) — now 0.076s,
+      with the cache pinned by a call-counting case rather than a stopwatch.
+      ⤳ **#222 filed, NOT folded:** D2 asks about `main()`, and the same wiring class turned up four
+      times the same afternoon in `explainer-serve.py`'s `do_GET` and `_send`. Widening the subject
+      to *the shipped entry point* is a decision about an accepted ADR, not an implementation detail.
 - [x] **#213's `ast` guard SUPERSEDED as the remedy (done in #360)** — implemented and run; its reach shrinks
       at exactly the rate the repair proceeds. Row amended with the measurements.
 - [x] **#216 filed (in #360)** — a comment asserting a defence the code does not implement

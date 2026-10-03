@@ -1376,6 +1376,14 @@ EXPECTED_MUTATIONS = {
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
     "scripts/recall-llm.py": 96,
+    # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
+    # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
+    # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
+    # coverage: one severs the unpinned-guard verdict and one severs `main`'s consumption of the
+    # finished list, and NEITHER is reachable by a unit case — they go red only through the case
+    # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
+    # detector cannot see, measured on the guard that enforces the rule.
+    "scripts/check-main-drivable.py": 18,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3023,6 +3031,9 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      # ⟳ 2026-10-02: ADR-0014's rule D2 arrives with its
+                                      # manifest in the same commit.
+                                      "scripts/check-main-drivable.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
@@ -3868,6 +3879,7 @@ def _self_test() -> int:
     # ⛔ TWO OF THOSE EIGHT WERE BLOCKINGS, AND ONE OF THE TWO WAS THE FIX FOR ROUND 8's OWN H1 —
     # severable the same way the defect it repaired was. The wiring class stands at SIX instances,
     # four of them in code written while fixing the others. Backlog #213.
+    # ⟳ 2026-10-02, D2: 1178 -> 1196. The new guard `check-main-drivable.py` arrives with 18.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3877,7 +3889,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1178)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1196)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

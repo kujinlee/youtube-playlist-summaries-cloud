@@ -300,6 +300,18 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "check-main-drivable.py": (
+        # ⟳ 2026-10-02: ADR-0014's rule D2, pinned in the commit that creates it. Asking this
+        # file's question of it found SIX unvaried parameters before it shipped — `tree` passed
+        # one parse twice, `start`/`path`/`writes` never passed at all, and `main.argv` collapsed
+        # to a single expression by a `_driven(args)` helper, which is the indirection this
+        # guard's own docstring records rejecting for the same reason.
+        "argv_forwarders.tree", "assess.debt", "assess.texts", "assess.whole",
+        "classify.path", "classify.text", "global_writes.fn",
+        "live_substitutions.fn", "live_substitutions.lineno", "live_substitutions.writes",
+        "main.argv", "main.root", "module_globals.tree", "suite_main_calls.tree",
+        "world_names.start", "world_names.tree",
+    ),
     # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
     # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not

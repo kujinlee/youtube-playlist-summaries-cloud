@@ -1,0 +1,237 @@
+[
+ {
+  "name": "the literal-argv discrimination is dropped, so a flag vector run over the LIVE repository counts as a constructed world and every pinned guard silently 'complies'",
+  "edits": [
+   [
+    "        if not isinstance(el, ast.Constant):\n            return True\n    return False",
+    "        if not isinstance(el, ast.Constant):\n            return True\n    return True"
+   ]
+  ],
+  "expect": [
+   "...but a hard-coded path literal does NOT \u2014 discrimination 2, stated in the docstring"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a second POSITIONAL argument stops counting as main's world, so `main(['--decide'], stream)` reads as debt",
+  "edits": [
+   [
+    "    if len(call.args) > 1:",
+    "    if len(call.args) > 99:"
+   ]
+  ],
+  "expect": [
+   "...and so does a second positional argument"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the keyword half of the param route is severed, so `main([], root=_r)` \u2014 ADR-0014's D1 verbatim \u2014 reads as debt",
+  "edits": [
+   [
+    "    return any(kw.arg not in (None, argv_param) for kw in call.keywords)",
+    "    return False"
+   ]
+  ],
+  "expect": [
+   "the PARAM route: a keyword supplies main's world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "every write to a global is read as a substitution, so a swap RESTORED long before the call credits the call anyway \u2014 the false credit this guard shipped on its first run",
+  "edits": [
+   [
+    "                is_restore = bool(value_names) and value_names <= holders",
+    "                is_restore = False"
+   ]
+  ],
+  "expect": [
+   "...global_writes tells the substitution from the restore"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the substitution is no longer bounded by the call's own line, so a restored swap is live at every line of the case",
+  "edits": [
+   [
+    "        prior = [rs for ln, g, rs in writes if g == name and ln < lineno]",
+    "        prior = [rs for ln, g, rs in writes if g == name]"
+   ]
+  ],
+  "expect": [
+   "...while at a line inside the substituted region it is not"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "assignment targets stop being WALKED, so a tuple of globals \u2014 the shape of the two richest constructed worlds in this repo \u2014 writes nothing",
+  "edits": [
+   [
+    "    for node in ast.walk(target):",
+    "    for node in [target]:"
+   ]
+  ],
+  "expect": [
+   "a TUPLE of globals()[\u2026] targets is a substitution \u2014 check-rc-contract.py:743's shape"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "main's world widens to every module global, so substituting a name main never reads buys a rebind credit",
+  "edits": [
+   [
+    "    seen: set[str] = set()\n    out: set[str] = set()",
+    "    seen: set[str] = set()\n    out: set[str] = set(glob)"
+   ]
+  ],
+  "expect": [
+   "...and NOT one no function on main's path reads"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "parameter shadowing is ignored, so `def main(ROOT=None)` reads the global ROOT it actually hides",
+  "edits": [
+   [
+    "                if node.id in glob and node.id not in shadowed:",
+    "                if node.id in glob:"
+   ]
+  ],
+  "expect": [
+   "...and a parameter shadowing a global is not a world read"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the __main__ block stops being excluded, so the PRODUCTION entry point is counted as a case driving main",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.If) and _is_main_guard(node):\n            skip.add(id(node))",
+    "        elif False:\n            skip.add(id(node))"
+   ]
+  ],
+  "expect": [
+   "the __main__ block is the production entry point, not a case driving main"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "main's own body stops being excluded, so a RECURSIVE call inside main counts as a case driving it",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == \"main\":\n            skip.add(id(node))",
+    "        if False:\n            skip.add(id(node))"
+   ]
+  ],
+  "expect": [
+   "...and main calling itself is not a case either"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "forwarders stop being recognised, so check-plan-code's `_main_rc(argv)` wrapper hides a tree it really does build",
+  "edits": [
+   [
+    "                if isinstance(first, ast.Name) and first.id in params:\n                    out[node.name] = params.index(first.id)",
+    "                if isinstance(first, ast.Name) and first.id in params:\n                    pass"
+   ]
+  ],
+  "expect": [
+   "a one-level forwarder carries the computed argv through to main"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "pin_paid is dropped, so a debt can be PAID without its pin being removed and then re-accrued with nothing noticing",
+  "edits": [
+   [
+    "                problems.append(\n                    f\"[D2_pin_paid] {path} now drives main() over a constructed world \"",
+    "                problems.append(\n                    f\"[D2_pin_NOTHING] {path} now drives main() over a constructed world \""
+   ]
+  ],
+  "expect": [
+   "...a pinned guard that now COMPLIES is reported, so the debt cannot be paid silently"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 THE RESIDUE. The unpinned-guard verdict is computed and then never reported \u2014 the exact class ADR-0014 exists for, at the one layer only an end-to-end case reaches",
+  "edits": [
+   [
+    "        if path not in debt:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "main() driven over a constructed world reports the undriven guard, rc 1",
+   "assess names an unpinned guard that cannot be driven"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 THE WIRING. assess still finds every violation and main() drops the list on the floor, printing OK and exiting 0 \u2014 no unit case can see this, which is the whole argument of ADR-0014 over #213",
+  "edits": [
+   [
+    "    if problems:\n        print()\n        for p in problems:\n            print(p)\n        return 1",
+    "    if False:\n        print()\n        for p in problems:\n            print(p)\n        return 1"
+   ]
+  ],
+  "expect": [
+   "main() driven over a constructed world reports the undriven guard, rc 1"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "CANNOT RUN is removed, so an empty or unreadable population reports a clean bill \u2014 a zero over nothing read as a pass",
+  "edits": [
+   [
+    "    if unreadable or not targets:",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "...an empty population is CANNOT RUN with rc 2, never a pass"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "pin reconciliation is applied to SUBSETS too, so any path override invents a stale finding for every guard it did not happen to read",
+  "edits": [
+   [
+    "    whole = not a.paths and root == ROOT",
+    "    whole = True"
+   ]
+  ],
+  "expect": [
+   "...a world where every guard complies is rc 0"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the stale-pin rule for a renamed guard is dropped, so the debt set can rot into names that no longer exist",
+  "edits": [
+   [
+    "        for pinned in sorted(debt - set(verdicts)):",
+    "        for pinned in []:"
+   ]
+  ],
+  "expect": [
+   "...a pin for a file outside the population is reported as stale"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the stale-pin rule for a guard with no main() is dropped, so a pin that asserts nothing stays in the set forever",
+  "edits": [
+   [
+    "        for pinned in sorted(q for q in debt & set(verdicts)\n                             if not verdicts[q].has_main and verdicts[q].error is None):",
+    "        for pinned in []:"
+   ]
+  ],
+  "expect": [
+   "...and pinning a guard with no main() asserts nothing, so it is stale too"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ }
+]

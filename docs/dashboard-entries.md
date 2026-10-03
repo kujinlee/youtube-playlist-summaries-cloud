@@ -13399,3 +13399,37 @@ marker this session's own hook had written. Proven with the marker present and r
 
 ⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
 convergence document's own recommendation.
+
+## 2026-10-02
+A rule the project decided a day ago but had never written down is now a working check. The
+decision was: a safety script should be testable the way a person actually runs it — end to end,
+over a fake copy of the project — and not only one function at a time. Eleven separate bugs had
+slipped through because each fix made the untestable part slightly bigger, and the project settled
+the question in a written decision record on 1 October without building the thing that enforces it.
+It is built now. Of 44 safety scripts, 8 can be tested that way; the other 29 are listed by name as
+known debt, so nobody has to remember which is which, and paying one off without updating the list
+is itself reported.
+
+Two things found while building it, both worth knowing because they are the same mistake in
+different clothes. The check's first draft would have **rejected the project's own best example** of
+the practice it was written to encourage — the decision record predicted exactly that and said so,
+which is why it was caught before the check shipped rather than after. And its first live run
+credited a script that does not deserve credit, because it looked for a temporary substitution
+anywhere in the test file instead of asking whether the substitution was still in place when the
+test ran. Both now have named tests that fail if the mistake returns.
+
+**Waiting on you:** nothing here. Two questions were written down rather than decided: whether this
+check should ask the same question of scripts whose entry point is not called `main` (the same bug
+appeared four times today in the page server, in exactly that shape), and a separate finding you
+spotted yourself — every automatic hook in this project is registered by a relative path, so all of
+them, including the one that stops a push to the main branch, quietly do nothing whenever a command
+has left the working directory somewhere else. Nothing was pushed while it was down.
+<!--tech-->
+`scripts/check-main-drivable.py` — ADR-0014's rule D2, 73 cases, 18 mutations, 29 of 37 pinned as
+`MAIN_DEBT`. Three routes admitted (param / argv / rebind); argv-as-world is the one the
+architecture review's draft omitted, which would have false-positived on
+`check-fixture-variation.py`. Two defects found by the first live run: unwalked tuple assignment
+targets (false negative on `check-plan-file-tags.py`, and `check-rc-contract.py` credited from the
+wrong call site), and substitution-vs-restore (false credit on `check-dashboard-entry.py`, whose
+`FLAG` swap is restored 1,160 lines before its `main` call). Backlog #222 (entry-point scope) and
+#223 (relative hook paths, fail-open) filed. Wired as two CI steps in the `verify` job.
