@@ -638,3 +638,35 @@ Are these actually share common idea?
 **The number that reframes everything**
    > The product is a YouTube playlist summariser. None of this work was about summarising YouTube playlists. Every one of these PRs was about the machinery that checks the work — guards, review rounds, mutation testing, the rules governing how claims get made.
    Q: PROBE selection-path: does this event carry the quoted passage as well as the section?
+
+---
+
+## 2026-10-02 10:58:43 — 2026-10-02-brief-project-status.html
+
+**What could not be checked**
+   > (nothing highlighted)
+   Q: PROBE heading-path on the status page: is the section carried cleanly?
+
+---
+
+## 2026-10-02 10:59:26 — 2026-10-02-brief-project-status.html
+
+**What could not be checked**
+   > The brief procedure requires comparing the roadmap’s claim against the running system. That is the one layer every other check is blind to — the ratchets compare documents to documents.
+   Q: PROBE selection-path on the status page: does the quote come through?
+
+---
+
+## 2026-10-02 11:36:38 — 2026-10-02-topic-recent-prs-found-solved.html
+
+**Traps a reader should not step in**
+   > Reading these titles as summaries They are essayistic. “The paragraph introducing the rules broke one of them” does not tell you the PR is about a stale count in a banner
+   Q: While the essayistic line can be more thought provoking, I want more informative title so that I can grasp what in there. In other words, more straightforward wording can be more informative.
+
+---
+
+## 2026-10-02 11:38:28 — 2026-10-02-topic-recent-prs-found-solved.html
+
+**Theme 4 — the repair that generated the defect**
+   > Theme 4 — the repair that generated the defectask #360 is the largest of the seventeen and the only one whose finding is structural. Nine adversarial review rounds kept finding the same class of defect: a rule's result computed, then discarded at the point it is used, with every named test still passing and the guard printing OK over a real violation. Rounds 5 through 9 each fixed their instance c
+   Q: have we found solution (and implemented) for the root cause of this issue?

@@ -1,0 +1,307 @@
+<title>Project status — the verification turn</title>
+<style>
+:root{
+  /* The tray lifted by brief-compose.py reads these; nothing else defines them, and an
+     undefined custom property drops its whole declaration silently. The composer refuses
+     rather than ship that, which is how this was caught. */
+  /* The tray's SHIM declares these only inside a dark media query. A media query has no
+     specificity, so in LIGHT mode they would keep the DARK value - a half-live toggle, measured
+     2026-09-08 as body text at 1.03:1. Declared here in all three theme states instead. */
+  --bg:#F6F7F9; --card:#FFFFFF; --ink:#141821; --ink-soft:#3C4654; --ink-faint:#6B7585;
+  --rule:#D9DEE5; --structure:#2F5D8C; --good:#1B7A5A; --defect:#B4342A;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --st-ground:#F6F7F9; --st-surface:#FFFFFF; --st-sunk:#EEF1F4;
+  --st-ink:#141821; --st-ink2:#3C4654; --st-ink3:#6B7585;
+  --st-rule:#D9DEE5; --st-rule2:#C3CAD4;
+  --st-struct:#2F5D8C;  --st-struct-bg:#E8EFF7;
+  --st-ok:#1B7A5A;      --st-ok-bg:#E4F2EC;
+  --st-bad:#B4342A;     --st-bad-bg:#FBE9E7;
+  --st-unknown:#8A5A00; --st-unknown-bg:#FBF0DB;
+  --st-med:#A06A00; --st-low:#5B6472;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11141A; --card:#171B22; --ink:#E8ECF2; --ink-soft:#B6BFCC; --ink-faint:#8A94A3;
+    --rule:#2B313B; --structure:#7FB0E0; --good:#5CC49B; --defect:#F08A80;
+    --st-ground:#11141A; --st-surface:#171B22; --st-sunk:#1E232B;
+    --st-ink:#E8ECF2; --st-ink2:#B6BFCC; --st-ink3:#8A94A3;
+    --st-rule:#2B313B; --st-rule2:#3A4250;
+    --st-struct:#7FB0E0; --st-struct-bg:#16263A;
+    --st-ok:#5CC49B;     --st-ok-bg:#12291F;
+    --st-bad:#F08A80;    --st-bad-bg:#2E1613;
+    --st-unknown:#E0A94A;--st-unknown-bg:#2C2110;
+    --st-med:#D9A441; --st-low:#8A94A3;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11141A; --card:#171B22; --ink:#E8ECF2; --ink-soft:#B6BFCC; --ink-faint:#8A94A3;
+  --rule:#2B313B; --structure:#7FB0E0; --good:#5CC49B; --defect:#F08A80;
+  --st-ground:#11141A; --st-surface:#171B22; --st-sunk:#1E232B;
+  --st-ink:#E8ECF2; --st-ink2:#B6BFCC; --st-ink3:#8A94A3;
+  --st-rule:#2B313B; --st-rule2:#3A4250;
+  --st-struct:#7FB0E0; --st-struct-bg:#16263A;
+  --st-ok:#5CC49B;     --st-ok-bg:#12291F;
+  --st-bad:#F08A80;    --st-bad-bg:#2E1613;
+  --st-unknown:#E0A94A;--st-unknown-bg:#2C2110;
+  --st-med:#D9A441; --st-low:#8A94A3;
+}
+body{background:var(--st-ground);color:var(--st-ink)}
+.st-wrap{max-width:62rem;margin:0 auto;padding-block:1.5rem;padding-left:max(16px,2vw);padding-right:max(16px,2vw);
+  font-family:var(--sans,ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif);line-height:1.55}
+.st-wrap *{box-sizing:border-box}
+.st-num{font-variant-numeric:tabular-nums;font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace)}
+
+/* §5a — static, correct with JavaScript disabled; the script only sharpens the chip */
+.st-read{border:1px solid var(--st-rule2);background:var(--st-sunk);padding:.9rem 1.1rem;margin:0 0 1.75rem}
+.st-read h4{margin:0 0 .45rem;font-size:.92rem;font-weight:700;display:flex;align-items:center;
+  gap:.55rem;flex-wrap:wrap}
+.st-read ol{margin:.4rem 0 0;padding-left:1.1rem}
+.st-read li{font-size:.84rem;color:var(--st-ink2);margin:.22rem 0}
+#modechip{font-family:var(--mono);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--st-rule2);
+  color:var(--st-ink3);border-radius:99px;font-weight:600;white-space:nowrap}
+
+/* masthead */
+.st-mast{border-top:3px solid var(--st-struct);padding-top:1rem;margin-bottom:1.75rem}
+.st-eyebrow{font-family:var(--mono,ui-monospace,monospace);font-size:.68rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--st-ink3);margin-bottom:.5rem}
+.st-mast h1{font-size:clamp(1.6rem,4vw,2.3rem);line-height:1.12;margin:0 0 .5rem;letter-spacing:-.02em;
+  text-wrap:balance;font-weight:800}
+.st-standfirst{font-size:1.02rem;color:var(--st-ink2);max-width:60ch;margin:0}
+.st-stamp{display:inline-flex;align-items:center;gap:.5rem;margin-top:.9rem;padding:.4rem .7rem;
+  border:1px solid var(--st-unknown);background:var(--st-unknown-bg);color:var(--st-unknown);
+  font-family:var(--mono,ui-monospace,monospace);font-size:.74rem;letter-spacing:.04em;font-weight:600}
+
+/* stat row */
+.st-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:1px;
+  background:var(--st-rule);border:1px solid var(--st-rule);margin:1.75rem 0}
+.st-stat{background:var(--st-surface);padding:.85rem .9rem}
+.st-stat .v{font-size:1.75rem;font-weight:700;line-height:1.05;display:block;margin-bottom:.15rem}
+.st-stat .k{font-size:.74rem;color:var(--st-ink3);line-height:1.35;display:block}
+.st-stat.bad .v{color:var(--st-bad)} .st-stat.ok .v{color:var(--st-ok)}
+.st-stat.unk .v{color:var(--st-unknown)} .st-stat.struct .v{color:var(--st-struct)}
+
+h2.st-h{font-size:1.15rem;margin:2.25rem 0 .2rem;letter-spacing:-.01em;font-weight:700;
+  padding-bottom:.35rem;border-bottom:1px solid var(--st-rule2)}
+.st-sub{color:var(--st-ink3);font-size:.85rem;margin:.35rem 0 1rem}
+.st-wrap p{max-width:66ch}
+
+/* the CANNOT RUN panel — this project's signature state, deliberately not grey */
+.st-cannot{border:1px solid var(--st-unknown);background:var(--st-unknown-bg);padding:1rem 1.1rem;margin:1rem 0}
+.st-cannot .hd{font-family:var(--mono,ui-monospace,monospace);font-size:.74rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--st-unknown);font-weight:700;margin-bottom:.45rem}
+.st-cannot p{margin:.4rem 0;color:var(--st-ink2)}
+
+/* chart */
+.st-chart{border:1px solid var(--st-rule);background:var(--st-surface);padding:1.1rem;margin:1rem 0}
+.st-bar{display:grid;grid-template-columns:7.5rem 1fr 3.2rem;align-items:center;gap:.6rem;margin:.55rem 0}
+.st-bar .lab{font-size:.8rem;color:var(--st-ink2)}
+.st-bar .track{background:var(--st-sunk);height:1.5rem;position:relative}
+.st-bar .fill{height:100%;display:block}
+.st-bar .n{text-align:right;font-size:.88rem;font-weight:700}
+.st-axis{display:flex;justify-content:space-between;font-size:.68rem;color:var(--st-ink3);
+  border-top:1px solid var(--st-rule);padding-top:.3rem;margin-top:.7rem}
+
+table.st-t{width:100%;border-collapse:collapse;font-size:.85rem;margin:.6rem 0}
+table.st-t th{text-align:left;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--st-ink3);border-bottom:1px solid var(--st-rule2);padding:.45rem .6rem .35rem;font-weight:700}
+table.st-t td{border-bottom:1px solid var(--st-rule);padding:.55rem .6rem;vertical-align:top;color:var(--st-ink2)}
+table.st-t td:first-child{color:var(--st-ink);font-weight:600;white-space:nowrap}
+.st-scroll{overflow-x:auto}
+code{font-family:var(--mono,ui-monospace,monospace);font-size:.88em;background:var(--st-sunk);
+  padding:.08em .32em;border-radius:2px}
+pre{background:var(--st-sunk);border:1px solid var(--st-rule);padding:.8rem .9rem;overflow-x:auto;
+  white-space:pre;margin:.8rem 0}
+pre code{background:none;padding:0;font-size:.8rem;line-height:1.5;white-space:pre}
+
+.st-pill{display:inline-block;font-family:var(--mono,ui-monospace,monospace);font-size:.68rem;
+  padding:.12rem .4rem;border:1px solid currentColor;font-weight:700;letter-spacing:.03em}
+.p-open{color:var(--st-bad)} .p-you{color:var(--st-unknown)} .p-ok{color:var(--st-ok)}
+.p-struct{color:var(--st-struct)}
+
+/* the decision */
+.st-dec{border:1px solid var(--st-rule2);background:var(--st-surface);margin:1rem 0}
+.st-dec > div{padding:1rem 1.1rem;border-bottom:1px solid var(--st-rule)}
+.st-dec > div:last-child{border-bottom:0}
+.st-dec .ttl{font-family:var(--mono,ui-monospace,monospace);font-size:.7rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--st-ink3);margin-bottom:.4rem;font-weight:700}
+.st-dec .rec{background:var(--st-struct-bg)}
+.st-dec .rec .ttl{color:var(--st-struct)}
+
+.st-foot{border-top:2px solid var(--st-struct);margin-top:2.5rem;padding-top:.9rem;
+  font-size:.78rem;color:var(--st-ink3)}
+.st-foot dl{display:grid;grid-template-columns:auto 1fr;gap:.25rem .9rem;margin:.5rem 0}
+.st-foot dt{font-family:var(--mono,ui-monospace,monospace);color:var(--st-ink2);font-size:.72rem}
+.st-foot dd{margin:0}
+@media (max-width:460px){
+  .st-bar{grid-template-columns:5.5rem 1fr 2.4rem}
+  .st-foot dl{grid-template-columns:1fr}
+}
+</style>
+
+<div class="st-wrap">
+
+<div class="st-mast">
+  <div class="st-eyebrow">Status briefing · master <span class="st-num">2413b003</span> · 2026-10-02</div>
+  <h1>The project spent nine days on the machinery, not the product</h1>
+  <p class="st-standfirst">Twenty commits, two merges today, every ratchet green — and <b>zero lines of product code</b>.
+  Meanwhile the one check that compares this repository to the running system <b>could not run</b>, and the last
+  deployment anyone recorded was 39 days ago.</p>
+  <div class="st-stamp">⬢ A DECISION IS WAITING ON YOU — see “The decision”</div>
+</div>
+
+<div class="st-read">
+  <h4>Reading this page <span id="modechip">&#9679; served</span></h4>
+  <p style="margin:.2rem 0 .4rem;font-size:.84rem;color:var(--st-ink2)">This page can answer you. It is served at
+  <b><code>http://127.0.0.1:7391/latest</code></b>, which always points at the newest page.</p>
+  <ol>
+    <li><b>To ask:</b> select any text, or hover a heading, then click <b>ask</b> &rarr; type &rarr; <b>Send</b>.</li>
+    <li>Then say <b>&ldquo;read my questions&rdquo;</b> in chat. Answers are written <i>into this page</i>, under the section you asked from.</li>
+    <li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> &mdash; safe to run twice. <b>A reboot stops the server</b>, which is the one moment you will need this.</li>
+    <li>Opened as a local <code>file://</code> copy the page still reads fine; only <b>Send</b> is unavailable.</li>
+  </ol>
+</div>
+
+<div class="st-stats">
+  <div class="st-stat unk"><span class="v st-num">39</span><span class="k">days since the last <i>recorded</i> deploy — live state <b>unverified</b></span></div>
+  <div class="st-stat bad"><span class="v st-num">0</span><span class="k">lines of product code in the last 17 PRs</span></div>
+  <div class="st-stat bad"><span class="v st-num">158</span><span class="k">backlog rows open, against 60 closed</span></div>
+  <div class="st-stat ok"><span class="v st-num">8/8</span><span class="k">ratchets green, run just now</span></div>
+  <div class="st-stat struct"><span class="v st-num">1178</span><span class="k">mutations, 0 survivors</span></div>
+</div>
+
+<h2 class="st-h">What could not be checked</h2>
+<p class="st-sub">The brief procedure requires comparing the roadmap’s claim against the running system. That is the one layer every other check is blind to — the ratchets compare documents to documents.</p>
+
+<div class="st-cannot">
+  <div class="hd">⛔ Cannot run — treat as NOT RUN, not as a pass</div>
+  <pre><code>$ flyctl releases --app youtube-playlist-summaries
+Error: no access token available. Please login with 'flyctl auth login'</code></pre>
+  <p>The roadmap’s last recorded deployment is <b>release v10, 2026-08-24 23:01Z</b> — <b>39 days ago</b>.
+  Whether production is still running v10, something newer, or something broken, <b>this briefing cannot say</b>.</p>
+  <p>This matters more than an ordinary missing check. Deploy drift has bitten this project <b>twice</b>, once with
+  production running <b>eight days behind on a database migration</b> while every file on disk looked correct.
+  <i>Merged is not deployed.</i></p>
+</div>
+
+<h2 class="st-h">The shape of the backlog</h2>
+<p class="st-sub">218 rows carry an id; 215 sit in the main table, the other three in a historical section and all closed. Parsed with the repository’s own <code>CELL_SPLIT</code>, not a hand-rolled split.</p>
+
+<div class="st-chart">
+  <div class="st-bar">
+    <span class="lab">🔴 Critical</span>
+    <span class="track"><span class="fill" style="width:7.9%;background:var(--st-bad)" role="img" aria-label="6 critical rows open"></span></span>
+    <span class="n st-num">6</span>
+  </div>
+  <div class="st-bar">
+    <span class="lab">🟠 High</span>
+    <span class="track"><span class="fill" style="width:71.1%;background:var(--st-unknown)" role="img" aria-label="54 high rows open"></span></span>
+    <span class="n st-num">54</span>
+  </div>
+  <div class="st-bar">
+    <span class="lab">🟡 Medium</span>
+    <span class="track"><span class="fill" style="width:100%;background:var(--st-med)" role="img" aria-label="76 medium rows open"></span></span>
+    <span class="n st-num">76</span>
+  </div>
+  <div class="st-bar">
+    <span class="lab">🟢 Low</span>
+    <span class="track"><span class="fill" style="width:28.9%;background:var(--st-low)" role="img" aria-label="22 low rows open"></span></span>
+    <span class="n st-num">22</span>
+  </div>
+  <div class="st-bar" style="margin-top:1rem;padding-top:.7rem;border-top:1px solid var(--st-rule)">
+    <span class="lab">✅ Closed</span>
+    <span class="track"><span class="fill" style="width:78.9%;background:var(--st-ok)" role="img" aria-label="60 rows closed, against 158 open"></span></span>
+    <span class="n st-num">60</span>
+  </div>
+  <div class="st-axis"><span>0</span><span>rows (scale to 76)</span><span>76</span></div>
+</div>
+
+<p>Six critical rows are open: <code>#139</code>, <code>#182</code>, <code>#196</code>, <code>#201</code>,
+<code>#202</code>, <code>#213</code>. Two of those six are not really open at all — see below.</p>
+
+<h2 class="st-h">Three stale rows, and the guard can only see two</h2>
+
+<p><b>#201 and #202 claim to be live on a branch that no longer exists.</b> Both Status cells read
+<i>“OPEN — filed 2026-09-30, LIVE on <code>semantic-recall-replication</code>”</i>. That branch was merged today as
+PR&nbsp;#360 and deleted; <code>git ls-remote</code> returns nothing for it. Their fix,
+<code>scripts/check-rc-contract.py</code>, is on master — it arrived in that very merge — and the dashboard entry for
+the work says in as many words <i>“Fixes backlog #201 and #202”</i>.</p>
+
+<p><b>The closure guard cannot see them, and the reason is structural.</b>
+<code>check-backlog-closure.py</code> keys on a <code>(backlog #N)</code> token at the <i>tail</i> of a merged commit
+subject. The subject that carried the fix ends <code>(#360)</code> — the pull-request number, not a backlog token — so
+there was nothing for it to match. It separately warns that <b>#117</b> and <b>#159</b> are merged without a ✅.</p>
+
+<p>So: <b>two stale rows the guard found, two it is structurally blind to.</b> Nothing is broken by this, but the
+critical count on this page — and on the dashboard — is overstated by two.</p>
+
+<h2 class="st-h">What is waiting, and on whom</h2>
+
+<div class="st-scroll">
+<table class="st-t">
+  <thead><tr><th>Item</th><th>What it needs</th><th>Blocked on</th><th>Since</th></tr></thead>
+  <tbody>
+    <tr><td>#211</td><td>Should rc&nbsp;3 speak when it has no detail? The hook currently renders nothing, so a stale cache tells the reader once and is then silent.</td><td><span class="st-pill p-you">YOU</span> a policy call, not engineering</td><td>2026-10-01</td></tr>
+    <tr><td>#215</td><td>One naming convention held in two files. The obvious better rule was measured and rejected.</td><td><span class="st-pill p-you">YOU</span> a policy call, not engineering</td><td>2026-10-01</td></tr>
+    <tr><td>#218</td><td>The explainer contract says pages live outside the repository; <code>~/explainers</code> is a symlink <i>into</i> it, where 74 pages are tracked. Amend the rule, or move the directory.</td><td><span class="st-pill p-you">YOU</span> which rule survives</td><td>2026-10-02</td></tr>
+    <tr><td>Deploy state</td><td>Authenticate <code>flyctl</code> so the roadmap can be compared to production.</td><td><span class="st-pill p-you">YOU</span> credentials</td><td>unknown</td></tr>
+    <tr><td>D1 (rest)</td><td>Apply ADR-0014 to the other two guards. <code>check-surface-recall.py</code> needs three defaulted parameters removed first — never costed.</td><td><span class="st-pill p-struct">READY</span> engineering, unblocked</td><td>2026-10-02</td></tr>
+    <tr><td>D2</td><td>The one-bit-per-guard rule. Must admit <i>argv-as-world</i> or it rejects the repository’s own best example.</td><td><span class="st-pill p-struct">READY</span> after D1</td><td>2026-10-02</td></tr>
+    <tr><td>#217</td><td>The mutation sweep’s subprocess cost. Budget was raised 15→30 min today.</td><td><span class="st-pill p-ok">ARMED</span> fires on a <i>second</i> raise</td><td>2026-10-02</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 class="st-h">The decision</h2>
+<p class="st-sub">Nine days, 20 commits, zero product lines, and no verifiable deployment in 39 days. The product is a YouTube playlist summariser. None of this work touched it.</p>
+
+<div class="st-dec">
+  <div>
+    <div class="ttl">The case for continuing — and it is measured, not felt</div>
+    <p>In <b>one session</b>, four separate guards caught four defects their own author had missed: an under-varied
+    test parameter, a <code>NO-REVIEW:</code> token written as a heading so the parser could not see it, two roadmap
+    items sharing a name so one tick contradicted the other, and an unescaped <code>|</code> that silently shifted a
+    table column. None was caught by review or by care.</p>
+    <p>Above that, a Phase&nbsp;6 architecture review found a defect <i>class</i> that <b>nine rounds of adversarial
+    review could not</b> — that the standard repair was generating the next instance of the bug it fixed — and the fix
+    had already existed in this repository for weeks, in one file, reaching zero others. That is a compounding return:
+    the machinery is now finding faults in itself faster than review finds them.</p>
+  </div>
+  <div>
+    <div class="ttl">The case against — also measured</div>
+    <p><b>158 rows open against 60 closed.</b> The backlog is growing, and it is growing from the tooling: of today’s
+    three new rows, all three are about the verification system, and one of them (<code>#218</code>) exists only
+    because an explainer page could not obey its own delivery contract. Tooling that generates tooling work has no
+    natural stopping point, and nothing on this page shows the product moving.</p>
+    <p>The sharpest form of the objection: <b>you cannot currently prove the product is running at all.</b> Thirty-nine
+    days of unverified deployment is a bigger risk than any open 🟠 row.</p>
+  </div>
+  <div class="rec">
+    <div class="ttl">Recommendation</div>
+    <p><b>Authenticate <code>flyctl</code> and verify production before any further tooling work.</b> It is minutes, it
+    answers the one question this briefing could not, and until it is answered every other priority is a guess. The
+    39-day gap is not evidence of a problem — it is the <i>absence</i> of evidence either way, which is exactly the
+    state this project’s own rules say must never be read as a pass.</p>
+    <p>After that: finish D1 and D2 — they are small, specified, and they close the class — then stop and give the
+    product a slice. The verification investment has earned its keep on the measurements above, but it should now be
+    asked to protect something that is shipping.</p>
+  </div>
+</div>
+
+<h2 class="st-h">Ground truth</h2>
+<div class="st-foot">
+  <dl>
+    <dt>commit</dt><dd><span class="st-num">2413b003</span> — “The checkboxes were a claim; #360 merging made three of them false (#361)”</dd>
+    <dt>branch</dt><dd><code>master</code>, working tree clean, 0 ahead of origin</dd>
+    <dt>today</dt><dd>PR&nbsp;#360 merged (<span class="st-num">5128b99b</span>) and PR&nbsp;#361 merged (<span class="st-num">2413b003</span>)</dd>
+    <dt>ratchets</dt><dd><code>check-docs</code>, <code>check-roadmap-consistency</code>, <code>check-producer-enumeration</code>, <code>check-anchors</code>, <code>check-backlog-closure</code>, <code>check-arch-findings</code>, <code>check-guard-coverage</code>, <code>check-test-counts</code> — all <code>rc=0</code></dd>
+    <dt>guards</dt><dd>43 guard scripts, 39 declaring a self-test count; 1178 mutations across 57 files, 0 survivors</dd>
+    <dt>corpus</dt><dd>1302 review documents, 14 ADRs, 351 merged pull requests all-time</dd>
+    <dt>backlog</dt><dd>218 ids — 158 open (🔴 6 · 🟠 54 · 🟡 76 · 🟢 22), 60 closed</dd>
+    <dt>⛔ not run</dt><dd><code>flyctl releases</code> — no access token. Live deployment state is <b>unknown</b>, not v10.</dd>
+    <dt>volatile</dt><dd>Ratchet exit codes decay in minutes; backlog counts in days; the 39-day deploy figure grows by one each day until someone checks.</dd>
+    <dt>stamped</dt><dd>2026-10-02, ~10:50 PDT</dd>
+  </dl>
+</div>
+
+</div>
