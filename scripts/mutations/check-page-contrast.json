@@ -77,17 +77,6 @@
   "expect": "a chromeless fragment is NOT"
  },
  {
-  "name": "a baselined site that vanished from the run passes silently again",
-  "file": "scripts/check-page-contrast.py",
-  "edits": [
-   [
-    "    vanished = sorted(k for k in prior if k not in seen)",
-    "    vanished = []"
-   ]
-  ],
-  "expect": "a baselined site NOT measured this run is reported"
- },
- {
   "name": "siblings are merged again, so a passing one can cross below AA behind a failing one",
   "file": "scripts/check-page-contrast.py",
   "edits": [
@@ -108,5 +97,38 @@
    ]
   ],
   "expect": "a gradient-backed site is not counted as below AA, however bad its nominal ratio"
+ },
+ {
+  "name": "the VANISHED advisory is silenced, so a baselined page absent from a run says nothing",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    vanished = sorted(k for k in baseline.get(\"samples\", {}) if k not in seen)",
+    "    vanished = []"
+   ]
+  ],
+  "expect": "a baselined site NOT measured this run is reported"
+ },
+ {
+  "name": "a baselined site that leaves the verdict on a gradient is dropped silently again",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    unscored = [s for s in samples if s.get(\"bg_uncertain\") and sample_key(s) in prior]",
+    "    unscored = []"
+   ]
+  ],
+  "expect": "a BASELINED site that becomes gradient-backed is reported, not silently dropped"
+ },
+ {
+  "name": "gradient-backed sites are written into the baseline, so every one reports NO LONGER SCORED forever",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    return {\"samples\": {sample_key(s): s[\"ratio\"]\n                        for s in samples if not s.get(\"bg_uncertain\")},",
+    "    return {\"samples\": {sample_key(s): s[\"ratio\"]\n                        for s in samples},"
+   ]
+  ],
+  "expect": "a gradient-backed site is NOT written into the baseline"
  }
 ]

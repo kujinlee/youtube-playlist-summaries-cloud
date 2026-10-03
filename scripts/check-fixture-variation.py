@@ -308,6 +308,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⟳ 2026-10-02, round 1 of #221: +2 keys for `dump_baseline`, which this guard
     # refused for having a single call site. DERIVED by running analyse(), not typed.
     "check-page-contrast.py": (
+        "baseline_payload.samples",
+        "baseline_payload.summary",
         "collapse.rows",
         "composite.bg",
         "composite.fg",
@@ -319,6 +321,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "load_baseline.path",
         "luminance.rgb",
         "parse_color.css",
+        "population_notes.baseline",
+        "population_notes.samples",
         "sample_key.s",
         "summarise.samples",
         "threshold_for.px",

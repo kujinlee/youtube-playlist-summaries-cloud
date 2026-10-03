@@ -81,6 +81,16 @@ _PALETTE_RE = ':root[{attr}="{theme}"]'
 # and it matched `:root` inside a PROSE COMMENT. The cascade and `var()` chains are the browser's
 # job; these are what `getComputedStyle(document.documentElement)` returns for the standard page
 # in each scheme.
+# ⛔ THE FAINT-INK ROLE, DECLARED AS A SET — and it took THREE rounds to find them all.
+# Round 1 B1 found `--ink3` after I had aliased `--fg3` and `--ink-faint` and declared the rest
+# "unreachable". Round 2 H3 then found `--ink2`, `--ink-2` and `--muted`. Seven spellings of one
+# role, discovered one review at a time, because each fix aliased the names I had noticed.
+# ⚠ DECLARED HERE SO THE SUITE CAN ITERATE IT. A case that hard-codes the tuple cannot see an
+# eighth spelling; a case that reads THIS can, and adding one is a single edit in one place.
+FAINT_INK_ROLE: tuple[str, ...] = (
+    "--fg3", "--ink-faint", "--ink3", "--ink-3", "--ink2", "--ink-2", "--muted",
+)
+
 STANDARD_LIGHT: dict[str, str] = {
     "--bg": "#f7f6f3", "--bg2": "#ffffff", "--card": "#ffffff", "--panel": "#ffffff",
     "--ground": "#f7f6f3",
@@ -96,7 +106,12 @@ STANDARD_LIGHT: dict[str, str] = {
     # chosen by measuring EVERY background this token actually lands on across the corpus:
     #     rgb(255,255,255) x4432   rgb(247,246,243) x1321   rgb(244,241,234) x96
     #     rgb(238,246,242) x20     rgb(247,235,217) x20     rgb(243,241,237) x18
-    # and clearing the WORST of them (#f7ebd9) at 4.52:1, chosen against 5,907 real sites.
+    # ⟳ ROUND 2 H2: #616c7c -> #5c6777, FIVE MORE POINTS, because the same commit that chose
+    # #616c7c also INTRODUCED `--code`, `--pill` and `--hair` as palette backgrounds and never
+    # re-checked the faint ink against them. Measured: 4.20 on --code and --pill, 4.32 on
+    # --hair — 53 of the 211 residual failures, caused by two of my own new tokens colliding.
+    # #5c6777 clears all 18 grounds the palette now defines, worst 4.53. Dark is unchanged at
+    # 4.52 and already clears its 16.
     # ⚠ "IMPERCEPTIBLE" WAS WRONG AND IS WITHDRAWN. Round 1 adjudicated it: ΔE76 from the
     # standard is 4.01 (light) and 5.41 (dark), both ABOVE the 2.3 just-noticeable-difference
     # threshold. A careful eye can see this. What IS true is that it is the perceptually
@@ -110,7 +125,7 @@ STANDARD_LIGHT: dict[str, str] = {
     # text that fails an accessibility floor. The standard page gets the same corrected value,
     # so the corpus is still unified; what moved is the standard, by the smallest amount that
     # makes it legal.
-    "--fg3": "#616c7c", "--ink-faint": "#616c7c",
+    "--fg3": "#5c6777", "--ink-faint": "#5c6777",
     "--rule": "#dfdcd5", "--line": "#dfdcd5",
     "--good": "#0f7268", "--verified": "#0f7268",
     "--defect": "#ad3a22", "--structure": "#3d5a86", "--structure-bg": "#eaf0f4",
@@ -149,8 +164,8 @@ STANDARD_LIGHT: dict[str, str] = {
     # three spellings of one role and asserted the third was out of reach.
     # ⚠ The recall hook fired `a-shim-can-fail-in-both-directions — fixing only the one name you
     # noticed` at the exact step this palette was written, and I quoted it in the step banner.
-    "--ink3": "#616c7c",
-    "--ink-3": "#616c7c",
+    "--ink3": "#5c6777", "--ink-3": "#5c6777",
+    "--ink2": "#5c6777", "--ink-2": "#5c6777", "--muted": "#5c6777",
 }
 STANDARD_DARK: dict[str, str] = {
     "--bg": "#101318", "--bg2": "#171b22", "--card": "#171b22", "--panel": "#171b22",
@@ -180,6 +195,7 @@ STANDARD_DARK: dict[str, str] = {
     "--verified-bg": "#1b2220", "--structure-br": "#33507a", "--structural": "#8fb0e0",
     # the faint-ink role, third and fourth spellings — the role's value, not their modal
     "--ink3": "#8892a2", "--ink-3": "#8892a2",
+    "--ink2": "#8892a2", "--ink-2": "#8892a2", "--muted": "#8892a2",
 }
 
 

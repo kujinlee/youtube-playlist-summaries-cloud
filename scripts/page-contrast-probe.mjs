@@ -16,24 +16,41 @@
 // verdict live here — those are pure Python, cased without a browser — but "reports only what
 // the page computed" was never true, and a comment asserting a property the code lacks is the
 // exact defect backlog #216 is about.
-// ⛔ WHAT IS DONE ABOUT IT: `--self-test` below exercises the pure predicates (`opaque`, the
-// selector builder) with no browser, and `check-page-contrast.py` runs it. The DOM walks
-// remain untested by anything but the corpus run, and that is stated rather than implied.
+// ⛔ WHAT IS DONE ABOUT IT, STATED EXACTLY: `--self-test` exercises `opaque` — the SAME source
+// text the browser runs, not a copy — with no browser. ⚠ It does NOT test `sel`, `bgOf`,
+// `hasImage` or the visibility filters; those are DOM walks and only the corpus run touches
+// them. ⚠ It is run by CI (`.github/workflows/ci.yml`), NOT by `check-page-contrast.py`. An
+// earlier version of this paragraph claimed all three of those things and was wrong about all
+// three — round 2's B2.
 //
 //   node scripts/page-contrast-probe.mjs <scheme> <page.html> [more.html ...]
 
 import { chromium } from 'playwright';
 import { pathToFileURL } from 'node:url';
 
-const PROBE = () => {
+// ⛔ ONE DEFINITION, AS SOURCE TEXT, AND ROUND 2's B2 IS WHY. The first attempt at testing this
+// predicate wrote a SECOND copy next to it and tested that: severing the one the browser
+// actually runs left the self-test reporting 10/10. A duplicate rule is this repository's
+// most-measured failure (17 recorded instances), committed inside the fix for an untested rule.
+// ⚠ The duplicate was not laziness — `page.evaluate` SERIALISES the probe, so it cannot close
+// over anything in Node scope. The repair is to keep the rule as text, hand it to the browser,
+// and build the testable function from the same text. Sever it and BOTH go red.
+// ⚠ `String.raw`, AND THE SELF-TEST CAUGHT WHY. A plain template literal treats `\(` as an
+// escape and collapses it to `(`, so the regex silently became `/rgba?(([^)]+))/` — unanchored
+// and wrong. The case `color(srgb ... / 0.3) is not` went red on the control immediately. A
+// rule kept as SOURCE TEXT has to survive its own quoting, and that is a new hazard this
+// single-source repair introduced.
+const OPAQUE_SRC = String.raw`(c) => {
+  if (!c) return false;
+  const m = c.match(/rgba?\(([^)]+)\)/) || c.match(/color\(\s*srgb\s+([^)]+)\)/);
+  if (!m) return false;
+  const parts = m[1].split(/[,\s/]+/).filter(Boolean);
+  return parts.length < 4 || parseFloat(parts[3]) >= 0.999;
+}`;
+
+const PROBE = ({ opaqueSrc }) => {
   const out = [];
-  const opaque = (c) => {
-    if (!c) return false;
-    const m = c.match(/rgba?\(([^)]+)\)/) || c.match(/color\(\s*srgb\s+([^)]+)\)/);
-    if (!m) return false;
-    const parts = m[1].split(/[,\s/]+/).filter(Boolean);
-    return parts.length < 4 || parseFloat(parts[3]) >= 0.999;
-  };
+  const opaque = (0, eval)(opaqueSrc);
   // The background a reader actually sees behind this text: the nearest ancestor that is opaque.
   // ⚠ NOT the element's own background — most text sits on a transparent element inside a card,
   // and scoring against `transparent` is how a contrast probe reports fiction.
@@ -125,14 +142,9 @@ const PROBE = () => {
 };
 
 // ── the pure predicates, lifted out so they can be tested without a browser (round 1 H3) ──
-export const OPAQUE_RE = /rgba?\(([^)]+)\)|color\(\s*srgb\s+([^)]+)\)/;
-export function isOpaque(c) {
-  if (!c) return false;
-  const m = c.match(/rgba?\(([^)]+)\)/) || c.match(/color\(\s*srgb\s+([^)]+)\)/);
-  if (!m) return false;
-  const parts = m[1].split(/[,\s/]+/).filter(Boolean);
-  return parts.length < 4 || parseFloat(parts[3]) >= 0.999;
-}
+// Built from OPAQUE_SRC, so the self-test below exercises the EXACT text the browser runs.
+// `OPAQUE_RE` was a THIRD copy of the same pattern and is deleted.
+export const isOpaque = (0, eval)(OPAQUE_SRC);
 
 if (process.argv[2] === '--self-test') {
   let ok = 0, fail = 0;
@@ -169,7 +181,7 @@ try {
   for (const p of pages) {
     await page.goto(pathToFileURL(p).href, { waitUntil: 'load' });
     if (extraCss) await page.addStyleTag({ content: extraCss });
-    const rows = await page.evaluate(PROBE);
+    const rows = await page.evaluate(PROBE, { opaqueSrc: OPAQUE_SRC });
     for (const r of rows) {
       process.stdout.write(JSON.stringify({ ...r, page: p.split('/').pop(), scheme }) + '\n');
     }

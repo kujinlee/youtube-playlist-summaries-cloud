@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 215 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 218 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1727,12 +1727,42 @@ def _self_test() -> int:
         # ⛔ ONE ROLE, ONE VALUE, ACROSS ALL ITS SPELLINGS — round 1's B1. The faint ink is
         # spelled `--fg3`, `--ink-faint`, `--ink3` and `--ink-3` across this corpus. Aliasing
         # two of four and calling the rest unreachable cost 23 regressions.
+        # ⛔ DERIVED FROM `FAINT_INK_ROLE`, NOT HARD-CODED — round 2's H3. The first version
+        # listed four spellings inline, so it could not see `--ink2`, `--ink-2` or `--muted`
+        # when the reviewer found them. A case that enumerates its own subject can only ever
+        # check the names its author already knew; reading the declaration makes an eighth
+        # spelling a one-line change in one place.
         case("every spelling of the faint-ink role carries ONE value, in light",
              lambda: len({page_chrome.STANDARD_LIGHT[t]
-                          for t in ("--fg3", "--ink-faint", "--ink3", "--ink-3")}) == 1)
+                          for t in page_chrome.FAINT_INK_ROLE}) == 1)
         case("...and in dark",
              lambda: len({page_chrome.STANDARD_DARK[t]
-                          for t in ("--fg3", "--ink-faint", "--ink3", "--ink-3")}) == 1)
+                          for t in page_chrome.FAINT_INK_ROLE}) == 1)
+        case("...and every spelling is actually IN both palettes, so none is silently absent",
+             lambda: all(t in page_chrome.STANDARD_LIGHT and t in page_chrome.STANDARD_DARK
+                         for t in page_chrome.FAINT_INK_ROLE))
+        # ⛔ AND THE FAINT INK MUST CLEAR AA ON EVERY BACKGROUND THE PALETTE ITSELF DEFINES —
+        # round 2's H2, where `--code`, `--pill` and `--hair` were introduced as backgrounds in
+        # the same commit that tuned the faint ink, and nobody re-checked the pair.
+        def _aa_over_own_grounds(pal: dict) -> bool:
+            import importlib.util as _iu
+            # ⚠ NOT `ROOT` — in this file `ROOT` is the SERVE root (`~/explainers`), not the
+            # repository. Using it here looked right and resolved to a path that does not
+            # exist, and the case then failed with FileNotFoundError rather than on its own
+            # assertion — a red for the wrong reason, which is worse than a green.
+            _here = pathlib.Path(__file__).resolve().parent
+            _sp = _iu.spec_from_file_location("_cpc", str(_here / "check-page-contrast.py"))
+            _m = _iu.module_from_spec(_sp); _sp.loader.exec_module(_m)
+            def _rgb(h):
+                h = h.lstrip("#"); return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 1.0)
+            fg = _rgb(pal["--fg3"])
+            grounds = [k for k in pal if k.endswith("-bg") or k in
+                       ("--bg", "--bg2", "--card", "--panel", "--ground", "--code", "--pill", "--hair")]
+            return all(_m.contrast(fg, _rgb(pal[k])) >= 4.5 for k in grounds)
+
+        case("the faint ink clears AA on every background the palette defines, in light",
+             lambda: _aa_over_own_grounds(page_chrome.STANDARD_LIGHT))
+        case("...and in dark", lambda: _aa_over_own_grounds(page_chrome.STANDARD_DARK))
         # ⚠ THE VOCABULARY IS THE POINT, not the count — the human: "Point is to have single
         # layer that decide common look and feel." These are the roles a reader most notices.
         case("the palette covers the emphasis and semantic roles the pages actually use",

@@ -25,8 +25,10 @@ arithmetic. `parse_color` handles both spellings and the cases below pin that di
 
 USAGE
     python3 scripts/check-page-contrast.py --self-test        # pure rules, no browser
-    python3 scripts/check-page-contrast.py --write-baseline docs/contrast-baseline.json
-    python3 scripts/check-page-contrast.py --against docs/contrast-baseline.json
+    python3 scripts/check-page-contrast.py --write-baseline docs/contrast-baseline.json.gz
+    python3 scripts/check-page-contrast.py --against docs/contrast-baseline.json.gz
+    python3 scripts/check-page-contrast.py --raw        # the files on disk, no palette
+    node scripts/page-contrast-probe.mjs --self-test    # the probe's own pure predicate
     python3 scripts/check-page-contrast.py --report           # measure and print, no verdict
 
 ⚠ THE LIVE GATE IS NOT WIRED TO ANYTHING. CI runs `--self-test` only (no browser on the runner).
@@ -39,7 +41,7 @@ this guard protects nothing on its own, and saying so is the only honest state.
 says TREAT THIS AS NOT RUN. A contrast gate that goes quiet when it cannot see is worse than none,
 because the silence is indistinguishable from "everything is readable".
 
-    python3 scripts/check-page-contrast.py --self-test  # 75 cases
+    python3 scripts/check-page-contrast.py --self-test  # 85 cases
 """
 from __future__ import annotations
 
@@ -185,6 +187,34 @@ def collapse(rows: list[dict]) -> list[dict]:
     return out
 
 
+def population_notes(samples: list[dict], baseline: dict | None) -> list[str]:
+    """PURE. -> ADVISORY notes about the measured population. Never fatal.
+
+    ⛔ SEPARATED FROM `verdict` BECAUSE THE COMMENT CLAIMED IT ALREADY WAS. Round 2's B1: the
+    VANISHED check was appended to the same list `main()` fails on, while a comment beside it
+    said "deliberately not fatal on its own… The caller decides". There was no such mechanism,
+    and the consequence was measured — on a clean `git archive` the gate reported 29,950
+    vanished sites and exited 1. The gate was RED ON EVERY CLEAN CLONE.
+    ⚠ Four of the 60 served pages are DERIVED and gitignored (`backlog-table`, `dashboard`,
+    `features`, `goals`), and after the sibling-split they are 45.7% of the baseline. A fresh
+    clone legitimately lacks them. Failing on that is not rigour, it is a gate nobody can keep
+    green — which `docs/backlog.md` #56 measured getting switched off.
+    """
+    if baseline is None:
+        return []
+    seen = {sample_key(s) for s in samples}
+    vanished = sorted(k for k in baseline.get("samples", {}) if k not in seen)
+    if not vanished:
+        return []
+    by_page: dict[str, int] = {}
+    for k in vanished:
+        by_page[k.split("|")[0]] = by_page.get(k.split("|")[0], 0) + 1
+    where = ", ".join(f"{p} x{n}" for p, n in sorted(by_page.items(), key=lambda kv: -kv[1])[:5])
+    return [f"{len(vanished)} baselined site(s) were not measured this run ({where}). "
+            f"A site that is gone is not a site that improved — but a derived page absent from "
+            f"a fresh clone is not a regression either, so this is ADVISORY."]
+
+
 def verdict(samples: list[dict], baseline: dict | None) -> list[str]:
     """PURE. -> the problems. A RATCHET, not an absolute bar.
 
@@ -198,30 +228,19 @@ def verdict(samples: list[dict], baseline: dict | None) -> list[str]:
     if baseline is None:
         return problems
     prior = {k: v for k, v in baseline.get("samples", {}).items()}
-    # ⛔ A KEY THAT VANISHED IS NOT A KEY THAT PASSED — round 1's B2, and it was Blocking in both
-    # halves. This loop only ever walked the CURRENT samples, so a baselined site that stopped
-    # being measured disappeared in silence. Measured: 496 of 6,664 baseline keys belong to four
-    # GITIGNORED standing pages, and in a clean `git archive` checkout the gate exited 0 while
-    # 7.4% of its own subject was absent. A ratchet that cannot tell "fixed" from "gone" is not
-    # a ratchet.
-    # ⚠ REPORTED, NOT SILENTLY TOLERATED, and deliberately not fatal on its own: the four pages
-    # are derived artefacts a fresh clone legitimately lacks. The caller decides; what is
-    # forbidden is not knowing.
-    # ⚠ A SITE WHOSE BACKGROUND IS A GRADIENT IS NOT SCORED — its ratio is not a fact about
-    # what a reader sees. It still counts as MEASURED for the vanishing check, so excluding it
-    # cannot be used to make a baselined site disappear quietly.
-    seen = {sample_key(s) for s in samples}
-    samples = [s for s in samples if not s.get("bg_uncertain")]
-    vanished = sorted(k for k in prior if k not in seen)
-    if vanished:
-        by_page: dict[str, int] = {}
-        for k in vanished:
-            by_page[k.split("|")[0]] = by_page.get(k.split("|")[0], 0) + 1
-        where = ", ".join(f"{p} x{n}" for p, n in sorted(by_page.items(), key=lambda kv: -kv[1])[:5])
+    # ⚠ THE VANISHED CHECK LIVES IN `population_notes`, NOT HERE — round 2's B1. It is
+    # advisory, and putting it in this list made the gate red on every clean clone.
+    # ⛔ BUT A SITE THAT STOPPED BEING SCORED IS NOT ADVISORY, and that is round 2's H1: the
+    # gradient exclusion removed such sites from `samples` entirely, so a baselined site at
+    # 8.0 crashing to 2.0 reported CROSSED while the same site with an image background
+    # reported NOTHING. It did not vanish — it left the verdict. Reported here.
+    unscored = [s for s in samples if s.get("bg_uncertain") and sample_key(s) in prior]
+    for s in unscored:
         problems.append(
-            f"VANISHED — {len(vanished)} baselined site(s) were not measured this run "
-            f"({where}). A site that is gone is not a site that improved; re-baseline "
-            f"deliberately, or restore what is missing. TREAT THE VERDICT AS PARTIAL.")
+            f"NO LONGER SCORED: {s['page']} [{s['scheme']}] {s['text'][:50]!r} was baselined at "
+            f"{prior[sample_key(s)]:.2f} and now sits on a gradient or image, so no ratio can be "
+            f"computed. A site leaving the verdict is not a site that improved.")
+    samples = [s for s in samples if not s.get("bg_uncertain")]
     for s in samples:
         k = sample_key(s)
         was = prior.get(k)
@@ -248,6 +267,19 @@ def verdict(samples: list[dict], baseline: dict | None) -> list[str]:
                 f"WORSENED while already below AA: {was:.2f} -> {s['ratio']:.2f} "
                 f"[{s['scheme']}] {s['page']} :: {s['text'][:60]!r}")
     return problems
+
+
+def baseline_payload(samples: list[dict], summary: dict) -> dict:
+    """PURE. -> what gets written as a baseline.
+
+    ⛔ EXTRACTED SO A CASE CAN DRIVE THE REAL RULE. The first case for the gradient exclusion
+    asserted a dict comprehension written inside the case itself — a copy — so severing the
+    shipped one left the suite green and the mutation SURVIVED. Second time in one day that a
+    test exercised a duplicate of the thing it was named for.
+    """
+    return {"samples": {sample_key(s): s["ratio"]
+                        for s in samples if not s.get("bg_uncertain")},
+            "summary": summary}
 
 
 def load_baseline(path: Path) -> dict:
@@ -305,8 +337,12 @@ def measure(pages: list[Path], schemes=("light", "dark"), extra_css: str = "",
     capability was absent. `check-paid-caller-arrival` already shells out to a sibling `.mjs` for
     the same reason, so this follows the established route rather than inventing one.
 
-    ⚠ THE PROBE DECIDES NOTHING. It reports computed colour, background, size and weight; every
-    threshold and every verdict is pure Python above, cased without a browser.
+    ⚠ THE PROBE HOLDS DECISION RULES — what is visible, what counts as opaque, which ancestor
+    supplies the background, how deep a selector path goes, what a gradient means. Round 1 (H3)
+    counted seven and round 2 (B2) found this SECOND copy of the false claim still standing
+    after the first was corrected: fixing one site of a repeated sentence is the instance, not
+    the class. What is true: every threshold and every VERDICT is pure Python above, cased
+    without a browser, and the probe's `opaque` predicate is single-source and self-tested.
     """
     probe = root / "scripts" / "page-contrast-probe.mjs"
     if not probe.is_file():
@@ -484,6 +520,11 @@ def _self_test() -> int:
                 "fg": fg, "bg": bg, "px": px, "weight": weight,
                 "ratio": ratio, "threshold": thr}
 
+    # a gradient-backed variant of the same site — its ratio is not a fact about what a
+    # reader sees, so it must never be scored, and must never be a hiding place either.
+    def g(ratio, **kw):
+        d = s(ratio, **kw); d["bg_uncertain"] = True; return d
+
     # ── collapse: elements -> sites, siblings kept APART ──
     # ⛔ ROUND 1 H1 WAS BLOCKING AND THIS IS THE REPAIR. The previous version merged siblings
     # sharing a selector path and kept the worst ratio, so a PASSING sibling could cross below
@@ -575,34 +616,72 @@ def _self_test() -> int:
         case("...and lands at the path it was given, not a remembered one",
              (_gz2.exists(), load_baseline(_gz) == _obj), (True, True))
 
-    # ── a key that VANISHES from the run — round 1's B2, Blocking in both halves ──
-    # ⛔ Measured before the fix: 496 of 6,664 baselined keys belong to GITIGNORED pages, and on
-    # a clean checkout the gate exited 0 while 7.4% of its own subject was simply absent.
-    gone = verdict([], base)
+    # ── a key that VANISHES — ADVISORY, and round 2's B1 is why it is not fatal ──
+    # ⛔ Measured before the split: on a clean `git archive` the gate reported 29,950 vanished
+    # sites and exited 1 — RED ON EVERY CLEAN CLONE — while a comment beside it claimed the
+    # check was "deliberately not fatal… The caller decides". There was no such mechanism.
+    # Four of the 60 pages are derived and gitignored, and after the sibling split they are
+    # 45.7% of the baseline; a fresh clone legitimately lacks them.
+    gone = population_notes([], base)
     case("a baselined site NOT measured this run is reported", len(gone), 1)
-    case("...and says VANISHED, so it cannot be read as an improvement",
-         "VANISHED" in (gone[0] if gone else ""), True)
     case("...and names the page, so a derived artefact is distinguishable from a deletion",
          "p.html" in (gone[0] if gone else ""), True)
-    case("...while a run that measures everything says nothing about vanishing",
-         any("VANISHED" in x for x in verdict([s(8.0)], base)), False)
-    case("no baseline means no vanishing verdict either", verdict([], None), [])
+    case("...and says ADVISORY, because a fresh clone legitimately lacks derived pages",
+         "ADVISORY" in (gone[0] if gone else ""), True)
+    case("...while a run that measures everything says nothing",
+         population_notes([s(8.0)], base), [])
+    case("no baseline means no population note either", population_notes([], None), [])
+    # ⛔⛔ AND THE PART THAT IS **NOT** ADVISORY — round 2's H1. The gradient exclusion removed
+    # baselined sites from the verdict entirely, so one crashing 8.0 -> 2.0 reported NOTHING
+    # while an identical non-gradient site reported CROSSED. Leaving the verdict is not
+    # improving, and `verdict` — not `population_notes` — must say so.
+    _left = verdict([g(2.0)], base)
+    case("a BASELINED site that becomes gradient-backed is reported, not silently dropped",
+         len(_left), 1)
+    case("...and says NO LONGER SCORED", "NO LONGER SCORED" in (_left[0] if _left else ""), True)
+    case("...and quotes the ratio it used to have, so the reader can judge",
+         "8.00" in (_left[0] if _left else ""), True)
+    # ⚠ A gradient-backed site that was NEVER baselined is not a finding — just unscorable.
+    case("an UNBASELINED gradient-backed site is silent",
+         verdict([s(8.0), g(1.0, selector="body>aside")], base), [])
+    # ⛔ AND THAT IS WHY THEY ARE NEVER BASELINED. Writing a gradient-backed site into the
+    # baseline makes it permanently "baselined and now unscored" — measured on a clean clone,
+    # 103 sites reporting NO LONGER SCORED while nothing about them had changed.
+    case("...so re-running over the same corpus reports nothing about it",
+         verdict([s(8.0), g(1.1, selector="body>figure")],
+                 baseline_payload([s(8.0), g(1.1, selector="body>figure")], {})), [])
 
     # ── is_served_page: the corpus rule, and it took three attempts ──
+    # ⛔ THIS BLOCK WAS DELETED BY THE SAME CARELESS SPLICE that ate the verdict cases, and
+    # unlike those it was not noticed until a MUTATION SURVIVED — `is_served_page -> True` left
+    # the suite green because nothing cased it any more. Two blocks lost to one bad slice; I
+    # restored the first and never checked for a second.
     case("a page declaring a viewport is a served page",
          is_served_page('<meta name="viewport" content="width=device-width"><body>x'), True)
     case("a chromeless fragment is NOT", is_served_page("<section><p>hello</p></section>"), False)
     case("...and that is the real file the FILENAME rule missed",
          is_served_page("<style>b{color:red}</style><div>0 of 92</div>"), False)
-    # ⛔ THE CASE THE SECOND RULE FAILED: a real page authored with no <html> tag.
     case("a real page with NO <html> tag is still a page, which `<html>` got wrong",
          is_served_page('<meta name="viewport" content="width=device-width"><div>real</div>'), True)
-    # ⚠ AND THE ONE THAT MAKES `:root` WRONG: fragments carry palettes too.
     case("a fragment that carries its own :root palette is still a fragment",
          is_served_page("<style>:root{--fg:#000;--bg:#fff}</style><p>x</p>"), False)
     case("an empty file is not a page", is_served_page(""), False)
     case("a viewport mentioned deep in prose does not promote a fragment",
          is_served_page("<p>x</p>" + ("y" * 5000) + 'name="viewport"'), False)
+
+    # ── the baseline payload, driven as the REAL function ──
+    _pay = baseline_payload([s(8.0), g(1.1, selector="body>figure")], {"below_aa": 0})
+    case("a gradient-backed site is NOT written into the baseline", len(_pay["samples"]), 1)
+    case("...and the scored one IS", sample_key(s(8.0)) in _pay["samples"], True)
+    case("...and the summary rides along", _pay["summary"], {"below_aa": 0})
+    # ⚠ A SECOND, DISTINCT SAMPLE SET — `check-fixture-variation` refused the first version for
+    # passing `baseline_payload` one list at both call sites, so a version ignoring its argument
+    # would have passed. FOURTH time this guard has caught that exact shape today, each time in
+    # a function written minutes earlier. The blind spot is "one call site", not any one rule.
+    _pay2 = baseline_payload([g(2.2), g(3.3, selector="body>aside")], {"below_aa": 7})
+    case("a set of ONLY gradient-backed sites yields an empty baseline", _pay2["samples"], {})
+    case("...and still carries its own summary, not the other call's",
+         _pay2["summary"], {"below_aa": 7})
 
     # ── summarise ──
     # ⚠ TWO DISTINCT INPUTS, because `check-fixture-variation` refused the first version of this
@@ -611,9 +690,6 @@ def _self_test() -> int:
     # ⛔ GRADIENT-BACKED SITES ARE COUNTED BUT NOT SCORED — round 1 H2, and the mutation that
     # reverts this SURVIVED until these cases existed. The corpus's old `worst: 1.107` was one
     # such site: text on a `repeating-linear-gradient`, scored against the cream beneath it.
-    def g(ratio, **kw):
-        d = s(ratio, **kw); d["bg_uncertain"] = True; return d
-
     case("a gradient-backed site is not counted as below AA, however bad its nominal ratio",
          summarise([g(1.1), s(9.0, selector="body>h1")])["below_aa"], 0)
     case("...and is excluded from WORST, which is where the fiction used to surface",
@@ -695,7 +771,12 @@ def main(argv: list[str], root: Path = ROOT) -> int:
              if sm["unmeasurable"] else ""))
 
     if args.write_baseline:
-        out = {"samples": {sample_key(s): s["ratio"] for s in samples}, "summary": sm}
+        # ⛔ GRADIENT-BACKED SITES ARE NOT BASELINED, and leaving them in made round 2's H1 fix
+        # fire on all 103 of them forever. Their stored ratio is the fiction H2 removed from the
+        # verdict; baselining it means every such site is permanently "baselined and now
+        # unscored". Only a site that LATER becomes gradient-backed is the thing H1 guards.
+        # ⚠ Found by running the gate on a clean `git archive`, not by reading the fix.
+        out = baseline_payload(samples, sm)
         n = dump_baseline(out, Path(args.write_baseline))
         print(f"  baseline written: {args.write_baseline} "
               f"({len(out['samples'])} keys, {n/1048576:.2f} MB gzipped)")
@@ -708,6 +789,8 @@ def main(argv: list[str], root: Path = ROOT) -> int:
             print(f"FAILED: baseline {args.against} cannot be read ({exc.__class__.__name__}). "
                   f"TREAT THIS AS NOT RUN.")
             return 2
+        for note in population_notes(samples, base):
+            print(f"  ⚠ ADVISORY — {note}")
         problems = verdict(samples, base)
         if problems:
             print(f"\nFAILED — {len(problems)} contrast regression(s):")
@@ -723,7 +806,12 @@ def main(argv: list[str], root: Path = ROOT) -> int:
     # and parsed, and did nothing at all; a reader who passed it got the summary they would have
     # got anyway. A documented switch that does nothing is a false claim with a help string.
     if args.report:
-        worst = sorted(samples, key=lambda s: s["ratio"])[:25]
+        # ⚠ SCORED SITES ONLY — round 2's M1. The first version sorted ALL samples, so its top
+        # line was `1.11 … 'create'`, the gradient-backed fiction H2 had just excluded, printed
+        # two lines under a `worst: 2.06` that correctly excluded it. A report contradicting its
+        # own summary teaches the reader to trust neither.
+        worst = sorted((x for x in samples if not x.get("bg_uncertain")),
+                       key=lambda s: s["ratio"])[:25]
         print("\n  worst sites (ratio, threshold, scheme, page, text):")
         for s in worst:
             flag = "✗" if s["ratio"] < s["threshold"] else " "
