@@ -315,6 +315,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "argv_forwarders.tree", "assess.debt", "assess.texts", "assess.whole",
         "classify.path", "classify.text",
         "computed_argv.expr", "computed_argv.fn", "computed_argv.tree",
+        # ⟳ round 3: `case_locals` (which names what the case binds) and
+        # `reads_the_live_world.locals_` (which lets a local shadow the live-world vocabulary).
+        "case_locals.fn",
         "computed_argv.guard_globals",
         "dispatches_a_suite.tree",
         "global_writes.aliased", "global_writes.fn",
@@ -324,6 +327,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         # ⟳ round 2's Claude half: the alias spellings and the guard's own globals became
         # PARAMETERS rather than module state, so they join the examined set with the rules.
         "reads_the_live_world.expr", "reads_the_live_world.guard_globals",
+        "reads_the_live_world.locals_",
         "live_substitutions.fn", "live_substitutions.lineno", "live_substitutions.writes",
         "main.argv", "main.root", "module_globals.tree", "suite_main_calls.tree",
         "suite_reachable.tree", "world_names.start", "world_names.tree",

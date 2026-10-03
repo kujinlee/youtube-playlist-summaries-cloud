@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 61,
+    "scripts/check-main-drivable.py": 66,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3908,9 +3908,25 @@ def _self_test() -> int:
     # decision point. ⛔ And the shape of the miss is the lesson worth the entry: round 1's
     # Medium fixed `root=ROOT` and round 2's Codex High fixed `cwd=ROOT`, each by comparing
     # the NAME the reviewer wrote, while the property went unasserted. Two fixes aimed at a
-    # spelling. ⚠ TWELVE existing anchors were orphaned by this fold and retargeted; the
-    # check that caught them now also refuses an anchor that does not start at a LINE
-    # BOUNDARY, after one matched mid-indentation and left a function with no return.
+    # spelling. ⚠ ⟳ CORRECTED BY ROUND 3: this said TWELVE existing anchors were ORPHANED by the
+    # fold, and re-deriving it against `HEAD^`'s manifest gives **6 absent and 1 present-but-
+    # mid-line**, of 40. Twelve was the length of the list my own assertion printed — and that
+    # assertion tested BOTH conditions at once, over a half-finished tree, so the number counted
+    # retargets I performed rather than anchors that needed one. A figure nobody can re-derive
+    # while reading is what this project keeps being burned by. The check was right and now also
+    # refuses an anchor that does not start at a LINE BOUNDARY, after one matched mid-indentation
+    # and left a function with no return.
+    # ⟳ 2026-10-02, round 3: 1239 -> 1244. `check-main-drivable` 61 -> 66 — EIGHT added and
+    # THREE RETIRED WITH THEIR SUBJECT, which is the second sanctioned fall in this slice.
+    # ⭐ Round 2 answered the alias-lifetime High by naming binding forms one at a time; round 3
+    # produced FIVE MORE that still credited a dead alias, and the tell was that the third list
+    # was still incomplete. The clauses are gone, replaced by Python's own enumeration — every
+    # rebinding puts the name in a STORE context — so the three entries naming `with`, `for`
+    # and the walrus have no subject left and retire rather than being retargeted onto a rule
+    # they were not written about. ⚠ Round 3's Blocking is the same shape at the other end:
+    # round 2's live-world test ran on the ELEMENT, so every form it refused came back one
+    # local assignment later. The repair is the RECURSION, which is why there is no third
+    # spelling to find — and why its entry severs the recursive call rather than a name list.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3920,7 +3936,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1239)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1244)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -576,8 +576,8 @@
   "name": "\u2b50 ROUND 2 HIGH. The globals() alias loses its lifetime, so a name rebound to a plain dict still writes as if it were the module globals",
   "edits": [
    [
-    "        if _is_globals_call(node.value, aliased):\n            bound |= names\n        else:\n            rebound |= names\n    return bound - rebound",
-    "        if _is_globals_call(node.value, aliased):\n            bound |= names\n        else:\n            rebound |= names\n    return bound"
+    "    return bound - rebound",
+    "    return bound"
    ]
   ],
   "expect": [
@@ -589,12 +589,12 @@
   "name": "the alias binding rule walks the whole target again, so a write THROUGH the alias reads as a REBINDING of it and kills the alias on its first use",
   "edits": [
    [
-    "        names = {tgt.id for tgt in node.targets if isinstance(tgt, ast.Name)}\n        names |= {el.id for tgt in node.targets if isinstance(tgt, (ast.Tuple, ast.List))\n                  for el in tgt.elts if isinstance(el, ast.Name)}",
-    "        names = {n.id for tgt in node.targets for n in ast.walk(tgt) if isinstance(n, ast.Name)}"
+    "        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)\n                and id(node) not in from_globals):",
+    "        if (isinstance(node, ast.Name)\n                and id(node) not in from_globals):"
    ]
   ],
   "expect": [
-   "...writing THROUGH an alias is not a rebinding of it"
+   "...and a subscript write through the alias is NOT a rebinding, which is what makes the broad rule safe"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -641,7 +641,7 @@
   "name": "\u2b50\u2b50 ROUND 2 BLOCKING. The live-world test is removed, so the repository itself counts as a constructed world on three routes at once \u2014 the deepest defect this rule has had",
   "edits": [
    [
-    "    if reads_the_live_world(el, set(guard_globals)):\n        return False",
+    "    if reads_the_live_world(el, set(guard_globals), case_locals(fn)):\n        return False",
     "    if False:\n        return False"
    ]
   ],
@@ -677,50 +677,11 @@
   "file": "scripts/check-main-drivable.py"
  },
  {
-  "name": "\u2b50 ROUND 2 CLAUDE HIGH. A `with \u2026 as g` stops killing the globals alias, so a write through a rebound name is credited as a module-global substitution",
-  "edits": [
-   [
-    "        if isinstance(node, ast.withitem) and isinstance(node.optional_vars, ast.Name):\n            rebound.add(node.optional_vars.id)",
-    "        if isinstance(node, ast.withitem) and isinstance(node.optional_vars, ast.Name):\n            pass"
-   ]
-  ],
-  "expect": [
-   "\u26d4 ...a with-as target kills the alias too (r2 High)"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
-  "name": "a for-loop target stops killing the globals alias",
-  "edits": [
-   [
-    "        if isinstance(node, (ast.For, ast.AsyncFor)) and isinstance(node.target, ast.Name):\n            rebound.add(node.target.id)",
-    "        if isinstance(node, (ast.For, ast.AsyncFor)) and isinstance(node.target, ast.Name):\n            pass"
-   ]
-  ],
-  "expect": [
-   "\u26d4 ...a for-loop target kills the alias too (r2 High)"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
-  "name": "a walrus stops killing the globals alias",
-  "edits": [
-   [
-    "            (bound if _is_globals_call(node.value, aliased) else rebound).add(node.target.id)",
-    "            pass"
-   ]
-  ],
-  "expect": [
-   "\u26d4 ...a walrus kills the alias too (r2 High)"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
   "name": "an except-as target stops killing the globals alias",
   "edits": [
    [
-    "        if isinstance(node, ast.ExceptHandler) and node.name:\n            rebound.add(node.name)",
-    "        if isinstance(node, ast.ExceptHandler) and node.name:\n            pass"
+    "        elif isinstance(node, ast.ExceptHandler) and node.name:\n            rebound.add(node.name)",
+    "        elif isinstance(node, ast.ExceptHandler) and node.name:\n            pass"
    ]
   ],
   "expect": [
@@ -790,6 +751,110 @@
   ],
   "expect": [
    "...while a conditional that CALLS the suite is a dispatch"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 ROUND 3 BLOCKING. Resolving a local name stops re-entering the live-world test, so every direct form round 2 refused comes back the moment it is bound to a variable first",
+  "edits": [
+   [
+    "        return _element_is_constructed(value, fn, tree, depth, guard_globals, onward)",
+    "        return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `str(ROOT)` behind a local name is STILL the live world (r3 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the resolution cycle guard is dropped, so `p = q; q = p` recurses until the interpreter stops it",
+  "edits": [
+   [
+    "        if el.id in seen:\n            return False",
+    "        if False:\n            return False"
+   ]
+  ],
+  "expect": [
+   "...and a resolution CYCLE terminates instead of hanging the guard"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 3 MEDIUM. A name the case BOUND stops shadowing the live-world vocabulary, so a tempdir called `home` is refused as though it were the user's home directory",
+  "edits": [
+   [
+    "    names = names - locals_",
+    "    names = names"
+   ]
+  ],
+  "expect": [
+   "a built world named `home` is a built world (r3 Medium \u2014 the lost-credit half)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "case_locals stops reading import aliases, so a name bound by an import neither shadows the vocabulary nor kills a globals alias",
+  "edits": [
+   [
+    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            out |= {(x.asname or x.name).split(\".\")[0] for x in node.names}",
+    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            pass"
+   ]
+  ],
+  "expect": [
+   "case_locals names what the case binds, and NOT what it declares `global`"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "case_locals stops excluding `global`-declared names, so a name the case writes INTO the guard's world shadows the live-world vocabulary instead",
+  "edits": [
+   [
+    "    return frozenset(out - declared)",
+    "    return frozenset(out)"
+   ]
+  ],
+  "expect": [
+   "case_locals names what the case binds, and NOT what it declares `global`"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 3 HIGH. The alias lifetime stops reading the STORE CONTEXT, so the five spellings round 3 found \u2014 and any sixth \u2014 credit a dead alias again",
+  "edits": [
+   [
+    "            rebound.add(node.id)\n        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            rebound |= ",
+    "            pass\n        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            rebound |= "
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...a TUPLE for-target kills the alias (r3 High \u2014 the third list was still incomplete, so the rule is the STORE CONTEXT now)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the alias lifetime stops reading import aliases, so `import os as g` leaves the alias alive",
+  "edits": [
+   [
+    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            rebound |= {(x.asname or x.name).split(\".\")[0] for x in node.names}",
+    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            pass"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...an import alias kills the alias (r3 High \u2014 the third list was still incomplete, so the rule is the STORE CONTEXT now)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the `x = globals()` binding stops being exempted from the rebinding scan, so an alias kills itself the moment it is created",
+  "edits": [
+   [
+    "                    from_globals.add(id(tgt))",
+    "                    pass"
+   ]
+  ],
+  "expect": [
+   "...and a subscript write through the alias is NOT a rebinding, which is what makes the broad rule safe"
   ],
   "file": "scripts/check-main-drivable.py"
  }

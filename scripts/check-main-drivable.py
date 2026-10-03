@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 171 cases
+    python3 scripts/check-main-drivable.py --self-test   # 188 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -512,64 +512,62 @@ def _is_globals_call(value: ast.AST, aliased: frozenset[str] = frozenset()) -> b
 
 
 def globals_aliases(fn: ast.AST | None, aliased: frozenset[str] = frozenset()) -> set[str]:
-    """Local names bound to `globals()` itself — `g = globals()`. PURE.
+    """Local names bound to `globals()` itself and still naming it — `g = globals()`. PURE.
 
-    ⛔ ROUND 1, CLAUDE BLOCKING, and it was a FALSE NEGATIVE on a live guard.
-    `check-dashboard-entry.py:1437-1447` writes `g = globals()`, substitutes
+    ⛔ ROUND 1 BLOCKING: `check-dashboard-entry.py:1437-1447` writes `g = globals()`, substitutes
     `g["collect"] = lambda base: …`, drives `main(["--base", "master"])` over it and restores in a
-    `finally` AFTER the call. That is the rebind route exactly; spelling it `g["x"]` instead of
-    `globals()["x"]` — the same operation, four lines apart — hid it completely. The guard pinned a
-    COMPLIANT file as debt, and the regression case I wrote about that file asserted the wrong
-    verdict for a reason that was also wrong. An alias is not an edge case: it is how the better
-    half of this repo spells it.
+    `finally` AFTER the call. That is the rebind route exactly, and spelling it `g["x"]` instead of
+    `globals()["x"]` hid it completely. An alias is not an edge case: it is how the better half of
+    this repo spells it.
+
+    ⛔⛔ AND THE LIFETIME RULE IS NOW THE CLASS, NOT A LIST OF SPELLINGS — round 3's High. The
+    first version saw only `g = {}`; round 2 added `for` / `with` / walrus / `except` one shape at
+    a time; round 3 then produced FIVE MORE that still credited a dead alias:
+
+        g = globals(); import os as g;                  g["X"] = 2
+        g = globals(); from pathlib import Path as g;   g["X"] = 2
+        g = globals(); for (g,) in [({},)]: pass;       g["X"] = 2
+        g = globals(); [(0) for (g,) in [({},)]];       g["X"] = 2
+        g = globals(); with cm() as (g,): pass;         g["X"] = 2
+
+    Three rounds, three lists, and the third list was still incomplete — which is the tell that the
+    subject was wrong. **Python already enumerates the whole: every rebinding puts the name in a
+    STORE context.** So the rule is now *bound by `x = globals()`, minus bound by anything else*,
+    where "anything else" is every Store-context Name plus the two binding forms that are not
+    Names at all (an import alias and `except … as`). A tuple target, a comprehension, a walrus and
+    a `with` are all Store contexts and need no clause of their own.
+
+    ⚠ A SUBSCRIPT WRITE IS NOT A REBINDING: in `g["x"] = 1` the Subscript carries the Store and the
+    Name `g` is a LOAD. That is what makes this rule safe to state so broadly, and getting it wrong
+    is what knocked `check-dashboard-entry.py` back out of the compliant set once already.
+
+    ⚠ The judgement is whole-case rather than per-line — conservative, a lost credit rather than a
+    false one, and sound with no flow analysis.
     """
     if fn is None:
         return set()
     bound: set[str] = set()
-    rebound: set[str] = set()
-    # ⛔ ROUND 2 CLAUDE HIGH: this loop saw only `ast.Assign`, so every OTHER way of rebinding a
-    # name left the alias alive and the write credited — `for g in [...]`, `with … as g`,
-    # `(g := {})`, `except … as g`, and a comprehension target. Only the one spelling the fix was
-    # written against was refused, which is the same aimed-at-a-spelling defect as round 2's
-    # Blocking, in the fix that shipped beside it.
+    from_globals: set[int] = set()          # the Name nodes that `x = globals()` binds
     for node in ast.walk(fn):
-        if isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
-            (bound if _is_globals_call(node.value, aliased) else rebound).add(node.target.id)
-            continue
-        if isinstance(node, (ast.For, ast.AsyncFor)) and isinstance(node.target, ast.Name):
-            rebound.add(node.target.id)
-            continue
-        if isinstance(node, (ast.comprehension,)) and isinstance(node.target, ast.Name):
-            rebound.add(node.target.id)
-            continue
-        if isinstance(node, ast.withitem) and isinstance(node.optional_vars, ast.Name):
-            rebound.add(node.optional_vars.id)
-            continue
-        if isinstance(node, ast.ExceptHandler) and node.name:
+        if isinstance(node, ast.Assign) and _is_globals_call(node.value, aliased):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    bound.add(tgt.id)
+                    from_globals.add(id(tgt))
+        elif (isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name)
+                and _is_globals_call(node.value, aliased)):
+            bound.add(node.target.id)
+            from_globals.add(id(node.target))
+
+    rebound: set[str] = set()
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                and id(node) not in from_globals):
+            rebound.add(node.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            rebound |= {(x.asname or x.name).split(".")[0] for x in node.names}
+        elif isinstance(node, ast.ExceptHandler) and node.name:
             rebound.add(node.name)
-            continue
-        if not isinstance(node, ast.Assign):
-            continue
-        # ⛔ ROUND 2 HIGH — AN ALIAS HAS A LIFETIME. Recording every binding and never killing one
-        # credited `g = globals(); g = {}; g["X"] = 2` as a module-global substitution, when the
-        # write lands in a local dict `main` has never heard of. The judgement is whole-case rather
-        # than per-line: a name reassigned to anything else anywhere in the case is not treated as
-        # an alias at all. Conservative — a lost credit, never a false one — and sound without
-        # flow analysis.
-        # ⛔⛔ AND ONLY A BARE NAME TARGET IS A BINDING. The first version of this rule walked the
-        # whole target, so `g["collect"] = …` — a write THROUGH the alias, the very thing it exists
-        # to see — read as a REBINDING of `g` and killed the alias on its first use. Measured: it
-        # took `check-dashboard-entry.py` straight back out of the compliant set, undoing round 1's
-        # Blocking inside the fix for round 2's.
-        names = {tgt.id for tgt in node.targets if isinstance(tgt, ast.Name)}
-        names |= {el.id for tgt in node.targets if isinstance(tgt, (ast.Tuple, ast.List))
-                  for el in tgt.elts if isinstance(el, ast.Name)}
-        if not names:
-            continue
-        if _is_globals_call(node.value, aliased):
-            bound |= names
-        else:
-            rebound |= names
     return bound - rebound
 
 
@@ -953,7 +951,8 @@ def _leaves(expr: ast.AST) -> tuple[set[str], set[str]]:
     return names, attrs
 
 
-def reads_the_live_world(expr: ast.AST, guard_globals: set[str]) -> bool:
+def reads_the_live_world(expr: ast.AST, guard_globals: set[str],
+                         locals_: frozenset[str] = frozenset()) -> bool:
     """-> True when this expression rests on the repository `main` would resolve by itself. PURE.
 
     ⛔ ROUND 2 BLOCKING, AND IT IS THE DEEPEST DEFECT THIS GUARD HAS HAD. The rule asked *is this
@@ -971,14 +970,50 @@ def reads_the_live_world(expr: ast.AST, guard_globals: set[str]) -> bool:
     property — this repo's `assert-the-property-not-the-mechanism` lesson, twice in one slice.
     """
     names, attrs = _leaves(expr)
+    # ⚠ ROUND 3 MEDIUM, and it is the LOST-CREDIT half round 2 introduced: a name the case BOUND
+    # is the case's, whatever it is called. `home = tempfile.mkdtemp()` then `main([], root=home)`
+    # was refused outright, because `home` is in the live-reader vocabulary. Measured on three
+    # names — `home`, `cwd`, `argv` — all built worlds, all refused.
+    names = names - locals_
     if names & (LIVE_WORLD_NAMES | guard_globals):
         return True
     return bool(attrs & LIVE_WORLD_READERS) or bool(names & LIVE_WORLD_READERS)
 
 
+def case_locals(fn: ast.AST | None) -> frozenset[str]:
+    """Names this case BINDS — every Store target, parameter, import alias and `except … as`.
+
+    ⚠ Minus anything declared `global` in the case: those names ARE the guard's, deliberately.
+    Used to let a local shadow the live-world vocabulary, which is round 3's Medium: a tempdir
+    assigned to a variable called `home` or `cwd` is a built world whatever it is named.
+    """
+    if fn is None:
+        return frozenset()
+    declared: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Global):
+            declared |= set(node.names)
+    out: set[str] = set()
+    if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        a = fn.args
+        out |= {x.arg for x in a.posonlyargs + a.args + a.kwonlyargs}
+        for extra in (a.vararg, a.kwarg):
+            if extra:
+                out.add(extra.arg)
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            out.add(node.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            out |= {(x.asname or x.name).split(".")[0] for x in node.names}
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            out.add(node.name)
+    return frozenset(out - declared)
+
+
 def _element_is_constructed(el: ast.AST, fn: ast.AST | None,
                             tree: ast.Module | None = None, depth: int = 0,
-                            guard_globals: frozenset[str] = frozenset()) -> bool:
+                            guard_globals: frozenset[str] = frozenset(),
+                            seen: frozenset[str] = frozenset()) -> bool:
     """-> True when this argv element is a value the case BUILT rather than a literal. PURE.
 
     ⛔ ROUND 1, CODEX HIGH. The first version read "not a Constant" as "constructed", so
@@ -998,9 +1033,22 @@ def _element_is_constructed(el: ast.AST, fn: ast.AST | None,
     # ⛔ THE LIVE WORLD IS NEVER A CONSTRUCTED ONE, whatever it is wrapped in. Checked FIRST, before
     # any per-shape rule, because the whole point of round 2's Blocking is that the per-shape rules
     # each let it through under a different spelling.
-    if reads_the_live_world(el, set(guard_globals)):
+    if reads_the_live_world(el, set(guard_globals), case_locals(fn)):
         return False
     if isinstance(el, ast.Name):
+        # ⛔ ROUND 3 BLOCKING, AND IT IS ROUND 2's BLOCKING ONE LOCAL ASSIGNMENT AWAY. The
+        # live-world test ran on the ELEMENT and then the resolved value fell through to
+        # `return True`, so every direct form that round 2 refused came back the moment it was
+        # bound to a name first:
+        #     p = str(ROOT)        ; main([], root=p)   -> param
+        #     p = os.getcwd()      ; main([p])          -> argv
+        #     p = Path(__file__)   ; main([], root=p)   -> param
+        # ⭐ The repair is the RECURSION, not another check: resolving a name re-enters this
+        # function, which begins with the live-world test, so the property is asserted at every
+        # level instead of at the one the reviewer happened to probe. Round 2 fixed two spellings
+        # and round 3 found the third; a rule reached by recursion has no third spelling.
+        if el.id in seen:
+            return False
         value = _last_assigned_value(el.id, fn)
         if value is None:
             idx = _param_index(fn, el.id)
@@ -1009,10 +1057,11 @@ def _element_is_constructed(el: ast.AST, fn: ast.AST | None,
             return False
         if isinstance(value, ast.Constant):
             return False
+        onward = seen | {el.id}
         if isinstance(value, (ast.List, ast.Tuple)):
-            return any(_element_is_constructed(x, fn, tree, depth, guard_globals)
+            return any(_element_is_constructed(x, fn, tree, depth, guard_globals, onward)
                        for x in value.elts)
-        return True
+        return _element_is_constructed(value, fn, tree, depth, guard_globals, onward)
     # ⛔ ROUND 2 H2, SECOND HALF: an ATTRIBUTE fell through to "anything else", so `stdin=sys.stdin`
     # read as a constructed world — the live process state credited as something the case built. An
     # attribute is judged by its BASE under exactly the rule a bare name gets: `tmp.parent` counts
@@ -1022,7 +1071,7 @@ def _element_is_constructed(el: ast.AST, fn: ast.AST | None,
         while isinstance(base, ast.Attribute):
             base = base.value
         if isinstance(base, ast.Name):
-            return _element_is_constructed(base, fn, tree, depth, guard_globals)
+            return _element_is_constructed(base, fn, tree, depth, guard_globals, seen)
     return True
 
 
@@ -1978,6 +2027,78 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("reads_the_live_world names the guard's own globals as the live world",
          (reads_the_live_world(ast.parse("str(ROOT)").body[0].value, {"ROOT"}),
           reads_the_live_world(ast.parse("str(td)").body[0].value, {"ROOT"})), (True, False))
+
+    # ── ROUND 3: the live world behind a LOCAL NAME, and the alias lifetime as a CLASS ────────
+    for label, body in (
+            ("str(ROOT)", "    p = str(ROOT)\n"),
+            ("os.getcwd()", "    p = os.getcwd()\n"),
+            ("Path(__file__)", "    p = Path(__file__)\n"),
+    ):
+        src = _PD + "def _self_test():\n" + body + "    case('x', main([], root=p), 0)\n"
+        case(f"⛔ `{label}` behind a local name is STILL the live world (r3 Blocking)",
+             classify(src).routes, frozenset())
+    _CHAIN = _PD + ("def _self_test():\n"
+                    "    p = str(ROOT)\n"
+                    "    q = p\n"
+                    "    case('x', main([], root=q), 0)\n")
+    case("...and it stays the live world through a SECOND name — the fix is the recursion, which "
+         "is why there is no third spelling to find",
+         classify(_CHAIN).routes, frozenset())
+    _BUILT = _PD + ("def _self_test():\n"
+                    "    p = tempfile.mkdtemp()\n"
+                    "    case('x', main([], root=p), 0)\n")
+    case("...while a tempdir behind a local name still counts", classify(_BUILT).routes,
+         frozenset({PARAM}))
+    _CYCLE = _PD + ("def _self_test():\n"
+                    "    p = q\n"
+                    "    q = p\n"
+                    "    case('x', main([], root=p), 0)\n")
+    # ⛔ A FOURTH DYING CASE, CAUGHT BY THE SWEEP AND NOT BY A REVIEWER. Severing the cycle guard
+    # makes this fixture recurse until Python stops it, and a `RecursionError` escaping the suite
+    # prints no `[FAIL]` line and no summary — so the sweep sees a red suite with nothing to
+    # attribute it to and refuses the kill. Catching it turns "the suite died" into "this case
+    # failed, by name", which is the whole difference between a kill and a mystery.
+    try:
+        _cycle_routes = classify(_CYCLE).routes
+    except RecursionError:
+        _cycle_routes = "RAISED RecursionError"
+    case("...and a resolution CYCLE terminates instead of hanging the guard",
+         _cycle_routes, frozenset())
+
+    for label, name in (("home", "home"), ("cwd", "cwd"), ("argv", "argv")):
+        src = _PD + ("def _self_test():\n"
+                     f"    {name} = tempfile.mkdtemp()\n"
+                     f"    case('x', main([], root={name}), 0)\n")
+        case(f"a built world named `{label}` is a built world (r3 Medium — the lost-credit half)",
+             classify(src).routes, frozenset({PARAM}))
+    case("...while the live reader it is named after is still refused when NOT shadowed",
+         classify(_PD + "def _self_test():\n    case('x', main([], root=os.getcwd()), 0)\n").routes,
+         frozenset())
+    case("case_locals names what the case binds, and NOT what it declares `global`",
+         (sorted(case_locals(ast.parse("def f(a):\n    b = 1\n    import os as c\n").body[0])),
+          sorted(case_locals(ast.parse("def f():\n    global G\n    G = 1\n").body[0]))),
+         (["a", "b", "c"], []))
+
+    _AL3 = ("X = 1\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return X\n"
+            "def _self_test():\n"
+            "    g = globals()\n"
+            "@@R@@"
+            "    g['X'] = 2\n"
+            "    case('x', main([]), 0)\n")
+    for form, spelling in (("    import os as g\n", "an import alias"),
+                           ("    from pathlib import Path as g\n", "a from-import alias"),
+                           ("    for (g,) in [({},)]:\n        pass\n", "a TUPLE for-target"),
+                           ("    _ = [0 for (g,) in [({},)]]\n", "a comprehension target"),
+                           ("    with cm() as (g,):\n        pass\n", "a TUPLE with-target")):
+        case(f"⛔ ...{spelling} kills the alias (r3 High — the third list was still incomplete, "
+             f"so the rule is the STORE CONTEXT now)",
+             classify(_AL3.replace("@@R@@", form)).routes, frozenset())
+    case("...and a subscript write through the alias is NOT a rebinding, which is what makes the "
+         "broad rule safe", classify(_AL3.replace("@@R@@", "")).routes, frozenset({REBIND}))
 
     # ── r2 Claude H1: every way of rebinding a name, not just the one the fix was written for ──
     _AL = ("X = 1\n"
