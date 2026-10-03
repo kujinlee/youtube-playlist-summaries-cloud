@@ -63,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 202 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 218 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -1221,7 +1221,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  ".svg": "image/svg+xml", ".png": "image/png"}[resolved.suffix.lower()]
         body = resolved.read_bytes()
         if resolved.suffix.lower() == ".html":
-            body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
+            # ⛔ THE STANDARD PALETTE FIRST, THEN THE RELOAD CLIENT — backlog #221. Both are
+            # APPENDED, so a page that lacks `</body>` still gets them, and both reach pages
+            # ALREADY ON DISK, which is the whole reason this is injected rather than generated:
+            # 60 served pages are historical artefacts and most cannot be regenerated.
+            # ⚠ `file://` gets neither, deliberately and unchanged — a saved copy stays the
+            # self-contained artifact it was. Unification is a property of being SERVED.
+            body += page_chrome.standard_palette_css().encode() + RELOAD_JS.encode()
         return self._send(200, body, ctype)
 
     def _regenerate(self, payload: dict) -> None:
@@ -1653,6 +1659,115 @@ def _self_test() -> int:
             os.utime(rev_file, (9_999, 9_999))
             return revision(rev_file) != rev_before
         case("revision changes when the file is rewritten later", _rewrite_later)
+
+        # ⛔⛔ THE PALETTE INJECTION, DRIVEN THROUGH THE REAL `do_GET` — backlog #221. Adding the
+        # injection left this suite at 202/202, which is the wiring class: the rule exists and
+        # nothing proves the server sends it. Four separate instances of that shape were found in
+        # this repository on 2026-10-02 alone, three of them inside the fix for the previous one.
+        # ⚠ A `BytesIO` ON `wfile`, NOT A STUBBED `_send`. A stub cannot see the body write —
+        # measured the same day, when severing `self.wfile.write(body)` left a suite fully green
+        # while the server wrote empty bodies to every response. `object.__new__` skips the
+        # socket-wanting `__init__`; nothing in `_send` touches the wire except through `wfile`.
+        def _wire_of(url_path: str) -> bytes:
+            saved_root = globals()["ROOT"]
+            with tempfile.TemporaryDirectory() as _td:
+                _sb = pathlib.Path(_td)
+                (_sb / "probe.html").write_bytes(b"<p>SENTINEL</p>")
+                try:
+                    globals()["ROOT"] = _sb
+                    h = object.__new__(Handler)
+                    h.path = url_path
+                    h.wfile = io.BytesIO()
+                    h.rfile = io.BytesIO(b"")
+                    h.requestline = f"GET {url_path} HTTP/1.1"
+                    h.request_version = "HTTP/1.1"
+                    h.command = "GET"
+                    h.client_address = ("127.0.0.1", 0)
+                    h.server = None
+                    h.close_connection = True
+                    h.log_message = lambda *a, **k: None  # type: ignore[method-assign]
+                    Handler.do_GET(h)
+                    return h.wfile.getvalue()
+                finally:
+                    globals()["ROOT"] = saved_root
+
+        _served = _wire_of("/probe.html")
+        case("do_GET puts the STANDARD PALETTE on the wire, not merely defines it",
+             lambda: b"--fg:#12161c" in _served)
+        case("...and the dark half, so the toggle is unified too",
+             lambda: b"--fg:#e7e9ee" in _served)
+        case("...and the live-reload client still rides with it",
+             lambda: b"/_rev?p=" in _served)
+        case("...and the page's own bytes survive both",
+             lambda: b"<p>SENTINEL</p>" in _served)
+
+        # The palette is a STRING constant too, so its contract is assertable without a browser.
+        # ⛔ ALL FOUR SELECTOR FORMS. `:root` alone is (0,1,0) and the pages carry
+        # `:root[data-theme="dark"]` at (0,2,0), which beats it — unification that collapses the
+        # moment a reader touches the theme toggle is not unification.
+        case("the palette covers the bare :root",
+             lambda: ":root{" in page_chrome.standard_palette_css())
+        case("...the OS dark preference, excluding an explicit light choice",
+             lambda: ':root:not([data-theme="light"])' in page_chrome.standard_palette_css())
+        case("...and BOTH explicit theme choices, at the specificity the pages use",
+             lambda: ':root[data-theme="dark"]{' in page_chrome.standard_palette_css()
+                     and ':root[data-theme="light"]{' in page_chrome.standard_palette_css())
+        # ⚠ fg2 SOFTER THAN fg IS THE PROPERTY THE HUMAN ASKED FOR, in both schemes, and it is
+        # the one a future palette edit could silently lose.
+        case("in light, --fg2 is lighter than --fg — emphasis reads as a change of tone",
+             lambda: page_chrome.STANDARD_LIGHT["--fg2"] > page_chrome.STANDARD_LIGHT["--fg"])
+        case("...and in dark, --fg2 is DIMMER than --fg, which is the same property inverted",
+             lambda: page_chrome.STANDARD_DARK["--fg2"] < page_chrome.STANDARD_DARK["--fg"])
+        # ⛔ THE TWO SCHEMES MUST COVER THE SAME ROLES. A token defined in light and missing in
+        # dark leaves that role resolving to the PAGE's own value in one scheme only — the
+        # corpus half-unified, and visible only to a reader who toggles. Nothing asserted this
+        # until round 1; the invariant was written in a comment and enforced by nothing.
+        case("light and dark define exactly the same role set",
+             lambda: set(page_chrome.STANDARD_LIGHT) == set(page_chrome.STANDARD_DARK))
+        # ⛔ ONE ROLE, ONE VALUE, ACROSS ALL ITS SPELLINGS — round 1's B1. The faint ink is
+        # spelled `--fg3`, `--ink-faint`, `--ink3` and `--ink-3` across this corpus. Aliasing
+        # two of four and calling the rest unreachable cost 23 regressions.
+        # ⛔ DERIVED FROM `FAINT_INK_ROLE`, NOT HARD-CODED — round 2's H3. The first version
+        # listed four spellings inline, so it could not see `--ink2`, `--ink-2` or `--muted`
+        # when the reviewer found them. A case that enumerates its own subject can only ever
+        # check the names its author already knew; reading the declaration makes an eighth
+        # spelling a one-line change in one place.
+        case("every spelling of the faint-ink role carries ONE value, in light",
+             lambda: len({page_chrome.STANDARD_LIGHT[t]
+                          for t in page_chrome.FAINT_INK_ROLE}) == 1)
+        case("...and in dark",
+             lambda: len({page_chrome.STANDARD_DARK[t]
+                          for t in page_chrome.FAINT_INK_ROLE}) == 1)
+        case("...and every spelling is actually IN both palettes, so none is silently absent",
+             lambda: all(t in page_chrome.STANDARD_LIGHT and t in page_chrome.STANDARD_DARK
+                         for t in page_chrome.FAINT_INK_ROLE))
+        # ⛔ AND THE FAINT INK MUST CLEAR AA ON EVERY BACKGROUND THE PALETTE ITSELF DEFINES —
+        # round 2's H2, where `--code`, `--pill` and `--hair` were introduced as backgrounds in
+        # the same commit that tuned the faint ink, and nobody re-checked the pair.
+        def _aa_over_own_grounds(pal: dict) -> bool:
+            import importlib.util as _iu
+            # ⚠ NOT `ROOT` — in this file `ROOT` is the SERVE root (`~/explainers`), not the
+            # repository. Using it here looked right and resolved to a path that does not
+            # exist, and the case then failed with FileNotFoundError rather than on its own
+            # assertion — a red for the wrong reason, which is worse than a green.
+            _here = pathlib.Path(__file__).resolve().parent
+            _sp = _iu.spec_from_file_location("_cpc", str(_here / "check-page-contrast.py"))
+            _m = _iu.module_from_spec(_sp); _sp.loader.exec_module(_m)
+            def _rgb(h):
+                h = h.lstrip("#"); return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 1.0)
+            fg = _rgb(pal["--fg3"])
+            grounds = [k for k in pal if k.endswith("-bg") or k in
+                       ("--bg", "--bg2", "--card", "--panel", "--ground", "--code", "--pill", "--hair")]
+            return all(_m.contrast(fg, _rgb(pal[k])) >= 4.5 for k in grounds)
+
+        case("the faint ink clears AA on every background the palette defines, in light",
+             lambda: _aa_over_own_grounds(page_chrome.STANDARD_LIGHT))
+        case("...and in dark", lambda: _aa_over_own_grounds(page_chrome.STANDARD_DARK))
+        # ⚠ THE VOCABULARY IS THE POINT, not the count — the human: "Point is to have single
+        # layer that decide common look and feel." These are the roles a reader most notices.
+        case("the palette covers the emphasis and semantic roles the pages actually use",
+             lambda: {"--strong", "--h", "--code", "--accent", "--danger", "--warn"}
+                     <= set(page_chrome.STANDARD_LIGHT))
 
         # The client is a STRING constant, so its guards can be asserted without a browser. These
         # are shape checks, not behaviour — the behaviour was driven in a real browser on 2026-08-18.

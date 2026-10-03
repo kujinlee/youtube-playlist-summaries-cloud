@@ -81,6 +81,10 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    # ⟳ 2026-10-02, backlog #221: the contrast harness. Added in the commit that creates it,
+    # because this guard REFUSED a file that declares a count nothing verifies — which is the
+    # right refusal: a number in a docstring with no owner is this repo's most-measured rot.
+    "check-page-contrast.py",
     "check-memory-link.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the

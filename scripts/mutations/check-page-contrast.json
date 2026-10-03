@@ -1,0 +1,134 @@
+[
+ {
+  "name": "the srgb branch stops scaling, so a normalised colour reads as near-black and every ratio is fiction",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        return (vals[0] * 255.0, vals[1] * 255.0, vals[2] * 255.0, alpha)",
+    "        return (vals[0], vals[1], vals[2], alpha)"
+   ]
+  ],
+  "expect": "color(srgb ...) is NORMALISED and scales UP, not down"
+ },
+ {
+  "name": "an unparseable colour is GUESSED as black instead of refusing",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    raise CannotRun(f\"unparseable computed colour {css!r} — the measurement cannot proceed on a \"\n                    f\"colour it does not understand, and guessing one would be a fabricated number\")",
+    "    return (0.0, 0.0, 0.0, 1.0)"
+   ]
+  ],
+  "expect": "an unparseable colour REFUSES rather than guessing — returned instead of refusing"
+ },
+ {
+  "name": "compositing ignores alpha, so translucent text is scored on its declared colour",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    a = fg[3]",
+    "    a = 1.0"
+   ]
+  ],
+  "expect": "a fully transparent foreground becomes the background"
+ },
+ {
+  "name": "the large-text carve-out applies to everything, so small text is held to 3.0",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    large = px >= 24.0 or (px >= 18.66 and weight >= 700)",
+    "    large = True"
+   ]
+  ],
+  "expect": "16px normal weight needs 4.5"
+ },
+ {
+  "name": "the CROSSED branch is severed, so an element that fell below AA is reported as merely WORSENED and the reader cannot tell the two apart",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        crossed = was >= s[\"threshold\"] > s[\"ratio\"]",
+    "        crossed = False"
+   ]
+  ],
+  "expect": "...and the message says CROSSED"
+ },
+ {
+  "name": "a NEW element below AA is admitted silently instead of reported",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "            if s[\"ratio\"] < s[\"threshold\"]:",
+    "            if False:"
+   ]
+  ],
+  "expect": "a NEW failing site is reported rather than admitted silently"
+ },
+ {
+  "name": "the corpus rule accepts fragments, so chromeless files with no palette are measured",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    return 'name=\"viewport\"' in text[:4000]",
+    "    return True"
+   ]
+  ],
+  "expect": "a chromeless fragment is NOT"
+ },
+ {
+  "name": "siblings are merged again, so a passing one can cross below AA behind a failing one",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        counter[base] = n + 1",
+    "        counter[base] = n"
+   ]
+  ],
+  "expect": "...and are numbered in document order, so the numbering is reproducible"
+ },
+ {
+  "name": "gradient-backed text is scored against the colour beneath, which no reader sees",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    scored = [s for s in samples if not s.get(\"bg_uncertain\")]",
+    "    scored = list(samples)"
+   ]
+  ],
+  "expect": "a gradient-backed site is not counted as below AA, however bad its nominal ratio"
+ },
+ {
+  "name": "the VANISHED advisory is silenced, so a baselined page absent from a run says nothing",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    vanished = sorted(k for k in baseline.get(\"samples\", {}) if k not in seen)",
+    "    vanished = []"
+   ]
+  ],
+  "expect": "a baselined site NOT measured this run is reported"
+ },
+ {
+  "name": "a baselined site that leaves the verdict on a gradient is dropped silently again",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    unscored = [s for s in samples if s.get(\"bg_uncertain\") and sample_key(s) in prior]",
+    "    unscored = []"
+   ]
+  ],
+  "expect": "a BASELINED site that becomes gradient-backed is reported, not silently dropped"
+ },
+ {
+  "name": "gradient-backed sites are written into the baseline, so every one reports NO LONGER SCORED forever",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "    return {\"samples\": {sample_key(s): s[\"ratio\"]\n                        for s in samples if not s.get(\"bg_uncertain\")},",
+    "    return {\"samples\": {sample_key(s): s[\"ratio\"]\n                        for s in samples},"
+   ]
+  ],
+  "expect": "a gradient-backed site is NOT written into the baseline"
+ }
+]

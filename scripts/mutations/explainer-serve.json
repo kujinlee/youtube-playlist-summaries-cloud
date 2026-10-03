@@ -107,7 +107,7 @@
     "           if not observed.env_value else"
    ]
   ],
-  "expect": "\u2026and that arm still names why it is there, in both shapes"
+  "expect": "…and that arm still names why it is there, in both shapes"
  },
  {
   "name": "the /src/ 404 re-emits master's unfilled <dir> placeholder",
@@ -115,7 +115,7 @@
   "edits": [
    [
     "                body = src_root_help(observed)",
-    "                body = f\"no source root \u2014 start the server with {SRC_ROOT_ENV}=<dir>\""
+    "                body = f\"no source root — start the server with {SRC_ROOT_ENV}=<dir>\""
    ]
   ],
   "expect": "/src/ 404 renders the pasteable help, not the unfilled <dir>"
@@ -129,7 +129,7 @@
     "SERVABLE = {\".html\", \".md\", \".css\", \".js\", \".svg\", \".png\", \".local\"}"
    ]
   ],
-  "expect": "a real '.env.local' in the root is NOT servable \u2014 the exclusion the reach comment's security verdict rests on"
+  "expect": "a real '.env.local' in the root is NOT servable — the exclusion the reach comment's security verdict rests on"
  },
  {
   "name": "safe_path drops the suffix allowlist entirely",
@@ -162,7 +162,7 @@
     "            copy = __len__ = setdefault = pop = _raise"
    ]
   ],
-  "expect": "\u2026and no surface it once refused has been dropped \u2014 the floor holds"
+  "expect": "…and no surface it once refused has been dropped — the floor holds"
  },
  {
   "name": "revision stops carrying the file's identity",
@@ -184,7 +184,7 @@
     "            root = observed.root if os.environ.get(SRC_ROOT_ENV) or True else None"
    ]
   ],
-  "expect": "driving /src/ never consults the environment \u2014 the _Forbidden property, RATCHETABLE"
+  "expect": "driving /src/ never consults the environment — the _Forbidden property, RATCHETABLE"
  },
  {
   "name": "the listener stops being loopback",
@@ -195,7 +195,7 @@
     "HOST = \"0.0.0.0\""
    ]
   ],
-  "expect": "the listener is loopback \u2014 clause 3 of the /src/ reach verdict"
+  "expect": "the listener is loopback — clause 3 of the /src/ reach verdict"
  },
  {
   "name": "a CORS header is emitted, so any origin can read private source",
@@ -206,14 +206,14 @@
     "        self.send_header(\"Content-Length\", str(len(body)))\n        self.send_header(\"Access-Control-Allow-Origin\", \"*\")"
    ]
   ],
-  "expect": "no CORS header is emitted \u2014 clause 4, the one the whole paragraph rests on"
+  "expect": "no CORS header is emitted — clause 4, the one the whole paragraph rests on"
  },
  {
   "name": "a regenerate TIMEOUT is reported as a successful rebuild",
   "file": "scripts/explainer-serve.py",
   "edits": [
    [
-    "            return self._send(504, (f\"{script} did not finish in {REGEN_TIMEOUT}s \u2014 the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
+    "            return self._send(504, (f\"{script} did not finish in {REGEN_TIMEOUT}s — the page \"\n                                    f\"may be unchanged. NOT REBUILT.\").encode(),\n                              \"text/plain; charset=utf-8\")",
     "            return self._send(200, json.dumps({\"ok\": True, \"page\": want}).encode(),\n                              \"application/json\")"
    ]
   ],
@@ -224,7 +224,7 @@
   "file": "scripts/explainer-serve.py",
   "edits": [
    [
-    "        warn = [l.strip() for l in (r.stdout or \"\").splitlines() if l.strip().startswith(\"\u26a0\")]",
+    "        warn = [l.strip() for l in (r.stdout or \"\").splitlines() if l.strip().startswith(\"⚠\")]",
     "        warn = []"
    ]
   ],
@@ -239,7 +239,7 @@
     "    return 0"
    ]
   ],
-  "expect": "--status exits NON-ZERO when nothing is listening \u2014 a down server is not a pass"
+  "expect": "--status exits NON-ZERO when nothing is listening — a down server is not a pass"
  },
  {
   "name": "md_render stops escaping the double quote safe_href credits it with",
@@ -250,7 +250,7 @@
     ""
    ]
   ],
-  "expect": "md_render escapes BOTH quote characters \u2014 the half safe_href credits it with"
+  "expect": "md_render escapes BOTH quote characters — the half safe_href credits it with"
  },
  {
   "name": "resolve_page glues .html onto a name that already had an extension",
@@ -272,7 +272,7 @@
     "    if pid is None:\n        return False"
    ]
   ],
-  "expect": "pid_alive refuses 0 \u2014 SIGTERM to pid 0 is the whole process group"
+  "expect": "pid_alive refuses 0 — SIGTERM to pid 0 is the whole process group"
  },
  {
   "name": "the allow-list resolves the caller's own string as the script",
@@ -294,7 +294,7 @@
     "                r = subprocess.run([sys.executable, script],"
    ]
   ],
-  "expect": "the argv is exactly [python, SCRIPTS/<allow-listed script>] \u2014 nothing else"
+  "expect": "the argv is exactly [python, SCRIPTS/<allow-listed script>] — nothing else"
  },
  {
   "name": "a generator that exits NON-ZERO is reported as a successful rebuild",
@@ -316,7 +316,7 @@
     "            body = f\"unknown page {want!r}.\""
    ]
   ],
-  "expect": "\u2026and the 400 names the legal set, so the caller is not left guessing"
+  "expect": "…and the 400 names the legal set, so the caller is not left guessing"
  },
  {
   "name": "start() binds a literal of its own instead of the HOST constant",
@@ -327,7 +327,7 @@
     "    with http.server.ThreadingHTTPServer((\"0.0.0.0\", PORT), Handler) as httpd:"
    ]
   ],
-  "expect": "\u2026and start() binds THAT constant, not a literal of its own"
+  "expect": "…and start() binds THAT constant, not a literal of its own"
  },
  {
   "name": "/_stale stops naming WHICH source moved",
@@ -338,7 +338,7 @@
     "            body = verdict"
    ]
   ],
-  "expect": "\u2026and `stale <path>` NAMES the source that moved, never a bare verdict"
+  "expect": "…and `stale <path>` NAMES the source that moved, never a bare verdict"
  },
  {
   "name": "/_stale raises a banner for a page nobody declared sources for",
@@ -371,7 +371,7 @@
     "            pass"
    ]
   ],
-  "expect": "a JSON array is refused \u2014 the contract is an OBJECT"
+  "expect": "a JSON array is refused — the contract is an OBJECT"
  },
  {
   "name": "the wrong-key 400 stops naming the keys it got",
@@ -404,7 +404,7 @@
     "        if False:\n            pass"
    ]
   ],
-  "expect": "/questions actually WRITES the question \u2014 the reply is not the evidence"
+  "expect": "/questions actually WRITES the question — the reply is not the evidence"
  },
  {
   "name": "/questions TRUNCATES the file instead of appending",
@@ -415,7 +415,7 @@
     "        with QUESTIONS.open(\"w\", encoding=\"utf-8\") as fh:"
    ]
   ],
-  "expect": "/questions APPENDS \u2014 an earlier question survives a later one"
+  "expect": "/questions APPENDS — an earlier question survives a later one"
  },
  {
   "name": "the POST route stops reaching the /regenerate handler",
@@ -470,7 +470,7 @@
     "    bare = url_path.split(\"?\", 1)[0].split(\"#\", 1)[0]"
    ]
   ],
-  "expect": "\u2026and the SINGLE-encoded spelling of a dot gets the same refusal"
+  "expect": "…and the SINGLE-encoded spelling of a dot gets the same refusal"
  },
  {
   "name": "the /src/ viewer interpolates the filename into HTML unescaped",
@@ -492,7 +492,7 @@
     "    alt = safe_path(bare + \".html\", root)"
    ]
   ],
-  "expect": "\u2026and so does the DOUBLE-encoded spelling, which the first repair served"
+  "expect": "…and so does the DOUBLE-encoded spelling, which the first repair served"
  },
  {
   "name": "index_html leaves the link TEXT unescaped while encoding the href",
@@ -504,5 +504,16 @@
    ]
   ],
   "expect": "index_html escapes the filename in the LINK TEXT, not only the href"
+ },
+ {
+  "name": "the standard palette is dropped from what the server sends, so every page keeps its own and the corpus stays unified in name only",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "            body += page_chrome.standard_palette_css().encode() + RELOAD_JS.encode()",
+    "            body += RELOAD_JS.encode()"
+   ]
+  ],
+  "expect": "do_GET puts the STANDARD PALETTE on the wire, not merely defines it"
  }
 ]

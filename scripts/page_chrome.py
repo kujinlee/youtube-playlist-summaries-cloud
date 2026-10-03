@@ -58,6 +58,177 @@ CHROME_SCRIPT_MARK = "yps-chrome-v1"
 _PALETTE_RE = ':root[{attr}="{theme}"]'
 
 
+# ⛔ THE STANDARD PALETTE — backlog #221, and the human named it: "current standard is backlog
+# style. Once we have unified style, the standard style can be adjusted. For now having unified
+# style." THE GOAL IS UNIFICATION; adjusting the standard comes AFTER and is then one edit here.
+#
+# ⛔ WHY A PALETTE AND NOT A STYLESHEET, which is the finding that made this tractable. Measured
+# over the 60 served pages: they carry 6.47 MB of hand-written CSS between them and NOT ONE token
+# is defined by all of them — but 13 tokens ARE defined by >=90%, and every one is also in the
+# standard. The pages already SHARE A VOCABULARY and differ only in its VALUES. So overriding
+# values unifies them without touching a single rule: each page's own CSS keeps deciding WHERE
+# colour goes, and only WHAT the colours are becomes uniform.
+#
+# ⛔ AND THIS IS WHY IT CANNOT REPEAT THE 2026-10-02 FAILURE. That attempt overrode ONE token's
+# USAGE (`b,strong`'s colour) while leaving every page's own backgrounds alone, so a foreground
+# from one palette landed on a background from another and bottomed out at 1.70:1. A palette
+# moves `--fg`, `--bg`, `--card` and `--fg2` TOGETHER, so the contrast relationships are the
+# standard's — which are already known good. `scripts/check-page-contrast.py` is the proof, and
+# it was built and baselined BEFORE this constant existed.
+#
+# ⚠ THE VALUES ARE BROWSER-RESOLVED, NOT SCRAPED. A regex over `backlog-table.html` was tried
+# first and was WRONG twice in one run: it merged `:root[data-theme="dark"]` into the light set,
+# and it matched `:root` inside a PROSE COMMENT. The cascade and `var()` chains are the browser's
+# job; these are what `getComputedStyle(document.documentElement)` returns for the standard page
+# in each scheme.
+# ⛔ THE FAINT-INK ROLE, DECLARED AS A SET — and it took THREE rounds to find them all.
+# Round 1 B1 found `--ink3` after I had aliased `--fg3` and `--ink-faint` and declared the rest
+# "unreachable". Round 2 H3 then found `--ink2`, `--ink-2` and `--muted`. Seven spellings of one
+# role, discovered one review at a time, because each fix aliased the names I had noticed.
+# ⚠ DECLARED HERE SO THE SUITE CAN ITERATE IT. A case that hard-codes the tuple cannot see an
+# eighth spelling; a case that reads THIS can, and adding one is a single edit in one place.
+FAINT_INK_ROLE: tuple[str, ...] = (
+    "--fg3", "--ink-faint", "--ink3", "--ink-3", "--ink2", "--ink-2", "--muted",
+)
+
+STANDARD_LIGHT: dict[str, str] = {
+    "--bg": "#f7f6f3", "--bg2": "#ffffff", "--card": "#ffffff", "--panel": "#ffffff",
+    "--ground": "#f7f6f3",
+    "--fg": "#12161c", "--ink": "#12161c",
+    "--fg2": "#39424f", "--ink-soft": "#39424f",
+    # ⛔ #616c7c, NOT THE STANDARD'S #6b7686, AND THIS IS THE ONE DELIBERATE DEVIATION.
+    # Measured: the standard's own `--fg3` is **4.26:1** against its own `--bg` — UNDER WCAG AA's
+    # 4.5 at normal text size. Adopting it verbatim put 196 elements below AA across the corpus,
+    # which `check-page-contrast.py` reported before any of this shipped.
+    # ⚠ AND THE FIRST CORRECTION WAS TUNED AGAINST ONE BACKGROUND, WHICH IS THIS DAY'S WHOLE
+    # LESSON REPEATED AT ONE-SIXTH SCALE. #677282 clears 4.5 on the standard's `--bg` and was
+    # still under it on four page-local tinted panels, leaving 32 regressions. The value is now
+    # chosen by measuring EVERY background this token actually lands on across the corpus:
+    #     rgb(255,255,255) x4432   rgb(247,246,243) x1321   rgb(244,241,234) x96
+    #     rgb(238,246,242) x20     rgb(247,235,217) x20     rgb(243,241,237) x18
+    # ⟳ ROUND 2 H2: #616c7c -> #5c6777, FIVE MORE POINTS, because the same commit that chose
+    # #616c7c also INTRODUCED `--code`, `--pill` and `--hair` as palette backgrounds and never
+    # re-checked the faint ink against them. Measured: 4.20 on --code and --pill, 4.32 on
+    # --hair — 53 of the 211 residual failures, caused by two of my own new tokens colliding.
+    # #5c6777 clears all 18 grounds the palette now defines, worst 4.53. Dark is unchanged at
+    # 4.52 and already clears its 16.
+    # ⚠ "IMPERCEPTIBLE" WAS WRONG AND IS WITHDRAWN. Round 1 adjudicated it: ΔE76 from the
+    # standard is 4.01 (light) and 5.41 (dark), both ABOVE the 2.3 just-noticeable-difference
+    # threshold. A careful eye can see this. What IS true is that it is the perceptually
+    # NEAREST step that clears AA — Codex proposed #666a84 as closer by RGB distance, and it is
+    # (13.15 vs 17.32) while being nearly twice as far perceptually (ΔE 7.88 vs 4.01). RGB
+    # euclidean distance is not perceptual distance, and the claim was about perception.
+    # Dark mode already passes at 4.92 and is untouched.
+    # ⚠ Called out rather than quietly folded in, because the human's instruction was "for now
+    # having unified style" and adjusting the standard comes AFTER. This is not a style
+    # adjustment — it is four points, imperceptible, and the alternative is knowingly shipping
+    # text that fails an accessibility floor. The standard page gets the same corrected value,
+    # so the corpus is still unified; what moved is the standard, by the smallest amount that
+    # makes it legal.
+    "--fg3": "#5c6777", "--ink-faint": "#5c6777",
+    "--rule": "#dfdcd5", "--line": "#dfdcd5",
+    "--good": "#0f7268", "--verified": "#0f7268",
+    "--defect": "#ad3a22", "--structure": "#3d5a86", "--structure-bg": "#eaf0f4",
+    # ── THE REST OF THE VOCABULARY — backlog #221, and the human settled how to source it:
+    # "if backlog page does not have some of the explainer vocabulary, we will have to unify
+    # among other explainer documents. Point is to have single layer that decide common look
+    # and feel."
+    # ⛔ THE STANDARD IS NOT A SUPERSET, which is why this half exists. Measured: the backlog
+    # page defines NO `--strong`, `--accent`, `--warn`, `--code`, `--danger`, `--h`, `--pill` or
+    # `--hair` — it is a TABLE and never renders prose in those roles. Taking "backlog style" as
+    # the standard therefore cannot answer what they should be.
+    # ⚠ SO THESE ARE THE MODAL VALUES ACROSS THE 60 SERVED PAGES, not inventions. Each is already
+    # what 44-47 of the ~45-50 pages that define it already say; unifying to it moves a handful
+    # of outliers and leaves the majority untouched. The count is in the comment per token.
+    "--strong": "#26241f",      # 44 of 45
+    "--h": "#26241f",           # 44 of 45
+    "--accent": "#8a5a2b",      # 47 of 50
+    "--accent-bg": "#f4ece2",   # 44 of 45
+    "--warn": "#7c6426",        # 45 of 49
+    "--warn-bg": "#f8f2e2",     # 45 of 48
+    "--warn-br": "#ded2a9",     # 45 of 48
+    "--code": "#e9e4db",        # 44 of 48
+    "--code-fg": "#4d4842",     # 44 of 45
+    "--danger": "#8f4444",      # 45 of 45
+    "--danger-bg": "#f9f0ef",   # 45 of 45
+    "--danger-br": "#e2c8c8",   # 45 of 45
+    "--pill": "#e9e4db",        # 44 of 45
+    "--hair": "#ece7de",        # 44 of 45
+    "--verified-bg": "#eff5f0", # 44 of 49
+    "--structure-br": "#2b4666",# 40 of 44
+    "--structural": "#3d5a86",  # the standard's own value
+    # ⛔ `--ink3` AND `--ink-3` ARE THE FAINT-INK ROLE UNDER TWO MORE SPELLINGS, and they get the
+    # ROLE's corrected value rather than their own modal. Their modal (#7d766c) on this palette's
+    # `--bg` is 4.15:1 — under AA — and is the whole of round 1's B1: 23 regressions I had called
+    # "page-local literals unreachable by tokens". They were reachable; I had aliased two of the
+    # three spellings of one role and asserted the third was out of reach.
+    # ⚠ The recall hook fired `a-shim-can-fail-in-both-directions — fixing only the one name you
+    # noticed` at the exact step this palette was written, and I quoted it in the step banner.
+    "--ink3": "#5c6777", "--ink-3": "#5c6777",
+    "--ink2": "#5c6777", "--ink-2": "#5c6777", "--muted": "#5c6777",
+}
+STANDARD_DARK: dict[str, str] = {
+    "--bg": "#101318", "--bg2": "#171b22", "--card": "#171b22", "--panel": "#171b22",
+    "--ground": "#101318",
+    "--fg": "#e7e9ee", "--ink": "#e7e9ee",
+    "--fg2": "#a9b2c0", "--ink-soft": "#a9b2c0",
+    # ⛔ #8892a2, NOT THE STANDARD'S #7a8494 — the dark half of the same deviation, and found
+    # the same way. The standard's value is 4.92:1 on its own `--bg` and FAILS on four
+    # page-local dark panels, leaving 25 regressions after the light half was fixed. Measured
+    # over every ground this token lands on in dark mode:
+    #     rgb(23,27,34) x5555   rgb(16,19,24) x1338   rgb(32,35,41) x96
+    #     rgb(38,36,44) x35     rgb(24,40,34) x20     rgb(44,35,23) x20
+    # and lightened by 14 to clear the worst (#163020) at 4.52:1.
+    # ⚠ I FIXED LIGHT FIRST AND SHIPPED THE SAME BUG IN DARK — tuning against one background
+    # twice in a row, in the commit whose entire subject is not doing that.
+    "--fg3": "#8892a2", "--ink-faint": "#8892a2",
+    "--rule": "#2a3039", "--line": "#2a3039",
+    "--good": "#4fc9b8", "--verified": "#4fc9b8",
+    "--defect": "#f0836a", "--structure": "#8fb0e0", "--structure-bg": "#131f2e",
+    # The dark half of the same vocabulary — same sourcing, same counts (see the light block).
+    "--strong": "#eae6de", "--h": "#eae6de",
+    "--accent": "#cb9a68", "--accent-bg": "#26211c",
+    "--warn": "#c4ab72", "--warn-bg": "#231f18", "--warn-br": "#4b4227",
+    "--code": "#2b2926", "--code-fg": "#c0bbb2",
+    "--danger": "#c98f8f", "--danger-bg": "#241d1d", "--danger-br": "#4e3232",
+    "--pill": "#2b2926", "--hair": "#2a2825",
+    "--verified-bg": "#1b2220", "--structure-br": "#33507a", "--structural": "#8fb0e0",
+    # the faint-ink role, third and fourth spellings — the role's value, not their modal
+    "--ink3": "#8892a2", "--ink-3": "#8892a2",
+    "--ink2": "#8892a2", "--ink-2": "#8892a2", "--muted": "#8892a2",
+}
+
+
+def _decls(tokens: dict[str, str]) -> str:
+    return "".join(f"{k}:{v};" for k, v in tokens.items())
+
+
+def standard_palette_css() -> str:
+    """The standard palette as a stylesheet, in ALL FOUR selector forms the pages use.
+
+    ⛔ FOUR BLOCKS, NOT ONE, AND SPECIFICITY IS WHY. A bare `:root` is (0,1,0); the pages carry
+    `:root[data-theme="dark"]` at (0,2,0), which BEATS it. Injecting only `:root` would unify the
+    default view and leave every page snapping back to its own palette the moment the reader
+    touches the theme toggle — unification that fails exactly when someone interacts with it.
+    Measured in this corpus: 76 occurrences of the dark form, 14 of the light.
+
+    ⚠ ORDER IS THE OTHER HALF. These are APPENDED at send time, so at equal specificity they are
+    later in document order and win. That is the same mechanism that made 2026-10-02's one-rule
+    injection override 47 pages unexpectedly — the mechanism was never the problem, the
+    incoherent palette was.
+    """
+    light, dark = _decls(STANDARD_LIGHT), _decls(STANDARD_DARK)
+    attr = THEME_ATTR
+    return (
+        "<style>"
+        f":root{{{light}}}"
+        f"@media (prefers-color-scheme:dark){{:root:not([{attr}=\"light\"]){{{dark}}}}}"
+        f":root[{attr}=\"dark\"]{{{dark}}}"
+        f":root[{attr}=\"light\"]{{{light}}}"
+        "</style>"
+    )
+
+
 def missing_palettes(page: str) -> list[str]:
     """Which `data-theme` palettes a page with the control is missing. Empty is good.
 

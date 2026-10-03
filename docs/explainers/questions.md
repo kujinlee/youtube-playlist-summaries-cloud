@@ -641,6 +641,13 @@ Are these actually share common idea?
 
 ---
 
+## 2026-10-02 16:40:38 — 2026-10-02-topic-recent-prs-found-solved.html
+
+**What was actually solved**
+   > What was actually solvedask
+   Q: the lists of theme 1 to theme 4 and this list what was actually solve appears to be that for 9 days no actual progress has been made. I remember that memory recall had been failing so frequently, we start investigating root cause. Claude native memory retrieval system is not strong enough to hold more than certain number (~100?) of memories. that isn't good enough and industry survey shows that other companies are start using external memory service /Users/kujinlee/Desktop/Claude_Code_Memory_Retrieval_Layer.pdf
+
+The current goal is to have a reliable memory retrieval layer. At least semantic matching was an important progress I think
 ## 2026-10-02 10:58:43 — 2026-10-02-brief-project-status.html
 
 **What could not be checked**

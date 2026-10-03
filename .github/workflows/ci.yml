@@ -382,6 +382,22 @@ jobs:
       - name: check-fixture-variation self-test
         run: python3 scripts/check-fixture-variation.py --self-test
 
+      # ⛔ THE PURE RULES ONLY — the live measurement needs Chromium and this runner has none
+      # (see the note at the top of this file: Playwright browsers stay local).
+      # ⚠ AND NOTHING RUNS THE LIVE GATE AT ALL — not CI, not a hook, not a script. It is a
+      # command a human types. An earlier version of this comment said the live run was "listed
+      # with the other two in docs/dev-process.md"; THERE IS NO SUCH ENTRY and the sentence was
+      # invented — round 1 M1. The step below is honest about what it covers precisely because
+      # a CI step bearing a contrast gate's name, going green without measuring contrast, is
+      # worse than no gate at all.
+      - name: Contrast harness self-test (pure rules only — NOTHING runs the live gate)
+        run: python3 scripts/check-page-contrast.py --self-test
+
+      # The probe's own pure predicates. Round 1 H3: the file's header claimed it "decides
+      # nothing" while holding seven decision rules with no test of any kind.
+      - name: Contrast probe self-test
+        run: node scripts/page-contrast-probe.mjs --self-test
+
       # The CI storage fixture (`scripts/ci/storage-service-fixture.sql`) is a MINIMAL stand-in for
       # tables the storage-api service creates and CI does not run. It is safe only while no gate
       # reads `storage.*`. Run HERE rather than only in `schema-gates.yml`, because this job has no
