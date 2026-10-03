@@ -1376,6 +1376,14 @@ EXPECTED_MUTATIONS = {
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
     "scripts/recall-llm.py": 96,
+    # ⟳ 2026-10-02, ADR-0014's rule D2: this guard is created and registered in the SAME commit —
+    # R4 refuses the file until a manifest exists, which is the contract doing its job on a guard
+    # written minutes earlier. ⭐ TWO of the eighteen are the ADR's own argument rather than
+    # coverage: one severs the unpinned-guard verdict and one severs `main`'s consumption of the
+    # finished list, and NEITHER is reachable by a unit case — they go red only through the case
+    # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
+    # detector cannot see, measured on the guard that enforces the rule.
+    "scripts/check-main-drivable.py": 83,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3023,6 +3031,9 @@ def _self_test() -> int:
                                       "scripts/check-guard-coverage.py",
                                       "scripts/check-handoff-path.py",
                                       "scripts/check-live-schema.py",
+                                      # ⟳ 2026-10-02: ADR-0014's rule D2 arrives with its
+                                      # manifest in the same commit.
+                                      "scripts/check-main-drivable.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
@@ -3868,6 +3879,91 @@ def _self_test() -> int:
     # ⛔ TWO OF THOSE EIGHT WERE BLOCKINGS, AND ONE OF THE TWO WAS THE FIX FOR ROUND 8's OWN H1 —
     # severable the same way the defect it repaired was. The wiring class stands at SIX instances,
     # four of them in code written while fixing the others. Backlog #213.
+    # ⟳ 2026-10-02, D2: 1178 -> 1196. The new guard `check-main-drivable.py` arrives with 18.
+    # ⟳⟳ 2026-10-02, D2 review round 1: 1196 -> 1219. `check-main-drivable` 18 -> 41, and the
+    # shape of the 23 is the finding: TWO Blockings, THREE Highs and TWO Mediums were all the
+    # FALSE-CREDIT direction — a dead call, a dead branch, a `g = globals()` alias, a fourth
+    # route nothing could reach, a restore rule that called a modified copy a restore, and a
+    # PARAM route with no literal discrimination at all. Four of the five guards the round
+    # found misjudged were COMPLIANT and pinned as debt, so the debt fell 29 -> 27 by review
+    # alone. ⚠ Every entry was anchor-checked against the DELIVERED file before being written;
+    # one earlier anchor was orphaned by a same-session refactor and the sweep refused it.
+    # ⟳⟳⟳ 1219 -> 1218, AND THIS IS THE SANCTIONED KIND OF FALL: the `__main__`-exclusion
+    # entry is RETIRED WITH ITS SUBJECT. Round 1's reachability rule subsumes that clause —
+    # a module-level call has no enclosing function — so the clause was dead, measured at 0 of
+    # 44 verdicts changed, and its mutation SURVIVED because no case could tell it from its
+    # absence. The code is deleted; the entry goes with it rather than being left orphaned.
+    # ⟳ 2026-10-02, D2 review round 2: 1218 -> 1227. `check-main-drivable` 40 -> 49, and all
+    # four findings were again the FALSE-CREDIT direction: a suite nothing dispatches, a
+    # subprocess over the live process state, an alias rebound to a plain dict, plus one
+    # lost-credit spelling. ⚠ The ninth entry guards the SUITE'S OWN fixtures: round 2's rule
+    # failed 35 cases on arrival because they were fragments with no dispatch, and the helper
+    # that wires them is now itself mutated — a fixture-shaping helper with no mutation is a
+    # place where every case can quietly stop modelling anything.
+    # ⟳⟳ 2026-10-02, round 2's CLAUDE half: 1227 -> 1239, `check-main-drivable` 49 -> 61.
+    # ⭐⭐ Its Blocking is the deepest defect the rule has had and the three entries at the top
+    # of the new twelve all guard it: the rule asked *is this value COMPUTED* when the
+    # question is *is this a world the case BUILT*, so `Path(__file__).parent.parent`,
+    # `os.getcwd()` and `str(ROOT)` were all credited — on three routes, through ONE shared
+    # decision point. ⛔ And the shape of the miss is the lesson worth the entry: round 1's
+    # Medium fixed `root=ROOT` and round 2's Codex High fixed `cwd=ROOT`, each by comparing
+    # the NAME the reviewer wrote, while the property went unasserted. Two fixes aimed at a
+    # spelling. ⚠ ⟳ CORRECTED BY ROUND 3: this said TWELVE existing anchors were ORPHANED by the
+    # fold, and re-deriving it against `HEAD^`'s manifest gives **6 absent and 1 present-but-
+    # mid-line**, of 40. Twelve was the length of the list my own assertion printed — and that
+    # assertion tested BOTH conditions at once, over a half-finished tree, so the number counted
+    # retargets I performed rather than anchors that needed one. A figure nobody can re-derive
+    # while reading is what this project keeps being burned by. The check was right and now also
+    # refuses an anchor that does not start at a LINE BOUNDARY, after one matched mid-indentation
+    # and left a function with no return.
+    # ⟳ 2026-10-02, round 3: 1239 -> 1244. `check-main-drivable` 61 -> 66 — EIGHT added and
+    # THREE RETIRED WITH THEIR SUBJECT, which is the second sanctioned fall in this slice.
+    # ⭐ Round 2 answered the alias-lifetime High by naming binding forms one at a time; round 3
+    # produced FIVE MORE that still credited a dead alias, and the tell was that the third list
+    # was still incomplete. The clauses are gone, replaced by Python's own enumeration — every
+    # rebinding puts the name in a STORE context — so the three entries naming `with`, `for`
+    # and the walrus have no subject left and retire rather than being retargeted onto a rule
+    # they were not written about. ⚠ Round 3's Blocking is the same shape at the other end:
+    # round 2's live-world test ran on the ELEMENT, so every form it refused came back one
+    # local assignment later. The repair is the RECURSION, which is why there is no third
+    # spelling to find — and why its entry severs the recursive call rather than a name list.
+    # ⟳⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW's recommendation, chosen by the human over a
+    # fourth fold: 1244 -> 1250. `check-main-drivable` 66 -> 72 — 8 added, 14 RETARGETED and
+    # 2 RETIRED WITH THEIR SUBJECT (`case_locals` is gone). ⭐ What the review measured and what
+    # the rewrite answers: **21 of the 21 element-level credits on disk exited through an
+    # un-recursed `return True` that examined nothing**, while the rules that did examine
+    # produced only refusals — including of ADR-0014's own Decision block, live on
+    # `check-ratchet-contract.py`, the one file D1 was applied to. The verdict was a function of
+    # the expression's TOP NODE: 15 of 15 wrapper rows gave the same answer for all six worlds.
+    # The rule is now three leaf classes (LIVE / BUILT / INERT) recursing over whatever the
+    # grammar hands it: 45 of 90 matrix cells wrong -> 0, world-blind rows 15/15 -> 0/15, the
+    # compliance set identical, and `check-ratchet-contract.py` regains the param credit D1
+    # earned it. ⚠ The read estimated 14 orphaned anchors by text-matching; MEASURED 16, then
+    # 19 once a redundant `seen` set was deleted too — a count nobody re-derives, again.
+    # ⟳ ROUNDS 4 AND ITS CLAUDE HALF, 2026-10-03: 1249 -> 1255 -> 1260; `check-main-drivable`
+    # 66 -> 71 -> 77 -> 82, with FOUR retirements-with-subject along the way.
+    # ⛔⛔ THE REWRITE'S PRE-COMMITTED FALSIFIER LANDED, and one of the newest entries exists
+    # to keep it landed. Round 4's commit claimed *"there is no node list left to extend"* and
+    # cited adding `ast.keyword` to that list as proof it could not — but the list WAS the
+    # `isinstance(c, ast.expr)` child filter, two grammar categories short: `ast.arguments`
+    # (lambda defaults) and `ast.comprehension` (iter/ifs). Measured over 20 wrappers x 6
+    # worlds: 15 of 120 cells wrong, 5 of 20 rows world-blind, against a claimed 0 of 90 and
+    # 0/15. ⟳ The rule survives only because the CONVERGING fix DELETES the list —
+    # `_expr_children` descends through any non-expression node without naming a kind — and the
+    # explicit `keywords` line added as proof is subsumed and retired with it.
+    # ⚠ Also from that half: the reachability floor had a SECOND SITE no mutation anchored, a
+    # nested `nonlocal` could overwrite a credited world, and `_last_assigned_value` had ZERO
+    # callers while still implementing the last-binding-wins rule the rewrite had replaced.
+    # ⟳ 82 -> 81, a FIFTH retirement-with-subject, same cause as the other four: the new
+    # `_expr_children` refused to descend into `ast.stmt`, its mutation SURVIVED, and an
+    # `ast.expr` HAS no statement children — so the clause guarded an input the function never
+    # receives. Deleted; the caller's type is the contract. ⭐ Every defensive clause this rule
+    # has shed was found the same way: by a mutation that could not die.
+    # ⟳ 2026-10-03, ROUND 5 against the FROZEN tree: 1259 -> 1261, 81 -> 83. ⭐ TWO Mediums and
+    # BOTH ABOUT THE SUITE RATHER THAN THE RULE — an unexercised keyword branch in the
+    # parameter hop, and a seventh case that died rather than reported. The rule's logic went
+    # unchanged for the first time in five rounds, and the falsifier did NOT land again: the
+    # grammar-category traversal held against the reviewer's adversarial cells.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3877,7 +3973,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1178)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1261)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

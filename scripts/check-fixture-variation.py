@@ -300,6 +300,50 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "check-main-drivable.py": (
+        # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
+        # `case_locals` are GONE, deliberately: the review measured that the rule
+        # dispatched on an expression's TOP NODE and defaulted to True — 21 of 21
+        # element-level credits on disk exited that default without a child being
+        # examined — so the whole expression rule was replaced by `world_class`, three
+        # leaf classes recursing over the grammar. Those keys retire WITH their
+        # functions and `world_class`'s own parameters take their place.
+        # ⚠ DERIVED BY RUNNING `analyse()`, not edited by hand: a first attempt added
+        # `_bound_values` and `guard_world_globals`, which this guard does not examine
+        # because the suite does not drive them at two call sites — and it said so.
+        "argv_forwarders.tree",
+        "assess.debt",
+        "assess.texts",
+        "assess.whole",
+        "classify.path",
+        "classify.text",
+        "computed_argv.expr",
+        "computed_argv.fn",
+        "computed_argv.tree",
+        "computed_argv.world",
+        "dispatches_a_suite.tree",
+        "global_writes.aliased",
+        "global_writes.fn",
+        "globals_aliases.aliased",
+        "globals_aliases.fn",
+        "live_substitutions.aliased",
+        "live_substitutions.fn",
+        "live_substitutions.lineno",
+        "live_substitutions.writes",
+        "main.argv",
+        "main.root",
+        "module_globals.tree",
+        "note_globals_imports.tree",
+        "suite_main_calls.tree",
+        "suite_reachable.tree",
+        "world_class.depth",
+        "world_class.expr",
+        "world_class.fn",
+        "world_class.tree",
+        "world_class.world",
+        "world_names.start",
+        "world_names.tree",
+    ),
     # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
     # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
     # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not

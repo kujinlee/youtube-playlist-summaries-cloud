@@ -2210,11 +2210,47 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       2 cases; it catches round 9's Blocking (52/54) AND a `BASELINE` severance that #213's guard
       demands no entry for. `check-surface-recall.py` is the expensive one — three defaulted rule
       parameters must come out first.
-- [ ] **D2 — one bit per guard**: does the self-test drive `main()` over a world the case built?
-      ⛔ **Do not write it as drafted** — sub-condition 2 false-positives on
-      `check-fixture-variation.py`, which drives `main()` 14 times from `_self_test()` over
-      constructed paths passed through `argv`. It must admit argv-as-world. Exposure is **29 of
-      36**, not the 31 the review stated (coordinator re-derivation; drivers are 7, not 5).
+- [x] **D2 — one bit per guard — BUILT 2026-10-02 as `scripts/check-main-drivable.py`** (74 cases,
+      18 mutations, two CI steps). It admits **three** routes — a world parameter, an `argv` that
+      names a computed path, and a global substitution that is still LIVE at the call — so the
+      drafted false positive never shipped: `check-fixture-variation.py` passes on `argv+rebind`.
+      ⭐ **Measured exposure 29 of 37, pinned by name in `MAIN_DEBT`** and reconciled in both
+      directions; the set came from the tool's own run, not from a list written beside it, and the
+      hand-written list it replaced was wrong about two files. ⛔ **Three defects the first live run
+      found in the rule itself**, each now a named regression case: an order-dependent single-route
+      verdict (the ADR's exemplar reported `rebind`, not the `argv` it is cited for); unwalked tuple
+      assignment targets (false NEGATIVE on `check-plan-file-tags.py`, and `check-rc-contract.py`
+      credited from the wrong call site — right answer, wrong reason); and substitution-without-
+      restore (false CREDIT on `check-dashboard-entry.py`, whose `FLAG` swap is restored 1,160 lines
+      before its `main` call). ⚠ Plus one performance defect worth the row: the rule was accidentally
+      cubic (1.99s on one file, 29s of CPU under a single mutation, sweep unfinishable) — now 0.076s,
+      with the cache pinned by a call-counting case rather than a stopwatch.
+      ⤳ **#222 filed, NOT folded:** D2 asks about `main()`, and the same wiring class turned up four
+      times the same afternoon in `explainer-serve.py`'s `do_GET` and `_send`. Widening the subject
+      to *the shipped entry point* is a decision about an accepted ADR, not an implementation detail.
+- [x] **THREE adversarial rounds, then a SCOPED ARCHITECTURE REVIEW — armed by thrashing, chosen by
+      the human over a fourth fold (2026-10-03).** Rounds 1–3 produced **19 findings**, and each
+      round found the previous round's fix had been aimed at the SPELLING a reviewer wrote rather
+      than at the property: `root=ROOT` → `cwd=ROOT` → `str(ROOT)`; four binding forms → five more;
+      eleven wrappers → seventeen. ⭐ **What the review measured, and it is the number that decides
+      everything: of the 21 element-level credits on disk, 21 exited through an un-recursed
+      `return True` that examined nothing — ZERO came from a rule that examined the expression** —
+      while the rules that did examine produced only refusals, including of **ADR-0014's own
+      Decision block**, live on `check-ratchet-contract.py`, the one guard D1 was applied to in
+      #360. The verdict was a function of the expression's TOP NODE: **15 of 15 wrapper rows gave
+      the same answer for all six worlds.** ⛔ And the two defects were MASKING each other — fixing
+      the import conflation alone takes false refusals to 0 and pushes false credits UP.
+      ⤳ **Rewritten as three leaf classes recursing over the grammar:** 90-cell matrix **45 wrong →
+      0**, world-blind rows **15/15 → 0/15**, canonical ADR repairs **0 of 5 → 5 of 5**, compliance
+      set IDENTICAL, 191 lines → 166, and `check-ratchet-contract.py` regains the `param` credit D1
+      earned it. 198 cases, 71 mutations. ⭐ Its pre-committed falsifier is *a future round adding a
+      node kind to a list inside it*; all three defects found while building it went the other way —
+      one added a grammar category, two DELETED a clause.
+      Review: [`docs/reviews/architecture-review-2026-10-03.md`](reviews/architecture-review-2026-10-03.md).
+      ⤳ **#224 filed, NOT resolved:** ADR-0014 asks D2 about a RUN and the implementation answers
+      about SOURCE TEXT — a fork written down nowhere, which three rounds argued the consequences
+      of. The dynamic reading was costed (87s over 44 guards, 7 compliant) and is blind to 3 of the
+      10 current credits, so the honest proposal is a dynamic half BESIDE the static rule.
 - [x] **#213's `ast` guard SUPERSEDED as the remedy (done in #360)** — implemented and run; its reach shrinks
       at exactly the rate the repair proceeds. Row amended with the measurements.
 - [x] **#216 filed (in #360)** — a comment asserting a defence the code does not implement
