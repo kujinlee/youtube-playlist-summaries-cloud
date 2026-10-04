@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 83,
+    "scripts/check-main-drivable.py": 112,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -3964,6 +3964,45 @@ def _self_test() -> int:
     # parameter hop, and a seventh case that died rather than reported. The rule's logic went
     # unchanged for the first time in five rounds, and the falsifier did NOT land again: the
     # grammar-category traversal held against the reviewer's adversarial cells.
+    # ⟳ 2026-10-03, THE ROUND-5 FOLD: 1261 -> 1291, `check-main-drivable` 83 -> 113. THIRTY
+    # entries, and the distribution is the finding — 21 of the 30 guard the SUITE's ability to
+    # report rather than the rule's ability to decide. ⭐ NINE OF THEM ARE DYING CASES: a case
+    # whose subject RAISES prints no `[FAIL]` line, so the mutation at that line goes red with
+    # nothing to attribute it to and `--mutate .` refuses the kill — the site is unmutatable
+    # while looking covered. The slice has now found SEVENTEEN, and the rule learned the hard
+    # way is that the wrap belongs at the site that RAISES, which is twice now NOT the site that
+    # names the rule (round 2's own pin-stale Medium dies one statement earlier, inside
+    # `assess`). ⚠ `_wired`'s precondition is deliberately NOT among them: that line already
+    # carried a CAUGHT entry mutating it the other way, so it was never unmutatable, and a
+    # second mutation of one line is an entry that measures nothing new.
+    # ⭐ THE OTHER NINE ARE THE BLOCKING AND THE TWO HIGHS, and each fold had a defect of its
+    # own that only the severance found: B1 widened `LIVE_WORLD_NAMES` while NOTHING READ that
+    # constant, so `Path(__spec__.origin)` kept its credit and the Low about a constant with
+    # zero readers was the same defect seen from the other side; H1 fixed seven restore
+    # spellings and left `{k: v for k, v in saved.items()}` false-crediting; H2's own new clause
+    # tested the SPELLING (`value.id == name`) and was not merely dead but WRONG — a case that
+    # builds a world into a local of the same name LOST its credit, measured.
+    # ⟳ 83 -> 113 is +30 and SIX DELETIONS with no entry at all, which is the sanctioned shape:
+    # three clauses provably subsumed (the `Starred` unwrap, the Constant's explicit
+    # `return INERT`, `argv_forwarders`' main skip), one unreachable by construction
+    # (`suite_reachable`'s `funcs.get` None test — `suite_entries` admits only names in `funcs`),
+    # and ⭐⭐ A PAIR THAT MASKED EACH OTHER: `world_names` carried TWO guards for an absent seed,
+    # so severing either left the other returning the same answer and NEITHER could be killed —
+    # and the case written for one of them passed against both. Removing the unreachable half is
+    # what made the reachable half falsifiable. A mutation that cannot die is not evidence that
+    # the clause does nothing; it can equally be evidence of a SECOND clause nobody looked for.
+    # ⟳ 113 -> 112, A SIXTH RETIREMENT-WITH-SUBJECT, and the SWEEP found it rather than any
+    # reading: round 1's High mutated `if isinstance(value, ast.Name): return value.id in holders`
+    # and that clause is gone — `_is_restore_value` decides by provenance now, with no name test
+    # to widen. Its defect is carried unchanged by the new `restore-adds-no-literal` entry, which
+    # names the SAME case. Retired rather than retargeted onto a rule it was not written about.
+    # ⚠ FOUR MORE ANCHORS WERE ORPHANED BY THE SAME FOLDS and are RETARGETED, not retired — the
+    # rules they test all still exist, one line away. ⭐ And the sweep caught something a
+    # severance by hand could not: one entry **SURVIVED** because round 5's own Blocking fix
+    # MASKED IT. The new no-argument-constructor clause answers `getcwd()` one step earlier, so
+    # the bare-name live-reader branch stopped being reached, its mutation stopped dying, and the
+    # case went on passing. The case now asserts a reader called WITH an argument and the bare
+    # name itself — shapes no other clause can answer. **Second masking pair in one fold.**
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -3973,7 +4012,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1261)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1290)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

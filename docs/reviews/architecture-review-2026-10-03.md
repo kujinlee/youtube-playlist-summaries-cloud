@@ -247,6 +247,48 @@ whether D2 should be answered by running is a different one.
   honest form of this falsifier is therefore **"a defect whose only fix is to extend a list, where
   removing the list is not available"** — the 2026-10-03 instance had removal available and took
   it. If removal is ever unavailable, the subject is enumerative and this review was wrong.
+
+  ### ⛔⛔ FIRED A SECOND TIME, ROUND 5, AND THIS TIME REMOVAL IS NOT AVAILABLE
+
+  **The honest form above has now been met, so the sentence it protects does not survive.** Round
+  5's Claude half landed it on a *name* list rather than a node-kind list — `LIVE_WORLD_READERS`,
+  the set of standard-library expressions that read ambient process state. Measured: `classify()`
+  over fourteen worlds, each the sole `root=` argument of a `main` call, gave **thirteen false
+  credits**, and the only three refusals were exactly the three names the list happened to hold.
+  `Path('.')` is the current working directory. `Path(sys.modules['__main__'].__file__)` defeats
+  the `__file__` test with one subscript.
+
+  **Both alternatives were costed by running them, not argued.** Inverting the `Call -> BUILT`
+  default fixes the direction but then `tempfile.mkdtemp()`, `io.StringIO()` and
+  `Path('/tmp/fixture')` — the three exemplars the rule's own docstring names — lose their credit
+  unless a *constructor* allowlist replaces the *reader* list: **the list relocates, it does not
+  go.** Requiring a case-local binding chain refuses `main([], root=tempfile.mkdtemp())`, which is
+  ADR-0014's own D1 idiom. `_expr_children` could delete its list because **`ast` enumerates the
+  grammar**; nothing enumerates "stdlib expressions that read ambient process state", because that
+  is a semantic fact about what those functions DO. `tempfile.gettempdir()` and
+  `tempfile.mkdtemp()` differ in nothing a parser can see.
+
+  ⭐ **The precise reading, which is narrower than "this review was wrong".** This review was right
+  about the **traversal**, and that half stands unchanged: 45 of 90 matrix cells wrong → 0, 15 of
+  15 world-blind wrapper rows → 0, verified again at round 5 against adversarial cells. It
+  **overclaimed about the leaf vocabulary**, a layer it never analysed — its measurement was of
+  dispatch on the top node, and the leaves were out of scope of every figure in it. So: the rewrite
+  was correct and the slogan was too broad. The static rule is irreducibly enumerative at **one of
+  its three leaf sources**, and the file now says so beside the list rather than repeating the
+  slogan.
+
+  ⤳ **And this is decisive evidence for backlog #224**, which is where the finding goes rather than
+  into a further round of widening. #224 records that ADR-0014 asks D2 about a **run** while this
+  implementation answers about **source text**; the fork went unnamed for three rounds. A dynamic
+  observation — does the suite still pass with the repository absent? — decides *exactly* what this
+  list stands in for, and decides it without enumerating anything. The list is therefore the price
+  of the static reading, not a defect inside it.
+
+  ⚠ **The enumerative tax, made concrete and measured on the fix itself:** adding a bare `"path"`
+  so that `sys.path` would read as live made `os.path.join(td, 'f')` — a world the case built —
+  read as live too. One widening, one false refusal, caught only because a control was run in the
+  other direction. The repair was `LIVE_WORLD_QUALIFIED`, which pairs a tail with its module; that
+  is a second list, which is the point.
 - **The claim that the two defects were masking each other:** a measurement showing false credits do
   NOT rise when the import conflation is fixed alone.
 - **The claim that today's verdicts were sound:** a guard among the 10 whose credited call site
