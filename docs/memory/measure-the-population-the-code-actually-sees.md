@@ -137,3 +137,21 @@ evaporated with the tool call — then the *same* pipe defect recurred within th
 occurrence was a different command. **If the repair does not land in a file that outlives the turn — a
 memory, a script, a checklist — it is an instance fix wearing the word "class".** Related:
 [[after-fixing-search-for-the-class]], [[a-check-result-is-not-the-claim]].
+
+⟳ **2026-10-04, AND IT COST THREE WRONG PROGRESS REPORTS — a watcher that matched ITSELF.**
+`until ! pgrep -f "partial-sweep.py"; do sleep 60; done` can never terminate: `pgrep -f` matches on
+the **whole command line**, and the waiter's own command line contains the string `partial-sweep.py`
+inside its quoted pattern. So the loop found "a process" forever, I reported *"still RUNNING"* three
+times, and a stale waiter from an earlier sweep had been spinning on the same bug for over an hour.
+The real signal was the output file's **mtime**, unchanged for 23 minutes.
+
+⛔⛔ **AND THE KNOWN-POSITIVE CHECK THIS FILE PRESCRIBES WAS ALSO WRONG.** I ran
+`pgrep -f "[p]artial-sweep[.]py"`, got three PIDs, and read that as *the pattern finds the real
+sweep*. All three were the stale **waiters** — the bracket trick protects the pattern, not the
+haystack, and their command lines held the unbracketed literal. **A known-positive check is only
+evidence if you confirm WHICH object matched**, not that something did.
+
+**How to apply:** never wait on `pgrep` for a process whose name appears in the waiting command.
+Wait on a signal the subject itself emits and the watcher cannot contain — a completion marker in
+the output (`until grep -q "^elapsed" out`), a sentinel file, or the process's exit via
+`run_in_background`. See [[a-hang-is-not-a-diagnosis]].
