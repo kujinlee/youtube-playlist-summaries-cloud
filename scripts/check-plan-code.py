@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 112,
+    "scripts/check-main-drivable.py": 116,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4003,6 +4003,29 @@ def _self_test() -> int:
     # the bare-name live-reader branch stopped being reached, its mutation stopped dying, and the
     # case went on passing. The case now asserts a reader called WITH an argument and the bare
     # name itself — shapes no other clause can answer. **Second masking pair in one fold.**
+    # ⟳ 2026-10-03, ROUND 6's CODEX HALF: 1290 -> 1294, `check-main-drivable` 112 -> 116. NOT
+    # CONVERGED, and ⭐⭐ TWO OF ITS FOUR FINDINGS ARE DEFECTS THE ROUND-5 FOLD INTRODUCED, which
+    # is the shape this component keeps producing.
+    # ⛔ THE HIGH IS THE BLOCKING'S OWN FIX, FIRING IN THE OTHER DIRECTION. Widening
+    # `LIVE_WORLD_READERS` to close 13 false CREDITS added `resolve`/`absolute` beside the
+    # pre-existing `abspath`/`realpath`, and the attribute branch answers on the TAIL — so
+    # `Path(tempfile.mkdtemp()).resolve()` went to DEBT. Five spellings, all false REFUSALS, two
+    # of them pre-dating this slice. ★ The repair is NOT a shorter list: a NORMALISER returns
+    # something exactly as live as its base, so descending (the branch's default) is right at both
+    # polarities, while an AMBIENT READER injects state its base never held and must stay listed.
+    # ⛔ AND THE OTHER HIGH REFUTES A DELETION THIS FOLD JUSTIFIED IN WRITING. The lambda-parameter
+    # subtraction was removed on the argument that *a lambda's parameters are `ast.arg`, not
+    # `ast.Name`, so they never enter `names`* — true of the PARAMETER and irrelevant, because a
+    # REFERENCE to it in the body is an `ast.Name`. `(lambda x: x)(saved)` beside a local `x`
+    # read the restore as a substitution. The severance could not kill it only because no case
+    # put a lambda in a restore value, and "cannot die" was again read as "does nothing" — the
+    # error documented two paragraphs above, committed in the same commit that documented it.
+    # ⟳ Plus a THIRD masking pair, and a tenth dying case. The subprocess argv shape test was
+    # written TWICE; the second copy could not be killed because `names_self` is false whenever
+    # argv is not a list, so the block it lives in is never entered — a guard masking its own
+    # duplicate. Hoisted to one binding, which removes both at once. Severing what remains raises
+    # at the FIRST real guard on disk whose subprocess argv is a bare NAME, so that case now
+    # catches. ⚠ The hoist orphaned round 4's extra-argv anchor, RETARGETED not retired.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -4012,7 +4035,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1290)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1294)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

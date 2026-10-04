@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 278 cases
+    python3 scripts/check-main-drivable.py --self-test   # 292 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -154,7 +154,13 @@ PARAM, ARGV, REBIND, SUBPROC = "param", "argv", "rebind", "subproc"
 # `__file__` and the guard's own module globals are the live repository by definition; these
 # functions READ it. An expression resting on any of them is the world `main` would have resolved
 # by itself, however much arithmetic is wrapped around it.
-LIVE_WORLD_NAMES = {"__file__", "__spec__", "__loader__", "__package__"}
+LIVE_WORLD_NAMES = {"__file__", "__spec__", "__loader__", "__package__", "__cached__"}
+
+# ⛔ ROUND 6, CODEX BLOCKING: the module NAMESPACE is another spelling of every name above.
+# `vars()["__file__"]` and `globals()["__file__"]` reach the live module dict and subscript it,
+# so the dunder never appears as a Name and every test above misses it — measured, both
+# classified `param`. A no-argument call to one of these IS the live namespace.
+NAMESPACE_READERS = {"vars", "globals", "locals", "dir"}
 
 # ⛔⛔ THIS LIST IS IRREDUCIBLE, AND SAYING SO IS THE POINT — it is the second landing of this
 # file's own pre-committed falsifier, and the one with no escape.
@@ -188,8 +194,16 @@ LIVE_WORLD_READERS = {
     "getcwd", "getcwdb", "cwd", "curdir", "getpwd",
     # the environment and the user
     "environ", "getenv", "environb", "home", "expanduser", "expandvars",
-    # paths resolved AGAINST the ambient directory
-    "realpath", "abspath", "resolve", "absolute", "samefile", "relpath",
+    # ⛔ ROUND 6, CODEX HIGH, AND THE WIDENING THAT CAUSED IT WAS MINE. `resolve`, `absolute`,
+    # `abspath`, `realpath`, `relpath` and `samefile` WERE LISTED HERE and they do not belong:
+    # the attribute branch returns LIVE on the TAIL ALONE, so `Path(tempfile.mkdtemp()).resolve()`
+    # — a world the case plainly built — went to DEBT. Measured, five spellings, all false
+    # REFUSALS. ★ THE SPLIT IS PRINCIPLED AND IT IS NOT A LIST DECISION: a NORMALISER returns
+    # something exactly as live as what it is given, so descending to its base (which the branch
+    # already does by default) is the right answer at both polarities — `Path('.').resolve()` is
+    # still LIVE through the literal. An AMBIENT READER injects state its base does not contain
+    # (`expanduser` reads $HOME, `getcwd` reads the process) and must stay. ⚠ `abspath` and
+    # `realpath` predate this slice, so this is a pre-existing false debt as well as a new one.
     # the running process and its module table
     # ⚠ `path`, `modules` and `prefix` are DELIBERATELY NOT HERE — they are in
     # `LIVE_WORLD_QUALIFIED`, because a bare `"path"` for `sys.path` made `os.path.join(td, "f")`
@@ -835,12 +849,21 @@ def _is_restore_value(value: ast.AST, holders: set[str], locals_: frozenset[str]
     # function — so the copy everyone writes by hand kept its credit while `dict(sv)` lost it.
     # Comprehension targets and lambda parameters are bound BY this expression, derived from it
     # rather than listed: `ast` says which nodes introduce them.
-    # ⚠ A LAMBDA'S PARAMETERS NEED NO SUBTRACTION and the first draft of this subtracted them
-    # anyway. They are `ast.arg` nodes, not `ast.Name`, so they never enter `names` in the first
-    # place — measured, the clause changed nothing and the severance could not die. Deleted rather
-    # than defended, which is the sixth clause this file has lost on exactly that evidence.
+    # ⛔⛔ THE LAMBDA HALF WAS DELETED AND ROUND 6 PUT IT BACK, and the reasoning that deleted it
+    # is the thing worth recording. I argued: *a lambda's parameters are `ast.arg` nodes, not
+    # `ast.Name`, so they never enter `names`* — TRUE OF THE PARAMETER, and irrelevant, because a
+    # REFERENCE to it in the body is an `ast.Name` like any other. `(lambda x: x)(_sv)` beside a
+    # local `x` reads `x` as a foreign case-bound leaf and calls the restore a substitution.
+    # ⚠ The severance could not kill it because no case put a lambda in a restore value, and I
+    # read "cannot die" as "does nothing" — the exact error this file documents twice elsewhere,
+    # committed while documenting it. A name bound BY this expression is not a leaf of the case,
+    # whichever construct binds it.
     internal = {n.id for c in ast.walk(value) if isinstance(c, ast.comprehension)
                 for n in ast.walk(c.target) if isinstance(n, ast.Name)}
+    internal |= {a.arg for lam in ast.walk(value) if isinstance(lam, ast.Lambda)
+                 for a in (lam.args.posonlyargs + lam.args.args + lam.args.kwonlyargs
+                           + ([lam.args.vararg] if lam.args.vararg else [])
+                           + ([lam.args.kwarg] if lam.args.kwarg else []))}
     names = {n.id for n in ast.walk(value) if isinstance(n, ast.Name)} - internal
     bound_here = names & (locals_ | holders)
     if not (names & holders):
@@ -968,9 +991,16 @@ def subprocess_self_calls(tree: ast.Module,
             # and it is not a path to anything. This asks a different question: *does this argv
             # name THIS SCRIPT*, for which `__file__` is the spelling. Sharing the set here would
             # be a vocabulary collision, not a de-duplication.
+            # ⛔ ROUND 6, CODEX MEDIUM, AND A THIRD MASKING PAIR. This shape test was written
+            # TWICE, here and again inside the `built` computation below. The second copy could
+            # not be killed and the reason is structural: `names_self` is false whenever argv is
+            # not a list, so the block the second copy lives in is never entered — one guard
+            # masking its own duplicate. Hoisted to a single binding, which removes the second
+            # copy and the duplication at once. One rule, one place.
+            elements = argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else []
             names_self = any(
                 isinstance(x, ast.Name) and x.id == "__file__"
-                for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])
+                for el in elements
                 for x in ast.walk(el))
             if names_self:
                 # ⛔ ROUND 2 HIGH: this read the mere PRESENCE of the keyword as a constructed
@@ -980,7 +1010,7 @@ def subprocess_self_calls(tree: ast.Module,
                             and _element_is_constructed(kw.value, fn, tree, 0, world)
                             for kw in node.keywords) or any(
                     _element_is_constructed(el, fn, tree, 0, world)
-                    for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])
+                    for el in elements
                     if not any(isinstance(x, ast.Name) and x.id in ("__file__", "sys")
                                for x in ast.walk(el)))
                 if built:
@@ -1290,7 +1320,7 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         if not expr.args and not expr.keywords:
             callee = {n.attr for n in ast.walk(expr.func) if isinstance(n, ast.Attribute)}
             callee |= {n.id for n in ast.walk(expr.func) if isinstance(n, ast.Name)}
-            if callee & (LIVE_WORLD_READERS | CWD_CONSTRUCTORS):
+            if callee & (LIVE_WORLD_READERS | CWD_CONSTRUCTORS | NAMESPACE_READERS):
                 return LIVE
         return BUILT
     return INERT
@@ -2274,6 +2304,31 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...and a value naming NO saved holder is not a restore however copy-shaped it looks",
          _is_restore_value(ast.parse("dict(other)").body[0].value, {"_sv"}, frozenset({"other"})),
          False)
+    # ⛔ ROUND 6, CODEX HIGH: THE CLAUSE I DELETED AND HAD TO PUT BACK. A lambda's PARAMETER is
+    # an `ast.arg`, but a REFERENCE to it in the body is an `ast.Name` — so `(lambda x: x)(_sv)`
+    # beside a local `x` read `x` as a foreign case-bound leaf and called the restore a
+    # substitution. Three rows, because the discrimination is between the parameter's name
+    # COLLIDING with a local and the value genuinely naming that local.
+    _R6L = ("import tempfile\nROOT = 1\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return ROOT\n"
+            "def _self_test():\n"
+            "    _sv = ROOT\n"
+            "    x = tempfile.mkdtemp()\n"
+            "    globals()['ROOT'] = tempfile.mkdtemp()\n"
+            "@@R@@"
+            "    case('x', main([]), 0)\n")
+    case("⛔ a restore THROUGH A LAMBDA whose parameter shadows a local is still a restore "
+         "(r6 Codex High — the clause deleted on the reasoning that `ast.arg` is not `ast.Name`)",
+         (classify(_R6L.replace("@@R@@", "    globals()['ROOT'] = (lambda x: x)(_sv)\n")).routes,
+          classify(_R6L.replace("@@R@@", "    globals()['ROOT'] = (lambda q: q)(_sv)\n")).routes),
+         (frozenset(), frozenset()))
+    case("...while the same lambda applied to the LOCAL is a genuine substitution, which is what "
+         "the subtraction must not swallow",
+         classify(_R6L.replace("@@R@@", "    globals()['ROOT'] = (lambda x: x)(x)\n")).routes,
+         frozenset({REBIND}))
     case("...and MERGING another value the case built into the saved one is a substitution, "
          "even though it adds no literal of its own",
          classify(R5_RESTORE.replace("    _sv = X\n",
@@ -2648,7 +2703,11 @@ def _self_test() -> int:                                      # noqa: C901 — a
                                       "`__file__`"),
             ("Path(sys.modules['__main__'].__file__)", "⭐ `__file__` LAUNDERED ONE HOP through "
                                                        "`sys.modules` — one subscript defeated "
-                                                       "the whole LIVE test")):
+                                                       "the whole LIVE test"),
+            ("Path(__cached__)", "the bytecode path beside the guard's own file (r6 Codex)"),
+            ("Path(vars()['__file__'])", "⭐ the module NAMESPACE subscripted — the dunder never "
+                                         "appears as a Name at all (r6 Codex)"),
+            ("Path(globals()['__file__'])", "...and the other spelling of that namespace")):
         case(f"⛔ `{_expr}` is the live repository — {_what} (r5 Blocking)", _world(_expr),
              frozenset())
     for _expr in ("Path.cwd()", "os.getcwd()", "Path(__file__)"):
@@ -2662,6 +2721,21 @@ def _self_test() -> int:                                      # noqa: C901 — a
                   "Path('/tmp/fixture')", "os.path.join(tempfile.mkdtemp(), 'f')"):
         case(f"...while `{_expr}` is a world the case BUILT and keeps its credit",
              _world(_expr), frozenset({PARAM}))
+    # ⛔ ROUND 6, CODEX HIGH — THE FALSE-REFUSAL HALF, AND THE WIDENING THAT CAUSED IT WAS THE
+    # BLOCKING'S OWN FIX. A NORMALISER returns something exactly as live as what it was given, so
+    # listing `resolve`/`absolute`/`abspath` as ambient readers made the attribute branch answer
+    # on the TAIL and sent five built worlds to DEBT. Both polarities are asserted together
+    # because that is the only way a case can tell the split from either list alone.
+    for _expr in ("Path(tempfile.mkdtemp()).resolve()", "Path(tempfile.mkdtemp()).absolute()",
+                  "os.path.abspath(tempfile.mkdtemp())", "os.path.realpath(tempfile.mkdtemp())",
+                  "os.path.relpath(tempfile.mkdtemp())"):
+        case(f"...and NORMALISING a built world leaves it built — `{_expr}` (r6 Codex High)",
+             _world(_expr), frozenset({PARAM}))
+    for _expr in ("Path('.').resolve()", "os.path.abspath('.')", "os.path.abspath(ROOT)",
+                  "Path('~').expanduser()"):
+        case(f"...while normalising the LIVE world leaves it live — `{_expr}`, and "
+             f"`expanduser` stays a READER because it injects $HOME its base did not hold",
+             _world(_expr), frozenset())
 
     # ── ROUND 5 HIGH H2: REBIND ASKED NOTHING ABOUT THE WORLD IT CREDITED ──────────────────────
     # ⛔ ROUND 1's MEDIUM, RECURRING ON THE FOURTH ROUTE. PARAM, ARGV and SUBPROC each run the
@@ -3181,8 +3255,12 @@ def _self_test() -> int:                                      # noqa: C901 — a
     ):
         f = live_root / "scripts" / name
         case(f"{name} is on disk", f.is_file(), True)
+        # ⛔ A TENTH DYING CASE, found by round 6's Codex half. These five classify REAL guards
+        # off disk, and `check-ci-watched.py` is the first file in the suite whose subprocess argv
+        # is a bare NAME — so severing the argv shape test raises here, at case 273, with no
+        # `[FAIL]` line. The raising site is the real-file read, not any fixture.
         case(f"...and {'complies' if want else 'is DEBT'} — {why}",
-             classify(f.read_text()).complies, want)
+             _caught(lambda f=f: classify(f.read_text()).complies), want)
 
     # ⛔ THE LIVE CONSEQUENCE of the tuple-restore defect, pinned on the real file. Before the fix,
     # `main(["/nonexistent/nope.py"])` at `check-fixture-variation.py:1881` — its unreadable-

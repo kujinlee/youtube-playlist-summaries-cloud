@@ -940,8 +940,8 @@
   "name": "\u2b50 ROUND 4 HIGH. The subprocess EXTRA-ARGV path reaches an undefined name again \u2014 a crash where a verdict belongs, on the one route branch no case covered",
   "edits": [
    [
-    "                    _element_is_constructed(el, fn, tree, 0, world)\n                    for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])",
-    "                    _element_is_constructed(el, fn, tree, 0, guard_world)\n                    for el in (argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else [])"
+    "                    _element_is_constructed(el, fn, tree, 0, world)\n                    for el in elements",
+    "                    _element_is_constructed(el, fn, tree, 0, guard_world)\n                    for el in elements"
    ]
   ],
   "expect": [
@@ -1453,6 +1453,58 @@
   ],
   "expect": [
    "an unparseable guard fails CLOSED even when pinned, and is NOT also called stale"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the module NAMESPACE stops being the live world, so `vars()['__file__']` and `globals()['__file__']` are credited as worlds the case built (r6 Codex Blocking)",
+  "edits": [
+   [
+    "NAMESPACE_READERS = {\"vars\", \"globals\", \"locals\", \"dir\"}",
+    "NAMESPACE_READERS = set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path(vars()['__file__'])` is the live repository \u2014 \u2b50 the module NAMESPACE subscripted \u2014 the dunder never appears as a Name at all (r6 Codex) (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the path NORMALISERS go back into the ambient-reader list, so `Path(tempfile.mkdtemp()).resolve()` \u2014 a world the case plainly built \u2014 is refused as the live repository (r6 Codex High, the false-REFUSAL direction)",
+  "edits": [
+   [
+    "    \"gettempdir\", \"gettempdirb\", \"listdir\", \"scandir\", \"walk\", \"iterdir\", \"glob\",",
+    "    \"gettempdir\", \"gettempdirb\", \"listdir\", \"scandir\", \"walk\", \"iterdir\", \"glob\",\n    \"resolve\", \"absolute\", \"abspath\", \"realpath\", \"relpath\","
+   ]
+  ],
+  "expect": [
+   "...and NORMALISING a built world leaves it built \u2014 `Path(tempfile.mkdtemp()).resolve()` (r6 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a lambda's parameter counts as a case-bound leaf again, so a restore written as `(lambda x: x)(saved)` beside a local `x` reads as a substitution and the call after it earns a FALSE credit (r6 Codex High)",
+  "edits": [
+   [
+    "    internal |= {a.arg for lam in ast.walk(value) if isinstance(lam, ast.Lambda)",
+    "    internal |= {a.arg for lam in [] if isinstance(lam, ast.Lambda)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a restore THROUGH A LAMBDA whose parameter shadows a local is still a restore (r6 Codex High \u2014 the clause deleted on the reasoning that `ast.arg` is not `ast.Name`)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the subprocess argv shape test goes, so a guard whose argv is a bare NAME raises AttributeError out of `subprocess_self_calls` (r6 Codex Medium, the tenth dying case)",
+  "edits": [
+   [
+    "            elements = argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else []",
+    "            elements = argv.elts"
+   ]
+  ],
+  "expect": [
+   "...and complies \u2014 its world is a helper's parameter, resolved at the call site"
   ],
   "file": "scripts/check-main-drivable.py"
  }
