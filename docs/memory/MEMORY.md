@@ -14,6 +14,7 @@
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
 - [⭐⭐ Concurrent agents go wrong](concurrent-agents-go-wrong.md) — the WRONG SUBJECT, a report that never arrives, one Postgres → a FALSE BLOCKING. ⭐⭐ **A LIVE AGENT'S FILE IS NOT STATIC** — cost TWICE in one night (appended to it; `git add -A`'d it). Stage EXPLICIT PATHS. RULE in `docs/review-method.md`
 - [⭐⭐ An anchor is unbound by ANY nearby edit](a-mutation-anchor-is-unbound-by-any-edit-nearby.md) — 7 orphaned in ONE session; one was a BLOCKING red CI step. Use the HARNESS's own rule, over EVERY manifest
+- [⭐⭐ "Cannot die" may mean a SECOND clause](cannot-die-may-mean-a-second-clause.md) — I deleted on that reading TWICE in two commits; both reversed by the next review. **4 masking pairs in one file.** Construct an input, and ask what ELSE answers this
 - [⭐ A mutation loses its binding](a-mutation-loses-its-binding.md) — anchors bind by TEXT, so a refactor ORPHANS them; promoting one drops its fake-`HOME` redirect
 - [What mutation testing proves](what-mutation-testing-proves.md) — load-bearing, never complete; a MUTATION can be masked like a fixture
 - [⭐ A sever substitutes TODAY's value](a-sever-substitutes-todays-value.md) — a literal I typed from memory went RED and read as *"wiring is protected"*; the real value → 58/58 green and the defect was live. **Fails toward GOOD NEWS.** Derive by RUNNING the callee

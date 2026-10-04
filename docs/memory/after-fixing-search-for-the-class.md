@@ -102,3 +102,16 @@ must agree about an input, assert the AGREEMENT, not either side's behaviour.**
 **How to apply, sharpened:** after any fix, ask the three questions in order — *is there another
 LEVEL of this (encoding, nesting, indirection)? another SITE that does the same job? another COPY of
 this sentence?* All three were productive here, and all three were cheap to ask.
+
+⟳ **2026-10-04, `d2-main-drivable`, and this one PAID — the rare case where I ran the search and it
+returned.** Round 5 wrapped ONE site whose case died rather than reported, and treated the class as
+done. Round 6's review found **two siblings**. Instead of fixing those two, I grepped the *shape*
+— every indexed access to a call's arguments — and found a **thirteenth dying site no review has
+ever named**, plus a fourth uncovered member of the same class.
+
+**The sequence is the lesson: fix the class, then LOOK AGAIN.** Round 5 fixed an instance and
+believed the class closed; round 6 proved it had not; the grep then beat round 6 too. Two reviews
+and a search were needed for one shape.
+
+⚠ And the cheap version is enough — this was `grep -n "args\[\|\.args)"` with the AST-attribute
+spellings filtered out, under a minute. See [[cannot-die-may-mean-a-second-clause]].
