@@ -1179,7 +1179,7 @@
    ]
   ],
   "expect": [
-   "\u26d4 `Path('.')` is the live repository \u2014 the current working directory, as a relative literal (r5 Blocking)"
+   "a relative literal is the ambient directory through a NON-constructor wrapper too \u2014 `os.path.join('.', 'x')` (r5 Blocking, unmasked at r6)"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -1192,7 +1192,7 @@
    ]
   ],
   "expect": [
-   "\u26d4 `Path('./fixtures')` is the live repository \u2014 a path PREFIXED with the ambient directory \u2014 the set holds the bare spellings, the prefix test holds the rest (r5 Blocking)"
+   "a relative literal is the ambient directory through a NON-constructor wrapper too \u2014 `os.path.join('./sub', 'x')` (r5 Blocking, unmasked at r6)"
   ],
   "file": "scripts/check-main-drivable.py"
  },

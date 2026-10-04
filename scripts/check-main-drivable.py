@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 322 cases
+    python3 scripts/check-main-drivable.py --self-test   # 326 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -2506,8 +2506,12 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("⛔ the SUBPROC route: the shipped entry point over built stdin (r1 Blocking)",
          classify(_wired(SUBPROC_OK)).routes, frozenset({SUBPROC}))
     SUBPROC_BARE = SUBPROC_OK.replace(", input=data", "")
+    # ⛔ FOURTEENTH DYING CASE, AND THE HOIST THAT FIXED THE TENTH CREATED IT. Round 6 lifted the
+    # argv shape test into `elements` to kill a masking pair; that moved the scope round 4's
+    # extra-argv mutation substitutes in, so its NameError now raises HERE instead of reporting.
+    # A repair that removes one unmutatable site can hand the defect to a different one.
     case("...but re-running the real guard over the real repo earns nothing",
-         classify(_wired(SUBPROC_BARE)).routes, frozenset())
+         _caught(lambda: classify(_wired(SUBPROC_BARE)).routes), frozenset())
     SUBPROC_OTHER = SUBPROC_OK.replace("__file__", "'scripts/other.py'")
     case("...and spawning a DIFFERENT file is not driving this guard's entry point",
          classify(_wired(SUBPROC_OTHER)).routes, frozenset())
@@ -2969,6 +2973,20 @@ def _self_test() -> int:                                      # noqa: C901 — a
              _path(_e), frozenset())
     case("...and an ABSOLUTE literal is still a world the case named, which is the line between "
          "the two", _path("Path('/tmp/fixture')"), frozenset({PARAM}))
+    # ⛔⛔ A FIFTH MASKING PAIR, FOUND BY THE SWEEP AND BY NOTHING ELSE. Round 6's
+    # relative-constructor clause answers `Path('.')` and `Path('./fixtures')` BEFORE
+    # `AMBIENT_PATH_LITERALS` and its `./` prefix test are consulted — so both of round 5's
+    # Blocking mutations SURVIVED while every case about them went on passing. The literal rule
+    # is still load-bearing; it is reached through any wrapper that is NOT a path constructor.
+    # ⚠ `os.path.join` is the right probe precisely because its tail is in neither new set.
+    for _e in ("os.path.join('.', 'x')", "os.path.join('./sub', 'x')",
+               "os.path.join('../up', 'x')"):
+        case(f"a relative literal is the ambient directory through a NON-constructor wrapper too "
+             f"— `{_e}` (r5 Blocking, unmasked at r6)", _path(_e), frozenset())
+    case("...while an ABSOLUTE literal and a built base through the same wrapper keep their "
+         "credit, so the rule is the LITERAL and not the wrapper",
+         (_path("os.path.join('/abs', 'x')"), _path("os.path.join(td, 'x')")),
+         (frozenset({PARAM}), frozenset({PARAM})))
 
     # ── ROUND 6, CLAUDE H3 / L1 / L2 / L3: the no-argument-call branch ─────────────────────────
     _R6N = ("from pathlib import Path\nimport os, tempfile, sys, builtins\n"
