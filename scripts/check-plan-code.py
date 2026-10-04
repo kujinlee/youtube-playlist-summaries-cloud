@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 116,
+    "scripts/check-main-drivable.py": 130,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4026,6 +4026,31 @@ def _self_test() -> int:
     # duplicate. Hoisted to one binding, which removes both at once. Severing what remains raises
     # at the FIRST real guard on disk whose subprocess argv is a bare NAME, so that case now
     # catches. ⚠ The hoist orphaned round 4's extra-argv anchor, RETARGETED not retired.
+    # ⟳ 2026-10-04, ROUND 6's CLAUDE HALF: 1294 -> 1308, `check-main-drivable` 116 -> 130
+    # (17 added, 3 RETIRED WITH THEIR SUBJECT, 2 retargeted). NOT CONVERGED, 13 findings.
+    # ⛔⛔ ITS BLOCKING REFUTES A DELETION THIS SLICE JUSTIFIED IN WRITING — the SECOND time in
+    # two commits. The comment said *"the rebind route only ever considers names in `world`"* and
+    # that conflated TWO SETS: `classify` intersects with `world_names()` (assignments PLUS
+    # IMPORTS PLUS DEFS) and hands this function `guard_world_globals()` (assignments only).
+    # MEASURED over the 37 guards: 811 names in the first, **535 absent from the second**, so for
+    # 66% of the world the LIVE test could never fire and `globals()["subprocess"] = subprocess`
+    # — handing main the module it already had — earned REBIND. `_dead_branch_ids` calls
+    # `if False:` "the cheapest possible way to fake compliance"; a one-line identity
+    # substitution was cheaper. ★ The name test is back WITH the condition that makes it right:
+    # *and the case has not re-bound that name*.
+    # ⛔ AND ITS H1 IS THE MIRROR OF ROUND 6's OWN CODEX HIGH. Restoring the lambda subtraction
+    # fixed a false green and introduced a false debt, because the subtraction was by NAME over
+    # the whole expression rather than by the binder's SCOPE. Replaced by `free_names`, which
+    # reads Python's own rule off the grammar — a lambda's defaults and a comprehension's FIRST
+    # iterable evaluate OUTSIDE the binder. No list, and the enumeration of parameter kinds that
+    # the previous commit added retires with it.
+    # ★ THE CLASS SEARCH IS THE PART WORTH COPYING. Round 6 named TWO more dying cases; grepping
+    # the indexed-argument SHAPE instead of fixing the two found a THIRTEENTH that no review has
+    # ever named, plus a fourth uncovered member. Round 5 wrapped one site and called the class
+    # done; round 6 found two siblings; the search found a third. Fix the class, then look again.
+    # ⚠ Two more of its findings are consequences of round 6's own Codex repair (the five
+    # directory readers it left behind, and `os.path.abspath('sub')` flipping DEBT -> credit), so
+    # the normaliser split now turns on the BASE being relative rather than on a name list.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -4035,7 +4060,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1294)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1308)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
