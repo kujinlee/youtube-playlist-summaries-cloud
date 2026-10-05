@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 375 cases
+    python3 scripts/check-main-drivable.py --self-test   # 381 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -1114,6 +1114,16 @@ def substitution_changes_the_world(value: ast.AST, name: str, fn: ast.AST | None
     # cannot tell them apart, because both rest on `g`, which is LIVE. The subscript KEY is the
     # answer, so it is read here rather than approximated downstream. ⚠ Found by a control: the
     # first draft of the alias fix refused `g["OTHER"]` too, which is a lost credit.
+    # ⛔ ROUND 9, CODEX MEDIUM: `.get()` IS THE OTHER SPELLING, and round 8's key-sensitive
+    # repair covered only the subscript — so `globals().get("OTHER")` read as the same world as
+    # `globals().get("ROOT")`, losing a real substitution. One rule, both spellings.
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+            and value.func.attr == "get" and value.args
+            and isinstance(value.args[0], ast.Constant)):
+        _g = value.func.value
+        if (_is_globals_call(_g)
+                or (isinstance(_g, ast.Name) and _g.id in globals_aliases(fn))):
+            return value.args[0].value != name
     if isinstance(value, ast.Subscript) and isinstance(value.slice, ast.Constant):
         _recv = value.value
         if (_is_globals_call(_recv)
@@ -1565,9 +1575,34 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
     if isinstance(expr, ast.Call):
         _tail = (expr.func.attr if isinstance(expr.func, ast.Attribute)
                  else expr.func.id if isinstance(expr.func, ast.Name) else None)
-        if (_tail in CWD_DEFAULTED_OPS and len(expr.args) < 2
-                and not any(k.arg == "start" for k in expr.keywords)):
-            return LIVE                      # the default `start` is the working directory
+        # ⛔ ROUND 9, CODEX HIGH: A METHOD IS A HELPER, and this must be asked BEFORE the child
+        # dominance check for the same reason `relpath` was — `C().same()` has a BUILT child
+        # (the receiver `C()`), so `kids` answers BUILT and the Call branch is never reached.
+        # SECOND time a call-level rule was first written below the rule about its children.
+        # ⚠ Resolved only when the method name is UNAMBIGUOUS across the module's classes: two
+        # classes sharing one method name cannot be told apart without types, and guessing
+        # there is the false-credit direction.
+        if isinstance(expr.func, ast.Attribute) and tree is not None:
+            _methods = [f for cls in tree.body if isinstance(cls, ast.ClassDef)
+                        for f in cls.body
+                        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and f.name == expr.func.attr]
+            if len(_methods) == 1:
+                _rets = [n.value for n in ast.walk(_methods[0])
+                         if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+                         and n.value is not None]
+                if LIVE in [world_class(r, _methods[0], tree, world, depth + 1) for r in _rets]:
+                    return LIVE
+        if _tail in CWD_DEFAULTED_OPS:
+            # ⛔ ROUND 9, CODEX HIGH, AND IT IS ROUND 8's OWN REPAIR ONE STEP SHORT. The clause
+            # asked whether `start` was SUPPLIED; supplying a RELATIVE one changes nothing,
+            # because `relpath(target, start="sub")` resolves "sub" against the live cwd too —
+            # measured at runtime from two directories, two answers. The question is not
+            # whether the default was overridden but whether what overrode it is ambient.
+            _start = (expr.args[1] if len(expr.args) > 1
+                      else next((k.value for k in expr.keywords if k.arg == "start"), None))
+            if _start is None or _is_relative_literal(_start):
+                return LIVE
 
     kids = [world_class(c, fn, tree, world, depth + 1) for c in _expr_children(expr)]
     if LIVE in kids:
@@ -3126,6 +3161,14 @@ def _self_test() -> int:                                      # noqa: C901 — a
              _world(_expr), frozenset({PARAM}))
     # ⛔ ROUND 8, CODEX HIGH: `relpath` reads the cwd through its DEFAULT `start`, so a BUILT
     # base does not make it a built world — only supplying `start` removes the default.
+    # ⛔ ROUND 9, CODEX HIGH: SUPPLYING `start` ONLY HELPS IF `start` IS NOT ITSELF AMBIENT.
+    # Round 8 asked whether it was supplied; `relpath(target, start="sub")` resolves "sub"
+    # against the live cwd too — measured at runtime from two directories, two answers.
+    for _e, _want in (("os.path.relpath(tempfile.mkdtemp(), start='sub')", frozenset()),
+                      ("os.path.relpath(tempfile.mkdtemp(), 'sub')", frozenset()),
+                      ("os.path.relpath(tempfile.mkdtemp(), start='/abs')", frozenset({PARAM}))):
+        case(f"`relpath`'s `start` must itself be non-ambient — `{_e}` (r9 Codex High)",
+             _world(_e), _want)
     for _e, _want in (("os.path.relpath(tempfile.mkdtemp())", frozenset()),
                       ("os.path.relpath('/tmp/fixture')", frozenset()),
                       ("os.path.relpath(tempfile.mkdtemp(), start=tempfile.mkdtemp())",
@@ -3202,6 +3245,28 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...while a helper that BUILDS a world still earns the route, which is the line "
          "between following a return and refusing every call",
          _helper("globals()['ROOT'] = fresh()"), frozenset({REBIND}))
+    # ⛔ ROUND 9, CODEX HIGH: A METHOD IS A HELPER, and the one-hop resolution followed only a
+    # bare-name callee. ⚠ The ambiguity row is the important one: two classes sharing a method
+    # name cannot be told apart without types, so the rule declines rather than guesses — a
+    # guess there is the false-credit direction.
+    _R9M = ("import tempfile\nROOT = 1\n"
+            "class C:\n    def same(self):\n        return ROOT\n"
+            "class D:\n    def fresh(self):\n        return tempfile.mkdtemp()\n"
+            "class E:\n    def dup(self):\n        return ROOT\n"
+            "class F:\n    def dup(self):\n        return tempfile.mkdtemp()\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return ROOT\n"
+            "def _self_test():\n@@S@@    case('x', main([]), 0)\n")
+    _m9 = lambda s: classify(_R9M.replace("@@S@@", f"    {s}\n")).routes
+    case("⛔ a METHOD that returns the global hands main the world it already had (r9 Codex "
+         "High) — and the rule is asked BEFORE the child check, because the receiver is BUILT",
+         _m9("globals()['ROOT'] = C().same()"), frozenset())
+    case("...while a method that BUILDS still earns the route, and an AMBIGUOUS method name is "
+         "declined rather than guessed",
+         (_m9("globals()['ROOT'] = D().fresh()"), _m9("globals()['ROOT'] = E().dup()")),
+         (frozenset({REBIND}), frozenset({REBIND})))
     # ⛔ ROUND 8, CLAUDE M1: the one-hop resolution missed three callee shapes, each of which
     # handed `main` the global and earned the route. A returned PARAMETER resolves to its
     # DEFAULT, and a YIELD is a return for this question.
@@ -3242,6 +3307,14 @@ def _self_test() -> int:                                      # noqa: C901 — a
          "and the READ use different spellings of the module dict, which defeated both the "
          "target rule and the restore rule (r8 Claude High)",
          _a8("    g = globals()\n    globals()['ROOT'] = g['ROOT']\n"), frozenset())
+    # ⛔ ROUND 9, CODEX MEDIUM: `.get()` IS THE OTHER SPELLING of a keyed module-dict read,
+    # and round 8's key-sensitive repair covered only the subscript.
+    case("a module-dict `.get()` is keyed like the subscript — the same global earns nothing, "
+         "a DIFFERENT one is a change (r9 Codex Medium)",
+         (_a8("    globals()['ROOT'] = globals().get('ROOT')\n"),
+          _a8("    globals()['ROOT'] = globals().get('OTHER')\n"),
+          _a8("    g = globals()\n    globals()['ROOT'] = g.get('OTHER')\n")),
+         (frozenset(), frozenset({REBIND}), frozenset({REBIND})))
     case("...while reading a DIFFERENT global through the same alias IS a change — the "
          "subscript KEY decides, and the first draft of this refused both",
          (_a8("    g = globals()\n    globals()['ROOT'] = g['OTHER']\n"),

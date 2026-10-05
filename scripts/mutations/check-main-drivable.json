@@ -1808,11 +1808,11 @@
   "file": "scripts/check-main-drivable.py"
  },
  {
-  "name": "supplying `start` stops removing the cwd default, so a genuinely built `relpath(td, start=td)` loses its credit",
+  "name": "the `start` argument stops being read at all, so a genuinely built `relpath(td, start=td)` is refused as the live cwd \u2014 round 8's half of the rule, kept after round 9 sharpened the other half",
   "edits": [
    [
-    "        if (_tail in CWD_DEFAULTED_OPS and len(expr.args) < 2\n                and not any(k.arg == \"start\" for k in expr.keywords)):",
-    "        if _tail in CWD_DEFAULTED_OPS:"
+    "            _start = (expr.args[1] if len(expr.args) > 1\n                      else next((k.value for k in expr.keywords if k.arg == \"start\"), None))",
+    "            _start = None"
    ]
   ],
   "expect": [
@@ -1960,6 +1960,58 @@
   ],
   "expect": [
    "an absolute literal is absolute on both separators, so a Windows path is a world the case named rather than the ambient directory (r8 Claude Low)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "supplying `start` is treated as removing the cwd default whatever `start` is, so `relpath(target, start='sub')` \u2014 which resolves 'sub' against the live cwd too \u2014 is credited as a world the case built (r9 Codex High)",
+  "edits": [
+   [
+    "            if _start is None or _is_relative_literal(_start):",
+    "            if _start is None:"
+   ]
+  ],
+  "expect": [
+   "`relpath`'s `start` must itself be non-ambient \u2014 `os.path.relpath(tempfile.mkdtemp(), start='sub')` (r9 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a METHOD's return stops being followed, so `C().same()` \u2014 whose body is `return ROOT` \u2014 hands main the global and earns REBIND (r9 Codex High)",
+  "edits": [
+   [
+    "        if isinstance(expr.func, ast.Attribute) and tree is not None:\n            _methods = [f for cls in tree.body if isinstance(cls, ast.ClassDef)",
+    "        if False:\n            _methods = [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a METHOD that returns the global hands main the world it already had (r9 Codex High) \u2014 and the rule is asked BEFORE the child check, because the receiver is BUILT"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an AMBIGUOUS method name is resolved by guessing the first class, when two classes sharing one method name cannot be told apart without types \u2014 the false-credit direction",
+  "edits": [
+   [
+    "            if len(_methods) == 1:",
+    "            if _methods:"
+   ]
+  ],
+  "expect": [
+   "...while a method that BUILDS still earns the route, and an AMBIGUOUS method name is declined rather than guessed"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a module-dict `.get()` stops being keyed, so `globals().get('OTHER')` reads as the same world as `globals().get('ROOT')` and a real substitution loses its route (r9 Codex Medium)",
+  "edits": [
+   [
+    "    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)\n            and value.func.attr == \"get\" and value.args",
+    "    if (False and isinstance(value.func, ast.Attribute)\n            and value.func.attr == \"get\" and value.args"
+   ]
+  ],
+  "expect": [
+   "a module-dict `.get()` is keyed like the subscript \u2014 the same global earns nothing, a DIFFERENT one is a change (r9 Codex Medium)"
   ],
   "file": "scripts/check-main-drivable.py"
  }

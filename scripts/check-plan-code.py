@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 151,
+    "scripts/check-main-drivable.py": 155,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4159,6 +4159,22 @@ def _self_test() -> int:
     # ⚠ Its sibling entry's `expect` also went stale and is retargeted onto the symtable
     # differential, which is now what reddens for it — the third `expect` drift this slice, all
     # three found by the sweep rather than by reading.
+    # ⟳ 2026-10-05, ROUND 9's CODEX HALF: 1329 -> 1333, `check-main-drivable` 151 -> 155
+    # (4 added, 1 retargeted onto the clause that superseded it). 0 Blocking, 2 High, 1 Medium,
+    # all DELIVERABLE, all latent, every candidate fix 0 verdict changes over the 44 guards.
+    # ⭐⭐ TWO OF THE THREE ARE ROUND 8's OWN REPAIRS ONE STEP SHORT, which is now the dominant
+    # shape: `relpath` asked whether `start` was SUPPLIED when the question is whether what
+    # supplied it is AMBIENT (`start="sub"` resolves against the cwd too), and the key-sensitive
+    # module-dict read covered the SUBSCRIPT and not `.get()`.
+    # ⛔ AND THE SECOND TIME A CALL-LEVEL RULE WAS WRITTEN BELOW THE RULE ABOUT ITS CHILDREN.
+    # `C().same()` has a BUILT child — the receiver — so `kids` answers BUILT and the Call
+    # branch is never reached; the method resolution had to be hoisted above the dominance
+    # check exactly as `relpath` did one round earlier. Both drafts LOOKED right and were
+    # unreachable, and in both cases only a probe said so. **A rule about a call must be asked
+    # before the rule about its children** — now stated at both sites.
+    # ⚠ The method resolution declines an AMBIGUOUS name rather than guessing: two classes
+    # sharing one method name cannot be told apart without types, and a guess there is the
+    # false-credit direction. That restraint has its own entry.
     # ⚠ Two more dying cases (fifteenth and sixteenth), and the reviewer's own correction of
     # a sixth "dead clause": the `bound if i == 0 else inner` ternary is a provable NO-OP, since
     # `inner` is initialised to `bound` and updated only afterwards — so it was not a coverage
@@ -4172,7 +4188,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1329)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1333)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
