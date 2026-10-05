@@ -1383,7 +1383,15 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 163,
+    # ⟳ 2026-10-05, ROUND 10's FOLD: 163 -> 183. Nineteen entries, and NINE RETARGETS that are not
+    # additions — the Blocking replaced a leaf-level PROXY with a rule that reads what an
+    # expression HANDS BACK, which moved or dissolved nine anchors. ⭐ FIVE of the nineteen were
+    # SURVIVORS on a first run and are here only because the run said so: the case each one
+    # needed did not exist, and two of those six exposed a case of the fold's own that could not
+    # fail — a branched binding answered by `_is_restore_value` before the rule under test, and a
+    # callee-scope substitution no input distinguished. Every `expect` below was derived by
+    # RUNNING its mutation against a green control, never written from the finding.
+    "scripts/check-main-drivable.py": 183,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4188,7 +4196,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1341)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1361)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

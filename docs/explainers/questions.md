@@ -670,3 +670,19 @@ Are these actually share common idea?
 **Theme 4 — the repair that generated the defect**
    > Theme 4 — the repair that generated the defectask #360 is the largest of the seventeen and the only one whose finding is structural. Nine adversarial review rounds kept finding the same class of defect: a rule's result computed, then discarded at the point it is used, with every named test still passing and the guard printing OK over a real violation. Rounds 5 through 9 each fixed their instance c
    Q: have we found solution (and implemented) for the root cause of this issue?
+
+---
+
+## 2026-10-05 11:29:02 — 2026-10-05-topic-why-x-not-y.html
+
+**2 · Redesign or patch — and refuting the reviewer who proposed the redesign**
+   > (nothing highlighted)
+   Q: PROBE from coordinator verification — ignore. Does the section label arrive clean?
+
+---
+
+## 2026-10-05 12:07:16 — 2026-10-05-topic-why-x-not-y.html
+
+**1 · Round 10, or stop and merge, or build the instrument**
+   > C — park the PR, build the #224 dynamic instrument Three rounds had independently pointed at it. It removes the residual defect class rather than another instance of it REJECTED
+   Q: what is #224 about? Could that be the resolution of root cause? why this wasn't recommended?
