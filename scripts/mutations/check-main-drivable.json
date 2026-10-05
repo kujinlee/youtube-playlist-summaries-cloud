@@ -1239,8 +1239,8 @@
   "name": "the rebind route stops asking anything about the substituted value, so `globals()['ROOT'] = ROOT` earns the route \u2014 round 1's Medium, recurring on the fourth route (r5 High)",
   "edits": [
    [
-    "            inert_write = (_is_restore_value(value, saved.get(g, set()), bound)\n                           or not substitution_changes_the_world(value, g, fn, tree, world))",
-    "            inert_write = _is_restore_value(value, saved.get(g, set()), bound)"
+    "                           or not substitution_changes_the_world(value, g, fn, tree, world,\n                                                                 aliased))",
+    "                           or False)"
    ]
   ],
   "expect": [
@@ -1707,8 +1707,8 @@
   "name": "`_is_relative_literal` stops checking for a leading separator, so every string literal base counts as relative",
   "edits": [
    [
-    "    return (isinstance(expr, ast.Constant) and isinstance(expr.value, str)\n            and not expr.value.startswith((\"/\", \"\\\\\")))",
-    "    return isinstance(expr, ast.Constant) and isinstance(expr.value, str)"
+    "    return _s is not None and not _s.startswith((\"/\", \"\\\\\"))",
+    "    return _s is not None"
    ]
   ],
   "expect": [
@@ -1759,12 +1759,12 @@
   "name": "`_is_relative_literal` stops checking it was handed a Constant, so an Attribute base raises AttributeError (r7 Claude Low, the sixteenth dying case)",
   "edits": [
    [
-    "    return (isinstance(expr, ast.Constant) and isinstance(expr.value, str)",
-    "    return (isinstance(expr.value, str)"
+    "    if isinstance(expr, ast.Constant):\n        return expr.value if isinstance(expr.value, str) else None",
+    "    if False:\n        return expr.value if isinstance(expr.value, str) else None"
    ]
   ],
   "expect": [
-   "...while an attribute of a world the case BUILT does count"
+   "`relpath`'s `start` must itself be non-ambient \u2014 `os.path.relpath(tempfile.mkdtemp(), start='sub')` (r9 Codex High)"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -1785,8 +1785,8 @@
   "name": "a module helper's RETURN stops being followed, so `globals()['ROOT'] = same_root()` \u2014 whose whole body is `return ROOT` \u2014 hands main the world it already had and earns REBIND (r8 Codex Blocking)",
   "edits": [
    [
-    "        if isinstance(expr.func, ast.Name) and tree is not None:\n            helper = _toplevel_functions(tree).get(expr.func.id)",
-    "        if False:\n            helper = _toplevel_functions(tree).get(expr.func.id)"
+    "        if callee_returns_live(expr, tree, world, depth):\n            return LIVE",
+    "        if False:\n            return LIVE"
    ]
   ],
   "expect": [
@@ -1837,8 +1837,8 @@
   "name": "a read of the module dict stops being resolved by its KEY, so `g['OTHER']` \u2014 a different global \u2014 reads as the same world and loses its credit (r8 Claude High, the control half)",
   "edits": [
    [
-    "            return value.slice.value != name",
-    "            return True"
+    "        return _key is not None and _key != name",
+    "        return True"
    ]
   ],
   "expect": [
@@ -1850,8 +1850,8 @@
   "name": "only the literal `globals()` spelling is resolved, so `g = globals()` then `globals()['ROOT'] = g['ROOT']` \u2014 a pure no-op using the repo's own idiom in eight guards \u2014 earns REBIND (r8 Claude High, the sixth masking pair)",
   "edits": [
    [
-    "        if (_is_globals_call(_recv)\n                or (isinstance(_recv, ast.Name) and _recv.id in globals_aliases(fn))):",
-    "        if _is_globals_call(_recv):"
+    "    if _recv is not None and (_is_globals_call(_recv, aliased)\n                              or (isinstance(_recv, ast.Name)\n                                  and _recv.id in globals_aliases(fn, aliased))):",
+    "    if _recv is not None and _is_globals_call(_recv):"
    ]
   ],
   "expect": [
@@ -1863,8 +1863,8 @@
   "name": "a returned PARAMETER stops resolving to its default, so `def same(p=ROOT): return p` hands main the global and earns the route (r8 Claude Medium)",
   "edits": [
    [
-    "                returns = [_defaults.get(r.id, r) if isinstance(r, ast.Name) else r\n                           for r in returns]",
-    "                returns = list(returns)"
+    "        rets = [defaults.get(r.id, r) if isinstance(r, ast.Name) else r for r in rets]",
+    "        rets = list(rets)"
    ]
   ],
   "expect": [
@@ -1876,8 +1876,8 @@
   "name": "a YIELD stops counting as a return, so a generator helper hands main the global and earns the route (r8 Claude Medium)",
   "edits": [
    [
-    "                           if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))\n                           and n.value is not None]",
-    "                           if isinstance(n, ast.Return) and n.value is not None]"
+    "    return [n.value for n in ast.walk(fn)\n            if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom)) and n.value is not None]",
+    "    return [n.value for n in ast.walk(fn)\n            if isinstance(n, ast.Return) and n.value is not None]"
    ]
   ],
   "expect": [
@@ -1889,8 +1889,8 @@
   "name": "the helper branch reads only top-level statements, so a `return ROOT` nested in an `if` is invisible and the identity earns the route (r8 Claude Low \u2014 the clause shipped with a case for its outer `if` and none for its breadth)",
   "edits": [
    [
-    "                returns = [n.value for n in ast.walk(helper)",
-    "                returns = [n.value for n in helper.body"
+    "    return [n.value for n in ast.walk(fn)",
+    "    return [n.value for n in fn.body"
    ]
   ],
   "expect": [
@@ -1928,8 +1928,8 @@
   "name": "the helper branch stops checking it was given a tree, raising AttributeError wherever `world_class` is called without one (r8 Claude Low, the seventeenth dying case)",
   "edits": [
    [
-    "        if isinstance(expr.func, ast.Name) and tree is not None:",
-    "        if isinstance(expr.func, ast.Name):"
+    "    if tree is None:\n        return False",
+    "    if False:\n        return False"
    ]
   ],
   "expect": [
@@ -1954,8 +1954,8 @@
   "name": "a Windows separator stops counting as absolute, so `os.path.abspath('\\\\\\\\srv\\\\share')` \u2014 a world the case named \u2014 is refused as the ambient directory (r8 Claude Low)",
   "edits": [
    [
-    "            and not expr.value.startswith((\"/\", \"\\\\\")))",
-    "            and not expr.value.startswith(\"/\"))"
+    "not _s.startswith((\"/\", \"\\\\\"))",
+    "not _s.startswith(\"/\")"
    ]
   ],
   "expect": [
@@ -1980,8 +1980,8 @@
   "name": "a METHOD's return stops being followed, so `C().same()` \u2014 whose body is `return ROOT` \u2014 hands main the global and earns REBIND (r9 Codex High)",
   "edits": [
    [
-    "        if isinstance(expr.func, ast.Attribute) and tree is not None:\n            _methods = [f for cls in tree.body if isinstance(cls, ast.ClassDef)",
-    "        if False:\n            _methods = [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
+    "    if isinstance(func, ast.Attribute):",
+    "    if False:"
    ]
   ],
   "expect": [
@@ -1993,8 +1993,8 @@
   "name": "an AMBIGUOUS method name is resolved by guessing the first class, when two classes sharing one method name cannot be told apart without types \u2014 the false-credit direction",
   "edits": [
    [
-    "            if len(_methods) == 1:",
-    "            if _methods:"
+    "        if len(named) == 1:",
+    "        if named:"
    ]
   ],
   "expect": [
@@ -2012,6 +2012,110 @@
   ],
   "expect": [
    "a module-dict `.get()` is keyed like the subscript \u2014 the same global earns nothing, a DIFFERENT one is a change (r9 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the single callee-identity owner stops being asked above the child-dominance check, so ONE argument the case built makes `kids` answer BUILT and every identity closure is bypassed on three of four routes (r9 Claude Blocking)",
+  "edits": [
+   [
+    "        # \u2b50 ONE CALLEE-IDENTITY QUESTION, ASKED ONCE, ABOVE `kids`. See\n        # `callee_returns_live` for why the position is part of the rule.\n        if callee_returns_live(expr, tree, world, depth):\n            return LIVE\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "\u26d4 an identity substitution hidden behind a module helper earns nothing \u2014 the helper's RETURN is its caller's value (r8 Codex Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a `@property` stops being resolved, so `C().prop` \u2014 the same member access without parentheses \u2014 hands main the global and earns the route (r9 Claude Medium)",
+  "edits": [
+   [
+    "        if tree is not None and not isinstance(expr.ctx, ast.Store):\n            _prop = _resolve_callee(expr, tree)",
+    "        if False:\n            _prop = _resolve_callee(expr, tree)"
+   ]
+  ],
+  "expect": [
+   "...and the owner resolves a method, a NESTED class's method, and a @property alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a NESTED class's methods become invisible to the callee owner, so `C.Inner().nested()` hands main the global (r9 Claude Medium)",
+  "edits": [
+   [
+    "        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)",
+    "        named = [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
+   ]
+  ],
+  "expect": [
+   "...and the owner resolves a method, a NESTED class's method, and a @property alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an ambiguous method name is declined even when EVERY candidate returns the live world, where which receiver it is cannot matter (r9 Claude High)",
+  "edits": [
+   [
+    "        if named and all(_ret_exprs(f) for f in named):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...and an AMBIGUOUS name is decided when EVERY candidate is live, declined when they disagree \u2014 which is the line between reading and guessing"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an f-string with no interpolation stops being a string literal, so one `f` flips nine relative-literal refusals into credits (r9 Claude High)",
+  "edits": [
+   [
+    "    if isinstance(expr, ast.JoinedStr) and expr.values and all(",
+    "    if False and expr.values and all("
+   ]
+  ],
+  "expect": [
+   "an f-string IS the literal it spells, so `Path(f\".\")` answers as `Path('.')` does (r9 Claude High \u2014 9 of 9 shapes flipped on one `f`)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an f-string literal stops reaching the classifier itself, so it is only caught by the path clauses \u2014 and `os.path.join(f'.', td)`, where LIVE must dominate BUILT, is credited",
+  "edits": [
+   [
+    "    _lit = string_literal(expr) if not isinstance(expr, ast.Constant) else None",
+    "    _lit = None"
+   ]
+  ],
+  "expect": [
+   "...and an f-string literal MIXED with a built value is still the live world, because LIVE dominates \u2014 the row that proves the literal reaches the classifier"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the `else` of a statically-TRUE test stops being dead, so the cheapest fake compliance written the other way round is credited (r9 Claude Medium)",
+  "edits": [
+   [
+    "            elif isinstance(node, ast.If):\n                for stmt in node.orelse:",
+    "            elif False:\n                for stmt in node.orelse:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the `else` of a statically-TRUE test is the same dead branch written the other way round, and round 1 called this the cheapest fake compliance (r9 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the flag test goes back to the name-contains shortcut that `suite_entries` records as tried and REJECTED, so any identifier containing `self_test` reads as a suite dispatch (r9 Claude Low)",
+  "edits": [
+   [
+    "    if any(isinstance(n, ast.Attribute) and n.attr in (\"self_test\", \"_self_test\")\n           for n in ast.walk(test)):\n        return True\n    if any(isinstance(n, ast.Name) and n.id in (\"self_test\", \"_self_test\")\n           for n in ast.walk(test)):\n        return True",
+    "    if \"self_test\" in ast.dump(test):\n        return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 an identifier merely CONTAINING `self_test` is not the flag test \u2014 the shortcut `suite_entries` records as REJECTED (r9 Claude Low)"
   ],
   "file": "scripts/check-main-drivable.py"
  }

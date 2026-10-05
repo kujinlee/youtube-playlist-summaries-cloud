@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 381 cases
+    python3 scripts/check-main-drivable.py --self-test   # 404 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -165,6 +165,15 @@ LIVE_WORLD_NAMES = {"__file__", "__spec__", "__loader__", "__package__", "__cach
 # examines is INSIDE a function, where `locals()` is the case's own frame — the most constructed
 # thing in the file — and `dir()` lists its local names. The sentence this set exists for,
 # *"reaches the live module dict"*, is true of `vars()` and `globals()` and false of those two.
+# ⚠ `vars` STAYS, AND THE REASON IS NOT THE ONE THIS COMMENT FIRST GAVE (round 9, Claude Low).
+# The claim was that `vars()["__file__"]` reaches the live module dict. It does not: this set is
+# consulted ONLY for a call with NO arguments, and a no-argument `vars()` is `locals()` —
+# measured on 3.14, `'__file__' in vars()` inside a function is False. ⭐ Refusing it is still
+# right, for the opposite reason: inside a suite case that expression is a KeyError waiting to
+# happen, so crediting it would credit code that cannot run. The direction was safe and the
+# justification was false, and this file's standard for a comment asserting a property its code
+# does not have is explicit. `vars(sys.modules[__name__])` IS the module dict — that call has an
+# argument and reaches the generic descent, which is where it belongs.
 NAMESPACE_READERS = {"vars", "globals"}
 
 # ⛔⛔ THIS LIST IS IRREDUCIBLE, AND SAYING SO IS THE POINT — it is the second landing of this
@@ -428,7 +437,15 @@ def _all_functions(tree: ast.Module) -> dict[str, ast.AST]:
 def _mentions_self_test(test: ast.AST) -> bool:
     """-> True for every spelling of the flag test this repo uses. Measured across 43 guards:
     `a.self_test` (9), `args.self_test` (5), `"--self-test" in argv` (6), `… in sys.argv` (6)."""
-    if "self_test" in ast.dump(test):
+    # ⛔ ROUND 9, CLAUDE LOW: THIS WAS THE NAME-CONTAINS SHORTCUT `suite_entries` RECORDS AS
+    # TRIED AND REJECTED, 50 lines below — it admits any identifier merely CONTAINING the
+    # substring, so `def _unrelated(no_self_test_mode): if no_self_test_mode: ...` read as a
+    # suite dispatch. The rule is the ATTRIBUTE or the NAME, not a substring of the dump.
+    if any(isinstance(n, ast.Attribute) and n.attr in ("self_test", "_self_test")
+           for n in ast.walk(test)):
+        return True
+    if any(isinstance(n, ast.Name) and n.id in ("self_test", "_self_test")
+           for n in ast.walk(test)):
         return True
     return any(isinstance(n, ast.Constant) and n.value == "--self-test" for n in ast.walk(test))
 
@@ -554,6 +571,16 @@ def _dead_branch_ids(tree: ast.Module) -> set[int]:
         if isinstance(node, (ast.If, ast.While)) and isinstance(node.test, ast.Constant):
             if not node.test.value:
                 for stmt in node.body:
+                    out.add(id(stmt))
+            # ⛔ ROUND 9, CLAUDE MEDIUM: THE `else` OF A STATICALLY-TRUE `if` IS THE SAME BRANCH
+            # WRITTEN THE OTHER WAY ROUND, and it was credited — `if True: pass else:
+            # main([str(td)])` earned the argv route. Round 1's rule called this shape "the
+            # cheapest possible way to fake compliance"; it refused one spelling of it.
+            # ⚠ `ast.If` ONLY, and the reviewer RAN the counter-case rather than assuming
+            # symmetry: the `else` of a `while` with a falsy test DOES execute, so including
+            # `While` here would be wrong.
+            elif isinstance(node, ast.If):
+                for stmt in node.orelse:
                     out.add(id(stmt))
     return out
 
@@ -832,7 +859,8 @@ def global_writes(fn: ast.AST | None,
             # `globals()["ROOT"] = ROOT` is not a restore and changes nothing, and reading only
             # `is_restore` credited it.
             inert_write = (_is_restore_value(value, saved.get(g, set()), bound)
-                           or not substitution_changes_the_world(value, g, fn, tree, world))
+                           or not substitution_changes_the_world(value, g, fn, tree, world,
+                                                                 aliased))
             writes.append((line, g, inert_write))
     # ⛔ `g.update(saved)` IS A WRITE — round 1, Claude M2. A bulk restore through a globals alias
     # wrote nothing at all under the target-based rule, so a substitution it undid stayed "live"
@@ -1044,8 +1072,25 @@ def _unpack(target: ast.AST, value: ast.AST) -> list[tuple[ast.AST, ast.AST]]:
     return [(target, value)]
 
 
+def _module_dict_read(value: ast.AST) -> "tuple[str | None, ast.AST | None]":
+    """-> (key, receiver) for a read of a module dict, or (None, None) when it is not one.
+
+    ⭐ ONE OWNER FOR BOTH SPELLINGS. `g["ROOT"]` and `g.get("ROOT")` are the same question, and
+    round 8 answered it for the subscript while round 9 added `.get` as a near-copy — the shape
+    this file has measured seventeen times. The key is `None` when it cannot be decided (a
+    variable, an expression), which the caller must read as "undecidable", never as "different".
+    """
+    if isinstance(value, ast.Subscript):
+        return string_literal(value.slice), value.value
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+            and value.func.attr == "get" and value.args):
+        return string_literal(value.args[0]), value.func.value
+    return None, None
+
+
 def substitution_changes_the_world(value: ast.AST, name: str, fn: ast.AST | None,
-                                   tree: ast.Module | None, world: frozenset[str]) -> bool:
+                                   tree: ast.Module | None, world: frozenset[str],
+                                   aliased: frozenset[str] = frozenset()) -> bool:
     """-> True when substituting this value actually hands `main` a DIFFERENT world. PURE.
 
     ⛔ ROUND 5, CLAUDE HIGH, AND IT IS ROUND 1's MEDIUM RECURRING ON THE FOURTH ROUTE. The other
@@ -1117,18 +1162,20 @@ def substitution_changes_the_world(value: ast.AST, name: str, fn: ast.AST | None
     # ⛔ ROUND 9, CODEX MEDIUM: `.get()` IS THE OTHER SPELLING, and round 8's key-sensitive
     # repair covered only the subscript — so `globals().get("OTHER")` read as the same world as
     # `globals().get("ROOT")`, losing a real substitution. One rule, both spellings.
-    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
-            and value.func.attr == "get" and value.args
-            and isinstance(value.args[0], ast.Constant)):
-        _g = value.func.value
-        if (_is_globals_call(_g)
-                or (isinstance(_g, ast.Name) and _g.id in globals_aliases(fn))):
-            return value.args[0].value != name
-    if isinstance(value, ast.Subscript) and isinstance(value.slice, ast.Constant):
-        _recv = value.value
-        if (_is_globals_call(_recv)
-                or (isinstance(_recv, ast.Name) and _recv.id in globals_aliases(fn))):
-            return value.slice.value != name
+    # ⛔ ROUND 9, CLAUDE M3 + M5, AND THEY ARE ONE RULE WRITTEN TWICE. A read of the module dict
+    # was decided by its key in two places, each requiring an `ast.Constant` key and each calling
+    # the globals matchers WITHOUT the `aliased` set the WRITE side is given. Two consequences:
+    # a VARIABLE key fell through to the live-with-a-case-bound-leaf exception and was CREDITED
+    # (false credit — `globals()[k]` with `k = "ROOT"`), and `gl()["ROOT"] = gl()["OTHER"]` under
+    # `from builtins import globals as gl` lost its credit because the read side did not know
+    # the alias. ⭐ `_is_globals_call`'s own docstring: *"a rule that recognises only the
+    # spelling its author happened to use is this repo's most-measured defect."*
+    _key, _recv = _module_dict_read(value)
+    if _recv is not None and (_is_globals_call(_recv, aliased)
+                              or (isinstance(_recv, ast.Name)
+                                  and _recv.id in globals_aliases(fn, aliased))):
+        # an UNDECIDABLE key is not evidence of a different world — the safe reading
+        return _key is not None and _key != name
     names = free_names(value)
     if world_class(value, fn, tree, world) is LIVE:
         bound_here = {n.id for n in ast.walk(fn or value)
@@ -1426,6 +1473,37 @@ def _expr_children(node: ast.AST) -> list[ast.expr]:
     return out
 
 
+def _callee_tail(expr: ast.Call) -> "str | None":
+    """The name at the end of this call's callee — `f` in `f()`, `m` in `o.m()`. PURE.
+
+    ⚠ ONE DERIVATION, ONE PLACE: round 9 wrote this twice in one function, character for
+    character, at two positions relative to `kids`. The drift risk is this file's own thesis.
+    """
+    if isinstance(expr.func, ast.Attribute):
+        return expr.func.attr
+    return expr.func.id if isinstance(expr.func, ast.Name) else None
+
+
+def string_literal(expr: ast.AST | None) -> "str | None":
+    """The string this expression IS, when it is a literal one — or None. PURE.
+
+    ⛔ ROUND 9, CLAUDE HIGH: `f"sub"` DEFEATED EVERY RELATIVE-LITERAL TEST IN THE RULE. An
+    f-string with no interpolation is a `JoinedStr` whose single element is a `Constant` — the
+    same string by every runtime measure — and both tests asked `isinstance(expr, ast.Constant)`.
+    Measured: **9 of 9 shapes flipped from a correct refusal to a credit** by adding one `f`.
+
+    ⭐ Not backlog #224's parked class, and the line is the one round 8 drew for `iglob`/`glob`:
+    no list grows here. This is the other SPELLING of a literal already handled, and the repair
+    is derivational — a `JoinedStr` all of whose values are `Constant` IS a string constant.
+    """
+    if isinstance(expr, ast.Constant):
+        return expr.value if isinstance(expr.value, str) else None
+    if isinstance(expr, ast.JoinedStr) and expr.values and all(
+            isinstance(v, ast.Constant) and isinstance(v.value, str) for v in expr.values):
+        return "".join(v.value for v in expr.values)
+    return None
+
+
 def _is_relative_literal(expr: ast.AST | None) -> bool:
     """-> True when this expression is a string literal naming a RELATIVE path. PURE.
 
@@ -1440,8 +1518,85 @@ def _is_relative_literal(expr: ast.AST | None) -> bool:
     `os.path.abspath('/tmp/fixture')` — a world the case named. A proxy for a property is not the
     property.
     """
-    return (isinstance(expr, ast.Constant) and isinstance(expr.value, str)
-            and not expr.value.startswith(("/", "\\")))
+    _s = string_literal(expr)
+    return _s is not None and not _s.startswith(("/", "\\"))
+
+
+def callee_returns_live(expr: ast.Call, tree: ast.Module | None, world: frozenset[str],
+                        depth: int) -> bool:
+    """-> True when this call's callee hands back the live world. PURE, one hop.
+
+    ⛔⛔ THIS IS ONE RULE THAT WAS TWO NEAR-COPIES, and round 9's Claude half showed the copies
+    were the defect generator rather than any one of their clauses. Round 8 added a resolver for
+    a bare-name callee, BELOW the child-dominance check; round 9 added a resolver for a method
+    callee, ABOVE it, and in copying dropped the returned-parameter half. **Six findings in one
+    round were that single structural fact** — a Blocking (one built argument makes `kids` answer
+    first, so round 8's repair never runs on three of four routes), two Highs and three Mediums.
+
+    ⭐ THE POSITION IS PART OF THE RULE. A question about a CALL must be asked before the question
+    about its CHILDREN, because any built argument makes the generic descent answer BUILT. Three
+    call-level rules in this file were first written below `kids` and all three were unreachable;
+    this one is called once, above it, for every callee shape.
+
+    Resolved callee shapes, and the reason each is here rather than in a list:
+
+      f(...)         a module-level function           — `_toplevel_functions`
+      o.m(...)       a method, when the name is UNAMBIGUOUS across the module's classes, nested
+                     classes included — two classes sharing a method name cannot be told apart
+                     without types, and guessing is the false-credit direction
+      o.p            a PROPERTY is not a Call at all, so its caller asks separately (`:Attribute`)
+
+    ⚠ A returned PARAMETER resolves to its DEFAULT: `def same(p=ROOT): return p` hands back the
+    global as surely as `return ROOT`. A YIELD is a return for this question. The depth bound
+    terminates recursion, so no `is not fn` guard is needed — measured on self-calls and mutual
+    recursion alike.
+    """
+    if tree is None:
+        return False
+    return _definition_returns_live(_resolve_callee(expr.func, tree), tree, world, depth)
+
+
+def _resolve_callee(func: ast.AST, tree: ast.Module) -> "ast.AST | None":
+    """The definition this callee names, or None when it cannot be resolved UNAMBIGUOUSLY."""
+    if isinstance(func, ast.Name):
+        return _toplevel_functions(tree).get(func.id)
+    if isinstance(func, ast.Attribute):
+        # ⚠ `ast.walk`, not `tree.body`: a NESTED class is still a class (round 9, Claude M2).
+        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+                 for f in cls.body
+                 if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+                 and f.name == func.attr]
+        if len(named) == 1:
+            return named[0]
+        # ⚠ AMBIGUOUS AND YET DECIDABLE when every candidate agrees (round 9, Claude H3): if all
+        # of them hand back the live world, which one the receiver is does not matter.
+        if named and all(_ret_exprs(f) for f in named):
+            return named if len({id(f) for f in named}) > 1 else named[0]
+    return None
+
+
+def _ret_exprs(fn: ast.AST) -> list[ast.expr]:
+    """Every value this definition hands back — `return`, `yield` and `yield from` alike."""
+    return [n.value for n in ast.walk(fn)
+            if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom)) and n.value is not None]
+
+
+def _definition_returns_live(defn, tree: ast.Module, world: frozenset[str], depth: int) -> bool:
+    """-> True when every candidate definition hands back the live world."""
+    if defn is None:
+        return False
+    candidates = defn if isinstance(defn, list) else [defn]
+    for one in candidates:
+        rets = _ret_exprs(one)
+        args = one.args
+        named = [a.arg for a in (args.posonlyargs + args.args)]
+        defaults = dict(zip(named[-len(args.defaults):] if args.defaults else [], args.defaults))
+        defaults.update({a.arg: d for a, d in zip(args.kwonlyargs, args.kw_defaults)
+                         if d is not None})
+        rets = [defaults.get(r.id, r) if isinstance(r, ast.Name) else r for r in rets]
+        if LIVE not in [world_class(r, one, tree, world, depth + 1) for r in rets]:
+            return False
+    return bool(candidates)
 
 
 def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = None,
@@ -1481,6 +1636,17 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
     An expression is a constructed world iff it is BUILT: any LIVE leaf dominates, and INERT alone
     is not evidence that the case built anything.
 
+    ⚠ LIMIT 6, ADDED ROUND 9: a world passed through `*args` or `**kwargs` is not seen —
+    `def main(argv=None, **kw)` with `main([], root=td)` is DEBT, and so is the `*rest` form.
+    Both run fine. Arguably the right conservatism, since neither signature DECLARES a world,
+    but the list below enumerated the other lost credits and omitted this one.
+
+    ⚠ LIMIT 7, ADDED ROUND 9: `relpath`'s `start` is tested for being a relative LITERAL, not
+    for being ambient. A `start` the case BUILT is credited even when it is relative, because
+    source text cannot tell a built-absolute path from a built-relative one — the same wall as
+    `gettempdir()` versus `mkdtemp()`. Demanding an absolute literal instead was measured and
+    costs two asserted cases that deliberately credit a built `start`.
+
     ⚠ WHAT IT STILL CANNOT DO. It is a leaf-provenance rule, not an interpreter: it does not know
     that `d["k"]` selects a different element than `d["j"]`, it over-approximates a `for` target by
     its iterable, and it follows a helper's parameter exactly ONE hop to the call sites. Each of
@@ -1498,12 +1664,19 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
     # `Starred`'s value as its one child, so `main([*args])` reaches the same leaf by the generic
     # descent. Measured both ways — `world_class(*ROOT)` is LIVE with it and without it. The
     # seventh clause this file has lost to a mutation that could not die.
+    # ⚠ AN F-STRING WITH NO INTERPOLATION IS A LITERAL and never reaches the `Constant` branch
+    # below, which is how one `f` flipped nine refusals into credits (round 9, Claude High).
+    _lit = string_literal(expr) if not isinstance(expr, ast.Constant) else None
+    if _lit is not None:
+        return LIVE if (_lit in AMBIENT_PATH_LITERALS
+                        or _lit.startswith(("./", "../"))) else INERT
     if isinstance(expr, ast.Constant):
         # ⚠ A RELATIVE PATH LITERAL IS THE AMBIENT DIRECTORY, not a literal like a flag: `"."` is
         # wherever the process happens to be, which is the live world by any reading.
         if isinstance(expr.value, str) and (expr.value in AMBIENT_PATH_LITERALS
                                             or expr.value.startswith(("./", "../"))):
             return LIVE
+
         # ⚠ AND NO `return INERT` HERE, deliberately — the shape test two lines down returns
         # exactly that for a Constant, which contains neither a Name nor an Attribute. An explicit
         # return would be an eighth clause no mutation could kill.
@@ -1561,6 +1734,14 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         return INERT
 
     if isinstance(expr, ast.Attribute):
+        # ⛔ ROUND 9, CLAUDE MEDIUM: A `@property` IS THE SAME MEMBER ACCESS WITHOUT PARENTHESES,
+        # and six rounds of identity closures all lived in the `Call` branch — so `C().prop`,
+        # three characters SHORTER than the `C().same()` round 9 closed, walked straight past
+        # them. Same family as round 7's `[subprocess][0]`.
+        if tree is not None and not isinstance(expr.ctx, ast.Store):
+            _prop = _resolve_callee(expr, tree)
+            if _prop is not None and _definition_returns_live(_prop, tree, world, depth):
+                return LIVE
         if expr.attr in LIVE_WORLD_READERS:
             return LIVE
         # a QUALIFIED reader counts only beneath its own module: `sys.path` yes, `os.path` no
@@ -1573,32 +1754,23 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
     # `kids` answers BUILT twelve lines above and the clause never ran. A rule about the CALL
     # has to be asked before the rule about its children.
     if isinstance(expr, ast.Call):
-        _tail = (expr.func.attr if isinstance(expr.func, ast.Attribute)
-                 else expr.func.id if isinstance(expr.func, ast.Name) else None)
-        # ⛔ ROUND 9, CODEX HIGH: A METHOD IS A HELPER, and this must be asked BEFORE the child
-        # dominance check for the same reason `relpath` was — `C().same()` has a BUILT child
-        # (the receiver `C()`), so `kids` answers BUILT and the Call branch is never reached.
-        # SECOND time a call-level rule was first written below the rule about its children.
-        # ⚠ Resolved only when the method name is UNAMBIGUOUS across the module's classes: two
-        # classes sharing one method name cannot be told apart without types, and guessing
-        # there is the false-credit direction.
-        if isinstance(expr.func, ast.Attribute) and tree is not None:
-            _methods = [f for cls in tree.body if isinstance(cls, ast.ClassDef)
-                        for f in cls.body
-                        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
-                        and f.name == expr.func.attr]
-            if len(_methods) == 1:
-                _rets = [n.value for n in ast.walk(_methods[0])
-                         if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
-                         and n.value is not None]
-                if LIVE in [world_class(r, _methods[0], tree, world, depth + 1) for r in _rets]:
-                    return LIVE
+        _tail = _callee_tail(expr)
+        # ⭐ ONE CALLEE-IDENTITY QUESTION, ASKED ONCE, ABOVE `kids`. See
+        # `callee_returns_live` for why the position is part of the rule.
+        if callee_returns_live(expr, tree, world, depth):
+            return LIVE
         if _tail in CWD_DEFAULTED_OPS:
             # ⛔ ROUND 9, CODEX HIGH, AND IT IS ROUND 8's OWN REPAIR ONE STEP SHORT. The clause
-            # asked whether `start` was SUPPLIED; supplying a RELATIVE one changes nothing,
+            # asked whether `start` was SUPPLIED; supplying a RELATIVE LITERAL changes nothing,
             # because `relpath(target, start="sub")` resolves "sub" against the live cwd too —
-            # measured at runtime from two directories, two answers. The question is not
-            # whether the default was overridden but whether what overrode it is ambient.
+            # measured at runtime from two directories, two answers.
+            # ⚠ WHAT THIS TESTS IS "a relative LITERAL", NOT "ambient", and round 9's Claude
+            # half was right that the first draft of this comment claimed the latter. A `start`
+            # the case BUILT is credited even when it is relative (`os.path.join("a","b")`) —
+            # measured: demanding an absolute literal instead costs two asserted cases that
+            # deliberately credit a built `start`, and source text cannot tell a built-absolute
+            # from a built-relative one. Same wall as `gettempdir()` versus `mkdtemp()`. That is
+            # a stated limit, not a claim: see limit 6 in the module docstring.
             _start = (expr.args[1] if len(expr.args) > 1
                       else next((k.value for k in expr.keywords if k.arg == "start"), None))
             if _start is None or _is_relative_literal(_start):
@@ -1621,8 +1793,7 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         # smuggle the live world in: `Path()` means the current directory, and `Path('.')` says so
         # with a literal. Both reach here with every child INERT. A bare constructor call over
         # nothing is not evidence the case built a world — it is evidence of nothing.
-        tail = (expr.func.attr if isinstance(expr.func, ast.Attribute)
-                else expr.func.id if isinstance(expr.func, ast.Name) else None)
+        tail = _callee_tail(expr)
         # ⚠ A PATH CONSTRUCTOR OVER A RELATIVE LITERAL IS ALREADY THE AMBIENT DIRECTORY, before
         # anything normalises it — `Path('sub')` names wherever the process happens to be, and
         # `Path('sub').resolve()` therefore has a LIVE base rather than an INERT one. The
@@ -1668,32 +1839,8 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         # resolves a parameter to its call sites. A helper's RETURN is its caller's value.
         # ⚠ The depth bound terminates recursion; a helper whose return it cannot follow stays
         # whatever the leaves say, which is the fail-closed direction.
-        if isinstance(expr.func, ast.Name) and tree is not None:
-            helper = _toplevel_functions(tree).get(expr.func.id)
-            # ⚠ NO `helper is not fn` GUARD: the depth bound already answers recursion,
-            # measured on a self-call and on mutual recursion — identical verdicts with
-            # it and without. Two mechanisms for one property is the duplicate this file
-            # deleted a `seen` set for; the fifteenth clause to go on that evidence.
-            if helper is not None:
-                # ⚠ A YIELD IS A RETURN for this question (r8 Claude M1, F3): a generator
-                # helper hands its caller the same object, and `next(same())` was earning the
-                # route over `ROOT`.
-                returns = [n.value for n in ast.walk(helper)
-                           if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
-                           and n.value is not None]
-                # ⚠ AND A RETURNED PARAMETER RESOLVES TO ITS DEFAULT (F1): `def same(p=ROOT):
-                # return p` hands back the global as surely as `return ROOT` does.
-                _hargs = helper.args
-                _defaults = dict(zip([a.arg for a in
-                                      (_hargs.posonlyargs + _hargs.args)][-len(_hargs.defaults):]
-                                     if _hargs.defaults else [], _hargs.defaults))
-                _defaults.update({a.arg: d for a, d in
-                                  zip(_hargs.kwonlyargs, _hargs.kw_defaults) if d is not None})
-                returns = [_defaults.get(r.id, r) if isinstance(r, ast.Name) else r
-                           for r in returns]
-                classes = [world_class(r, helper, tree, world, depth + 1) for r in returns]
-                if LIVE in classes:
-                    return LIVE
+        # ⚠ NO SECOND CALLEE RESOLVER HERE. Round 8 put one below this line and round 9 put a
+        # near-copy above it; `callee_returns_live` is now the only one, asked before `kids`.
         if not expr.args and not expr.keywords:
             # ⚠ `LIVE_WORLD_READERS` IS NOT IN THIS UNION, and round 6's Claude L1 is why: a
             # Call's `func` is always yielded by `_expr_children`, so a callee in that list has
@@ -2707,6 +2854,15 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # rule, and a single call site cannot tell its parameter from the constant one fixture
     # supplies. The four rows are the four positions that decide it.
     _ald = lambda s: adds_literal_data(ast.parse(s).body[0].value)
+    # ⚠ `string_literal` AT SEVERAL VALUES — it is the single owner of "what string is this
+    # literal", and four call sites that all pass `expr` cannot tell its parameter from a
+    # constant. The rows are the four kinds it must separate.
+    _sl = lambda s: string_literal(ast.parse(s).body[0].value)
+    case("`string_literal` reads a plain constant and a constant-only f-string alike, and "
+         "refuses an interpolated one, a non-string and a non-literal",
+         (_sl("'sub'"), _sl("f'sub'"), _sl("f'{x}sub'"), _sl("3"), _sl("td")),
+         ("sub", "sub", None, None, None))
+
     case("`adds_literal_data` counts a dict key but not a subscript index, a conditional TEST "
          "or a comprehension's condition — a selection is not data",
          (_ald("{**sv, 5: 'd'}"), _ald("[sv][0]"), _ald("sv if True else sv"),
@@ -3267,6 +3423,140 @@ def _self_test() -> int:                                      # noqa: C901 — a
          "declined rather than guessed",
          (_m9("globals()['ROOT'] = D().fresh()"), _m9("globals()['ROOT'] = E().dup()")),
          (frozenset({REBIND}), frozenset({REBIND})))
+
+    # ── ROUND 9's CLAUDE HALF: ONE CALLEE-IDENTITY OWNER, and the Blocking it closed ──────────
+    # ⛔⛔ ROUND 8's HELPER REPAIR SAT BELOW THE CHILD-DOMINANCE CHECK, so ONE argument the case
+    # built made `kids` answer BUILT and the repair never ran — on THREE of four routes. Third
+    # time a call-level rule in this file was written below the rule about its children, and
+    # round 9 had moved the other two for exactly that reason without moving this one.
+    # ⭐ The extraction is the finding's real subject: "resolve a callee's identity" existed as
+    # TWO near-copies at two positions with two lookup scopes, and SIX findings of fifteen were
+    # that single fact. One owner, asked once, above `kids`.
+    _R9B = ("import tempfile, subprocess, sys\nfrom pathlib import Path\nROOT = 1\n"
+            "def same_root(x=None):\n    return ROOT\n"
+            "def fresh(x=None):\n    return tempfile.mkdtemp()\n"
+            "class K:\n    def same(self):\n        return ROOT\n"
+            "    class Inner:\n        def nested(self):\n            return ROOT\n"
+            "    @property\n    def prop(self):\n        return ROOT\n"
+            "class L:\n    def dup(self):\n        return ROOT\n"
+            "class M:\n    def dup(self):\n        return ROOT\n"
+            "class N:\n    def mix(self):\n        return ROOT\n"
+            "class O:\n    def mix(self):\n        return tempfile.mkdtemp()\n"
+            "def main(argv=None, root=ROOT):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return root\n"
+            "def _self_test():\n    td = tempfile.mkdtemp()\n@@S@@    case('x', 1, 1)\n")
+    _b9 = lambda s: classify(_R9B.replace("@@S@@", s)).routes
+    for _s, _route in (("    case('y', main([], root=same_root(td)), 0)\n", "PARAM"),
+                       ("    case('y', main([same_root(td)]), 0)\n", "ARGV"),
+                       ("    subprocess.run([sys.executable, __file__, same_root(td)])\n",
+                        "SUBPROC"),
+                       ("    globals()['ROOT'] = same_root(td)\n", "REBIND")):
+        case(f"⛔ ONE argument the case built must not reopen the helper identity — {_route} "
+             f"(r9 Claude Blocking: the repair sat below the child-dominance check)",
+             _b9(_s), frozenset())
+    case("...and the owner resolves a method, a NESTED class's method, and a @property alike",
+         (_b9("    case('y', main([], root=K().same()), 0)\n"),
+          _b9("    case('y', main([], root=K.Inner().nested()), 0)\n"),
+          _b9("    case('y', main([], root=K().prop), 0)\n")),
+         (frozenset(), frozenset(), frozenset()))
+    case("...and an AMBIGUOUS name is decided when EVERY candidate is live, declined when they "
+         "disagree — which is the line between reading and guessing",
+         (_b9("    case('y', main([], root=L().dup()), 0)\n"),
+          _b9("    case('y', main([], root=N().mix()), 0)\n")),
+         (frozenset(), frozenset({PARAM})))
+    case("...while a helper and a method that BUILD still earn the route",
+         (_b9("    case('y', main([], root=fresh(td)), 0)\n"),
+          _b9("    case('y', main([], root=td), 0)\n")),
+         (frozenset({PARAM}), frozenset({PARAM})))
+
+    # ── ROUND 9, CLAUDE HIGH: AN F-STRING IS A LITERAL, and one `f` flipped NINE refusals ─────
+    _R9F = ("from pathlib import Path\nimport os, tempfile\nROOT = Path('/repo')\n"
+            "def main(argv=None, root=ROOT):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return root\n"
+            "def _self_test():\n    td = tempfile.mkdtemp()\n"
+            "    case('x', main([], root=@@E@@), 0)\n")
+    _f9 = lambda e: classify(_R9F.replace("@@E@@", e)).routes
+    for _plain in ("Path('.')", "os.path.abspath('.')", "os.listdir('.')", "Path('./x')",
+                   "os.path.abspath('./x')", "Path('sub')", "os.path.abspath('sub')"):
+        _fs = _plain.replace("('", '(f"').replace("')", '")')
+        case(f"an f-string IS the literal it spells, so `{_fs}` answers as `{_plain}` does "
+             f"(r9 Claude High — 9 of 9 shapes flipped on one `f`)",
+             (_f9(_plain), _f9(_fs)), (frozenset(), frozenset()))
+    case("...and an ABSOLUTE f-string literal is still a world the case named",
+         (_f9("Path(f'/tmp/fixture')"), _f9("os.path.abspath(f'/abs')")),
+         (frozenset({PARAM}), frozenset({PARAM})))
+    # ⚠ AND THE SHAPE THAT DISTINGUISHES THE ENTRY POINT from `_is_relative_literal`'s own
+    # consumers: an f-string MIXED with a built value. The path clauses answer the pure forms,
+    # so only a mixed expression — where LIVE must dominate BUILT — can tell whether the
+    # literal reached `world_class` at all. Measured: credited without it.
+    case("...and an f-string literal MIXED with a built value is still the live world, because "
+         "LIVE dominates — the row that proves the literal reaches the classifier",
+         (_f9("os.path.join(f'.', td)"), _f9("os.path.join(f'./x', td)"),
+          _f9("os.path.join(f'abs', td)")),
+         (frozenset(), frozenset(), frozenset({PARAM})))
+
+    # ⛔ ROUND 9, CLAUDE LOW: `_mentions_self_test` USED THE NAME-CONTAINS SHORTCUT THAT
+    # `suite_entries` RECORDS AS TRIED AND REJECTED, fifty lines below it. It matched any
+    # identifier merely CONTAINING the substring, so a module whose only conditional names
+    # `no_self_test_mode` read as dispatching a suite.
+    _R9S = ("import tempfile\nROOT = 1\n"
+            "def main(argv=None, root=ROOT):\n"
+            "    if no_self_test_mode:\n"
+            "        return _self_test()\n"
+            "    return root\n"
+            "def _self_test():\n"
+            "    td = tempfile.mkdtemp()\n"
+            "    case('x', main([str(td)]), 0)\n")
+    case("⛔ an identifier merely CONTAINING `self_test` is not the flag test — the shortcut "
+         "`suite_entries` records as REJECTED (r9 Claude Low)",
+         classify(_R9S).routes, frozenset())
+    case("...while the real spellings still dispatch: an attribute, a bare name and the flag",
+         (dispatches_a_suite(ast.parse(_R9S.replace("no_self_test_mode", "a.self_test"))),
+          dispatches_a_suite(ast.parse(_R9S.replace("no_self_test_mode", "self_test"))),
+          dispatches_a_suite(ast.parse(_R9S.replace("no_self_test_mode",
+                                                    "'--self-test' in argv")))),
+         (True, True, True))
+
+    # ── ROUND 9, CLAUDE M3/M4/M5 ──────────────────────────────────────────────────────────────
+    _R9G = ("import os, tempfile\nfrom builtins import globals as gl\n"
+            "ROOT = os.getcwd()\nOTHER = '/tmp/f'\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return ROOT, OTHER\n"
+            "def _self_test():\n@@S@@    case('x', main([]), 0)\n")
+    _g9 = lambda s: classify(_R9G.replace("@@S@@", s)).routes
+    case("⛔ a module-dict read whose KEY cannot be decided is not evidence of a different "
+         "world (r9 Claude Medium — a variable key was a false credit)",
+         (_g9("    k = 'ROOT'\n    globals()['ROOT'] = globals()[k]\n"),
+          _g9("    k = 'ROOT'\n    globals()['ROOT'] = globals().get(k)\n")),
+         (frozenset(), frozenset()))
+    case("...and the READ side honours the `globals` alias the WRITE side already did — one "
+         "rule, both directions (r9 Claude Medium)",
+         (_g9("    gl()['ROOT'] = gl()['OTHER']\n"),
+          _g9("    gl()['ROOT'] = gl().get('OTHER')\n"),
+          _g9("    gl()['ROOT'] = gl()['ROOT']\n")),
+         (frozenset({REBIND}), frozenset({REBIND}), frozenset()))
+    _R9D = ("import tempfile\nROOT = 1\n"
+            "def main(argv=None, root=ROOT):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return root\n"
+            "def _self_test():\n    td = tempfile.mkdtemp()\n@@S@@")
+    _d9 = lambda s: classify(_R9D.replace("@@S@@", s)).routes
+    case("⛔ the `else` of a statically-TRUE test is the same dead branch written the other way "
+         "round, and round 1 called this the cheapest fake compliance (r9 Claude Medium)",
+         (_d9("    if True:\n        pass\n    else:\n        main([str(td)])\n"),
+          _d9("    if 1:\n        pass\n    else:\n        main([str(td)])\n")),
+         (frozenset(), frozenset()))
+    case("...⚠ while a `while False: … else:` DOES execute its else, so the symmetric repair "
+         "would have been wrong — the reviewer ran it rather than assuming",
+         _d9("    while False:\n        pass\n    else:\n        main([str(td)])\n"),
+         frozenset({ARGV}))
     # ⛔ ROUND 8, CLAUDE M1: the one-hop resolution missed three callee shapes, each of which
     # handed `main` the global and earned the route. A returned PARAMETER resolves to its
     # DEFAULT, and a YIELD is a return for this question.
