@@ -155,3 +155,20 @@ evidence if you confirm WHICH object matched**, not that something did.
 Wait on a signal the subject itself emits and the watcher cannot contain — a completion marker in
 the output (`until grep -q "^elapsed" out`), a sentinel file, or the process's exit via
 `run_in_background`. See [[a-hang-is-not-a-diagnosis]].
+
+⟳ **2026-10-05 — AND ONCE AGAINST MY OWN READING, not a script.** I read an adversarial review
+with `sed -n '144,214p'` and `sed -n '214,270p'`, line ranges chosen by eye from a heading scan
+that grepped `^## ` while the findings were `^### `. The ranges silently truncated, **two findings
+of eleven were never read**, and I reported the round folded. The only thing that surfaced it was
+the teammate's own summary stating counts — *3 Mediums, 4 Lows* — that did not match what I had
+acted on.
+
+⭐ **A RANGE IS NOT A POPULATION.** Enumerate first, then read:
+
+    grep -nE "^#+ (H|M|L)[0-9] " <review>
+
+**How to apply:** before acting on any structured document — a review, a backlog, a report — get
+the COUNT of items from the document itself and reconcile it against the number you acted on. A
+heading grep that returns fewer items than the summary claims is the cheap version of this check,
+and it would have fired here in one second. ⚠ The same applies to a teammate's report: its counts
+are a free falsifier for your own reading, so compare them rather than skimming past them.
