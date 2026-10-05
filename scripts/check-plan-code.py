@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 142,
+    "scripts/check-main-drivable.py": 150,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4108,6 +4108,31 @@ def _self_test() -> int:
     # closes over as read from the enclosing function. `free_names` was right; the measuring
     # instrument was wrong. That is what an adversarial reviewer should do to a new oracle, and
     # the corrected oracle now carries the four shapes that refuted it.
+    # ⟳ 2026-10-05, ROUND 8's CLAUDE HALF: 1320 -> 1328, `check-main-drivable` 142 -> 150
+    # (9 added, 1 dropped as a duplicate anchor, 4 retargeted). 0 Blocking, 1 High, 2 Medium,
+    # 3 Low; everything LATENT, 0 verdict changes over the 44 guards for every candidate fix.
+    # ⛔ THE HIGH IS THE SIXTH MASKING PAIR AND THE PROBE IS THIS REPO'S OWN IDIOM:
+    # `g = globals()` appears in eight guards, and `globals()["ROOT"] = g["ROOT"]` was a pure
+    # no-op earning REBIND — because the WRITE and the READ use different spellings of the
+    # module dict, defeating `_global_target_names` and `_is_restore_value` at once. It also
+    # SWALLOWED round 8's own `relpath` repair on this route: one expression, ambient on ARGV
+    # and PARAM, "a world the case built" on REBIND.
+    # ★★ AND THE FIX THE FINDING PROPOSED WAS DEAD *AND* WRONG — the THIRD time this slice has
+    # produced that pair, and the first time it was a REVIEWER's proposal rather than mine.
+    # Treating any LIVE case-bound leaf as an alias is unreachable (the subscript rule and the
+    # restore rule each answer earlier) and wrong where it can be reached:
+    # `_o = OTHER; globals()["ROOT"] = _o` substitutes one world global for another, which IS a
+    # change. What actually closes it is reading the subscript KEY — `g["ROOT"]` is the same
+    # world, `g["OTHER"]` is not. **A finding can be real and its proposed fix a hypothesis.**
+    # ⚠ The first draft of that same clause ALSO refused `{**saved, 5: "Detail:"}` —
+    # `check-surface-recall.py:652`, one of the three best constructed worlds in this repo —
+    # caught by three cases going red rather than by reading, and repaired by giving "does this
+    # add data of its own" ONE owner that both the restore rule and the identity rule call.
+    # ⟳ Also: PEP 572 scoping for the walrus (a lambda body binds its own, everything else
+    # binds in the case), three more callee shapes for the one-hop helper resolution (a returned
+    # parameter's default, a yield, a return nested in an `if`), a SEVENTEENTH dying case, and
+    # the same-line substitution bound finally written into `live_substitutions`' docstring
+    # after it cost a reviewer two probe rounds to discover.
     # ⚠ Two more dying cases (fifteenth and sixteenth), and the reviewer's own correction of
     # a sixth "dead clause": the `bound if i == 0 else inner` ternary is a provable NO-OP, since
     # `inner` is initialised to `bound` and updated only afterwards — so it was not a coverage
@@ -4121,7 +4146,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1320)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1328)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

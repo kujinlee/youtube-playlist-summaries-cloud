@@ -1135,7 +1135,7 @@
   "name": "a MODIFIED copy counts as a restore, so `check-surface-recall.py`'s constructed world reads as a put-back and the guard goes to debt",
   "edits": [
    [
-    "    return not any(isinstance(n, ast.Constant) and id(n) not in indices\n                   for n in ast.walk(value))",
+    "    return not adds_literal_data(value)",
     "    return True"
    ]
   ],
@@ -1499,7 +1499,7 @@
   "name": "a lambda body's names leak into the enclosing scope, so a restore written `(lambda _sv: _sv)(_sv)` reads as a substitution",
   "edits": [
    [
-    "            rec(node.body, bound | params)",
+    "            rec(node.body, bound | params | _walrus_bound_here(node.body))",
     "            rec(node.body, bound)"
    ]
   ],
@@ -1551,8 +1551,8 @@
   "name": "a subscript INDEX counts as literal data added to a restore, so `[saved for saved in [saved]][0]` reads as a substitution",
   "edits": [
    [
-    "    indices = {id(n) for sub in ast.walk(value) if isinstance(sub, ast.Subscript)\n               for n in ast.walk(sub.slice)}",
-    "    indices = set()"
+    "    inert_positions = {id(n) for sub in ast.walk(value) if isinstance(sub, ast.Subscript)\n                       for n in ast.walk(sub.slice)}",
+    "    inert_positions = set()"
    ]
   ],
   "expect": [
@@ -1759,8 +1759,8 @@
   "name": "a walrus target read LATER in the same expression counts as a free name of the case, so `(_t := saved) or _t` \u2014 a restore \u2014 earns REBIND (r7 Claude Medium, found by differential test against CPython's symtable)",
   "edits": [
    [
-    "    return out - {n.target.id for n in ast.walk(value)\n                  if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name)}",
-    "    return out"
+    "    rec(value, frozenset(_walrus_bound_here(value)))",
+    "    rec(value, frozenset())"
    ]
   ],
   "expect": [
@@ -1843,6 +1843,110 @@
   ],
   "expect": [
    "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a read of the module dict stops being resolved by its KEY, so `g['OTHER']` \u2014 a different global \u2014 reads as the same world and loses its credit (r8 Claude High, the control half)",
+  "edits": [
+   [
+    "            return value.slice.value != name",
+    "            return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `g = globals()` then `globals()['ROOT'] = g['ROOT']` is a pure no-op \u2014 the WRITE and the READ use different spellings of the module dict, which defeated both the target rule and the restore rule (r8 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "only the literal `globals()` spelling is resolved, so `g = globals()` then `globals()['ROOT'] = g['ROOT']` \u2014 a pure no-op using the repo's own idiom in eight guards \u2014 earns REBIND (r8 Claude High, the sixth masking pair)",
+  "edits": [
+   [
+    "        if (_is_globals_call(_recv)\n                or (isinstance(_recv, ast.Name) and _recv.id in globals_aliases(fn))):",
+    "        if _is_globals_call(_recv):"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `g = globals()` then `globals()['ROOT'] = g['ROOT']` is a pure no-op \u2014 the WRITE and the READ use different spellings of the module dict, which defeated both the target rule and the restore rule (r8 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a returned PARAMETER stops resolving to its default, so `def same(p=ROOT): return p` hands main the global and earns the route (r8 Claude Medium)",
+  "edits": [
+   [
+    "                returns = [_defaults.get(r.id, r) if isinstance(r, ast.Name) else r\n                           for r in returns]",
+    "                returns = list(returns)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = same_p()` hands main the global it already had \u2014 a returned PARAMETER, via its default (r8 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a YIELD stops counting as a return, so a generator helper hands main the global and earns the route (r8 Claude Medium)",
+  "edits": [
+   [
+    "                           if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))\n                           and n.value is not None]",
+    "                           if isinstance(n, ast.Return) and n.value is not None]"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = next(same_y())` hands main the global it already had \u2014 a YIELD is a return here (r8 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the helper branch reads only top-level statements, so a `return ROOT` nested in an `if` is invisible and the identity earns the route (r8 Claude Low \u2014 the clause shipped with a case for its outer `if` and none for its breadth)",
+  "edits": [
+   [
+    "                returns = [n.value for n in ast.walk(helper)",
+    "                returns = [n.value for n in helper.body"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = next(same_y())` hands main the global it already had \u2014 a YIELD is a return here (r8 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a walrus inside a LAMBDA BODY is collected as binding in the case, so a name the case genuinely reads is hidden \u2014 PEP 572 scopes it to the lambda (r8 Claude Medium)",
+  "edits": [
+   [
+    "        if isinstance(n, ast.Lambda):\n            return                      # its walruses are its own",
+    "        if False:\n            return                      # its walruses are its own"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a literal in a conditional TEST counts as data the value adds, so `_g if True else _g` \u2014 which evaluates to `_g` either way \u2014 reads as a modified copy",
+  "edits": [
+   [
+    "    inert_positions |= {id(n) for x in ast.walk(value) if isinstance(x, ast.IfExp)\n                        for n in ast.walk(x.test)}",
+    "    inert_positions |= set()"
+   ]
+  ],
+  "expect": [
+   "...and an alias of the global through any wrapper earns nothing, while a MODIFIED copy still does \u2014 a TEST is not data, a dict key is"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the helper branch stops checking it was given a tree, raising AttributeError wherever `world_class` is called without one (r8 Claude Low, the seventeenth dying case)",
+  "edits": [
+   [
+    "        if isinstance(expr.func, ast.Name) and tree is not None:",
+    "        if isinstance(expr.func, ast.Name):"
+   ]
+  ],
+  "expect": [
+   "...and the plain put-back beside it IS a restore"
   ],
   "file": "scripts/check-main-drivable.py"
  }

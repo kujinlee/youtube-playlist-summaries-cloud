@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 361 cases
+    python3 scripts/check-main-drivable.py --self-test   # 370 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -853,6 +853,28 @@ def global_writes(fn: ast.AST | None,
     return sorted(writes)
 
 
+def _walrus_bound_here(node: ast.AST) -> set[str]:
+    """Walrus targets that bind in the scope `node` appears in. PURE.
+
+    PEP 572: `(x := …)` binds in the containing FUNCTION, and a comprehension's walrus reaches
+    out to that same scope — which is why a comprehension is not a stopping point here. A lambda
+    IS one: a walrus in a lambda body binds inside the lambda, so it is left for that scope to
+    collect. Round 8 found the blanket version hiding `z` in `(lambda: (z := _sv))() or z`.
+    """
+    out: set[str] = set()
+
+    def rec(n: ast.AST) -> None:
+        if isinstance(n, ast.Lambda):
+            return                      # its walruses are its own
+        if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name):
+            out.add(n.target.id)
+        for child in ast.iter_child_nodes(n):
+            rec(child)
+
+    rec(node)
+    return out
+
+
 def free_names(value: ast.AST) -> set[str]:
     """Names this expression reads from the ENCLOSING scope. PURE.
 
@@ -896,7 +918,8 @@ def free_names(value: ast.AST) -> set[str]:
                 rec(d, bound)
             params = {x.arg for x in [*a.posonlyargs, *a.args, *a.kwonlyargs]}
             params |= {x.arg for x in (a.vararg, a.kwarg) if x is not None}
-            rec(node.body, bound | params)
+            # a walrus in the BODY binds in the lambda, not in the case — PEP 572
+            rec(node.body, bound | params | _walrus_bound_here(node.body))
             return
         if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
             inner = bound
@@ -918,15 +941,37 @@ def free_names(value: ast.AST) -> set[str]:
         for child in ast.iter_child_nodes(node):
             rec(child, bound)
 
-    # ⛔ ROUND 7, CLAUDE MEDIUM, FOUND BY DIFFERENTIAL TEST AGAINST CPython's OWN `symtable`
-    # over 41 shapes — 38 agreed and 3 diverged, all one class. The walrus branch drops the
-    # target where it is BOUND and a LATER READ of it in the same expression was still counted
-    # as a free name of the case: `(_t := _sv) or _t` reported `['_sv', '_t']` where `symtable`
-    # says `['_sv']`. Both consumers then failed toward CREDIT. A walrus target is bound by this
-    # expression wherever it is read in it, so it is removed once, at the end.
-    rec(value, frozenset())
-    return out - {n.target.id for n in ast.walk(value)
-                  if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name)}
+    # ⛔ ROUND 7 FOUND THE WALRUS AND ROUND 8 FOUND THE SCOPE. Round 7 subtracted every walrus
+    # target in the expression, because `(_t := _sv) or _t` was reporting `_t` as the case's —
+    # right answer, wrong mechanism. PEP 572 scopes a walrus in a LAMBDA BODY to that lambda and
+    # one anywhere else to the ENCLOSING function, so a blanket subtraction hides a name the
+    # case really does read: `(lambda: (z := _sv))() or z` reads `z` from the case, and CPython's
+    # `symtable` says so. ⭐ Collected per scope instead, which is the same shape as `params`.
+    rec(value, frozenset(_walrus_bound_here(value)))
+    return out
+
+
+def adds_literal_data(value: ast.AST) -> bool:
+    """-> True when this expression contributes literal data the global did not hold. PURE.
+
+    ⚠ A SUBSCRIPT INDEX IS NAVIGATION, NOT DATA, and counting it cost a restore its refusal:
+    `[saved for saved in [saved]][0]` has exactly one Constant, the `0`. A TEST is not data
+    either — `_g if True else _g` evaluates to `_g` whichever way the literal goes. A key or a
+    value in a dict display IS data, which is what separates `{**saved}` (a copy) from
+    `{**saved, 5: "Detail:"}` (`check-surface-recall.py:652`, a world the case BUILT).
+
+    ⭐ ONE OWNER, because round 8's Medium was a hand-inlined copy of exactly this kind of
+    question drifting from its named owner inside a single commit. Both the restore rule and
+    the identity rule ask it now.
+    """
+    inert_positions = {id(n) for sub in ast.walk(value) if isinstance(sub, ast.Subscript)
+                       for n in ast.walk(sub.slice)}
+    inert_positions |= {id(n) for x in ast.walk(value) if isinstance(x, ast.IfExp)
+                        for n in ast.walk(x.test)}
+    inert_positions |= {id(n) for c in ast.walk(value) if isinstance(c, ast.comprehension)
+                        for cond in c.ifs for n in ast.walk(cond)}
+    return any(isinstance(n, ast.Constant) and id(n) not in inert_positions
+               for n in ast.walk(value))
 
 
 def _is_restore_value(value: ast.AST, holders: set[str], locals_: frozenset[str]) -> bool:
@@ -972,16 +1017,7 @@ def _is_restore_value(value: ast.AST, holders: set[str], locals_: frozenset[str]
         return False
     if bound_here - holders:
         return False
-    # ⚠ A SUBSCRIPT INDEX IS NAVIGATION, NOT ADDED DATA, and counting it cost a restore its
-    # refusal: `[saved for saved in [saved]][0]` has exactly one Constant, the `0`, and read as a
-    # substitution. The rule's own sentence is "it adds no literal data of its own" — a key in a
-    # dict display does, an index does not. ⭐ And the direction is checked, not assumed:
-    # excluding indices also makes `saved[5]` read as a restore, which REFUSES a credit rather
-    # than granting one. The safe way to be wrong.
-    indices = {id(n) for sub in ast.walk(value) if isinstance(sub, ast.Subscript)
-               for n in ast.walk(sub.slice)}
-    return not any(isinstance(n, ast.Constant) and id(n) not in indices
-                   for n in ast.walk(value))
+    return not adds_literal_data(value)
 
 
 def _unpack(target: ast.AST, value: ast.AST) -> list[tuple[ast.AST, ast.AST]]:
@@ -1069,6 +1105,16 @@ def substitution_changes_the_world(value: ast.AST, name: str, fn: ast.AST | None
              if not (hasattr(builtins, n) and n not in _shadowed)}
     if _free == {name} and not _bound_values(name, fn):
         return False
+    # ⛔ A READ OF THE MODULE DICT NAMES A GLOBAL, AND WHICH ONE IS DECIDABLE. `g["ROOT"]` is
+    # the same world as `ROOT`; `g["OTHER"]` is a different one — and the alias exception below
+    # cannot tell them apart, because both rest on `g`, which is LIVE. The subscript KEY is the
+    # answer, so it is read here rather than approximated downstream. ⚠ Found by a control: the
+    # first draft of the alias fix refused `g["OTHER"]` too, which is a lost credit.
+    if isinstance(value, ast.Subscript) and isinstance(value.slice, ast.Constant):
+        _recv = value.value
+        if (_is_globals_call(_recv)
+                or (isinstance(_recv, ast.Name) and _recv.id in globals_aliases(fn))):
+            return value.slice.value != name
     names = free_names(value)
     if world_class(value, fn, tree, world) is LIVE:
         bound_here = {n.id for n in ast.walk(fn or value)
@@ -1076,6 +1122,27 @@ def substitution_changes_the_world(value: ast.AST, name: str, fn: ast.AST | None
         # LIVE with nothing the case bound is a pure live read: `os.getcwd()`, `ROOT`, `__file__`.
         # LIVE *with* a case-bound leaf is a world derived FROM the live one — a modified copy —
         # which is how the two live guards above substitute, and is a real change.
+        # ⛔ ROUND 8, CLAUDE HIGH, AND IT IS THE SIXTH MASKING PAIR. The exception was disabled
+        # by ANY case-bound name in the value — but a case-bound name that is merely an ALIAS of
+        # the global adds nothing, and all three identity closures (r6 bare name, r7 twelve
+        # wrappers, r8 a module helper) sit ABOVE this line and were bypassed by it. The repo's
+        # own idiom is the proof: `g = globals()` appears in eight guards, and
+        #
+        #     g = globals(); globals()["ROOT"] = g["ROOT"]        -> rebind, a pure no-op
+        #
+        # because the WRITE and the READ use different spellings of the module dict, defeating
+        # `_global_target_names` and `_is_restore_value` at once. ⛔ It also SWALLOWED round 8's
+        # own `relpath` repair on this route: `os.path.relpath(td)` is ambient on ARGV and PARAM
+        # and "a world the case built" on REBIND — one expression, two answers, because the fix
+        # landed on two routes of four.
+        # ⛔ AN "ALIAS IS NOT THE CASE'S OWN" CLAUSE WAS HERE AND IT WAS DEAD *AND* WRONG — the
+        # third time this file has produced that pair. Round 8's High proposed treating a
+        # case-bound leaf whose own class is LIVE as an alias; measured, it was unreachable
+        # (the globals-subscript rule above and `_is_restore_value` answer both of the shapes
+        # the finding named, each one earlier) and WRONG where it could be reached:
+        # `_o = OTHER; globals()["ROOT"] = _o` substitutes one world global for another, which
+        # IS a change, and the clause refused it. ⭐ The finding was real and the repair it
+        # suggested was not; what closes it is reading the subscript KEY, above.
         if not (names & bound_here):
             return False
     return True
@@ -1091,6 +1158,12 @@ def live_substitutions(fn: ast.AST | None, lineno: int,
     `global_writes(fn)` once per NAME inside a loop over its own output, which is where the
     quadratic factor on top of the cubic one came from.
     """
+    # ⚠ THE BOUND IS STRICTLY EARLIER LINES (round 8, Claude L3), which means a substitution on
+    # the SAME source line as the call is never credited: `globals()["ROOT"] = mkdtemp(); main([])`
+    # earns nothing while the same two statements on two lines earn the route. That is the
+    # conservative direction and it is deliberate — the order read here is LEXICAL, not
+    # executional — but it cost a reviewer two probe rounds to discover, which is the evidence
+    # it was undocumented rather than merely unsurprising.
     writes = global_writes(fn, aliased) if writes is None else writes
     live: set[str] = set()
     for name in {g for _, g, _ in writes}:
@@ -1563,8 +1636,22 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             # it and without. Two mechanisms for one property is the duplicate this file
             # deleted a `seen` set for; the fifteenth clause to go on that evidence.
             if helper is not None:
+                # ⚠ A YIELD IS A RETURN for this question (r8 Claude M1, F3): a generator
+                # helper hands its caller the same object, and `next(same())` was earning the
+                # route over `ROOT`.
                 returns = [n.value for n in ast.walk(helper)
-                           if isinstance(n, ast.Return) and n.value is not None]
+                           if isinstance(n, (ast.Return, ast.Yield, ast.YieldFrom))
+                           and n.value is not None]
+                # ⚠ AND A RETURNED PARAMETER RESOLVES TO ITS DEFAULT (F1): `def same(p=ROOT):
+                # return p` hands back the global as surely as `return ROOT` does.
+                _hargs = helper.args
+                _defaults = dict(zip([a.arg for a in
+                                      (_hargs.posonlyargs + _hargs.args)][-len(_hargs.defaults):]
+                                     if _hargs.defaults else [], _hargs.defaults))
+                _defaults.update({a.arg: d for a, d in
+                                  zip(_hargs.kwonlyargs, _hargs.kw_defaults) if d is not None})
+                returns = [_defaults.get(r.id, r) if isinstance(r, ast.Name) else r
+                           for r in returns]
                 classes = [world_class(r, helper, tree, world, depth + 1) for r in returns]
                 if LIVE in classes:
                     return LIVE
@@ -2292,8 +2379,14 @@ def _self_test() -> int:                                      # noqa: C901 — a
                   "    globals()['DECLARED'] = _saved\n")
     case("⛔ a MODIFIED copy of the real world is a SUBSTITUTION, not a restore (r1 High)",
          classify(_wired(R_MODIFIED)).routes, frozenset({REBIND}))
+    # ⛔ SEVENTEENTH DYING CASE (r8 Claude L2). `global_writes` is called here with NO tree, so
+    # `world_class` reaches the helper branch with `tree=None` — which is exactly the input that
+    # branch's precondition exists for. Severing the precondition raises HERE, at case 49, with
+    # zero `[FAIL]` lines. The guard is load-bearing and stays; what was missing is a case that
+    # REPORTS instead of crashing.
     case("...and the plain put-back beside it IS a restore",
-         [r for _, _, r in global_writes(ast.parse(_wired(R_MODIFIED)).body[-1])], [False, True])
+         _caught(lambda: [r for _, _, r in
+                          global_writes(ast.parse(_wired(R_MODIFIED)).body[-1])]), [False, True])
     R_COPY_RESTORE = R_MODIFIED.replace("globals()['DECLARED'] = _saved\n",
                                         "globals()['DECLARED'] = dict(_saved)\n")
     case("...and so is a shallow copy of the saved value",
@@ -2570,6 +2663,17 @@ def _self_test() -> int:                                      # noqa: C901 — a
          frozenset({REBIND}))
     case("...and with no restore at all the substitution is still live at the call",
          classify(R5_RESTORE.replace("@@R@@", "")).routes, frozenset({REBIND}))
+    # ⚠ `adds_literal_data` AT SEVERAL VALUES — it is the single owner of "does this expression
+    # contribute data the global did not hold", called by both the restore rule and the identity
+    # rule, and a single call site cannot tell its parameter from the constant one fixture
+    # supplies. The four rows are the four positions that decide it.
+    _ald = lambda s: adds_literal_data(ast.parse(s).body[0].value)
+    case("`adds_literal_data` counts a dict key but not a subscript index, a conditional TEST "
+         "or a comprehension's condition — a selection is not data",
+         (_ald("{**sv, 5: 'd'}"), _ald("[sv][0]"), _ald("sv if True else sv"),
+          _ald("[q for q in sv if q > 3]"), _ald("dict(sv)")),
+         (True, False, False, False, False))
+
     case("...and a value naming NO saved holder is not a restore however copy-shaped it looks",
          _is_restore_value(ast.parse("dict(other)").body[0].value, {"_sv"}, frozenset({"other"})),
          False)
@@ -3094,6 +3198,57 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...while a helper that BUILDS a world still earns the route, which is the line "
          "between following a return and refusing every call",
          _helper("globals()['ROOT'] = fresh()"), frozenset({REBIND}))
+    # ⛔ ROUND 8, CLAUDE M1: the one-hop resolution missed three callee shapes, each of which
+    # handed `main` the global and earned the route. A returned PARAMETER resolves to its
+    # DEFAULT, and a YIELD is a return for this question.
+    _R8M = ("import tempfile\nROOT = 1\n"
+            "def same_p(p=ROOT):\n    return p\n"
+            "def same_kw(*, p=ROOT):\n    return p\n"
+            "def same_y():\n    yield ROOT\n"
+            "def cond():\n    if 1:\n        return ROOT\n    return ROOT\n"
+            "def fresh_p(p=None):\n    return tempfile.mkdtemp()\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return ROOT\n"
+            "def _self_test():\n@@S@@    case('x', main([]), 0)\n")
+    _h8 = lambda s: classify(_R8M.replace("@@S@@", f"    {s}\n")).routes
+    for _s, _why in (("globals()['ROOT'] = same_p()", "a returned PARAMETER, via its default"),
+                     ("globals()['ROOT'] = same_kw()", "...and a keyword-only default"),
+                     ("globals()['ROOT'] = next(same_y())", "a YIELD is a return here"),
+                     ("globals()['ROOT'] = cond()", "a return nested in an `if` — the branch "
+                                                    "walks the whole body, not just its top")):
+        case(f"⛔ `{_s}` hands main the global it already had — {_why} (r8 Claude Medium)",
+             _h8(_s), frozenset())
+    case("...while a helper whose parameter has a default it does NOT return still builds",
+         _h8("globals()['ROOT'] = fresh_p()"), frozenset({REBIND}))
+
+    # ⛔ ROUND 8, CLAUDE HIGH — THE SIXTH MASKING PAIR, and the repo's own idiom is the probe.
+    # The case-bound-leaf exception was disabled by ANY case-bound name, so an ALIAS of the
+    # global re-enabled the credit that three rounds of identity closures had removed.
+    # `g = globals()` appears in eight guards on disk.
+    _R8A = ("import tempfile\nfrom pathlib import Path\nROOT = 1\nOTHER = 2\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return ROOT, OTHER\n"
+            "def _self_test():\n@@S@@    case('x', main([]), 0)\n")
+    _a8 = lambda s: classify(_R8A.replace("@@S@@", s)).routes
+    case("⛔ `g = globals()` then `globals()['ROOT'] = g['ROOT']` is a pure no-op — the WRITE "
+         "and the READ use different spellings of the module dict, which defeated both the "
+         "target rule and the restore rule (r8 Claude High)",
+         _a8("    g = globals()\n    globals()['ROOT'] = g['ROOT']\n"), frozenset())
+    case("...while reading a DIFFERENT global through the same alias IS a change — the "
+         "subscript KEY decides, and the first draft of this refused both",
+         (_a8("    g = globals()\n    globals()['ROOT'] = g['OTHER']\n"),
+          _a8("    globals()['ROOT'] = globals()['OTHER']\n")),
+         (frozenset({REBIND}), frozenset({REBIND})))
+    case("...and an alias of the global through any wrapper earns nothing, while a MODIFIED "
+         "copy still does — a TEST is not data, a dict key is",
+         (_a8("    _g = ROOT\n    globals()['ROOT'] = _g if True else _g\n"),
+          _a8("    _sv = ROOT\n    globals()['ROOT'] = {**_sv, 5: 'd'}\n"),
+          _a8("    _g = tempfile.mkdtemp()\n    globals()['ROOT'] = Path(_g)\n")),
+         (frozenset(), frozenset({REBIND}), frozenset({REBIND})))
 
     case("...and a builtin the CASE HAS SHADOWED is the case's own, so it is not excluded",
          _ident("globals()['ROOT'] = next(ROOT)", pre="    next = lambda v: 'x'\n"),
@@ -3189,7 +3344,15 @@ def _self_test() -> int:                                      # noqa: C901 — a
                "(lambda *a, **k: a)(_sv)", "[x for x in src if (y := x) and y]",
                # ⟳ the two shapes round 8 used to refute the oracle's first version
                "[(lambda: x) for x in src]", "[(lambda: x)() for x in src]",
-               "[(lambda y=x: y)() for x in src]", "(lambda: [q for q in src])()"]
+               "[(lambda y=x: y)() for x in src]", "(lambda: [q for q in src])()",
+               # ⟳ round 8: a walrus in a LAMBDA BODY scopes to the lambda (PEP 572), so a read
+               # of it outside genuinely comes from the case. The blanket subtraction hid that,
+               # and `_SHAPES` had no lambda-scoped walrus to see it with.
+               "(lambda: (z := _sv))() or z", "(lambda: (z := 1))() or z",
+               "[(lambda: (z := 1))() for q in _sv] or z", "[(y := q) for q in _sv] and y",
+               # ⚠ READ INSIDE the lambda, which is the shape that distinguishes the scope
+               # clause from its absence — the four above agree either way.
+               "(lambda: (z := _sv) or z)()", "(lambda q: (z := q) or z)(_sv)"]
     case("⭐ free_names agrees with CPython's own symbol table on every binding form it claims "
          "to read off the grammar (r7 Claude Medium — 3 of 41 shapes diverged before this)",
          [e for e in _SHAPES
