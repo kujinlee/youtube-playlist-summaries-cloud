@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 133,
+    "scripts/check-main-drivable.py": 138,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4065,6 +4065,29 @@ def _self_test() -> int:
     # is INERT too, so `os.path.abspath("/tmp/fixture")` was read as the live cwd. **A proxy for
     # a property is not the property** — the comment above it even claimed the predicate was the
     # base rather than a name list, while testing something that was neither.
+    # ⟳ 2026-10-04, ROUND 7's CLAUDE HALF: 1311 -> 1316, `check-main-drivable` 133 -> 138
+    # (5 added, 1 REPLACED with a sharper mutation of the same line, 3 declined because their
+    # line already carried a CAUGHT entry, 8 anchors RETARGETED, 2 re-anchored off mid-line).
+    # 0 Blocking, 2 High, 4 Medium, 5 Low; 5 deliverable, 5 instrument, 1 mixed.
+    # ⛔ ITS H1 IS THE SAME DEFECT CLASS THIS FILE KEEPS PAYING FOR: round 6 closed the identity
+    # route for a BARE NAME, and `[subprocess][0]` — three characters longer — walked back
+    # through it. **18 false credits of 36** over twelve trivial wrappers. The repair is a LEAF
+    # test, the same move that let `_is_restore_value` delete `COPIERS`; a wrapper list would
+    # have been the fourth list this file refused. ⚠ Two of the twelve needed a second idea:
+    # `next(iter([X]))` has builtins among its free names, and PYTHON ENUMERATES ITS BUILTINS,
+    # so excluding unshadowed ones is a derivation rather than a list.
+    # ⛔ ITS H2 IS THE THIRD REVERSAL OF THIS SLICE. Round 6 moved the directory readers out of
+    # `LIVE_WORLD_READERS` and `os.listdir()` — which DEFAULTS its base to the cwd — went BUILT
+    # while `os.listdir('.')`, the identical runtime value, stayed LIVE. The receiver decides.
+    # ★ AND THE METHOD WORTH COPYING: it differential-tested `free_names` against CPython's own
+    # `symtable` over 41 shapes and found 3 divergences, every one of which had a PASSING
+    # hand-written case. A hand-written expectation encodes the author's model of the rule — the
+    # same model that produced the rule. That differential is now a case, with a ground truth
+    # this file does not own.
+    # ⚠ Two more dying cases (fifteenth and sixteenth), and the reviewer's own correction of
+    # a sixth "dead clause": the `bound if i == 0 else inner` ternary is a provable NO-OP, since
+    # `inner` is initialised to `bound` and updated only afterwards — so it was not a coverage
+    # gap but a comment dressed as code, and the rule it claimed to carry lives one line above.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -4074,7 +4097,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1311)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1316)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

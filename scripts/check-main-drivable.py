@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 334 cases
+    python3 scripts/check-main-drivable.py --self-test   # 356 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -102,6 +102,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 import contextlib
 import io
 import re
@@ -250,7 +251,9 @@ CWD_CONSTRUCTORS = {"Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPa
 
 # A RELATIVE path literal denotes wherever the process happens to be — the live world, not a world
 # the case built: `Path(".")`, `open("../x")`, `main(["./f.py"])`.
-AMBIENT_PATH_LITERALS = {"", ".", "..", "./", "../"}
+# ⚠ NO "./" OR "../" MEMBERS: the prefix test beside this set already matches both exactly, so
+# they were two list entries a derivation had already covered — measured DEAD, round 7 L2.
+AMBIENT_PATH_LITERALS = {"", ".", ".."}
 SPAWNERS = {"run", "Popen", "check_output", "check_call", "call"}
 WORLD_KWARGS = ("input", "env", "cwd", "stdin")
 
@@ -892,7 +895,12 @@ def free_names(value: ast.AST) -> set[str]:
             inner = bound
             for i, gen in enumerate(node.generators):
                 # ⚠ THE FIRST ITERABLE IS EVALUATED IN THE ENCLOSING SCOPE, the rest inside.
-                rec(gen.iter, bound if i == 0 else inner)
+                # ⚠ `inner`, NOT `bound if i == 0 else inner` — round 7 proved the ternary a
+                # NO-OP: `inner` starts as `bound` and is only updated AFTER this line, so at
+                # i == 0 the two arms are the same object. The enclosing-scope rule for the
+                # first iterable rests on that initialisation, one line above, and the
+                # conditional was a comment dressed as code.
+                rec(gen.iter, inner)
                 inner = inner | {n.id for n in ast.walk(gen.target) if isinstance(n, ast.Name)}
                 for cond in gen.ifs:
                     rec(cond, inner)
@@ -903,8 +911,15 @@ def free_names(value: ast.AST) -> set[str]:
         for child in ast.iter_child_nodes(node):
             rec(child, bound)
 
+    # ⛔ ROUND 7, CLAUDE MEDIUM, FOUND BY DIFFERENTIAL TEST AGAINST CPython's OWN `symtable`
+    # over 41 shapes — 38 agreed and 3 diverged, all one class. The walrus branch drops the
+    # target where it is BOUND and a LATER READ of it in the same expression was still counted
+    # as a free name of the case: `(_t := _sv) or _t` reported `['_sv', '_t']` where `symtable`
+    # says `['_sv']`. Both consumers then failed toward CREDIT. A walrus target is bound by this
+    # expression wherever it is read in it, so it is removed once, at the end.
     rec(value, frozenset())
-    return out
+    return out - {n.target.id for n in ast.walk(value)
+                  if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name)}
 
 
 def _is_restore_value(value: ast.AST, holders: set[str], locals_: frozenset[str]) -> bool:
@@ -1028,7 +1043,24 @@ def substitution_changes_the_world(value: ast.AST, name: str, fn: ast.AST | None
     # the missing half is *and the case has not re-bound that name*. A bare `Name` equal to the
     # global, which this case never bound, IS the same world by identity, whichever set the
     # caller passed.
-    if isinstance(value, ast.Name) and value.id == name and not _bound_values(name, fn):
+    # ⛔ ROUND 7, CLAUDE HIGH: THE TEST WAS ON THE VALUE'S SHAPE AND THE PROPERTY IS ITS LEAVES.
+    # Round 6 closed the identity route for a BARE NAME, and `[subprocess][0]` — three characters
+    # longer — walked straight back through it. MEASURED: twelve trivial wrappers over three
+    # kinds of global, **18 false credits of 36**, every one handing `main` the very object it
+    # would have resolved by itself. ⭐ A list of wrappers is the thing this file has already
+    # refused three times; the property is *does this expression evaluate to the global itself*,
+    # and that is decidable from the leaves — the same move that let `_is_restore_value` delete
+    # `COPIERS`. ⚠ Over-matching here is the SAFE direction: it REFUSES a route, never grants one.
+    # ⚠ BUILTINS ARE NOT LEAVES OF THE CASE, and `next(iter([X]))` is the row that proved it:
+    # `next` and `iter` are free names, so the leaf set was `{next, iter, X}` and two wrappers of
+    # twelve survived. ⭐ PYTHON ENUMERATES ITS OWN BUILTINS, so this is a derivation and not a
+    # fourth list — the same standing that lets `ast` settle the grammar questions above. A
+    # builtin the CASE has shadowed is excluded from the exclusion: then it is the case's.
+    _shadowed = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)
+                 and isinstance(n.ctx, ast.Store)} if fn is not None else set()
+    _free = {n for n in free_names(value)
+             if not (hasattr(builtins, n) and n not in _shadowed)}
+    if _free == {name} and not _bound_values(name, fn):
         return False
     names = free_names(value)
     if world_class(value, fn, tree, world) is LIVE:
@@ -1300,7 +1332,7 @@ def _expr_children(node: ast.AST) -> list[ast.expr]:
     return out
 
 
-def _is_relative_literal(expr: ast.AST) -> bool:
+def _is_relative_literal(expr: ast.AST | None) -> bool:
     """-> True when this expression is a string literal naming a RELATIVE path. PURE.
 
     ⚠ NOT THE SAME QUESTION AS THE `Constant` BRANCH, and saying so matters because they look
@@ -1396,7 +1428,7 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         # the second-implementation shape pre-drift. The two had already disagreed: B1's fix added
         # `__spec__` to the constant and `Path(__spec__.origin)` kept its credit, because nothing
         # read the constant. Wired rather than deleted — the owner is the right one to keep.
-        if expr.id in LIVE_WORLD_NAMES or expr.id in world:
+        if expr.id in LIVE_WORLD_NAMES:
             return LIVE
         # ⛔ ROUND 4 BLOCKING, HALF TWO: reading only the LAST binding credited
         # `if c: p = ROOT else: p = mkdtemp()` as BUILT, when the run may pass the live repository.
@@ -1416,6 +1448,17 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             # its own (`tempfile.mkdtemp()`, `Path(td)`), so nothing ever needed promoting. Deleted
             # — the third clause this rule has lost rather than gained.
             return BUILT if BUILT in classes else INERT
+        # ⛔ ROUND 7, CLAUDE MEDIUM: THE SHADOWING RULE WAS APPLIED TO ONE OF TWO LISTS. The
+        # guard's world globals were tested BEFORE the bindings block and `LIVE_WORLD_READERS`
+        # after it, so `home = str` let the case's binding win and `ROOT = tempfile.mkdtemp()`
+        # did not — the verdict turned on which local name the case happened to pick. ⚠ The
+        # comment at the no-argument-call branch already asserted the opposite ("round 3's
+        # shadowing rule says the case's own binding wins"), which made it a claim the code did
+        # not implement. The shape is ON DISK: `check-fixture-variation.py` shadows three of its
+        # own globals 28 times. Measured: 0 verdict changes over the 44 guards, because both
+        # files comply by another route — lost credit, not false credit.
+        if expr.id in world:
+            return LIVE
         idx = _param_index(fn, expr.id)
         if idx is not None and _constructed_at_call_sites(tree, fn, idx, expr.id, depth, world):
             return BUILT
@@ -1455,9 +1498,12 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
         # `Path('sub').resolve()` therefore has a LIVE base rather than an INERT one. The
         # absolute spelling is untouched: `Path('/tmp/fixture')` is still a world the case named.
         if tail in CWD_CONSTRUCTORS and len(expr.args) == 1 and not expr.keywords:
-            only = expr.args[0]
-            if (isinstance(only, ast.Constant) and isinstance(only.value, str)
-                    and not only.value.startswith(("/", "\\"))):
+            # ⚠ `_is_relative_literal`, NOT A SECOND COPY OF ITS RULE. Round 7 added that
+            # helper as the named owner of this question and hand-inlined the same three
+            # conditions here, in the same commit. Measured identical today — 0 verdict changes
+            # over the 44 guards — which is what a duplicate looks like before it drifts, and
+            # this repo has measured that drift seventeen times.
+            if _is_relative_literal(expr.args[0]):
                 return LIVE
         if tail in BASE_RELATIVE_PATH_OPS:
             # the base is the first argument, or the receiver for a method call
@@ -1468,8 +1514,22 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             # has no provenance" — and an ABSOLUTE literal has no provenance either, so
             # `os.path.abspath('/tmp/fixture')` was read as the live cwd. An absolute path is not
             # resolved against anything. Test the literal, which is what "relative" means.
-            if base is not None and _is_relative_literal(base):
+            # ⚠ NO `base is not None` GUARD: `_is_relative_literal` refuses a non-Constant,
+            # and None is one — measured DEAD. The helper owns the question including its
+            # degenerate input, which is why it takes `ast.AST` and not `ast.Constant`.
+            if _is_relative_literal(base):
                 return LIVE                  # a relative path, resolved against the live cwd
+            # ⛔ ROUND 7, CLAUDE HIGH, AND ROUND 6's OWN FIX CAUSED IT — the third reversal this
+            # slice. `os.listdir()` and `os.scandir()` take NO argument and default to `'.'`, so
+            # moving them out of `LIVE_WORLD_READERS` lost the only thing that caught the
+            # defaulted form: `os.listdir()` read BUILT while `os.listdir('.')` — the identical
+            # runtime value, written out — read LIVE. ⭐ The receiver decides, and it is still the
+            # base rule rather than a name list: a receiver with provenance (`Path(td).iterdir()`)
+            # keeps its credit, while a receiver that is merely a module means the base is the
+            # DEFAULT, which is the working directory.
+            if not expr.args and (base is None
+                                  or world_class(base, fn, tree, world, depth + 1) is INERT):
+                return LIVE
         if not expr.args and not expr.keywords:
             # ⚠ `LIVE_WORLD_READERS` IS NOT IN THIS UNION, and round 6's Claude L1 is why: a
             # Call's `func` is always yielded by `_expr_children`, so a callee in that list has
@@ -2750,8 +2810,11 @@ def _self_test() -> int:                                      # noqa: C901 — a
     R2_SUB_ATTR = R2_SUB_LIVE.replace("    subprocess.run([sys.executable, __file__], stdin=sys.stdin)",
                                       "    tmp = Path(td)\n"
                                       "    subprocess.run([sys.executable, __file__], cwd=tmp.parent)")
+    # ⛔ SIXTEENTH DYING CASE. `tmp.parent` is an Attribute whose tail (`parent`) is not in any
+    # list, so it reaches `_is_relative_literal` as a non-Constant — the exact input round 7's
+    # L2 said was reachable. Severing that type guard raises HERE, at case 139.
     case("...while an attribute of a world the case BUILT does count",
-         classify(_wired(R2_SUB_ATTR)).routes, frozenset({SUBPROC}))
+         _caught(lambda: classify(_wired(R2_SUB_ATTR)).routes), frozenset({SUBPROC}))
 
     R2_ALIAS_LIVE = ("X = 1\n"
                      "def main(argv=None):\n"
@@ -2859,7 +2922,12 @@ def _self_test() -> int:                                      # noqa: C901 — a
             "        return _self_test()\n"
             "    return root\n"
             "def _self_test():\n")
-    _world = lambda e: classify(_R5L + f"    case('x', main([], root={e}), 0)\n").routes
+    # ⛔ FIFTEENTH DYING CASE (r7 Claude L1). A bare `Path()` reaches `expr.args[0]` if the
+    # arity guard is severed, and the site that RAISES is `world_class` rather than any case —
+    # so every row of this table died together and the sweep saw no `[FAIL]` at all. Catching
+    # here covers the whole table at its one raising site.
+    _world = lambda e: _caught(
+        lambda: classify(_R5L + f"    case('x', main([], root={e}), 0)\n").routes)
     for _expr, _what in (
             ("Path('.')", "the current working directory, as a relative literal"),
             ("Path()", "the same, spelled with no argument at all"),
@@ -2926,13 +2994,33 @@ def _self_test() -> int:                                      # noqa: C901 — a
             "def _self_test():\n"
             "@@S@@"
             "    case('x', main([]), 0)\n")
-    _ident = lambda s: classify(_R6B.replace("@@S@@", f"    {s}\n")).routes
+    _ident = lambda s, pre="": classify(_R6B.replace("@@S@@", pre + f"    {s}\n")).routes
     for _s, _what in (("globals()['ROOT'] = ROOT", "a module-level ASSIGNMENT"),
                       ("globals()['subprocess'] = subprocess", "⭐ an IMPORT — in `world_names` "
                                                                "and NOT in `guard_world_globals`"),
                       ("globals()['helper'] = helper", "⭐ a DEF, the same gap")):
         case(f"⛔ `{_s}` hands main the world it already had — {_what} (r6 Blocking)",
              _ident(_s), frozenset())
+    # ⛔⛔ ROUND 7, CLAUDE HIGH: TWELVE WRAPPERS, THREE KINDS OF GLOBAL, ONE ASSERTION. Round 6
+    # closed the identity route for a BARE NAME and `[subprocess][0]` — three characters longer —
+    # walked back through it: **18 false credits of 36**, each handing `main` the very object it
+    # would have resolved by itself. ⭐ The repair is a LEAF test, not a wrapper list, which is
+    # the move that let `_is_restore_value` delete `COPIERS`; and the whole matrix is one case
+    # because the defect was never one wrapper, it was the decision to test the value's SHAPE.
+    for _w in ("X", "(X)", "globals()['X']", "[X][0]", "(X,)[0]", "X if True else X", "X or X",
+               "(X,)[-1]", "{0: X}[0]", "(lambda: X)()", "[v for v in [X]][0]",
+               "next(iter([X]))"):
+        case(f"⛔ `globals()['G'] = {_w.replace('X', 'G')}` evaluates to the global itself, so it "
+             f"earns nothing — for an ASSIGNMENT, an IMPORT and a DEF alike (r7 Claude High)",
+             tuple(_ident(f"globals()['{_g}'] = {_w.replace('X', _g)}")
+                   for _g in ("ROOT", "subprocess", "helper")),
+             (frozenset(), frozenset(), frozenset()))
+    # ⚠ AND THE BUILTINS HALF, which two of the twelve rows needed: `next(iter([X]))` has free
+    # names `{next, iter, X}`, so the leaf test failed until unshadowed builtins were excluded.
+    # Python enumerates its own builtins, so that is a derivation and not a fourth list.
+    case("...and a builtin the CASE HAS SHADOWED is the case's own, so it is not excluded",
+         _ident("globals()['ROOT'] = next(ROOT)", pre="    next = lambda v: 'x'\n"),
+         frozenset({REBIND}))
     case("...while substituting any of them with a world the case BUILT still earns the route",
          (_ident("globals()['ROOT'] = tempfile.mkdtemp()"),
           _ident("globals()['subprocess'] = tempfile.mkdtemp()")),
@@ -2986,9 +3074,53 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # ⛔ ROUND 7, CODEX HIGH: THE WALRUS BINDS ITS TARGET. Every `ast.Name` counted as a read, so
     # a restore written `globals()['X'] = (_tmp := _sv)` looked like a fresh substitution and
     # earned REBIND — putting the world back and being credited for it.
+    # ⭐⭐ `free_names` IS CHECKED AGAINST CPython's OWN SYMBOL TABLE, not against what I believe
+    # the answer to be. Round 7's Claude half found three divergences by differential-testing 41
+    # shapes against `symtable`, and all three were shapes I had written a passing case for —
+    # a hand-written expectation can only ever encode the author's model of the rule, which is
+    # the same model that produced the rule. This case has a ground truth the file does not own.
+    import symtable as _st
+
+    def _reads_from_enclosing(expr: str) -> list[str]:
+        """The names CPython says this expression reads from outside its own scopes."""
+        fn = [c for c in _st.symtable("def _f():\n    return " + expr + "\n", "<t>", "exec")
+              .get_children() if c.get_name() == "_f"][0]
+
+        def walk(sc):
+            out = {s.get_name() for s in sc.get_symbols()
+                   if s.is_referenced() and not s.is_assigned() and not s.is_parameter()
+                   and not s.get_name().startswith(".")}
+            for ch in sc.get_children():
+                out |= walk(ch)
+            return out
+        return sorted(walk(fn))
+
+    _SHAPES = ["(_t := _sv) or _t", "[q for n in _sv if (q := n)]",
+               "[k for i in _sv for j in i if (k := j)]", "(lambda x: x)(_sv)",
+               "(lambda _sv: _sv)(_sv)", "[v for v in [_sv]][0]", "{**_sv, 5: 'd'}",
+               "(lambda a=outer: a)(1)", "[y for x in src for y in x]", "dict(_sv)",
+               "next(iter([_sv]))", "{k: v for k, v in src.items()}",
+               "(lambda *a, **k: a)(_sv)", "[x for x in src if (y := x) and y]"]
+    case("⭐ free_names agrees with CPython's own symbol table on every binding form it claims "
+         "to read off the grammar (r7 Claude Medium — 3 of 41 shapes diverged before this)",
+         [e for e in _SHAPES
+          if sorted(free_names(ast.parse(e).body[0].value)) != _reads_from_enclosing(e)], [])
+
     case("⛔ a WALRUS binds its target, so only the value it assigns is read from the case "
          "(r7 Codex High)",
          (_fn("(_tmp := _sv)"), _fn("[y := q for q in src]")), (["_sv"], ["src"]))
+    # ⛔ ROUND 7, CLAUDE MEDIUM: THE LAMBDA *DEFAULT* SCOPE WAS UNFALSIFIABLE. The existing
+    # entry mutates the defaults loop to `for d in []:`, which tests only that defaults are
+    # VISITED — nothing tested the scope they are visited IN. Severing that (defaults evaluated
+    # INSIDE the lambda) left the suite green while flipping a verdict, and round 6's High was
+    # this exact false debt one parameter over, via a lambda ARGUMENT.
+    case("a lambda DEFAULT evaluates in the enclosing scope, so a world the case built and "
+         "passed as one is still a substitution (r7 Claude Medium)",
+         (classify(_R6H.replace("@@R@@",
+                                "    globals()['ROOT'] = {**_sv, **(lambda td=td: td)()}\n")).routes,
+          classify(_R6H.replace("@@R@@",
+                                "    globals()['ROOT'] = {**_sv, **(lambda *, td=td: td)()}\n")).routes),
+         (frozenset({REBIND}), frozenset({REBIND})))
     case("...and a restore written through a walrus is still a restore",
          classify(_R6H.replace("@@R@@", "    globals()['ROOT'] = (_tmp := _sv)\n")).routes,
          frozenset())
@@ -3003,7 +3135,8 @@ def _self_test() -> int:                                      # noqa: C901 — a
             "        return _self_test()\n"
             "    return root\n"
             "def _self_test():\n    td = tempfile.mkdtemp()\n")
-    _path = lambda e: classify(_R6P + f"    case('x', main([], root={e}), 0)\n").routes
+    _path = lambda e: _caught(
+        lambda: classify(_R6P + f"    case('x', main([], root={e}), 0)\n").routes)
     for _e in ("next(Path(td).iterdir())", "os.listdir(td)[0]", "os.scandir(td)",
                "next(Path(td).glob('*'))", "os.walk(td)", "Path(td).resolve()",
                "os.path.abspath(td)"):
@@ -3018,10 +3151,35 @@ def _self_test() -> int:                                      # noqa: C901 — a
              _path(_e), frozenset())
     case("...and an ABSOLUTE literal is still a world the case named, which is the line between "
          "the two", _path("Path('/tmp/fixture')"), frozenset({PARAM}))
+    # ⛔ ROUND 7, CLAUDE HIGH — THE ZERO-ARGUMENT FORM, which the suite had no case for at all
+    # and which is why round 6's overshoot shipped. `os.listdir()` defaults its base to the cwd,
+    # so it is the live world; `Path(td).iterdir()` has a receiver with provenance and is not.
+    for _e, _want in (("os.listdir()", frozenset()), ("os.scandir()", frozenset()),
+                      ("sorted(os.listdir())", frozenset()),
+                      ("Path(td).iterdir()", frozenset({PARAM})),
+                      ("Path(td).glob('*')", frozenset({PARAM}))):
+        case(f"a zero-argument path op defaults its base to the working directory — `{_e}` "
+             f"(r7 Claude High: `os.listdir()` and `os.listdir('.')` are the same runtime value)",
+             _path(_e), _want)
     # ⛔ ROUND 7, CODEX MEDIUM: "NO PROVENANCE" IS NOT "RELATIVE". The base-relative rule tested
     # `world_class(base) is INERT` as a stand-in, and an ABSOLUTE literal is INERT too — so a
     # normaliser over an absolute fixture path was read as the live cwd. Both polarities, because
     # a proxy for a property is wrong in exactly one direction and that is the one to pin.
+    # ⚠ `_is_relative_literal`'s TWO TYPE GUARDS, which round 7 L2 found uncovered and which
+    # must NOT get the "cannot die, so delete it" treatment this file has applied fourteen times
+    # and reversed twice: with both gone the helper raises AttributeError on a non-Constant
+    # base, and that base is REACHABLE — a bare-name call whose tail is in the ops set resolves
+    # its base to None.
+    case("`_is_relative_literal` refuses a non-Constant and a non-str Constant rather than "
+         "raising, which is how a bare-name path op reaches it (r7 Claude Low)",
+         (_caught(lambda: _is_relative_literal(None)),
+          _caught(lambda: _is_relative_literal(ast.parse("td").body[0].value)),
+          _caught(lambda: _is_relative_literal(ast.parse("3").body[0].value)),
+          _is_relative_literal(ast.parse("'sub'").body[0].value)),
+         (False, False, False, True))
+    case("...and a path constructor given a KEYWORD is not the one-literal form",
+         (_path("Path('sub', foo=1)"), _path("Path('sub')")),
+         (frozenset({PARAM}), frozenset()))
     for _e, _want in (("os.path.abspath('/tmp/fixture')", frozenset({PARAM})),
                       ("os.path.realpath('/abs/x')", frozenset({PARAM})),
                       ("Path('/tmp/f').resolve()", frozenset({PARAM})),

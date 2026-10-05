@@ -628,7 +628,7 @@
   "name": "\u2b50\u2b50 ROUND 2 BLOCKING. The live-world test is removed, so the repository itself counts as a constructed world on three routes at once \u2014 the deepest defect this rule has had",
   "edits": [
    [
-    "        if expr.id in LIVE_WORLD_NAMES or expr.id in world:\n            return LIVE",
+    "        if expr.id in LIVE_WORLD_NAMES:\n            return LIVE",
     "        if False:\n            return LIVE"
    ]
   ],
@@ -641,8 +641,8 @@
   "name": "the guard's own globals stop counting as the live world, so handing main the global it would have read anyway earns the route",
   "edits": [
    [
-    " or expr.id in world:",
-    ":"
+    "        if expr.id in world:\n            return LIVE\n        idx = _param_index(fn, expr.id)",
+    "        if False:\n            return LIVE\n        idx = _param_index(fn, expr.id)"
    ]
   ],
   "expect": [
@@ -1070,8 +1070,8 @@
   "name": "the walrus loses its binding form, so `if (t := mkdtemp()): main([t])` resolves no value and a built world reads as debt",
   "edits": [
    [
-    "elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):",
-    "elif False and isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):"
+    "        elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):",
+    "        elif False and isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):"
    ]
   ],
   "expect": [
@@ -1096,8 +1096,8 @@
   "name": "a position-only parameter stops being positional, so the one-hop resolution cannot find the call sites of `def _h(w, /)`",
   "edits": [
    [
-    "names = [a.arg for a in fn.args.posonlyargs + fn.args.args]",
-    "names = [a.arg for a in fn.args.args]"
+    "    names = [a.arg for a in fn.args.posonlyargs + fn.args.args]",
+    "    names = [a.arg for a in fn.args.args]"
    ]
   ],
   "expect": [
@@ -1174,7 +1174,7 @@
   "name": "a relative path literal stops being the ambient directory, so `Path('.')` is credited as a world the case built (r5 Blocking)",
   "edits": [
    [
-    "AMBIENT_PATH_LITERALS = {\"\", \".\", \"..\", \"./\", \"../\"}",
+    "AMBIENT_PATH_LITERALS = {\"\", \".\", \"..\"}",
     "AMBIENT_PATH_LITERALS = set()"
    ]
   ],
@@ -1226,8 +1226,8 @@
   "name": "`world_class` reads the literal string again instead of `LIVE_WORLD_NAMES`, so widening that constant is inert and `__spec__.origin` keeps its credit (r5 Low, and half the Blocking)",
   "edits": [
    [
-    "        if expr.id in LIVE_WORLD_NAMES or expr.id in world:",
-    "        if expr.id == \"__file__\" or expr.id in world:"
+    "        if expr.id in LIVE_WORLD_NAMES:",
+    "        if expr.id == \"__file__\":"
    ]
   ],
   "expect": [
@@ -1470,15 +1470,15 @@
   "file": "scripts/check-main-drivable.py"
  },
  {
-  "name": "the identity test goes, so `globals()['subprocess'] = subprocess` hands main the module it already had and earns REBIND \u2014 535 of the 811 names in the 37 guards' worlds sit in that gap (r6 Claude Blocking)",
+  "name": "the identity test goes back to matching a BARE NAME, so `globals()['subprocess'] = [subprocess][0]` \u2014 three characters longer \u2014 hands main the module it already had and earns REBIND (r7 Claude High: 18 false credits of 36, and the regression that actually occurred)",
   "edits": [
    [
-    "    if isinstance(value, ast.Name) and value.id == name and not _bound_values(name, fn):\n        return False",
-    "    if False:\n        return False"
+    "    if _free == {name} and not _bound_values(name, fn):\n        return False",
+    "    if isinstance(value, ast.Name) and value.id == name and not _bound_values(name, fn):\n        return False"
    ]
   ],
   "expect": [
-   "\u26d4 `globals()['subprocess'] = subprocess` hands main the world it already had \u2014 \u2b50 an IMPORT \u2014 in `world_names` and NOT in `guard_world_globals` (r6 Blocking)"
+   "\u26d4 `globals()['G'] = [G][0]` evaluates to the global itself, so it earns nothing \u2014 for an ASSIGNMENT, an IMPORT and a DEF alike (r7 Claude High)"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -1486,8 +1486,8 @@
   "name": "the identity test stops asking whether the case REBOUND the name, so a world built into a local that shadows the global loses its credit \u2014 the half whose absence justified deleting the test",
   "edits": [
    [
-    "and value.id == name and not _bound_values(name, fn):",
-    "and value.id == name:"
+    "    if _free == {name} and not _bound_values(name, fn):",
+    "    if _free == {name}:"
    ]
   ],
   "expect": [
@@ -1525,8 +1525,8 @@
   "name": "a comprehension's FIRST iterable is read inside the comprehension's scope rather than outside it",
   "edits": [
    [
-    "                rec(gen.iter, bound if i == 0 else inner)",
-    "                rec(gen.iter, bound)"
+    "            inner = bound\n            for i, gen in enumerate(node.generators):",
+    "            inner = frozenset()\n            for i, gen in enumerate(node.generators):"
    ]
   ],
   "expect": [
@@ -1707,8 +1707,8 @@
   "name": "the base-relative test goes back to `world_class(base) is INERT` as a stand-in for \"relative\", so a normaliser over an ABSOLUTE fixture path is read as the live cwd (r7 Codex Medium \u2014 a proxy for a property is not the property)",
   "edits": [
    [
-    "            if base is not None and _is_relative_literal(base):",
-    "            if base is not None and world_class(base, fn, tree, world, depth + 1) is INERT:"
+    "            if _is_relative_literal(base):\n                return LIVE",
+    "            if base is not None and world_class(base, fn, tree, world, depth + 1) is INERT:\n                return LIVE"
    ]
   ],
   "expect": [
@@ -1726,6 +1726,71 @@
   ],
   "expect": [
    "a normaliser over an ABSOLUTE base resolves nothing against the cwd \u2014 `os.path.abspath('/tmp/fixture')` (r7 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "unshadowed builtins count as leaves of the case, so `next(iter([X]))` escapes the identity test (r7 Claude High, the last two wrappers of twelve)",
+  "edits": [
+   [
+    "    _free = {n for n in free_names(value)\n             if not (hasattr(builtins, n) and n not in _shadowed)}",
+    "    _free = set(free_names(value))"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['G'] = next(iter([G]))` evaluates to the global itself, so it earns nothing \u2014 for an ASSIGNMENT, an IMPORT and a DEF alike (r7 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a zero-argument path operation stops defaulting its base to the working directory, so `os.listdir()` is credited as a world the case built while `os.listdir('.')` \u2014 the same runtime value \u2014 is refused (r7 Claude High)",
+  "edits": [
+   [
+    "            if not expr.args and (base is None\n                                  or world_class(base, fn, tree, world, depth + 1) is INERT):\n                return LIVE",
+    "            if False:\n                return LIVE"
+   ]
+  ],
+  "expect": [
+   "a zero-argument path op defaults its base to the working directory \u2014 `os.listdir()` (r7 Claude High: `os.listdir()` and `os.listdir('.')` are the same runtime value)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a walrus target read LATER in the same expression counts as a free name of the case, so `(_t := saved) or _t` \u2014 a restore \u2014 earns REBIND (r7 Claude Medium, found by differential test against CPython's symtable)",
+  "edits": [
+   [
+    "    return out - {n.target.id for n in ast.walk(value)\n                  if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name)}",
+    "    return out"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`_is_relative_literal` stops checking it was handed a Constant, so an Attribute base raises AttributeError (r7 Claude Low, the sixteenth dying case)",
+  "edits": [
+   [
+    "    return (isinstance(expr, ast.Constant) and isinstance(expr.value, str)",
+    "    return (isinstance(expr.value, str)"
+   ]
+  ],
+  "expect": [
+   "...while an attribute of a world the case BUILT does count"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a lambda's DEFAULTS are evaluated inside the lambda's own scope, so a world the case built and passed as a default reads as a restore and loses its credit (r7 Claude Medium \u2014 the scope the previous entry never tested)",
+  "edits": [
+   [
+    "            for d in [*a.defaults, *[k for k in a.kw_defaults if k is not None]]:\n                rec(d, bound)\n            params = {x.arg for x in [*a.posonlyargs, *a.args, *a.kwonlyargs]}\n            params |= {x.arg for x in (a.vararg, a.kwarg) if x is not None}",
+    "            params = {x.arg for x in [*a.posonlyargs, *a.args, *a.kwonlyargs]}\n            params |= {x.arg for x in (a.vararg, a.kwarg) if x is not None}\n            for d in [*a.defaults, *[k for k in a.kw_defaults if k is not None]]:\n                rec(d, bound | params)"
+   ]
+  ],
+  "expect": [
+   "a lambda DEFAULT evaluates in the enclosing scope, so a world the case built and passed as one is still a substitution (r7 Claude Medium)"
   ],
   "file": "scripts/check-main-drivable.py"
  }
