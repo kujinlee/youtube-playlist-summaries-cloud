@@ -1949,5 +1949,31 @@
    "...and the plain put-back beside it IS a restore"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`iglob` leaves the base-relative set while `glob` stays, so one stdlib operation gets opposite verdicts under its two names \u2014 the instance-not-class defect inside the repair written about instance-not-class (r8 Claude Medium)",
+  "edits": [
+   [
+    "                          \"listdir\", \"scandir\", \"walk\", \"fwalk\", \"iterdir\", \"glob\", \"iglob\",\n                          \"rglob\"}",
+    "                          \"listdir\", \"scandir\", \"walk\", \"iterdir\", \"glob\"}"
+   ]
+  ],
+  "expect": [
+   "`glob` and `iglob` are one operation and get one answer \u2014 `glob.iglob('*.py')` (r8 Claude M2)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a Windows separator stops counting as absolute, so `os.path.abspath('\\\\\\\\srv\\\\share')` \u2014 a world the case named \u2014 is refused as the ambient directory (r8 Claude Low)",
+  "edits": [
+   [
+    "            and not expr.value.startswith((\"/\", \"\\\\\")))",
+    "            and not expr.value.startswith(\"/\"))"
+   ]
+  ],
+  "expect": [
+   "an absolute literal is absolute on both separators, so a Windows path is a world the case named rather than the ambient directory (r8 Claude Low)"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]

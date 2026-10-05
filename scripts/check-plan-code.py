@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 150,
+    "scripts/check-main-drivable.py": 152,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4133,6 +4133,21 @@ def _self_test() -> int:
     # parameter's default, a yield, a return nested in an `if`), a SEVENTEENTH dying case, and
     # the same-line substitution bound finally written into `live_substitutions`' docstring
     # after it cost a reviewer two probe rounds to discover.
+    # ⟳ +2 (150 -> 152), AND THE REASON THEY WERE LATE IS WORTH THE LINE. I read that review
+    # by `sed` LINE RANGES instead of enumerating its headings, and the ranges silently
+    # truncated: two findings — M2 and L4 — were never read, and I reported the round folded.
+    # The teammate's own summary named a count I had not matched, which is the only reason it
+    # surfaced. ⭐ `grep -nE "^#+ (H|M|L)[0-9] "` first, then read; a range is not a population.
+    # M2: `glob` was in the base-relative set and `iglob` was not — one stdlib operation, two
+    # names, opposite verdicts, which is the instance-not-class defect occurring INSIDE the
+    # comment written about instance-not-class. ⚠ Correctly distinguished from backlog #224 by
+    # the reviewer, who withheld the genuinely parked neighbours they also found
+    # (`normpath('sub')`, `isdir('sub')`) because those are new NAMES rather than half of a
+    # list the file had already curated.
+    # L4: the `"\\"` half of the separator test was pinned by nothing, and unlike round 7's
+    # `"./"`/`"../"` members it is NOT subsumed — dropping it falsely refuses a Windows absolute
+    # literal. Covered rather than deleted: the subject is SOURCE TEXT, and source text can
+    # name a Windows path.
     # ⚠ Two more dying cases (fifteenth and sixteenth), and the reviewer's own correction of
     # a sixth "dead clause": the `bound if i == 0 else inner` ternary is a provable NO-OP, since
     # `inner` is initialised to `bound` and updated only afterwards — so it was not a coverage
@@ -4146,7 +4161,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1328)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1330)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

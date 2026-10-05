@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 370 cases
+    python3 scripts/check-main-drivable.py --self-test   # 375 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -236,7 +236,13 @@ LIVE_WORLD_READERS = {
 # this process happens to be". `Path(mkdtemp()).resolve()` keeps its credit; `abspath('sub')`
 # does not; `Path('.').resolve()` is already live through the literal.
 BASE_RELATIVE_PATH_OPS = {"resolve", "absolute", "abspath", "realpath", "samefile",
-                          "listdir", "scandir", "walk", "iterdir", "glob"}
+                          # ⛔ ROUND 8, CLAUDE M2: `glob` was here and `iglob` was not — one
+                          # stdlib operation, two names, opposite verdicts, which is the
+                          # instance-not-class defect the comment below was written about
+                          # happening inside the repair for it. `rglob` and `fwalk` are listed
+                          # for the class, not because an escape was found through them.
+                          "listdir", "scandir", "walk", "fwalk", "iterdir", "glob", "iglob",
+                          "rglob"}
 
 # ⛔ ROUND 8, CODEX HIGH: `relpath` IS NOT A NORMALISER, and grouping it with `abspath` was the
 # base-relative repair over-reaching. `os.path.relpath(p)` reads the working directory through
@@ -3403,6 +3409,25 @@ def _self_test() -> int:                                      # noqa: C901 — a
              _path(_e), frozenset())
     case("...and an ABSOLUTE literal is still a world the case named, which is the line between "
          "the two", _path("Path('/tmp/fixture')"), frozenset({PARAM}))
+    # ⛔ ROUND 8, CLAUDE M2: ONE OPERATION, TWO NAMES, OPPOSITE VERDICTS. `glob` was in the
+    # base-relative set and `iglob` was not — the instance-not-class defect happening inside the
+    # repair written about instance-not-class. ⚠ `rglob`/`fwalk` are asserted for the class.
+    for _e, _want in (("glob.glob('*.py')", frozenset()), ("glob.iglob('*.py')", frozenset()),
+                      ("glob.iglob(td)", frozenset({PARAM})),
+                      ("glob.glob(td)", frozenset({PARAM}))):
+        case(f"`glob` and `iglob` are one operation and get one answer — `{_e}` (r8 Claude M2)",
+             _path(_e), _want)
+    # ⛔ ROUND 8, CLAUDE L4: the `"\\"` half of the separator test was pinned by nothing — the
+    # one entry severs the whole `startswith`, which the `"/"` half already kills. It is NOT
+    # subsumed (unlike round 7's `"./"`/`"../"` members, which a derivation covered): dropping
+    # it falsely refuses a Windows absolute literal. Covered rather than deleted, because the
+    # subject is SOURCE TEXT and source text can name a Windows path.
+    case("an absolute literal is absolute on both separators, so a Windows path is a world the "
+         "case named rather than the ambient directory (r8 Claude Low)",
+         (_path("os.path.abspath('\\\\srv\\share')"),
+          _path("os.path.abspath('/srv/share')"),
+          _path("os.path.abspath('srv')")),
+         (frozenset({PARAM}), frozenset({PARAM}), frozenset()))
     # ⛔ ROUND 7, CLAUDE HIGH — THE ZERO-ARGUMENT FORM, which the suite had no case for at all
     # and which is why round 6's overshoot shipped. `os.listdir()` defaults its base to the cwd,
     # so it is the live world; `Path(td).iterdir()` has a receiver with provenance and is not.
