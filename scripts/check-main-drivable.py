@@ -903,16 +903,14 @@ def free_names(value: ast.AST) -> set[str]:
     out: set[str] = set()
 
     def rec(node: ast.AST, bound: frozenset[str]) -> None:
-        if isinstance(node, ast.NamedExpr):
-            # ⛔ ROUND 7, CODEX HIGH. The walrus BINDS its target — `(_tmp := _sv)` reads `_sv`
-            # and binds `_tmp` — and every `ast.Name` was being counted as a read, so a restore
-            # written through a walrus looked like a fresh substitution and earned REBIND. The
-            # value is visited; the target is not. ⚠ Python scopes a walrus target in the
-            # ENCLOSING function, so it is a binding of the case, not of this expression — which
-            # is why it is dropped here rather than added to `bound`: `_is_restore_value` asks
-            # what the value READS, and the target is written, not read.
-            rec(node.value, bound)
-            return
+        # ⛔ A `NamedExpr` BRANCH WAS HERE and round 8's scope work subsumed it. It existed to
+        # visit a walrus's VALUE and skip its TARGET (round 7's Codex High); once
+        # `_walrus_bound_here` pre-binds every target the scope owns, the generic descent
+        # reaches the target as a Name already in `bound` and skips it for the same reason.
+        # Measured over eight walrus shapes — lambda-scoped, comprehension-scoped, re-read and
+        # subscripted — identical answers with the branch and without. Sixteenth clause this
+        # slice to go on that evidence, and the second where a LATER, more general mechanism
+        # made an earlier special case redundant rather than wrong.
         if isinstance(node, ast.Name):
             if node.id not in bound:
                 out.add(node.id)

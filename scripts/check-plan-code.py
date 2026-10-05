@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 152,
+    "scripts/check-main-drivable.py": 151,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4148,6 +4148,17 @@ def _self_test() -> int:
     # `"./"`/`"../"` members it is NOT subsumed — dropping it falsely refuses a Windows absolute
     # literal. Covered rather than deleted: the subject is SOURCE TEXT, and source text can
     # name a Windows path.
+    # ⟳ 152 -> 151, A SANCTIONED FALL: round 7's `NamedExpr` branch in `free_names` is RETIRED
+    # WITH ITS SUBJECT. It existed to visit a walrus's value and skip its target; round 8's
+    # `_walrus_bound_here` pre-binds every target the scope owns, so the generic descent now
+    # reaches the target as a Name already in `bound` and skips it for the same reason.
+    # Measured over eight walrus shapes — lambda-scoped, comprehension-scoped, re-read,
+    # subscripted — identical answers with the branch and without. ⭐ The second time in this
+    # slice a LATER, MORE GENERAL mechanism made an earlier special case redundant rather than
+    # wrong, which is the one shape of deletion that has never had to be reversed here.
+    # ⚠ Its sibling entry's `expect` also went stale and is retargeted onto the symtable
+    # differential, which is now what reddens for it — the third `expect` drift this slice, all
+    # three found by the sweep rather than by reading.
     # ⚠ Two more dying cases (fifteenth and sixteenth), and the reviewer's own correction of
     # a sixth "dead clause": the `bound if i == 0 else inner` ternary is a provable NO-OP, since
     # `inner` is initialised to `bound` and updated only afterwards — so it was not a coverage
@@ -4161,7 +4172,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1330)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1329)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

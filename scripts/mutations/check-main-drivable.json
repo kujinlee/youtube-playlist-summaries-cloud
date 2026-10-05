@@ -1530,7 +1530,7 @@
    ]
   ],
   "expect": [
-   "...and only the FIRST iterable is outside \u2014 a later one reads the targets before it"
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
   ],
   "file": "scripts/check-main-drivable.py"
  },
@@ -1687,19 +1687,6 @@
   ],
   "expect": [
    "...and a bulk `g.update()` with NO arguments is not a write, rather than an IndexError \u2014 the fourth member of the indexed-argument class"
-  ],
-  "file": "scripts/check-main-drivable.py"
- },
- {
-  "name": "the walrus stops binding its target, so a restore written `globals()['X'] = (_tmp := saved)` reads as a fresh substitution and the call after it earns a FALSE rebind credit (r7 Codex High)",
-  "edits": [
-   [
-    "        if isinstance(node, ast.NamedExpr):",
-    "        if False:"
-   ]
-  ],
-  "expect": [
-   "\u26d4 a WALRUS binds its target, so only the value it assigns is read from the case (r7 Codex High)"
   ],
   "file": "scripts/check-main-drivable.py"
  },
