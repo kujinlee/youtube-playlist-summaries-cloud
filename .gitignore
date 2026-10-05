@@ -162,3 +162,15 @@ docs/explainers/features.fragment.html
 # The server's own runtime droppings — it writes these into whatever it serves.
 docs/explainers/.serve.log
 docs/explainers/.serve.pid
+
+# ⛔ THE EXPLAINER QUESTION LOG IS A QUEUE, NOT AN ARTIFACT — and THIS REPOSITORY IS PUBLIC.
+# Decided 2026-10-05 by the repository owner. `questions.md` is the raw, unedited stream of
+# questions a reader types into a served explainer page. The whole value of that channel is that a
+# HALF-FORMED question stays cheap to ask; publishing every one of them to a public repo under the
+# asker's name taxes exactly the behaviour the comprehensibility suite exists to encourage.
+# ⭐ Nothing is lost by ignoring it: `.agents/skills/shared/explainer-delivery.md` §6 REQUIRES that
+# answers be written INTO the page, and the pages ARE tracked (79 of them) — so the Q&A that
+# matters is in the artifact. Track artifacts, not queues.
+# ⚠ This stops NEW questions being published. The 81 already in git history remain there; removing
+# those needs a history rewrite of a public repo, which was considered and NOT chosen.
+docs/explainers/questions.md
