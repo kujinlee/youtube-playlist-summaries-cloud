@@ -1793,5 +1793,57 @@
    "a lambda DEFAULT evaluates in the enclosing scope, so a world the case built and passed as one is still a substitution (r7 Claude Medium)"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a module helper's RETURN stops being followed, so `globals()['ROOT'] = same_root()` \u2014 whose whole body is `return ROOT` \u2014 hands main the world it already had and earns REBIND (r8 Codex Blocking)",
+  "edits": [
+   [
+    "        if isinstance(expr.func, ast.Name) and tree is not None:\n            helper = _toplevel_functions(tree).get(expr.func.id)",
+    "        if False:\n            helper = _toplevel_functions(tree).get(expr.func.id)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 an identity substitution hidden behind a module helper earns nothing \u2014 the helper's RETURN is its caller's value (r8 Codex Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`relpath` goes back to being treated as a plain normaliser, so `os.path.relpath(td)` is credited although it reads the working directory through its default `start` (r8 Codex High)",
+  "edits": [
+   [
+    "CWD_DEFAULTED_OPS = {\"relpath\"}",
+    "CWD_DEFAULTED_OPS = set()"
+   ]
+  ],
+  "expect": [
+   "`relpath` is cwd-dependent unless `start` is supplied \u2014 `os.path.relpath(tempfile.mkdtemp())` (r8 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "supplying `start` stops removing the cwd default, so a genuinely built `relpath(td, start=td)` loses its credit",
+  "edits": [
+   [
+    "        if (_tail in CWD_DEFAULTED_OPS and len(expr.args) < 2\n                and not any(k.arg == \"start\" for k in expr.keywords)):",
+    "        if _tail in CWD_DEFAULTED_OPS:"
+   ]
+  ],
+  "expect": [
+   "`relpath` is cwd-dependent unless `start` is supplied \u2014 `os.path.relpath(tempfile.mkdtemp(), start=tempfile.mkdtemp())` (r8 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the symtable oracle stops carrying what ANCESTOR scopes bound, so a name a nested lambda merely closes over reads as the enclosing case's and the differential test goes false-positive (r8 Codex Medium \u2014 the finding was against the measuring instrument)",
+  "edits": [
+   [
+    "            for ch in sc.get_children():\n                out |= walk(ch, bound | here)",
+    "            for ch in sc.get_children():\n                out |= walk(ch, bound)"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]

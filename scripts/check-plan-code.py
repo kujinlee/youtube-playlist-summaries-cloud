@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 138,
+    "scripts/check-main-drivable.py": 142,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4084,6 +4084,30 @@ def _self_test() -> int:
     # hand-written case. A hand-written expectation encodes the author's model of the rule — the
     # same model that produced the rule. That differential is now a case, with a ground truth
     # this file does not own.
+    # ⟳ 2026-10-04, ROUND 8's CODEX HALF: 1316 -> 1320, `check-main-drivable` 138 -> 142
+    # (4 added, 1 clause deleted). 1 Blocking, 1 High, 1 Medium — 2 deliverable, 1 instrument,
+    # and NO live false green: the fix for each was applied and `classify` diffed over all 44
+    # guards on disk, 0 verdict changes.
+    # ⛔ THE BLOCKING: an identity can hide behind a NAME. `same_root()`, whose whole body is
+    # `return ROOT`, is a call over nothing live and so classified BUILT — the leaf test added
+    # one round earlier cannot see through a name. Resolved by following a module helper's
+    # RETURN one hop, which this file already does twice (`world_names` through module calls,
+    # `_constructed_at_call_sites` through a parameter). ⭐ Note the shape: round 7 closed the
+    # identity route for twelve WRAPPERS and round 8 walked through a NAME. Three rounds have
+    # now each closed one spelling of "hand main the world it already had".
+    # ⛔ THE HIGH: `relpath` is NOT a normaliser and grouping it with `abspath` was the
+    # base-relative repair over-reaching. `os.path.relpath(p)` reads the cwd through its DEFAULT
+    # `start=os.curdir` — measured at runtime from two directories, two answers for one target.
+    # ⚠ AND THE FIRST DRAFT OF THAT FIX WAS UNREACHABLE: it sat inside the `Call` branch, below
+    # the generic child-dominance check, so a call WITH arguments answered BUILT twelve lines
+    # earlier and the clause never ran. A rule about the CALL must be asked before the rule
+    # about its children.
+    # ★ THE MEDIUM IS THE ONE WORTH THE ENTRY: it refuted the ORACLE, not the subject. Round 7
+    # added a differential test of `free_names` against CPython's `symtable` and called it "a
+    # ground truth this file does not own" — and the oracle counted a name a NESTED scope merely
+    # closes over as read from the enclosing function. `free_names` was right; the measuring
+    # instrument was wrong. That is what an adversarial reviewer should do to a new oracle, and
+    # the corrected oracle now carries the four shapes that refuted it.
     # ⚠ Two more dying cases (fifteenth and sixteenth), and the reviewer's own correction of
     # a sixth "dead clause": the `bound if i == 0 else inner` ternary is a provable NO-OP, since
     # `inner` is initialised to `bound` and updated only afterwards — so it was not a coverage
@@ -4097,7 +4121,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1316)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1320)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

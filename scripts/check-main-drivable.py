@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 356 cases
+    python3 scripts/check-main-drivable.py --self-test   # 361 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -235,8 +235,15 @@ LIVE_WORLD_READERS = {
 # when that base carries no provenance at all — a bare literal, which can only mean "wherever
 # this process happens to be". `Path(mkdtemp()).resolve()` keeps its credit; `abspath('sub')`
 # does not; `Path('.').resolve()` is already live through the literal.
-BASE_RELATIVE_PATH_OPS = {"resolve", "absolute", "abspath", "realpath", "relpath", "samefile",
+BASE_RELATIVE_PATH_OPS = {"resolve", "absolute", "abspath", "realpath", "samefile",
                           "listdir", "scandir", "walk", "iterdir", "glob"}
+
+# ⛔ ROUND 8, CODEX HIGH: `relpath` IS NOT A NORMALISER, and grouping it with `abspath` was the
+# base-relative repair over-reaching. `os.path.relpath(p)` reads the working directory through
+# its DEFAULT `start=os.curdir`, so its result depends on the cwd however built `p` is —
+# measured at runtime from two directories, two different answers for one target. It is ambient
+# unless the caller supplies `start`, which is the one thing that removes the default.
+CWD_DEFAULTED_OPS = {"relpath"}
 
 # Attribute tails that are the live world ONLY beneath a particular module — see the note above.
 LIVE_WORLD_QUALIFIED = {("sys", "path"), ("sys", "modules"), ("sys", "prefix"),
@@ -1474,6 +1481,17 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             return LIVE
         return world_class(expr.value, fn, tree, world, depth + 1)
 
+    # ⛔ BEFORE THE CHILD DOMINANCE CHECK, DELIBERATELY, and the first draft of this sat inside
+    # the `Call` branch where it was UNREACHABLE: a call WITH arguments has a BUILT child, so
+    # `kids` answers BUILT twelve lines above and the clause never ran. A rule about the CALL
+    # has to be asked before the rule about its children.
+    if isinstance(expr, ast.Call):
+        _tail = (expr.func.attr if isinstance(expr.func, ast.Attribute)
+                 else expr.func.id if isinstance(expr.func, ast.Name) else None)
+        if (_tail in CWD_DEFAULTED_OPS and len(expr.args) < 2
+                and not any(k.arg == "start" for k in expr.keywords)):
+            return LIVE                      # the default `start` is the working directory
+
     kids = [world_class(c, fn, tree, world, depth + 1) for c in _expr_children(expr)]
     if LIVE in kids:
         return LIVE
@@ -1530,6 +1548,26 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             if not expr.args and (base is None
                                   or world_class(base, fn, tree, world, depth + 1) is INERT):
                 return LIVE
+        # ⛔ ROUND 8, CODEX BLOCKING: AN IDENTITY CAN HIDE BEHIND A NAME. `same_root()`, whose
+        # whole body is `return ROOT`, classified BUILT — a call over nothing live — so
+        # `globals()["ROOT"] = same_root()` handed `main` the world it already had and earned
+        # REBIND. ⭐ ONE HOP, and the file already does exactly this twice: `world_names`
+        # follows module-level calls to find what `main` reads, and `_constructed_at_call_sites`
+        # resolves a parameter to its call sites. A helper's RETURN is its caller's value.
+        # ⚠ The depth bound terminates recursion; a helper whose return it cannot follow stays
+        # whatever the leaves say, which is the fail-closed direction.
+        if isinstance(expr.func, ast.Name) and tree is not None:
+            helper = _toplevel_functions(tree).get(expr.func.id)
+            # ⚠ NO `helper is not fn` GUARD: the depth bound already answers recursion,
+            # measured on a self-call and on mutual recursion — identical verdicts with
+            # it and without. Two mechanisms for one property is the duplicate this file
+            # deleted a `seen` set for; the fifteenth clause to go on that evidence.
+            if helper is not None:
+                returns = [n.value for n in ast.walk(helper)
+                           if isinstance(n, ast.Return) and n.value is not None]
+                classes = [world_class(r, helper, tree, world, depth + 1) for r in returns]
+                if LIVE in classes:
+                    return LIVE
         if not expr.args and not expr.keywords:
             # ⚠ `LIVE_WORLD_READERS` IS NOT IN THIS UNION, and round 6's Claude L1 is why: a
             # Call's `func` is always yielded by `_expr_children`, so a callee in that list has
@@ -2969,11 +3007,25 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # listing `resolve`/`absolute`/`abspath` as ambient readers made the attribute branch answer
     # on the TAIL and sent five built worlds to DEBT. Both polarities are asserted together
     # because that is the only way a case can tell the split from either list alone.
+    # ⚠ `relpath` IS ABSENT FROM THIS ROW AND THAT IS ROUND 8's HIGH. It was listed here as a
+    # normaliser and it is not one: `os.path.relpath(p)` reads the working directory through its
+    # DEFAULT `start=os.curdir`, so its answer depends on the cwd however built `p` is —
+    # measured at runtime from two directories, two different results for one target. Its own
+    # rows are below, with the `start` that removes the default.
     for _expr in ("Path(tempfile.mkdtemp()).resolve()", "Path(tempfile.mkdtemp()).absolute()",
-                  "os.path.abspath(tempfile.mkdtemp())", "os.path.realpath(tempfile.mkdtemp())",
-                  "os.path.relpath(tempfile.mkdtemp())"):
+                  "os.path.abspath(tempfile.mkdtemp())", "os.path.realpath(tempfile.mkdtemp())"):
         case(f"...and NORMALISING a built world leaves it built — `{_expr}` (r6 Codex High)",
              _world(_expr), frozenset({PARAM}))
+    # ⛔ ROUND 8, CODEX HIGH: `relpath` reads the cwd through its DEFAULT `start`, so a BUILT
+    # base does not make it a built world — only supplying `start` removes the default.
+    for _e, _want in (("os.path.relpath(tempfile.mkdtemp())", frozenset()),
+                      ("os.path.relpath('/tmp/fixture')", frozenset()),
+                      ("os.path.relpath(tempfile.mkdtemp(), start=tempfile.mkdtemp())",
+                       frozenset({PARAM})),
+                      ("os.path.relpath(tempfile.mkdtemp(), tempfile.mkdtemp())",
+                       frozenset({PARAM}))):
+        case(f"`relpath` is cwd-dependent unless `start` is supplied — `{_e}` (r8 Codex High)",
+             _world(_e), _want)
     for _expr in ("Path('.').resolve()", "os.path.abspath('.')", "os.path.abspath(ROOT)",
                   "Path('~').expanduser()"):
         case(f"...while normalising the LIVE world leaves it live — `{_expr}`, and "
@@ -3018,6 +3070,31 @@ def _self_test() -> int:                                      # noqa: C901 — a
     # ⚠ AND THE BUILTINS HALF, which two of the twelve rows needed: `next(iter([X]))` has free
     # names `{next, iter, X}`, so the leaf test failed until unshadowed builtins were excluded.
     # Python enumerates its own builtins, so that is a derivation and not a fourth list.
+    # ⛔ ROUND 8, CODEX BLOCKING: AN IDENTITY CAN HIDE BEHIND A NAME. `same_root()`, whose whole
+    # body is `return ROOT`, is a call over nothing live and classified BUILT — so substituting
+    # it handed `main` the world it already had and earned the route. The leaf test cannot see
+    # through a name; following the helper's RETURN one hop can, and the file already resolves
+    # one hop twice over (`world_names` through module calls, `_constructed_at_call_sites`
+    # through a parameter).
+    _R8H = ("import tempfile\nROOT = {'a': 1}\n"
+            "def same_root():\n    return ROOT\n"
+            "def wrapped():\n    return same_root()\n"
+            "def fresh():\n    return tempfile.mkdtemp()\n"
+            "def main(argv=None):\n"
+            "    if '--self-test' in argv:\n"
+            "        return _self_test()\n"
+            "    return ROOT\n"
+            "def _self_test():\n@@S@@    case('x', main([]), 0)\n")
+    _helper = lambda s: classify(_R8H.replace("@@S@@", f"    {s}\n")).routes
+    case("⛔ an identity substitution hidden behind a module helper earns nothing — the helper's "
+         "RETURN is its caller's value (r8 Codex Blocking)",
+         (_helper("globals()['ROOT'] = same_root()"),
+          _helper("globals()['ROOT'] = wrapped()")),
+         (frozenset(), frozenset()))
+    case("...while a helper that BUILDS a world still earns the route, which is the line "
+         "between following a return and refusing every call",
+         _helper("globals()['ROOT'] = fresh()"), frozenset({REBIND}))
+
     case("...and a builtin the CASE HAS SHADOWED is the case's own, so it is not excluded",
          _ident("globals()['ROOT'] = next(ROOT)", pre="    next = lambda v: 'x'\n"),
          frozenset({REBIND}))
@@ -3086,21 +3163,33 @@ def _self_test() -> int:                                      # noqa: C901 — a
         fn = [c for c in _st.symtable("def _f():\n    return " + expr + "\n", "<t>", "exec")
               .get_children() if c.get_name() == "_f"][0]
 
-        def walk(sc):
+        # ⛔ ROUND 8, CODEX MEDIUM: THE ORACLE WAS THE BRITTLE HALF, NOT `free_names`. A name a
+        # NESTED scope merely closes over is "referenced and not assigned" THERE, so
+        # `[(lambda: x) for x in src]` reported `x` as read from the enclosing function when the
+        # comprehension binds it one scope out. The fix is the same idea the subject uses:
+        # carry what the ANCESTORS bound. ⚠ Worth saying plainly — the finding was against the
+        # measuring instrument I had just called a ground truth, which is the right thing for a
+        # reviewer to attack and exactly what "a ground truth this file does not own" earns.
+        def walk(sc, bound):
+            here = {s.get_name() for s in sc.get_symbols()
+                    if s.is_assigned() or s.is_parameter()}
             out = {s.get_name() for s in sc.get_symbols()
-                   if s.is_referenced() and not s.is_assigned() and not s.is_parameter()
-                   and not s.get_name().startswith(".")}
+                   if s.is_referenced() and s.get_name() not in here
+                   and s.get_name() not in bound and not s.get_name().startswith(".")}
             for ch in sc.get_children():
-                out |= walk(ch)
+                out |= walk(ch, bound | here)
             return out
-        return sorted(walk(fn))
+        return sorted(walk(fn, frozenset()))
 
     _SHAPES = ["(_t := _sv) or _t", "[q for n in _sv if (q := n)]",
                "[k for i in _sv for j in i if (k := j)]", "(lambda x: x)(_sv)",
                "(lambda _sv: _sv)(_sv)", "[v for v in [_sv]][0]", "{**_sv, 5: 'd'}",
                "(lambda a=outer: a)(1)", "[y for x in src for y in x]", "dict(_sv)",
                "next(iter([_sv]))", "{k: v for k, v in src.items()}",
-               "(lambda *a, **k: a)(_sv)", "[x for x in src if (y := x) and y]"]
+               "(lambda *a, **k: a)(_sv)", "[x for x in src if (y := x) and y]",
+               # ⟳ the two shapes round 8 used to refute the oracle's first version
+               "[(lambda: x) for x in src]", "[(lambda: x)() for x in src]",
+               "[(lambda y=x: y)() for x in src]", "(lambda: [q for q in src])()"]
     case("⭐ free_names agrees with CPython's own symbol table on every binding form it claims "
          "to read off the grammar (r7 Claude Medium — 3 of 41 shapes diverged before this)",
          [e for e in _SHAPES
