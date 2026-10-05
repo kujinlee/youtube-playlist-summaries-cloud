@@ -240,8 +240,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(not_measured_line(verdict))\n        return 0 if ok else 1",
-        "            print(not_measured_line(verdict)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
+        "            print(not_measured_line(verdict, shard))\n        return 0 if ok else 1",
+        "            print(not_measured_line(verdict, shard)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -516,8 +516,8 @@
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress)",
-        "mutate_delivered(mroot)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard)",
+        "mutate_delivered(mroot, shard=shard)"
       ]
     ],
     "expect": [
@@ -939,5 +939,203 @@
       ]
     ],
     "expect": "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
-  }
+  },
+    {
+      "name": "#217: the shard partition is CONTIGUOUS, so one shard takes the expensive block and its siblings idle",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    return muts[index - 1::total]",
+          "    return muts[index - 1:]"
+        ]
+      ],
+      "expect": [
+        "⛔ round-robin spreads ONE file's contiguous block evenly; a contiguous split cannot",
+        "⭐ every mutation runs in EXACTLY ONE shard and the union is the whole manifest"
+      ]
+    },
+    {
+      "name": "#217: the shard partition is off by one, so the manifest's FIRST mutation is measured by nobody",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "muts[index - 1::total]",
+          "muts[index::total]"
+        ]
+      ],
+      "expect": [
+        "⭐ every mutation runs in EXACTLY ONE shard and the union is the whole manifest",
+        "...and the shards of one N are PAIRWISE DISJOINT, counted not assumed"
+      ]
+    },
+    {
+      "name": "#217: a malformed --shard is answered by the BOUNDS sentence, which is about numbers it never parsed",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    if m is None:\n        return None, (f\"CANNOT RUN — --shard {spec!r} is not of the form I/N (two integers, \"",
+          "    if False:\n        return None, (f\"CANNOT RUN — --shard {spec!r} is not of the form I/N (two integers, \""
+        ]
+      ],
+      "expect": [
+        "...a non-integer shard is a SENTENCE and a CANNOT RUN, never a traceback",
+        "...so is a shard with no N at all"
+      ]
+    },
+    {
+      "name": "#217: a shard that does not exist (0 of 4, 5 of 4, any shard of 0) is accepted",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    if not 1 <= index <= total:\n        return None, (f\"CANNOT RUN — --shard {index}/{total} names a shard that does not \"",
+          "    if False:\n        return None, (f\"CANNOT RUN — --shard {index}/{total} names a shard that does not \""
+        ]
+      ],
+      "expect": [
+        "...shard 0 does not exist, and the refusal says which shard was asked for",
+        "...nor shard 5 of 4",
+        "...nor any shard of zero shards"
+      ]
+    },
+    {
+      "name": "#217: an EMPTY shard is no longer refused, so N above the mutation count reports a vacuous pass",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    if not shard_slice(list(range(count)), index, total):",
+          "    if False:"
+        ]
+      ],
+      "expect": [
+        "⛔ an EMPTY shard is refused, and the refusal names the count that empties it",
+        "⛔ a shard with NO mutations in it refuses, rather than passing vacuously",
+        "⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+      ]
+    },
+    {
+      "name": "#217: the shard is IGNORED, so every shard of a CI matrix runs the whole manifest",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts",
+          "    shard_muts = muts"
+        ]
+      ],
+      "expect": [
+        "⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+        "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
+      ]
+    },
+    {
+      "name": "#217: a sharded run declares the WHOLE manifest, so every shard is a shortfall and no shard is ever MEASURED",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "        declared = len(shard_muts)",
+          "        declared = len(muts)"
+        ]
+      ],
+      "expect": [
+        "⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+        "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
+      ]
+    },
+    {
+      "name": "#217: a shard controls every file in the manifest rather than the files it mutates",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    targets = sorted({m[\"file\"] for m in shard_muts})",
+          "    targets = sorted(counts)"
+        ]
+      ],
+      "expect": [
+        "⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+        "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
+      ]
+    },
+    {
+      "name": "#217: mutate_delivered lets an empty shard through to the normal return, where 0 survivors reads as success",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "        if why:\n            return False, [why], NotMeasured.from_counts([], None, ev_files)",
+          "        if why and False:\n            return False, [why], NotMeasured.from_counts([], None, ev_files)"
+        ]
+      ],
+      "expect": "⛔ a shard with NO mutations in it refuses, rather than passing vacuously"
+    },
+    {
+      "name": "#217: the verdict line TRANSPOSES I and N, so shard 1 of 3 reads as shard 3 of 1",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    return f\"shard {shard[0]} of {shard[1]} (round-robin)\"",
+          "    return f\"shard {shard[1]} of {shard[0]} (round-robin)\""
+        ]
+      ],
+      "expect": [
+        "...and it is named I of N, in that order, when there is one",
+        "the tally line says which slice it is about",
+        "...and so does the NOT-MEASURED line"
+      ]
+    },
+    {
+      "name": "#217: the TALLY line stops naming its slice, so a shard's numbers read as a whole-manifest pass",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard)}\")",
+          "              f\"{len(verdict.survivors)} survivor(s)\")"
+        ]
+      ],
+      "expect": [
+        "the tally line says which slice it is about",
+        "the tally states how many were killed AND how many were attributed"
+      ]
+    },
+    {
+      "name": "#217: the NOT-MEASURED line stops naming its slice",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}\"",
+          "    return f\"NOT MEASURED — {nm.reason}\""
+        ]
+      ],
+      "expect": "...and so does the NOT-MEASURED line"
+    },
+    {
+      "name": "#217: --shard without --mutate is accepted silently instead of refused",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "        if not a.mutate:\n            print(f\"CANNOT RUN — --shard {a.shard} only means something with --mutate ROOT, \"",
+          "        if False:\n            print(f\"CANNOT RUN — --shard {a.shard} only means something with --mutate ROOT, \""
+        ]
+      ],
+      "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
+    },
+    {
+      "name": "#217: a malformed --shard does not stop the run, so the sweep proceeds unsharded under a sharded log line",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "        shard, why = parse_shard(a.shard)\n        if why:\n            print(why, file=sys.stderr)\n            return 2",
+          "        shard, why = parse_shard(a.shard)\n        if why:\n            print(why, file=sys.stderr)"
+        ]
+      ],
+      "expect": "...and a malformed --shard refuses BEFORE any suite runs"
+    },
+    {
+      "name": "#217: an empty shard exits 1 like a surviving mutation instead of 2 like a run that measured nothing",
+      "file": "scripts/check-plan-code.py",
+      "edits": [
+        [
+          "            why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))",
+          "            why = None"
+        ]
+      ],
+      "expect": "⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+    }
 ]

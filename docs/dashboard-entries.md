@@ -13399,3 +13399,35 @@ marker this session's own hook had written. Proven with the marker present and r
 
 ⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
 convergence document's own recommendation.
+
+## 2026-10-05 [needs-you]
+The slowest safety check now runs eight ways at once, and finishes in six minutes instead of
+twenty-nine. It had grown past the time limit CI allows and was being killed before it finished,
+which meant it was proving nothing at all.
+**What needs you:** after this merges, one setting has to be changed by hand in GitHub, or the
+check can go red without stopping anyone merging. It cannot be done before the merge — doing it
+early would leave every pull request waiting forever for a check that does not exist yet.
+
+<!--tech-->
+**Closes backlog #217.** `scripts/check-plan-code.py` gains `--shard I/N` (only with `--mutate`);
+the sweep moves out of `verify` into a `mutation-sweep` matrix (8 shards, `fail-fast: false`) plus a
+`mutation-sweep-complete` aggregator. Branch `shard-mutation-sweep`.
+
+⛔ **THE SETTING:** add `mutation-sweep-complete` to `required_status_checks.contexts` for `master`
+**after** the merge, never before — a required context that does not yet report leaves a PR
+*pending forever* (backlog #137, measured live on PR #314). `verify` no longer carries the sweep, so
+until then a surviving mutation reports red and does **not** block the button.
+
+| | |
+|---|---|
+| **why** | cost is `mutations × suite_time`. On PR #365's branch one guard holds 183 entries against its own ~30 s suite — ~87 of ~90 min — and `verify` was killed at `timeout-minutes: 30`, already raised once from 15 |
+| **sharded** | the EXECUTION only. Counts vs `EXPECTED_MUTATIONS` both ways, duplicate name/anchor refusals and the home-escape scan over targets **and** replacements run in **every** shard — N local invariants are not the global one |
+| **measured** | unsharded **1,758 s**; shard 1 of 8 **353 s**; shard 3 of 8 re-run independently **346 s**, 149 killed, 149 attributed, **0 survivors**. 5.0× not 8×, because a ~153 s control floor does not divide by N |
+| **the crux** | round-robin, not contiguous. The heaviest file's 96 entries spread `[12]×8` round-robin vs `[0,…,0,96]` contiguous. Costed by suite time: 1.15× spread vs **17.9×**. ⭐ A per-shard mutation *count* is even either way, which is why counting them proves nothing |
+| **falsifier** | every mutation runs in exactly one shard — disjoint and union-complete at N = 1, 2, 3, 7, 8, 16, 1193, 1198 on the real manifest. Empty shard refuses; malformed `--shard` refuses with a sentence, not a traceback |
+| **counts** | self-test 131 → **155**; manifest 77 → **92**; declared sum 1178 → **1193** |
+
+⚠ **NOT MEASURED:** unsharded `--mutate .` was not re-run after the change — the evidence is two
+shards plus the partition falsifier. Also found and not yet filed: `check-python-pin.py` refuses
+valid YAML, counting any 2-space-indented line containing a colon as a job key, so a block comment
+between jobs makes it exit 2.

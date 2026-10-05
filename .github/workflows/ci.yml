@@ -479,8 +479,14 @@ jobs:
       # · a manifest's count differs from EXPECTED_MUTATIONS in EITHER direction (adding a
       #   mutation is also a visible act) · a manifest repeats a mutation name or edit anchor,
       #   which would keep the count while narrowing real coverage.
-      - name: Mutation manifest against the delivered scripts
-        run: python3 scripts/check-plan-code.py --mutate .
+      #
+      # ⟳ 2026-10-05, backlog #217: THE SWEEP ITSELF HAS MOVED to the `mutation-sweep` matrix
+      # job at the bottom of this file, which runs it in N parallel shards. It is NOT gone and
+      # it is NOT weaker — the whole-manifest checks in that FAILS IF list run in every shard;
+      # only the suite runs are split. What is left here is the self-test below.
+      # ⛔ THE CONTEXT NAME CHANGED, AND THAT IS A REPO SETTING, NOT A FILE EDIT — see the
+      # comment on `mutation-sweep-complete`. Until that setting lands, a red sweep does not
+      # block a merge; `verify` no longer carries it.
 
       # The ratchet runs in CI; until now its own tests did not. Same reason every other
       # ratchet here has a --self-test step: a guard whose tests are developer-machine-only
@@ -532,3 +538,169 @@ jobs:
           printf '%s' "$BODY" > /tmp/review-pr-body.md
           python3 scripts/check-review-recorded.py \
             --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/review-pr-body.md
+
+
+  mutation-sweep:
+    # ─────────────────────────────────────────────────────────────────────────────────────
+    # THE MUTATION SWEEP, IN SHARDS — backlog #217.
+    #
+    # ⛔ WHY IT IS NOT A STEP OF `verify` ANY MORE. The sweep re-runs a guard's WHOLE suite
+    # once per mutation, so its cost is `mutations x suite_time`. MEASURED on PR #360's
+    # branch: one guard (`check-main-drivable.py`) held 183 entries against its own ~30s
+    # self-test — ~87 of the ~90 minutes — and the job was KILLED at `timeout-minutes: 30`,
+    # a ceiling already raised once from 15. Raising it again is a budget nobody is keeping,
+    # which is #217's own stated trigger condition.
+    #
+    # ⛔ AND WHY A MATRIX ON `verify` WOULD HAVE BEEN WRONG, twice over. A matrix renames the
+    # check to `verify (1)`, `verify (2)`, … — and `verify` is THE required context, so
+    # renaming it leaves every pull request waiting for a context that will never report
+    # (backlog #137, measured live on PR #314). It would also re-run `verify`'s other ~60
+    # steps, `npm ci` and the 2,700-test suite included, once per shard.
+    #
+    # WHAT IS SHARDED AND WHAT IS NOT — only the EXECUTION. The whole-manifest checks (counts
+    # against EXPECTED_MUTATIONS in both directions, the duplicate name and anchor refusals,
+    # the home-escape scan over every target and every replacement) run in EVERY shard,
+    # because N local invariants are not the global one: a shard that validated only its own
+    # slice would let coverage shrink with every shard still green.
+    #
+    # ⚠ EACH SHARD PAYS THE CONTROL RUNS for the files IT mutates, so that cost is repeated
+    # across shards rather than divided. Deliberate — a "caught" verdict is empty without a
+    # green control for the file it is about. It also means N is not free, and it is why the
+    # measured speedup at N=8 is 5.0x (1758s -> 353s) rather than 8x: see the matrix.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # ⛔ NOT fail-fast. A surviving mutation in shard 3 says nothing about shards 4-8, and
+      # cancelling them turns one finding into an unknown — the reader needs every survivor
+      # from the first run, not whichever one happened to fail first.
+      fail-fast: false
+      matrix:
+        # ⛔ ONLY THE LENGTH OF THIS LIST MATTERS. The step below takes I from
+        # `strategy.job-index` and N from `strategy.job-total`, so the shards are 1..job-total
+        # by construction, exactly once each. Writing `/8` by hand beside this list would be
+        # one number in two places, and the dangerous direction is SILENT: a list shortened to
+        # 4 with the denominator left at 8 runs HALF the manifest and all four shards pass.
+        # The values are 1..N only so the GitHub UI reads `mutation-sweep (3)` for the third.
+        #
+        # WHY 8 — ARITHMETIC OVER MEASURED COSTS, not a guess. Timed on this branch
+        # (2026-10-05, 1,193 entries over 57 target files, `/usr/bin/time -p`):
+        #
+        #   unsharded `--mutate .`          1758s   (29.3 min — the thing being replaced)
+        #   one pass over all 57 suites       77s   (a shard pays this TWICE: control +
+        #                                            re-control, and it does NOT divide by N)
+        #   mutation work                   1606s   (sum of each entry's own suite cost)
+        #   shard 1 of 8, measured           353s   (150/150 killed, 150 attributed)
+        #
+        # So a shard costs ~153s of control plus ~1606/N. The model predicts 1758.8s unsharded
+        # against 1758.45s measured, which is why the per-N numbers below are arithmetic rather
+        # than extrapolation.
+        #
+        # ⛔ SIZED AGAINST THE WORST CASE, WHICH IS NOT THIS BRANCH — PR #360's, where the sweep
+        # is ~90 min (~5,100s) because one guard holds 183 entries against a ~30s suite. There
+        # the control pass is ~107s, so mutation work is ~4,890s and a shard is
+        # 214 + 4890/N seconds:
+        #
+        #   N=4   ~1,436s = 23.9 min   -> 1.25x under the 30-minute ceiling. Not headroom.
+        #   N=8     ~825s = 13.8 min   -> 2.2x. Chosen.
+        #   N=16    ~519s =  8.7 min   -> 3.5x, but 16 checkouts and 16 `npm ci` runs buy it,
+        #                                 and the 214s control floor caps the whole speedup at
+        #                                 ~24x however large N gets.
+        #
+        # ⭐ AND THE BALANCE IS MEASURED, not assumed — this is the crux of round-robin. Per
+        # shard predicted work from the same per-suite costs, at N=8: ROUND-ROBIN 325-374s,
+        # a 1.15x spread; CONTIGUOUS 27-491s, a 17.9x spread, with the long shard carrying the
+        # expensive block alone. At N=16 contiguous reaches 63x. A per-shard mutation COUNT is
+        # even either way, which is exactly why counting them proves nothing.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      # ⚠ fetch-depth: 0 for parity with `verify`, not because the sweep reads history — it
+      # copies the tree into a temp dir with no `.git` at all. Keeping the two checkouts
+      # identical means a guard that grows a history-reading case does not fail HERE for a
+      # reason that has nothing to do with mutation testing. Measured at ~0.85s.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ⚠ NODE AND `npm ci` ARE NOT OPTIONAL HERE, and the reason is one guard:
+      # `check-paid-caller-arrival` shells out to `node scripts/ts-comment-spans.mjs`, which
+      # imports typescript — the harness stages `node_modules/typescript` for exactly that,
+      # and the oracle REFUSES to fall back (deliberately). Without this, 20 of that guard's
+      # 32 cases report CANNOT RUN, its control goes red, and the harness correctly refuses
+      # the whole run. This is not overhead to trim: it is what lets the shard measure.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The same pin as every other job, which `scripts/check-python-pin.py` requires: every
+      # job pins the interpreter or is exempt in writing, and the pins must AGREE.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ⛔ FIRST, as in `verify`. If the pin did not take effect, every mutation verdict below
+      # is a measurement of an interpreter nobody declared — PR #315 is the instance: CI and a
+      # dev machine disagreed about one attribution on the same commit.
+      - name: The Python pin took effect
+        run: python3 scripts/check-python-pin.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ⛔ I AND N COME FROM THE MATRIX, NOT FROM THIS LINE. `strategy.job-index` is 0-based,
+      # hence the +1 — `--shard` is 1-based because that is what a human types and what the
+      # GitHub UI prints. Both arrive through `env:` rather than being interpolated into the
+      # shell; they are GitHub-controlled integers today, and interpolating into a shell
+      # string is a habit this repository has already paid for once.
+      # An absent N makes the spec `1/`, which `parse_shard` refuses as CANNOT RUN (rc 2)
+      # rather than sweeping everything under a sharded log line — the failure direction that
+      # matters, since the quiet alternative is N jobs each measuring the whole manifest.
+      - name: Mutation manifest against the delivered scripts (one shard)
+        env:
+          SHARD_INDEX: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        run: |
+          python3 scripts/check-plan-code.py --mutate . \
+            --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL"
+
+  mutation-sweep-complete:
+    # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
+    # separate contexts (`mutation-sweep (1)` …), so requiring the sweep itself would mean N
+    # entries in a repository SETTING and a settings change every time the shard count is
+    # retuned — and a required context that stops reporting leaves a pull request PENDING
+    # FOREVER, not failed (backlog #137, measured live on PR #314). This job is the stable
+    # name to require.
+    #
+    # ⛔ READ THIS BEFORE MERGING: `verify` no longer runs the sweep, so until
+    # `mutation-sweep-complete` is in `required_status_checks.contexts` — a repository
+    # setting, which must land AFTER this file and never before it — a surviving mutation
+    # reports red and does NOT block the merge button. Nothing in this file can do that for
+    # you; say it in the pull request.
+    needs: mutation-sweep
+    # ⚠ `always()`, so a failed or cancelled matrix still REPORTS. Without it this job is
+    # SKIPPED when a shard fails, and a skipped required check is the pending-forever shape
+    # this job exists to avoid.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # `needs.<job>.result` over a matrix is the AGGREGATE — `success` only when every shard
+      # succeeded — so this cannot pass while a shard is red, cancelled or skipped.
+      - name: Every shard of the mutation sweep reported green
+        env:
+          SWEEP: ${{ needs.mutation-sweep.result }}
+        run: |
+          if [ "$SWEEP" != "success" ]; then
+            echo "FAILED — the sharded mutation sweep reported '$SWEEP', not 'success'."
+            echo "A shard that was cancelled or skipped measured NOTHING: treat the mutation"
+            echo "evidence for this commit as NOT CHECKED until every shard is green."
+            exit 1
+          fi
+          echo "the mutation sweep is green in every shard"
+
+      # The same pin as every other job in this file. `check-python-pin.py` asks it of jobs
+      # that run no Python too, and `EXEMPT_JOBS` is deliberately EMPTY — an empty allow-list
+      # is the strongest form, so this is two lines of YAML instead of the first entry in it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
