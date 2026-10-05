@@ -1383,7 +1383,7 @@ EXPECTED_MUTATIONS = {
     # finished list, and NEITHER is reachable by a unit case — they go red only through the case
     # that drives `main()` over a constructed tree. That is the residue #213's per-call-site
     # detector cannot see, measured on the guard that enforces the rule.
-    "scripts/check-main-drivable.py": 130,
+    "scripts/check-main-drivable.py": 133,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -4051,6 +4051,20 @@ def _self_test() -> int:
     # ⚠ Two more of its findings are consequences of round 6's own Codex repair (the five
     # directory readers it left behind, and `os.path.abspath('sub')` flipping DEBT -> credit), so
     # the normaliser split now turns on the BASE being relative rather than on a name list.
+    # ⟳ 2026-10-04, ROUND 7's CODEX HALF: 1308 -> 1311, `check-main-drivable` 130 -> 133. NOT
+    # CONVERGED: **0 Blocking, 1 High, 1 Medium, and NO live false green on any guard on disk** —
+    # the first round of the seven whose severity ceiling fell and whose blast radius was wholly
+    # latent. Both findings were introduced by the round-6 fold, which is now the pattern rather
+    # than the exception. ⚠ Its enumerative scope was EXCLUDED in the brief by the repository
+    # owner's decision, so "another spelling" findings are absent by construction, not by absence.
+    # ⛔ THE HIGH: the walrus BINDS its target, and `free_names` counted every `ast.Name` as a
+    # read — so `globals()["X"] = (_tmp := saved)`, a restore, read as a fresh substitution and
+    # earned REBIND. A fake-compliance route, which is the one thing D2 exists to refuse.
+    # ⛔ THE MEDIUM, and it is a lesson about predicates: the base-relative rule tested
+    # `world_class(base) is INERT` as a STAND-IN for "the base is relative". An absolute literal
+    # is INERT too, so `os.path.abspath("/tmp/fixture")` was read as the live cwd. **A proxy for
+    # a property is not the property** — the comment above it even claimed the predicate was the
+    # base rather than a name list, while testing something that was neither.
     # ⟳ 2026-10-01, D1: 1177 -> 1178. +1 on `check-ratchet-contract` for MAIN's consumption of
     # `assess` — round 9's Blocking, the EIGHTH instance, and the one `assess`'s own extraction
     # created. ⭐ THIS ENTRY IS DIFFERENT IN KIND FROM THE SEVEN BEFORE IT: those were covered one
@@ -4060,7 +4074,7 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1308)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1311)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

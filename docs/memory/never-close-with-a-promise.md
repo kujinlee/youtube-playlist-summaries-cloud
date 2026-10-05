@@ -202,3 +202,20 @@ work it was never told about.
 ⚠ **Do not add a sixth prose rule here.** Five instances, four of them with a written rule already in
 place, is this project's own measured evidence that *"having the rule did not help, so this is the
 attempt at a mechanism"*. The mechanism is `begin-plan.py`; the failure is arming it.
+
+⟳ **SIXTH INSTANCE, 2026-10-04, AND IT COST NINE IDLE HOURS — a NEW mechanism, not a new rule.**
+I dispatched round 7's Codex half as `nohup python3 scripts/codex-review.py … &` inside a Bash call
+that returned immediately, then closed the turn with *"⏳ running, I'll report when it lands."*
+`nohup … &` is a **detached shell job**: the harness saw the Bash call finish, had no tracked task,
+and so never re-invoked the session. Codex finished **three minutes later**; the result sat unread
+for **nine hours**, until the human asked.
+
+⛔ **THE DISTINCTION IS MECHANICAL AND I KEEP MISSING IT.** `run_in_background: true` creates a task
+the harness tracks and notifies on. A bare `&` does not. The earlier sweeps in the same session DID
+notify — because they were wrapped in waiter commands launched with `run_in_background: true`. The
+Codex dispatch skipped that one step and nothing else differed.
+
+**How to apply, additively:** before ending a turn, ask *what will wake me?* and name it. If the
+answer is not one of — a `run_in_background` task, a `Monitor`, a `ScheduleWakeup`, or the user —
+then **nothing will**, and the turn must not end on a promise. ⚠ `docs/plugins.md` already says
+*"never passively wait on a background review"*; the failure here was not waiting at all.

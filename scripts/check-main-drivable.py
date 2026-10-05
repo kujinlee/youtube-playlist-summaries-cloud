@@ -3,7 +3,7 @@
 
     python3 scripts/check-main-drivable.py               # the population: scripts/check-*.py on disk
     python3 scripts/check-main-drivable.py --report      # every guard's route, always exit 0
-    python3 scripts/check-main-drivable.py --self-test   # 326 cases
+    python3 scripts/check-main-drivable.py --self-test   # 334 cases
 
 WHY THIS EXISTS — it is ADR-0014's rule D2, which that ADR records as "NOT YET WRITTEN".
 
@@ -865,6 +865,16 @@ def free_names(value: ast.AST) -> set[str]:
     out: set[str] = set()
 
     def rec(node: ast.AST, bound: frozenset[str]) -> None:
+        if isinstance(node, ast.NamedExpr):
+            # ⛔ ROUND 7, CODEX HIGH. The walrus BINDS its target — `(_tmp := _sv)` reads `_sv`
+            # and binds `_tmp` — and every `ast.Name` was being counted as a read, so a restore
+            # written through a walrus looked like a fresh substitution and earned REBIND. The
+            # value is visited; the target is not. ⚠ Python scopes a walrus target in the
+            # ENCLOSING function, so it is a binding of the case, not of this expression — which
+            # is why it is dropped here rather than added to `bound`: `_is_restore_value` asks
+            # what the value READS, and the target is written, not read.
+            rec(node.value, bound)
+            return
         if isinstance(node, ast.Name):
             if node.id not in bound:
                 out.add(node.id)
@@ -1290,6 +1300,24 @@ def _expr_children(node: ast.AST) -> list[ast.expr]:
     return out
 
 
+def _is_relative_literal(expr: ast.AST) -> bool:
+    """-> True when this expression is a string literal naming a RELATIVE path. PURE.
+
+    ⚠ NOT THE SAME QUESTION AS THE `Constant` BRANCH, and saying so matters because they look
+    alike. That branch asks *is this literal OBVIOUSLY the ambient directory* — `.`, `..`, `./x` —
+    and deliberately leaves `'sub'` alone, because a bare literal in `argv` is usually a flag and
+    the docstring's limit 2 turns on that. This asks a narrower question with the context already
+    established: *given that this literal is the BASE of a path operation, is it relative?*
+
+    ⛔ ROUND 7, CODEX MEDIUM: that question used to be answered by `world_class(base) is INERT` as
+    a stand-in for "relative". An ABSOLUTE literal is INERT too, so the stand-in refused
+    `os.path.abspath('/tmp/fixture')` — a world the case named. A proxy for a property is not the
+    property.
+    """
+    return (isinstance(expr, ast.Constant) and isinstance(expr.value, str)
+            and not expr.value.startswith(("/", "\\")))
+
+
 def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = None,
                 world: frozenset[str] = frozenset(), depth: int = 0) -> str:
     """Is this expression the LIVE repository, a world the case BUILT, or neither? PURE.
@@ -1435,7 +1463,12 @@ def world_class(expr: ast.AST, fn: ast.AST | None, tree: ast.Module | None = Non
             # the base is the first argument, or the receiver for a method call
             base = (expr.args[0] if expr.args
                     else expr.func.value if isinstance(expr.func, ast.Attribute) else None)
-            if base is not None and world_class(base, fn, tree, world, depth + 1) is INERT:
+            # ⛔ ROUND 7, CODEX MEDIUM, AND THE PREDICATE WAS SLOPPY IN EXACTLY THE WAY THE
+            # COMMENT ABOVE CLAIMS IT IS NOT. It said "the base is relative" and tested "the base
+            # has no provenance" — and an ABSOLUTE literal has no provenance either, so
+            # `os.path.abspath('/tmp/fixture')` was read as the live cwd. An absolute path is not
+            # resolved against anything. Test the literal, which is what "relative" means.
+            if base is not None and _is_relative_literal(base):
                 return LIVE                  # a relative path, resolved against the live cwd
         if not expr.args and not expr.keywords:
             # ⚠ `LIVE_WORLD_READERS` IS NOT IN THIS UNION, and round 6's Claude L1 is why: a
@@ -2950,6 +2983,18 @@ def _self_test() -> int:                                      # noqa: C901 — a
     case("...and only the FIRST iterable is outside — a later one reads the targets before it",
          (_fn("[y for x in src for y in x]"), _fn("[y for x in src for y in x if y > lim]")),
          (["src"], ["lim", "src"]))
+    # ⛔ ROUND 7, CODEX HIGH: THE WALRUS BINDS ITS TARGET. Every `ast.Name` counted as a read, so
+    # a restore written `globals()['X'] = (_tmp := _sv)` looked like a fresh substitution and
+    # earned REBIND — putting the world back and being credited for it.
+    case("⛔ a WALRUS binds its target, so only the value it assigns is read from the case "
+         "(r7 Codex High)",
+         (_fn("(_tmp := _sv)"), _fn("[y := q for q in src]")), (["_sv"], ["src"]))
+    case("...and a restore written through a walrus is still a restore",
+         classify(_R6H.replace("@@R@@", "    globals()['ROOT'] = (_tmp := _sv)\n")).routes,
+         frozenset())
+    case("...while a walrus over a world the case BUILT is still a substitution",
+         classify(_R6H.replace("@@R@@", "    globals()['ROOT'] = (_tmp := td)\n")).routes,
+         frozenset({REBIND}))
 
     # ── ROUND 6, CLAUDE H2 + M4: THE PREDICATE IS THE BASE, NOT THE NAME ───────────────────────
     _R6P = ("from pathlib import Path\nimport os, tempfile, sys\nROOT = Path('/repo')\n"
@@ -2973,6 +3018,17 @@ def _self_test() -> int:                                      # noqa: C901 — a
              _path(_e), frozenset())
     case("...and an ABSOLUTE literal is still a world the case named, which is the line between "
          "the two", _path("Path('/tmp/fixture')"), frozenset({PARAM}))
+    # ⛔ ROUND 7, CODEX MEDIUM: "NO PROVENANCE" IS NOT "RELATIVE". The base-relative rule tested
+    # `world_class(base) is INERT` as a stand-in, and an ABSOLUTE literal is INERT too — so a
+    # normaliser over an absolute fixture path was read as the live cwd. Both polarities, because
+    # a proxy for a property is wrong in exactly one direction and that is the one to pin.
+    for _e, _want in (("os.path.abspath('/tmp/fixture')", frozenset({PARAM})),
+                      ("os.path.realpath('/abs/x')", frozenset({PARAM})),
+                      ("Path('/tmp/f').resolve()", frozenset({PARAM})),
+                      ("os.path.abspath('sub')", frozenset()),
+                      ("Path('sub').resolve()", frozenset())):
+        case(f"a normaliser over an ABSOLUTE base resolves nothing against the cwd — `{_e}` "
+             f"(r7 Codex Medium)", _path(_e), _want)
     # ⛔⛔ A FIFTH MASKING PAIR, FOUND BY THE SWEEP AND BY NOTHING ELSE. Round 6's
     # relative-constructor clause answers `Path('.')` and `Path('./fixtures')` BEFORE
     # `AMBIENT_PATH_LITERALS` and its `./` prefix test are consulted — so both of round 5's

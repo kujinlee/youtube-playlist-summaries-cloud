@@ -1689,5 +1689,44 @@
    "...and a bulk `g.update()` with NO arguments is not a write, rather than an IndexError \u2014 the fourth member of the indexed-argument class"
   ],
   "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the walrus stops binding its target, so a restore written `globals()['X'] = (_tmp := saved)` reads as a fresh substitution and the call after it earns a FALSE rebind credit (r7 Codex High)",
+  "edits": [
+   [
+    "        if isinstance(node, ast.NamedExpr):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a WALRUS binds its target, so only the value it assigns is read from the case (r7 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the base-relative test goes back to `world_class(base) is INERT` as a stand-in for \"relative\", so a normaliser over an ABSOLUTE fixture path is read as the live cwd (r7 Codex Medium \u2014 a proxy for a property is not the property)",
+  "edits": [
+   [
+    "            if base is not None and _is_relative_literal(base):",
+    "            if base is not None and world_class(base, fn, tree, world, depth + 1) is INERT:"
+   ]
+  ],
+  "expect": [
+   "a normaliser over an ABSOLUTE base resolves nothing against the cwd \u2014 `os.path.abspath('/tmp/fixture')` (r7 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`_is_relative_literal` stops checking for a leading separator, so every string literal base counts as relative",
+  "edits": [
+   [
+    "    return (isinstance(expr, ast.Constant) and isinstance(expr.value, str)\n            and not expr.value.startswith((\"/\", \"\\\\\")))",
+    "    return isinstance(expr, ast.Constant) and isinstance(expr.value, str)"
+   ]
+  ],
+  "expect": [
+   "a normaliser over an ABSOLUTE base resolves nothing against the cwd \u2014 `os.path.abspath('/tmp/fixture')` (r7 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
  }
 ]
