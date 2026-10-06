@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 175 cases
+    python3 scripts/check-plan-code.py --self-test          # 177 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1037,7 +1037,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 103,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 105,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1672,19 +1672,23 @@ def shard_dest(opt: str) -> str:
     was broken; what was wrong was the claim, which is the defect this file keeps paying
     for. Both consumers now route through here, so they agree BY CONSTRUCTION.
     """
-    return opt.replace("-", "_")
+    # ⚠ BOTH of argparse's steps — round 8 L1. It strips the prefix chars FIRST and then
+    # replaces hyphens, so `-shard-x` becomes `shard_x`; replacing alone gave `_shard_x`
+    # and reintroduced the AttributeError this function exists to remove.
+    return opt.lstrip("-").replace("-", "_")
 
 
-SHARD_FLAGS: "dict[str, str]" = {
-    "shard": ("With --mutate: run only shard I of N, ROUND-ROBIN over the mutation list "
-              "(backlog #217). The global manifest checks still run on the WHOLE manifest "
-              "in every shard; only the suite runs are split. I is 1-based. An empty shard "
-              "is CANNOT RUN, never a pass."),
-    "shard0": ("Like --shard, but I is ZERO-BASED, which is what a CI matrix provides. "
-               "Exists so the 0->1 conversion lives in tested code rather than a workflow "
-               "`run:` block — round 6 M1: logic in YAML has no self-test, no mutation "
-               "entry and no ratchet coverage, which is how this rule shipped wrong three "
-               "times with every gate green."),
+SHARD_FLAGS: "dict[str, tuple[bool, str]]" = {
+    "shard": (False,
+              "With --mutate: run only shard I of N, ROUND-ROBIN over the mutation list "
+              "(backlog #217). The global manifest checks still run on the WHOLE manifest in "
+              "every shard; only the suite runs are split. I is 1-based. An empty shard is "
+              "CANNOT RUN, never a pass."),
+    "shard0": (True,
+               "Like --shard, but I is ZERO-BASED, which is what a CI matrix provides. Exists so "
+               "the 0->1 conversion lives in tested code rather than a workflow `run:` block — "
+               "round 6 M1: logic in YAML has no self-test, no mutation entry and no ratchet "
+               "coverage, which is how this rule shipped wrong three times with every gate green."),
 }
 
 
@@ -4039,13 +4043,39 @@ def _self_test() -> int:
         _p.add_argument(f"--{_opt}", metavar="I/N")
         try:
             return getattr(_p.parse_args([f"--{_opt}", "2/5"]), shard_dest(_opt))
-        except AttributeError:
-            return "MISSED — shard_dest disagrees with argparse"
+        except Exception as exc:                  # noqa: BLE001 — round 8 L2
+            # ⚠ NOT just `AttributeError`. A `TypeError` from a malformed name would kill the suite
+            # before it printed `[FAIL] <case>`, making the mutation unattributable — the same trap
+            # the length case fell into two folds ago. Any failure becomes a VALUE here.
+            return f"MISSED — shard_dest disagrees with argparse ({type(exc).__name__})"
 
     case("a hyphenated flag round-trips through `shard_dest` exactly as argparse names it",
          _roundtrip("shard-x"), "2/5")
     case("...and every shipped key survives the same normalisation",
          tuple(shard_dest(_k) for _k in SHARD_FLAGS), tuple(SHARD_FLAGS))
+
+    # ── ROUND 8 M1 — THE CLAIM, MADE CHECKABLE. "A third flag is one dict entry" was false: the
+    # dict covered argparse registration and the mode refusal, while exclusivity, parsing and
+    # zero-basedness were hand-written against `a.shard`/`a.shard0`. FIVE readers, not two. The
+    # reviewer's exhibit — add a key, watch the flag be accepted and never parsed — is the case.
+    _third = dict(SHARD_FLAGS, shard2=(False, "a third key, added in-process"))
+    _saved_flags = globals()["SHARD_FLAGS"]
+    globals()["SHARD_FLAGS"] = _third
+    try:
+        _se3 = io.StringIO()
+        with contextlib.redirect_stderr(_se3):
+            _rc_unparsed = main(["--mutate", ".", "--shard2", "garbage"])
+        _unparsed_out = _se3.getvalue()
+        _se4 = io.StringIO()
+        with contextlib.redirect_stderr(_se4):
+            _rc_both = main(["--mutate", ".", "--shard2", "1/8", "--shard", "1/8"])
+        _both_out = _se4.getvalue()
+    finally:
+        globals()["SHARD_FLAGS"] = _saved_flags
+    case("a flag added to SHARD_FLAGS is PARSED, not merely accepted — round 8 M1",
+         (_rc_unparsed, "not of the form I/N" in _unparsed_out), (2, True))
+    case("...and is mutually exclusive with the others, without being named anywhere — round 8 M1",
+         (_rc_both, "same control" in _both_out), (2, True))
 
     case("an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1",
          tuple(shard_mode_refusal("", None, flag=f"--{_f}") is not None for _f in SHARD_FLAGS),
@@ -4514,7 +4544,7 @@ def _self_test() -> int:
     # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
     # refusal keys on exact tuple equality of the find-strings, and it refused the first
     # draft. The figure is the guard's own, read from its failure message.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1208)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1210)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -4644,7 +4674,7 @@ def main(argv: list[str]) -> int:
                          "the mode that makes the evidence about the code that ships.")
     # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
     # declaration; this loop and the mode check in `main` are its only two readers.
-    for _opt, _help in SHARD_FLAGS.items():
+    for _opt, (_zero, _help) in SHARD_FLAGS.items():
         # ⛔ NO EXPLICIT `dest=` — ROUND 7 CODEX LOW, SECOND ATTEMPT. Passing
         # `dest=shard_dest(_opt)` made BOTH consumers read the same function, so severing it
         # changed nothing on either side: the mutation SURVIVED (shard 8, 150 of 151) and the
@@ -4715,20 +4745,25 @@ def main(argv: list[str]) -> int:
     # called parse_shard. Not a false green — the verdict line does say `the WHOLE manifest` — and
     # unreachable from CI, whose nearest shape `1/` IS refused. Fixed anyway because the refusal
     # existed and was simply not consulted, which costs one character to put right.
-    # ⛔ ONE OR THE OTHER, NEVER BOTH — they disagree about what I means, and a run that
-    # silently honoured one would measure a different slice than its log line claims.
-    if a.shard is not None and a.shard0 is not None:
-        print("CANNOT RUN — --shard and --shard0 are the same control with different bases; "
-              "pass one. NOTHING WAS MEASURED. Treat this as NOT CHECKED.", file=sys.stderr)
+    # ⛔ EXCLUSIVITY AND PARSING ARE DERIVED TOO — ROUND 8 M1. These were three hand-written
+    # branches naming `a.shard` and `a.shard0`, so `SHARD_FLAGS` covered argparse registration and
+    # the mode refusal and NOTHING ELSE. Measured: adding a third key gave a flag that refused
+    # correctly under `--self-test` and was then NEVER PARSED — no empty-shard refusal, no mutual
+    # exclusion. The comment claimed "a third flag is one dict entry, and disagreement is
+    # IMPOSSIBLE"; there were FIVE readers, not the two it named. Deriving all of them is what
+    # makes that sentence a fact instead of a promise — and it deletes three branches rather than
+    # adding a fourth.
+    _given = [(_f, getattr(a, shard_dest(_f))) for _f in SHARD_FLAGS
+              if getattr(a, shard_dest(_f)) is not None]
+    if len(_given) > 1:
+        print(f"CANNOT RUN — {', '.join('--' + _f for _f, _ in _given)} are the same control with "
+              f"different bases; pass one. NOTHING WAS MEASURED. Treat this as NOT CHECKED.",
+              file=sys.stderr)
         return 2
-    if a.shard0 is not None:
-        shard, why = parse_shard(a.shard0, zero_based=True, flag="--shard0")
-        if why:
-            print(why, file=sys.stderr)
-            return 2
-    if a.shard is not None:
+    if _given:
         # The mode refusal already ran at the top of `main`, before any mode dispatched.
-        shard, why = parse_shard(a.shard)
+        _f, _val = _given[0]
+        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f"--{_f}")
         if why:
             print(why, file=sys.stderr)
             return 2

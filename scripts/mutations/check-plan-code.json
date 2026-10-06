@@ -1119,8 +1119,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        shard, why = parse_shard(a.shard)\n        if why:\n            print(why, file=sys.stderr)\n            return 2",
-        "        shard, why = parse_shard(a.shard)\n        if why:\n            print(why, file=sys.stderr)"
+        "        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f\"--{_f}\")\n        if why:\n            print(why, file=sys.stderr)\n            return 2",
+        "        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f\"--{_f}\")\n        if why:\n            print(why, file=sys.stderr)"
       ]
     ],
     "expect": "...and a malformed --shard refuses BEFORE any suite runs"
@@ -1251,8 +1251,30 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return opt.replace(\"-\", \"_\")",
-        "    return opt"
+        "lstrip(\"-\").replace(\"-\", \"_\")",
+        "lstrip(\"-\")"
+      ]
+    ],
+    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+  },
+  {
+    "name": "the shard flags are enumerated again by hand instead of derived, so a flag in SHARD_FLAGS is registered and mode-checked but never PARSED and never mutually exclusive \u2014 round 8 M1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _given = [(_f, getattr(a, shard_dest(_f))) for _f in SHARD_FLAGS\n              if getattr(a, shard_dest(_f)) is not None]",
+        "    _given = [(_f, getattr(a, shard_dest(_f))) for _f in (\"shard\", \"shard0\")\n              if getattr(a, shard_dest(_f)) is not None]"
+      ]
+    ],
+    "expect": "a flag added to SHARD_FLAGS is PARSED, not merely accepted \u2014 round 8 M1"
+  },
+  {
+    "name": "`shard_dest` drops argparse's prefix-strip step, so a leading-hyphen flag name resolves to `_shard_x` where argparse named it `shard_x` \u2014 round 8 L1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return opt.lstrip(\"-\").replace(\"-\", \"_\")",
+        "    return opt.replace(\"-\", \"_\")"
       ]
     ],
     "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"

@@ -13771,3 +13771,43 @@ looked, not because anything changed — which is the argument for one owner rat
 | counts | self-test `173 → 175`; manifest `102 → 103`; declared sum `1207 → 1208` |
 | measured | shards 3, 5, 8 each **151 killed, 151 attributed, 0 survivors** |
 | anchors | **1,216**, 0 unresolved, 0 duplicate tuples |
+
+## 2026-10-06
+The shortcut added yesterday for "how to add another one of these options" turned out to only do
+half the job: a new option would appear and be checked in one place, then be silently ignored where
+it actually matters. Nothing shipped was broken — the two options we use work — but the note beside
+it promised more than it did. The shortcut now does the whole job, which let three hand-written
+special cases be deleted rather than a fourth added.
+
+<!--tech-->
+**Round 8 (Claude half), folded. Two Mediums in the deliverable — NOT CONVERGED, counter stays 0.**
+
+**M1** — *"a third flag is one dict entry, and disagreement is IMPOSSIBLE"* was false in **both**
+directions, measured by monkeypatching `SHARD_FLAGS` in-process:
+
+    SHARD_FLAGS["shard2"]   -> --self-test green, then the flag is NEVER PARSED:
+                               no I/N check, no empty-shard refusal, no mutual exclusion
+    SHARD_FLAGS["shard-x"]  -> 174/175, red at the fold's own new case
+
+⛔ **There were FIVE readers, not the two the comment named.** The dict covered argparse registration
+and the mode refusal; exclusivity, parsing and zero-basedness were hand-written against
+`a.shard`/`a.shard0`, and `shard0`'s zero-basedness was not in the dict at all.
+
+**The fix completes the abstraction rather than softening the sentence** — every previous over-claim
+I "fixed" by rewording was followed by a round finding the next one. All five readers now derive, and
+three hand-written branches are **deleted** rather than a fourth added. Verified end to end with a
+third key: malformed spec → rc=2 parsed refusal; with `--shard` → rc=2 exclusivity refusal.
+
+| | |
+|---|---|
+| **M2** | `ci.yml` still described a shell guard `d95908c0` had deleted — "hence the +1", naming `--shard`, promising "the guard below costs two lines" **seven lines above** a block opening *"NO LOGIC LIVES HERE ANY MORE"*. Replaced with what actually guards it now |
+| **L1** | `shard_dest` did one of argparse's **two** steps; `-shard-x` → `_shard_x`. Now `lstrip("-")` first |
+| **L2** | the probe caught only `AttributeError`; a `TypeError` would kill the suite with 0 `[FAIL]` lines. Any failure is a value now |
+| **L3** | the PR body said "Five rounds" — there are eight, and that line was itself round 5's stale-narration fix |
+| counts | self-test `175 → 177`; manifest `103 → 105`; declared sum `1208 → 1210`; anchors **1,218**, 0 unresolved |
+
+⚠ **The local sweep could not measure this fold and says so.** `check-surface-recall`'s control takes
+**81 s** on this machine against a 120 s `SUITE_TIMEOUT` (1.48×), and under load it tips — the harness
+then voids the **entire shard** (`NOT MEASURED`, all 151 mutations), which is correct behaviour over a
+failed control. CI's runners are unaffected: all 8 shards were green at `df1ec075`. CI is the
+measurement for this commit.

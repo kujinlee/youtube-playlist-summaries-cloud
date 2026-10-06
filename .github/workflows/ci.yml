@@ -671,23 +671,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ⛔ I AND N COME FROM THE MATRIX, NOT FROM THIS LINE. `strategy.job-index` is 0-based,
-      # hence the +1 — `--shard` is 1-based because that is what a human types and what the
-      # GitHub UI prints. Both arrive through `env:` rather than being interpolated into the
-      # shell; they are GitHub-controlled integers today, and interpolating into a shell
-      # string is a habit this repository has already paid for once.
-      # An absent N makes the spec `1/`, which `parse_shard` refuses as CANNOT RUN (rc 2)
-      # rather than sweeping everything under a sharded log line — the failure direction that
-      # matters, since the quiet alternative is N jobs each measuring the whole manifest.
+      # ⛔ I AND N COME FROM THE MATRIX, AND NOTHING HERE INTERPRETS THEM — ROUND 8 M2.
+      # `strategy.job-index` is 0-based and `job-total` is N; both arrive through `env:` and are
+      # passed STRAIGHT to `--shard0`, which is 0-based precisely so this file needs no arithmetic.
       #
-      # ⛔ AND THE PARAGRAPH ABOVE GUARDED ONLY THE N SIDE, WHICH IS ROUND 1's M2(a) AND ROUND 5's
-      # L2. Bash arithmetic reads an unset or non-numeric name as 0, so `$((SHARD_INDEX + 1))` is
-      # `1` for BOTH `` and `abc` — measured. An absent I in every job therefore makes all N jobs
-      # run `shard 1 of N`: 7/8 of the manifest unmeasured and ALL EIGHT REPORTING GREEN. That is
-      # the silent false green this whole step exists to prevent, reachable from the opposite side
-      # of the same expression. `strategy.job-index` is GitHub-provided and always set, so it is
-      # not reachable today — the guard below costs two lines and removes the asymmetry rather
-      # than leaving a comment that is true about N and silent about I.
+      # ⚠ THIS PARAGRAPH PREVIOUSLY DESCRIBED A SHELL GUARD THAT NO LONGER EXISTS. It said "hence
+      # the +1", named `--shard`, and promised "the guard below costs two lines" — seven lines
+      # above a block that opens "NO LOGIC LIVES HERE ANY MORE". `git log -S` confirms `d95908c0`
+      # removed both the arithmetic and the guard, and left their description standing. The
+      # protection did move correctly into `parse_shard`; the file simply told an editor otherwise,
+      # which is the defect PR #366 has produced most often — a sentence truer of the past than of
+      # the code beneath it.
+      #
+      # What actually guards this now, and where to read it: `parse_shard` refuses anything that is
+      # not a canonical ASCII `I/N` (bounded to four digits, no Unicode digits, no leading zeros, no
+      # surrounding whitespace), refuses `0 <= I < N` violations, and refuses an empty value — each
+      # with a CANNOT RUN sentence and a case in `check-plan-code.py`'s own suite.
       - name: Mutation manifest against the delivered scripts (one shard)
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
