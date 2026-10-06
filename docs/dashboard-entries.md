@@ -13484,3 +13484,42 @@ the selector exits 1 while `codex exec -m gpt-5.5` completes a full review on th
 round's own Codex half was produced that way. #229 — why no guard saw it:
 `check-ratchet-contract`'s widened population is opt-in by **self-testedness**, and its other half
 is drawn by **filename**, so a gate-critical script with zero coverage is in neither.
+
+## 2026-10-05
+The fix described in the entry above was not finished, and the check written to prove it was
+looking at the wrong thing. It confirmed that a setting had the right value; it never confirmed
+that the code which uses that setting actually reads it. So the one line that matters could have
+been replaced by a hand-written copy missing the setting, and every test would still have passed —
+which is the exact mistake the setting was introduced to prevent, a year of care undone by a copy.
+Both checks now run the real path instead of a stand-in, so either mistake is caught.
+
+<!--tech-->
+**Round 3 of PR #366 (Claude half), folded.** One Medium, five Lows. The r2 fix asserted the VALUE
+of `SUBPROCESS_ENV_KEYS`; nothing asserted the spawn READS it. Measured before the repair —
+replacing the constant reference at the call site with an inline literal missing the key left both
+suites green:
+
+    check-rc-contract.py    _env = {… if k in SUBPROCESS_ENV_KEYS}
+                          → _env = {… if k in ("PATH","HOME","TMPDIR","LANG")}   56/56, no FAILs
+    check-surface-recall.py same at _render_once                                 59/59, no FAILs
+
+⛔ An inline hand-copied scrub **is** round 8 H1's original defect — so the guard was blind to the
+precise regression its own subject exists to prevent. Both property cases now drive the real scrub
+through the real spawn (`observe` / `_render_once(…, scrub=True)`) with a hook that imports a
+module, so each is red in BOTH directions. Falsified per file, per direction: call-site sever →
+`55/56` and `58/59`; constant sever → `55/56` and `57/59`; each via the case it names.
+
+| | |
+|---|---|
+| **entries** | +1 per file on the CALL SITE (anchors distinct from the existing block entry, per the exact-tuple rule). `check-rc-contract` 16 → 17, `check-surface-recall` 20 → 21 |
+| **declared sum** | 1198 → **1200** |
+| **reviewer's own refutation** | shard 3 — which my brief asked for — is **blind to this fold**: `shard_slice` is `muts[i-1::N]`, the new entries sit at global indices 620 and 807, i.e. shards **5 and 8**. The reviewer ran 3, 5 and 8 |
+
+**✅ CORRECTION to the entry above, which is append-only so this is where it goes.** Three things in
+it were imprecise. ⑴ It cites `check-plan-code.py:808` for "runs only the mutated file's suite";
+`:808` is a *comment restating* that, and the code producing it is `rc, out = run_suite(d, fname)`
+at **`:1879`**. ⑵ Its counts (`1193→1198`, `155→161`) are the cumulative totals across five
+commits, under a heading describing one — the per-commit split is in the commit messages. ⑶ The
+root cause of the original symptom, a mutant `.pyc` outliving the restore of its own source
+(`26661d75`), is described in no entry at all; it is the reason `PYTHONDONTWRITEBYTECODE` and the
+`stage_tree` `ignore=` exist, and without it both look arbitrary.

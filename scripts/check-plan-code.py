@@ -1413,7 +1413,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
     # across two consecutive rounds, every one caused by the previous round's fix — which is
     # `dev-process.md:108`'s condition, met for the first time in this fold.
-    "scripts/check-rc-contract.py": 16,
+    "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
     # contract: every Blocking in rounds 3-7 landed on R3 while R1/R2 produced none, and round 7
@@ -1425,7 +1425,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ FOUR OF THE 11 ARE RELOCATED, NOT NEW — they came from `check-rc-contract`'s manifest with
     # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
     # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
-    "scripts/check-surface-recall.py": 20,
+    "scripts/check-surface-recall.py": 21,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -4311,7 +4311,7 @@ def _self_test() -> int:
     # `PYTHONDONTWRITEBYTECODE` — and each dies via its own file's property case, because
     # `run_suite` runs only the mutated file's suite (:808). The figure is the guard's own,
     # taken from its failure message.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1198)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1200)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

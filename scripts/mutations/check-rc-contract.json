@@ -174,5 +174,16 @@
       ]
     ],
     "expect": "a spawn scrubbed by THIS guard's allowlist writes no bytecode cache \u2014 r2 Medium"
+  },
+  {
+    "name": "the CALL SITE stops consulting the allowlist constant and inlines a hand-copy without PYTHONDONTWRITEBYTECODE \u2014 round 8 H1's original defect, which r2's constant-only property left green (r3 Medium, PR #366)",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "            _env = {k: v for k, v in os.environ.items() if k in SUBPROCESS_ENV_KEYS}",
+        "            _env = {k: v for k, v in os.environ.items() if k in (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")}"
+      ]
+    ],
+    "expect": "a spawn scrubbed by THIS guard's allowlist writes no bytecode cache \u2014 r2 Medium"
   }
 ]

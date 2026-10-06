@@ -782,28 +782,41 @@ def _self_test() -> int:
     # site — so `check-fixture-variation.py` was right that nothing could tell it from a literal.
     # The suite is stubbed out rather than re-entered, because `main(["--self-test"])` for real is
     # unbounded recursion; `main` resolves `_self_test` from module globals at call time.
-    # ── R2 MEDIUM — THE PROPERTY THIS GUARD'S OWN SCRUB MUST HOLD (PR #366). The sibling case in
-    # `check-surface-recall.py` asserts only that the two allowlists AGREE, which a wrong set held
-    # consistently satisfies — and that is how the harness came to claim "no suite the harness
-    # spawns may WRITE a cache" over a tree where a scrubbed spawn still did.
-    # ⚠ The case lives HERE, not beside its sibling, because `check-plan-code.run_suite` runs only
-    # the MUTATED file's suite (:808) — a cross-file case can never be a mutation's `expect`.
-    # ⚠ The probe SETS the variable in the source environment instead of reading the caller's, so
-    # this verdict cannot depend on how the guard was invoked — backlog #56's shape. It scrubs with
-    # the LIVE constant, so severing the key goes red here.
-    def _scrubbed_spawn_writes_cache(keys) -> list[str]:
-        """-> the `.pyc` names a scrubbed child leaves behind. `[]` is the property holding."""
-        with tempfile.TemporaryDirectory() as _td:
-            (Path(_td) / "_pyc_probe.py").write_text("VALUE = 1\n")
-            _src = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-            subprocess.run([sys.executable, "-c", "import _pyc_probe"], timeout=30, check=True,
-                           capture_output=True,
-                           env={**{k: v for k, v in _src.items() if k in keys},
-                                "PYTHONPATH": _td})
-            return sorted(q.name for q in (Path(_td) / "__pycache__").glob("*.pyc"))
+    # ── r3 MEDIUM — THE PROPERTY MUST BE TAKEN THROUGH THE PRODUCTION SPAWN, NOT THE CONSTANT.
+    # r2's fix asserted the VALUE of `SUBPROCESS_ENV_KEYS`; nothing asserted the spawn READS it, so
+    # replacing the reference at the call site with an inline literal missing the key left both
+    # suites green at 56/56 and 59/59 — and an inline hand-copied scrub IS round 8 H1's original
+    # defect, the very thing this constant exists to prevent. Measured before the repair.
+    # ⛔ So the probe drives the REAL scrub through the REAL spawn: a hook that imports a module.
+    # It is therefore red in BOTH directions — the constant losing the key, and the call site
+    # ceasing to consult it — and the two mutation entries name this one case.
+    # ⚠ It SETS the variable rather than reading the caller's, so the verdict cannot depend on how
+    # the guard was invoked (backlog #56's shape), and it restores the prior value in a `finally`.
+    def _production_spawn_writes_cache() -> list[str]:
+        """-> `.pyc` names the REAL scrubbed spawn leaves behind. `[]` is the property holding."""
+        _probe = tempfile.mkdtemp()
+        _hook_src = (
+            '#!/usr/bin/env bash\n'
+            'set -uo pipefail\n'
+            f'printf \'V = 1\\n\' > "{_probe}/_pycprobe.py"\n'
+            f'PYTHONPATH="{_probe}" python3 -c \'import _pycprobe\' >/dev/null 2>&1\n'
+            'python3 -c \'import json,sys; print(json.dumps({"hookSpecificOutput":'
+            '{"hookEventName":"PostToolUse","additionalContext":sys.stdin.read()}}))\' '
+            '<<<"probe-detail"\n'
+            'exit 0\n')
+        _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+        try:
+            observe(_hook_src, 5, _PROBE)
+        finally:
+            if _saved is None:
+                os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
+            else:
+                os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
+        return sorted(q.name for q in (Path(_probe) / "__pycache__").glob("*.pyc"))
 
     case("a spawn scrubbed by THIS guard's allowlist writes no bytecode cache — r2 Medium",
-         _scrubbed_spawn_writes_cache(SUBPROCESS_ENV_KEYS), [])
+         _production_spawn_writes_cache(), [])
 
     _saved_st = globals()["_self_test"]
     globals()["_self_test"] = lambda: 99

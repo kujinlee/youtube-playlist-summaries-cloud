@@ -566,27 +566,42 @@ def _self_test() -> int:
     case("the subprocess env allowlist is the SAME in both guards — round 8 H1",
          tuple(SUBPROCESS_ENV_KEYS), tuple(_sibmod.SUBPROCESS_ENV_KEYS))
 
-    # ── R2 MEDIUM — THE PROPERTY, NOT THE AGREEMENT (PR #366). The case above is satisfied by a
-    # wrong set held consistently in both copies, and that is how the harness came to claim "no
-    # suite the harness spawns may WRITE a cache" over a tree where a scrubbed spawn still did.
-    # ⚠ The probe SETS the variable in the source environment rather than reading the caller's, so
-    # the verdict cannot depend on how this guard was invoked — backlog #56's shape, the reason a
-    # gate gets switched off. It scrubs with the LIVE constant, so severing the key goes red here.
-    def _scrubbed_spawn_writes_cache(keys) -> list[str]:
-        """-> the `.pyc` names a scrubbed child leaves behind. `[]` is the property holding."""
-        import tempfile as _tf
-        with _tf.TemporaryDirectory() as _td:
-            _mod = Path(_td) / "_pyc_probe.py"
-            _mod.write_text("VALUE = 1\n")
-            _src = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-            subprocess.run([sys.executable, "-c", "import _pyc_probe"], timeout=30, check=True,
-                           capture_output=True,
-                           env={**{k: v for k, v in _src.items() if k in keys},
-                                "PYTHONPATH": _td})
-            return sorted(q.name for q in (Path(_td) / "__pycache__").glob("*.pyc"))
+    # ── r3 MEDIUM — THE PROPERTY MUST BE TAKEN THROUGH THE PRODUCTION SPAWN, NOT THE CONSTANT.
+    # r2's fix asserted the VALUE of `SUBPROCESS_ENV_KEYS`; nothing asserted `_render_once` READS
+    # it, so replacing the reference with an inline literal missing the key left this suite green
+    # at 59/59 — and an inline hand-copied scrub IS round 8 H1's original defect, the very thing
+    # this constant exists to prevent. Measured before the repair.
+    # ⛔ So the probe drives the REAL scrub through the REAL spawn: a fixture hook that imports a
+    # module. It is red in BOTH directions — the constant losing the key, and `_render_once`
+    # ceasing to consult it — and the two mutation entries name this one case.
+    # ⚠ It SETS the variable rather than reading the caller's, so the verdict cannot depend on how
+    # the guard was invoked (backlog #56's shape), and it restores the prior value in a `finally`.
+    def _production_spawn_writes_cache() -> list[str]:
+        """-> `.pyc` names the REAL scrubbed spawn leaves behind. `[]` is the property holding."""
+        _probe = tempfile.mkdtemp()
+        _hook_src = (
+            '#!/usr/bin/env bash\n'
+            'set -uo pipefail\n'
+            f'printf \'V = 1\\n\' > "{_probe}/_pycprobe.py"\n'
+            f'PYTHONPATH="{_probe}" python3 -c \'import _pycprobe\' >/dev/null 2>&1\n'
+            'python3 -c \'import json,sys; print(json.dumps({"hookSpecificOutput":'
+            '{"hookEventName":"PostToolUse","additionalContext":sys.stdin.read()}}))\' '
+            '<<<"probe-detail"\n'
+            'exit 0\n')
+        _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+        try:
+            with _fixture_hook(_hook_src) as _fx:
+                _render_once(_fx, 5, "probe-detail", True)
+        finally:
+            if _saved is None:
+                os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
+            else:
+                os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
+        return sorted(q.name for q in (Path(_probe) / "__pycache__").glob("*.pyc"))
 
     case("a spawn scrubbed by THIS guard's allowlist writes no bytecode cache — r2 Medium",
-         _scrubbed_spawn_writes_cache(SUBPROCESS_ENV_KEYS), [])
+         _production_spawn_writes_cache(), [])
     _rat = __import__("importlib").util.spec_from_file_location(
         "_sib_rat", ROOT / "scripts" / "check-ratchet-contract.py")
     _ratmod = __import__("importlib").util.module_from_spec(_rat)
