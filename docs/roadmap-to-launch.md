@@ -2224,7 +2224,7 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       was the review's sharpest finding: with no venue, *"a guard's `main` must be drivable"*
       could be discovered but never **decided**, which is why `check-ci-watched.py` solved it
       alone and told nobody.
-- [ ] **#217 — the sweep's subprocess cost.** `verify` was CANCELLED at 15m15s on #360 and the
+- [x] **#217 — the sweep's subprocess cost.** `verify` was CANCELLED at 15m15s on #360 and the
       budget went 15 → 30 with the measurement at the line (two subprocess-heavy guards add
       ~13 min). ⛔ The trigger for splitting the sweep into its own job is a SECOND raise.
 - [ ] **The rest of the propagation half, which is the harder one.** Three structural lessons, three files, no

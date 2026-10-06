@@ -679,11 +679,23 @@ jobs:
       # An absent N makes the spec `1/`, which `parse_shard` refuses as CANNOT RUN (rc 2)
       # rather than sweeping everything under a sharded log line — the failure direction that
       # matters, since the quiet alternative is N jobs each measuring the whole manifest.
+      #
+      # ⛔ AND THE PARAGRAPH ABOVE GUARDED ONLY THE N SIDE, WHICH IS ROUND 1's M2(a) AND ROUND 5's
+      # L2. Bash arithmetic reads an unset or non-numeric name as 0, so `$((SHARD_INDEX + 1))` is
+      # `1` for BOTH `` and `abc` — measured. An absent I in every job therefore makes all N jobs
+      # run `shard 1 of N`: 7/8 of the manifest unmeasured and ALL EIGHT REPORTING GREEN. That is
+      # the silent false green this whole step exists to prevent, reachable from the opposite side
+      # of the same expression. `strategy.job-index` is GitHub-provided and always set, so it is
+      # not reachable today — the guard below costs two lines and removes the asymmetry rather
+      # than leaving a comment that is true about N and silent about I.
       - name: Mutation manifest against the delivered scripts (one shard)
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
         run: |
+          case "$SHARD_INDEX" in
+            ''|*[!0-9]*) echo "CANNOT RUN — SHARD_INDEX is '$SHARD_INDEX', not a number: bash would read it as 0 and this job would silently measure shard 1." >&2; exit 2 ;;
+          esac
           python3 scripts/check-plan-code.py --mutate . \
             --shard "$((SHARD_INDEX + 1))/$SHARD_TOTAL"
 

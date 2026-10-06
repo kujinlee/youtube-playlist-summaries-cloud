@@ -13523,3 +13523,45 @@ commits, under a heading describing one — the per-commit split is in the commi
 root cause of the original symptom, a mutant `.pyc` outliving the restore of its own source
 (`26661d75`), is described in no entry at all; it is the reason `PYTHONDONTWRITEBYTECODE` and the
 `stage_tree` `ignore=` exist, and without it both look arbitrary.
+
+## 2026-10-06
+The safety check that runs eight ways at once is now actually finished, and the last review round
+found the kind of problem that matters most: not a bug in the new code, but three places where what
+we had *written down* no longer matched what the code does — including the pull request itself
+claiming to close a task whose status still said open. Nothing was broken; the record was.
+
+Two small gaps in the new code were also closed, both of which had been reported in the **first**
+review round and then neither fixed nor written off — so the fifth round spent its time finding them
+again. That is the more useful lesson than either gap.
+
+<!--tech-->
+**Round 5 of PR #366 (Claude half), folded. NOT CONVERGED — findings aimed at the DELIVERABLE, so
+the quiet-round streak restarts** (`review-method.md:110`, judged by AIM per `:112`). No Blocking,
+no High. **The sharding itself survived the hardest attack any round has made on it.**
+
+⭐ **Q4(b) tree identity — CONFIRMED three ways**, the first round to do so: the diff of `a5fcd951`
+against CI-green `a28c76be` over `scripts/ .github/ lib/ app/ worker/ supabase/ components/ tests/`
+is **empty** (review docs only); `git rev-list --count HEAD..origin/master` is **0** so the merge is
+a fast-forward and the merge result's tree *is* this tree; and **CI is green on `a5fcd951` itself**
+(run 37480588749, `headSha` verified) — stronger than the claim the brief made.
+
+| Finding | Fix |
+|---|---|
+| **M1** — the PR says *"Closes backlog #217"* while row 217 was 🟠 with zero ✅ and `roadmap:2227` was `- [ ]`. `check-merge-ready` says READY because its gate asks only for a dashboard *entry*; `check-backlog-closure` is warn-only and reads *merged* subjects, so neither can speak before the merge. **This is backlog #219's own failure mode.** | both ticked, **before** the merge, per `dev-process.md` Phase 5 |
+| **M2** — four narration sites disagreed with the tree | two in-code comments corrected; this entry is the third; the PR body is the fourth |
+| **L1** — `--shard ""` swept the WHOLE manifest: `parse_shard` refused it, but `if a.shard:` is falsy for `""` so **the refusal was unreachable**. Round 1's L1, never fixed, never dispositioned | `if a.shard is not None:` — measured: `''`, `1/`, `0/8`, `9/8`, `abc/8`, `2/0` all now rc=2 |
+| **L2** — the CI shell seam guarded only the **N** side. Bash reads an unset or non-numeric name as 0, so `$((SHARD_INDEX + 1))` is `1` for both `` and `abc`: an absent I in every job would run **all eight as shard 1 of 8** — 7/8 unmeasured, **all eight green**. Round 1's M2(a), never fixed | a `case` guard refuses a non-numeric I; measured `0`→1/8, `7`→8/8, and ``/`abc`/`3x` refused |
+| **L3** — the aggregator observes only `needs.mutation-sweep.result`, so it cannot see that eight *distinct* shards ran. Round 1's M2(b) | **deferred, and recorded as deferred** — backlog **#230**. The complaint was never the gap; it was that nobody wrote down a decision |
+
+⛔ **THREE OF FIVE FINDINGS WERE ROUND 1's, UNFIXED AND UNDISPOSITIONED.** The review gates can prove
+a round *happened* and that both halves were filed; nothing checks that a filed finding was either
+fixed or declined. That is the ledger hole this round actually exposed, and it cost round 5 its time.
+
+**✅ CORRECTION to my own claim, which round 5 refuted.** I wrote that the sweep could "re-break
+silently at some manifest size". **False.** A `timeout-minutes` kill is a job `failure`, so the matrix
+aggregate is `failure` and `mutation-sweep-complete` exits 1 — loud and merge-blocking. I also quoted
+a 5.1× timeout margin from `ci.yml`'s recorded 353 s; the measured shards at `a5fcd951` are
+`248 216 209 227 179 225 218 248` s, so the real margin is **7.3×**. Per-shard spread measured
+**1.39×**, against the PR body's predicted 1.15× — the contiguous comparison (17.9×) still holds.
+Filed as **#231**: after PR #365 lands, the margin becomes ~1.9×, and the lever then is **N**, not
+the timeout, because the ~153 s control floor does not divide by N.

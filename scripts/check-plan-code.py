@@ -1026,6 +1026,11 @@ EXPECTED_MUTATIONS = {
     # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
     "scripts/check-python-pin.py": 52,
     # ⟳ 2026-10-05, backlog #217: 77 -> 92. FIFTEEN entries, one per clause of `--shard I/N`,
+    # ⟳⟳ 2026-10-06, ROUND 5 M2 — AND THE LINE ABOVE WAS LEFT NARRATING 92 WHILE THE VALUE
+    # BELOW REACHED 95. Three later entries (the `.pyc` read/write pair and the stale-`expect`
+    # retarget) landed without extending this note, so the only record of them was the number
+    # itself — which is the one thing a reader cannot attribute. Corrected to 95; thethree 
+    # intervening deltas are in their own commits.
     # added in the same commit as the flag. Every `expect` was derived by APPLYING the mutation
     # in a staged tree and reading which case reddened — not written from memory, which is how
     # this file's r2 fold shipped three behaviours with zero entries. Four of the fifteen pin
@@ -4309,8 +4314,13 @@ def _self_test() -> int:
     # `check-rc-contract` (15 -> 16) and `check-surface-recall` (19 -> 20). Both sever the
     # SAME constant in their own file — the allowlist that was dropping
     # `PYTHONDONTWRITEBYTECODE` — and each dies via its own file's property case, because
-    # `run_suite` runs only the mutated file's suite (:808). The figure is the guard's own,
+    # `run_suite` runs only the mutated file's suite (:1879). The figure is the guard's own,
     # taken from its failure message.
+    # ⟳⟳ 2026-10-06, round 4 fold: 1198 -> 1200, a SECOND entry each (16 -> 17, 20 -> 21) on the
+    # CALL SITE rather than the constant — round 3 proved the constant's value says nothing about
+    # whether the production line reads it. ⚠ ROUND 5's M2 is that the line above said "one entry
+    # each" after the manifests carried two, and cited `:808` — a comment RESTATING the rule — for
+    # a claim produced by `rc, out = run_suite(d, fname)` at `:1879`. Both corrected here.
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1200)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
@@ -4497,7 +4507,13 @@ def main(argv: list[str]) -> int:
     # modify — so accepting it silently would let a CI matrix run N whole-manifest sweeps while
     # its log said "shard 3 of 5".
     shard = None
-    if a.shard:
+    # ⛔ `is not None`, NOT truthiness — ROUND 1 L1, RE-FOUND IN ROUND 5 AND STILL UNFIXED.
+    # `--shard ""` is FALSY, so under `if a.shard:` the refusal below was UNREACHABLE for it and
+    # the run swept the WHOLE manifest. `parse_shard("")` has always refused it; nothing ever
+    # called parse_shard. Not a false green — the verdict line does say `the WHOLE manifest` — and
+    # unreachable from CI, whose nearest shape `1/` IS refused. Fixed anyway because the refusal
+    # existed and was simply not consulted, which costs one character to put right.
+    if a.shard is not None:
         # The mode refusal already ran at the top of `main`, before any mode dispatched.
         shard, why = parse_shard(a.shard)
         if why:
