@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 7058 chars"
+  ],
+  "dirty": {
+    "docs/explainers/questions.md": "100644 b4ddfc025962158f2a9c2ecce174fb8bb88b0783"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "77316edc0c2e296d0203e8eecc00377a2493523b",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/43d5c426-4572-4bf9-9540-ba5e7c33b65d/scratchpad/r2b-codex-217.md",
+  "reason": "7058 chars",
+  "refused": false,
+  "review": "shard-mutation-sweep-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

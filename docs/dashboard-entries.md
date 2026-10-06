@@ -13399,3 +13399,545 @@ marker this session's own hook had written. Proven with the marker present and r
 
 ⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
 convergence document's own recommendation.
+
+## 2026-10-05 [needs-you]
+The slowest safety check now runs eight ways at once, and finishes in six minutes instead of
+twenty-nine. It had grown past the time limit CI allows and was being killed before it finished,
+which meant it was proving nothing at all.
+**What needs you:** after this merges, one setting has to be changed by hand in GitHub, or the
+check can go red without stopping anyone merging. It cannot be done before the merge — doing it
+early would leave every pull request waiting forever for a check that does not exist yet.
+
+<!--tech-->
+**Closes backlog #217.** `scripts/check-plan-code.py` gains `--shard I/N` (only with `--mutate`);
+the sweep moves out of `verify` into a `mutation-sweep` matrix (8 shards, `fail-fast: false`) plus a
+`mutation-sweep-complete` aggregator. Branch `shard-mutation-sweep`.
+
+⛔ **THE SETTING:** add `mutation-sweep-complete` to `required_status_checks.contexts` for `master`
+**after** the merge, never before — a required context that does not yet report leaves a PR
+*pending forever* (backlog #137, measured live on PR #314). `verify` no longer carries the sweep, so
+until then a surviving mutation reports red and does **not** block the button.
+
+| | |
+|---|---|
+| **why** | cost is `mutations × suite_time`. On PR #365's branch one guard holds 183 entries against its own ~30 s suite — ~87 of ~90 min — and `verify` was killed at `timeout-minutes: 30`, already raised once from 15 |
+| **sharded** | the EXECUTION only. Counts vs `EXPECTED_MUTATIONS` both ways, duplicate name/anchor refusals and the home-escape scan over targets **and** replacements run in **every** shard — N local invariants are not the global one |
+| **measured** | unsharded **1,758 s**; shard 1 of 8 **353 s**; shard 3 of 8 re-run independently **346 s**, 149 killed, 149 attributed, **0 survivors**. 5.0× not 8×, because a ~153 s control floor does not divide by N |
+| **the crux** | round-robin, not contiguous. The heaviest file's 96 entries spread `[12]×8` round-robin vs `[0,…,0,96]` contiguous. Costed by suite time: 1.15× spread vs **17.9×**. ⭐ A per-shard mutation *count* is even either way, which is why counting them proves nothing |
+| **falsifier** | every mutation runs in exactly one shard — disjoint and union-complete at N = 1, 2, 3, 7, 8, 16, 1193, 1198 on the real manifest. Empty shard refuses; malformed `--shard` refuses with a sentence, not a traceback |
+| **counts** | self-test 131 → **155**; manifest 77 → **92**; declared sum 1178 → **1193** |
+
+⚠ **NOT MEASURED:** unsharded `--mutate .` was not re-run after the change — the evidence is two
+shards plus the partition falsifier. Also found and not yet filed: `check-python-pin.py` refuses
+valid YAML, counting any 2-space-indented line containing a colon as a job key, so a block comment
+between jobs makes it exit 2.
+
+## 2026-10-05
+A second safety check was quietly claiming something that was not true, and the review that found
+it is the reason this branch is not finished yet. The harness that proves our checks still work
+makes sure no leftover files are written while it measures — but two of its own helpers built a
+clean environment from a fixed list, and the one setting that prevents those files was not on the
+list. Nothing is broken today: the only program that path runs happens not to create them. One
+added import would have been enough.
+
+Also worth knowing, because it affected what you were told: the tool that picks which outside
+reviewer to use was reporting "no reviewer available" when one was available. It judged on whether
+the model is shown in a menu rather than on whether it can be called. That mattered because
+"unavailable" is exactly the condition that lets a review be skipped on purpose — so a review that
+should have happened was recorded as legitimately skipped, and nothing would have re-checked it.
+Your question is what caught it.
+
+<!--tech-->
+**Round 2 of PR #366 (Codex half), folded.** One Medium. `SUBPROCESS_ENV_KEYS` in
+`check-rc-contract.py` and `check-surface-recall.py` is an allow-list for a scrubbed `subprocess`
+env, and it dropped `PYTHONDONTWRITEBYTECODE` — so a nested hook observer could write a bytecode
+cache inside a staged tree even though `child_env` and `stage_tree` had both been closed.
+
+Reproduced at `77316edc`: parent holding the variable, scrub to the shipped four keys, child
+imports a module → `__pycache__/_pyc_probe.cpython-314.pyc`. With the key → none.
+
+⭐ **A case for this already existed and was green.** Round 8 H1 asserted the two hand-copied
+allow-lists *agree*. Agreement is satisfied by a wrong set held consistently, so the harness went
+on claiming "no suite the harness spawns may WRITE a cache" over a tree where one did. The property
+is asserted directly now, per file, over each file's own constant.
+
+⚠ **The case could not live beside its sibling.** `run_suite(d, fname)` runs only the **mutated**
+file's suite (`check-plan-code.py:808`), so a cross-file case can never be a mutation's `expect` —
+the first attempt would have shipped coverage that looked complete and was unattributable.
+
+⚠ **Widening the constant orphaned a round-8 anchor** (`anchor NOT FOUND`, whole-manifest verdict
+`1197 of 1198`). Anchors bind by literal text. Both entries now target distinct lines, following
+the `is_gate_data` one-clause-per-line precedent (`:1099`), because the duplicate refusal keys on
+exact tuple equality of the find-strings (`:1092`).
+
+| | |
+|---|---|
+| **falsifier** | per file, sever the key → red **via the case it names**: `56/56 → 55/56`, `59/59 → 57/59`. Round-8's retargeted entry fails via exactly one case |
+| **counts** | self-test `155 → 161`; the two guards `55 → 56` and `58 → 59`; manifests `15 → 16` and `19 → 20`; declared sum `1193 → 1198` |
+| **anchors** | all **1,206** resolved against the delivered tree, **0 unresolved** |
+| **✅ closes the previous entry's NOT MEASURED** | unsharded `--mutate .` **was** run tonight, over the whole manifest — it is what caught the orphan |
+
+**Filed: backlog #228 and #229.** #228 — `codex-frontier-model.py:66` selects on
+`visibility == "list"`, but `supported_in_api` governs whether a model runs; measured on a cache
+fetched the same hour, both models are `visibility: "hide"` **and** `supported_in_api: true`, so
+the selector exits 1 while `codex exec -m gpt-5.5` completes a full review on that slug — this
+round's own Codex half was produced that way. #229 — why no guard saw it:
+`check-ratchet-contract`'s widened population is opt-in by **self-testedness**, and its other half
+is drawn by **filename**, so a gate-critical script with zero coverage is in neither.
+
+## 2026-10-05
+The fix described in the entry above was not finished, and the check written to prove it was
+looking at the wrong thing. It confirmed that a setting had the right value; it never confirmed
+that the code which uses that setting actually reads it. So the one line that matters could have
+been replaced by a hand-written copy missing the setting, and every test would still have passed —
+which is the exact mistake the setting was introduced to prevent, a year of care undone by a copy.
+Both checks now run the real path instead of a stand-in, so either mistake is caught.
+
+<!--tech-->
+**Round 3 of PR #366 (Claude half), folded.** One Medium, five Lows. The r2 fix asserted the VALUE
+of `SUBPROCESS_ENV_KEYS`; nothing asserted the spawn READS it. Measured before the repair —
+replacing the constant reference at the call site with an inline literal missing the key left both
+suites green:
+
+    check-rc-contract.py    _env = {… if k in SUBPROCESS_ENV_KEYS}
+                          → _env = {… if k in ("PATH","HOME","TMPDIR","LANG")}   56/56, no FAILs
+    check-surface-recall.py same at _render_once                                 59/59, no FAILs
+
+⛔ An inline hand-copied scrub **is** round 8 H1's original defect — so the guard was blind to the
+precise regression its own subject exists to prevent. Both property cases now drive the real scrub
+through the real spawn (`observe` / `_render_once(…, scrub=True)`) with a hook that imports a
+module, so each is red in BOTH directions. Falsified per file, per direction: call-site sever →
+`55/56` and `58/59`; constant sever → `55/56` and `57/59`; each via the case it names.
+
+| | |
+|---|---|
+| **entries** | +1 per file on the CALL SITE (anchors distinct from the existing block entry, per the exact-tuple rule). `check-rc-contract` 16 → 17, `check-surface-recall` 20 → 21 |
+| **declared sum** | 1198 → **1200** |
+| **reviewer's own refutation** | shard 3 — which my brief asked for — is **blind to this fold**: `shard_slice` is `muts[i-1::N]`, the new entries sit at global indices 620 and 807, i.e. shards **5 and 8**. The reviewer ran 3, 5 and 8 |
+
+**✅ CORRECTION to the entry above, which is append-only so this is where it goes.** Three things in
+it were imprecise. ⑴ It cites `check-plan-code.py:808` for "runs only the mutated file's suite";
+`:808` is a *comment restating* that, and the code producing it is `rc, out = run_suite(d, fname)`
+at **`:1879`**. ⑵ Its counts (`1193→1198`, `155→161`) are the cumulative totals across five
+commits, under a heading describing one — the per-commit split is in the commit messages. ⑶ The
+root cause of the original symptom, a mutant `.pyc` outliving the restore of its own source
+(`26661d75`), is described in no entry at all; it is the reason `PYTHONDONTWRITEBYTECODE` and the
+`stage_tree` `ignore=` exist, and without it both look arbitrary.
+
+## 2026-10-06
+The safety check that runs eight ways at once is now actually finished, and the last review round
+found the kind of problem that matters most: not a bug in the new code, but three places where what
+we had *written down* no longer matched what the code does — including the pull request itself
+claiming to close a task whose status still said open. Nothing was broken; the record was.
+
+Two small gaps in the new code were also closed, both of which had been reported in the **first**
+review round and then neither fixed nor written off — so the fifth round spent its time finding them
+again. That is the more useful lesson than either gap.
+
+<!--tech-->
+**Round 5 of PR #366 (Claude half), folded. NOT CONVERGED — findings aimed at the DELIVERABLE, so
+the quiet-round streak restarts** (`review-method.md:110`, judged by AIM per `:112`). No Blocking,
+no High. **The sharding itself survived the hardest attack any round has made on it.**
+
+⭐ **Q4(b) tree identity — CONFIRMED three ways**, the first round to do so: the diff of `a5fcd951`
+against CI-green `a28c76be` over `scripts/ .github/ lib/ app/ worker/ supabase/ components/ tests/`
+is **empty** (review docs only); `git rev-list --count HEAD..origin/master` is **0** so the merge is
+a fast-forward and the merge result's tree *is* this tree; and **CI is green on `a5fcd951` itself**
+(run 37480588749, `headSha` verified) — stronger than the claim the brief made.
+
+| Finding | Fix |
+|---|---|
+| **M1** — the PR says *"Closes backlog #217"* while row 217 was 🟠 with zero ✅ and `roadmap:2227` was `- [ ]`. `check-merge-ready` says READY because its gate asks only for a dashboard *entry*; `check-backlog-closure` is warn-only and reads *merged* subjects, so neither can speak before the merge. **This is backlog #219's own failure mode.** | both ticked, **before** the merge, per `dev-process.md` Phase 5 |
+| **M2** — four narration sites disagreed with the tree | two in-code comments corrected; this entry is the third; the PR body is the fourth |
+| **L1** — `--shard ""` swept the WHOLE manifest: `parse_shard` refused it, but `if a.shard:` is falsy for `""` so **the refusal was unreachable**. Round 1's L1, never fixed, never dispositioned | `if a.shard is not None:` — measured: `''`, `1/`, `0/8`, `9/8`, `abc/8`, `2/0` all now rc=2 |
+| **L2** — the CI shell seam guarded only the **N** side. Bash reads an unset or non-numeric name as 0, so `$((SHARD_INDEX + 1))` is `1` for both `` and `abc`: an absent I in every job would run **all eight as shard 1 of 8** — 7/8 unmeasured, **all eight green**. Round 1's M2(a), never fixed | a `case` guard refuses a non-numeric I; measured `0`→1/8, `7`→8/8, and ``/`abc`/`3x` refused |
+| **L3** — the aggregator observes only `needs.mutation-sweep.result`, so it cannot see that eight *distinct* shards ran. Round 1's M2(b) | **deferred, and recorded as deferred** — backlog **#230**. The complaint was never the gap; it was that nobody wrote down a decision |
+
+⛔ **THREE OF FIVE FINDINGS WERE ROUND 1's, UNFIXED AND UNDISPOSITIONED.** The review gates can prove
+a round *happened* and that both halves were filed; nothing checks that a filed finding was either
+fixed or declined. That is the ledger hole this round actually exposed, and it cost round 5 its time.
+
+**✅ CORRECTION to my own claim, which round 5 refuted.** I wrote that the sweep could "re-break
+silently at some manifest size". **False.** A `timeout-minutes` kill is a job `failure`, so the matrix
+aggregate is `failure` and `mutation-sweep-complete` exits 1 — loud and merge-blocking. I also quoted
+a 5.1× timeout margin from `ci.yml`'s recorded 353 s; the measured shards at `a5fcd951` are
+`248 216 209 227 179 225 218 248` s, so the real margin is **7.3×**. Per-shard spread measured
+**1.39×**, against the PR body's predicted 1.15× — the contiguous comparison (17.9×) still holds.
+Filed as **#231**: after PR #365 lands, the margin becomes ~1.9×, and the lever then is **N**, not
+the timeout, because the ~153 s control floor does not divide by N.
+
+## 2026-10-06
+A guard added yesterday to stop one mistake could be walked through by a different value of the same
+kind. It checked that the shard number was made of digits, and assumed digits meant safe — but the
+shell's arithmetic has a fixed size, so a long enough number silently wraps around to 1 and every
+job would have measured the same eighth of the work while all of them reported success. That is the
+exact failure the guard was added to prevent, reached through the guard instead of around it. The
+arithmetic now happens somewhere that cannot wrap.
+
+<!--tech-->
+**Round 5 Codex half: one Low, caused by this fold's own L2 guard.** Its premise — that `[0-9]+` is a
+safe Bash arithmetic input — is false:
+
+    SHARD_INDEX=18446744073709551616   class check ACCEPTS -> $((I+1)) wraps -> 1 -> spec 1/8
+    SHARD_INDEX=08                     bash: "value too great for base"  (leading zero = octal)
+    SHARD_INDEX=3x                     refused, but the message claimed bash reads it as 0 — it errors
+
+⛔ **A character class cannot bound a value.** The computation moves out of Bash: a Python parser
+validates both names as canonical decimal integers in `0..4096`, rejects leading zeros and
+whitespace, checks `0 <= I < N`, and prints the spec. Bash now does no arithmetic at all, so the
+overflow class is removed rather than narrowed. The error message no longer asserts a mechanism that
+is only sometimes true.
+
+Measured through the SHIPPED block, as bash receives it after YAML's dedent — ten inputs:
+
+| input | result |
+|---|---|
+| `0`, `7` (N=8) | `1/8`, `8/8` — accepted |
+| `""`, `abc`, `3x`, `08`, `" 0"` | rc=2 CANNOT RUN |
+| `18446744073709551616` | rc=2 — **was accepted and wrapped to 1 before** |
+| `I=8` with `N=8`, and `N=0` | rc=2 — index/total bounds |
+
+⚠ **I put the PR red myself in between.** I committed round 5's Claude half without its Codex
+partner, and `check-review-rounds` refused it — *"round 5: only claude"*. Exactly one step failed;
+all 8 shards, the aggregator and `schema-gates` were green throughout. I had deliberately held the
+review file back for rounds 3 and 4 for this reason and dropped the habit when the commit got large.
+Both halves land together here.
+
+## 2026-10-06
+The same small piece of logic has now been wrong three times running, and the reason turned out to
+be where it lived rather than how it was written. It sat in the build configuration file, which
+nothing in this project tests — no checks run against it, so each wrong version passed everything.
+It has been moved into the program, where the tests are. The configuration file now just passes two
+values along and decides nothing.
+
+<!--tech-->
+**Round 6 (Claude half), folded. Three findings, one cause.** The `SHARD_INDEX` guard shipped wrong
+in three consecutive rounds with every gate green:
+
+    v1  no I-side check          -> an absent index became a valid shard 1; all N jobs one slice,
+                                    all green                        (r1 M2a, r5 L2)
+    v2  bash `case` on [!0-9]    -> bash arithmetic is FIXED WIDTH; 18446744073709551616 wrapped
+                                    to 1                              (r5 codex Low)
+    v3  Python `isdigit()`       -> UNICODE-WIDE; `٠` (U+0660) became shard 1 of 8, and ASCII
+                                    leading zeros (`00/8`) were accepted too   (r6 L1)
+
+⭐ **M1 is the finding that explains the other three.** `grep -rln SHARD_INDEX` over
+`scripts/ tests/ .claude/` returned **nothing** — a workflow `run:` block has no self-test, no
+mutation entry and no caller, and `check-ratchet-contract`'s population is `scripts/*.{py,sh}` plus
+`.claude/hooks/*`, **never** `.github/workflows/`. Every version of the rule was unmeasurable by
+construction. Same shape as backlog #229, one layer out.
+
+**The fix moves the rule to where the tests are.** `--shard0` takes the 0-based index a CI matrix
+provides; the `0 -> 1` conversion happens inside `parse_shard`, which has a suite, mutation entries
+and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+
+| | |
+|---|---|
+| **L2** | `SHARD_SPEC` was `^(\d+)/(\d+)$` — Python's `\d` is Unicode-wide too, so `parse_shard("1/٨")` returned `(1, 8)`. Now `^(0\|[1-9][0-9]*)/(0\|[1-9][0-9]*)$` |
+| **L3** | 128 code points pass `isdigit()` while `int()` RAISES — a traceback the function's own docstring forbids. Now structurally impossible: every matching string is `int()`-able |
+| **falsifier** | `1/٨`, `٠/8`, `１/8`, `²/8`, `00/8`, `08/8`, `01/8` all refuse; `0/8`→`1/8`, `7/8`→`8/8`, `8/8` refused; both flags together refused |
+| **counts** | self-test `161 → 168`; `check-plan-code` manifest `95 → 98`; declared sum `1200 → 1203` |
+| **measured** | shards 1, 2 and 3 — which carry the three new entries — each **151 killed, 151 attributed, 0 survivors** |
+| **anchors** | **1,211**, 0 unresolved. ⚠ Two pre-existing entries were orphaned by the message change and retargeted with their subject intact |
+
+## 2026-10-06
+Fourth and final correction to the same small rule: it still accepted a value with a stray space or
+newline around it, which matters because that value arrives from the build system as text and a
+stray newline is the most likely way it could be malformed. The rule now accepts exactly what it
+says it accepts.
+
+<!--tech-->
+**Round 6 Codex half: one Low, folded.** `parse_shard` used `SHARD_SPEC.match(spec.strip())`, so the
+canonical claim was false at its own boundary:
+
+    parse_shard(" 1/8")  -> (1, 8)      parse_shard("1/8 ")   -> (1, 8)
+    parse_shard("1/8\n") -> (1, 8)      --shard0 "0/8\n"      -> (1, 8)
+
+⚠ `$` matches **before** a trailing newline, so anchoring was not enough; `.strip()` swallowed the
+rest. Measured: `match("1/8\n")` is True, `fullmatch("1/8\n")` is False. Now `fullmatch`, no
+`strip()` — 22 exhibits checked, all correct.
+
+**The fourth distinct way this one rule was too wide**, and the fourth fix:
+
+| v | rule | too wide because |
+|---|---|---|
+| v1 | no I-side check | absent index → valid shard 1; all N jobs one slice, all green |
+| v2 | bash `case` on `*[!0-9]*` | bash arithmetic is fixed-width → `18446744073709551616` wrapped to 1 |
+| v3 | Python `isdigit()` | Unicode-wide → `٠` became shard 1/8; ASCII `00/8` accepted |
+| v4 | canonical regex + `.match(strip())` | `$` matches before `\n`; `.strip()` ate whitespace |
+| **v5** | `fullmatch`, no `strip`, in `parse_shard` | — |
+
+**What round 6's Codex half verified by RUNNING rather than reading:** `--shard0 i/N` selects the
+same slice as `--shard (i+1)/N` at N=3 and N=8; the both-flags refusal returns 2 before doing work;
+the workflow retains no arithmetic, validation or embedded interpreter; and `check-python-pin.py`
+still covers `mutation-sweep` — **earned** by deleting that job's `setup-python` on a temp archive
+and confirming the guard went red naming `ci.yml:mutation-sweep`. It also confirmed the two
+retargeted anchors load once (positions 473/474, shards 1 and 2) and still measure their original
+subjects.
+
+| | |
+|---|---|
+| counts | self-test `168 → 169`; `check-plan-code` manifest `98 → 99`; declared sum `1203 → 1204` |
+| measured | shards 1–4 each **151 killed, 151 attributed, 0 survivors** |
+| anchors | **1,212**, 0 unresolved |
+
+## 2026-10-06
+A review round found something that should not have been possible: a way to run the checker that
+printed "everything passed" while checking nothing at all. Asking it to test one eighth of the work
+and handing it a nonsense value for which eighth made it report a clean pass instead of refusing.
+That is the single outcome the tool exists to prevent, and it was reachable from the documented
+command line. Fixed, along with the reason it was reachable: the rule about which eighth to run was
+written in two places that had quietly stopped agreeing.
+
+<!--tech-->
+**Round 7 (Claude half), folded. One High, three Lows — NOT CONVERGED, counter back to zero.**
+
+**H1 (High, deliverable) — a shard-shaped invocation reporting success over a subject no shard
+touched**, which is round 1's Codex finding reopened by round 6's own fold:
+
+    --self-test --shard0 garbage   rc=0 | 169/169 passed
+    --self-test --shard0 99/8      rc=0 | 169/169 passed
+    --self-test --shard ''         rc=0 | 169/169 passed
+    --self-test --shard 0/8        rc=2 | CANNOT RUN …            <- the control
+
+⛔ **Two dimensions, and fixing one left the other open.** `main` asked the mode question of
+`a.shard` by name, so a *new flag* rode through; and `shard_mode_refusal` tested truthiness, so an
+*empty value* rode through. The second is the third instance of one defect — round 1 reported it,
+round 5 fixed `main`'s `if a.shard:`, and this was `shard_mode_refusal`'s.
+
+| | |
+|---|---|
+| flag dimension | `SHARD_FLAGS` is now a dict **both** consumers derive from — `_build_parser` adds exactly those arguments, `main` asks the mode question of exactly those dests. A third flag is one entry, and disagreement is **impossible**, not merely detected |
+| value dimension | `is not None`, not truthiness. ⚠ Measured after: `:1689` was the **only** truthiness test left on an argv-derived value in the file |
+| why no gate saw it | all three existing cases call the predicate **directly** with positional args — proving the predicate right and never that the call site passes it everything |
+
+**L1** — the fifth way the accept rule was too wide is the digit run's **length**: `fullmatch("1" ×
+4301 + "/8")` matched and `int()` then raised. Bounded to four digits. ⚠ **And my first case for it
+was wrong-shaped** — it asserted a return value on an input that now *raises*, so the suite died
+before printing any `[FAIL]` line and shard 6 reported `151 killed, 150 attributed`: killed by
+something, the clause proven by nothing. The case now converts a raise into a comparable value and
+asserts the docstring's real promise — *a sentence and a CANNOT RUN, never a traceback*.
+
+**L2 → backlog #232.** Nine other sites spell "a decimal integer" their own way; three were measured
+raising on input they accept, and one (`count_drift`, bare `\d`) sits 440 lines below the canonical
+pattern in the same file. **L3** — the PR's `NO-REVIEW:` waiver was false and still described removed
+design; **withdrawn**, no exemption claimed.
+
+| | |
+|---|---|
+| counts | self-test `169 → 173`; manifest `99 → 102`; declared sum `1204 → 1207` |
+| measured | shards 1, 2, 3, 5, 6, 7 each **151 killed, 151 attributed, 0 survivors** |
+| anchors | **1,215**, 0 unresolved, 0 duplicate tuples |
+
+## 2026-10-06
+A check I added this morning to stop one mistake turned out to be unable to fail — it compared a
+value against itself, so it would have passed no matter what the code did. The automated sweep
+caught it, not the test suite: every test was green the entire time. Fixed so the check now compares
+against a rule the language itself sets, which is something it cannot quietly agree with.
+
+<!--tech-->
+**Round 7 Codex half: one Low, on my own fix. Folded — twice, because the first fold was unkillable.**
+
+The `SHARD_FLAGS` enumeration shipped claiming *"a third flag is one dict entry, and disagreement is
+impossible."* **False for a hyphenated key:** argparse maps `--shard-x` to dest `shard_x` while
+`main` looked the key up verbatim —
+
+    --self-test --shard-x 2/5   rc=1  AttributeError: 'Namespace' object has no attribute 'shard-x'
+
+a traceback where a sentence is owed. **First fix added `shard_dest()` and passed
+`dest=shard_dest(_opt)` to argparse. That was wrong twice over:**
+
+| | |
+|---|---|
+| unfalsifiable | both consumers then read the SAME function, so severing it changed nothing on either side. **The mutation SURVIVED — shard 8, 150 of 151** — while `--self-test` stayed at `175/175`. A survivor is invisible to the suite; only the sweep sees it |
+| wrong on its own terms | an explicit hyphenated dest names the attribute `shard-x`, which no ordinary attribute access can reach |
+
+**Second fix: argparse owns the dest, and `shard_dest` must MATCH it.** While `shard_dest` *set* the
+name its value was arbitrary; now it has to agree with a rule this repo does not control, and
+agreement with an external authority is checkable in a way agreement with yourself never is.
+Falsified: severing it yields `[FAIL] … got 'MISSED — shard_dest disagrees with argparse'`.
+
+Also verified by round 7's Codex half, by running rather than reading: `is not None` is **not** too
+wide (`shard_mode_refusal(None, None)` stays silent); a real sharded run still works
+(`--mutate . --shard0 3/8` → 151/151); and the reshaped length case does not mask the defect.
+
+**#232 amended, three raising sites → five.** It reproduced `peer-sites.py` (`abc` → rc=2, `²` → rc=1
+traceback) and `count_drift`, and added `check-gate-falsifiability --current-release=²` and
+`check-plan-progress.decide(… paused_unticked: ² …)`. ⚠ The count rose because a second reviewer
+looked, not because anything changed — which is the argument for one owner rather than nine audits.
+
+| | |
+|---|---|
+| counts | self-test `173 → 175`; manifest `102 → 103`; declared sum `1207 → 1208` |
+| measured | shards 3, 5, 8 each **151 killed, 151 attributed, 0 survivors** |
+| anchors | **1,216**, 0 unresolved, 0 duplicate tuples |
+
+## 2026-10-06
+The shortcut added yesterday for "how to add another one of these options" turned out to only do
+half the job: a new option would appear and be checked in one place, then be silently ignored where
+it actually matters. Nothing shipped was broken — the two options we use work — but the note beside
+it promised more than it did. The shortcut now does the whole job, which let three hand-written
+special cases be deleted rather than a fourth added.
+
+<!--tech-->
+**Round 8 (Claude half), folded. Two Mediums in the deliverable — NOT CONVERGED, counter stays 0.**
+
+**M1** — *"a third flag is one dict entry, and disagreement is IMPOSSIBLE"* was false in **both**
+directions, measured by monkeypatching `SHARD_FLAGS` in-process:
+
+    SHARD_FLAGS["shard2"]   -> --self-test green, then the flag is NEVER PARSED:
+                               no I/N check, no empty-shard refusal, no mutual exclusion
+    SHARD_FLAGS["shard-x"]  -> 174/175, red at the fold's own new case
+
+⛔ **There were FIVE readers, not the two the comment named.** The dict covered argparse registration
+and the mode refusal; exclusivity, parsing and zero-basedness were hand-written against
+`a.shard`/`a.shard0`, and `shard0`'s zero-basedness was not in the dict at all.
+
+**The fix completes the abstraction rather than softening the sentence** — every previous over-claim
+I "fixed" by rewording was followed by a round finding the next one. All five readers now derive, and
+three hand-written branches are **deleted** rather than a fourth added. Verified end to end with a
+third key: malformed spec → rc=2 parsed refusal; with `--shard` → rc=2 exclusivity refusal.
+
+| | |
+|---|---|
+| **M2** | `ci.yml` still described a shell guard `d95908c0` had deleted — "hence the +1", naming `--shard`, promising "the guard below costs two lines" **seven lines above** a block opening *"NO LOGIC LIVES HERE ANY MORE"*. Replaced with what actually guards it now |
+| **L1** | `shard_dest` did one of argparse's **two** steps; `-shard-x` → `_shard_x`. Now `lstrip("-")` first |
+| **L2** | the probe caught only `AttributeError`; a `TypeError` would kill the suite with 0 `[FAIL]` lines. Any failure is a value now |
+| **L3** | the PR body said "Five rounds" — there are eight, and that line was itself round 5's stale-narration fix |
+| counts | self-test `175 → 177`; manifest `103 → 105`; declared sum `1208 → 1210`; anchors **1,218**, 0 unresolved |
+
+⚠ **The local sweep could not measure this fold and says so.** `check-surface-recall`'s control takes
+**81 s** on this machine against a 120 s `SUITE_TIMEOUT` (1.48×), and under load it tips — the harness
+then voids the **entire shard** (`NOT MEASURED`, all 151 mutations), which is correct behaviour over a
+failed control. CI's runners are unaffected: all 8 shards were green at `df1ec075`. CI is the
+measurement for this commit.
+
+## 2026-10-06
+Two tests written yesterday had a hidden property: they were cheap in every normal run and ruinous
+in the one situation they exist for. The automated checker deliberately breaks a safety rail and
+watches for an alarm — but these two tests, once that rail was broken, went off and did an enormous
+amount of real work instead of failing fast. Three of eight parallel checks timed out as a result.
+Both are fixed, and the fix is the same idea in both: give the test an input that stays cheap even
+when the thing it is testing is broken.
+
+<!--tech-->
+**Round 8 Codex half: two Highs and a Low, all caused by this fold. Folded — plus one more I caused
+while folding.**
+
+**High 1 — a self-test that starts a nested real sweep.** The round-8 cases called
+`main(["--mutate", ".", …])`. When the mutation under test severs the early refusal, that call stops
+refusing and sweeps the whole repository from inside one mutation's suite run:
+
+    ✗ mutation 'the shard flags are enumerated again by hand …': the suite did NOT COMPLETE
+      (CANNOT RUN — check-plan-code.py --self-test did not finish in 120s)
+    NOT MEASURED — measured over shard 1 of 8
+
+CI shards 1, 2 and 4 red at `56eafeef`. Fixed with an **empty temp root** — the rule stated forty
+lines below the code I wrote. Measured: those three mutations now die in **4.7 s** instead of timing
+out at 120 s.
+
+**High 2 — the `prefix-strip` mutation SURVIVED.** The case used `shard-x`, which round-trips
+identically with or without `lstrip("-")`, so it never tested the behaviour its own entry names. The
+discriminating input is a **leading**-hyphen key: argparse sees `---shard-x` and names it `shard_x`,
+while replace-only yields `_shard_x`.
+
+**Low — a colliding key produced four different failure shapes** for one declaration mistake:
+argparse's own `conflicting option string` for `mutate`/`compare`, a nonsense sentence for
+`self_test`, and a silently reddened unrelated case for `plan`. Now one `ValueError` naming the key.
+⚠ The shard loop moved to the END of parser construction, because the check can only see options
+already registered and `--compare` was declared below it.
+
+⚠ **AND I CAUSED A FOURTH WHILE FIXING THE THIRD.** The new collision case called
+`main(["--self-test"])`, which re-enters the suite currently running it. It terminated only because
+the guard raises during parser construction; severing the guard recursed to a **150 s timeout**.
+`main([])` builds the parser without dispatching the suite — 150 s → **5.3 s**.
+
+⭐ **Twice in one hour, the same class: a test whose COST depends on the mutation it tests.** Both
+were documented in the file being edited. Knowing the rule and applying it while writing are
+different skills, and only running the mutations caught the second — the suite was green throughout.
+
+| | |
+|---|---|
+| counts | self-test `177 → 178`; manifest `105 → 106`; declared sum `1210 → 1211` |
+| anchors | **1,219**, 0 unresolved, 0 duplicates; six document guards rc=0 |
+
+## 2026-10-06
+First clean round. Nine rounds of review found nothing wrong with the thing being shipped this time
+— no problems at all in the build configuration, the way work is split across eight parallel jobs,
+or the check that refuses to call it green unless all eight finished. What was found instead: three
+notes written earlier in the week that no longer match the code, and one small gap in a helper. All
+four are written down as future work rather than changed now, because changing anything here restarts
+the review clock.
+
+<!--tech-->
+**Round 9 — BOTH halves CLEAN. The first quiet round; one more is required before merge.**
+
+Zero Blocking, zero High, and **zero findings of any severity in `ci.yml`, the partition, or the
+aggregator** — the deliverable. Four findings, all filing-class under the freeze.
+
+⭐ **Two results worth more than the findings:**
+
+| | |
+|---|---|
+| **the owner's pending action is SAFE, and nothing had said so** | `ci.yml` carries **no `paths:` filter**, so `mutation-sweep-complete` always reports on a PR to master — adding it to `required_status_checks.contexts` cannot recreate #137's pending-forever. Current required contexts, read from the API: `["verify","schema-gates"]` |
+| **the Claude half disproved its own strongest hypothesis** | it expected manifest coverage to have left the required context. Controlled experiment — two `git archive` trees, `node_modules` symlinked, one entry deleted — control `178/178 rc=0`, shrunken `177/178 rc=1`, named case *"the entry count they yield is the pinned sum"*. `verify` still catches it in under a second |
+
+**Verified by running, not reading:** partition union-complete and pairwise disjoint at
+N = 1,2,3,4,5,7,8,16,1211, with the empty-shard refusal firing at exactly 1212 and nowhere earlier;
+**eight distinct shards actually ran**, read as `measured over shard I of 8` from all eight job logs;
+the aggregator on a real red run (`37528420394`) with 3 shards red, `fail-fast: false` honoured and
+`mutation-sweep-complete` = failure. The Codex half independently measured the partition at N=8 —
+`152,152,152,151,151,151,151,151` — and a real `--shard0 0/8` at **152 killed, 152 attributed, 0
+survivors**.
+
+**Filed, not fixed** — every touch of `scripts/` re-opens `check-review-recorded`, which round 9
+confirmed is a true positive and the only red:
+
+- **#233** the collision guard snapshots `_taken` before its own loop, so two keys normalising to one
+  dest escape it — *the repair reproducing a narrower instance of what it repaired*
+- **#234** a comment repairing a "two readers" claim left a fresh one (four readers at HEAD). ⚠ Found
+  while writing an explainer, **after nine rounds had passed over it**
+- **#235** ⟳ **TWO** global checks ride only on the non-required matrix — the home-escape scan **and anchor resolution**. This line said "the one"; round 10 found the row false about its own subject, and the half it missed is the one an *ordinary refactor* trips (this PR orphaned six anchors across rounds 6–8). Raised to 🟠
+
+**Fixed, because prose is free under the freeze:** the PR body's corrections table said declared sum
+`1200` and self-test `161`; actual **1211** and **178**. ⛔ That table was round 5's correction,
+corrected by round 7, and stale again by round 9 — **a number written into prose has no owner**. It
+now carries the commands that produce the figures **as well as** the figures. ⟳ *Round 10: this sentence said "instead of", and the table carries both — a claim about a correction that was itself slightly false, which is the fourth generation of this exact site.*
+
+## 2026-10-06 [needs-you]
+**Converged.** Two review rounds in a row found nothing wrong with the thing being shipped, which is
+the condition this project uses to stop reviewing. Ten rounds, twenty reviews. The change itself —
+splitting the slowest safety check across eight parallel jobs so it finishes in minutes instead of
+being killed at thirty — has been correct since round one; everything after that was about the
+apparatus that measures it, and about notes that no longer matched the code.
+
+**What needs you:** after this merges, one setting has to be changed by hand in GitHub. Round 9
+established that doing it is *safe*, which nothing had previously confirmed.
+
+<!--tech-->
+**Rounds 9 and 10: both clean, both halves each. CONVERGED on `review-method.md:110`.**
+
+Zero Blocking, zero High, **zero findings in the deliverable at any severity across four consecutive
+review halves**. Round 10's Codex half: *"Should this merge? **Yes**, after current-head CI finishes
+green and this Codex half is filed … no code or tracked-file change is required first."*
+
+**What round 10 actually bought, none of it in the deliverable:**
+
+| | |
+|---|---|
+| **#235 was false about its own subject** | it called the home-escape scan *"the one item with no second home"* in `verify`. **Anchor resolution is a second** — `load_manifests` reads JSON only and never opens a delivered source, so `--self-test` cannot resolve an anchor; resolution lives at `run_mutations:1952`/`:1962`, reachable only from `--mutate`. ⭐ And the row's Low bound **does not transfer**: a home-escape needs a deliberate edit that survives review, while **an orphaned anchor comes from an ordinary refactor** — this PR orphaned six across rounds 6–8. As written the row would have been *closed* by fixing the easy half. Raised to 🟠, both halves named in the fix |
+| **a new staleness shape** | the corrections table carried the **right figures against the wrong build** — `"Actual at ece8d309"` beside 1211/178, where the actuals were 1200/161. The figure was fixed an hour earlier and the provenance was not |
+| **a gate that cannot see modifications** | round 9's committed review doc had been edited in the working tree (+30/−2). `check-review-recorded.py:1251` is `--diff-filter=A`, so a review document **modified** after being added is never re-examined |
+
+**Exhaustively refuted, not assumed:** eight GitHub states tried for a green-PR-over-unmeasured-work
+(cancelled, skipped, timeout, failed, aggregator-only rerun, one-job rerun, missing aggregator,
+missing `ffmpeg`) — none reachable; the partition union-complete and pairwise disjoint at ten values
+of N with the empty-shard refusal at exactly 1212; eight distinct shards read from the job logs; and
+`verify`'s old coverage enumerated item by item against the matrix, finding **no third** item without
+a second home.
+
+**⛔ THE SETTING, and why it is now known safe.** Add `mutation-sweep-complete` to
+`required_status_checks.contexts` for `master` **after** this merges, never before. Required contexts
+today are `["verify","schema-gates"]`. ✅ `ci.yml` carries **no `paths:` filter**, so that context
+always reports on a PR to master — it therefore **cannot** recreate #137's pending-forever shape.
+Nine rounds warned about the danger; round 9 was the first to establish why it is clear.

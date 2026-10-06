@@ -1,0 +1,22 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 4738 chars"
+  ],
+  "dirty": {
+    "docs/explainers/2026-10-06-brief-dev-process-speed.fragment.html": "100644 729f0baa12bc61499734714e298ee54009412f4a",
+    "docs/explainers/2026-10-06-brief-dev-process-speed.html": "100644 ad50c50b8d1216d269c48dbbc58e61f12302801a",
+    "docs/explainers/questions.md": "100644 74f4c5a2c297a846ce57b09620c79d7eac0a7225",
+    "docs/reviews/claude/shard-mutation-sweep-r10-claude.md": "100644 02d05bed5213941be0e4432f0a1e4c4007e65182"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "1fb8ef92a568f6813f32f17bf0b66ae6c608a1dc",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a7b78d02-5365-411c-a05a-7d1030f3f22e/scratchpad/r10-codex.md",
+  "reason": "4738 chars",
+  "refused": false,
+  "review": "shard-mutation-sweep-r10-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

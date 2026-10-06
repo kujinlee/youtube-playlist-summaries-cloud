@@ -4,8 +4,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \"",
-        "        return 1, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \""
+        "        return 2, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
+        "        return 1, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
       ]
     ],
     "expect": "a hung suite is rc 2, distinct from both pass and fail"
@@ -73,8 +73,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN — control run of ",
-        "            if False:\n                report.append(f\"CANNOT RUN — control run of "
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
       ]
     ],
     "expect": "a RED control is refused, not reported as catches"
@@ -99,7 +99,7 @@
         "        if isinstance(want, list) and not want and False:"
       ]
     ],
-    "expect": "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
+    "expect": "run_mutations refuses an EMPTY expect list \u2014 a declared-but-empty set"
   },
   {
     "name": "a repeated edit anchor measures nothing twice",
@@ -117,7 +117,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return \"CANNOT RUN — the docstring no longer declares a case count.\"",
+        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
         "        return None"
       ]
     ],
@@ -240,8 +240,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(not_measured_line(verdict))\n        return 0 if ok else 1",
-        "            print(not_measured_line(verdict)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
+        "            print(not_measured_line(verdict, shard))\n        return 0 if ok else 1",
+        "            print(not_measured_line(verdict, shard)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -288,7 +288,7 @@
         "        if got < want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \""
       ]
     ],
-    "expect": "a GROWN manifest is refused too — the count is exact, not a floor"
+    "expect": "a GROWN manifest is refused too \u2014 the count is exact, not a floor"
   },
   {
     "name": "the duplicate mutation NAME refusal stops firing (r1 F5a)",
@@ -306,7 +306,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON — {exc}\")\n            continue",
+        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON \u2014 {exc}\")\n            continue",
         "        except json.JSONDecodeError:\n            continue"
       ]
     ],
@@ -500,24 +500,22 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase — the long one — is the one with no progress",
+    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase \u2014 the long one \u2014 is the one with no progress",
     "edits": [
       [
         "progress=progress)",
         "progress=None)"
       ]
     ],
-    "expect": [
-      "every phase of --mutate reports its position when a caller asks"
-    ],
+    "expect": "every phase of --mutate reports its position when a caller asks",
     "file": "scripts/check-plan-code.py"
   },
   {
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress)",
-        "mutate_delivered(mroot)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard)",
+        "mutate_delivered(mroot, shard=shard)"
       ]
     ],
     "expect": [
@@ -529,7 +527,7 @@
     "name": "the label is emitted unbounded again, so a 232-char manifest name wraps to three rows and the line that should visibly stop advancing is no longer one line",
     "edits": [
       [
-        "    return head + label[:max(room - 1, 0)] + \"…\"",
+        "    return head + label[:max(room - 1, 0)] + \"\u2026\"",
         "    return head + label"
       ]
     ],
@@ -581,8 +579,8 @@
     "name": "the merged output goes back to stdout-first, so the tail recorded in the durable evidence object is whatever a child last wrote to stderr, not the failure",
     "edits": [
       [
-        "which is also what they want.\n    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
-        "which is also what they want.\n    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
+        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
+        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
       ]
     ],
     "expect": [
@@ -617,7 +615,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback — the regression measured across 28 of 38 suites",
+    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback \u2014 the regression measured across 28 of 38 suites",
     "edits": [
       [
         "    err_keep = min(len(err), max(half, window - len(out)))",
@@ -683,7 +681,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half — at one end of the band a real control crash shows stack frames and no exception",
+    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half \u2014 at one end of the band a real control crash shows stack frames and no exception",
     "edits": [
       [
         "    half = window // 2\n    err_keep",
@@ -696,7 +694,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line — median 63 characters in this repo — cannot fit in the report",
+    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line \u2014 median 63 characters in this repo \u2014 cannot fit in the report",
     "edits": [
       [
         "stderr.strip()\n    half = window // 2",
@@ -735,7 +733,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the AFTER-control diagnostic goes back to slicing one merged string — the identical line to the before-control site, in the same function, and it had no entry",
+    "name": "the AFTER-control diagnostic goes back to slicing one merged string \u2014 the identical line to the before-control site, in the same function, and it had no entry",
     "edits": [
       [
         "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
@@ -748,7 +746,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved — r4 L2's shape, found by the edge sweep",
+    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved \u2014 r4 L2's shape, found by the edge sweep",
     "edits": [
       [
         "DIAGNOSTIC_WINDOW = 400",
@@ -761,7 +759,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on — no fixture could see this for five rounds",
+    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on \u2014 no fixture could see this for five rounds",
     "edits": [
       [
         "                                 out[-out_keep:] if out_keep else \"\") if p)",
@@ -803,8 +801,8 @@
     "name": "the ellipsis stops paying for its own character, so a truncated line is one column over the row it is bounded to",
     "edits": [
       [
-        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"…\"",
-        "        return head + label\n    return head + label[:max(room, 0)] + \"…\""
+        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"\u2026\"",
+        "        return head + label\n    return head + label[:max(room, 0)] + \"\u2026\""
       ]
     ],
     "expect": [
@@ -878,7 +876,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' — the third of the three things a reader needs — is gone",
+    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' \u2014 the third of the three things a reader needs \u2014 is gone",
     "edits": [
       [
         "progress(position, len(targets), f\"control {name}\")",
@@ -917,7 +915,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop — an empty stream produced by refusing at the door rather than by running quietly",
+    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop \u2014 an empty stream produced by refusing at the door rather than by running quietly",
     "edits": [
       [
         "        EXPECTED_MUTATIONS.pop(\"scripts/other.py\", None)\n        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()",
@@ -938,6 +936,358 @@
         "SUITE_TIMEOUT = 3"
       ]
     ],
-    "expect": "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
+    "expect": "SUITE_TIMEOUT is pinned \u2014 the budget every spawned suite runs under cannot drift silently"
+  },
+  {
+    "name": "#217: the shard partition is CONTIGUOUS, so one shard takes the expensive block and its siblings idle",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return muts[index - 1::total]",
+        "    return muts[index - 1:]"
+      ]
+    ],
+    "expect": [
+      "\u26d4 round-robin spreads ONE file's contiguous block evenly; a contiguous split cannot",
+      "\u2b50 every mutation runs in EXACTLY ONE shard and the union is the whole manifest"
+    ]
+  },
+  {
+    "name": "#217: the shard partition is off by one, so the manifest's FIRST mutation is measured by nobody",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "muts[index - 1::total]",
+        "muts[index::total]"
+      ]
+    ],
+    "expect": [
+      "\u2b50 every mutation runs in EXACTLY ONE shard and the union is the whole manifest",
+      "...and the shards of one N are PAIRWISE DISJOINT, counted not assumed"
+    ]
+  },
+  {
+    "name": "#217: a malformed --shard is answered by the BOUNDS sentence, which is about numbers it never parsed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if m is None:\n        return None, (f\"CANNOT RUN \u2014 {flag} {spec!r} is not of the form I/N (two integers, \"",
+        "    if False:\n        return None, (f\"CANNOT RUN \u2014 {flag} {spec!r} is not of the form I/N (two integers, \""
+      ]
+    ],
+    "expect": [
+      "...a non-integer shard is a SENTENCE and a CANNOT RUN, never a traceback",
+      "...so is a shard with no N at all"
+    ]
+  },
+  {
+    "name": "#217: a shard that does not exist (0 of 4, 5 of 4, any shard of 0) is accepted",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not 1 <= index <= total:\n        return None, (f\"CANNOT RUN \u2014 {flag} {index - (1 if zero_based else 0)}/{total} names a \"",
+        "    if False:\n        return None, (f\"CANNOT RUN \u2014 {flag} {index - (1 if zero_based else 0)}/{total} names a \""
+      ]
+    ],
+    "expect": [
+      "...shard 0 does not exist, and the refusal says which shard was asked for",
+      "...nor shard 5 of 4",
+      "...nor any shard of zero shards"
+    ]
+  },
+  {
+    "name": "#217: an EMPTY shard is no longer refused, so N above the mutation count reports a vacuous pass",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if not shard_slice(list(range(count)), index, total):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "\u26d4 an EMPTY shard is refused, and the refusal names the count that empties it",
+      "\u26d4 a shard with NO mutations in it refuses, rather than passing vacuously",
+      "\u26d4 a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+    ]
+  },
+  {
+    "name": "#217: the shard is IGNORED, so every shard of a CI matrix runs the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts",
+        "    shard_muts = muts"
+      ]
+    ],
+    "expect": [
+      "\u26d4 a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+      "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
+    ]
+  },
+  {
+    "name": "#217: a sharded run declares the WHOLE manifest, so every shard is a shortfall and no shard is ever MEASURED",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        declared = len(shard_muts)",
+        "        declared = len(muts)"
+      ]
+    ],
+    "expect": [
+      "\u26d4 a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+      "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
+    ]
+  },
+  {
+    "name": "#217: a shard controls every file in the manifest rather than the files it mutates",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    targets = sorted({m[\"file\"] for m in shard_muts})",
+        "    targets = sorted(counts)"
+      ]
+    ],
+    "expect": [
+      "\u26d4 a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+      "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
+    ]
+  },
+  {
+    "name": "#217: mutate_delivered lets an empty shard through to the normal return, where 0 survivors reads as success",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if why:\n            return False, [why], NotMeasured.from_counts([], None, ev_files)",
+        "        if why and False:\n            return False, [why], NotMeasured.from_counts([], None, ev_files)"
+      ]
+    ],
+    "expect": "\u26d4 a shard with NO mutations in it refuses, rather than passing vacuously"
+  },
+  {
+    "name": "#217: the verdict line TRANSPOSES I and N, so shard 1 of 3 reads as shard 3 of 1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return f\"shard {shard[0]} of {shard[1]} (round-robin)\"",
+        "    return f\"shard {shard[1]} of {shard[0]} (round-robin)\""
+      ]
+    ],
+    "expect": [
+      "...and it is named I of N, in that order, when there is one",
+      "the tally line says which slice it is about",
+      "...and so does the NOT-MEASURED line"
+    ]
+  },
+  {
+    "name": "#217: the TALLY line stops naming its slice, so a shard's numbers read as a whole-manifest pass",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" \u2014 measured over {shard_label(shard)}\")",
+        "              f\"{len(verdict.survivors)} survivor(s)\")"
+      ]
+    ],
+    "expect": [
+      "the tally line says which slice it is about",
+      "the tally states how many were killed AND how many were attributed"
+    ]
+  },
+  {
+    "name": "#217: the NOT-MEASURED line stops naming its slice",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return f\"NOT MEASURED \u2014 {nm.reason} \u2014 measured over {shard_label(shard)}\"",
+        "    return f\"NOT MEASURED \u2014 {nm.reason}\""
+      ]
+    ],
+    "expect": "...and so does the NOT-MEASURED line"
+  },
+  {
+    "name": "#217: main stops obeying the shard mode refusal, so --self-test --shard rides through",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if _mode_why:",
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if False:"
+      ]
+    ],
+    "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
+  },
+  {
+    "name": "#217: a malformed --shard does not stop the run, so the sweep proceeds unsharded under a sharded log line",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f\"--{_f}\")\n        if why:\n            print(why, file=sys.stderr)\n            return 2",
+        "        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f\"--{_f}\")\n        if why:\n            print(why, file=sys.stderr)"
+      ]
+    ],
+    "expect": "...and a malformed --shard refuses BEFORE any suite runs"
+  },
+  {
+    "name": "#217: an empty shard exits 1 like a surviving mutation instead of 2 like a run that measured nothing",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))",
+        "            why = None"
+      ]
+    ],
+    "expect": "\u26d4 a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+  },
+  {
+    "name": "the shard mode refusal stops firing, so --self-test --shard rides through as a clean exit 0",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if shard_arg is not None and not mutate_arg:\n        return (f\"CANNOT RUN \u2014 {flag} {shard_arg!r} only means something with --mutate ROOT, \"",
+        "    if shard_arg is not None and not mutate_arg and False:\n        return (f\"CANNOT RUN \u2014 {flag} {shard_arg!r} only means something with --mutate ROOT, \""
+      ]
+    ],
+    "expect": "\u26d4 a shard alongside --self-test is refused, not silently accepted \u2014 the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
+  },
+  {
+    "name": "#217: the bytecode cache is left ON, so a mutant .pyc outlives the restore of its source",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    env[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n",
+        "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
+      ]
+    ],
+    "expect": "...and the other half of the race: no suite the harness spawns may WRITE a cache either, or this run poisons the next one"
+  },
+  {
+    "name": "#217 r2: the staged tree carries the repo's __pycache__ in, so a mutant .pyc arrives looking current",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shutil.copytree(src, dst, ignore=shutil.ignore_patterns(\"__pycache__\"))",
+        "        shutil.copytree(src, dst)"
+      ]
+    ],
+    "expect": "\u26d4 no bytecode cache reaches a staged tree \u2014 the source is copied, the compiled artefact is not, or a mutant .pyc arrives looking current and the next importer silently gets it"
+  },
+  {
+    "name": "the digit class goes back to UNICODE-WIDE `\\\\d`, so an Arabic-Indic eight parses as 8 and a CI index of `\u0660` becomes shard 1 of N \u2014 round 6 L1/L2",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "SHARD_SPEC = re.compile(r\"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$\")",
+        "SHARD_SPEC = re.compile(r\"^(\\d+)/(\\d+)$\")"
+      ]
+    ],
+    "expect": "a UNICODE digit is not a decimal integer \u2014 round 6 L2"
+  },
+  {
+    "name": "leading zeros are accepted again, so `00/8` is shard 1 of 8 and the word CANONICAL in the refusal is a claim the pattern does not keep \u2014 round 6 L1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "r\"^(0|[1-9][0-9]{0,3})/",
+        "r\"^([0-9]+)/"
+      ]
+    ],
+    "expect": "...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps"
+  },
+  {
+    "name": "the zero-based conversion is dropped, so a CI matrix index of 0 names shard 0 and every shard is off by one \u2014 round 6 M1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if zero_based:\n        index += 1",
+        "    if zero_based:\n        index += 0"
+      ]
+    ],
+    "expect": "--shard0 is ZERO-based: index 0 is shard 1"
+  },
+  {
+    "name": "the shard spec is matched loosely again \u2014 `.match()` with `.strip()` \u2014 so a whitespace-wrapped or newline-terminated spec parses and the canonical accept set the message advertises is false at its boundary (round 6 codex Low)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    m = SHARD_SPEC.fullmatch(spec)",
+        "    m = SHARD_SPEC.match(spec.strip())"
+      ]
+    ],
+    "expect": "...and so is whitespace, including a TRAILING NEWLINE \u2014 round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
+  },
+  {
+    "name": "the mode refusal goes back to asking about `a.shard` BY NAME, so any other shard-shaped flag rides through `--self-test` as a clean exit 0 over a subject no shard touched (round 7 H1, which was round 1's Codex finding reopened)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)",
+        "    _mode_why = shard_mode_refusal(a.shard, a.mutate)"
+      ]
+    ],
+    "expect": "EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag"
+  },
+  {
+    "name": "the digit run loses its length bound, so a 4301-digit shard spec MATCHES and `int()` then raises \u2014 the traceback `parse_shard`'s own docstring forbids (round 7 L1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "{0,3})$\"",
+        "*)$\""
+      ]
+    ],
+    "expect": "a digit run longer than the bound is REFUSED on either side, never raised \u2014 r7 L1"
+  },
+  {
+    "name": "the mode refusal goes back to TRUTHINESS, so an EMPTY shard value is not shard-shaped and `--self-test --shard ''` rides through as a clean exit 0 (round 7 H1, third instance of one defect)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if shard_arg is not None and not mutate_arg:",
+        "    if shard_arg and not mutate_arg:"
+      ]
+    ],
+    "expect": "an EMPTY shard value is still a shard-shaped invocation, for every flag \u2014 round 7 H1"
+  },
+  {
+    "name": "`shard_dest` stops normalising, so a hyphenated shard flag is looked up by its raw name and `main` raises AttributeError instead of refusing \u2014 a traceback where a sentence is owed (round 7 codex Low)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "lstrip(\"-\").replace(\"-\", \"_\")",
+        "lstrip(\"-\")"
+      ]
+    ],
+    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+  },
+  {
+    "name": "the shard flags are enumerated again by hand instead of derived, so a flag in SHARD_FLAGS is registered and mode-checked but never PARSED and never mutually exclusive \u2014 round 8 M1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _given = [(_f, getattr(a, shard_dest(_f))) for _f in SHARD_FLAGS\n              if getattr(a, shard_dest(_f)) is not None]",
+        "    _given = [(_f, getattr(a, shard_dest(_f))) for _f in (\"shard\", \"shard0\")\n              if getattr(a, shard_dest(_f)) is not None]"
+      ]
+    ],
+    "expect": "a flag added to SHARD_FLAGS is PARSED, not merely accepted \u2014 round 8 M1"
+  },
+  {
+    "name": "`shard_dest` drops argparse's prefix-strip step, so a leading-hyphen flag name resolves to `_shard_x` where argparse named it `shard_x` \u2014 round 8 L1",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return opt.lstrip(\"-\").replace(\"-\", \"_\")",
+        "    return opt.replace(\"-\", \"_\")"
+      ]
+    ],
+    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+  },
+  {
+    "name": "the SHARD_FLAGS collision guard stops firing, so a key named after an existing option produces argparse's own error, a nonsense refusal, or a silently reddened unrelated case \u2014 four shapes for one declaration mistake (r8 codex Low)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if shard_dest(_opt) in _taken or _opt in _taken:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a SHARD_FLAGS key colliding with an existing option is refused by name \u2014 r8 codex Low"
   }
 ]

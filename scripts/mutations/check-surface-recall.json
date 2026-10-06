@@ -202,10 +202,32 @@
     "file": "scripts/check-surface-recall.py",
     "edits": [
       [
-        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")",
-        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\")"
+        "    \"PATH\", \"HOME\", \"TMPDIR\", \"LANG\",",
+        "    \"PATH\", \"HOME\", \"TMPDIR\","
       ]
     ],
     "expect": "the subprocess env allowlist is the SAME in both guards \u2014 round 8 H1"
+  },
+  {
+    "name": "the subprocess env allowlist drops PYTHONDONTWRITEBYTECODE, so a scrubbed spawn writes a bytecode cache inside the staged tree again (r2 Medium, PR #366)",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    \"PYTHONDONTWRITEBYTECODE\",",
+        ""
+      ]
+    ],
+    "expect": "the env the scrub hands the production spawn carries PYTHONDONTWRITEBYTECODE \u2014 r4 Medium"
+  },
+  {
+    "name": "the CALL SITE stops consulting the allowlist constant and inlines a hand-copy without PYTHONDONTWRITEBYTECODE \u2014 round 8 H1's original defect, which r2's constant-only property left green (r3 Medium, PR #366)",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "if k in SUBPROCESS_ENV_KEYS} if scrub",
+        "if k in (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")} if scrub"
+      ]
+    ],
+    "expect": "the env the scrub hands the production spawn carries PYTHONDONTWRITEBYTECODE \u2014 r4 Medium"
   }
 ]

@@ -2,7 +2,8 @@
 """A plan that contains code must ASSEMBLE into that code, and its evidence must be RUN.
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
-    python3 scripts/check-plan-code.py --self-test          # 131 cases
+    python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
+    python3 scripts/check-plan-code.py --self-test          # 178 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -61,6 +62,15 @@ lives in the plan under review, where a reviewer reads it.
                   green means something about the code that ships.
 
 The final line of STDOUT names the mode, so a CI log cannot be read as the wrong subject.
+
+⟳ backlog #217 — AND IT NAMES THE SHARD, because `--shard I/N` makes the subject a FRACTION
+of the manifest. `--shard` splits only the EXECUTION, round-robin over the mutation list: the
+whole-manifest checks (counts against `EXPECTED_MUTATIONS` in both directions, the duplicate
+name and anchor refusals, the home-escape scan over every target and every replacement) run
+in EVERY shard, because they are cheap and because N local invariants are not the global one.
+An EMPTY shard is rc=2 CANNOT RUN, never a pass. ⚠ Each shard runs the control and re-control
+for the files IT mutates, so the controls are repeated across shards — that is deliberate: a
+"caught" verdict is empty without a green control for the file it is about.
 
 ⟳ r1 L2 — "of STDOUT" is load-bearing and was missing. Progress goes to stderr, so under
 `--mutate . 2>&1` the last line is a progress line, not the verdict. Nothing in-repo merges
@@ -150,6 +160,27 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     env = dict(os.environ)
     env["HOME"] = str(d / CHILD_HOME)
     env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
+    # ⛔ NO BYTECODE CACHE, AND THIS ONE LINE IS A CORRECTNESS FIX, NOT A TIDINESS ONE.
+    # MEASURED, backlog #217 round 1: a mutation of `observer_log.py` ("append truncates
+    # instead of appending") ran, Python cached the MUTANT as
+    # `scripts/__pycache__/observer_log.cpython-314.pyc`, and the harness then restored the
+    # SOURCE — which is all it ever restored. Python validates a cache entry against the
+    # source's (mtime, size); the restore rewrites the same number of bytes, so inside one
+    # mtime tick the stale entry still looks current and the next import gets the MUTANT.
+    # `check-banner-armed.py` imports `observer_log`, so five of its cases failed in the
+    # AFTER-control and the whole shard reported NOT MEASURED.
+    #
+    # ⭐ IT EXPLAINS EVERY SYMPTOM, which is how it was told apart from two wrong fixes before
+    # it: nondeterministic because it is an mtime race; invisible to clean runs because a clean
+    # run's cache matches its own source; and ~7x more likely under sharding because every
+    # shard re-runs the controls (round 1, H2). Restoring `.claude/` — twice attempted — could
+    # never have helped: the residue was in `scripts/__pycache__/` the whole time.
+    #
+    # ⚠ WHY NOT "DELETE __pycache__ AFTER EACH RUN": that is the same restore-the-damage shape
+    # one directory over, and it leaves the window open for anything that reads the cache
+    # DURING a run. Not writing it has no window. The cost is recompilation per suite, which is
+    # milliseconds against suites measured in seconds.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
 
@@ -226,7 +257,19 @@ def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
             continue
         dst = dest / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst)
+        # ⛔ NEVER CARRY A BYTECODE CACHE INTO THE STAGED TREE. `PYTHONDONTWRITEBYTECODE`
+        # closes only the WRITE half of this race: it stops THIS run creating a cache, and says
+        # nothing about one that arrives already made. `copytree` uses `copy2`, which preserves
+        # mtime and size — the exact pair Python validates a cache against — so a `.pyc` that
+        # looks current in the repository looks current in the staged tree too.
+        #
+        # ⭐ MEASURED, round 2 of backlog #217, ON THE TREE THAT SHIPPED WITH THE ENV FIX IN
+        # FORCE: the repo's `scripts/__pycache__/` is 89 files and 55 of the 57 mutation targets
+        # already have one there. Planting a mutant `observer_log` cache whose (mtime, size)
+        # match the untouched source — the `"a"` -> `"w"` swap is LENGTH-PRESERVING, so this is
+        # not contrived — reproduced H1 exactly: `check-banner-armed.py` rc=1, 155/160, the same
+        # five case names CI had reported. The env line alone was half a fix.
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
     return problems
 
 
@@ -332,8 +375,12 @@ def control_is_green(rc: int, out: str) -> bool:
     return rc == 0 and "passed" in out
 
 
-def not_measured_line(nm: NotMeasured) -> str:
+def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None) -> str:
     """The ONE sentence that says a run produced no coverage verdict.
+
+    ⟳ backlog #217: it now also names WHICH SLICE of the manifest produced no verdict, through
+    `shard_label` — the same helper the tally line uses, because two renderings of one fact
+    are two things that can disagree.
 
     ⟳ 2026-09-09, round 1 F4. ONE consumer now — the `--mutate` printer at `main()`. It had
     THREE (that printer, the plan-mode printer, the evidence block), and PR #271 deleted two
@@ -367,7 +414,7 @@ def not_measured_line(nm: NotMeasured) -> str:
     AttributeError on `.reason`, which is the point: the sentence is only ever true of one
     variant, and the type says so instead of a comment saying so.
     """
-    return f"NOT MEASURED — {nm.reason}"
+    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -978,7 +1025,19 @@ EXPECTED_MUTATIONS = {
     # Low 2: three clauses of `pin_took_effect` were undriven and the first is FAIL-OPEN — an
     # EMPTY `pythonLocation` makes `startswith("/")` true for every absolute path on earth.
     "scripts/check-python-pin.py": 52,
-    "scripts/check-plan-code.py": 77,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    # ⟳ 2026-10-05, backlog #217: 77 -> 92. FIFTEEN entries, one per clause of `--shard I/N`,
+    # ⟳⟳ 2026-10-06, ROUND 5 M2 — AND THE LINE ABOVE WAS LEFT NARRATING 92 WHILE THE VALUE
+    # BELOW REACHED 95. Three later entries (the `.pyc` read/write pair and the stale-`expect`
+    # retarget) landed without extending this note, so the only record of them was the number
+    # itself — which is the one thing a reader cannot attribute. Corrected to 95; thethree 
+    # intervening deltas are in their own commits.
+    # added in the same commit as the flag. Every `expect` was derived by APPLYING the mutation
+    # in a staged tree and reading which case reddened — not written from memory, which is how
+    # this file's r2 fold shipped three behaviours with zero entries. Four of the fifteen pin
+    # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
+    # because a partition that drops an entry makes N green jobs report success over work
+    # nobody did — strictly worse than the slow sweep they replace.
+    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1359,7 +1418,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
     # across two consecutive rounds, every one caused by the previous round's fix — which is
     # `dev-process.md:108`'s condition, met for the first time in this fold.
-    "scripts/check-rc-contract.py": 15,
+    "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
     # contract: every Blocking in rounds 3-7 landed on R3 while R1/R2 produced none, and round 7
@@ -1371,7 +1430,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ FOUR OF THE 11 ARE RELOCATED, NOT NEW — they came from `check-rc-contract`'s manifest with
     # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
     # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
-    "scripts/check-surface-recall.py": 19,
+    "scripts/check-surface-recall.py": 21,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -1477,8 +1536,206 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
     return out, problems
 
 
+# ── SHARDING THE EXECUTION (backlog #217) ───────────────────────────────────────────────────
+# The sweep re-runs a guard's WHOLE suite once per mutation, so its cost is
+# `mutations x suite_time` and ONE subprocess-heavy guard can spend a CI job's entire budget by
+# itself. MEASURED on PR #360's branch: `check-main-drivable.py` held 183 entries against its own
+# ~30s self-test — ~87 of the ~90 minutes, against a `timeout-minutes: 30` ceiling that had
+# already been raised once. `--shard I/N` splits the EXECUTION across parallel jobs; the budget
+# then bounds `total_work / N` instead of `total_work`.
+# ⛔ FIVE WAYS THIS ONE PATTERN WAS TOO WIDE, AND THE FIFTH WAS THE DIGIT RUN'S LENGTH.
+#   r6 L2  `\d` is UNICODE-WIDE: `parse_shard("1/٨")` returned `(1, 8)` from an Arabic-Indic
+#          eight, and 128 further code points (`²`, `፩`) pass `\d`/`isdigit()` while `int()`
+#          RAISES — a traceback this function's own docstring forbids.
+#   r6 L1  `[0-9]+` accepted `00/8` as shard 1 of 8, so CANONICAL in the message below was a
+#          claim the pattern did not keep.
+#   r6 cdx `.match()` with `.strip()` accepted ` 1/8`, `1/8 ` and `1/8\n` — `$` matches BEFORE a
+#          final newline, so anchoring alone was never enough. Now `fullmatch`, no `strip()`.
+#   r7 L1  ⚠ AND THE SENTENCE HERE USED TO CLAIM "every string that matches is one `int()`
+#          accepts". FALSE, about the exact symptom named four lines above:
+#          `fullmatch("1" * 4301 + "/8")` MATCHES and `int()` then raises `ValueError: Exceeds
+#          the limit (4300 digits)`. The alphabet was never the only way in — the LENGTH was.
+#          `{0,3}` bounds each side at four digits (9999 shards, absurdly more than any matrix
+#          asks for), so the claim is now one the pattern keeps.
+# ⚠ This rule used to be spelled a SECOND way in `.github/workflows/ci.yml`, which is what
+# produced three disagreeing definitions of "a decimal integer" across two files. The workflow
+# no longer spells it at all and calls `--shard0` instead.
+SHARD_SPEC = re.compile(r"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$")
+
+
+def parse_shard(spec: str, *, zero_based: bool = False,
+                flag: str = "--shard") -> tuple[tuple[int, int] | None, str | None]:
+    """`"2/5"` -> `((2, 5), None)`; anything else -> `(None, why)`. PURE.
+
+    ⛔ A SENTENCE AND A CANNOT RUN, NEVER A TRACEBACK OR ARGPARSE'S "invalid value". Whoever
+    typed `--shard` believed a subject was being measured; a stack trace tells them their
+    invocation is broken without saying what was or was not checked. Same reasoning as the
+    retired-flag refusal in `main`.
+
+    ⚠ ONE PREDICATE FOR ALL THREE NUMERIC MISTAKES — `1 <= index <= total` refuses shard 0,
+    shard 5 of 4, and any shard of zero shards. Writing them as three clauses would be three
+    chances to get the boundary wrong, and the composite is exactly as decidable.
+    """
+    # ⛔ `fullmatch`, AND NO `.strip()` — ROUND 6 CODEX LOW. `.match()` anchored with `$` still
+    # accepts a TRAILING NEWLINE (`$` matches before one), and `.strip()` silently accepted
+    # surrounding whitespace — so `" 1/8"`, `"1/8 "` and `"1/8\n"` all parsed, and the accept
+    # set was not the canonical one this pattern advertises. Measured: `match("1/8\n")` is
+    # True and `fullmatch("1/8\n")` is False. ⚠ That matters at the CI seam specifically,
+    # where the value arrives by shell interpolation and a stray newline is the likeliest
+    # possible contaminant — the fourth distinct way this one rule has been too wide.
+    m = SHARD_SPEC.fullmatch(spec)
+    # ⚠ PARSED BEFORE EITHER ARM REFUSES, AND THAT ORDER IS FOR THE MUTATION SPACE. A
+    # validation clause whose job is to prevent a crash cannot be severed without producing the
+    # crash — and a mutation that kills the suite before it prints `[FAIL] <case>` is read as
+    # "caught by something else", so it proves nothing about the clause it severed. With the
+    # numbers resolved first, removing EITHER arm leaves a runnable function that returns the
+    # OTHER arm's sentence, which a case can see. Hence the cases assert the SENTENCE, not just
+    # that something was refused: the two refusals are distinguishable only by what they say.
+    index, total = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    if m is None:
+        return None, (f"CANNOT RUN — {flag} {spec!r} is not of the form I/N (two integers, "
+                      f"e.g. `{flag} 2/5`). NOTHING WAS MEASURED. Treat this as NOT CHECKED.")
+    # ⚠ A CI matrix index is 0-BASED and a shard number is 1-BASED, and that `+1` is the whole
+    # reason the workflow used to carry arithmetic. It is here now, inside the one function that
+    # has a suite, mutation entries and ratchet coverage — round 6 M1: `grep -rln SHARD_INDEX`
+    # over `scripts/ tests/ .claude/` returned NOTHING, because logic in a `run:` block is
+    # invisible to every gate this repository owns. That is why it shipped wrong twice.
+    if zero_based:
+        index += 1
+    if not 1 <= index <= total:
+        return None, (f"CANNOT RUN — {flag} {index - (1 if zero_based else 0)}/{total} names a "
+                      f"shard that does not exist: I must be at least "
+                      f"{0 if zero_based else 1} and at most "
+                      f"{'N-1' if zero_based else 'N'}. NOTHING WAS MEASURED. "
+                      f"Treat this as NOT CHECKED.")
+    return (index, total), None
+
+
+def shard_slice(muts: list, index: int, total: int) -> list:
+    """The mutations belonging to shard `index` of `total`, ROUND-ROBIN. PURE.
+
+    ⛔ ROUND-ROBIN, AND THE CRUX OF THE WHOLE DESIGN IS THAT IT IS NOT CONTIGUOUS. `muts` is
+    built in sorted-by-manifest order, so EVERY ENTRY OF ONE FILE IS CONTIGUOUS — and that one
+    file is where the cost is. A contiguous split (`muts[a:b]`) hands the expensive block to a
+    single shard, which still exceeds the ceiling while its siblings idle; sharding BY FILE is
+    worse still, since one file can exceed the ceiling on its own. The stride spreads each
+    file's entries across all N.
+
+    ⚠ `index` is 1-BASED, because it is what a human types and what a CI matrix prints. The
+    `- 1` is the only place that knows, and `shard_refusal` is the only other reader.
+    """
+    return muts[index - 1::total]
+
+
+def shard_refusal(index: int, total: int, count: int) -> str | None:
+    """None if shard `index` of `total` has work to do over `count` mutations, else why not.
+
+    ⛔ AN EMPTY SHARD THAT "PASSES" IS A GATE REPORTING SUCCESS FOR WORK IT NEVER DID — the
+    precise failure this script exists to prevent, arriving through its own new flag. It reaches
+    the normal return with `declared = 0`, no survivors and `ok = True`, and prints a line that
+    differs from a real pass only in a number nobody reads.
+
+    ⚠ THE EMPTINESS IS DERIVED FROM `shard_slice`, not re-derived as `index > count`. The two
+    agree today; a second copy of the partition arithmetic is a copy that drifts, and this
+    project has recorded seventeen instances of exactly that.
+    """
+    if not shard_slice(list(range(count)), index, total):
+        return (f"CANNOT RUN — shard {index} of {total} is EMPTY: the manifest holds "
+                f"{count} mutation(s), so there is nothing for this shard to measure. A shard "
+                f"that passes over an empty subset reports success for work it never did. "
+                f"Lower N. NOTHING WAS MEASURED. Treat this as NOT CHECKED.")
+    return None
+
+
+# ⛔ ONE SOURCE FOR EVERY SHARD-SHAPED FLAG — ROUND 7 H1, A REGRESSION I CAUSED. Round 6 added
+# `--shard0`, wired it into PARSING, and left the mode refusal asking only about `a.shard`,
+# so `--self-test --shard0 garbage` printed `169/169 passed` and exited 0 — reopening round
+# 1's Codex finding VERBATIM and producing the one outcome this script exists to prevent: a
+# shard-shaped invocation reporting success over a subject no shard touched.
+# ⚠ A NEW FLAG IS NOT ONE EDIT — it is an edit at every site that reasons about the concept,
+# and two sites here disagreed for a whole round. So the flags are DECLARED ONCE here and
+# BOTH consumers derive from it: `_build_parser` adds exactly these arguments and `main`
+# asks the mode question of exactly these dests. A third flag is one dict entry, and
+# disagreement is not DETECTED but IMPOSSIBLE — which is the stronger of the two, and the
+# reason this is not the one-liner round 7 warned would leave a third instance.
+# ⚠ "IMPOSSIBLE" IS EARNED ONLY BECAUSE OF `shard_dest` BELOW — round 7's Codex half showed
+# the first version of this claim was false for a hyphenated key.
+def shard_dest(opt: str) -> str:
+    """`"shard-x"` -> `"shard_x"`. argparse's OWN normalisation, spelled once.
+
+    ⛔ ROUND 7 CODEX LOW. `SHARD_FLAGS` was introduced claiming a third flag is "one dict
+    entry, and disagreement is IMPOSSIBLE". False for a hyphenated name: argparse maps
+    `--shard-x` to dest `shard_x`, while `main` looked the key up verbatim and raised
+    `AttributeError: 'Namespace' object has no attribute 'shard-x'` — a TRACEBACK, not a
+    sentence. The two consumers could still disagree, THROUGH argparse's naming rule,
+    which the abstraction did not model. ⚠ The shipped keys have no hyphens, so nothing
+    was broken; what was wrong was the claim, which is the defect this file keeps paying
+    for. Both consumers now route through here, so they agree BY CONSTRUCTION.
+    """
+    # ⚠ BOTH of argparse's steps — round 8 L1. It strips the prefix chars FIRST and then
+    # replaces hyphens, so `-shard-x` becomes `shard_x`; replacing alone gave `_shard_x`
+    # and reintroduced the AttributeError this function exists to remove.
+    return opt.lstrip("-").replace("-", "_")
+
+
+SHARD_FLAGS: "dict[str, tuple[bool, str]]" = {
+    "shard": (False,
+              "With --mutate: run only shard I of N, ROUND-ROBIN over the mutation list "
+              "(backlog #217). The global manifest checks still run on the WHOLE manifest in "
+              "every shard; only the suite runs are split. I is 1-based. An empty shard is "
+              "CANNOT RUN, never a pass."),
+    "shard0": (True,
+               "Like --shard, but I is ZERO-BASED, which is what a CI matrix provides. Exists so "
+               "the 0->1 conversion lives in tested code rather than a workflow `run:` block — "
+               "round 6 M1: logic in YAML has no self-test, no mutation entry and no ratchet "
+               "coverage, which is how this rule shipped wrong three times with every gate green."),
+}
+
+
+def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None",
+                       *, flag: str = "--shard") -> "str | None":
+    """None if `--shard` means something in this mode, else the sentence saying it does not.
+
+    ⛔ PURE, AND LIFTED OUT OF `main`, BECAUSE THE CASE CANNOT CALL `main`. The defect this
+    closes was an ORDER defect: `--self-test` returned BEFORE the shard was validated, so
+    `--self-test --shard garbage` exited 0 and printed a clean suite result — a shard-shaped
+    invocation reporting success over a subject no shard ever touched. Asserting that through
+    `main(["--self-test", …])` would re-enter the suite currently running the case, so the
+    predicate lives here and `main` merely obeys it, first, before any mode dispatches.
+
+    ⚠ Found by round 1's Codex half. The coordinator had tested `--shard` with NO mode — which
+    refuses correctly — and never with `--self-test`: the adjacent case passes and the one next
+    to it was never constructed, which is this file's most-repeated blind spot.
+    """
+    # ⛔ `is not None`, NOT TRUTHINESS — ROUND 7 H1's OTHER HALF, AND THE THIRD INSTANCE OF ONE
+    # DEFECT. `""` is falsy, so `--self-test --shard ''` and `--self-test --shard0 ''` rode through
+    # this predicate and printed a clean `172/172 passed` at rc 0 — the same shape round 5 fixed in
+    # `main` (`if a.shard:`) and round 1 first reported. Fixing the flag dimension above left this
+    # one open: a new flag was wired in while an empty VALUE still bypassed the check.
+    # ⚠ Measured after the repair: `:1689` was the ONLY truthiness test left on an argv-derived
+    # value in this file — every other shard-related check already reads `is not None`.
+    if shard_arg is not None and not mutate_arg:
+        return (f"CANNOT RUN — {flag} {shard_arg!r} only means something with --mutate ROOT, "
+                f"which is the only mode that runs mutations. NOTHING WAS MEASURED.")
+    return None
+
+
+def shard_label(shard: "tuple[int, int] | None") -> str:
+    """Which SLICE of the manifest a verdict line is about. PURE.
+
+    The docstring's "the final line of STDOUT names the mode" is too weak once the execution
+    can be split: a sharded run's verdict is about a FRACTION of the manifest, and a CI log
+    that does not say so reads exactly like a whole-repo pass.
+    """
+    if shard is None:
+        return "the WHOLE manifest"
+    return f"shard {shard[0]} of {shard[1]} (round-robin)"
+
+
 def mutate_delivered(root: pathlib.Path,
-                     progress=None) -> tuple[bool, list[str], "Measured | NotMeasured"]:
+                     progress=None,
+                     shard: "tuple[int, int] | None" = None,
+                     ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
 
     The whole `scripts/` tree is copied because these scripts import each other as
@@ -1555,7 +1812,24 @@ def mutate_delivered(root: pathlib.Path,
                              f"mutation is what puts the route there")
     if drift:
         return False, drift, NotMeasured.from_counts([], None, ev_files)
-    targets = sorted(counts)
+    # ⛔ EVERYTHING ABOVE THIS LINE IS OVER THE WHOLE MANIFEST, AND MUST STAY THAT WAY. The
+    # counts against EXPECTED_MUTATIONS (both directions), the duplicate name/anchor refusals
+    # inside `load_manifests`, and the home-escape scan over every target and every REPLACEMENT
+    # are statements about the manifest as a whole. They are also cheap — file reads and scans,
+    # no suite — so running them in every shard costs nothing. If a shard validated only its own
+    # slice, one global invariant would quietly become N local ones and coverage could shrink
+    # with every shard still green, which is this repository's definition of a false green.
+    # ONLY THE EXECUTION BELOW IS SHARDED.
+    if shard is not None:
+        why = shard_refusal(shard[0], shard[1], len(muts))
+        if why:
+            return False, [why], NotMeasured.from_counts([], None, ev_files)
+    shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts
+    # THE SHARD'S OWN TARGETS, not the manifest's. The control run is what makes every "caught"
+    # verdict below mean anything, so a shard must prove the suite of each file it MUTATES is
+    # green first — and must not pay for the suites of files it never touches, which is the cost
+    # this flag exists to cut.
+    targets = sorted({m["file"] for m in shard_muts})
     with tempfile.TemporaryDirectory() as td:
         d = pathlib.Path(td)
         staging = stage_tree(root, d)
@@ -1589,11 +1863,15 @@ def mutate_delivered(root: pathlib.Path,
                               f"CHECKED.\n    {diagnostic_tail(so, se)}")
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
-        ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets),
+        ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
                                                           progress=progress)
         # EVERY declared mutation must have produced a verdict. A skipped one leaves the tally
         # looking complete — 161 of 162 with 0 survivors reads as coverage confirmed.
-        declared = len(muts)
+        # ⚠ WHAT THIS SHARD DECLARED, not what the manifest holds. `len(muts)` here makes every
+        # sharded run a SHORTFALL — no `Measured` is constructible, so the run reports NOT
+        # MEASURED over work it actually did, and the cardinality clause stops being able to see
+        # a genuinely skipped mutation because every run already fails it.
+        declared = len(shard_muts)
         # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
         # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
         # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
@@ -1846,8 +2124,12 @@ def _entries_of(v) -> list:
     return v.mutations if isinstance(v, Measured) else v.entries
 
 
-def tally_line(ok: bool, verdict) -> str:
+def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None) -> str:
     """The one-line summary of a `--mutate` run. PURE.
+
+    ⟳ backlog #217: AND WHICH SLICE OF THE MANIFEST IT IS ABOUT. A sharded run's numbers are a
+    verdict over a fraction of the manifest; without the shard named, this line in a CI log is
+    indistinguishable from a whole-repo pass. `shard_label` renders it for both printers.
 
     ⛔ IT STATES THE AFFIRMATIVE NUMBERS, not only the negative one. It used to report
     `N mutation(s), 0 survivor(s)` — and "0 survivors" is the complement of the thing a reader
@@ -1866,7 +2148,8 @@ def tally_line(ok: bool, verdict) -> str:
             + f"delivered scripts mutated: {len(verdict.files)} file(s), "
               f"{len(verdict.mutations)} mutation(s), {killed} killed, "
               f"{attributed} attributed to the case each names, "
-              f"{len(verdict.survivors)} survivor(s)")
+              f"{len(verdict.survivors)} survivor(s)"
+            + f" — measured over {shard_label(shard)}")
 
 
 # One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
@@ -2994,6 +3277,64 @@ def _self_test() -> int:
             _ok7, _rep7, _ = mutate_delivered(_r)
             case("an entry REPEATING another's edit anchors is refused",
                  (_ok7, any("repeats the edit anchors" in r for r in _rep7)), (False, True))
+        # ── --shard: THE EXECUTION IS SHARDED, THE GLOBAL CHECKS ARE NOT (backlog #217) ──────
+        # The sweep re-runs a guard's WHOLE suite once per mutation, so cost is
+        # mutations x suite_time and one subprocess-heavy guard can exhaust a CI job's budget
+        # alone. `--shard I/N` splits the EXECUTION across parallel jobs.
+        #
+        # ⛔ WHAT MUST NOT SHARD, and the reason it is a case and not a comment. `counts` vs
+        # `EXPECTED_MUTATIONS`, the duplicate-name and duplicate-anchor refusals, and the
+        # home-escape scan are statements about the WHOLE manifest. A shard that validated only
+        # its own slice would turn one global invariant into N local ones, and coverage could
+        # then shrink without any shard noticing — this project's definition of a false green.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r, second=True)
+            EXPECTED_MUTATIONS.clear()
+            EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+            EXPECTED_MUTATIONS["scripts/other.py"] = 1
+            # ⚠ TWO TARGETS IN TWO FILES, one mutation each — the smallest fixture in which a
+            # shard can be WRONG in a way a one-target fixture cannot show: the slice, the
+            # control set and the declared count are three different numbers here, and at size
+            # one they are all 1. `_mini` orders the manifests `other.json`, `thing.json`
+            # (sorted), so shard 1 of 2 is `other` and shard 2 of 2 is `thing`.
+            _toldS: list = []
+            _okS, _repS, _evS = mutate_delivered(
+                _r, progress=lambda *a: _toldS.append(a), shard=(1, 2))
+            # ⛔ THE CONTROL SET IS THE SHARD'S OWN TARGETS, NOT THE MANIFEST'S. A shard that
+            # controlled every file would pay the suite cost of files it never mutates, which is
+            # the cost this flag exists to cut — and `targets` also feeds the declared count,
+            # so getting it from `counts` here leaves a shortfall that reads as NOT MEASURED.
+            case("⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+                 (_toldS, _okS, isinstance(_evS, Measured) and len(_evS.mutations)),
+                 ([(1, 1, "control scripts/other.py"), (1, 1, "two is three"),
+                   (1, 1, "re-control scripts/other.py")], True, 1))
+            # ...AND THE OTHER HALF OF THE PARTITION IS THE OTHER FILE. Asserting one shard
+            # alone cannot tell a round-robin slice from a constant: `muts[0::2]` and
+            # `muts[:1]` agree on shard 1 and disagree on shard 2.
+            _toldS2: list = []
+            _okS2, _repS2, _evS2 = mutate_delivered(
+                _r, progress=lambda *a: _toldS2.append(a), shard=(2, 2))
+            case("...and shard 2 of 2 is the OTHER file, so the two together are the manifest",
+                 (_toldS2, _okS2, isinstance(_evS2, Measured) and len(_evS2.mutations)),
+                 ([(1, 1, "control scripts/thing.py"), (1, 1, "value is two"),
+                   (1, 1, "re-control scripts/thing.py")], True, 1))
+            # ⛔ AN EMPTY SHARD IS CANNOT RUN, NOT A PASS. `mutate_delivered` refuses it as well
+            # as `main` (which exits 2): a shard with nothing in it reaches the normal return
+            # with `declared = 0`, zero survivors and `ok = True` — a gate reporting success
+            # for work it never did, which is the exact failure this script exists to prevent.
+            _okE, _repE, _evE = mutate_delivered(_r, shard=(3, 3))
+            case("⛔ a shard with NO mutations in it refuses, rather than passing vacuously",
+                 (_okE, any("is EMPTY" in r for r in _repE), isinstance(_evE, Measured)),
+                 (False, True, False))
+            # ⛔ THE GLOBAL CHECK FIRES FROM INSIDE A SHARD. Same fixture, same shard, one lie
+            # in EXPECTED_MUTATIONS: shard 2 of 3 must fail exactly as an unsharded run does.
+            EXPECTED_MUTATIONS["scripts/other.py"] = 2
+            _okG2, _repG2, _evG2 = mutate_delivered(_r, shard=(2, 3))
+            _okG3, _repG3, _evG3 = mutate_delivered(_r)
+            case("⛔ a count mismatch fails shard 2 of 3 exactly as it fails unsharded",
+                 (_okG2, any("expected 2" in r for r in _repG2),
+                  isinstance(_evG2, Measured), _repG2 == _repG3),
+                 (False, True, False, True))
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
@@ -3472,7 +3813,8 @@ def _self_test() -> int:
     case("the tally states how many were killed AND how many were attributed",
          tally_line(True, _mk(_all_ok, [])),
          "OK — delivered scripts mutated: 1 file(s), 2 mutation(s), 2 killed, "
-         "2 attributed to the case each names, 0 survivor(s)")
+         "2 attributed to the case each names, 0 survivor(s) — measured over "
+         "the WHOLE manifest")
     # ⭐ killed-but-unattributable no longer reads as success.
     _none_named = [dict(m, attributed=False) for m in _all_ok]
     case("⭐ a run where everything died and nothing was attributed says so in the FIRST line",
@@ -3481,6 +3823,351 @@ def _self_test() -> int:
          tally_line(False, _mk(_none_named, [])) != tally_line(True, _mk(_all_ok, [])), True)
     case("a survivor is not counted as a kill",
          "1 killed" in tally_line(False, _mk(_all_ok, ["y"])), True)
+
+    # ── --shard: THE PARTITION IS THE WHOLE CONTRACT (backlog #217) ──────────────────────
+    # ⭐ THE LOAD-BEARING FALSIFIER. Splitting the sweep across N parallel jobs is worth
+    # nothing unless every mutation lands in exactly one shard: a partition that DROPS an
+    # entry makes N green jobs report success over work nobody did, which is strictly worse
+    # than the slow sweep it replaces, and a partition that DUPLICATES one silently pays the
+    # cost twice. Asserted over several N, including an N larger than the list.
+    #
+    # ⚠ A MULTISET EQUALITY, NOT A LENGTH AND NOT A SET. `sorted(flat) == sorted(items)`
+    # with distinct items is pairwise disjointness AND union equality in one observation;
+    # a length alone passes when one entry is dropped and another duplicated, and a SET
+    # comparison cannot see the duplicate at all.
+    _items = [f"m{i}" for i in range(37)]
+    _parts = {n: [shard_slice(_items, i, n) for i in range(1, n + 1)] for n in (1, 2, 3, 7, 40)}
+    case("⭐ every mutation runs in EXACTLY ONE shard and the union is the whole manifest",
+         {n: sorted(x for p in ps for x in p) == sorted(_items) for n, ps in _parts.items()},
+         {1: True, 2: True, 3: True, 7: True, 40: True})
+    case("...and the shards of one N are PAIRWISE DISJOINT, counted not assumed",
+         {n: sum(len(p) for p in ps) for n, ps in _parts.items()},
+         {1: 37, 2: 37, 3: 37, 7: 37, 40: 37})
+    # ⛔ ROUND-ROBIN, NOT CONTIGUOUS — THE CRUX, and the only case that can tell them apart.
+    # `muts` is built in sorted-by-file order, so ONE FILE'S ENTRIES ARE CONTIGUOUS. Measured
+    # on PR #360's branch: one guard held 183 of the manifest's entries against its own ~30s
+    # suite — ~87 of the ~90 minutes. A contiguous split hands that whole block to one shard
+    # and that shard still exceeds the ceiling, while the others idle; sharding BY FILE is
+    # worse still, since a single file can exceed the ceiling alone. Both pass the partition
+    # case above, which is why BALANCE needs its own.
+    _cost = ["big"] * 10 + ["small"] * 2
+    case("⛔ round-robin spreads ONE file's contiguous block evenly; a contiguous split cannot",
+         [sum(1 for x in shard_slice(_cost, i, 4) if x == "big") for i in range(1, 5)],
+         [3, 3, 2, 2])
+    case("a shard past the end of the list is empty rather than an error",
+         (shard_slice(_cost, 1, 1), shard_slice([], 1, 2)), (_cost, []))
+
+    # ── ...AND THE REFUSALS. An empty shard that "passes" measured nothing ───────────────
+    # ⚠ EACH REFUSAL IS ASSERTED BY ITS SENTENCE, not by "something was refused". The two arms
+    # both return `(None, <a CANNOT RUN>)`, so a case that only checks for None cannot tell them
+    # apart — and with the numbers parsed up front (see `parse_shard`) severing one arm leaves
+    # the other answering for it. The sentence is the only observation that separates them.
+    case("--shard 2/5 parses", parse_shard("2/5"), ((2, 5), None))
+    case("...a non-integer shard is a SENTENCE and a CANNOT RUN, never a traceback",
+         (parse_shard("x/5")[0], (parse_shard("x/5")[1] or "").startswith("CANNOT RUN"),
+          "not of the form I/N" in (parse_shard("x/5")[1] or "")), (None, True, True))
+    case("...so is a shard with no N at all",
+         (parse_shard("3")[0], "not of the form I/N" in (parse_shard("3")[1] or "")),
+         (None, True))
+    case("...shard 0 does not exist, and the refusal says which shard was asked for",
+         (parse_shard("0/4")[0], "--shard 0/4 names a shard that does not exist"
+          in (parse_shard("0/4")[1] or "")), (None, True))
+    case("...nor shard 5 of 4", parse_shard("5/4")[0], None)
+    case("...nor any shard of zero shards", parse_shard("1/0")[0], None)
+
+    # ── ROUND 6 L1/L2/L3 — "A DECIMAL INTEGER" MUST MEAN ONE THING, AND IT MEANT THREE.
+    # `\d` and `str.isdigit()` are UNICODE-WIDE: `1/٨` parsed as `(1, 8)` from an Arabic-Indic
+    # eight, `٠` became shard 1 of 8 through a guard written to stop exactly that, and 128 further
+    # code points (`²`, `፩`) pass the class while `int()` RAISES — a traceback this function's own
+    # docstring forbids. The pattern is an explicit byte class now, so every string it matches is
+    # one `int()` accepts, and the traceback case cannot arise.
+    case("a UNICODE digit is not a decimal integer — round 6 L2",
+         (parse_shard("1/٨")[0], parse_shard("٠/8")[0], parse_shard("１/8")[0]), (None, None, None))
+    case("...and a code point that is `isdigit` but not `int`-able REFUSES, never raises — L3",
+         (parse_shard("²/8")[0], "not of the form I/N" in (parse_shard("²/8")[1] or "")),
+         (None, True))
+    case("...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps",
+         (parse_shard("00/8")[0], parse_shard("08/8")[0], parse_shard("01/8")[0]),
+         (None, None, None))
+    case("...and so is whitespace, including a TRAILING NEWLINE — round 6 codex Low. `$` matches "
+         "before a final newline and `.strip()` swallowed the rest, so the canonical claim was "
+         "false at its own boundary; the CI seam interpolates a shell value, where a stray "
+         "newline is the likeliest contaminant",
+         (parse_shard(" 1/8")[0], parse_shard("1/8 ")[0], parse_shard("1/8\n")[0],
+          parse_shard("1/8\t")[0]), (None, None, None, None))
+
+    # ── ROUND 6 M1 — the 0->1 conversion lives HERE, where a suite can see it. Three versions of
+    # this rule shipped inside a workflow `run:` block, which has no self-test, no mutation entry
+    # and no ratchet coverage, and each was wrong in a different way.
+    case("--shard0 is ZERO-based: index 0 is shard 1", parse_shard("0/8", zero_based=True)[0], (1, 8))
+    case("...and index N-1 is shard N", parse_shard("7/8", zero_based=True)[0], (8, 8))
+    case("...and index N is refused, because it is one past the last shard",
+         (parse_shard("8/8", zero_based=True, flag="--shard0")[0],
+          "--shard0 8/8 names a shard that does not exist"
+          in (parse_shard("8/8", zero_based=True, flag="--shard0")[1] or "")),
+         (None, True))
+    case("...and the refusal names the FLAG the caller actually used",
+         ("--shard0" in (parse_shard("x/5", flag="--shard0")[1] or ""),
+          "--shard" in (parse_shard("x/5")[1] or "")), (True, True))
+    case("⛔ an EMPTY shard is refused, and the refusal names the count that empties it",
+         ((shard_refusal(4, 4, 3) or "").startswith("CANNOT RUN"),
+          "3 mutation(s)" in (shard_refusal(4, 4, 3) or "")), (True, True))
+    case("...and a shard with work in it is not refused", shard_refusal(2, 3, 9), None)
+
+    # ── THE VERDICT LINE NAMES WHICH SLICE IT MEASURED ──────────────────────────────────
+    # ⛔ "The final line of STDOUT names the mode" (see the docstring) is now too weak: a
+    # sharded run's line is a verdict about a FRACTION of the manifest, and read without the
+    # shard it is indistinguishable from a whole-repo pass in a CI log.
+    # ⛔ ROUND 1, CODEX MEDIUM — THE MODE REFUSAL, WHICH `--self-test` USED TO OUTRUN. These
+    # case `shard_mode_refusal` rather than `main`, because `main(["--self-test", …])` would
+    # re-enter the suite running this case. ⚠ The FIRST row is the one the defect needed: a
+    # shard alongside --self-test, which exited 0 and printed a clean result. The coordinator
+    # had cased the SECOND row only — `--shard` with no mode at all — which refused correctly
+    # the whole time.
+    case("⛔ a shard alongside --self-test is refused, not silently accepted — the mode runs no "
+         "mutations, so a shard over it would report success for a subject nothing touched",
+         ((shard_mode_refusal("2/8", None) or "").startswith("CANNOT RUN"),
+          (shard_mode_refusal("garbage", None) or "").startswith("CANNOT RUN"),
+          "NOTHING WAS MEASURED" in (shard_mode_refusal("0/0", None) or "")),
+         (True, True, True))
+    case("...and a shard WITH --mutate is the one combination that means something",
+         shard_mode_refusal("2/8", "."), None)
+    case("...and no shard at all is never refused, whatever the mode",
+         (shard_mode_refusal(None, None), shard_mode_refusal(None, ".")), (None, None))
+    # ⛔ ROUND 1 H1 + ROUND 2 H1 — AND THE SECOND EXISTS BECAUSE THE FIRST CASE ASSERTED THE
+    # MECHANISM. A mutant compiled to `__pycache__` outlives the restore of its own source:
+    # Python validates a cache on the source's (mtime, size), and a restore inside one mtime
+    # tick still looks current, so the next importer gets the MUTANT. `check-banner-armed.py`
+    # imports `observer_log`, which is how five of its cases failed in an AFTER-control.
+    #
+    # ⛔ THE RACE HAS TWO HALVES AND THE FIRST FIX CLOSED ONE. `PYTHONDONTWRITEBYTECODE` stops
+    # this run WRITING a cache; it says nothing about READING one that arrived already made.
+    # `stage_tree` used `copytree` with no `ignore=`, and `copy2` preserves mtime and size — the
+    # exact pair Python checks — so the repository's own 89-file `scripts/__pycache__/` was
+    # copied in looking current. Round 2 reproduced the original symptom on the tree that had
+    # "fixed" it, down to the same five case names.
+    #
+    # ⭐ THE FIRST CASE HERE ASSERTED TWO DICT LOOKUPS UNDER A SENTENCE CLAIMING A PROPERTY, so
+    # it passed over a tree where the property was false. These assert the PROPERTY: stage a
+    # tree that HAS a cache, and demand the staged copy has none.
+    with tempfile.TemporaryDirectory() as _cd, tempfile.TemporaryDirectory() as _cd2:
+        _fake = pathlib.Path(_cd)
+        for _rel in HARNESS_TREE:
+            (_fake / _rel).mkdir(parents=True, exist_ok=True)
+        (_fake / "scripts" / "__pycache__").mkdir(parents=True, exist_ok=True)
+        (_fake / "scripts" / "__pycache__" / "poisoned.cpython-314.pyc").write_bytes(b"\x00mutant")
+        (_fake / "scripts" / "keep.py").write_text("x = 1\n")
+        _out = pathlib.Path(_cd2) / "staged"
+        _problems = stage_tree(_fake, _out)
+        case("⛔ no bytecode cache reaches a staged tree — the source is copied, the compiled "
+             "artefact is not, or a mutant .pyc arrives looking current and the next importer "
+             "silently gets it",
+             (_problems,
+              [str(f.relative_to(_out)) for f in _out.rglob("*.pyc")],
+              (_out / "scripts" / "keep.py").read_text()),
+             ([], [], "x = 1\n"))
+    with tempfile.TemporaryDirectory() as _bd, tempfile.TemporaryDirectory() as _bd2:
+        # ⚠ TWO DISTINCT DIRECTORIES. `child_env` derives its paths FROM its argument, so a
+        # suite handing it one value cannot tell it from a constant — `check-fixture-variation`
+        # refused this case's first draft for exactly that.
+        _e1, _e2 = child_env(pathlib.Path(_bd)), child_env(pathlib.Path(_bd2))
+        case("...and the other half of the race: no suite the harness spawns may WRITE a cache "
+             "either, or this run poisons the next one",
+             (_e1.get("PYTHONDONTWRITEBYTECODE"), _e2.get("PYTHONDONTWRITEBYTECODE")),
+             ("1", "1"))
+        case("...and the redirected home is derived from the directory it is given, so the two "
+             "trees cannot share one home", _e1["HOME"] == _e2["HOME"], False)
+
+    case("the slice is named when there is no shard", shard_label(None), "the WHOLE manifest")
+    case("...and it is named I of N, in that order, when there is one",
+         shard_label((2, 5)), "shard 2 of 5 (round-robin)")
+    # ⚠ THE WIRING, NOT ONLY THE FUNCTION — this file's own recorded lesson (round 6, M5):
+    # extracting a helper buys coverage of the helper and the CALL inherits the blind spot.
+    case("the tally line says which slice it is about",
+         tally_line(True, _mk(_all_ok, []), (1, 3)).endswith(
+             "0 survivor(s) — measured over shard 1 of 3 (round-robin)"), True)
+    case("...and so does the NOT-MEASURED line",
+         not_measured_line(NotMeasured.from_counts([], 2, {}), (3, 4)).endswith(
+             " — measured over shard 3 of 4 (round-robin)"), True)
+    # ⚠ A SECOND CALL SITE, WITH A DIFFERENT VERDICT AND AN EXPLICIT `None` — required by
+    # `check-fixture-variation.py`, and the reason is this file's own round-6 finding: at one
+    # call site a parameter is indistinguishable from a constant, so no case can tell a clause
+    # that READS it from one that ignores it. The shard is spelled out rather than defaulted,
+    # because an omitted argument is not a second value.
+    case("...and the NOT-MEASURED line says WHOLE manifest when no shard was asked for",
+         not_measured_line(
+             NotMeasured.from_counts([{"name": "x", "measured": True}], 3, {"a.py": True}),
+             None).endswith(" — measured over the WHOLE manifest"), True)
+
+    # ── THE ENTRY POINT'S REFUSALS. rc 2 = CANNOT RUN, and it must not read as rc 1 ──────
+    # ⚠ rc AND A SUBSTRING. `main` returns 2 from four different places, so an rc-only
+    # assertion cannot tell this refusal from the bare-invocation one next to it.
+    _se = io.StringIO()
+    with contextlib.redirect_stderr(_se):
+        _rc_ns = main(["--shard", "2/5"])
+    case("--shard without --mutate is CANNOT RUN, not a silent whole-manifest run",
+         (_rc_ns, "--shard" in _se.getvalue() and "CANNOT RUN" in _se.getvalue()), (2, True))
+    # ⛔ AND THE SAME, ASKED OF EVERY FLAG IN `SHARD_FLAGS` — ROUND 7 H1. `--shard0` existed for
+    # a whole round while `main` asked the mode question of `a.shard` ALONE, so
+    # `--self-test --shard0 garbage` printed a clean `169/169 passed` and exited 0. ⚠ The
+    # assertion is driven BY THE DICT, so a third flag is covered the moment it is declared
+    # rather than when somebody remembers to add a case — which is the failure this replaces.
+    _flag_refusals = {}
+    for _f in SHARD_FLAGS:
+        _sef = io.StringIO()
+        with contextlib.redirect_stderr(_sef):
+            _flag_refusals[_f] = (main([f"--{_f}", "2/5"]), _sef.getvalue())
+    case("EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag",
+         {_f: (_rc, f"--{_f}" in _out and "CANNOT RUN" in _out)
+          for _f, (_rc, _out) in _flag_refusals.items()},
+         {_f: (2, True) for _f in SHARD_FLAGS})
+    case("...and there is more than one of them, so the loop above is not a one-element dressing",
+         len(SHARD_FLAGS) > 1, True)
+    # ⛔ THE EMPTY STRING, FOR EVERY FLAG — round 7 H1's other half. `""` is FALSY, so a truthiness
+    # test let a shard-shaped invocation through: `--self-test --shard ''` printed a clean suite
+    # result at rc 0. Third instance of one defect (round 1 reported it, round 5 fixed `main`'s
+    # `if a.shard:`, this is `shard_mode_refusal`'s).
+    # ⛔ AGREEMENT WITH argparse's OWN RULE, asked of argparse — round 7 codex Low. Asserting my
+    # belief about the normalisation would be a second implementation of it; this builds a throwaway
+    # parser with a HYPHENATED flag and checks the round trip, so the case fails if argparse ever
+    # normalises differently than `shard_dest` does.
+    def _roundtrip(_opt: str):
+        """-> the value argparse stored, looked up the way `main` looks it up.
+
+        ⛔ argparse CHOOSES the dest; `shard_dest` must agree with that choice. An earlier draft
+        passed `dest=shard_dest(_opt)`, so both sides read one function and the mutation survived.
+        ⚠ A miss is returned as a VALUE rather than raised, or the suite dies before printing
+        `[FAIL] <case>` — the same trap the length case fell into one fold ago.
+        """
+        _p = argparse.ArgumentParser(add_help=False)
+        _p.add_argument(f"--{_opt}", metavar="I/N")
+        try:
+            return getattr(_p.parse_args([f"--{_opt}", "2/5"]), shard_dest(_opt))
+        except Exception as exc:                  # noqa: BLE001 — round 8 L2
+            # ⚠ NOT just `AttributeError`. A `TypeError` from a malformed name would kill the suite
+            # before it printed `[FAIL] <case>`, making the mutation unattributable — the same trap
+            # the length case fell into two folds ago. Any failure becomes a VALUE here.
+            return f"MISSED — shard_dest disagrees with argparse ({type(exc).__name__})"
+
+    # ⛔ BOTH OF argparse's STEPS NEED AN INPUT THAT EXERCISES THEM — r8 codex High. `shard-x`
+    # round-trips identically with or without `lstrip("-")`, so the mutation deleting the strip
+    # SURVIVED (CI shard 2) while this case stayed green: the case did not test the behaviour its
+    # own entry names. A LEADING-hyphen key is the discriminating input — argparse sees the option
+    # `---shard-x` and names it `shard_x`, while replace-only yields `_shard_x`.
+    case("a hyphenated flag round-trips through `shard_dest` exactly as argparse names it",
+         (_roundtrip("shard-x"), _roundtrip("-shard-x")), ("2/5", "2/5"))
+    case("...and every shipped key survives the same normalisation",
+         tuple(shard_dest(_k) for _k in SHARD_FLAGS), tuple(SHARD_FLAGS))
+
+    # ── r8 CODEX LOW — a colliding key is a DECLARATION error and gets ONE sentence, not four
+    # different shapes. Measured before the guard: `mutate`/`compare` raised argparse's own
+    # "conflicting option string", `self_test` produced a nonsense refusal about `--self_test True`,
+    # and `plan` silently reddened an unrelated case.
+    def _collide(_key: str) -> str:
+        _saved = globals()["SHARD_FLAGS"]
+        globals()["SHARD_FLAGS"] = {"shard": _saved["shard"], _key: (False, "colliding")}
+        try:
+            # ⛔ `main([])`, NEVER `main(["--self-test"])` — the parser is built either way, but
+            # `--self-test` RE-ENTERS the suite currently running this case. It terminated only
+            # because the guard raises during construction; severing the guard recursed until the
+            # 150s timeout, measured. That is the same shape as the `--mutate .` defect fixed forty
+            # lines above — a case whose COST depends on the mutation it tests — and this one was
+            # written after that lesson. An empty argv builds the parser and refuses for want of a
+            # mode: cheap under every mutation.
+            main([])
+            return "NO ERROR"
+        except ValueError as exc:
+            return "refused" if f"{_key!r} collides" in str(exc) else f"wrong text: {exc}"
+        except Exception as exc:                  # noqa: BLE001 — the TYPE is the evidence
+            return f"{type(exc).__name__}"
+        finally:
+            globals()["SHARD_FLAGS"] = _saved
+
+    case("a SHARD_FLAGS key colliding with an existing option is refused by name — r8 codex Low",
+         tuple(_collide(_k) for _k in ("mutate", "compare", "self_test", "plan")),
+         ("refused",) * 4)
+
+    # ── ROUND 8 M1 — THE CLAIM, MADE CHECKABLE. "A third flag is one dict entry" was false: the
+    # dict covered argparse registration and the mode refusal, while exclusivity, parsing and
+    # zero-basedness were hand-written against `a.shard`/`a.shard0`. FIVE readers, not two. The
+    # reviewer's exhibit — add a key, watch the flag be accepted and never parsed — is the case.
+    # ⛔ AN EMPTY ROOT, NOT `.` — the rule stated forty lines below, which these two cases were
+    # written directly above and then broke. With `--mutate .` a mutation that severs either
+    # refusal makes these calls start THE REAL SWEEP inside one mutation's suite run:
+    # `SUITE_TIMEOUT`, recorded as NOT CHECKED rather than as a catch, and the whole shard voided.
+    # MEASURED — CI shards 1, 2 and 4 went red on `56eafeef` for exactly this. Over an empty root a
+    # severed refusal instead hits the count drift (rc 1, no suite), a DIFFERENT answer a case can
+    # read.
+    _third = dict(SHARD_FLAGS, shard2=(False, "a third key, added in-process"))
+    _saved_flags = globals()["SHARD_FLAGS"]
+    globals()["SHARD_FLAGS"] = _third
+    try:
+        with tempfile.TemporaryDirectory() as _emptyroot:
+            _se3 = io.StringIO()
+            with contextlib.redirect_stderr(_se3):
+                _rc_unparsed = main(["--mutate", _emptyroot, "--shard2", "garbage"])
+            _unparsed_out = _se3.getvalue()
+            _se4 = io.StringIO()
+            with contextlib.redirect_stderr(_se4):
+                _rc_both = main(["--mutate", _emptyroot, "--shard2", "1/8", "--shard", "1/8"])
+            _both_out = _se4.getvalue()
+    finally:
+        globals()["SHARD_FLAGS"] = _saved_flags
+    case("a flag added to SHARD_FLAGS is PARSED, not merely accepted — round 8 M1",
+         (_rc_unparsed, "not of the form I/N" in _unparsed_out), (2, True))
+    case("...and is mutually exclusive with the others, without being named anywhere — round 8 M1",
+         (_rc_both, "same control" in _both_out), (2, True))
+
+    case("an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1",
+         tuple(shard_mode_refusal("", None, flag=f"--{_f}") is not None for _f in SHARD_FLAGS),
+         tuple(True for _f in SHARD_FLAGS))
+    # ⚠ The digit run's LENGTH, not its alphabet — round 7 L1. `int()` refuses beyond 4300 digits,
+    # so an unbounded `[0-9]*` matched a string the conversion then raised on.
+    # ⚠ BOTH SIDES. The bound appears twice in the pattern, so a mutation may remove only one —
+    # asserting a long INDEX alone would leave a long TOTAL unguarded, which is the "two distinct
+    # inputs" rule applied to one expression.
+    # ⛔ AND IT MUST OBSERVE A RAISE RATHER THAN SUFFER ONE. The first draft asserted the RETURN
+    # VALUE, so removing the bound made `parse_shard` raise and the suite died BEFORE printing any
+    # `[FAIL] <case>` line: shard 6 reported `151 killed, 150 attributed` — killed by something, the
+    # clause proven by nothing. That is the hazard this function's own comment names twenty lines
+    # above, and the first draft walked into it. Converting the raise into a comparable value makes
+    # the case assert the docstring's actual promise — A SENTENCE AND A CANNOT RUN, NEVER A
+    # TRACEBACK — instead of only the happy path's return value.
+    def _parsed_or_raised(spec: str):
+        try:
+            return parse_shard(spec)[0]
+        except Exception as exc:                      # noqa: BLE001 — the TYPE is the evidence
+            return f"RAISED {type(exc).__name__}"
+
+    case("a digit run longer than the bound is REFUSED on either side, never raised — r7 L1",
+         (_parsed_or_raised("1" * 4301 + "/8"), _parsed_or_raised("1/" + "8" * 4301),
+          _parsed_or_raised("1/9999"), _parsed_or_raised("1/10000")),
+         (None, None, (1, 9999), None))
+    # ⛔ AN EMPTY ROOT, NOT `.`, AND THAT IS NOT TIDINESS. With `--mutate .` this case would run
+    # THE REAL SWEEP the moment the refusal below it is severed — eight minutes inside a
+    # self-test, and inside the mutation harness a `SUITE_TIMEOUT` CANNOT RUN, which is recorded
+    # as "not checked" rather than as a catch. Over an empty root the severed path instead hits
+    # the count drift (rc 1, no suite), which is a DIFFERENT answer a case can read.
+    with tempfile.TemporaryDirectory() as _td:
+        _se2 = io.StringIO()
+        with contextlib.redirect_stderr(_se2):
+            _rc_bad = main(["--mutate", _td, "--shard", "two/five"])
+        case("...and a malformed --shard refuses BEFORE any suite runs",
+             (_rc_bad, "not of the form I/N" in _se2.getvalue()), (2, True))
+    # ⛔ AND THE EMPTY SHARD EXITS 2, NOT 1. The count lives in the manifest, so this is the
+    # one refusal `main` cannot make from its arguments alone — and it must be a CANNOT RUN:
+    # rc 1 from this path would read as "a mutation survived" in a CI log, which is a verdict
+    # about code rather than the truth, which is that nothing was measured.
+    # ⚠ N=9 OVER A 2-ENTRY MANIFEST, so no suite can run either way: if this clause were
+    # severed the run would hit the count drift against the REAL `EXPECTED_MUTATIONS` and
+    # return 1 — a different number, which is what makes the case fail rather than hang.
+    with tempfile.TemporaryDirectory() as _td:
+        _re = pathlib.Path(_td); _mini(_re, second=True)
+        _se3 = io.StringIO()
+        with contextlib.redirect_stderr(_se3):
+            _rc_empty = main(["--mutate", str(_re), "--shard", "9/9"])
+        case("⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1",
+             (_rc_empty, "is EMPTY" in _se3.getvalue()), (2, True))
 
     # ── THE CONSUMER'S PARSE, pinned where it lives (r2 M2 + L1) ─────────────────────────
     case("the consumer reads a case name off a [FAIL] line",
@@ -3877,7 +4564,28 @@ def _self_test() -> int:
     # not a call at all. Per-instance entries cover the shapes someone enumerated; a driven `main`
     # covers the residue. `docs/reviews/architecture-review-2026-10-01.md`, and the precedent it
     # found already in this repo at `check-ci-watched.py:860`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1178)
+    # ⟳ 2026-10-05, backlog #217: 1178 -> 1193. +15 on THIS file, for the fifteen clauses of
+    # `--shard I/N`. A RISE is the ordinary direction; the sum moves in the same commit as the
+    # per-file count, because the two numbers are the only things that make coverage leaving
+    # visible, and a sum that follows later is a sum nobody can attribute.
+    # ⟳ 2026-10-05, PR #366 round 2 Medium: 1196 -> 1198, one entry each for
+    # `check-rc-contract` (15 -> 16) and `check-surface-recall` (19 -> 20). Both sever the
+    # SAME constant in their own file — the allowlist that was dropping
+    # `PYTHONDONTWRITEBYTECODE` — and each dies via its own file's property case, because
+    # `run_suite` runs only the mutated file's suite (:1879). The figure is the guard's own,
+    # taken from its failure message.
+    # ⟳⟳ 2026-10-06, round 4 fold: 1198 -> 1200, a SECOND entry each (16 -> 17, 20 -> 21) on the
+    # CALL SITE rather than the constant — round 3 proved the constant's value says nothing about
+    # whether the production line reads it. ⚠ ROUND 5's M2 is that the line above said "one entry
+    # each" after the manifests carried two, and cited `:808` — a comment RESTATING the rule — for
+    # a claim produced by `rc, out = run_suite(d, fname)` at `:1879`. Both corrected here.
+    # ⟳⟳⟳ 2026-10-06, round 6 L1/L2/M1: 1200 -> 1203, three entries on `check-plan-code`
+    # (95 -> 98) — the digit class reverting to UNICODE-WIDE `\d`, leading zeros being
+    # accepted again, and the zero-based conversion being dropped. ⚠ The second and third
+    # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
+    # refusal keys on exact tuple equality of the find-strings, and it refused the first
+    # draft. The figure is the guard's own, read from its failure message.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1211)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -4005,11 +4713,45 @@ def main(argv: list[str]) -> int:
                     help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
                          "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
                          "the mode that makes the evidence about the code that ships.")
+    # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
+    # declaration; this loop and the mode check in `main` are its only two readers.
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
                          "of the code and says nothing about the delivered scripts.")
+    # ⚠ LAST, DELIBERATELY — the collision check above can only see options already
+    # registered, and `--compare` is declared below the old position, so a key named
+    # `compare` slipped past it into argparse's own "conflicting option string".
+    # ⛔ A COLLIDING KEY IS A DECLARATION ERROR AND MUST SAY SO ONCE — r8 codex Low. Measured:
+    # `mutate`/`compare` raised argparse's own "conflicting option string"; `self_test` produced the
+    # nonsense sentence "--self_test True only means something with --mutate ROOT"; `plan` silently
+    # reddened an unrelated case. Four failure shapes for one mistake, none of them naming it.
+    _taken = ({_a.dest for _a in ap._actions}
+              | {_s.lstrip("-") for _a in ap._actions for _s in _a.option_strings})
+    for _opt, (_zero, _help) in SHARD_FLAGS.items():
+        if shard_dest(_opt) in _taken or _opt in _taken:
+            raise ValueError(
+                f"SHARD_FLAGS key {_opt!r} collides with an option this parser already defines "
+                f"(dest {shard_dest(_opt)!r}). Rename the key — this is a declaration error in "
+                f"this file, not user input.")
+        # ⛔ NO EXPLICIT `dest=` — ROUND 7 CODEX LOW, SECOND ATTEMPT. Passing
+        # `dest=shard_dest(_opt)` made BOTH consumers read the same function, so severing it
+        # changed nothing on either side: the mutation SURVIVED (shard 8, 150 of 151) and the
+        # case could not fail. It was also wrong on its own terms — an explicit hyphenated
+        # dest names the attribute `shard-x`, which no ordinary attribute access can reach.
+        # Letting argparse normalise makes `shard_dest` MATCH an external rule rather than
+        # define its own, which is what makes the agreement checkable at all.
+        ap.add_argument(f"--{_opt}", metavar="I/N", help=_help)
     a = ap.parse_args(argv)
+    # ⛔ BEFORE EVERY MODE, --self-test INCLUDED. `--self-test` used to return here first, so a
+    # meaningless shard rode through as a clean exit 0 — see `shard_mode_refusal`.
+    # ⚠ Asked of EVERY dest in `SHARD_FLAGS`, never of one by name — round 7 H1.
+    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,
+                                                       flag=f"--{_f}")
+                                    for _f in SHARD_FLAGS) if _w), None)
+    if _mode_why:
+        print(_mode_why, file=sys.stderr)
+        return 2
     if a.self_test:
         return _self_test()
     # ⛔ PLAN MODE IS RETIRED (2026-09-08). Decided by the user after four adversarial review
@@ -4047,15 +4789,64 @@ def main(argv: list[str]) -> int:
               f"`--mutate .`, which reads the delivered scripts rather than a copy of them. "
               f"See PR #176. Treat this as NOT CHECKED.", file=sys.stderr)
         return 2
+    # ⛔ THE SHARD IS RESOLVED BEFORE ANY SUITE RUNS, and every bad value is rc 2 (CANNOT RUN).
+    # `--shard` alone changes nothing about the subject measured — there is no mode for it to
+    # modify — so accepting it silently would let a CI matrix run N whole-manifest sweeps while
+    # its log said "shard 3 of 5".
+    shard = None
+    # ⛔ `is not None`, NOT truthiness — ROUND 1 L1, RE-FOUND IN ROUND 5 AND STILL UNFIXED.
+    # `--shard ""` is FALSY, so under `if a.shard:` the refusal below was UNREACHABLE for it and
+    # the run swept the WHOLE manifest. `parse_shard("")` has always refused it; nothing ever
+    # called parse_shard. Not a false green — the verdict line does say `the WHOLE manifest` — and
+    # unreachable from CI, whose nearest shape `1/` IS refused. Fixed anyway because the refusal
+    # existed and was simply not consulted, which costs one character to put right.
+    # ⛔ EXCLUSIVITY AND PARSING ARE DERIVED TOO — ROUND 8 M1. These were three hand-written
+    # branches naming `a.shard` and `a.shard0`, so `SHARD_FLAGS` covered argparse registration and
+    # the mode refusal and NOTHING ELSE. Measured: adding a third key gave a flag that refused
+    # correctly under `--self-test` and was then NEVER PARSED — no empty-shard refusal, no mutual
+    # exclusion. The comment claimed "a third flag is one dict entry, and disagreement is
+    # IMPOSSIBLE"; there were FIVE readers, not the two it named. Deriving all of them is what
+    # makes that sentence a fact instead of a promise — and it deletes three branches rather than
+    # adding a fourth.
+    _given = [(_f, getattr(a, shard_dest(_f))) for _f in SHARD_FLAGS
+              if getattr(a, shard_dest(_f)) is not None]
+    if len(_given) > 1:
+        print(f"CANNOT RUN — {', '.join('--' + _f for _f, _ in _given)} are the same control with "
+              f"different bases; pass one. NOTHING WAS MEASURED. Treat this as NOT CHECKED.",
+              file=sys.stderr)
+        return 2
+    if _given:
+        # The mode refusal already ran at the top of `main`, before any mode dispatched.
+        _f, _val = _given[0]
+        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f"--{_f}")
+        if why:
+            print(why, file=sys.stderr)
+            return 2
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
             print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
                   file=sys.stderr)
             return 2
+        # ⛔ WHETHER THE SHARD IS EMPTY IS A FACT ABOUT THE MANIFEST, so it is the one refusal
+        # that cannot be made from the arguments — hence the extra `load_manifests`, which is
+        # file reads and no suite. It is asked HERE rather than read back out of
+        # `mutate_delivered` because that function's refusals are VERDICTS (rc 1), and rc 1 from
+        # an empty shard reads as "a mutation survived" when the truth is that nothing ran.
+        # `mutate_delivered` refuses it too, for any other caller; this is the exit code.
+        # ⚠ ONLY WHEN THE MANIFEST ITSELF LOADS. Over a broken manifest `len(muts)` is a
+        # shortfall, and "shard 4 of 4 is empty" would then be a confident answer to the wrong
+        # question — the manifest's own problems belong to `mutate_delivered`'s report.
+        if shard is not None:
+            _muts, _problems = load_manifests(mroot)
+            why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))
+            if why:
+                print(why, file=sys.stderr)
+                return 2
         # THE ONE PLACE THE REPORTER IS SUPPLIED. Everything below `mutate_delivered` defaults
         # to silence, so a nested run cannot write into the stream its parent reads.
-        ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress)
+        ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
+                                               shard=shard)
         for r in report:
             print(f"  \u2717 {r}")
         # BACKLOG #93, AND ITS ANSWER CHANGED - READ THIS BEFORE RE-ADDING A DIFFERENCE.
@@ -4089,7 +4880,7 @@ def main(argv: list[str]) -> int:
         # rather than the gate: the gate is defended by the type; the refusal is the part a
         # one-line edit can still get wrong quietly.
         if isinstance(verdict, Measured):
-            print(tally_line(ok, verdict))
+            print(tally_line(ok, verdict, shard))
         else:
             # NO tally — and that includes the FILE count. On a control-failure run
             # `ev["files"]` holds the CONTROL runs, so "7 file(s)" asserts work that measured
@@ -4100,7 +4891,7 @@ def main(argv: list[str]) -> int:
             # line above — printing "(162 of 162 … produced a verdict)" next to "produced no
             # coverage verdict" contradicts itself. Measured 2026-09-03: the first run of
             # F2-S4 emitted exactly that sentence.
-            print(not_measured_line(verdict))
+            print(not_measured_line(verdict, shard))
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
     # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts

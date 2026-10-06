@@ -163,5 +163,27 @@
       ]
     ],
     "expect": "a hook that writes to STDERR is a cannot-run, never silence \u2014 round 7 H2"
+  },
+  {
+    "name": "the subprocess env allowlist drops PYTHONDONTWRITEBYTECODE, so a scrubbed spawn writes a bytecode cache inside the staged tree again (r2 Medium, PR #366)",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\", \"PYTHONDONTWRITEBYTECODE\")",
+        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")"
+      ]
+    ],
+    "expect": "the env the scrub hands the production spawn carries PYTHONDONTWRITEBYTECODE \u2014 r4 Medium"
+  },
+  {
+    "name": "the CALL SITE stops consulting the allowlist constant and inlines a hand-copy without PYTHONDONTWRITEBYTECODE \u2014 round 8 H1's original defect, which r2's constant-only property left green (r3 Medium, PR #366)",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "            _env = {k: v for k, v in os.environ.items() if k in SUBPROCESS_ENV_KEYS}",
+        "            _env = {k: v for k, v in os.environ.items() if k in (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")}"
+      ]
+    ],
+    "expect": "the env the scrub hands the production spawn carries PYTHONDONTWRITEBYTECODE \u2014 r4 Medium"
   }
 ]
