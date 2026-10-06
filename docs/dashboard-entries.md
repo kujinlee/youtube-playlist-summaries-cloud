@@ -13565,3 +13565,40 @@ a 5.1× timeout margin from `ci.yml`'s recorded 353 s; the measured shards at `a
 **1.39×**, against the PR body's predicted 1.15× — the contiguous comparison (17.9×) still holds.
 Filed as **#231**: after PR #365 lands, the margin becomes ~1.9×, and the lever then is **N**, not
 the timeout, because the ~153 s control floor does not divide by N.
+
+## 2026-10-06
+A guard added yesterday to stop one mistake could be walked through by a different value of the same
+kind. It checked that the shard number was made of digits, and assumed digits meant safe — but the
+shell's arithmetic has a fixed size, so a long enough number silently wraps around to 1 and every
+job would have measured the same eighth of the work while all of them reported success. That is the
+exact failure the guard was added to prevent, reached through the guard instead of around it. The
+arithmetic now happens somewhere that cannot wrap.
+
+<!--tech-->
+**Round 5 Codex half: one Low, caused by this fold's own L2 guard.** Its premise — that `[0-9]+` is a
+safe Bash arithmetic input — is false:
+
+    SHARD_INDEX=18446744073709551616   class check ACCEPTS -> $((I+1)) wraps -> 1 -> spec 1/8
+    SHARD_INDEX=08                     bash: "value too great for base"  (leading zero = octal)
+    SHARD_INDEX=3x                     refused, but the message claimed bash reads it as 0 — it errors
+
+⛔ **A character class cannot bound a value.** The computation moves out of Bash: a Python parser
+validates both names as canonical decimal integers in `0..4096`, rejects leading zeros and
+whitespace, checks `0 <= I < N`, and prints the spec. Bash now does no arithmetic at all, so the
+overflow class is removed rather than narrowed. The error message no longer asserts a mechanism that
+is only sometimes true.
+
+Measured through the SHIPPED block, as bash receives it after YAML's dedent — ten inputs:
+
+| input | result |
+|---|---|
+| `0`, `7` (N=8) | `1/8`, `8/8` — accepted |
+| `""`, `abc`, `3x`, `08`, `" 0"` | rc=2 CANNOT RUN |
+| `18446744073709551616` | rc=2 — **was accepted and wrapped to 1 before** |
+| `I=8` with `N=8`, and `N=0` | rc=2 — index/total bounds |
+
+⚠ **I put the PR red myself in between.** I committed round 5's Claude half without its Codex
+partner, and `check-review-rounds` refused it — *"round 5: only claude"*. Exactly one step failed;
+all 8 shards, the aggregator and `schema-gates` were green throughout. I had deliberately held the
+review file back for rounds 3 and 4 for this reason and dropped the habit when the commit got large.
+Both halves land together here.
