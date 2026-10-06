@@ -13897,9 +13897,47 @@ confirmed is a true positive and the only red:
   dest escape it — *the repair reproducing a narrower instance of what it repaired*
 - **#234** a comment repairing a "two readers" claim left a fresh one (four readers at HEAD). ⚠ Found
   while writing an explainer, **after nine rounds had passed over it**
-- **#235** the home-escape scan is the one global check riding only on the non-required matrix
+- **#235** ⟳ **TWO** global checks ride only on the non-required matrix — the home-escape scan **and anchor resolution**. This line said "the one"; round 10 found the row false about its own subject, and the half it missed is the one an *ordinary refactor* trips (this PR orphaned six anchors across rounds 6–8). Raised to 🟠
 
 **Fixed, because prose is free under the freeze:** the PR body's corrections table said declared sum
 `1200` and self-test `161`; actual **1211** and **178**. ⛔ That table was round 5's correction,
 corrected by round 7, and stale again by round 9 — **a number written into prose has no owner**. It
 now carries the commands that produce the figures **as well as** the figures. ⟳ *Round 10: this sentence said "instead of", and the table carries both — a claim about a correction that was itself slightly false, which is the fourth generation of this exact site.*
+
+## 2026-10-06 [needs-you]
+**Converged.** Two review rounds in a row found nothing wrong with the thing being shipped, which is
+the condition this project uses to stop reviewing. Ten rounds, twenty reviews. The change itself —
+splitting the slowest safety check across eight parallel jobs so it finishes in minutes instead of
+being killed at thirty — has been correct since round one; everything after that was about the
+apparatus that measures it, and about notes that no longer matched the code.
+
+**What needs you:** after this merges, one setting has to be changed by hand in GitHub. Round 9
+established that doing it is *safe*, which nothing had previously confirmed.
+
+<!--tech-->
+**Rounds 9 and 10: both clean, both halves each. CONVERGED on `review-method.md:110`.**
+
+Zero Blocking, zero High, **zero findings in the deliverable at any severity across four consecutive
+review halves**. Round 10's Codex half: *"Should this merge? **Yes**, after current-head CI finishes
+green and this Codex half is filed … no code or tracked-file change is required first."*
+
+**What round 10 actually bought, none of it in the deliverable:**
+
+| | |
+|---|---|
+| **#235 was false about its own subject** | it called the home-escape scan *"the one item with no second home"* in `verify`. **Anchor resolution is a second** — `load_manifests` reads JSON only and never opens a delivered source, so `--self-test` cannot resolve an anchor; resolution lives at `run_mutations:1952`/`:1962`, reachable only from `--mutate`. ⭐ And the row's Low bound **does not transfer**: a home-escape needs a deliberate edit that survives review, while **an orphaned anchor comes from an ordinary refactor** — this PR orphaned six across rounds 6–8. As written the row would have been *closed* by fixing the easy half. Raised to 🟠, both halves named in the fix |
+| **a new staleness shape** | the corrections table carried the **right figures against the wrong build** — `"Actual at ece8d309"` beside 1211/178, where the actuals were 1200/161. The figure was fixed an hour earlier and the provenance was not |
+| **a gate that cannot see modifications** | round 9's committed review doc had been edited in the working tree (+30/−2). `check-review-recorded.py:1251` is `--diff-filter=A`, so a review document **modified** after being added is never re-examined |
+
+**Exhaustively refuted, not assumed:** eight GitHub states tried for a green-PR-over-unmeasured-work
+(cancelled, skipped, timeout, failed, aggregator-only rerun, one-job rerun, missing aggregator,
+missing `ffmpeg`) — none reachable; the partition union-complete and pairwise disjoint at ten values
+of N with the empty-shard refusal at exactly 1212; eight distinct shards read from the job logs; and
+`verify`'s old coverage enumerated item by item against the matrix, finding **no third** item without
+a second home.
+
+**⛔ THE SETTING, and why it is now known safe.** Add `mutation-sweep-complete` to
+`required_status_checks.contexts` for `master` **after** this merges, never before. Required contexts
+today are `["verify","schema-gates"]`. ✅ `ci.yml` carries **no `paths:` filter**, so that context
+always reports on a PR to master — it therefore **cannot** recreate #137's pending-forever shape.
+Nine rounds warned about the danger; round 9 was the first to establish why it is clear.
