@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 160 cases
+    python3 scripts/check-plan-code.py --self-test          # 161 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -257,7 +257,19 @@ def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
             continue
         dst = dest / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst)
+        # ⛔ NEVER CARRY A BYTECODE CACHE INTO THE STAGED TREE. `PYTHONDONTWRITEBYTECODE`
+        # closes only the WRITE half of this race: it stops THIS run creating a cache, and says
+        # nothing about one that arrives already made. `copytree` uses `copy2`, which preserves
+        # mtime and size — the exact pair Python validates a cache against — so a `.pyc` that
+        # looks current in the repository looks current in the staged tree too.
+        #
+        # ⭐ MEASURED, round 2 of backlog #217, ON THE TREE THAT SHIPPED WITH THE ENV FIX IN
+        # FORCE: the repo's `scripts/__pycache__/` is 89 files and 55 of the 57 mutation targets
+        # already have one there. Planting a mutant `observer_log` cache whose (mtime, size)
+        # match the untouched source — the `"a"` -> `"w"` swap is LENGTH-PRESERVING, so this is
+        # not contrived — reproduced H1 exactly: `check-banner-armed.py` rc=1, 155/160, the same
+        # five case names CI had reported. The env line alone was half a fix.
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
     return problems
 
 
@@ -1020,7 +1032,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 94,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 95,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -3795,24 +3807,50 @@ def _self_test() -> int:
          shard_mode_refusal("2/8", "."), None)
     case("...and no shard at all is never refused, whatever the mode",
          (shard_mode_refusal(None, None), shard_mode_refusal(None, ".")), (None, None))
-    # ⛔ ROUND 1, H1, THE ACTUAL CAUSE — and the two fixes before it were aimed at the wrong
-    # directory. A mutant compiled to `scripts/__pycache__/*.pyc` OUTLIVES the source restore,
-    # because Python validates its cache on the source's (mtime, size) and a restore inside one
-    # mtime tick looks current. The next import gets the MUTANT. Measured: a mutation of
-    # `observer_log.py` broke five cases of `check-banner-armed.py`, which imports it, in the
-    # AFTER-control — so the shard reported NOT MEASURED over work that was fine.
+    # ⛔ ROUND 1 H1 + ROUND 2 H1 — AND THE SECOND EXISTS BECAUSE THE FIRST CASE ASSERTED THE
+    # MECHANISM. A mutant compiled to `__pycache__` outlives the restore of its own source:
+    # Python validates a cache on the source's (mtime, size), and a restore inside one mtime
+    # tick still looks current, so the next importer gets the MUTANT. `check-banner-armed.py`
+    # imports `observer_log`, which is how five of its cases failed in an AFTER-control.
+    #
+    # ⛔ THE RACE HAS TWO HALVES AND THE FIRST FIX CLOSED ONE. `PYTHONDONTWRITEBYTECODE` stops
+    # this run WRITING a cache; it says nothing about READING one that arrived already made.
+    # `stage_tree` used `copytree` with no `ignore=`, and `copy2` preserves mtime and size — the
+    # exact pair Python checks — so the repository's own 89-file `scripts/__pycache__/` was
+    # copied in looking current. Round 2 reproduced the original symptom on the tree that had
+    # "fixed" it, down to the same five case names.
+    #
+    # ⭐ THE FIRST CASE HERE ASSERTED TWO DICT LOOKUPS UNDER A SENTENCE CLAIMING A PROPERTY, so
+    # it passed over a tree where the property was false. These assert the PROPERTY: stage a
+    # tree that HAS a cache, and demand the staged copy has none.
+    with tempfile.TemporaryDirectory() as _cd, tempfile.TemporaryDirectory() as _cd2:
+        _fake = pathlib.Path(_cd)
+        for _rel in HARNESS_TREE:
+            (_fake / _rel).mkdir(parents=True, exist_ok=True)
+        (_fake / "scripts" / "__pycache__").mkdir(parents=True, exist_ok=True)
+        (_fake / "scripts" / "__pycache__" / "poisoned.cpython-314.pyc").write_bytes(b"\x00mutant")
+        (_fake / "scripts" / "keep.py").write_text("x = 1\n")
+        _out = pathlib.Path(_cd2) / "staged"
+        _problems = stage_tree(_fake, _out)
+        case("⛔ no bytecode cache reaches a staged tree — the source is copied, the compiled "
+             "artefact is not, or a mutant .pyc arrives looking current and the next importer "
+             "silently gets it",
+             (_problems,
+              [str(f.relative_to(_out)) for f in _out.rglob("*.pyc")],
+              (_out / "scripts" / "keep.py").read_text()),
+             ([], [], "x = 1\n"))
     with tempfile.TemporaryDirectory() as _bd, tempfile.TemporaryDirectory() as _bd2:
-        # ⚠ TWO DISTINCT DIRECTORIES, not one. `child_env`'s whole job is to derive paths FROM
-        # its argument, so a suite that only ever hands it one value cannot tell the function
-        # from a constant — `check-fixture-variation.py` refuses exactly that, and refused this
-        # case's first draft.
+        # ⚠ TWO DISTINCT DIRECTORIES. `child_env` derives its paths FROM its argument, so a
+        # suite handing it one value cannot tell it from a constant — `check-fixture-variation`
+        # refused this case's first draft for exactly that.
         _e1, _e2 = child_env(pathlib.Path(_bd)), child_env(pathlib.Path(_bd2))
-        case("⛔ every suite the harness spawns runs with the bytecode cache OFF, or a mutant "
-             "outlives the restore of its own source and the next importer silently gets it",
+        case("...and the other half of the race: no suite the harness spawns may WRITE a cache "
+             "either, or this run poisons the next one",
              (_e1.get("PYTHONDONTWRITEBYTECODE"), _e2.get("PYTHONDONTWRITEBYTECODE")),
              ("1", "1"))
         case("...and the redirected home is derived from the directory it is given, so the two "
              "trees cannot share one home", _e1["HOME"] == _e2["HOME"], False)
+
     case("the slice is named when there is no shard", shard_label(None), "the WHOLE manifest")
     case("...and it is named I of N, in that order, when there is one",
          shard_label((2, 5)), "shard 2 of 5 (round-robin)")
@@ -4267,7 +4305,7 @@ def _self_test() -> int:
     # `--shard I/N`. A RISE is the ordinary direction; the sum moves in the same commit as the
     # per-file count, because the two numbers are the only things that make coverage leaving
     # visible, and a sum that follows later is a sum nobody can attribute.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1195)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1196)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

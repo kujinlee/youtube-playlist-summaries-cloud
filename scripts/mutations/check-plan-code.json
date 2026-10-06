@@ -1157,5 +1157,16 @@
       ]
     ],
     "expect": "⛔ every suite the harness spawns runs with the bytecode cache OFF, or a mutant outlives the restore of its own source and the next importer silently gets it"
+  },
+  {
+    "name": "#217 r2: the staged tree carries the repo's __pycache__ in, so a mutant .pyc arrives looking current",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shutil.copytree(src, dst, ignore=shutil.ignore_patterns(\"__pycache__\"))",
+        "        shutil.copytree(src, dst)"
+      ]
+    ],
+    "expect": "⛔ no bytecode cache reaches a staged tree — the source is copied, the compiled artefact is not, or a mutant .pyc arrives looking current and the next importer silently gets it"
   }
 ]
