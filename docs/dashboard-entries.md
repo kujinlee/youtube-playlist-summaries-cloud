@@ -13602,3 +13602,40 @@ partner, and `check-review-rounds` refused it — *"round 5: only claude"*. Exac
 all 8 shards, the aggregator and `schema-gates` were green throughout. I had deliberately held the
 review file back for rounds 3 and 4 for this reason and dropped the habit when the commit got large.
 Both halves land together here.
+
+## 2026-10-06
+The same small piece of logic has now been wrong three times running, and the reason turned out to
+be where it lived rather than how it was written. It sat in the build configuration file, which
+nothing in this project tests — no checks run against it, so each wrong version passed everything.
+It has been moved into the program, where the tests are. The configuration file now just passes two
+values along and decides nothing.
+
+<!--tech-->
+**Round 6 (Claude half), folded. Three findings, one cause.** The `SHARD_INDEX` guard shipped wrong
+in three consecutive rounds with every gate green:
+
+    v1  no I-side check          -> an absent index became a valid shard 1; all N jobs one slice,
+                                    all green                        (r1 M2a, r5 L2)
+    v2  bash `case` on [!0-9]    -> bash arithmetic is FIXED WIDTH; 18446744073709551616 wrapped
+                                    to 1                              (r5 codex Low)
+    v3  Python `isdigit()`       -> UNICODE-WIDE; `٠` (U+0660) became shard 1 of 8, and ASCII
+                                    leading zeros (`00/8`) were accepted too   (r6 L1)
+
+⭐ **M1 is the finding that explains the other three.** `grep -rln SHARD_INDEX` over
+`scripts/ tests/ .claude/` returned **nothing** — a workflow `run:` block has no self-test, no
+mutation entry and no caller, and `check-ratchet-contract`'s population is `scripts/*.{py,sh}` plus
+`.claude/hooks/*`, **never** `.github/workflows/`. Every version of the rule was unmeasurable by
+construction. Same shape as backlog #229, one layer out.
+
+**The fix moves the rule to where the tests are.** `--shard0` takes the 0-based index a CI matrix
+provides; the `0 -> 1` conversion happens inside `parse_shard`, which has a suite, mutation entries
+and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+
+| | |
+|---|---|
+| **L2** | `SHARD_SPEC` was `^(\d+)/(\d+)$` — Python's `\d` is Unicode-wide too, so `parse_shard("1/٨")` returned `(1, 8)`. Now `^(0\|[1-9][0-9]*)/(0\|[1-9][0-9]*)$` |
+| **L3** | 128 code points pass `isdigit()` while `int()` RAISES — a traceback the function's own docstring forbids. Now structurally impossible: every matching string is `int()`-able |
+| **falsifier** | `1/٨`, `٠/8`, `１/8`, `²/8`, `00/8`, `08/8`, `01/8` all refuse; `0/8`→`1/8`, `7/8`→`8/8`, `8/8` refused; both flags together refused |
+| **counts** | self-test `161 → 168`; `check-plan-code` manifest `95 → 98`; declared sum `1200 → 1203` |
+| **measured** | shards 1, 2 and 3 — which carry the three new entries — each **151 killed, 151 attributed, 0 survivors** |
+| **anchors** | **1,211**, 0 unresolved. ⚠ Two pre-existing entries were orphaned by the message change and retargeted with their subject intact |

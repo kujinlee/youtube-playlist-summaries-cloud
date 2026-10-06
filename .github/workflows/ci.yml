@@ -693,29 +693,22 @@ jobs:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
         run: |
-          # ⛔ THE ARITHMETIC IS NOT BASH'S — ROUND 5 CODEX LOW, AND IT REFUTED THIS GUARD'S FIRST
-          # SHAPE. That version checked the CHARACTER CLASS (`*[!0-9]*`) and assumed all-digits
-          # meant arithmetic-safe. Bash arithmetic is FIXED WIDTH, so `18446744073709551616`
-          # passed the class check and `$((SHARD_INDEX + 1))` wrapped to **1** — reproducing the
-          # all-jobs-alias-to-shard-1 failure the guard exists to prevent, THROUGH the guard
-          # rather than around it. `08` was worse than useless: bash reads a leading zero as
-          # octal and errors "value too great for base". A class cannot bound a value; a parser
-          # can, so the computation moves to Python and bash does no arithmetic at all.
-          SPEC=$(python3 -c '
-          import os, sys
-          def one(name):
-              v = os.environ.get(name, "")
-              if not v.isdigit() or (len(v) > 1 and v.startswith("0")) or int(v) > 4096:
-                  sys.exit(f"CANNOT RUN — {name} is {v!r}, which is not a canonical decimal "
-                           f"integer in 0..4096. NOTHING WAS MEASURED; treat this as NOT CHECKED.")
-              return int(v)
-          i, n = one("SHARD_INDEX"), one("SHARD_TOTAL")
-          if n < 1 or i >= n:
-              sys.exit(f"CANNOT RUN — SHARD_INDEX={i} is not a valid 0-based index into "
-                       f"SHARD_TOTAL={n}. NOTHING WAS MEASURED.")
-          print(f"{i + 1}/{n}")
-          ') || exit 2
-          python3 scripts/check-plan-code.py --mutate . --shard "$SPEC"
+          # ⛔ NO LOGIC LIVES HERE ANY MORE — ROUND 6 M1, AND IT IS WHY THIS ONE GUARD SHIPPED
+          # WRONG IN THREE CONSECUTIVE ROUNDS WITH EVERY GATE GREEN. `grep -rln SHARD_INDEX` over
+          # `scripts/ tests/ .claude/` returned NOTHING: a `run:` block has no self-test, no
+          # mutation entry and no caller, and `check-ratchet-contract`'s population is
+          # `scripts/*.{py,sh}` plus `.claude/hooks/*` — never `.github/workflows/`. So every
+          # version of the rule written here was unmeasurable by construction:
+          #   v1  no I-side check at all -> an absent index became a valid shard 1, all N jobs
+          #       measuring one slice and all reporting green      (round 1 M2a, round 5 L2)
+          #   v2  a bash `case` on `*[!0-9]*` -> bash arithmetic is FIXED WIDTH, so
+          #       18446744073709551616 wrapped to 1                (round 5 codex Low)
+          #   v3  a Python parser using `isdigit()` -> UNICODE-WIDE, so `٠` became shard 1
+          #                                                        (round 6 L1)
+          # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
+          # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+          python3 scripts/check-plan-code.py --mutate . \
+            --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
 
   mutation-sweep-complete:
     # ⭐ ONE CONTEXT TO REQUIRE, WHOSE NAME DOES NOT MOVE WHEN N DOES. A matrix reports N
