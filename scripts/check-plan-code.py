@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 168 cases
+    python3 scripts/check-plan-code.py --self-test          # 169 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1037,7 +1037,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 98,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 99,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1569,7 +1569,14 @@ def parse_shard(spec: str, *, zero_based: bool = False,
     shard 5 of 4, and any shard of zero shards. Writing them as three clauses would be three
     chances to get the boundary wrong, and the composite is exactly as decidable.
     """
-    m = SHARD_SPEC.match(spec.strip())
+    # ⛔ `fullmatch`, AND NO `.strip()` — ROUND 6 CODEX LOW. `.match()` anchored with `$` still
+    # accepts a TRAILING NEWLINE (`$` matches before one), and `.strip()` silently accepted
+    # surrounding whitespace — so `" 1/8"`, `"1/8 "` and `"1/8\n"` all parsed, and the accept
+    # set was not the canonical one this pattern advertises. Measured: `match("1/8\n")` is
+    # True and `fullmatch("1/8\n")` is False. ⚠ That matters at the CI seam specifically,
+    # where the value arrives by shell interpolation and a stray newline is the likeliest
+    # possible contaminant — the fourth distinct way this one rule has been too wide.
+    m = SHARD_SPEC.fullmatch(spec)
     # ⚠ PARSED BEFORE EITHER ARM REFUSES, AND THAT ORDER IS FOR THE MUTATION SPACE. A
     # validation clause whose job is to prevent a crash cannot be severed without producing the
     # crash — and a mutation that kills the suite before it prints `[FAIL] <case>` is read as
@@ -3822,6 +3829,12 @@ def _self_test() -> int:
     case("...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps",
          (parse_shard("00/8")[0], parse_shard("08/8")[0], parse_shard("01/8")[0]),
          (None, None, None))
+    case("...and so is whitespace, including a TRAILING NEWLINE — round 6 codex Low. `$` matches "
+         "before a final newline and `.strip()` swallowed the rest, so the canonical claim was "
+         "false at its own boundary; the CI seam interpolates a shell value, where a stray "
+         "newline is the likeliest contaminant",
+         (parse_shard(" 1/8")[0], parse_shard("1/8 ")[0], parse_shard("1/8\n")[0],
+          parse_shard("1/8\t")[0]), (None, None, None, None))
 
     # ── ROUND 6 M1 — the 0->1 conversion lives HERE, where a suite can see it. Three versions of
     # this rule shipped inside a workflow `run:` block, which has no self-test, no mutation entry
@@ -4376,7 +4389,7 @@ def _self_test() -> int:
     # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
     # refusal keys on exact tuple equality of the find-strings, and it refused the first
     # draft. The figure is the guard's own, read from its failure message.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1203)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1204)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

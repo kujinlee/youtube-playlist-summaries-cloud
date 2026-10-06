@@ -13639,3 +13639,44 @@ and ratchet coverage. The workflow interpolates two strings and asserts nothing.
 | **counts** | self-test `161 → 168`; `check-plan-code` manifest `95 → 98`; declared sum `1200 → 1203` |
 | **measured** | shards 1, 2 and 3 — which carry the three new entries — each **151 killed, 151 attributed, 0 survivors** |
 | **anchors** | **1,211**, 0 unresolved. ⚠ Two pre-existing entries were orphaned by the message change and retargeted with their subject intact |
+
+## 2026-10-06
+Fourth and final correction to the same small rule: it still accepted a value with a stray space or
+newline around it, which matters because that value arrives from the build system as text and a
+stray newline is the most likely way it could be malformed. The rule now accepts exactly what it
+says it accepts.
+
+<!--tech-->
+**Round 6 Codex half: one Low, folded.** `parse_shard` used `SHARD_SPEC.match(spec.strip())`, so the
+canonical claim was false at its own boundary:
+
+    parse_shard(" 1/8")  -> (1, 8)      parse_shard("1/8 ")   -> (1, 8)
+    parse_shard("1/8\n") -> (1, 8)      --shard0 "0/8\n"      -> (1, 8)
+
+⚠ `$` matches **before** a trailing newline, so anchoring was not enough; `.strip()` swallowed the
+rest. Measured: `match("1/8\n")` is True, `fullmatch("1/8\n")` is False. Now `fullmatch`, no
+`strip()` — 22 exhibits checked, all correct.
+
+**The fourth distinct way this one rule was too wide**, and the fourth fix:
+
+| v | rule | too wide because |
+|---|---|---|
+| v1 | no I-side check | absent index → valid shard 1; all N jobs one slice, all green |
+| v2 | bash `case` on `*[!0-9]*` | bash arithmetic is fixed-width → `18446744073709551616` wrapped to 1 |
+| v3 | Python `isdigit()` | Unicode-wide → `٠` became shard 1/8; ASCII `00/8` accepted |
+| v4 | canonical regex + `.match(strip())` | `$` matches before `\n`; `.strip()` ate whitespace |
+| **v5** | `fullmatch`, no `strip`, in `parse_shard` | — |
+
+**What round 6's Codex half verified by RUNNING rather than reading:** `--shard0 i/N` selects the
+same slice as `--shard (i+1)/N` at N=3 and N=8; the both-flags refusal returns 2 before doing work;
+the workflow retains no arithmetic, validation or embedded interpreter; and `check-python-pin.py`
+still covers `mutation-sweep` — **earned** by deleting that job's `setup-python` on a temp archive
+and confirming the guard went red naming `ci.yml:mutation-sweep`. It also confirmed the two
+retargeted anchors load once (positions 473/474, shards 1 and 2) and still measure their original
+subjects.
+
+| | |
+|---|---|
+| counts | self-test `168 → 169`; `check-plan-code` manifest `98 → 99`; declared sum `1203 → 1204` |
+| measured | shards 1–4 each **151 killed, 151 attributed, 0 survivors** |
+| anchors | **1,212**, 0 unresolved |

@@ -1201,5 +1201,16 @@
       ]
     ],
     "expect": "--shard0 is ZERO-based: index 0 is shard 1"
+  },
+  {
+    "name": "the shard spec is matched loosely again \u2014 `.match()` with `.strip()` \u2014 so a whitespace-wrapped or newline-terminated spec parses and the canonical accept set the message advertises is false at its boundary (round 6 codex Low)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    m = SHARD_SPEC.fullmatch(spec)",
+        "    m = SHARD_SPEC.match(spec.strip())"
+      ]
+    ],
+    "expect": "...and so is whitespace, including a TRAILING NEWLINE \u2014 round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
   }
 ]
