@@ -160,6 +160,27 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     env = dict(os.environ)
     env["HOME"] = str(d / CHILD_HOME)
     env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
+    # ⛔ NO BYTECODE CACHE, AND THIS ONE LINE IS A CORRECTNESS FIX, NOT A TIDINESS ONE.
+    # MEASURED, backlog #217 round 1: a mutation of `observer_log.py` ("append truncates
+    # instead of appending") ran, Python cached the MUTANT as
+    # `scripts/__pycache__/observer_log.cpython-314.pyc`, and the harness then restored the
+    # SOURCE — which is all it ever restored. Python validates a cache entry against the
+    # source's (mtime, size); the restore rewrites the same number of bytes, so inside one
+    # mtime tick the stale entry still looks current and the next import gets the MUTANT.
+    # `check-banner-armed.py` imports `observer_log`, so five of its cases failed in the
+    # AFTER-control and the whole shard reported NOT MEASURED.
+    #
+    # ⭐ IT EXPLAINS EVERY SYMPTOM, which is how it was told apart from two wrong fixes before
+    # it: nondeterministic because it is an mtime race; invisible to clean runs because a clean
+    # run's cache matches its own source; and ~7x more likely under sharding because every
+    # shard re-runs the controls (round 1, H2). Restoring `.claude/` — twice attempted — could
+    # never have helped: the residue was in `scripts/__pycache__/` the whole time.
+    #
+    # ⚠ WHY NOT "DELETE __pycache__ AFTER EACH RUN": that is the same restore-the-damage shape
+    # one directory over, and it leaves the window open for anything that reads the cache
+    # DURING a run. Not writing it has no window. The cost is recompilation per suite, which is
+    # milliseconds against suites measured in seconds.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
 
@@ -999,7 +1020,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 95,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 94,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1789,38 +1810,6 @@ def mutate_delivered(root: pathlib.Path,
         return ok, m_report, verdict
 
 
-PROJECT_STATE = ".claude"
-
-
-def _snapshot_project_state(d: pathlib.Path) -> "dict[str, bytes] | None":
-    """Every file under `d/.claude`, by relative path. None when the directory is absent.
-
-    Bytes rather than a sibling copytree: the staged tree is what `stage_tree` built and
-    `HARNESS_TREE` enumerates, so writing a snapshot directory INTO it would add an entry
-    those two do not know about — and `check-plan-code`'s own cases assert that set.
-    """
-    root = d / PROJECT_STATE
-    if not root.is_dir():
-        return None
-    return {str(f.relative_to(root)): f.read_bytes()
-            for f in root.rglob("*") if f.is_file()}
-
-
-def _restore_project_state(d: pathlib.Path, snap: "dict[str, bytes] | None") -> None:
-    """Put `d/.claude` back exactly as `_snapshot_project_state` found it. Removes additions."""
-    if snap is None:
-        return
-    root = d / PROJECT_STATE
-    for f in list(root.rglob("*")):
-        if f.is_file() and str(f.relative_to(root)) not in snap:
-            f.unlink()                      # written by a mutation run; it was never staged
-    for rel, blob in snap.items():
-        target = root / rel
-        if not target.exists() or target.read_bytes() != blob:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(blob)
-
-
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                   progress=None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
@@ -1835,9 +1824,6 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     43 mutations / 0 survivors before and after.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
-    # Taken ONCE, before any mutation runs, so every run — and the after-control — sees the
-    # same `.claude/` the control saw.
-    _state_snapshot = _snapshot_project_state(d)
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
         # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
@@ -1880,26 +1866,6 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         (d / fname).write_text(src)
         rc, out = run_suite(d, fname)
         (d / fname).write_text(orig)
-        # ⛔ RESTORING THE MUTATED FILE IS NOT RESTORING THE TREE. A mutation's EXECUTION can
-        # write state the clean script never writes, and that state outlives the run: the file
-        # goes back, the residue does not. `check-banner-armed.py` reads
-        # `ROOT/.claude/executing-plan`, `ROOT/.claude/banner-flush-observations.log` and
-        # `ROOT/.claude/banner-turn-state/`, and `HARNESS_TREE` stages `.claude/hooks`, so
-        # `.claude/` EXISTS in the staged tree and is writable by every suite that runs there.
-        #
-        # ⭐ MEASURED, round 1 of backlog #217: CI shard 1 of 8 reported `CANNOT RUN —
-        # check-banner-armed.py is no longer green AFTER the sequence` and therefore NOT
-        # MEASURED, while shards 2-8 passed and master was green with the unsharded sweep on
-        # the same tree. The after-control was RIGHT — the tree had changed underneath it — and
-        # the thing that changed it was a mutation this harness had just run.
-        #
-        # ⚠ SCOPE IS `.claude/` AND IS STATED RATHER THAN IMPLIED. It is the directory this
-        # repository uses for project state, it is 13 files and 0.07 MB so restoring it per
-        # mutation costs nothing measurable, and it is the one the measured failure involved. A
-        # mutation that writes OUTSIDE it — into `docs/` or `scripts/` — is still unrestored,
-        # and the after-control remains the thing that catches that. This narrows the hole; it
-        # does not close the class, and the next instance will look exactly like this one.
-        _restore_project_state(d, _state_snapshot)
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
         # git is a could-not-tell"), and splitting on the first one truncated it to
@@ -3829,36 +3795,24 @@ def _self_test() -> int:
          shard_mode_refusal("2/8", "."), None)
     case("...and no shard at all is never refused, whatever the mode",
          (shard_mode_refusal(None, None), shard_mode_refusal(None, ".")), (None, None))
-    # ⛔ ROUND 1, CLAUDE H1 — THE STATE A MUTATION'S EXECUTION LEAVES BEHIND. Restoring the
-    # mutated FILE was never restoring the TREE, and the after-control correctly reported
-    # `NOT MEASURED` when a mutation's residue made a later control red. These case the
-    # snapshot/restore pair directly, over a real directory, because the defect is about the
-    # filesystem and a mock of it would assert the contract I imagined.
-    with tempfile.TemporaryDirectory() as _sd:
-        _s = pathlib.Path(_sd)
-        (_s / PROJECT_STATE / "hooks").mkdir(parents=True)
-        (_s / PROJECT_STATE / "hooks" / "h.sh").write_text("original\n")
-        _snap = _snapshot_project_state(_s)
-        # a mutation run writes residue: a NEW file, and an EDIT to a staged one
-        (_s / PROJECT_STATE / "executing-plan").write_text("plan: x\narmed: t\n")
-        (_s / PROJECT_STATE / "hooks" / "h.sh").write_text("CLOBBERED\n")
-        (_s / PROJECT_STATE / "banner-turn-state").mkdir()
-        (_s / PROJECT_STATE / "banner-turn-state" / "s.json").write_text("{}")
-        _dirty = sorted(str(f.relative_to(_s / PROJECT_STATE))
-                        for f in (_s / PROJECT_STATE).rglob("*") if f.is_file())
-        _restore_project_state(_s, _snap)
-        _clean = sorted(str(f.relative_to(_s / PROJECT_STATE))
-                        for f in (_s / PROJECT_STATE).rglob("*") if f.is_file())
-        case("⛔ a mutation's residue in .claude/ is removed before the next run — an ADDED "
-             "file goes, and a CLOBBERED one comes back, or the next control reads state the "
-             "control never saw and the whole shard reports NOT MEASURED",
-             (len(_dirty), _clean, (_s / PROJECT_STATE / "hooks" / "h.sh").read_text()),
-             (3, ["hooks/h.sh"], "original\n"))
-    with tempfile.TemporaryDirectory() as _sd:
-        case("...and a tree with no .claude/ at all snapshots as None and restores to nothing, "
-             "rather than raising inside the mutation loop",
-             (_snapshot_project_state(pathlib.Path(_sd)),
-              _restore_project_state(pathlib.Path(_sd), None)), (None, None))
+    # ⛔ ROUND 1, H1, THE ACTUAL CAUSE — and the two fixes before it were aimed at the wrong
+    # directory. A mutant compiled to `scripts/__pycache__/*.pyc` OUTLIVES the source restore,
+    # because Python validates its cache on the source's (mtime, size) and a restore inside one
+    # mtime tick looks current. The next import gets the MUTANT. Measured: a mutation of
+    # `observer_log.py` broke five cases of `check-banner-armed.py`, which imports it, in the
+    # AFTER-control — so the shard reported NOT MEASURED over work that was fine.
+    with tempfile.TemporaryDirectory() as _bd, tempfile.TemporaryDirectory() as _bd2:
+        # ⚠ TWO DISTINCT DIRECTORIES, not one. `child_env`'s whole job is to derive paths FROM
+        # its argument, so a suite that only ever hands it one value cannot tell the function
+        # from a constant — `check-fixture-variation.py` refuses exactly that, and refused this
+        # case's first draft.
+        _e1, _e2 = child_env(pathlib.Path(_bd)), child_env(pathlib.Path(_bd2))
+        case("⛔ every suite the harness spawns runs with the bytecode cache OFF, or a mutant "
+             "outlives the restore of its own source and the next importer silently gets it",
+             (_e1.get("PYTHONDONTWRITEBYTECODE"), _e2.get("PYTHONDONTWRITEBYTECODE")),
+             ("1", "1"))
+        case("...and the redirected home is derived from the directory it is given, so the two "
+             "trees cannot share one home", _e1["HOME"] == _e2["HOME"], False)
     case("the slice is named when there is no shard", shard_label(None), "the WHOLE manifest")
     case("...and it is named I of N, in that order, when there is one",
          shard_label((2, 5)), "shard 2 of 5 (round-robin)")
@@ -4313,7 +4267,7 @@ def _self_test() -> int:
     # `--shard I/N`. A RISE is the ordinary direction; the sum moves in the same commit as the
     # per-file count, because the two numbers are the only things that make coverage leaving
     # visible, and a sum that follows later is a sum nobody can attribute.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1196)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1195)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

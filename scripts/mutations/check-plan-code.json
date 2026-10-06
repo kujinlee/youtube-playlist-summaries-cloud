@@ -507,9 +507,7 @@
         "progress=None)"
       ]
     ],
-    "expect": [
-      "every phase of --mutate reports its position when a caller asks"
-    ],
+    "expect": "every phase of --mutate reports its position when a caller asks",
     "file": "scripts/check-plan-code.py"
   },
   {
@@ -1106,12 +1104,12 @@
     "expect": "...and so does the NOT-MEASURED line"
   },
   {
-    "name": "#217: --shard without --mutate is accepted silently instead of refused",
+    "name": "#217: main stops obeying the shard mode refusal, so --self-test --shard rides through",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if not a.mutate:\n            print(f\"CANNOT RUN — --shard {a.shard} only means something with --mutate ROOT, \"",
-        "        if False:\n            print(f\"CANNOT RUN — --shard {a.shard} only means something with --mutate ROOT, \""
+        "    _mode_why = shard_mode_refusal(a.shard, a.mutate)\n    if _mode_why:",
+        "    _mode_why = shard_mode_refusal(a.shard, a.mutate)\n    if False:"
       ]
     ],
     "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
@@ -1150,25 +1148,14 @@
     "expect": "⛔ a shard alongside --self-test is refused, not silently accepted — the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
   },
   {
-    "name": "the residue sweep stops removing files a mutation ADDED, so the next control reads state the control never saw",
+    "name": "#217: the bytecode cache is left ON, so a mutant .pyc outlives the restore of its source",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if f.is_file() and str(f.relative_to(root)) not in snap:\n            f.unlink()",
-        "        if f.is_file() and str(f.relative_to(root)) in snap:\n            f.unlink()"
+        "    env[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n",
+        "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
       ]
     ],
-    "expect": "⛔ a mutation's residue in .claude/ is removed before the next run — an ADDED file goes, and a CLOBBERED one comes back, or the next control reads state the control never saw and the whole shard reports NOT MEASURED"
-  },
-  {
-    "name": "the restore stops rewriting a staged file a mutation CLOBBERED, so the tree drifts under the after-control",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "        if not target.exists() or target.read_bytes() != blob:",
-        "        if not target.exists() and target.read_bytes() != blob:"
-      ]
-    ],
-    "expect": "⛔ a mutation's residue in .claude/ is removed before the next run — an ADDED file goes, and a CLOBBERED one comes back, or the next control reads state the control never saw and the whole shard reports NOT MEASURED"
+    "expect": "⛔ every suite the harness spawns runs with the bytecode cache OFF, or a mutant outlives the restore of its own source and the next importer silently gets it"
   }
 ]
