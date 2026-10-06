@@ -202,10 +202,21 @@
     "file": "scripts/check-surface-recall.py",
     "edits": [
       [
-        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")",
-        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\")"
+        "    \"PATH\", \"HOME\", \"TMPDIR\", \"LANG\",",
+        "    \"PATH\", \"HOME\", \"TMPDIR\","
       ]
     ],
     "expect": "the subprocess env allowlist is the SAME in both guards \u2014 round 8 H1"
+  },
+  {
+    "name": "the subprocess env allowlist drops PYTHONDONTWRITEBYTECODE, so a scrubbed spawn writes a bytecode cache inside the staged tree again (r2 Medium, PR #366)",
+    "file": "scripts/check-surface-recall.py",
+    "edits": [
+      [
+        "    \"PYTHONDONTWRITEBYTECODE\",",
+        ""
+      ]
+    ],
+    "expect": "a spawn scrubbed by THIS guard's allowlist writes no bytecode cache \u2014 r2 Medium"
   }
 ]

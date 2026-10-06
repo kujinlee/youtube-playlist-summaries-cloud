@@ -163,5 +163,16 @@
       ]
     ],
     "expect": "a hook that writes to STDERR is a cannot-run, never silence \u2014 round 7 H2"
+  },
+  {
+    "name": "the subprocess env allowlist drops PYTHONDONTWRITEBYTECODE, so a scrubbed spawn writes a bytecode cache inside the staged tree again (r2 Medium, PR #366)",
+    "file": "scripts/check-rc-contract.py",
+    "edits": [
+      [
+        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\", \"PYTHONDONTWRITEBYTECODE\")",
+        "SUBPROCESS_ENV_KEYS = (\"PATH\", \"HOME\", \"TMPDIR\", \"LANG\")"
+      ]
+    ],
+    "expect": "a spawn scrubbed by THIS guard's allowlist writes no bytecode cache \u2014 r2 Medium"
   }
 ]

@@ -68,7 +68,7 @@ DOES NOT CHECK (round 5 L2 — stated, because an undeclared gap reads as covere
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 55 cases
+    python3 scripts/check-rc-contract.py --self-test  # 56 cases
 """
 from __future__ import annotations
 
@@ -329,7 +329,14 @@ def observe(hook_src: str, rc: int, out: str) -> str:
 # ⛔ ONE ALLOWLIST, NAMED, AND ITS SIBLING RECONCILES AGAINST IT BY A CASE — ROUND 8 H1. The scrub
 # was hand-copied between this file and `check-surface-recall.py` with nothing comparing the two:
 # the fix for a DRIFT defect was a second copy of itself.
-SUBPROCESS_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG")
+# ⛔ `PYTHONDONTWRITEBYTECODE` IS LOAD-BEARING AND WAS MISSING — ROUND 2 MEDIUM (PR #366).
+# The scrub above is an ALLOW-LIST, so it dropped the one variable the mutation harness sets
+# to keep bytecode caches impossible while it measures. Reproduced at `77316edc`: a scrubbed
+# child importing a module wrote `__pycache__/*.pyc` with the parent holding the variable.
+# ⚠ The sibling case below asserted only that the two copies AGREE, which a wrong set held
+# consistently satisfies — so the PROPERTY ("a scrubbed spawn writes no cache") is asserted
+# directly now, over each file's own constant, and is what the mutation entries name.
+SUBPROCESS_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG", "PYTHONDONTWRITEBYTECODE")
 
 _PROBE = "PROBE-DETAIL-TEXT"
 
@@ -775,9 +782,33 @@ def _self_test() -> int:
     # site — so `check-fixture-variation.py` was right that nothing could tell it from a literal.
     # The suite is stubbed out rather than re-entered, because `main(["--self-test"])` for real is
     # unbounded recursion; `main` resolves `_self_test` from module globals at call time.
+    # ── R2 MEDIUM — THE PROPERTY THIS GUARD'S OWN SCRUB MUST HOLD (PR #366). The sibling case in
+    # `check-surface-recall.py` asserts only that the two allowlists AGREE, which a wrong set held
+    # consistently satisfies — and that is how the harness came to claim "no suite the harness
+    # spawns may WRITE a cache" over a tree where a scrubbed spawn still did.
+    # ⚠ The case lives HERE, not beside its sibling, because `check-plan-code.run_suite` runs only
+    # the MUTATED file's suite (:808) — a cross-file case can never be a mutation's `expect`.
+    # ⚠ The probe SETS the variable in the source environment instead of reading the caller's, so
+    # this verdict cannot depend on how the guard was invoked — backlog #56's shape. It scrubs with
+    # the LIVE constant, so severing the key goes red here.
+    def _scrubbed_spawn_writes_cache(keys) -> list[str]:
+        """-> the `.pyc` names a scrubbed child leaves behind. `[]` is the property holding."""
+        with tempfile.TemporaryDirectory() as _td:
+            (Path(_td) / "_pyc_probe.py").write_text("VALUE = 1\n")
+            _src = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            subprocess.run([sys.executable, "-c", "import _pyc_probe"], timeout=30, check=True,
+                           capture_output=True,
+                           env={**{k: v for k, v in _src.items() if k in keys},
+                                "PYTHONPATH": _td})
+            return sorted(q.name for q in (Path(_td) / "__pycache__").glob("*.pyc"))
+
+    case("a spawn scrubbed by THIS guard's allowlist writes no bytecode cache — r2 Medium",
+         _scrubbed_spawn_writes_cache(SUBPROCESS_ENV_KEYS), [])
+
     _saved_st = globals()["_self_test"]
     globals()["_self_test"] = lambda: 99
     try:
+
         case("main dispatches --self-test to the suite", main(["--self-test"]), 99)
         case("...and an argv WITHOUT it does not reach the suite", main(["--nope"]) != 99, True)
     finally:

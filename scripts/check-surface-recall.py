@@ -25,7 +25,7 @@ FAILS IF
 
 Usage:
     python3 scripts/check-surface-recall.py
-    python3 scripts/check-surface-recall.py --self-test  # 58 cases
+    python3 scripts/check-surface-recall.py --self-test  # 59 cases
 """
 from __future__ import annotations
 
@@ -46,7 +46,17 @@ TIMEOUT = 30.0
 # with nothing comparing the two, so the fix for a DRIFT defect was itself a second copy. A shared
 # module would be heavier than the problem; a case that REFUSES a divergence is the remedy this
 # repo uses where one place is impractical, and there is one below.
-SUBPROCESS_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG")
+# ⛔ `PYTHONDONTWRITEBYTECODE` IS LOAD-BEARING AND WAS MISSING — ROUND 2 MEDIUM (PR #366).
+# The scrub above is an ALLOW-LIST, so it dropped the one variable the mutation harness sets
+# to keep bytecode caches impossible while it measures. Reproduced at `77316edc`: a scrubbed
+# child importing a module wrote `__pycache__/*.pyc` with the parent holding the variable.
+# ⚠ The sibling case below asserted only that the two copies AGREE, which a wrong set held
+# consistently satisfies — so the PROPERTY ("a scrubbed spawn writes no cache") is asserted
+# directly now, over each file's own constant, and is what the mutation entries name.
+SUBPROCESS_ENV_KEYS = (
+    "PATH", "HOME", "TMPDIR", "LANG",
+    "PYTHONDONTWRITEBYTECODE",
+)
 
 # The name this file's fixtures carry, and the name `check-ratchet-contract` excludes from caller
 # evidence. One convention, two files; the case below refuses a divergence — round 8 M2.
@@ -555,6 +565,28 @@ def _self_test() -> int:
     _sib.loader.exec_module(_sibmod)
     case("the subprocess env allowlist is the SAME in both guards — round 8 H1",
          tuple(SUBPROCESS_ENV_KEYS), tuple(_sibmod.SUBPROCESS_ENV_KEYS))
+
+    # ── R2 MEDIUM — THE PROPERTY, NOT THE AGREEMENT (PR #366). The case above is satisfied by a
+    # wrong set held consistently in both copies, and that is how the harness came to claim "no
+    # suite the harness spawns may WRITE a cache" over a tree where a scrubbed spawn still did.
+    # ⚠ The probe SETS the variable in the source environment rather than reading the caller's, so
+    # the verdict cannot depend on how this guard was invoked — backlog #56's shape, the reason a
+    # gate gets switched off. It scrubs with the LIVE constant, so severing the key goes red here.
+    def _scrubbed_spawn_writes_cache(keys) -> list[str]:
+        """-> the `.pyc` names a scrubbed child leaves behind. `[]` is the property holding."""
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as _td:
+            _mod = Path(_td) / "_pyc_probe.py"
+            _mod.write_text("VALUE = 1\n")
+            _src = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            subprocess.run([sys.executable, "-c", "import _pyc_probe"], timeout=30, check=True,
+                           capture_output=True,
+                           env={**{k: v for k, v in _src.items() if k in keys},
+                                "PYTHONPATH": _td})
+            return sorted(q.name for q in (Path(_td) / "__pycache__").glob("*.pyc"))
+
+    case("a spawn scrubbed by THIS guard's allowlist writes no bytecode cache — r2 Medium",
+         _scrubbed_spawn_writes_cache(SUBPROCESS_ENV_KEYS), [])
     _rat = __import__("importlib").util.spec_from_file_location(
         "_sib_rat", ROOT / "scripts" / "check-ratchet-contract.py")
     _ratmod = __import__("importlib").util.module_from_spec(_rat)

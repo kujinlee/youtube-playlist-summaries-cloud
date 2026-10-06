@@ -13431,3 +13431,56 @@ until then a surviving mutation reports red and does **not** block the button.
 shards plus the partition falsifier. Also found and not yet filed: `check-python-pin.py` refuses
 valid YAML, counting any 2-space-indented line containing a colon as a job key, so a block comment
 between jobs makes it exit 2.
+
+## 2026-10-05
+A second safety check was quietly claiming something that was not true, and the review that found
+it is the reason this branch is not finished yet. The harness that proves our checks still work
+makes sure no leftover files are written while it measures — but two of its own helpers built a
+clean environment from a fixed list, and the one setting that prevents those files was not on the
+list. Nothing is broken today: the only program that path runs happens not to create them. One
+added import would have been enough.
+
+Also worth knowing, because it affected what you were told: the tool that picks which outside
+reviewer to use was reporting "no reviewer available" when one was available. It judged on whether
+the model is shown in a menu rather than on whether it can be called. That mattered because
+"unavailable" is exactly the condition that lets a review be skipped on purpose — so a review that
+should have happened was recorded as legitimately skipped, and nothing would have re-checked it.
+Your question is what caught it.
+
+<!--tech-->
+**Round 2 of PR #366 (Codex half), folded.** One Medium. `SUBPROCESS_ENV_KEYS` in
+`check-rc-contract.py` and `check-surface-recall.py` is an allow-list for a scrubbed `subprocess`
+env, and it dropped `PYTHONDONTWRITEBYTECODE` — so a nested hook observer could write a bytecode
+cache inside a staged tree even though `child_env` and `stage_tree` had both been closed.
+
+Reproduced at `77316edc`: parent holding the variable, scrub to the shipped four keys, child
+imports a module → `__pycache__/_pyc_probe.cpython-314.pyc`. With the key → none.
+
+⭐ **A case for this already existed and was green.** Round 8 H1 asserted the two hand-copied
+allow-lists *agree*. Agreement is satisfied by a wrong set held consistently, so the harness went
+on claiming "no suite the harness spawns may WRITE a cache" over a tree where one did. The property
+is asserted directly now, per file, over each file's own constant.
+
+⚠ **The case could not live beside its sibling.** `run_suite(d, fname)` runs only the **mutated**
+file's suite (`check-plan-code.py:808`), so a cross-file case can never be a mutation's `expect` —
+the first attempt would have shipped coverage that looked complete and was unattributable.
+
+⚠ **Widening the constant orphaned a round-8 anchor** (`anchor NOT FOUND`, whole-manifest verdict
+`1197 of 1198`). Anchors bind by literal text. Both entries now target distinct lines, following
+the `is_gate_data` one-clause-per-line precedent (`:1099`), because the duplicate refusal keys on
+exact tuple equality of the find-strings (`:1092`).
+
+| | |
+|---|---|
+| **falsifier** | per file, sever the key → red **via the case it names**: `56/56 → 55/56`, `59/59 → 57/59`. Round-8's retargeted entry fails via exactly one case |
+| **counts** | self-test `155 → 161`; the two guards `55 → 56` and `58 → 59`; manifests `15 → 16` and `19 → 20`; declared sum `1193 → 1198` |
+| **anchors** | all **1,206** resolved against the delivered tree, **0 unresolved** |
+| **✅ closes the previous entry's NOT MEASURED** | unsharded `--mutate .` **was** run tonight, over the whole manifest — it is what caught the orphan |
+
+**Filed: backlog #228 and #229.** #228 — `codex-frontier-model.py:66` selects on
+`visibility == "list"`, but `supported_in_api` governs whether a model runs; measured on a cache
+fetched the same hour, both models are `visibility: "hide"` **and** `supported_in_api: true`, so
+the selector exits 1 while `codex exec -m gpt-5.5` completes a full review on that slug — this
+round's own Codex half was produced that way. #229 — why no guard saw it:
+`check-ratchet-contract`'s widened population is opt-in by **self-testedness**, and its other half
+is drawn by **filename**, so a gate-critical script with zero coverage is in neither.

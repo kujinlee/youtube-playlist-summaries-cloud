@@ -1413,7 +1413,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
     # across two consecutive rounds, every one caused by the previous round's fix — which is
     # `dev-process.md:108`'s condition, met for the first time in this fold.
-    "scripts/check-rc-contract.py": 15,
+    "scripts/check-rc-contract.py": 16,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
     # contract: every Blocking in rounds 3-7 landed on R3 while R1/R2 produced none, and round 7
@@ -1425,7 +1425,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ FOUR OF THE 11 ARE RELOCATED, NOT NEW — they came from `check-rc-contract`'s manifest with
     # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
     # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
-    "scripts/check-surface-recall.py": 19,
+    "scripts/check-surface-recall.py": 20,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -4305,7 +4305,13 @@ def _self_test() -> int:
     # `--shard I/N`. A RISE is the ordinary direction; the sum moves in the same commit as the
     # per-file count, because the two numbers are the only things that make coverage leaving
     # visible, and a sum that follows later is a sum nobody can attribute.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1196)
+    # ⟳ 2026-10-05, PR #366 round 2 Medium: 1196 -> 1198, one entry each for
+    # `check-rc-contract` (15 -> 16) and `check-surface-recall` (19 -> 20). Both sever the
+    # SAME constant in their own file — the allowlist that was dropping
+    # `PYTHONDONTWRITEBYTECODE` — and each dies via its own file's property case, because
+    # `run_suite` runs only the mutated file's suite (:808). The figure is the guard's own,
+    # taken from its failure message.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1198)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
