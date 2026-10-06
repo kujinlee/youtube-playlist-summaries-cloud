@@ -1278,5 +1278,16 @@
       ]
     ],
     "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+  },
+  {
+    "name": "the SHARD_FLAGS collision guard stops firing, so a key named after an existing option produces argparse's own error, a nonsense refusal, or a silently reddened unrelated case \u2014 four shapes for one declaration mistake (r8 codex Low)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if shard_dest(_opt) in _taken or _opt in _taken:",
+        "        if False:"
+      ]
+    ],
+    "expect": "a SHARD_FLAGS key colliding with an existing option is refused by name \u2014 r8 codex Low"
   }
 ]

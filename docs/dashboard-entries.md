@@ -13811,3 +13811,52 @@ third key: malformed spec → rc=2 parsed refusal; with `--shard` → rc=2 exclu
 then voids the **entire shard** (`NOT MEASURED`, all 151 mutations), which is correct behaviour over a
 failed control. CI's runners are unaffected: all 8 shards were green at `df1ec075`. CI is the
 measurement for this commit.
+
+## 2026-10-06
+Two tests written yesterday had a hidden property: they were cheap in every normal run and ruinous
+in the one situation they exist for. The automated checker deliberately breaks a safety rail and
+watches for an alarm — but these two tests, once that rail was broken, went off and did an enormous
+amount of real work instead of failing fast. Three of eight parallel checks timed out as a result.
+Both are fixed, and the fix is the same idea in both: give the test an input that stays cheap even
+when the thing it is testing is broken.
+
+<!--tech-->
+**Round 8 Codex half: two Highs and a Low, all caused by this fold. Folded — plus one more I caused
+while folding.**
+
+**High 1 — a self-test that starts a nested real sweep.** The round-8 cases called
+`main(["--mutate", ".", …])`. When the mutation under test severs the early refusal, that call stops
+refusing and sweeps the whole repository from inside one mutation's suite run:
+
+    ✗ mutation 'the shard flags are enumerated again by hand …': the suite did NOT COMPLETE
+      (CANNOT RUN — check-plan-code.py --self-test did not finish in 120s)
+    NOT MEASURED — measured over shard 1 of 8
+
+CI shards 1, 2 and 4 red at `56eafeef`. Fixed with an **empty temp root** — the rule stated forty
+lines below the code I wrote. Measured: those three mutations now die in **4.7 s** instead of timing
+out at 120 s.
+
+**High 2 — the `prefix-strip` mutation SURVIVED.** The case used `shard-x`, which round-trips
+identically with or without `lstrip("-")`, so it never tested the behaviour its own entry names. The
+discriminating input is a **leading**-hyphen key: argparse sees `---shard-x` and names it `shard_x`,
+while replace-only yields `_shard_x`.
+
+**Low — a colliding key produced four different failure shapes** for one declaration mistake:
+argparse's own `conflicting option string` for `mutate`/`compare`, a nonsense sentence for
+`self_test`, and a silently reddened unrelated case for `plan`. Now one `ValueError` naming the key.
+⚠ The shard loop moved to the END of parser construction, because the check can only see options
+already registered and `--compare` was declared below it.
+
+⚠ **AND I CAUSED A FOURTH WHILE FIXING THE THIRD.** The new collision case called
+`main(["--self-test"])`, which re-enters the suite currently running it. It terminated only because
+the guard raises during parser construction; severing the guard recursed to a **150 s timeout**.
+`main([])` builds the parser without dispatching the suite — 150 s → **5.3 s**.
+
+⭐ **Twice in one hour, the same class: a test whose COST depends on the mutation it tests.** Both
+were documented in the file being edited. Knowing the rule and applying it while writing are
+different skills, and only running the mutations caught the second — the suite was green throughout.
+
+| | |
+|---|---|
+| counts | self-test `177 → 178`; manifest `105 → 106`; declared sum `1210 → 1211` |
+| anchors | **1,219**, 0 unresolved, 0 duplicates; six document guards rc=0 |

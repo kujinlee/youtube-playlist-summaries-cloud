@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 177 cases
+    python3 scripts/check-plan-code.py --self-test          # 178 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1037,7 +1037,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 105,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -4049,27 +4049,68 @@ def _self_test() -> int:
             # the length case fell into two folds ago. Any failure becomes a VALUE here.
             return f"MISSED — shard_dest disagrees with argparse ({type(exc).__name__})"
 
+    # ⛔ BOTH OF argparse's STEPS NEED AN INPUT THAT EXERCISES THEM — r8 codex High. `shard-x`
+    # round-trips identically with or without `lstrip("-")`, so the mutation deleting the strip
+    # SURVIVED (CI shard 2) while this case stayed green: the case did not test the behaviour its
+    # own entry names. A LEADING-hyphen key is the discriminating input — argparse sees the option
+    # `---shard-x` and names it `shard_x`, while replace-only yields `_shard_x`.
     case("a hyphenated flag round-trips through `shard_dest` exactly as argparse names it",
-         _roundtrip("shard-x"), "2/5")
+         (_roundtrip("shard-x"), _roundtrip("-shard-x")), ("2/5", "2/5"))
     case("...and every shipped key survives the same normalisation",
          tuple(shard_dest(_k) for _k in SHARD_FLAGS), tuple(SHARD_FLAGS))
+
+    # ── r8 CODEX LOW — a colliding key is a DECLARATION error and gets ONE sentence, not four
+    # different shapes. Measured before the guard: `mutate`/`compare` raised argparse's own
+    # "conflicting option string", `self_test` produced a nonsense refusal about `--self_test True`,
+    # and `plan` silently reddened an unrelated case.
+    def _collide(_key: str) -> str:
+        _saved = globals()["SHARD_FLAGS"]
+        globals()["SHARD_FLAGS"] = {"shard": _saved["shard"], _key: (False, "colliding")}
+        try:
+            # ⛔ `main([])`, NEVER `main(["--self-test"])` — the parser is built either way, but
+            # `--self-test` RE-ENTERS the suite currently running this case. It terminated only
+            # because the guard raises during construction; severing the guard recursed until the
+            # 150s timeout, measured. That is the same shape as the `--mutate .` defect fixed forty
+            # lines above — a case whose COST depends on the mutation it tests — and this one was
+            # written after that lesson. An empty argv builds the parser and refuses for want of a
+            # mode: cheap under every mutation.
+            main([])
+            return "NO ERROR"
+        except ValueError as exc:
+            return "refused" if f"{_key!r} collides" in str(exc) else f"wrong text: {exc}"
+        except Exception as exc:                  # noqa: BLE001 — the TYPE is the evidence
+            return f"{type(exc).__name__}"
+        finally:
+            globals()["SHARD_FLAGS"] = _saved
+
+    case("a SHARD_FLAGS key colliding with an existing option is refused by name — r8 codex Low",
+         tuple(_collide(_k) for _k in ("mutate", "compare", "self_test", "plan")),
+         ("refused",) * 4)
 
     # ── ROUND 8 M1 — THE CLAIM, MADE CHECKABLE. "A third flag is one dict entry" was false: the
     # dict covered argparse registration and the mode refusal, while exclusivity, parsing and
     # zero-basedness were hand-written against `a.shard`/`a.shard0`. FIVE readers, not two. The
     # reviewer's exhibit — add a key, watch the flag be accepted and never parsed — is the case.
+    # ⛔ AN EMPTY ROOT, NOT `.` — the rule stated forty lines below, which these two cases were
+    # written directly above and then broke. With `--mutate .` a mutation that severs either
+    # refusal makes these calls start THE REAL SWEEP inside one mutation's suite run:
+    # `SUITE_TIMEOUT`, recorded as NOT CHECKED rather than as a catch, and the whole shard voided.
+    # MEASURED — CI shards 1, 2 and 4 went red on `56eafeef` for exactly this. Over an empty root a
+    # severed refusal instead hits the count drift (rc 1, no suite), a DIFFERENT answer a case can
+    # read.
     _third = dict(SHARD_FLAGS, shard2=(False, "a third key, added in-process"))
     _saved_flags = globals()["SHARD_FLAGS"]
     globals()["SHARD_FLAGS"] = _third
     try:
-        _se3 = io.StringIO()
-        with contextlib.redirect_stderr(_se3):
-            _rc_unparsed = main(["--mutate", ".", "--shard2", "garbage"])
-        _unparsed_out = _se3.getvalue()
-        _se4 = io.StringIO()
-        with contextlib.redirect_stderr(_se4):
-            _rc_both = main(["--mutate", ".", "--shard2", "1/8", "--shard", "1/8"])
-        _both_out = _se4.getvalue()
+        with tempfile.TemporaryDirectory() as _emptyroot:
+            _se3 = io.StringIO()
+            with contextlib.redirect_stderr(_se3):
+                _rc_unparsed = main(["--mutate", _emptyroot, "--shard2", "garbage"])
+            _unparsed_out = _se3.getvalue()
+            _se4 = io.StringIO()
+            with contextlib.redirect_stderr(_se4):
+                _rc_both = main(["--mutate", _emptyroot, "--shard2", "1/8", "--shard", "1/8"])
+            _both_out = _se4.getvalue()
     finally:
         globals()["SHARD_FLAGS"] = _saved_flags
     case("a flag added to SHARD_FLAGS is PARSED, not merely accepted — round 8 M1",
@@ -4544,7 +4585,7 @@ def _self_test() -> int:
     # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
     # refusal keys on exact tuple equality of the find-strings, and it refused the first
     # draft. The figure is the guard's own, read from its failure message.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1210)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1211)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -4674,7 +4715,25 @@ def main(argv: list[str]) -> int:
                          "the mode that makes the evidence about the code that ships.")
     # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
     # declaration; this loop and the mode check in `main` are its only two readers.
+    ap.add_argument("--compare", metavar="DIR",
+                    help="diff each assembled file against DIR/<name> and FAIL on any "
+                         "difference. WITHOUT THIS the check reads only the plan's copy "
+                         "of the code and says nothing about the delivered scripts.")
+    # ⚠ LAST, DELIBERATELY — the collision check above can only see options already
+    # registered, and `--compare` is declared below the old position, so a key named
+    # `compare` slipped past it into argparse's own "conflicting option string".
+    # ⛔ A COLLIDING KEY IS A DECLARATION ERROR AND MUST SAY SO ONCE — r8 codex Low. Measured:
+    # `mutate`/`compare` raised argparse's own "conflicting option string"; `self_test` produced the
+    # nonsense sentence "--self_test True only means something with --mutate ROOT"; `plan` silently
+    # reddened an unrelated case. Four failure shapes for one mistake, none of them naming it.
+    _taken = ({_a.dest for _a in ap._actions}
+              | {_s.lstrip("-") for _a in ap._actions for _s in _a.option_strings})
     for _opt, (_zero, _help) in SHARD_FLAGS.items():
+        if shard_dest(_opt) in _taken or _opt in _taken:
+            raise ValueError(
+                f"SHARD_FLAGS key {_opt!r} collides with an option this parser already defines "
+                f"(dest {shard_dest(_opt)!r}). Rename the key — this is a declaration error in "
+                f"this file, not user input.")
         # ⛔ NO EXPLICIT `dest=` — ROUND 7 CODEX LOW, SECOND ATTEMPT. Passing
         # `dest=shard_dest(_opt)` made BOTH consumers read the same function, so severing it
         # changed nothing on either side: the mutation SURVIVED (shard 8, 150 of 151) and the
@@ -4683,10 +4742,6 @@ def main(argv: list[str]) -> int:
         # Letting argparse normalise makes `shard_dest` MATCH an external rule rather than
         # define its own, which is what makes the agreement checkable at all.
         ap.add_argument(f"--{_opt}", metavar="I/N", help=_help)
-    ap.add_argument("--compare", metavar="DIR",
-                    help="diff each assembled file against DIR/<name> and FAIL on any "
-                         "difference. WITHOUT THIS the check reads only the plan's copy "
-                         "of the code and says nothing about the delivered scripts.")
     a = ap.parse_args(argv)
     # ⛔ BEFORE EVERY MODE, --self-test INCLUDED. `--self-test` used to return here first, so a
     # meaningless shard rode through as a clean exit 0 — see `shard_mode_refusal`.
