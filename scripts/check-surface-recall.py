@@ -566,52 +566,59 @@ def _self_test() -> int:
     case("the subprocess env allowlist is the SAME in both guards — round 8 H1",
          tuple(SUBPROCESS_ENV_KEYS), tuple(_sibmod.SUBPROCESS_ENV_KEYS))
 
-    # ── r3 CODEX MEDIUM + LOW — AN ABSENCE IS NOT A MEASUREMENT WITHOUT ITS PRECONDITION.
-    # r2 asserted the constant's VALUE; r3 drove the real spawn but asserted only that NO cache
-    # appeared — and the hook redirects the import to /dev/null, so an import that never ran also
-    # produces no cache. Measured: with the key REMOVED and the probe importing `_missing_pycprobe`,
-    # both suites passed. Three rounds, one shape: a negative proved by interception cannot
-    # terminate, which is this repo's own recorded class.
-    # ⛔ THE FIX CHANGES KIND RATHER THAN WIDENING. The probe now returns a CONJUNCTION — a positive
-    # witness that the import ran under the scrubbed spawn, PLUS the cache names — so:
-    #   import never ran  -> [] ................... RED (the r3-codex false pass)
-    #   key absent        -> ["ran", "<pyc>"] ..... RED (the r2/r3 defect)
-    #   correct           -> ["ran"] .............. GREEN
-    # ⚠ `TemporaryDirectory` rather than `mkdtemp` — r3 Codex measured 8 leaked dirs per run (Low).
-    def _production_spawn_writes_cache() -> list[str]:
-        """-> `["ran"]` when the import HAPPENED and left no cache. Any other value is the defect.
+    # ── r4 MEDIUM — ASSERT THE DICT WE OWN, NOT THE FILESYSTEM TWO PROCESSES AWAY.
+    # Three filesystem probes, three defeats, one cause: "no `.pyc` appeared" has PRECONDITIONS and
+    # they live in CPython. r2 asserted NONE of them; r3 asserted "the spawn ran"; the r3 fold
+    # asserted "the import ran"; r4 then exhibited the THIRD — *bytecode would have been written
+    # absent the key* — with a `python3` shim on PATH that adds `-B` (PATH is itself allow-listed).
+    # Both call-site mutants SURVIVED, at a clean 56/56 and 59/59. A fourth precondition row would
+    # have been a fourth widening.
+    # ⛔ SO THE MEASUREMENT MOVES UP ONE LEVEL: capture the env dict the REAL spawn hands
+    # `subprocess.run`, and assert the key is in it. We own that dict; CPython owns honouring it,
+    # and every r2–r4 defect lived in the half we do NOT own. No child process, no filesystem, no
+    # preconditions — an ambient `-B`, a `PYTHONPYCACHEPREFIX`, or a shimmed interpreter cannot
+    # reach a dict comparison.
+    # ⭐ `check-plan-code.py:3847` has asserted exactly this, for exactly this variable, in two
+    # lines, ever since the harness gained `child_env`. The right-altitude instrument already
+    # existed in this repo; it was unavailable here only because the scrub is an inline
+    # comprehension rather than a named producer. Three rounds were downstream of that.
+    _ENVELOPE = json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PostToolUse", "additionalContext": "probe"}})
 
-        The witness is what makes the absence meaningful: `[]` means the import never ran, which
-        is a CANNOT-RUN wearing the shape of a pass.
+    def _env_handed_to_the_spawn(rc: int) -> dict:
+        """-> the env dict the production scrub actually passes to `subprocess.run`.
+
+        `subprocess.run` is replaced for the length of one call and restored in a `finally`; the
+        stand-in returns a well-formed envelope so the production path completes normally instead
+        of raising, which keeps the capture on the SUCCESS route rather than an error route.
         """
-        with tempfile.TemporaryDirectory() as _td:
-            _probe = Path(_td)
-            _ran = _probe / "ran"
-            (_probe / "_pycprobe.py").write_text(
-                f"open({str(_ran)!r}, 'w').write('1')\n", encoding="utf-8")
-            _hook_src = (
-                '#!/usr/bin/env bash\n'
-                'set -uo pipefail\n'
-                f'PYTHONPATH="{_probe}" python3 -c \'import _pycprobe\' >/dev/null 2>&1\n'
-                'python3 -c \'import json,sys; print(json.dumps({"hookSpecificOutput":'
-                '{"hookEventName":"PostToolUse","additionalContext":sys.stdin.read()}}))\' '
-                '<<<"probe-detail"\n'
-                'exit 0\n')
-            _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
-            os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-            try:
-                with _fixture_hook(_hook_src) as _fx:
-                    _render_once(_fx, 5, "probe-detail", True)
-            finally:
-                if _saved is None:
-                    os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
-                else:
-                    os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
-            return ((["ran"] if _ran.exists() else [])
-                    + sorted(q.name for q in (_probe / "__pycache__").glob("*.pyc")))
+        seen: dict = {}
+        _real = subprocess.run
+        _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
-    case("a spawn scrubbed by THIS guard's allowlist writes no bytecode cache — r2 Medium",
-         _production_spawn_writes_cache(), ["ran"])
+        def _capture(*a, **kw):
+            seen.update(kw.get("env") or {})
+            return subprocess.CompletedProcess(a[0] if a else [], 0, _ENVELOPE, "")
+
+        subprocess.run = _capture
+        try:
+            _render_once(HOOK, rc, "probe-detail", True)
+        finally:
+            subprocess.run = _real
+            if _saved is None:
+                os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
+            else:
+                os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
+        return seen
+
+    # ⚠ TWO DISTINCT INPUTS. `check-fixture-variation` refuses a case whose producer sees one
+    # value at every call site — the same rule `check-plan-code.py:3843` records for `child_env`.
+    _spawn_env_1 = _env_handed_to_the_spawn(5)
+    _spawn_env_2 = _env_handed_to_the_spawn(6)
+    case("the env the scrub hands the production spawn carries PYTHONDONTWRITEBYTECODE — r4 Medium",
+         (_spawn_env_1.get("PYTHONDONTWRITEBYTECODE"),
+          _spawn_env_2.get("PYTHONDONTWRITEBYTECODE")), ("1", "1"))
     _rat = __import__("importlib").util.spec_from_file_location(
         "_sib_rat", ROOT / "scripts" / "check-ratchet-contract.py")
     _ratmod = __import__("importlib").util.module_from_spec(_rat)

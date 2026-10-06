@@ -103,3 +103,87 @@ replace* — rather than asking for a fourth instance of the same class.
 - **Round 4's verdict is not pre-empted.** If it finds a third defect of this class, that refutes
   §3's claim that the redesign was sufficient, and the right response is a design review rather
   than a fourth fold. This record will then need a correction appended, not an edit.
+
+---
+
+# ⟳ CORRECTION, 2026-10-06 — §3 WAS REFUTED BY ROUND 4. Appended, not edited, per §5.
+
+§5 of this record pre-registered the falsifier: *"if round 4 finds a third defect of this class,
+that refutes §3's claim that the redesign was sufficient."* **It did.** Round 4's Claude half
+(`docs/reviews/claude/shard-mutation-sweep-r4-claude.md`) exhibited a **third** unasserted
+precondition and both of the entries that exist solely to carry r3's finding **survived**:
+
+```text
+with a `python3` shim on PATH that adds -B  (PATH is itself allow-listed)
+  [m16+shim] check-rc-contract.py:    rc=0  56/56   ← MUTANT SURVIVES
+  [m20+shim] check-surface-recall.py: rc=0  59/59   ← MUTANT SURVIVES
+```
+
+A second route reached the same end: swapping the key for `PYTHONPYCACHEPREFIX` in the allow-list,
+with that variable set ambiently → 56/56 green.
+
+## What §3 got wrong, precisely
+
+§3 claimed the redesign (proxy → property) was the right KIND of fix and was sufficient. **The kind
+was right and the ALTITUDE was wrong.** The probe still measured the filesystem, which is two
+processes away from the thing being asserted, and a filesystem absence has preconditions that live
+in CPython — the half we do not own. Each round asserted one more of them:
+
+| Round | Preconditions asserted | Defeated by |
+|---|---|---|
+| r2 | none — asserted the constant's value | the call site not reading the constant |
+| r3 | "the spawn ran" | the import not running |
+| r3 fold (§3) | "the import ran" | **bytecode not being written anyway** — ambient `-B` |
+
+A fourth row would have been a fourth widening. **The class was never going to close on the
+filesystem**, which is what §3 could not see and round 4 could.
+
+## The repair, and why it is not a fourth widening
+
+The measurement moves UP one level: capture the env dict the production spawn hands
+`subprocess.run`, and assert the key is in it. `subprocess.run` is replaced for the length of one
+call and restored in a `finally`; the stand-in returns a well-formed envelope so the capture sits on
+the SUCCESS route. Asserted at TWO distinct inputs, per `check-fixture-variation`'s rule.
+
+⭐ **The reviewer's structural point, which is the durable lesson here:** `check-plan-code.py:3847`
+has asserted exactly this property, for exactly this variable, in two lines, ever since the harness
+gained `child_env`. The right-altitude instrument already existed in this repository. It was
+unavailable to these two guards for one reason — **the scrub is an inline dict comprehension, not a
+named producer, so there was nothing a two-line case could assert.** *Three rounds were downstream
+of one missing abstraction.*
+
+**Why `-B` and `PYTHONPYCACHEPREFIX` are now unreachable rather than defended:** the case computes a
+dict comparison. It opens no file and starts no interpreter, so there is no precondition to forget.
+That is the difference between guarding a boundary and moving it.
+
+Measured on a mirrored copy of the tree, with a shim calling the interpreter by ABSOLUTE path:
+
+| Attack | Before | After |
+|---|---|---|
+| call-site mutant + `-B` shim, `check-rc-contract` | survived 56/56 | **RED 55/56**, named case only |
+| call-site mutant + ambient `PYTHONPYCACHEPREFIX` | survived | **RED 55/56**, named case only |
+| call-site mutant + `-B` shim, `check-surface-recall` (#20, the unconfounded carrier) | survived 59/59 | **RED 58/59**, named case only |
+
+## What is NOT taken, and why — stated so the next round need not re-derive it
+
+The reviewer's design verdict was **REPLACE**, and its fuller form was to extract a shared
+`scrub_env()` so the allow-list, the round-8 agreement case and the duplicated probe all collapse.
+**That extraction was NOT done.** The right-altitude half of the verdict was taken in place.
+
+Reasoning, offered to be refuted rather than asserted: the reviewer's second Medium was that the
+*"a shared module would be heavier than the problem"* justification had a denominator that had moved
+~6× (31 duplicated lines). Replacing the 31-line probe with a ~12-line capture **restores** that
+justification rather than deferring it. Extraction would additionally mean manifest surgery and a
+ratchet fall on a PR whose subject is sharding.
+
+⚠ **Two findings therefore remain open and are NOT closed by this fold:**
+- the duplication itself (now ~12 lines rather than 31) — a maintainability finding;
+- the reviewer's Low 1, **pre-existing and not caused by any fold**: the bytecode this suite actually
+  writes to its own tree (measured: 2 `.pyc`) comes from three in-process `exec_module` sibling
+  imports — a route **no allow-list governs and no case observes**, because it never crosses a
+  process boundary at all.
+
+⚠ **And §19's confounding qualification still stands, unaltered:** `check-surface-recall.json` #19
+fires the round-8 agreement case independently, so it would report `caught` even were the bytecode
+property vacuous. #20 is that file's only unconfounded carrier. The extraction would have removed
+the confounding by removing the agreement case; the in-place repair does not.
