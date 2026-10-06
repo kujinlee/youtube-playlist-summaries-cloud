@@ -1108,8 +1108,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    _mode_why = shard_mode_refusal(a.shard, a.mutate)\n    if _mode_why:",
-        "    _mode_why = shard_mode_refusal(a.shard, a.mutate)\n    if False:"
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if _mode_why:",
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if False:"
       ]
     ],
     "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
@@ -1141,8 +1141,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if shard_arg and not mutate_arg:\n        return (f\"CANNOT RUN \u2014 --shard {shard_arg} only means something with --mutate ROOT, \"",
-        "    if shard_arg and not mutate_arg and False:\n        return (f\"CANNOT RUN \u2014 --shard {shard_arg} only means something with --mutate ROOT, \""
+        "    if shard_arg is not None and not mutate_arg:\n        return (f\"CANNOT RUN \u2014 {flag} {shard_arg!r} only means something with --mutate ROOT, \"",
+        "    if shard_arg is not None and not mutate_arg and False:\n        return (f\"CANNOT RUN \u2014 {flag} {shard_arg!r} only means something with --mutate ROOT, \""
       ]
     ],
     "expect": "\u26d4 a shard alongside --self-test is refused, not silently accepted \u2014 the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
@@ -1174,7 +1174,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "SHARD_SPEC = re.compile(r\"^(0|[1-9][0-9]*)/(0|[1-9][0-9]*)$\")",
+        "SHARD_SPEC = re.compile(r\"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$\")",
         "SHARD_SPEC = re.compile(r\"^(\\d+)/(\\d+)$\")"
       ]
     ],
@@ -1185,7 +1185,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "r\"^(0|[1-9][0-9]*)/",
+        "r\"^(0|[1-9][0-9]{0,3})/",
         "r\"^([0-9]+)/"
       ]
     ],
@@ -1212,5 +1212,38 @@
       ]
     ],
     "expect": "...and so is whitespace, including a TRAILING NEWLINE \u2014 round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
+  },
+  {
+    "name": "the mode refusal goes back to asking about `a.shard` BY NAME, so any other shard-shaped flag rides through `--self-test` as a clean exit 0 over a subject no shard touched (round 7 H1, which was round 1's Codex finding reopened)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)",
+        "    _mode_why = shard_mode_refusal(a.shard, a.mutate)"
+      ]
+    ],
+    "expect": "EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag"
+  },
+  {
+    "name": "the digit run loses its length bound, so a 4301-digit shard spec MATCHES and `int()` then raises \u2014 the traceback `parse_shard`'s own docstring forbids (round 7 L1)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "{0,3})$\"",
+        "*)$\""
+      ]
+    ],
+    "expect": "a digit run longer than the bound is REFUSED on either side, never raised \u2014 r7 L1"
+  },
+  {
+    "name": "the mode refusal goes back to TRUTHINESS, so an EMPTY shard value is not shard-shaped and `--self-test --shard ''` rides through as a clean exit 0 (round 7 H1, third instance of one defect)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if shard_arg is not None and not mutate_arg:",
+        "    if shard_arg and not mutate_arg:"
+      ]
+    ],
+    "expect": "an EMPTY shard value is still a shard-shaped invocation, for every flag \u2014 round 7 H1"
   }
 ]

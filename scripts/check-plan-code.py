@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 169 cases
+    python3 scripts/check-plan-code.py --self-test          # 173 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1037,7 +1037,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 99,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 102,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1543,17 +1543,24 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
 # ~30s self-test — ~87 of the ~90 minutes, against a `timeout-minutes: 30` ceiling that had
 # already been raised once. `--shard I/N` splits the EXECUTION across parallel jobs; the budget
 # then bounds `total_work / N` instead of `total_work`.
-# ⛔ `[0-9]`, NOT `\d` — ROUND 6 L2. Python's `\d` is UNICODE-WIDE, so `parse_shard("1/٨")`
-# returned `(1, 8)` from an ARABIC-INDIC EIGHT, and 128 further code points (`²`, `፩`) pass
-# `\d`/`isdigit()` while `int()` RAISES — a traceback, which this function's own docstring
-# forbids. ⚠ AND LEADING ZEROS ARE REFUSED TOO: `[0-9]+` accepted `00/8` as shard 1 of 8,
-# so the word CANONICAL in the message below was a claim the pattern did not keep — the
-# same dishonest-message defect round 5 charged against an earlier version of this guard.
-# forbids. An explicit byte class makes both impossible: every string that matches is one
-# `int()` accepts. ⚠ The same rule is spelled in `.github/workflows/ci.yml`, and spelling it
-# a second way is what produced three disagreeing definitions of "a decimal integer" across
-# two files — so the workflow no longer spells it at all and calls `--shard0` instead.
-SHARD_SPEC = re.compile(r"^(0|[1-9][0-9]*)/(0|[1-9][0-9]*)$")
+# ⛔ FIVE WAYS THIS ONE PATTERN WAS TOO WIDE, AND THE FIFTH WAS THE DIGIT RUN'S LENGTH.
+#   r6 L2  `\d` is UNICODE-WIDE: `parse_shard("1/٨")` returned `(1, 8)` from an Arabic-Indic
+#          eight, and 128 further code points (`²`, `፩`) pass `\d`/`isdigit()` while `int()`
+#          RAISES — a traceback this function's own docstring forbids.
+#   r6 L1  `[0-9]+` accepted `00/8` as shard 1 of 8, so CANONICAL in the message below was a
+#          claim the pattern did not keep.
+#   r6 cdx `.match()` with `.strip()` accepted ` 1/8`, `1/8 ` and `1/8\n` — `$` matches BEFORE a
+#          final newline, so anchoring alone was never enough. Now `fullmatch`, no `strip()`.
+#   r7 L1  ⚠ AND THE SENTENCE HERE USED TO CLAIM "every string that matches is one `int()`
+#          accepts". FALSE, about the exact symptom named four lines above:
+#          `fullmatch("1" * 4301 + "/8")` MATCHES and `int()` then raises `ValueError: Exceeds
+#          the limit (4300 digits)`. The alphabet was never the only way in — the LENGTH was.
+#          `{0,3}` bounds each side at four digits (9999 shards, absurdly more than any matrix
+#          asks for), so the claim is now one the pattern keeps.
+# ⚠ This rule used to be spelled a SECOND way in `.github/workflows/ci.yml`, which is what
+# produced three disagreeing definitions of "a decimal integer" across two files. The workflow
+# no longer spells it at all and calls `--shard0` instead.
+SHARD_SPEC = re.compile(r"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$")
 
 
 def parse_shard(spec: str, *, zero_based: bool = False,
@@ -1640,7 +1647,32 @@ def shard_refusal(index: int, total: int, count: int) -> str | None:
     return None
 
 
-def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None") -> "str | None":
+# ⛔ ONE SOURCE FOR EVERY SHARD-SHAPED FLAG — ROUND 7 H1, A REGRESSION I CAUSED. Round 6 added
+# `--shard0`, wired it into PARSING, and left the mode refusal asking only about `a.shard`,
+# so `--self-test --shard0 garbage` printed `169/169 passed` and exited 0 — reopening round
+# 1's Codex finding VERBATIM and producing the one outcome this script exists to prevent: a
+# shard-shaped invocation reporting success over a subject no shard touched.
+# ⚠ A NEW FLAG IS NOT ONE EDIT — it is an edit at every site that reasons about the concept,
+# and two sites here disagreed for a whole round. So the flags are DECLARED ONCE here and
+# BOTH consumers derive from it: `_build_parser` adds exactly these arguments and `main`
+# asks the mode question of exactly these dests. A third flag is one dict entry, and
+# disagreement is not DETECTED but IMPOSSIBLE — which is the stronger of the two, and the
+# reason this is not the one-liner round 7 warned would leave a third instance.
+SHARD_FLAGS: "dict[str, str]" = {
+    "shard": ("With --mutate: run only shard I of N, ROUND-ROBIN over the mutation list "
+              "(backlog #217). The global manifest checks still run on the WHOLE manifest "
+              "in every shard; only the suite runs are split. I is 1-based. An empty shard "
+              "is CANNOT RUN, never a pass."),
+    "shard0": ("Like --shard, but I is ZERO-BASED, which is what a CI matrix provides. "
+               "Exists so the 0->1 conversion lives in tested code rather than a workflow "
+               "`run:` block — round 6 M1: logic in YAML has no self-test, no mutation "
+               "entry and no ratchet coverage, which is how this rule shipped wrong three "
+               "times with every gate green."),
+}
+
+
+def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None",
+                       *, flag: str = "--shard") -> "str | None":
     """None if `--shard` means something in this mode, else the sentence saying it does not.
 
     ⛔ PURE, AND LIFTED OUT OF `main`, BECAUSE THE CASE CANNOT CALL `main`. The defect this
@@ -1654,8 +1686,15 @@ def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None") -> "st
     refuses correctly — and never with `--self-test`: the adjacent case passes and the one next
     to it was never constructed, which is this file's most-repeated blind spot.
     """
-    if shard_arg and not mutate_arg:
-        return (f"CANNOT RUN — --shard {shard_arg} only means something with --mutate ROOT, "
+    # ⛔ `is not None`, NOT TRUTHINESS — ROUND 7 H1's OTHER HALF, AND THE THIRD INSTANCE OF ONE
+    # DEFECT. `""` is falsy, so `--self-test --shard ''` and `--self-test --shard0 ''` rode through
+    # this predicate and printed a clean `172/172 passed` at rc 0 — the same shape round 5 fixed in
+    # `main` (`if a.shard:`) and round 1 first reported. Fixing the flag dimension above left this
+    # one open: a new flag was wired in while an empty VALUE still bypassed the check.
+    # ⚠ Measured after the repair: `:1689` was the ONLY truthiness test left on an argv-derived
+    # value in this file — every other shard-related check already reads `is not None`.
+    if shard_arg is not None and not mutate_arg:
+        return (f"CANNOT RUN — {flag} {shard_arg!r} only means something with --mutate ROOT, "
                 f"which is the only mode that runs mutations. NOTHING WAS MEASURED.")
     return None
 
@@ -3947,6 +3986,51 @@ def _self_test() -> int:
         _rc_ns = main(["--shard", "2/5"])
     case("--shard without --mutate is CANNOT RUN, not a silent whole-manifest run",
          (_rc_ns, "--shard" in _se.getvalue() and "CANNOT RUN" in _se.getvalue()), (2, True))
+    # ⛔ AND THE SAME, ASKED OF EVERY FLAG IN `SHARD_FLAGS` — ROUND 7 H1. `--shard0` existed for
+    # a whole round while `main` asked the mode question of `a.shard` ALONE, so
+    # `--self-test --shard0 garbage` printed a clean `169/169 passed` and exited 0. ⚠ The
+    # assertion is driven BY THE DICT, so a third flag is covered the moment it is declared
+    # rather than when somebody remembers to add a case — which is the failure this replaces.
+    _flag_refusals = {}
+    for _f in SHARD_FLAGS:
+        _sef = io.StringIO()
+        with contextlib.redirect_stderr(_sef):
+            _flag_refusals[_f] = (main([f"--{_f}", "2/5"]), _sef.getvalue())
+    case("EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag",
+         {_f: (_rc, f"--{_f}" in _out and "CANNOT RUN" in _out)
+          for _f, (_rc, _out) in _flag_refusals.items()},
+         {_f: (2, True) for _f in SHARD_FLAGS})
+    case("...and there is more than one of them, so the loop above is not a one-element dressing",
+         len(SHARD_FLAGS) > 1, True)
+    # ⛔ THE EMPTY STRING, FOR EVERY FLAG — round 7 H1's other half. `""` is FALSY, so a truthiness
+    # test let a shard-shaped invocation through: `--self-test --shard ''` printed a clean suite
+    # result at rc 0. Third instance of one defect (round 1 reported it, round 5 fixed `main`'s
+    # `if a.shard:`, this is `shard_mode_refusal`'s).
+    case("an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1",
+         tuple(shard_mode_refusal("", None, flag=f"--{_f}") is not None for _f in SHARD_FLAGS),
+         tuple(True for _f in SHARD_FLAGS))
+    # ⚠ The digit run's LENGTH, not its alphabet — round 7 L1. `int()` refuses beyond 4300 digits,
+    # so an unbounded `[0-9]*` matched a string the conversion then raised on.
+    # ⚠ BOTH SIDES. The bound appears twice in the pattern, so a mutation may remove only one —
+    # asserting a long INDEX alone would leave a long TOTAL unguarded, which is the "two distinct
+    # inputs" rule applied to one expression.
+    # ⛔ AND IT MUST OBSERVE A RAISE RATHER THAN SUFFER ONE. The first draft asserted the RETURN
+    # VALUE, so removing the bound made `parse_shard` raise and the suite died BEFORE printing any
+    # `[FAIL] <case>` line: shard 6 reported `151 killed, 150 attributed` — killed by something, the
+    # clause proven by nothing. That is the hazard this function's own comment names twenty lines
+    # above, and the first draft walked into it. Converting the raise into a comparable value makes
+    # the case assert the docstring's actual promise — A SENTENCE AND A CANNOT RUN, NEVER A
+    # TRACEBACK — instead of only the happy path's return value.
+    def _parsed_or_raised(spec: str):
+        try:
+            return parse_shard(spec)[0]
+        except Exception as exc:                      # noqa: BLE001 — the TYPE is the evidence
+            return f"RAISED {type(exc).__name__}"
+
+    case("a digit run longer than the bound is REFUSED on either side, never raised — r7 L1",
+         (_parsed_or_raised("1" * 4301 + "/8"), _parsed_or_raised("1/" + "8" * 4301),
+          _parsed_or_raised("1/9999"), _parsed_or_raised("1/10000")),
+         (None, None, (1, 9999), None))
     # ⛔ AN EMPTY ROOT, NOT `.`, AND THAT IS NOT TIDINESS. With `--mutate .` this case would run
     # THE REAL SWEEP the moment the refusal below it is severed — eight minutes inside a
     # self-test, and inside the mutation harness a `SUITE_TIMEOUT` CANNOT RUN, which is recorded
@@ -4389,7 +4473,7 @@ def _self_test() -> int:
     # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
     # refusal keys on exact tuple equality of the find-strings, and it refused the first
     # draft. The figure is the guard's own, read from its failure message.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1204)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1207)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -4517,18 +4601,10 @@ def main(argv: list[str]) -> int:
                     help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
                          "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
                          "the mode that makes the evidence about the code that ships.")
-    ap.add_argument("--shard", metavar="I/N",
-                    help="With --mutate: run only shard I of N, ROUND-ROBIN over the mutation "
-                         "list (backlog #217). The global manifest checks still run on the "
-                         "WHOLE manifest in every shard; only the suite runs are split. I is "
-                         "1-based. An empty shard is CANNOT RUN, never a pass.")
-    ap.add_argument("--shard0", metavar="I/N",
-                    help="Like --shard, but I is ZERO-BASED, which is what a CI "
-                         "matrix provides. Exists so the 0->1 conversion lives in "
-                         "tested code instead of a workflow `run:` block — round 6 "
-                         "M1: logic in YAML has no self-test, no mutation entry and "
-                         "no ratchet coverage, which is how the same guard shipped "
-                         "wrong twice with every gate green.")
+    # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
+    # declaration; this loop and the mode check in `main` are its only two readers.
+    for _dest, _help in SHARD_FLAGS.items():
+        ap.add_argument(f"--{_dest}", metavar="I/N", help=_help)
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -4536,7 +4612,10 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
     # ⛔ BEFORE EVERY MODE, --self-test INCLUDED. `--self-test` used to return here first, so a
     # meaningless shard rode through as a clean exit 0 — see `shard_mode_refusal`.
-    _mode_why = shard_mode_refusal(a.shard, a.mutate)
+    # ⚠ Asked of EVERY dest in `SHARD_FLAGS`, never of one by name — round 7 H1.
+    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,
+                                                       flag=f"--{_f}")
+                                    for _f in SHARD_FLAGS) if _w), None)
     if _mode_why:
         print(_mode_why, file=sys.stderr)
         return 2

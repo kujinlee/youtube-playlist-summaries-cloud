@@ -13680,3 +13680,51 @@ subjects.
 | counts | self-test `168 → 169`; `check-plan-code` manifest `98 → 99`; declared sum `1203 → 1204` |
 | measured | shards 1–4 each **151 killed, 151 attributed, 0 survivors** |
 | anchors | **1,212**, 0 unresolved |
+
+## 2026-10-06
+A review round found something that should not have been possible: a way to run the checker that
+printed "everything passed" while checking nothing at all. Asking it to test one eighth of the work
+and handing it a nonsense value for which eighth made it report a clean pass instead of refusing.
+That is the single outcome the tool exists to prevent, and it was reachable from the documented
+command line. Fixed, along with the reason it was reachable: the rule about which eighth to run was
+written in two places that had quietly stopped agreeing.
+
+<!--tech-->
+**Round 7 (Claude half), folded. One High, three Lows — NOT CONVERGED, counter back to zero.**
+
+**H1 (High, deliverable) — a shard-shaped invocation reporting success over a subject no shard
+touched**, which is round 1's Codex finding reopened by round 6's own fold:
+
+    --self-test --shard0 garbage   rc=0 | 169/169 passed
+    --self-test --shard0 99/8      rc=0 | 169/169 passed
+    --self-test --shard ''         rc=0 | 169/169 passed
+    --self-test --shard 0/8        rc=2 | CANNOT RUN …            <- the control
+
+⛔ **Two dimensions, and fixing one left the other open.** `main` asked the mode question of
+`a.shard` by name, so a *new flag* rode through; and `shard_mode_refusal` tested truthiness, so an
+*empty value* rode through. The second is the third instance of one defect — round 1 reported it,
+round 5 fixed `main`'s `if a.shard:`, and this was `shard_mode_refusal`'s.
+
+| | |
+|---|---|
+| flag dimension | `SHARD_FLAGS` is now a dict **both** consumers derive from — `_build_parser` adds exactly those arguments, `main` asks the mode question of exactly those dests. A third flag is one entry, and disagreement is **impossible**, not merely detected |
+| value dimension | `is not None`, not truthiness. ⚠ Measured after: `:1689` was the **only** truthiness test left on an argv-derived value in the file |
+| why no gate saw it | all three existing cases call the predicate **directly** with positional args — proving the predicate right and never that the call site passes it everything |
+
+**L1** — the fifth way the accept rule was too wide is the digit run's **length**: `fullmatch("1" ×
+4301 + "/8")` matched and `int()` then raised. Bounded to four digits. ⚠ **And my first case for it
+was wrong-shaped** — it asserted a return value on an input that now *raises*, so the suite died
+before printing any `[FAIL]` line and shard 6 reported `151 killed, 150 attributed`: killed by
+something, the clause proven by nothing. The case now converts a raise into a comparable value and
+asserts the docstring's real promise — *a sentence and a CANNOT RUN, never a traceback*.
+
+**L2 → backlog #232.** Nine other sites spell "a decimal integer" their own way; three were measured
+raising on input they accept, and one (`count_drift`, bare `\d`) sits 440 lines below the canonical
+pattern in the same file. **L3** — the PR's `NO-REVIEW:` waiver was false and still described removed
+design; **withdrawn**, no exemption claimed.
+
+| | |
+|---|---|
+| counts | self-test `169 → 173`; manifest `99 → 102`; declared sum `1204 → 1207` |
+| measured | shards 1, 2, 3, 5, 6, 7 each **151 killed, 151 attributed, 0 survivors** |
+| anchors | **1,215**, 0 unresolved, 0 duplicate tuples |
