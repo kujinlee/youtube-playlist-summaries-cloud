@@ -13860,3 +13860,46 @@ different skills, and only running the mutations caught the second — the suite
 |---|---|
 | counts | self-test `177 → 178`; manifest `105 → 106`; declared sum `1210 → 1211` |
 | anchors | **1,219**, 0 unresolved, 0 duplicates; six document guards rc=0 |
+
+## 2026-10-06
+First clean round. Nine rounds of review found nothing wrong with the thing being shipped this time
+— no problems at all in the build configuration, the way work is split across eight parallel jobs,
+or the check that refuses to call it green unless all eight finished. What was found instead: three
+notes written earlier in the week that no longer match the code, and one small gap in a helper. All
+four are written down as future work rather than changed now, because changing anything here restarts
+the review clock.
+
+<!--tech-->
+**Round 9 — BOTH halves CLEAN. The first quiet round; one more is required before merge.**
+
+Zero Blocking, zero High, and **zero findings of any severity in `ci.yml`, the partition, or the
+aggregator** — the deliverable. Four findings, all filing-class under the freeze.
+
+⭐ **Two results worth more than the findings:**
+
+| | |
+|---|---|
+| **the owner's pending action is SAFE, and nothing had said so** | `ci.yml` carries **no `paths:` filter**, so `mutation-sweep-complete` always reports on a PR to master — adding it to `required_status_checks.contexts` cannot recreate #137's pending-forever. Current required contexts, read from the API: `["verify","schema-gates"]` |
+| **the Claude half disproved its own strongest hypothesis** | it expected manifest coverage to have left the required context. Controlled experiment — two `git archive` trees, `node_modules` symlinked, one entry deleted — control `178/178 rc=0`, shrunken `177/178 rc=1`, named case *"the entry count they yield is the pinned sum"*. `verify` still catches it in under a second |
+
+**Verified by running, not reading:** partition union-complete and pairwise disjoint at
+N = 1,2,3,4,5,7,8,16,1211, with the empty-shard refusal firing at exactly 1212 and nowhere earlier;
+**eight distinct shards actually ran**, read as `measured over shard I of 8` from all eight job logs;
+the aggregator on a real red run (`37528420394`) with 3 shards red, `fail-fast: false` honoured and
+`mutation-sweep-complete` = failure. The Codex half independently measured the partition at N=8 —
+`152,152,152,151,151,151,151,151` — and a real `--shard0 0/8` at **152 killed, 152 attributed, 0
+survivors**.
+
+**Filed, not fixed** — every touch of `scripts/` re-opens `check-review-recorded`, which round 9
+confirmed is a true positive and the only red:
+
+- **#233** the collision guard snapshots `_taken` before its own loop, so two keys normalising to one
+  dest escape it — *the repair reproducing a narrower instance of what it repaired*
+- **#234** a comment repairing a "two readers" claim left a fresh one (four readers at HEAD). ⚠ Found
+  while writing an explainer, **after nine rounds had passed over it**
+- **#235** the home-escape scan is the one global check riding only on the non-required matrix
+
+**Fixed, because prose is free under the freeze:** the PR body's corrections table said declared sum
+`1200` and self-test `161`; actual **1211** and **178**. ⛔ That table was round 5's correction,
+corrected by round 7, and stale again by round 9 — **a number written into prose has no owner**. It
+now carries the commands that produce the figures instead of the figures.
