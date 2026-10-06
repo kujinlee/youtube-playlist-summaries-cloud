@@ -13902,4 +13902,4 @@ confirmed is a true positive and the only red:
 **Fixed, because prose is free under the freeze:** the PR body's corrections table said declared sum
 `1200` and self-test `161`; actual **1211** and **178**. ⛔ That table was round 5's correction,
 corrected by round 7, and stale again by round 9 — **a number written into prose has no owner**. It
-now carries the commands that produce the figures instead of the figures.
+now carries the commands that produce the figures **as well as** the figures. ⟳ *Round 10: this sentence said "instead of", and the table carries both — a claim about a correction that was itself slightly false, which is the fourth generation of this exact site.*

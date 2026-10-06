@@ -164,8 +164,17 @@ withdrawn, and the repo's own rule is to relay that output verbatim.**
    The gate matches that literal exactly — case, hyphen and colon.
 ```
 
-The token is in the body's own heading *"⟳ THE NO-REVIEW WAIVER IS WITHDRAWN"*. The gate's
-observation is literally correct and its near-miss detection is working as designed; the effect is
+⟳ **CLOSED DURING THIS ROUND — re-measured after the coordinator amended the body.** `grep -c
+'NO-REVIEW'` over the live body is now **0**, and `check-merge-ready.py --pr 366` no longer prints
+the ⛔ line at all. Recorded rather than deleted, because the exhibit above is the gate output this
+round actually relayed, and because the ordering matters for the record: the token was **present**
+when I ran the gate at `8756c623` and is **absent** now, so the coordinator's rewrite is the fix for
+this, not its cause. **Nothing to file.** M1 is likewise now fixed in the body (`1196 → 1211`,
+`160 → 178`, with the third-generation drift recorded in place).
+
+The original claim, kept for the record: the token was in the body's own heading *"⟳ THE NO-REVIEW
+WAIVER IS WITHDRAWN"*. The gate's
+observation is literally correct and its near-miss detection is working as designed; the effect was
 that every future relay of this PR's readiness — and `check-merge-ready`'s verdict is required to be
 relayed verbatim — carries a line that reads as a live near-miss defect and describes prose. Cheapest
 disposition: rename the heading to *"the review waiver is withdrawn"*. **Filed, not folded.**
@@ -262,6 +271,25 @@ job 112521633417 : measured over shard 8 of 8
 Eight jobs, eight distinct indices, one denominator. Would have falsified it: a repeated index, a
 missing index, or a denominator other than 8. **For THIS run, #230's blind spot is not a live
 defect** — verified by hand, which is the only instrument that can.
+
+⛔ **AND THE BUILD IT WAS VERIFIED AGAINST, because a tick without one is the defect
+[`dev-process.md`](../dev-process.md) names:** commit `8756c623`, workflow run **37537354847**, read
+2026-10-06. It expires at the next run. A hand-read is an observation, not a mechanism, so this
+does **not** reduce #230's severity — the aggregator's blind spot is still total.
+
+⚠ **What it does change is the COST of #230's fix, and I think r1's proposal is over-built.** The
+evidence is already produced: `shard_label()` prints `measured over shard I of N` in every shard's
+log, so nothing needs to be *computed* — only *collected*. r1 proposed each shard upload its
+slice's entry names and the aggregator assert the union equals the manifest. That ships 1,211
+strings through artifacts to re-prove a partition `shard_slice`'s own suite already holds (and that
+§1 above re-derived at ten values of N). **One line per shard is enough** for every failure
+reachable today: resolved `I`, `N`, the slice count, and a digest of the slice's sorted
+`(file, name)` pairs. The aggregator then asserts N reports arrived, the indices are exactly `1..N`
+distinct, every `N` agrees, the counts sum to the manifest size, and the digests are pairwise
+distinct — which kills *N copies of one shard*, a missing index, and a mismatched denominator in
+bytes rather than lists. ⛔ **Not by scraping the logs**, which is the brittle shape this repository
+has paid for repeatedly: a grep over a log format is a second implementation of the rule
+`shard_label` owns.
 
 ### 3. The aggregator, on a REAL red run rather than by reading `always()`
 
