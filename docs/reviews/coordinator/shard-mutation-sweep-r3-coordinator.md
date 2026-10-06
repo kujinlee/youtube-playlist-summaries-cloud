@@ -187,3 +187,59 @@ ratchet fall on a PR whose subject is sharding.
 fires the round-8 agreement case independently, so it would report `caught` even were the bytecode
 property vacuous. #20 is that file's only unconfounded carrier. The extraction would have removed
 the confounding by removing the agreement case; the in-place repair does not.
+## ✅ r4 Low 1 BOUNDED, 2026-10-06 — the exec_module route cannot reproduce the defect this PR removes
+
+The r4 Claude half found that this suite writes bytecode to its own tree through three in-process
+`exec_module` sibling imports (`check-surface-recall.py:333, :565, :626`) — a route no allow-list
+governs, because it never crosses a process boundary. Measured, on a mirrored copy:
+
+    check-surface-recall --self-test, NO harness env   -> 2 .pyc
+                                                          check-ratchet-contract.cpython-314.pyc
+                                                          check-rc-contract.cpython-314.pyc
+    check-surface-recall --self-test, HARNESS env      -> 0 .pyc
+    check-rc-contract    --self-test, either way       -> 0 .pyc   (route is in ONE file, not the family)
+
+⭐ **Why it is correctly Low and not a deliverable concern wearing an instrument label.**
+`exec_module` runs IN-PROCESS, so it honours `PYTHONDONTWRITEBYTECODE` from the process's own
+environment — and `child_env` sets precisely that for every suite the harness spawns. The route is
+therefore already closed in the ONLY context where it could matter.
+
+The original defect required a **mutant** `.pyc` outliving the restore of its own source, which
+requires the mutation harness; the harness suppresses the write (this measurement) and refuses the
+inbound copy (`stage_tree(..., ignore=shutil.ignore_patterns("__pycache__"))`). Both halves closed.
+
+⚠ **The bound, stated rather than implied:** outside the harness — an interactive run, or CI's
+`verify` step on a fresh checkout — the two caches ARE written, and nothing governs them. They are
+current for the source at hand, so they are harmless there; the claim is specifically that they
+cannot carry a MUTANT across a restore.
+
+## ✅ ROUND 4 CLOSED — quiet round 1 of the 2 the method requires
+
+`docs/reviews/codex/shard-mutation-sweep-r4-codex.md` found **no Blocking, High, Medium or Low**
+against the fold, and owed no proposed fix. It ran shard **5/8 AND 8/8** — both slices carrying this
+component — at 150 killed / 150 attributed / 0 survivors each, and independently reproduced the
+`exec_module` measurement above (unset → 2 `.pyc`, `env=1` → 0), concluding it is "not a
+mutation-sweep poison route".
+
+It also sustained the reasoning this record offered for refutation in §"What is NOT taken":
+> *"extraction is still attractive, but I do not think it is owed by this fold … the coordinator's
+> '31-line filesystem probe denominator collapsed' argument holds after this fold. Extraction would
+> be a design cleanup, not a convergence blocker."*
+
+**Its verdict is NOT CONVERGED, and that is the rule working rather than a defect:**
+`review-method.md:110` stops only on **two consecutive** rounds with no Blocking, no High, no
+deliverable finding and no non-trivial fixes. This is the first such round.
+
+⚠ **Round 5 is therefore a CONFIRMATION round and must be aimed differently**, for a reason this
+record should state so the next session does not spend a fifth pass on a settled component:
+
+> **The actual subject of PR #366 — the sharding — has had ONE round of review.** r1 reviewed it;
+> r2, r3 and r4 were entirely about a bytecode race discovered while fixing the CI red. The half
+> that SHIPS (`--shard I/N`, the 8-way matrix, `mutation-sweep-complete`) has had far less
+> adversarial attention than the instrument that measures it.
+
+Specific questions round 5 owes, beyond re-reading the partition proof: does
+`mutation-sweep-complete` go red when a shard is **cancelled or skipped** rather than failed — a
+*cancelled* job being exactly how PR #365's sweep died — and does `fail-fast: false` still let the
+remaining shards report? Plus Q4(b), tree identity (`:114`): **no round has yet reviewed the tree
+that would merge**, because each reviewed an earlier commit.
