@@ -1156,7 +1156,7 @@
         "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
       ]
     ],
-    "expect": "⛔ every suite the harness spawns runs with the bytecode cache OFF, or a mutant outlives the restore of its own source and the next importer silently gets it"
+    "expect": "...and the other half of the race: no suite the harness spawns may WRITE a cache either, or this run poisons the next one"
   },
   {
     "name": "#217 r2: the staged tree carries the repo's __pycache__ in, so a mutant .pyc arrives looking current",
