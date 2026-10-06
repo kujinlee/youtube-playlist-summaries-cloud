@@ -13728,3 +13728,46 @@ design; **withdrawn**, no exemption claimed.
 | counts | self-test `169 → 173`; manifest `99 → 102`; declared sum `1204 → 1207` |
 | measured | shards 1, 2, 3, 5, 6, 7 each **151 killed, 151 attributed, 0 survivors** |
 | anchors | **1,215**, 0 unresolved, 0 duplicate tuples |
+
+## 2026-10-06
+A check I added this morning to stop one mistake turned out to be unable to fail — it compared a
+value against itself, so it would have passed no matter what the code did. The automated sweep
+caught it, not the test suite: every test was green the entire time. Fixed so the check now compares
+against a rule the language itself sets, which is something it cannot quietly agree with.
+
+<!--tech-->
+**Round 7 Codex half: one Low, on my own fix. Folded — twice, because the first fold was unkillable.**
+
+The `SHARD_FLAGS` enumeration shipped claiming *"a third flag is one dict entry, and disagreement is
+impossible."* **False for a hyphenated key:** argparse maps `--shard-x` to dest `shard_x` while
+`main` looked the key up verbatim —
+
+    --self-test --shard-x 2/5   rc=1  AttributeError: 'Namespace' object has no attribute 'shard-x'
+
+a traceback where a sentence is owed. **First fix added `shard_dest()` and passed
+`dest=shard_dest(_opt)` to argparse. That was wrong twice over:**
+
+| | |
+|---|---|
+| unfalsifiable | both consumers then read the SAME function, so severing it changed nothing on either side. **The mutation SURVIVED — shard 8, 150 of 151** — while `--self-test` stayed at `175/175`. A survivor is invisible to the suite; only the sweep sees it |
+| wrong on its own terms | an explicit hyphenated dest names the attribute `shard-x`, which no ordinary attribute access can reach |
+
+**Second fix: argparse owns the dest, and `shard_dest` must MATCH it.** While `shard_dest` *set* the
+name its value was arbitrary; now it has to agree with a rule this repo does not control, and
+agreement with an external authority is checkable in a way agreement with yourself never is.
+Falsified: severing it yields `[FAIL] … got 'MISSED — shard_dest disagrees with argparse'`.
+
+Also verified by round 7's Codex half, by running rather than reading: `is not None` is **not** too
+wide (`shard_mode_refusal(None, None)` stays silent); a real sharded run still works
+(`--mutate . --shard0 3/8` → 151/151); and the reshaped length case does not mask the defect.
+
+**#232 amended, three raising sites → five.** It reproduced `peer-sites.py` (`abc` → rc=2, `²` → rc=1
+traceback) and `count_drift`, and added `check-gate-falsifiability --current-release=²` and
+`check-plan-progress.decide(… paused_unticked: ² …)`. ⚠ The count rose because a second reviewer
+looked, not because anything changed — which is the argument for one owner rather than nine audits.
+
+| | |
+|---|---|
+| counts | self-test `173 → 175`; manifest `102 → 103`; declared sum `1207 → 1208` |
+| measured | shards 3, 5, 8 each **151 killed, 151 attributed, 0 survivors** |
+| anchors | **1,216**, 0 unresolved, 0 duplicate tuples |

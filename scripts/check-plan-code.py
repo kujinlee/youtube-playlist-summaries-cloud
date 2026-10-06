@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 173 cases
+    python3 scripts/check-plan-code.py --self-test          # 175 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1037,7 +1037,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 102,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 103,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1658,6 +1658,23 @@ def shard_refusal(index: int, total: int, count: int) -> str | None:
 # asks the mode question of exactly these dests. A third flag is one dict entry, and
 # disagreement is not DETECTED but IMPOSSIBLE — which is the stronger of the two, and the
 # reason this is not the one-liner round 7 warned would leave a third instance.
+# ⚠ "IMPOSSIBLE" IS EARNED ONLY BECAUSE OF `shard_dest` BELOW — round 7's Codex half showed
+# the first version of this claim was false for a hyphenated key.
+def shard_dest(opt: str) -> str:
+    """`"shard-x"` -> `"shard_x"`. argparse's OWN normalisation, spelled once.
+
+    ⛔ ROUND 7 CODEX LOW. `SHARD_FLAGS` was introduced claiming a third flag is "one dict
+    entry, and disagreement is IMPOSSIBLE". False for a hyphenated name: argparse maps
+    `--shard-x` to dest `shard_x`, while `main` looked the key up verbatim and raised
+    `AttributeError: 'Namespace' object has no attribute 'shard-x'` — a TRACEBACK, not a
+    sentence. The two consumers could still disagree, THROUGH argparse's naming rule,
+    which the abstraction did not model. ⚠ The shipped keys have no hyphens, so nothing
+    was broken; what was wrong was the claim, which is the defect this file keeps paying
+    for. Both consumers now route through here, so they agree BY CONSTRUCTION.
+    """
+    return opt.replace("-", "_")
+
+
 SHARD_FLAGS: "dict[str, str]" = {
     "shard": ("With --mutate: run only shard I of N, ROUND-ROBIN over the mutation list "
               "(backlog #217). The global manifest checks still run on the WHOLE manifest "
@@ -4006,6 +4023,30 @@ def _self_test() -> int:
     # test let a shard-shaped invocation through: `--self-test --shard ''` printed a clean suite
     # result at rc 0. Third instance of one defect (round 1 reported it, round 5 fixed `main`'s
     # `if a.shard:`, this is `shard_mode_refusal`'s).
+    # ⛔ AGREEMENT WITH argparse's OWN RULE, asked of argparse — round 7 codex Low. Asserting my
+    # belief about the normalisation would be a second implementation of it; this builds a throwaway
+    # parser with a HYPHENATED flag and checks the round trip, so the case fails if argparse ever
+    # normalises differently than `shard_dest` does.
+    def _roundtrip(_opt: str):
+        """-> the value argparse stored, looked up the way `main` looks it up.
+
+        ⛔ argparse CHOOSES the dest; `shard_dest` must agree with that choice. An earlier draft
+        passed `dest=shard_dest(_opt)`, so both sides read one function and the mutation survived.
+        ⚠ A miss is returned as a VALUE rather than raised, or the suite dies before printing
+        `[FAIL] <case>` — the same trap the length case fell into one fold ago.
+        """
+        _p = argparse.ArgumentParser(add_help=False)
+        _p.add_argument(f"--{_opt}", metavar="I/N")
+        try:
+            return getattr(_p.parse_args([f"--{_opt}", "2/5"]), shard_dest(_opt))
+        except AttributeError:
+            return "MISSED — shard_dest disagrees with argparse"
+
+    case("a hyphenated flag round-trips through `shard_dest` exactly as argparse names it",
+         _roundtrip("shard-x"), "2/5")
+    case("...and every shipped key survives the same normalisation",
+         tuple(shard_dest(_k) for _k in SHARD_FLAGS), tuple(SHARD_FLAGS))
+
     case("an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1",
          tuple(shard_mode_refusal("", None, flag=f"--{_f}") is not None for _f in SHARD_FLAGS),
          tuple(True for _f in SHARD_FLAGS))
@@ -4473,7 +4514,7 @@ def _self_test() -> int:
     # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
     # refusal keys on exact tuple equality of the find-strings, and it refused the first
     # draft. The figure is the guard's own, read from its failure message.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1207)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1208)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -4603,8 +4644,15 @@ def main(argv: list[str]) -> int:
                          "the mode that makes the evidence about the code that ships.")
     # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
     # declaration; this loop and the mode check in `main` are its only two readers.
-    for _dest, _help in SHARD_FLAGS.items():
-        ap.add_argument(f"--{_dest}", metavar="I/N", help=_help)
+    for _opt, _help in SHARD_FLAGS.items():
+        # ⛔ NO EXPLICIT `dest=` — ROUND 7 CODEX LOW, SECOND ATTEMPT. Passing
+        # `dest=shard_dest(_opt)` made BOTH consumers read the same function, so severing it
+        # changed nothing on either side: the mutation SURVIVED (shard 8, 150 of 151) and the
+        # case could not fail. It was also wrong on its own terms — an explicit hyphenated
+        # dest names the attribute `shard-x`, which no ordinary attribute access can reach.
+        # Letting argparse normalise makes `shard_dest` MATCH an external rule rather than
+        # define its own, which is what makes the agreement checkable at all.
+        ap.add_argument(f"--{_opt}", metavar="I/N", help=_help)
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -4613,7 +4661,7 @@ def main(argv: list[str]) -> int:
     # ⛔ BEFORE EVERY MODE, --self-test INCLUDED. `--self-test` used to return here first, so a
     # meaningless shard rode through as a clean exit 0 — see `shard_mode_refusal`.
     # ⚠ Asked of EVERY dest in `SHARD_FLAGS`, never of one by name — round 7 H1.
-    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,
+    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,
                                                        flag=f"--{_f}")
                                     for _f in SHARD_FLAGS) if _w), None)
     if _mode_why:

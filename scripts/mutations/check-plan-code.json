@@ -1108,8 +1108,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if _mode_why:",
-        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if False:"
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if _mode_why:",
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if False:"
       ]
     ],
     "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
@@ -1218,7 +1218,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, _f), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)",
+        "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)",
         "    _mode_why = shard_mode_refusal(a.shard, a.mutate)"
       ]
     ],
@@ -1245,5 +1245,16 @@
       ]
     ],
     "expect": "an EMPTY shard value is still a shard-shaped invocation, for every flag \u2014 round 7 H1"
+  },
+  {
+    "name": "`shard_dest` stops normalising, so a hyphenated shard flag is looked up by its raw name and `main` raises AttributeError instead of refusing \u2014 a traceback where a sentence is owed (round 7 codex Low)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return opt.replace(\"-\", \"_\")",
+        "    return opt"
+      ]
+    ],
+    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
   }
 ]
