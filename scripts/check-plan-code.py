@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 155 cases
+    python3 scripts/check-plan-code.py --self-test          # 160 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -999,7 +999,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 92,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 95,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1575,6 +1575,26 @@ def shard_refusal(index: int, total: int, count: int) -> str | None:
     return None
 
 
+def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None") -> "str | None":
+    """None if `--shard` means something in this mode, else the sentence saying it does not.
+
+    ⛔ PURE, AND LIFTED OUT OF `main`, BECAUSE THE CASE CANNOT CALL `main`. The defect this
+    closes was an ORDER defect: `--self-test` returned BEFORE the shard was validated, so
+    `--self-test --shard garbage` exited 0 and printed a clean suite result — a shard-shaped
+    invocation reporting success over a subject no shard ever touched. Asserting that through
+    `main(["--self-test", …])` would re-enter the suite currently running the case, so the
+    predicate lives here and `main` merely obeys it, first, before any mode dispatches.
+
+    ⚠ Found by round 1's Codex half. The coordinator had tested `--shard` with NO mode — which
+    refuses correctly — and never with `--self-test`: the adjacent case passes and the one next
+    to it was never constructed, which is this file's most-repeated blind spot.
+    """
+    if shard_arg and not mutate_arg:
+        return (f"CANNOT RUN — --shard {shard_arg} only means something with --mutate ROOT, "
+                f"which is the only mode that runs mutations. NOTHING WAS MEASURED.")
+    return None
+
+
 def shard_label(shard: "tuple[int, int] | None") -> str:
     """Which SLICE of the manifest a verdict line is about. PURE.
 
@@ -1769,6 +1789,38 @@ def mutate_delivered(root: pathlib.Path,
         return ok, m_report, verdict
 
 
+PROJECT_STATE = ".claude"
+
+
+def _snapshot_project_state(d: pathlib.Path) -> "dict[str, bytes] | None":
+    """Every file under `d/.claude`, by relative path. None when the directory is absent.
+
+    Bytes rather than a sibling copytree: the staged tree is what `stage_tree` built and
+    `HARNESS_TREE` enumerates, so writing a snapshot directory INTO it would add an entry
+    those two do not know about — and `check-plan-code`'s own cases assert that set.
+    """
+    root = d / PROJECT_STATE
+    if not root.is_dir():
+        return None
+    return {str(f.relative_to(root)): f.read_bytes()
+            for f in root.rglob("*") if f.is_file()}
+
+
+def _restore_project_state(d: pathlib.Path, snap: "dict[str, bytes] | None") -> None:
+    """Put `d/.claude` back exactly as `_snapshot_project_state` found it. Removes additions."""
+    if snap is None:
+        return
+    root = d / PROJECT_STATE
+    for f in list(root.rglob("*")):
+        if f.is_file() and str(f.relative_to(root)) not in snap:
+            f.unlink()                      # written by a mutation run; it was never staged
+    for rel, blob in snap.items():
+        target = root / rel
+        if not target.exists() or target.read_bytes() != blob:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(blob)
+
+
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                   progress=None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
@@ -1783,6 +1835,9 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
     43 mutations / 0 survivors before and after.
     """
     ok, report, ev_muts, ev_survivors = True, [], [], []
+    # Taken ONCE, before any mutation runs, so every run — and the after-control — sees the
+    # same `.claude/` the control saw.
+    _state_snapshot = _snapshot_project_state(d)
     for position, mut in enumerate(muts, 1):
         name, fname = mut.get("name", "?"), mut.get("file", "")
         # ⚠ SILENT UNLESS A CALLER ASKS. This function is driven dozens of times by its own
@@ -1825,6 +1880,26 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         (d / fname).write_text(src)
         rc, out = run_suite(d, fname)
         (d / fname).write_text(orig)
+        # ⛔ RESTORING THE MUTATED FILE IS NOT RESTORING THE TREE. A mutation's EXECUTION can
+        # write state the clean script never writes, and that state outlives the run: the file
+        # goes back, the residue does not. `check-banner-armed.py` reads
+        # `ROOT/.claude/executing-plan`, `ROOT/.claude/banner-flush-observations.log` and
+        # `ROOT/.claude/banner-turn-state/`, and `HARNESS_TREE` stages `.claude/hooks`, so
+        # `.claude/` EXISTS in the staged tree and is writable by every suite that runs there.
+        #
+        # ⭐ MEASURED, round 1 of backlog #217: CI shard 1 of 8 reported `CANNOT RUN —
+        # check-banner-armed.py is no longer green AFTER the sequence` and therefore NOT
+        # MEASURED, while shards 2-8 passed and master was green with the unsharded sweep on
+        # the same tree. The after-control was RIGHT — the tree had changed underneath it — and
+        # the thing that changed it was a mutation this harness had just run.
+        #
+        # ⚠ SCOPE IS `.claude/` AND IS STATED RATHER THAN IMPLIED. It is the directory this
+        # repository uses for project state, it is 13 files and 0.07 MB so restoring it per
+        # mutation costs nothing measurable, and it is the one the measured failure involved. A
+        # mutation that writes OUTSIDE it — into `docs/` or `scripts/` — is still unrestored,
+        # and the after-control remains the thing that catches that. This narrows the hole; it
+        # does not close the class, and the next instance will look exactly like this one.
+        _restore_project_state(d, _state_snapshot)
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
         # git is a could-not-tell"), and splitting on the first one truncated it to
@@ -3738,6 +3813,52 @@ def _self_test() -> int:
     # ⛔ "The final line of STDOUT names the mode" (see the docstring) is now too weak: a
     # sharded run's line is a verdict about a FRACTION of the manifest, and read without the
     # shard it is indistinguishable from a whole-repo pass in a CI log.
+    # ⛔ ROUND 1, CODEX MEDIUM — THE MODE REFUSAL, WHICH `--self-test` USED TO OUTRUN. These
+    # case `shard_mode_refusal` rather than `main`, because `main(["--self-test", …])` would
+    # re-enter the suite running this case. ⚠ The FIRST row is the one the defect needed: a
+    # shard alongside --self-test, which exited 0 and printed a clean result. The coordinator
+    # had cased the SECOND row only — `--shard` with no mode at all — which refused correctly
+    # the whole time.
+    case("⛔ a shard alongside --self-test is refused, not silently accepted — the mode runs no "
+         "mutations, so a shard over it would report success for a subject nothing touched",
+         ((shard_mode_refusal("2/8", None) or "").startswith("CANNOT RUN"),
+          (shard_mode_refusal("garbage", None) or "").startswith("CANNOT RUN"),
+          "NOTHING WAS MEASURED" in (shard_mode_refusal("0/0", None) or "")),
+         (True, True, True))
+    case("...and a shard WITH --mutate is the one combination that means something",
+         shard_mode_refusal("2/8", "."), None)
+    case("...and no shard at all is never refused, whatever the mode",
+         (shard_mode_refusal(None, None), shard_mode_refusal(None, ".")), (None, None))
+    # ⛔ ROUND 1, CLAUDE H1 — THE STATE A MUTATION'S EXECUTION LEAVES BEHIND. Restoring the
+    # mutated FILE was never restoring the TREE, and the after-control correctly reported
+    # `NOT MEASURED` when a mutation's residue made a later control red. These case the
+    # snapshot/restore pair directly, over a real directory, because the defect is about the
+    # filesystem and a mock of it would assert the contract I imagined.
+    with tempfile.TemporaryDirectory() as _sd:
+        _s = pathlib.Path(_sd)
+        (_s / PROJECT_STATE / "hooks").mkdir(parents=True)
+        (_s / PROJECT_STATE / "hooks" / "h.sh").write_text("original\n")
+        _snap = _snapshot_project_state(_s)
+        # a mutation run writes residue: a NEW file, and an EDIT to a staged one
+        (_s / PROJECT_STATE / "executing-plan").write_text("plan: x\narmed: t\n")
+        (_s / PROJECT_STATE / "hooks" / "h.sh").write_text("CLOBBERED\n")
+        (_s / PROJECT_STATE / "banner-turn-state").mkdir()
+        (_s / PROJECT_STATE / "banner-turn-state" / "s.json").write_text("{}")
+        _dirty = sorted(str(f.relative_to(_s / PROJECT_STATE))
+                        for f in (_s / PROJECT_STATE).rglob("*") if f.is_file())
+        _restore_project_state(_s, _snap)
+        _clean = sorted(str(f.relative_to(_s / PROJECT_STATE))
+                        for f in (_s / PROJECT_STATE).rglob("*") if f.is_file())
+        case("⛔ a mutation's residue in .claude/ is removed before the next run — an ADDED "
+             "file goes, and a CLOBBERED one comes back, or the next control reads state the "
+             "control never saw and the whole shard reports NOT MEASURED",
+             (len(_dirty), _clean, (_s / PROJECT_STATE / "hooks" / "h.sh").read_text()),
+             (3, ["hooks/h.sh"], "original\n"))
+    with tempfile.TemporaryDirectory() as _sd:
+        case("...and a tree with no .claude/ at all snapshots as None and restores to nothing, "
+             "rather than raising inside the mutation loop",
+             (_snapshot_project_state(pathlib.Path(_sd)),
+              _restore_project_state(pathlib.Path(_sd), None)), (None, None))
     case("the slice is named when there is no shard", shard_label(None), "the WHOLE manifest")
     case("...and it is named I of N, in that order, when there is one",
          shard_label((2, 5)), "shard 2 of 5 (round-robin)")
@@ -4192,7 +4313,7 @@ def _self_test() -> int:
     # `--shard I/N`. A RISE is the ordinary direction; the sum moves in the same commit as the
     # per-file count, because the two numbers are the only things that make coverage leaving
     # visible, and a sum that follows later is a sum nobody can attribute.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1193)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1196)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -4330,6 +4451,12 @@ def main(argv: list[str]) -> int:
                          "difference. WITHOUT THIS the check reads only the plan's copy "
                          "of the code and says nothing about the delivered scripts.")
     a = ap.parse_args(argv)
+    # ⛔ BEFORE EVERY MODE, --self-test INCLUDED. `--self-test` used to return here first, so a
+    # meaningless shard rode through as a clean exit 0 — see `shard_mode_refusal`.
+    _mode_why = shard_mode_refusal(a.shard, a.mutate)
+    if _mode_why:
+        print(_mode_why, file=sys.stderr)
+        return 2
     if a.self_test:
         return _self_test()
     # ⛔ PLAN MODE IS RETIRED (2026-09-08). Decided by the user after four adversarial review
@@ -4373,11 +4500,7 @@ def main(argv: list[str]) -> int:
     # its log said "shard 3 of 5".
     shard = None
     if a.shard:
-        if not a.mutate:
-            print(f"CANNOT RUN — --shard {a.shard} only means something with --mutate ROOT, "
-                  f"which is the only mode that runs mutations. NOTHING WAS MEASURED.",
-                  file=sys.stderr)
-            return 2
+        # The mode refusal already ran at the top of `main`, before any mode dispatched.
         shard, why = parse_shard(a.shard)
         if why:
             print(why, file=sys.stderr)

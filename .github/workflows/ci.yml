@@ -567,6 +567,23 @@ jobs:
     # across shards rather than divided. Deliberate — a "caught" verdict is empty without a
     # green control for the file it is about. It also means N is not free, and it is why the
     # measured speedup at N=8 is 5.0x (1758s -> 353s) rather than 8x: see the matrix.
+    #
+    # ⛔⛔ AND THE REPETITION IS NOT ONLY A COST — IT MULTIPLIES THE FALSE-RED EXPOSURE OF THE
+    # ONE CHECK WHOSE JOB IS TO INVALIDATE A RUN. Round 1's Claude half measured it: 114
+    # control + re-control suite runs unsharded become **822 at N=8** and 1,316 at N=16 — a
+    # 7.21x increase — and every shard controls every file it touches, so a file controlled by
+    # all eight shards is run sixteen times instead of twice. The after-control answers "did
+    # the tree change underneath us"; running it 7.21x more often finds 7.21x more drift,
+    # whether or not the drift means anything about the delivered code.
+    #
+    # ⭐ THIS IS NOT HYPOTHETICAL — IT FIRED ON THE FIRST CI RUN OF THIS VERY CHANGE. Shard 1
+    # of 8 reported `CANNOT RUN — scripts/check-banner-armed.py is no longer green AFTER the
+    # sequence`, and therefore `NOT MEASURED`, while shards 2-8 passed and master was green
+    # with the unsharded sweep on the same tree. ⚠ THE GATE BEHAVED CORRECTLY: it refused to
+    # report coverage it could not vouch for, which is the whole point of the after-control.
+    # The defect is upstream of it — a mutation's EXECUTION can leave state in the shared
+    # staged tree that the next control then reads. See `run_mutations`, which restores the
+    # mutated FILE and, before this change, nothing else.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
