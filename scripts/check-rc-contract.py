@@ -782,41 +782,51 @@ def _self_test() -> int:
     # site — so `check-fixture-variation.py` was right that nothing could tell it from a literal.
     # The suite is stubbed out rather than re-entered, because `main(["--self-test"])` for real is
     # unbounded recursion; `main` resolves `_self_test` from module globals at call time.
-    # ── r3 MEDIUM — THE PROPERTY MUST BE TAKEN THROUGH THE PRODUCTION SPAWN, NOT THE CONSTANT.
-    # r2's fix asserted the VALUE of `SUBPROCESS_ENV_KEYS`; nothing asserted the spawn READS it, so
-    # replacing the reference at the call site with an inline literal missing the key left both
-    # suites green at 56/56 and 59/59 — and an inline hand-copied scrub IS round 8 H1's original
-    # defect, the very thing this constant exists to prevent. Measured before the repair.
-    # ⛔ So the probe drives the REAL scrub through the REAL spawn: a hook that imports a module.
-    # It is therefore red in BOTH directions — the constant losing the key, and the call site
-    # ceasing to consult it — and the two mutation entries name this one case.
-    # ⚠ It SETS the variable rather than reading the caller's, so the verdict cannot depend on how
-    # the guard was invoked (backlog #56's shape), and it restores the prior value in a `finally`.
+    # ── r3 CODEX MEDIUM + LOW — AN ABSENCE IS NOT A MEASUREMENT WITHOUT ITS PRECONDITION.
+    # r2 asserted the constant's VALUE; r3 drove the real spawn but asserted only that NO cache
+    # appeared — and the hook redirects the import to /dev/null, so an import that never ran also
+    # produces no cache. Measured: with the key REMOVED and the probe importing `_missing_pycprobe`,
+    # both suites passed. Three rounds, one shape: a negative proved by interception cannot
+    # terminate, which is this repo's own recorded class.
+    # ⛔ THE FIX CHANGES KIND RATHER THAN WIDENING. The probe now returns a CONJUNCTION — a positive
+    # witness that the import ran under the scrubbed spawn, PLUS the cache names — so:
+    #   import never ran  -> [] ................... RED (the r3-codex false pass)
+    #   key absent        -> ["ran", "<pyc>"] ..... RED (the r2/r3 defect)
+    #   correct           -> ["ran"] .............. GREEN
+    # ⚠ `TemporaryDirectory` rather than `mkdtemp` — r3 Codex measured 8 leaked dirs per run (Low).
     def _production_spawn_writes_cache() -> list[str]:
-        """-> `.pyc` names the REAL scrubbed spawn leaves behind. `[]` is the property holding."""
-        _probe = tempfile.mkdtemp()
-        _hook_src = (
-            '#!/usr/bin/env bash\n'
-            'set -uo pipefail\n'
-            f'printf \'V = 1\\n\' > "{_probe}/_pycprobe.py"\n'
-            f'PYTHONPATH="{_probe}" python3 -c \'import _pycprobe\' >/dev/null 2>&1\n'
-            'python3 -c \'import json,sys; print(json.dumps({"hookSpecificOutput":'
-            '{"hookEventName":"PostToolUse","additionalContext":sys.stdin.read()}}))\' '
-            '<<<"probe-detail"\n'
-            'exit 0\n')
-        _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
-        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
-        try:
-            observe(_hook_src, 5, _PROBE)
-        finally:
-            if _saved is None:
-                os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
-            else:
-                os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
-        return sorted(q.name for q in (Path(_probe) / "__pycache__").glob("*.pyc"))
+        """-> `["ran"]` when the import HAPPENED and left no cache. Any other value is the defect.
+
+        The witness is what makes the absence meaningful: `[]` means the import never ran, which
+        is a CANNOT-RUN wearing the shape of a pass.
+        """
+        with tempfile.TemporaryDirectory() as _td:
+            _probe = Path(_td)
+            _ran = _probe / "ran"
+            (_probe / "_pycprobe.py").write_text(
+                f"open({str(_ran)!r}, 'w').write('1')\n", encoding="utf-8")
+            _hook_src = (
+                '#!/usr/bin/env bash\n'
+                'set -uo pipefail\n'
+                f'PYTHONPATH="{_probe}" python3 -c \'import _pycprobe\' >/dev/null 2>&1\n'
+                'python3 -c \'import json,sys; print(json.dumps({"hookSpecificOutput":'
+                '{"hookEventName":"PostToolUse","additionalContext":sys.stdin.read()}}))\' '
+                '<<<"probe-detail"\n'
+                'exit 0\n')
+            _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
+            os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+            try:
+                observe(_hook_src, 5, _PROBE)
+            finally:
+                if _saved is None:
+                    os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
+                else:
+                    os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
+            return ((["ran"] if _ran.exists() else [])
+                    + sorted(q.name for q in (_probe / "__pycache__").glob("*.pyc")))
 
     case("a spawn scrubbed by THIS guard's allowlist writes no bytecode cache — r2 Medium",
-         _production_spawn_writes_cache(), [])
+         _production_spawn_writes_cache(), ["ran"])
 
     _saved_st = globals()["_self_test"]
     globals()["_self_test"] = lambda: 99
