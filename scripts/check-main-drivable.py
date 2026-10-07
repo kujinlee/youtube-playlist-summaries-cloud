@@ -78,8 +78,8 @@ judgement is the call site, and a file passes on its best one.
 5. `pin_stale` reconciles only against the WHOLE population: a path override or a constructed root
    reports no pin findings at all, and prints that it skipped them.
 
-THE DEBT SET IS NOT A BASELINE OF ZERO. 27 of the 37 guards with a `main()` do not satisfy this
-today — this file is in its own population and is one of the 10 that do — and backlog #56's measured
+THE DEBT SET IS NOT A BASELINE OF ZERO. 27 of the 38 guards with a `main()` do not satisfy this
+today — this file is in its own population and is one of the 11 that do — and backlog #56's measured
 verdict is that a gate red from birth gets switched off. `MAIN_DEBT`
 pins them by name and is reconciled in BOTH directions: a pinned guard that now complies is a
 violation naming itself (so the debt cannot be paid silently and then re-accrued), and a pinned

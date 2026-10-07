@@ -868,14 +868,19 @@ def main(argv: list[str], root: Path = ROOT) -> int:
             return 1
         # ⛔ THE SUCCESS LINE CARRIES ITS OWN COVERAGE — round 3 HIGH 1. It used to say only
         # "no element crossed below AA", printed directly beneath an ADVISORY reporting that
-        # 29,950 of 66,732 baselined sites were not measured. MEASURED: that green covered
-        # 55.1% of its own baseline, and regenerating the four gitignored derived pages made
+        # 29,950 of 65,370 baselined sites were not measured. MEASURED: that green covered
+        # 54.2% of its own baseline, and regenerating the four gitignored derived pages made
         # the identical command exit 1 with ten NEW below-AA sites.
         # ⚠ A verdict that omits its denominator is read as whole-corpus by every reader
         # INCLUDING THE ONE WHO WROTE IT: the coordinator quoted this line as proof that a fold
         # was verified while the advisory sat two lines above it in the same output. The
         # docstring of `population_notes` even states the derived pages are 45.7% of the
         # baseline — the number was known and simply never reached the verdict.
+        # ⟳ 2026-10-06, round 4 M2: this comment FIRST said "66,732 … 55.1%" and labelled it
+        # MEASURED. Both were wrong: the baseline holds 65,370 keys and the line below computes
+        # 54.2%. The author had summed `scored + missed` instead of reading the baseline's own
+        # total, corrected it in conversation, and left the wrong pair here — a wrong number
+        # labelled MEASURED, inside the comment that exists to warn about unlabelled numbers.
         _measured, _total, _missed = coverage(samples, base)
         _cov = (f"{_measured / _total * 100:.1f}% of baseline ({_measured} of {_total} site(s))"
                 if _total else "no baseline")
