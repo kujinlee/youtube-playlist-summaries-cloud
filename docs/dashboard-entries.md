@@ -13400,6 +13400,81 @@ marker this session's own hook had written. Proven with the marker present and r
 ⛔ **STILL NOT CONVERGED.** Round 3 is owed and goes to **Codex first**, alternating, per the
 convergence document's own recommendation.
 
+## 2026-10-02
+A rule the project decided a day ago but had never written down is now a working check. The
+decision was: a safety script should be testable the way a person actually runs it — end to end,
+over a fake copy of the project — and not only one function at a time. Eleven separate bugs had
+slipped through because each fix made the untestable part slightly bigger, and the project settled
+the question in a written decision record on 1 October without building the thing that enforces it.
+It is built now. Of 44 safety scripts, 8 can be tested that way; the other 29 are listed by name as
+known debt, so nobody has to remember which is which, and paying one off without updating the list
+is itself reported.
+
+Two things found while building it, both worth knowing because they are the same mistake in
+different clothes. The check's first draft would have **rejected the project's own best example** of
+the practice it was written to encourage — the decision record predicted exactly that and said so,
+which is why it was caught before the check shipped rather than after. And its first live run
+credited a script that does not deserve credit, because it looked for a temporary substitution
+anywhere in the test file instead of asking whether the substitution was still in place when the
+test ran. Both now have named tests that fail if the mistake returns.
+
+**Waiting on you:** nothing here. Two questions were written down rather than decided: whether this
+check should ask the same question of scripts whose entry point is not called `main` (the same bug
+appeared four times today in the page server, in exactly that shape), and a separate finding you
+spotted yourself — every automatic hook in this project is registered by a relative path, so all of
+them, including the one that stops a push to the main branch, quietly do nothing whenever a command
+has left the working directory somewhere else. Nothing was pushed while it was down.
+<!--tech-->
+`scripts/check-main-drivable.py` — ADR-0014's rule D2, 438 cases, 183 mutations, 27 of 37 pinned as
+`MAIN_DEBT`. Three routes admitted (param / argv / rebind); argv-as-world is the one the
+architecture review's draft omitted, which would have false-positived on
+`check-fixture-variation.py`. Two defects found by the first live run: unwalked tuple assignment
+targets (false negative on `check-plan-file-tags.py`, and `check-rc-contract.py` credited from the
+wrong call site), and substitution-vs-restore (false credit on `check-dashboard-entry.py`, whose
+`FLAG` swap is restored 1,160 lines before its `main` call). Backlog #222 (entry-point scope) and
+#223 (relative hook paths, fail-open) filed. Wired as two CI steps in the `verify` job.
+
+## 2026-10-03
+The safety check built yesterday was reviewed three times, each review found that the previous
+fix had been aimed at the wrong thing, and so the project's own rule for that situation fired: stop
+patching and ask whether the design is wrong. You chose that, and then chose to act on what it
+found. It was wrong, in a way worth writing down plainly.
+
+The check has to look at a test and decide one thing: when this test runs the script, is it pointing
+it at a **fake copy** of the project or at the **real one**? It turns out the check was not deciding
+that at all. Of the twenty-one times it said "yes, that's a fake copy", all twenty-one came from a
+branch that simply says yes without looking at anything. Every part of it that did look only ever
+said **no** — including saying no to the exact example written in the decision record it exists to
+enforce, and saying no to the one script that record had actually been applied to. The giveaway
+measurement: fifteen different ways of writing an expression, six different worlds, and in all
+fifteen cases the answer was the same for every world. The check's answer never depended on the
+thing it was supposed to be about.
+
+It now works from the inside of an expression outward instead of the outside in, which means there
+is no longer a list of shapes to keep extending — and that was the point, because the three reviews
+had been extending one. Every number improved and none got worse: of ninety test combinations,
+forty-five were wrong before and none are now; the five canonical ways of writing the repair all
+pass where none did; the verdicts on all forty-four scripts are unchanged; and it is twenty-five
+lines shorter. The one script whose verdict moved, moved in the right direction — it regained credit
+for a repair it had genuinely made.
+
+**Waiting on you:** the pull request, which is the only thing that needs your hand. Two questions
+were written down rather than decided: whether this check should ask about scripts whose entry point
+is not called `main`, and a sharper one — the decision record asks its question about *running* a
+test, while the check answers it by *reading* the test's source. Nobody had noticed that difference,
+and three rounds of review argued about its consequences without naming it.
+<!--tech-->
+Scoped Phase 6 review, armed by THRASHING: `docs/reviews/architecture-review-2026-10-03.md`.
+Mechanism: `_element_is_constructed` matched 6 of Python's 29 expression kinds and defaulted to
+`return True`; instrumented, 21 of 21 element-level credits exited that branch. Second defect:
+`guard_globals = module_globals(tree)` counts imports, so `Path`/`tempfile`/`os` read as the guard's
+own world — 8 of 10 canonical ADR-0014 repairs refused, live on `check-ratchet-contract.py:941,965,980`.
+The two masked each other (fixing imports alone: false refusals 4→0, false credits 15→18).
+Replaced by `world_class` — three leaf classes LIVE/BUILT/INERT recursing over the grammar.
+90-cell matrix 45→0 wrong, world-blind rows 15/15→0/15, 191→166 lines, compliance set identical
+(10/27/7), `check-ratchet-contract.py` rebind → param+rebind. 198 cases, 71 mutations (8 added, 19
+retargeted, 3 retired with their subject). Rounds 1–3: 19 findings, all folded, four commits.
+Backlog #224 (the run-vs-text fork), #222 (entry-point scope). `--mutate .` in flight at write time.
 ## 2026-10-05 [needs-you]
 The slowest safety check now runs eight ways at once, and finishes in six minutes instead of
 twenty-nine. It had grown past the time limit CI allows and was being killed before it finished,
@@ -13941,3 +14016,100 @@ a second home.
 today are `["verify","schema-gates"]`. ✅ `ci.yml` carries **no `paths:` filter**, so that context
 always reports on a PR to master — it therefore **cannot** recreate #137's pending-forever shape.
 Nine rounds warned about the danger; round 9 was the first to establish why it is clear.
+
+## 2026-10-06 [needs-you]
+**The check that was being killed now finishes.** PR #365 adds a safety check with 183 individual
+tests. On its own branch those ran inside a job with a thirty-minute ceiling and were **killed 26
+minutes into an 85-minute run** — so the work shipped unmeasured. Merging the sharding change (#366)
+into it splits that run across eight parallel jobs, and all eight now pass. That was the whole
+blockage, and it is gone.
+
+One more review round ran on the merged result, because no earlier round had seen it. Both halves
+came back clean, and **nothing either half found is in the thing being shipped** — the two real
+findings are about notes and a repository setting.
+
+**What needs you — two things, and the second is not new:**
+1. **Merging #365.** Merging is yours; the branch is ready on the gates, and the reviewer was explicit
+   that "converged" is a statement about the code and *not* a recommendation to merge while item 2 is
+   open.
+2. **One GitHub setting**, still outstanding from the last entry: add `mutation-sweep-complete` to the
+   required checks for `master`. Until it lands, a failing mutation is reported but **cannot block the
+   merge button** — which is most of what #365 is for.
+
+<!--tech-->
+**PR #365: `origin/master` (#366) MERGED in as `70ad61d1`; round 11 CONVERGED; now at `26b3f142`.**
+
+MERGED, not rebased — the branch carries a prior merge commit and 28 commits, so a rebase replays 27
+of them through the two files with real semantic conflicts. The repo squash-merges, so the delivered
+diff is identical. **Three conflicts, not the five a `comm -12` predicted** (`ci.yml` and
+`roadmap-to-launch.md` auto-merged); `scripts/mutations/*.json` did not collide, so the 183-entry
+manifest arrived untouched and no anchor was hand-merged. ⚠ Round 11 found my own merge commit
+under-enumerated the true merges: **`docs/memory/MEMORY.md` is a sixth one, named nowhere in it** (a
+clean union). It also verified the backlog result is exactly `A ∪ B` — 233 rows, 0 duplicates, with
+220/221 absent from *both* parents rather than lost — and that `check-python-pin` passes **and is
+falsifiable**: removing the `mutation-sweep` pin in memory yields `['ci.yml:mutation-sweep']`, so the
+pass is not vacuous. Neither my own verification list nor Codex's had falsified it.
+
+⭐ **THE SWEEP COMPLETES, MEASURED — and the filed margin was wrong.** All 8 shards plus
+`mutation-sweep-complete` green at `70ad61d1`, the first matrix run that actually contained these 183
+entries:
+
+| | |
+|---|---|
+| per-shard wall clock | 1310 / 977 / 659 / 856 / 1228 / 1304 / 1289 / **1377** s |
+| slowest · mean | **1377 s = 22.9 min** · 1125 s |
+| margin vs the 30-min cap | **1.31×** — *not* the 1.9× backlog #231 was filed with |
+| #231's own `FAILS IF` trigger | 1,500 s — **not breached, but 123 s below it**: 8% of headroom, not 25% |
+
+**Round 11's Medium is why that number moved — and the round then CORRECTED ITSELF, against its own
+magnitude, which is the part worth recording.** `ci.yml:563-564`, `ci.yml:636-639` and #231 all rested
+on `check-main-drivable.py --self-test` costing `~30s`, a figure with no measurement behind it. The
+round first offered three laptop timings (54.47 s warm, 64.11 s cold, 74.40 s under the
+`PYTHONDONTWRITEBYTECODE=1` that `child_env` sets) and called the model off by 1.8×–2.5× — and I wrote
+that into #231 and into this entry. ⛔ **ITS AUTHOR THEN WITHDREW THOSE TIMINGS AS CI EVIDENCE**, having
+re-derived the per-suite cost from the shard numbers above: mean 1125 s less the 221 s control floor
+leaves ~904 s over ~24.9 suite runs = **~36.3 s each, 1.21× the model, not 1.8×–2.5×**. The laptop
+overstates this runner by 1.5×–2.0×.
+
+⭐ **So the margin (1.31×) is CI's and stands; only the EXPLANATION moved, and it moved to a narrower
+and more durable one:** `183/8 × 30s` omits the per-suite cost **and the two extra control runs per
+shard, which do not divide by N** — the same non-dividing floor that makes N=8 worth 5.0× rather than
+8×. ⚠ The round's prediction landed within 6% of actual **partly by luck, two errors in opposite
+directions** — its words, not a hedge I added. ⚠ Measured spread across shards is **2.09×** against
+the 1.15× `ci.yml:648-649` predicts. #231 amended with CI's numbers, then corrected, raised 🟡 → 🟠.
+⛔ The lever stays **N**, never `timeout-minutes`.
+
+⚠ **AND THE HIGH WAS UNFILED, so it is now #236.** Neither #230 (what the aggregator *observes*) nor
+#235 (two specific whole-manifest checks that lost their `verify` home) has *"the aggregator is not a
+required context"* as its subject, so closing either would have left it standing. `rulesets` is empty
+too, so neither protection mechanism supplies it. **A green sweep is not a blocking sweep** — all
+eight shards passed on `70ad61d1` and that changes nothing about this.
+
+**Round 11, both halves, on the tree that merges — 0 Blocking, 0 in the deliverable.**
+
+- **Codex: zero findings.** It independently rescanned every manifest `find` against the delivered
+  source (0 missing, 0 ambiguous) and **refuted my own caveat**: I had flagged that stubbing
+  `run_suite` might make my anchor result an artefact of the stub, and it showed the concern is void —
+  `run_mutations` resolves the anchor before it ever calls `run_suite` (`check-plan-code.py:1960`).
+- **Claude: CONVERGED**, 1 High + 1 Medium + 1 Low, none in the deliverable. It established *why*
+  that is credible rather than thin: `check-main-drivable.py` is blob `34ffb91a` at **both** parents,
+  so rounds 1–10's subject never moved across the merge — only its environment did.
+- ⭐ **It derived provenance my own merge commit said it lacked.** That message settled for *"1211 +
+  183 = 1394 is a cross-check that agrees, and agreement is not provenance."* It is derivable:
+  1178/57 at the merge base, 1361/58 and 1211/57 at the two parents, 1394/58 at `HEAD`, with
+  1178 + 183 + 33 = 1394 — and **zero files had their count changed on both sides**, so there was no
+  collision candidate anywhere in the dict. I understated my own evidence.
+
+**Four stale figures corrected** to the verified **438 cases / 183 mutations / 27 pinned** —
+`ci.yml:390`, two roadmap sites, one dashboard figure. All four were TRUE at `840a7b43`; round 1's
+`5d3f3c2c` moved them and **no round re-read those files in 21 commits**. The two prose sites also
+disagreed with each other (73 vs 74), which is the tell that neither was derived. Checked for the
+**absence** of the old values, not just the presence of the new ones.
+
+⚠ **ONE QUIET ROUND, NOT TWO, and the tree question is WAIVED rather than passed.**
+`review-method.md:103-107` counts ROUNDS, and round 10's Claude half had 1 Blocking + 3 High in the
+deliverable — so (a)-convergence wants a second consecutive quiet round on the letter of the rule.
+And the only guarded-code change after round 11's verdict is a one-word **comment** correction in
+`ci.yml` (`29 of 37` → `27 of 37`) that round 11 itself asked for, declared `NO-REVIEW:` per
+`review-method.md:118` rather than spending a round re-reviewing a comment — the cost PR #302 paid
+twice.

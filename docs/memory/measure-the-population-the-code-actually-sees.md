@@ -137,3 +137,38 @@ evaporated with the tool call — then the *same* pipe defect recurred within th
 occurrence was a different command. **If the repair does not land in a file that outlives the turn — a
 memory, a script, a checklist — it is an instance fix wearing the word "class".** Related:
 [[after-fixing-search-for-the-class]], [[a-check-result-is-not-the-claim]].
+
+⟳ **2026-10-04, AND IT COST THREE WRONG PROGRESS REPORTS — a watcher that matched ITSELF.**
+`until ! pgrep -f "partial-sweep.py"; do sleep 60; done` can never terminate: `pgrep -f` matches on
+the **whole command line**, and the waiter's own command line contains the string `partial-sweep.py`
+inside its quoted pattern. So the loop found "a process" forever, I reported *"still RUNNING"* three
+times, and a stale waiter from an earlier sweep had been spinning on the same bug for over an hour.
+The real signal was the output file's **mtime**, unchanged for 23 minutes.
+
+⛔⛔ **AND THE KNOWN-POSITIVE CHECK THIS FILE PRESCRIBES WAS ALSO WRONG.** I ran
+`pgrep -f "[p]artial-sweep[.]py"`, got three PIDs, and read that as *the pattern finds the real
+sweep*. All three were the stale **waiters** — the bracket trick protects the pattern, not the
+haystack, and their command lines held the unbracketed literal. **A known-positive check is only
+evidence if you confirm WHICH object matched**, not that something did.
+
+**How to apply:** never wait on `pgrep` for a process whose name appears in the waiting command.
+Wait on a signal the subject itself emits and the watcher cannot contain — a completion marker in
+the output (`until grep -q "^elapsed" out`), a sentinel file, or the process's exit via
+`run_in_background`. See [[a-hang-is-not-a-diagnosis]].
+
+⟳ **2026-10-05 — AND ONCE AGAINST MY OWN READING, not a script.** I read an adversarial review
+with `sed -n '144,214p'` and `sed -n '214,270p'`, line ranges chosen by eye from a heading scan
+that grepped `^## ` while the findings were `^### `. The ranges silently truncated, **two findings
+of eleven were never read**, and I reported the round folded. The only thing that surfaced it was
+the teammate's own summary stating counts — *3 Mediums, 4 Lows* — that did not match what I had
+acted on.
+
+⭐ **A RANGE IS NOT A POPULATION.** Enumerate first, then read:
+
+    grep -nE "^#+ (H|M|L)[0-9] " <review>
+
+**How to apply:** before acting on any structured document — a review, a backlog, a report — get
+the COUNT of items from the document itself and reconcile it against the number you acted on. A
+heading grep that returns fewer items than the summary claims is the cheap version of this check,
+and it would have fired here in one second. ⚠ The same applies to a teammate's report: its counts
+are a free falsifier for your own reading, so compare them rather than skimming past them.

@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three decisions on PR #365, and the measurement that closed each</title>
+
+<style>
+:root{
+  --bg:#fbfaf8; --fg:#1b1a18; --fg2:#45423d; --fg3:#6d6862; --rule:#e2ddd5;
+  --card:#fff; --accent:#8a4b1f; --accent2:#2f5d50;
+  --verified:#2f5d50; --verified-br:#bcd4cb; --verified-bg:#eef5f2;
+  --warn:#8a2f2f; --warn-br:#e3c3c3; --warn-bg:#fbf0f0;
+  --em:#2d4a7c;
+  --code:#f3f0ea; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#15161a; --fg:#e8e6e2; --fg2:#bdb9b2; --fg3:#8e8a84; --rule:#2e3036;
+    --card:#1c1e23; --accent:#e2a06a; --accent2:#7fc0ab;
+    --verified:#7fc0ab; --verified-br:#2f5d50; --verified-bg:#1a2a26;
+    --warn:#e39a9a; --warn-br:#5d2f2f; --warn-bg:#2a1a1a;
+    --em:#9db8e8;
+    --code:#22242a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 ui-serif,Georgia,"Times New Roman",serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:52rem;margin:0 auto;padding:2.2rem 1.15rem 6rem}
+h1{font-size:1.95rem;line-height:1.2;margin:0 0 .4rem;letter-spacing:-.015em;position:relative}
+h2{font-size:1.3rem;margin:2.6rem 0 .7rem;padding-top:1.1rem;border-top:1px solid var(--rule);
+  letter-spacing:-.01em;position:relative}
+h3{font-size:1.05rem;margin:1.7rem 0 .5rem;color:var(--fg);position:relative}
+p{margin:.75rem 0}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.855em;background:var(--code);
+  padding:.12em .36em;border-radius:3px;word-break:break-word}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:7px;
+  padding:.85rem 1rem;overflow-x:auto;white-space:pre;margin:.9rem 0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+.sub{color:var(--fg3);font-size:.95rem;margin:.1rem 0 .3rem}
+.reading{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:0 7px 7px 0;padding:.8rem 1rem;margin:1.3rem 0;font-size:.95rem}
+.howto{background:var(--card);border:1px solid var(--rule);border-radius:7px;
+  padding:.85rem 1rem;margin:1.4rem 0;font-size:.89rem;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto ol{margin:.4rem 0 .2rem;padding-left:1.2rem}
+.howto li{margin:.22rem 0}
+.tbl{width:100%;overflow-x:auto;margin:1rem 0}
+table{border-collapse:collapse;width:100%;font-size:.88rem;
+  font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+th,td{text-align:left;padding:.44rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:650;color:var(--fg2);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+tbody tr:hover{background:var(--card)}
+.ok{color:var(--verified);font-weight:650}
+.no{color:var(--warn);font-weight:650}
+blockquote{margin:1rem 0;padding:.6rem 0 .6rem 1rem;border-left:3px solid var(--rule);
+  color:var(--fg2);font-style:italic}
+blockquote p{margin:.3rem 0}
+.big{background:var(--verified-bg);border:1px solid var(--verified-br);border-radius:8px;
+  padding:1.1rem 1.2rem;margin:1.5rem 0}
+.warnbox{background:var(--warn-bg);border:1px solid var(--warn-br);border-radius:8px;
+  padding:.9rem 1.1rem;margin:1.3rem 0}
+.toc{font-size:.92rem;font-family:ui-sans-serif,system-ui,sans-serif;background:var(--card);
+  border:1px solid var(--rule);border-radius:7px;padding:.9rem 1.1rem}
+.toc ol{padding-left:1.3rem;margin:.4rem 0}
+.toc li{margin:.3rem 0}
+.tag{display:inline-block;font:600 .68rem/1.5 ui-sans-serif,system-ui,sans-serif;
+  text-transform:uppercase;letter-spacing:.05em;padding:.05rem .4rem;border-radius:3px;
+  border:1px solid var(--rule);color:var(--fg3);vertical-align:.1em}
+.tag.m{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.tag.i{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.chose{font:650 .72rem/1.5 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--verified)}
+.lost{font:650 .72rem/1.5 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--fg3)}
+tr.won td{background:var(--verified-bg)}
+.cite{font-family:var(--mono);font-size:.78rem;color:var(--fg3)}
+.frame{font-size:1.06rem;line-height:1.6;border-left:3px solid var(--accent2);
+  padding:.2rem 0 .2rem 1.1rem;margin:1.5rem 0;color:var(--fg)}
+.lede{font-size:1.1rem;color:var(--fg2);margin:.6rem 0 1.4rem}
+hr.soft{border:0;border-top:1px solid var(--rule);margin:2rem 0}
+.fn{font-size:.85rem;color:var(--fg3);font-family:ui-sans-serif,system-ui,sans-serif}
+
+/* ── READING EXPERIMENT, 2026-10-05 ────────────────────────────────────────────
+   Three ways of signalling structure, switchable live. Scheme 1 is what shipped:
+   headings, body and <b> are ALL var(--fg), so the only channel carrying
+   structure is luminance. 2 and 3 add hue.
+   ⛔ Teal (--verified) and red (--warn) are untouched in all three: on these
+   pages they MEAN measured / warning, and spending them on emphasis would make
+   every bolded phrase assert something it does not mean. */
+:root              { --head:var(--accent); --prose:var(--fg2); --emph:var(--em); }
+:root[data-scheme="1"]{ --head:var(--fg);     --prose:var(--fg);  --emph:var(--fg); }
+:root[data-scheme="2"]{ --head:var(--accent); --prose:var(--fg2); --emph:var(--fg); }
+body            { color:var(--prose) }
+h1,h2,h3,h4     { color:var(--head) }
+b,strong        { color:var(--emph) }
+.schemer{margin:1.1rem 0 1.6rem;font-size:.8rem;
+  font-family:ui-sans-serif,system-ui,sans-serif;color:var(--fg3);
+  display:flex;flex-wrap:wrap;align-items:center;gap:.3rem}
+.schemer .lbl{color:var(--fg3)}
+.schemer button{font:inherit;font-size:.78rem;cursor:pointer;padding:.15rem .5rem;
+  border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--fg3)}
+.schemer button:hover{border-color:var(--accent);color:var(--fg2)}
+.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+<h1>Three decisions on PR #365, and the measurement that closed each</h1>
+<p class="sub"><b>As of commit <code>5101f82c</code></b> on branch <code>d2-main-drivable</code> &middot; 2026-10-05, ~11:20 PDT</p>
+
+<div class="reading">
+<b>What this page is.</b> Not an account of what was done &mdash; an account of <b>why each of three
+forks closed the way it did</b>, with the rejected options named and the reason each one lost.
+Written because you said you could not follow why I was doing X rather than Y.
+</div>
+
+<div class="howto">
+<b>This page can answer back.</b>
+<span id="modechip">served &rarr; Send works; opened as a file &rarr; copies instead</span>
+<ol>
+<li>Stable URL: <code>http://127.0.0.1:7391/latest</code> &mdash; always the newest page. <code>/</code> lists them all.</li>
+<li><b>To ask:</b> select any text, or hover a heading, &rarr; <i>ask</i> &rarr; type &rarr; <b>Send</b>. Then say <b>&ldquo;read my questions&rdquo;</b> in chat.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> from the repo. Safe to run twice. <b>A reboot stops it</b> &mdash; that is the one moment you will need this line.</li>
+<li>A <code>file://</code> copy of this page still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="schemer" id="schemer">
+<span class="lbl">Text style:</span>
+<button type="button" data-s="3" class="on">colour</button>
+<button type="button" data-s="2">headings only</button>
+<button type="button" data-s="1">plain</button>
+</div>
+
+<script>
+(function(){
+  var r=document.documentElement, box=document.getElementById('schemer');
+  if(!box) return;
+  var saved=null; try{ saved=localStorage.getItem('explainer-scheme'); }catch(e){}
+  function set(s){
+    if(s==='3'){ r.removeAttribute('data-scheme'); } else { r.setAttribute('data-scheme',s); }
+    var bs=box.querySelectorAll('button[data-s]');
+    for(var i=0;i<bs.length;i++){ bs[i].className = (bs[i].getAttribute('data-s')===s)?'on':''; }
+    try{ localStorage.setItem('explainer-scheme',s); }catch(e){}
+  }
+  box.addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;
+    if(b) set(b.getAttribute('data-s'));
+  });
+  set(saved==='1'||saved==='2'?saved:'3');
+})();
+</script>
+
+<h2 id="frame">The thing worth noticing first</h2>
+
+<p>Your complaint was not <i>what are you doing</i> &mdash; the step banners answered that. It was
+<b>why not something else</b>. And looking back at all three decisions, the answer has the same
+shape every time:</p>
+
+<div class="frame">
+In each case the fork was closed by a <b>measurement that eliminated an option</b>, not by a
+preference. And in the third case, the measurement eliminated <b>my own recommendation</b> &mdash;
+the one I had argued for an hour earlier.
+</div>
+
+<p>That is why the reasoning was invisible to you. These were not judgement calls dressed up in
+confident prose; they were forks closed by evidence. But the evidence arrived inside tool calls you
+never see, and all that surfaced in the transcript was the conclusion plus a selection card whose
+option descriptions are built to be skimmed. <b>The reasoning existed and was never delivered.</b>
+That is the defect this page exists to fix, and it is mine, not the tooling's.</p>
+
+<div class="toc">
+<b>The three decisions</b>
+<ol>
+<li><a href="#d1">Run round 10, or stop and merge, or build the #224 instrument first</a> &mdash; <span class="lost">closed by a rule that judges aim, not severity</span></li>
+<li><a href="#d2">Redesign or patch the Blocking &mdash; and where I refuted the reviewer who proposed the redesign</a> &mdash; <span class="lost">closed by two controls</span></li>
+<li><a href="#d3">Defer the 85-minute CI sweep, having recommended fixing it first</a> &mdash; <span class="lost">closed against me, by your question</span></li>
+</ol>
+<p style="margin:.6rem 0 0"><a href="#pattern">What the three have in common</a> &middot; <a href="#measured">Measured vs inferred</a> &middot; <a href="#open">Still open</a></p>
+</div>
+
+<h2 id="d1">1 &middot; Round 10, or stop and merge, or build the instrument</h2>
+
+<p>This was the card you were mid-decision on when you reset context. Three options, and the two I
+did not recommend were <b>not weak</b> &mdash; each rested on real evidence:</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th>Option</th><th>What it rested on</th><th>Outcome</th></tr></thead>
+<tbody>
+<tr class="won"><td><b>A &mdash; run round 10</b></td><td>The stop condition was unmet, and round 9's extraction had materially changed the code</td><td><span class="chose">chosen</span></td></tr>
+<tr><td>B &mdash; stop, merge with residue written down</td><td><b>Zero live false greens</b> in nine rounds across 44 real guards. The gate's actual job was already being done correctly</td><td><span class="lost">rejected</span></td></tr>
+<tr><td>C &mdash; park the PR, build the #224 dynamic instrument</td><td><b>Three rounds</b> had independently pointed at it. It removes the residual defect class rather than another instance of it</td><td><span class="lost">rejected</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Why A won, in one rule</h3>
+
+<p>The stop condition is a table in <code class="cite">docs/review-method.md:105-110</code>, and the
+decisive row is the last one:</p>
+
+<pre><code>| a **Blocking or High**                                  | **CONTINUE** |
+| a finding **in the deliverable**                        | **CONTINUE** |
+| non-trivial fixes                                       | **CONTINUE** |
+| **two consecutive rounds** with neither, every finding
+  aimed at the **instrument**                            | **STOP**     |</code></pre>
+
+<p>Round 9 had carried a Blocking and three Highs, with 14 of its 15 findings in the deliverable. So
+the counter of consecutive qualifying rounds stood at <b>0 of 2</b> &mdash; it had not had its first
+clean round, let alone two. Option B was therefore not &ldquo;a slightly lower bar&rdquo;; it was
+<b>abandoning the condition entirely</b> while it read CONTINUE.</p>
+
+<p>And the line immediately after that table, <code class="cite">review-method.md:112</code>, is the
+part that makes it bite:</p>
+
+<blockquote><p>&ldquo;Judge by <b>AIM, not severity</b> &mdash; a clean severity column describes the
+reviewers, not the design. On PR #302 severity read &lsquo;converged&rsquo; from round 1 and was
+useless; aim separated the rounds cleanly. Inverted, it is why PR #299 was right to run
+seventeen.&rdquo;</p></blockquote>
+
+<h3>The argument I had and did not give you</h3>
+
+<p>Round 9 closed with an extraction &mdash; a single callee-identity owner &mdash; that introduced
+seven new or reshaped functions. <b>No review round had ever seen that code.</b> And the four rounds
+before it had each found their Blocking or High in exactly that position: the newest repair. So the
+expected value of round 10 was not &ldquo;maybe something turns up&rdquo;; it was &ldquo;the place
+that has yielded a Blocking four times running is currently unexamined&rdquo;.</p>
+
+<div class="big">
+<p style="margin:0"><b>Round 10 vindicated the choice.</b> It returned <b>11 findings</b> &mdash; 1 Blocking,
+3 High, 4 Medium, 3 Low &mdash; with <b>10 of 11 in the deliverable</b> and <b>6 of 11 caused by round
+9's own fix</b>. I then reproduced the Blocking myself: <b>7 of 7 rows, including both controls</b>.
+Had option B been chosen, that Blocking would have merged.</p>
+</div>
+
+<p class="fn"><b>What would have made this wrong:</b> if round 10 had come back clean, or with
+everything aimed at the instrument, then B was the better call and I had spent two or three hours to
+learn it. That was the stated trade-off, and it was a real risk, not a rhetorical one.</p>
+
+<h3 id="q224">&#8617; Asked from this page: what is #224 about? Could that be the resolution of
+the root cause? Why wasn&rsquo;t it recommended?</h3>
+
+<p><b>Short answer: yes, #224 is the root cause &mdash; and no, building it would not have caught the
+Blocking round 10 found.</b> Those two facts sit together uncomfortably, and the second is the one I
+did not know well enough to say out loud when I offered you the card.</p>
+
+<h4>What #224 actually is</h4>
+
+<p>It is a <b>fork nobody wrote down</b>. <code>docs/adr/0014-a-guards-main-is-drivable.md</code> asks a
+question about a <b>run</b>: <i>does this guard&rsquo;s <code>--self-test</code> invoke <code>main()</code>
+over a world the case constructed?</i> The implementation,
+<code>scripts/check-main-drivable.py</code>, answers a question about <b>source text</b>: <i>can any
+case point <code>main</code> at such a world?</i> Those are not the same question. The substitution
+appears in no ADR, no docstring limit and no backlog row, and it was surfaced only by the scoped
+architecture review of 2026-10-03 &mdash; <b>after rounds 1, 2 and 3 had already spent nineteen
+findings on its consequences</b>.</p>
+
+<h4>Yes &mdash; it is the root cause, and you are right to point at it</h4>
+
+<p>Everything hard about the static rule follows from that fork, because deciding <i>built</i> from
+<i>live</i> over arbitrary Python expressions is <b>undecidable in general</b>. That is why three
+separate rounds each found the previous fix aimed at a spelling rather than at the rule. Round 5
+measured the size of it: <code>classify()</code> over fourteen worlds, each the sole <code>root=</code>
+argument of a <code>main</code> call, returned <b>thirteen false credits</b> &mdash; and the only three
+refusals were exactly the three names a hand-curated list happened to contain.</p>
+
+<div class="big">
+<p style="margin:0"><b>But it is blind to the route this round&rsquo;s Blocking lives on.</b> The
+proposal in #224 is a dynamic half <i>beside</i> the static rule, never a replacement, for a stated
+reason: it is <b>structurally blind to 3 of the 10 current credits, because a substitution of a module
+global leaves no filesystem trace</b>. REBIND <i>is</i> the module-global substitution route &mdash;
+and B1 is a false credit on REBIND. <b>The instrument that dissolves the class cannot see the defect
+round 10 found.</b></p>
+</div>
+
+<h4>So why wasn&rsquo;t it recommended?</h4>
+
+<p>Three reasons, weakest first, because the weakest is the one I led with at the time and that was a
+mistake:</p>
+
+<ul>
+<li><b>The PR accrues conflicts while it waits.</b> True, and the least important thing on this list.</li>
+<li><b>The static guard ships either way.</b> The dynamic half is <i>additive</i>. Building it does not
+delete <code>check-main-drivable.py</code> or its defects &mdash; those still need fixing, and the
+blind spot above means some of them can only ever be found statically.</li>
+<li><b>#224 is a decision you own, not a task I can execute.</b> It carries three options: (a) whether
+D2 gains a dynamic half at all; (b) if so, which verdict wins when the two disagree &mdash; a question
+the 7-vs-10 gap makes concrete today; or (c) amend ADR-0014&rsquo;s wording to say <i>source text</i>,
+making the static rule the literal reading. <b>Option (c) is not a no-op</b>: it would be the first
+time this project amended an ADR&rsquo;s Decision rather than superseding it, and <code>docs/adr/</code>
+has no stated rule for doing that.</li>
+</ul>
+
+<p>And the argument that actually carried was none of those &mdash; it was that the stop condition was
+unmet and round 9&rsquo;s extraction had never been reviewed. Round 10 vindicated that. But
+<b>vindicating the choice is not the same as the alternative being wrong</b>, and I should have said
+so more plainly on the card.</p>
+
+<p class="fn"><b>What this changes going forward:</b> it strengthens the case for doing #224
+<i>next</i>, once this PR is closed out. Three rounds had independently pointed at it; round 10 is the
+fourth. The honest framing is that #224 and round 10 were never substitutes &mdash; one removes a
+defect <i>class</i> going forward, the other found a defect <i>instance</i> that was about to merge.
+<b>UNVERIFIED:</b> the &ldquo;7 compliant under a dynamic observer vs 10 under the static rule&rdquo;
+figures are the independent architecture read&rsquo;s, quoted from backlog #224; I have not re-derived
+them.</p>
+
+<h2 id="d2">2 &middot; Redesign or patch &mdash; and refuting the reviewer who proposed the redesign</h2>
+
+<p>This is the decision I would most want you to see, because the interesting part is that
+<b>the reviewer was right about the defect and wrong about the fix</b>, and taking its
+recommendation at face value would have broken something.</p>
+
+<h3>The defect, first</h3>
+
+<p>The guard asks whether a test case drives <code>main()</code> over a world the case built.
+One route &mdash; REBIND, where a case substitutes a global that <code>main</code> reads &mdash; was
+handing out credit it had not earned. The code is at
+<code class="cite">scripts/check-main-drivable.py:1180</code>:</p>
+
+<pre><code>if world_class(value, fn, tree, world) is LIVE:
+    bound_here = {n.id for n in ast.walk(fn or value)
+                  if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    if not (names &amp; bound_here):
+        return False
+return True</code></pre>
+
+<p>It asks the owner of the question &mdash; <code>world_class</code> &mdash; what world an
+expression is, gets back LIVE, and then <b>throws that answer away</b> if any leaf of the expression
+is a name the case bound. I reproduced the consequences:</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th>Substituted value</th><th>PARAM route</th><th>REBIND route</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>same_root(td)</code>, where <code>same_root</code> returns <code>ROOT</code></td><td>refused</td><td class="no">credited</td><td>round 8's Codex Blocking, reopened</td></tr>
+<tr><td><code>os.path.relpath(td)</code></td><td>refused</td><td class="no">credited</td><td>round 8's <code>relpath</code> repair, voided</td></tr>
+<tr><td><code>os.path.join('.', td)</code></td><td>refused</td><td class="no">credited</td><td>round 5's ambient-literal rule, voided</td></tr>
+<tr><td><code>os.path.join(f'.', td)</code></td><td>refused</td><td class="no">credited</td><td>round 9's own f-string High, voided</td></tr>
+<tr><td><code>os.path.abspath('sub')</code></td><td>refused</td><td class="ok">refused</td><td>control &mdash; holds</td></tr>
+<tr><td><code>tempfile.mkdtemp()</code></td><td>credited</td><td class="ok">credited</td><td>control &mdash; correct both ways</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>And the discriminating control: drop the argument, and the credit vanishes.
+<code>globals()['ROOT'] = same_root(td)</code> earns <code>rebind</code>;
+<code>same_root()</code> earns nothing. <b>One case-bound argument was the entire purchase price of
+the credit</b> &mdash; even though <code>same_root</code> ignores that argument and hands back the
+world <code>main</code> already had.</p>
+
+<h3>Why the proposed fix was wrong</h3>
+
+<p>The reviewer's repair was: <i>&ldquo;one authoritative world verdict that no route may override
+&mdash; all four routes consume <code>world_class</code>'s answer&rdquo;</i>. I measured it before
+implementing it, and two results refuted it:</p>
+
+<div class="warnbox">
+<p style="margin:.1rem 0"><b>1. A credit that must survive.</b>
+<code>_o = OTHER; globals()['ROOT'] = _o</code> substitutes one world global for another. That
+<i>is</i> a change &mdash; <code>main</code> now reads a different global &mdash; and REBIND should
+credit it even though PARAM correctly refuses it (it is not a world the case <i>built</i>). The two
+routes legitimately disagree here. Making them share one verdict destroys that credit, and the
+code's own comments record it being lost once already and restored.</p>
+<p style="margin:.6rem 0 .1rem"><b>2. The purpose the clause claims is not the purpose it serves.</b>
+Its comment says it exists to credit &ldquo;a world derived FROM the live one &mdash; a modified
+copy&rdquo;. I tested exactly that: <code>os.path.join(ROOT, 'sub')</code> and
+<code>os.path.dirname(ROOT)</code> are <b>refused on both routes</b> today. The clause does not do
+the job it says it does.</p>
+</div>
+
+<p>So the reviewer's finding was correct and its repair was too strong. This is a recurring
+shape here, not a one-off: round 8's reviewer also proposed a fix that was <b>dead <i>and</i>
+wrong</b> while its finding was sound. It is why the implementing brief said to treat every proposed
+fix as unverified code.</p>
+
+<h3>The design that went in instead</h3>
+
+<p>The defect is not that a second place decides the question. It is that the second place decides it
+through a <b>proxy</b>:</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th></th><th>The rule</th></tr></thead>
+<tbody>
+<tr><td><b>Proxy</b> (before)</td><td>Does a case-bound <i>name appear anywhere in the expression text?</i></td></tr>
+<tr><td><b>Property</b> (after)</td><td>Does this expression <i>yield a different world global</i> than the one being replaced?</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The proxy fails whenever a case-bound name appears but does not reach the value &mdash; which is
+precisely <code>same_root(td)</code>. This project has a commit named for the class:
+<i>&ldquo;A proxy for a property is not the property&rdquo;</i>.</p>
+
+<p>And the strong version was <b>already in the file, one branch up</b>, at
+<code class="cite">check-main-drivable.py:1178</code>, handling reads of the module dictionary:</p>
+
+<pre><code>return _key is not None and _key != name</code></pre>
+
+<p>That line compares the <i>resolved world identity</i> to the name being replaced. The clause
+below it asks the same question through the weaker proxy. Meanwhile round 9's own extraction had
+just supplied the parts needed to generalise the strong version &mdash;
+<code>_resolve_callee</code> (<code class="cite">:1559</code>) and <code>_ret_exprs</code>
+(<code class="cite">:1578</code>) resolve a call to the expressions it hands back. So the redesign
+reuses existing machinery rather than adding any.</p>
+
+<h3>Why the <i>warrant</i> mattered more than the conclusion</h3>
+
+<p>This is the subtlest reason, and it is the one I would have lost entirely in a transcript. There
+are two ways to argue for deleting a clause, they reach the same conclusion, and <b>only one
+survives review</b>:</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th>Argument</th><th>About</th><th>Record in this slice</th></tr></thead>
+<tbody>
+<tr><td>&ldquo;Its mutation cannot die, so the clause does nothing&rdquo;</td><td>today's reachability</td><td class="no">3 deletions argued this way were <b>reversed</b>. One clause was dead <i>and</i> wrong</td></tr>
+<tr class="won"><td>&ldquo;A later, more general mechanism subsumes it&rdquo;</td><td>meaning</td><td class="ok">Every deletion argued this way <b>held</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The first is a claim about what the code currently happens to reach; the second is a claim about
+what it <i>means</i>. The redesign here is the second kind, which is why I was willing to do it at
+all &mdash; and why the brief told the implementer that if any part of the old clause is
+<i>not</i> subsumed, keep that part and say so.</p>
+
+<h3>Redesign or patch: the rule has exactly one test</h3>
+
+<p>Six of round 10's eleven findings were caused by round 9's own fix, which is the shape that
+escalates a component from <i>fix</i> to <i>redesign</i>. But the rule is emphatic that its own
+symptom table must not be used to decide
+(<code class="cite">docs/review-method.md:198-200</code>):</p>
+
+<blockquote><p><b>&ldquo;THE SYMPTOM LIST IS A PROMPT, NOT THE TEST. There is one test, and it is
+this: Can a redesign remove it?&rdquo;</b></p></blockquote>
+
+<p>It says so because using the list as a checklist produced a <b>measured false escalation on
+2026-08-14</b> &mdash; one reviewer escalated a stale type signature whose real fix was six words.
+Applied here, the test answers <b>yes</b>: a single authoritative world verdict dissolves the
+Blocking and the masking pair the extraction itself introduced. So the redesign was <b>owed by the
+rule</b>, not an override of it &mdash; which also means there is no override to record, the cheaper
+outcome.</p>
+
+<h2 id="d3">3 &middot; Deferring the 85-minute CI sweep, after recommending the opposite</h2>
+
+<p>Here I was simply wrong, your question caught it, and the correction is worth seeing as a
+correction rather than smoothed into a clean narrative.</p>
+
+<h3>What I said first</h3>
+
+<p>PR #365's CI was red: the <code>verify</code> job had been killed by its 30-minute ceiling
+(<code class="cite">.github/workflows/ci.yml:38</code>) during the step that runs the full mutation
+sweep (<code class="cite">ci.yml:496-497</code>):</p>
+
+<pre><code>- name: Mutation manifest against the delivered scripts
+  run: python3 scripts/check-plan-code.py --mutate .</code></pre>
+
+<p>I recommended fixing it <b>first</b>, by moving the sweep into its own parallel job &mdash; backlog
+#217's shape (a) &mdash; and I described that as <b>&ldquo;ci.yml only&rdquo;</b>. Then you asked:</p>
+
+<blockquote><p>&ldquo;A is good but how do we know it will avoid 30min timeout issue?&rdquo;</p></blockquote>
+
+<h3>The measurement that refuted me</h3>
+
+<p>I had never checked how much of the 30 minutes <i>was</i> the sweep. It turned out GitHub had
+captured the sweep's own <code>[N/1341]</code> progress output, which makes this a direct
+measurement rather than a projection:</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th>Measured</th><th>Value</th><th>Where from</th></tr></thead>
+<tbody>
+<tr><td>Entries 1&ndash;363 (every script alphabetically before the new guard)</td><td>224s</td><td>log timestamps</td></tr>
+<tr><td>Entries 364&ndash;407 &mdash; the first <b>44 of the new guard's 163</b></td><td>1252s &rarr; <b>28.5s each</b></td><td>log timestamps</td></tr>
+<tr><td>Still to run when the job was killed</td><td><b>119</b> of its entries, plus <b>815</b> later ones</td><td>arithmetic</td></tr>
+<tr class="won"><td><b>Cross-check:</b> <code>master</code>'s manifest total is <b>1178 = 1341 &minus; 163</b> &mdash; exactly this branch's file &mdash; and it sweeps all 1178 in</td><td><b>467s</b> (mean of 3 green runs)</td><td>CI</td></tr>
+<tr><td><b>Projected total</b>: 224 + 163&times;28.5 + ~243</td><td class="no">~5112s &asymp; <b>85 min</b></td><td></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>So the job was not 1% over budget. It was <b>26 minutes into an 85-minute run</b>. Its own job at a
+30- or 45-minute ceiling fails identically. And a second check refuted the other half of my claim:
+<code>--mutate ROOT</code> is <b>all-or-nothing</b> &mdash; it has no shard or filter flag &mdash; so
+it was never a <code>ci.yml</code>-only edit either.</p>
+
+<h3>The cost law, which is the part worth keeping</h3>
+
+<div class="frame">
+The sweep re-runs a guard's <b>whole</b> self-test once per mutation. So its cost is
+<b>mutations &times; suite_time</b>. The new guard has <b>163</b> mutations and a <b>30.0s</b>
+self-test &mdash; and it is the first guard in the repo where both factors are large at once.
+</div>
+
+<p>That is why the entire 85 minutes is attributable to one file, and why the three remaining
+options are all real work: a sharded CI matrix (needs a flag that does not exist), a ~100-minute
+dedicated job (a budget nobody is keeping, by backlog #217's own test), or moving the full sweep off
+the PR path entirely.</p>
+
+<h3>Why defer rather than fix it now</h3>
+
+<p>Two reasons, and the second is the stronger: the fix is <b>real engineering on the harness every
+other guard's evidence depends on</b>, so it needs its own review; and round 10's fold <b>changes the
+mutation count</b>, which would make every number above stale. Fixing it first meant deriving the
+arithmetic twice. The measurement was written into backlog #217
+(<code class="cite">docs/backlog.md:245</code>) and committed as <code>5101f82c</code>, so it is
+durable rather than living in this conversation.</p>
+
+<h2 id="pattern">What the three have in common</h2>
+
+<p>In all three, the deciding move was the same: <b>construct the thing and look, rather than reason
+about it</b>.</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th>Decision</th><th>What closed it</th><th>Who it went against</th></tr></thead>
+<tbody>
+<tr><td>Round 10 vs stop vs build</td><td>A rule read from the file, not recalled &mdash; and the counter standing at 0 of 2</td><td>Nobody. But it put 2&ndash;3 hours at risk</td></tr>
+<tr><td>Redesign vs patch</td><td>Two controls: a credit that must survive, and a stated purpose the clause does not serve</td><td><b>The reviewer</b> whose finding I was acting on</td></tr>
+<tr><td>Fix CI first vs defer</td><td>The sweep's own progress log, plus a cross-check on <code>master</code></td><td><b>Me</b>, an hour earlier</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Which is also the answer to your underlying question. The reason you could not follow why X rather
+than Y is that <b>in each case Y was eliminated by something I ran, not by something I thought</b>
+&mdash; and a tool call leaves no trace you can read. The step banners said what I was doing; they
+never said what I had just ruled out, or why.</p>
+
+<h2 id="measured">Measured vs inferred</h2>
+
+<p>You cannot tell these apart from prose, and the difference is usually what matters.</p>
+
+<div class="tbl">
+<table>
+<thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>The B1 table: 4 false credits + 2 controls</td><td><span class="tag m">measured</span></td><td>Reproduced in-process against the real module; 7 of 7 rows matched</td></tr>
+<tr><td>The cannot-fail REBIND test row</td><td><span class="tag m">measured</span></td><td>Two independent ways &mdash; no <code>main()</code> call in the row, and <code>routes.add(REBIND)</code> has one production site (<code class="cite">:1981</code>) nested inside <code>for call, fn, kind in calls:</code> (<code class="cite">:1973</code>), unreachable when <code>calls == 0</code></td></tr>
+<tr><td>Sweep needs ~85 min</td><td><span class="tag m">measured</span></td><td>Progress log + a cross-check that agrees; the total itself is a projection <i>from</i> measurements, not a guess</td></tr>
+<tr><td><code>--mutate ROOT</code> has no shard flag</td><td><span class="tag m">measured</span></td><td><code>--help</code></td></tr>
+<tr><td>Round 9's extraction had never been reviewed</td><td><span class="tag m">measured</span></td><td>Round 9's review doc predates the commits that created it</td></tr>
+<tr><td>&ldquo;Three deletions reversed; the subsumption ones held&rdquo;</td><td><span class="tag i">inferred</span></td><td>From this slice's commit messages and memory notes, not re-derived commit by commit</td></tr>
+<tr><td>Round 10's own blast-radius figures (0 of 44)</td><td><span class="tag i">inferred</span></td><td><b>The reviewer's measurement, not mine.</b> I verified B1 and H1 by hand; I did not re-run the other nine</td></tr>
+<tr><td>The redesign is correct</td><td><span class="tag i">inferred</span></td><td>The design is verified against the four disagreements and two controls. Whether the <i>implementation</i> is right is pending &mdash; see below</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="open">Still open, as of this page</h2>
+
+<ul>
+<li><b>The fold outcome is NOT KNOWN.</b> <code>r10-fold</code> was still running when this page was
+built. Whether the redesign passes the 404-case suite, keeps the 44-guard verdicts stable, and
+reddens each new mutation via its named case is <b>unverified</b>.</li>
+<li><b>PR #365's CI is still red</b> on the 85-minute sweep. Deferred to its own slice by your call.</li>
+<li><b>Production's database migration state is NOT MEASURED.</b> The roadmap's &ldquo;prod stays at
+<code>0026</code>&rdquo; is six weeks old; no credentials were used this session to check it.
+Separately, 5 commits of deployable code &mdash; including a 1,898-line migration &mdash; are merged
+and undeployed, and <code>flyctl apps list</code> returns one app where PR #322's design needs two.</li>
+<li><b>Merging is yours.</b> It always is.</li>
+</ul>
+
+<hr class="soft">
+<p class="fn">Built by the <code>explain-topic</code> skill. Horizon: commit <code>5101f82c</code>,
+2026-10-05 ~11:20 PDT. Line numbers are as of that commit &mdash; the working tree was being edited
+concurrently while this was written, so citations were taken from <code>git show 5101f82c:&lt;path&gt;</code>
+rather than from disk.</p>
+
+</div>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-05 12:30 · 5101f82c · uncommitted changes</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
