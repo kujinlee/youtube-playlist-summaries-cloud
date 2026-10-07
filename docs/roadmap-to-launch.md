@@ -2210,11 +2210,11 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       2 cases; it catches round 9's Blocking (52/54) AND a `BASELINE` severance that #213's guard
       demands no entry for. `check-surface-recall.py` is the expensive one — three defaulted rule
       parameters must come out first.
-- [x] **D2 — one bit per guard — BUILT 2026-10-02 as `scripts/check-main-drivable.py`** (74 cases,
-      18 mutations, two CI steps). It admits **three** routes — a world parameter, an `argv` that
+- [x] **D2 — one bit per guard — BUILT 2026-10-02 as `scripts/check-main-drivable.py`** (438 cases,
+      183 mutations, two CI steps). It admits **three** routes — a world parameter, an `argv` that
       names a computed path, and a global substitution that is still LIVE at the call — so the
       drafted false positive never shipped: `check-fixture-variation.py` passes on `argv+rebind`.
-      ⭐ **Measured exposure 29 of 37, pinned by name in `MAIN_DEBT`** and reconciled in both
+      ⭐ **Measured exposure 27 of 37, pinned by name in `MAIN_DEBT`** and reconciled in both
       directions; the set came from the tool's own run, not from a list written beside it, and the
       hand-written list it replaced was wrong about two files. ⛔ **Three defects the first live run
       found in the rule itself**, each now a named regression case: an order-dependent single-route

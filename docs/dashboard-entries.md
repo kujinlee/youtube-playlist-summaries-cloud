@@ -13425,7 +13425,7 @@ spotted yourself — every automatic hook in this project is registered by a rel
 them, including the one that stops a push to the main branch, quietly do nothing whenever a command
 has left the working directory somewhere else. Nothing was pushed while it was down.
 <!--tech-->
-`scripts/check-main-drivable.py` — ADR-0014's rule D2, 73 cases, 18 mutations, 29 of 37 pinned as
+`scripts/check-main-drivable.py` — ADR-0014's rule D2, 438 cases, 183 mutations, 27 of 37 pinned as
 `MAIN_DEBT`. Three routes admitted (param / argv / rebind); argv-as-world is the one the
 architecture review's draft omitted, which would have false-positived on
 `check-fixture-variation.py`. Two defects found by the first live run: unwalked tuple assignment
