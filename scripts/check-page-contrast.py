@@ -789,8 +789,18 @@ def _self_test() -> int:
     # every CannotRun into one `return 2`: probe missing, no pages, node absent, the browser
     # run exiting non-zero. So severing the corpus line (`root` → `ROOT`) swaps one refusal
     # cause for another and the integer never moves. MEASURED: that mutant is killed only
-    # where a browser exists, and SURVIVES in the world CI actually has — node present,
-    # Chromium absent (`ci.yml:53-57` installs node 22; nothing installs Chromium).
+    # where a browser exists, and SURVIVES wherever it runs as a gate.
+    # ⚠ TWO DIFFERENT MISSING DEPENDENCIES, AND THE FIRST VERSION OF THIS COMMENT NAMED ONLY
+    # THE WEAKER ONE (round 5 M1 — the third pass over this same sentence: the original
+    # falsifier named a no-node runner, Phase 6 corrected it to Chromium, and the operative
+    # layer is one further down again). In CI's `verify` job the suite runs against a full
+    # `node_modules`, so the missing piece really is the BROWSER (`ci.yml:53-57` installs
+    # node 22; nothing installs Chromium). But inside the MUTATION HARNESS — where these
+    # entries are actually measured — `HARNESS_TREE` stages `node_modules/typescript` ONLY,
+    # and `page-contrast-probe.mjs` is `import { chromium } from "playwright"`, so the probe
+    # dies at MODULE RESOLUTION (`ERR_MODULE_NOT_FOUND`) before any browser is looked for.
+    # MEASURED: this laptop has working Chromium (`measure()` returns 214 samples in the real
+    # worktree) and the staged tree still refuses. Installing Chromium changes nothing there.
     # ⚠ #240's own FAILS IF named a no-node runner, which is not that world. Corrected in
     # the row; as first written it could have been satisfied by installing node.
     # The seam is what lets a case reach PAST the browser and read the DECISION instead.
@@ -798,7 +808,10 @@ def _self_test() -> int:
     def _world(tmp: Path, names: tuple[str, ...]) -> Path:
         """A constructed corpus. The viewport meta is what `is_served_page` keys on."""
         (tmp / "docs" / "explainers").mkdir(parents=True)
-        (tmp / "scripts").mkdir()
+        # ⚠ NO `scripts/` HERE, AND ITS TWIN IS LOAD-BEARING — round 5 L5. The D2 setup
+        # above creates one so the probe is MISSING under the constructed root, which is what
+        # makes those two cases refuse; here the recorder replaces `measure`, so the probe
+        # path is never taken and the directory was dead. The two lines looked interchangeable.
         for n in names:
             (tmp / "docs" / "explainers" / n).write_text(
                 '<meta name="viewport" content="width=device-width"><p>hello</p>',
@@ -895,11 +908,29 @@ def main(argv: list[str], root: Path = ROOT, measure_fn=measure) -> int:
     Backlog #240. The cause is that every CannotRun funnels into one `return 2`, so a severance
     that swaps one refusal cause for another is invisible to a case asserting the integer.
 
-    ⚠ THE BOUND, STATED RATHER THAN HIDDEN. A `measure_fn` double covers this function's
-    DECISION path — corpus resolution, palette selection, verdict rendering, refusal routing.
-    It does NOT cover the probe, and `a-mocked-boundary-tests-the-contract-you-imagined` is why
-    that is said plainly: the probe is already unexercised by the suite in CI (no Chromium), so
-    the seam adds coverage without removing any. It must not be described as testing the
+    ⚠ THE BOUND — AND THE FIRST VERSION OF THIS PARAGRAPH OVERCLAIMED IT, WHICH IS WORSE
+    THAN SAYING NOTHING BECAUSE IT WAS HEADED "STATED RATHER THAN HIDDEN". It listed FOUR
+    components and the cases measure THREE. Round 5 H1, reproduced by severing the palette
+    path four ways — each one leaves the suite at **104/104 GREEN**:
+        extra = re.sub(...standard_palette_css())  ->  extra = ""      104/104
+        elif args.raw:                             ->  elif not args.raw:  104/104
+        extra = Path(args.extra_css).read_text()   ->  extra = ""      104/104
+        measure_fn(pages, extra_css=extra, ...)    ->  measure_fn(pages, ...)  104/104
+    ⛔ THE FIRST OF THOSE REINSTATES BACKLOG #221 — the gate measuring the bare files
+    instead of what a reader sees — and the comment three lines above that branch says so in
+    writing. So the honest statement is:
+
+        COVERED by the cases below: corpus resolution, verdict rendering, refusal routing.
+        NOT COVERED: palette selection, and the probe.
+
+    ⚠ THE MECHANISM IS #239'S OWN SHAPE, INSIDE THE FIX FOR #239. `_recorder` records
+    `root` — a deliberate sentinel, asserted — and absorbs `extra_css` into a default it
+    never reads. One argument threaded and witnessed, its sibling not. Closing it is a
+    ratchet/coverage task, not a correction, and is tracked rather than done here.
+
+    `a-mocked-boundary-tests-the-contract-you-imagined` is why the probe exclusion is said
+    plainly: the probe is already unexercised by the suite wherever it runs as a gate, so the
+    seam adds coverage without removing any. It must not be described as testing the
     measurement. The cases below are RECORDERS, not stubs — they assert the real page list
     this function computed, so the binding is to the production value, not to a fixture.
     """

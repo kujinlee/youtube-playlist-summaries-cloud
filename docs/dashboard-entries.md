@@ -14178,3 +14178,55 @@ measurement. The cases are RECORDERS, not stubs.
 guarded code was committed after every one of them") — red before this commit, and this commit adds
 guarded code. #242 remains open and now has the falsifier it lacked. Folding was stopped on a
 thrashing verdict; merging is the human gate.
+
+## 2026-10-06
+Correcting the entry above, within the hour, because its own "here is what this does not cover"
+paragraph was the part that was wrong.
+
+That entry said the repair covered four things. A review checked, and it covers three. The missing
+one is the part that decides which stylesheet gets measured — and one of the ways it can silently
+break is the exact bug this whole piece of work exists to prevent: the check going back to measuring
+the raw files instead of what a reader actually sees. The tests would not have noticed.
+
+Nothing shipped is worse than it was, and the three things the entry claimed about the look of the
+pages all hold. What was wrong was a sentence advertising its own honesty. The gap is now written
+down accurately in four places and tracked as work rather than quietly closed.
+
+<!--tech-->
+Round 5, Claude half standing in for Codex (`REVIEW GAP: codex` — no frontier model resolvable, both
+cached models are `visibility: "hide"`). **NOT CONVERGED: 1 High, 1 Medium, 5 Low; the High is in the
+deliverable.** Full doc: `docs/reviews/claude/unify-explainer-style-r5-claude.md`.
+
+**H1 — the BOUND named four components and measures three.** VERIFIED BY ME, not taken on trust:
+severing the palette path four ways each leaves the suite at **104/104 GREEN** — `extra = ""`,
+`--raw`/default inverted, the `--extra-css` branch, and `extra_css` dropped from the call site. ⛔ The
+first REINSTATES #221. The mechanism is **#239's own shape inside the fix for #239**: `_recorder`
+records `root` (a sentinel, asserted) and absorbs `extra_css` into a default it never reads.
+
+**M1 — the code comments named the wrong missing dependency.** Measured: this laptop has working
+Chromium (`measure()` → 214 samples in the real worktree) and the staged tree still refuses, with
+`ERR_MODULE_NOT_FOUND` for `playwright` — module resolution, before any browser lookup. Two
+environments, two different missing pieces: CI's `verify` job lacks the BROWSER; the mutation harness
+lacks the PACKAGE, because `HARNESS_TREE` stages `node_modules/typescript` only. Both code sites now
+say so; the backlog rows already did. Third pass over that one sentence.
+
+Corrected here: H1's and M1's prose, L1 (#245 cited 4.0s — a whole 16-mutation run — for a claim
+about an anchor pass; the pass itself measures **91 ms** over 1,411 entries / 1,419 find-strings,
+0 unbound), L3 (#236's present-tense **1,394** → **1,411**), L4 (the bound sat on #241 alone, now on
+all three closure rows), L5 (a dead `mkdir` beside its load-bearing twin).
+
+**#236 CLOSED as a side-effect of L3** — its premise is now false, verified from the API:
+`required_status_checks.contexts` is `["verify","schema-gates","mutation-sweep-complete"]` and
+`rulesets` is length 0, so the aggregator IS required.
+
+⭐ **CI on `2025da34`: all 8 shards PASS and `mutation-sweep-complete` PASS** — 1,411 entries,
+0 survivors. Shard 7 `[73/176] main() resolves its corpus from the MODULE root` and shard 8
+`[73/176] the measurement stops being handed the root (#239)` were both killed AND **attributed**,
+in CI's own browserless world. Shard 4 passes where `470f4ba5` gave `NOT MEASURED — 175 of 176`. So
+Phase 6 Q1 is verified by the whole-manifest run, not only by my scoped copy.
+
+⚠ **STILL OPEN AND DELIBERATELY NOT DONE:** H1's capability half (witness `extra_css`, plus manifest
+entries for the palette path including the `extra = ""` severance) and L2 (no entry severs the seam's
+own default, which is the only path production uses). Both are new code and new ratchet surface;
+folding was stopped on a thrashing verdict, so that is the owner's call, not mine. `verify` stays RED
+on `check-review-recorded`; #242 remains open; merging is the human gate.
