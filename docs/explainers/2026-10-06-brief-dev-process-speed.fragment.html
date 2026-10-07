@@ -1,0 +1,793 @@
+<title>Ten rounds, then two — what the freeze changed</title>
+<style>
+:root{
+  --bg:#f6f5f2; --card:#fffefb; --ink:#1a1c22; --ink-soft:#4b5060; --ink-faint:#656c7d;
+  --rule:#ddd9d0; --structure:#3f4bb8; --good:#1f7a55; --defect:#b03a2b; --pending:#8f6410;
+  --structure-bg:#eceef9; --good-bg:#e7f2ec; --pending-bg:#f6efdd; --defect-bg:#f8ebe8;
+  --accent:#3f4bb8; --em:#2d4a7c;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+}
+:root[data-theme="light"]{
+  --bg:#f6f5f2; --card:#fffefb; --ink:#1a1c22; --ink-soft:#4b5060; --ink-faint:#656c7d;
+  --rule:#ddd9d0; --structure:#3f4bb8; --good:#1f7a55; --defect:#b03a2b; --pending:#8f6410;
+  --structure-bg:#eceef9; --good-bg:#e7f2ec; --pending-bg:#f6efdd; --defect-bg:#f8ebe8;
+  --accent:#3f4bb8; --em:#2d4a7c;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --card:#1d1c22; --ink:#eceaf0; --ink-soft:#c8c5cf; --ink-faint:#928e9c;
+  --rule:#38353f; --structure:#8f9bf0; --good:#6fcf9a; --defect:#f0937c; --pending:#d9b45e;
+  --structure-bg:#1e2140; --good-bg:#15271f; --pending-bg:#2a2314; --defect-bg:#2d1b17;
+  --accent:#8f9bf0; --em:#9db8e8;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --card:#1d1c22; --ink:#eceaf0; --ink-soft:#c8c5cf; --ink-faint:#928e9c;
+    --rule:#38353f; --structure:#8f9bf0; --good:#6fcf9a; --defect:#f0937c; --pending:#d9b45e;
+    --structure-bg:#1e2140; --good-bg:#15271f; --pending-bg:#2a2314; --defect-bg:#2d1b17;
+    --accent:#8f9bf0; --em:#9db8e8;
+  }
+}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);
+     font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.ex-body{max-width:50rem;margin:0 auto;padding:2.2rem 1.25rem 5rem}
+@media (max-width:40rem){ .ex-body{padding:1.4rem 1rem 3rem} body{font-size:16px} }
+
+.mast{margin:0 0 1.6rem}
+.eyebrow{font:600 .72rem/1.5 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+         color:var(--ink-faint);margin:0 0 .5rem}
+h1{font-family:var(--serif);font-size:clamp(1.85rem,4.4vw,2.7rem);line-height:1.12;
+   letter-spacing:-.015em;margin:0 0 .7rem;color:var(--head,var(--accent))}
+.standfirst{font-size:1.1rem;line-height:1.55;color:var(--ink-soft);margin:0 0 1.1rem;max-width:44rem}
+.standfirst b{color:var(--emph,var(--em))}
+
+h2{font-family:var(--serif);font-size:1.42rem;line-height:1.2;letter-spacing:-.01em;
+   margin:3.1rem 0 .3rem;color:var(--head,var(--accent));position:relative}
+h2 .n{font:600 .74rem/1 var(--mono);color:var(--ink-faint);display:block;margin-bottom:.42rem;
+      letter-spacing:.08em}
+h3{font-size:1.02rem;margin:1.9rem 0 .4rem;color:var(--head,var(--accent));position:relative;
+   letter-spacing:-.005em}
+h4{font-size:.95rem;margin:1.3rem 0 .35rem;color:var(--ink);position:relative}
+p{margin:.72rem 0;color:var(--prose,var(--ink))}
+strong{color:var(--emph,var(--em))}
+a{color:var(--accent)}
+code,.k{font-family:var(--mono);font-size:.88em;background:var(--structure-bg);
+        padding:.08em .34em;border-radius:3px;color:var(--ink)}
+
+.scope{border-left:3px solid var(--accent);background:var(--card);padding:.85rem 1.05rem;
+       margin:1.2rem 0 1.6rem;border-radius:0 6px 6px 0}
+.scope p{margin:.3rem 0}
+
+.new{border-left:3px solid var(--pending);background:var(--pending-bg);
+     padding:.8rem 1.05rem;margin:1.3rem 0;border-radius:0 6px 6px 0}
+.new p:first-child{margin-top:0} .new p:last-child{margin-bottom:0}
+.newtag{font:700 .68rem/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+        color:var(--pending);display:block;margin-bottom:.45rem}
+
+.keep{border-left:3px solid var(--good);background:var(--good-bg);
+      padding:.8rem 1.05rem;margin:1.3rem 0;border-radius:0 6px 6px 0}
+.call{border-left:3px solid var(--defect);background:var(--defect-bg);
+      padding:.8rem 1.05rem;margin:1.3rem 0;border-radius:0 6px 6px 0}
+.keep p:last-child,.call p:last-child{margin-bottom:0}
+.keep p:first-child,.call p:first-child{margin-top:0}
+
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.92rem}
+.scroll{overflow-x:auto;margin:1rem 0}
+.scroll table{margin:0}
+th,td{text-align:left;padding:.44rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:600 .74rem/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+   color:var(--ink-faint);border-bottom:2px solid var(--rule);white-space:nowrap}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+tr.hot td{background:var(--defect-bg)}
+tr.cool td{background:var(--good-bg)}
+
+.bars{margin:1.1rem 0}
+.bar{display:grid;grid-template-columns:9.5rem 1fr auto;gap:.6rem;align-items:center;
+     margin:.34rem 0;font-size:.9rem}
+.bar .lbl{color:var(--ink-soft)}
+.bar .track{background:var(--structure-bg);border-radius:3px;height:1.05rem;position:relative}
+.bar .fill{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--structure)}
+.bar .fill.hot{background:var(--defect)}
+.bar .val{font-family:var(--mono);font-size:.84rem;color:var(--ink-soft)}
+@media (max-width:34rem){ .bar{grid-template-columns:7rem 1fr auto} }
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.7rem;margin:1.2rem 0}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:7px;padding:.75rem .85rem}
+.stat .big{font:700 1.5rem/1.1 var(--mono);display:block;color:var(--ink)}
+.stat .cap{font-size:.78rem;color:var(--ink-faint);display:block;margin-top:.2rem;line-height:1.35}
+.stat.good .big{color:var(--good)} .stat.bad .big{color:var(--defect)}
+
+pre{background:var(--card);border:1px solid var(--rule);border-radius:7px;
+    padding:.8rem .9rem;overflow-x:auto;font-family:var(--mono);font-size:.82rem;
+    line-height:1.5;margin:.9rem 0;color:var(--ink)}
+.src{font:.76rem/1.5 var(--mono);color:var(--ink-faint);margin:.25rem 0 1.1rem}
+
+ul,ol{margin:.7rem 0;padding-left:1.25rem;color:var(--prose,var(--ink))}
+li{margin:.32rem 0}
+li::marker{color:var(--ink-faint)}
+
+.rulebox{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);
+         border-radius:0 7px 7px 0;padding:.85rem 1.05rem;margin:1rem 0}
+.rulebox h4{margin:0 0 .3rem;color:var(--head,var(--accent));font-family:var(--serif);font-size:1.05rem}
+.rulebox p{margin:.3rem 0}
+.rulebox .why{font-size:.87rem;color:var(--ink-faint)}
+
+.foot{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--rule);
+      font-size:.84rem;color:var(--ink-faint)}
+.legend{font-size:.84rem;color:var(--ink-faint);margin:.5rem 0 0}
+
+/* ── text-style schemes. The PROTOTYPE's vocabulary verbatim (data-scheme / data-s /
+   explainer-scheme), so this page cannot become a second spelling of the same control.
+   Scheme 3 = colour = NO ATTRIBUTE, so a reader with JS off still gets the default. */
+:root            { --head:var(--accent); --prose:var(--ink-soft); --emph:var(--em); }
+:root[data-scheme="1"] { --head:var(--ink);    --prose:var(--ink); --emph:var(--ink); }
+:root[data-scheme="2"] { --head:var(--accent); --prose:var(--ink-soft); --emph:var(--ink); }
+.schemer{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin:1.3rem 0 .2rem;
+         font-size:.84rem;color:var(--ink-faint)}
+.schemer .lbl{opacity:.85}
+.schemer button{background:none;border:1px solid var(--rule);border-radius:1em;
+                padding:.12em .7em;cursor:pointer;color:var(--ink-faint);font:inherit}
+.schemer button:hover{border-color:var(--accent)}
+.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+<div class="ex-body">
+
+<div class="mast">
+<p class="eyebrow">PR #366 · PR #365 · backlog #217 · as of 1133697a · 2026-10-06 17:40 PDT</p>
+<h1>Ten rounds, then two — what the freeze changed</h1>
+<p class="standfirst">The sharding change was finished early; the review loop was not. The first
+version of this page argued that a <b>freeze point</b> would end the loop. It has since been
+declared and measured <b>twice</b> — so the argument is no longer a proposal.</p>
+</div>
+
+<div class="schemer" id="schemer">
+<span class="lbl">Text style:</span>
+<button type="button" data-s="3" class="on" aria-pressed="true">colour</button>
+<button type="button" data-s="2" aria-pressed="false">headings only</button>
+<button type="button" data-s="1" aria-pressed="false">plain</button>
+</div>
+
+<div class="scope">
+<p><strong>What this page is.</strong> Why PR #366's review loop ran long, which specific changes
+shorten it, and what happened when those changes were applied. Measured from two branches in this
+repository — not general advice about code review.</p>
+<p><strong>What changed since the first version.</strong> That version was written at 15:14, before
+round 9 returned. It said "eight rounds" in five places and presented the freeze as a
+<em>proposal</em>. The loop actually ran to <b>ten</b>; the freeze was declared after round 8 and
+rounds 9 and 10 came back clean. A second, independent application on PR #365 converged in one
+round. §3 is new, §8 is new, and the counts below are corrected.</p>
+</div>
+
+<h2><span class="n">01</span>Where the effort actually went</h2>
+
+<p>One fact reframes everything else: <strong>the process spent most of its effort reviewing code it
+had written itself.</strong></p>
+
+<div class="bars">
+  <div class="bar"><span class="lbl">deliverable</span>
+    <span class="track"><span class="fill" style="width:3.9%"></span></span><span class="val">+220</span></div>
+  <div class="bar"><span class="lbl">instrument</span>
+    <span class="track"><span class="fill" style="width:14.3%"></span></span><span class="val">+809</span></div>
+  <div class="bar"><span class="lbl">review prose</span>
+    <span class="track"><span class="fill hot" style="width:100%"></span></span><span class="val">+5,653</span></div>
+</div>
+
+<p class="legend">Lines added, <code>origin/master..HEAD</code> at the time of measurement:
+<code>ci.yml</code> is the thing that ships; <code>check-plan-code.py</code> is the instrument that
+measures it; <code>docs/reviews/</code> is the prose about both. The instrument grew
+<strong>3.7×</strong> more than the deliverable; the prose <strong>25×</strong>.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Round</th><th>Findings</th><th>≈ caused by this fold</th><th>What it was about</th></tr></thead>
+<tbody>
+<tr class="cool"><td>r1</td><td class="num">8</td><td class="num">0</td><td>the sharding itself</td></tr>
+<tr><td>r2</td><td class="num">5</td><td class="num">2</td><td>a bytecode race found while fixing a CI red</td></tr>
+<tr><td>r3</td><td class="num">2</td><td class="num">1</td><td>the fix for r2</td></tr>
+<tr class="hot"><td>r4</td><td class="num">0</td><td class="num">3</td><td>the fix for r3</td></tr>
+<tr class="cool"><td>r5</td><td class="num">6</td><td class="num">2</td><td>merge artifacts + three r1 findings never fixed</td></tr>
+<tr class="hot"><td>r6</td><td class="num">5</td><td class="num">6</td><td>a digit-validation rule</td></tr>
+<tr><td>r7</td><td class="num">4</td><td class="num">1</td><td>the fix for r6</td></tr>
+<tr class="hot"><td>r8</td><td class="num">5</td><td class="num">8</td><td>the fix for r7 — <strong>freeze declared here</strong></td></tr>
+<tr class="cool"><td>r9</td><td class="num">4</td><td class="num">0</td><td>all filing-class; none in the deliverable</td></tr>
+<tr class="cool"><td>r10</td><td class="num">0</td><td class="num">0</td><td>clean — <strong>converged</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Rounds 1 and 5 looked at <code>ci.yml</code>. It survived both. <strong>Everything between them
+examined the apparatus built to measure it</strong> — and the last column is the tell: by round 8,
+more findings were caused by the previous fix than by the subject.</p>
+
+<h2><span class="n">02</span>Why the loop could not end</h2>
+
+<p>This is the structural part, and the single most useful thing on the page. <strong>Two separate
+gates both require a tree that stops changing, and every fix resets both.</strong></p>
+
+<p>The first is the convergence rule in <code>docs/review-method.md</code>:</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Observation</th><th>Answer</th></tr></thead>
+<tbody>
+<tr><td>a Blocking or High</td><td><strong>CONTINUE</strong></td></tr>
+<tr><td>a finding <em>in the deliverable</em></td><td><strong>CONTINUE</strong></td></tr>
+<tr><td>non-trivial fixes</td><td><strong>CONTINUE</strong></td></tr>
+<tr><td>two consecutive rounds with neither, every finding aimed at the instrument</td><td><strong>STOP</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The second is <code>check-review-recorded</code>, which was the only red check on the branch for
+most of that day, and which states its own complaint precisely:</p>
+
+<pre>FAILED — 8 round(s) ran and guarded code was committed after every one of them.
+  The closest verdict never saw:
+    scripts/check-plan-code.py, scripts/mutations/check-plan-code.json
+  Run one more round against the current tree, or put `NO-REVIEW: &lt;reason&gt;` in the body.</pre>
+
+<div class="call">
+<p>Read those two together. <strong>"Non-trivial fixes → CONTINUE"</strong> means folding a finding
+resets the convergence counter. <strong>"Guarded code committed after every round"</strong> means
+folding a finding invalidates the newest verdict.</p>
+<p><strong>So fixing and converging are mutually exclusive.</strong> A loop that keeps folding can
+satisfy neither gate — not because the gates are wrong, but because its own actions keep resetting
+the exit condition. Nobody declared which of the two activities was happening, so it did both,
+indefinitely.</p>
+</div>
+
+<p>The fix is not a new rule. It is a <strong>freeze point</strong>: a declared moment after which
+findings are <em>filed</em> rather than <em>fixed</em>, unless they are Blocking or High
+<em>in the deliverable</em>.</p>
+<h2><span class="n">03</span>What happened when the freeze was declared — measured, twice</h2>
+
+<div class="new"><span class="newtag">New · this section did not exist in the first version</span>
+<p>The first version of this page argued the freeze would work. It then ran. <strong>Both
+applications behaved as predicted, and the second is an independent branch with a different
+author-of-record and a different deliverable.</strong></p>
+</div>
+
+<div class="stats">
+  <div class="stat good"><span class="big">8 → 10</span><span class="cap">rounds on PR #366: freeze declared after r8, converged at r10</span></div>
+  <div class="stat good"><span class="big">2</span><span class="cap">rounds to converge once nothing was resetting the counter</span></div>
+  <div class="stat good"><span class="big">0</span><span class="cap">findings in the deliverable across the final four review halves</span></div>
+  <div class="stat good"><span class="big">1</span><span class="cap">round to converge on PR #365, the independent second application</span></div>
+</div>
+
+<h3>Application 1 — PR #366, the branch this page is about</h3>
+<p>The freeze was declared after round 8 in one sentence: <em>Blocking/High in the deliverable
+folds; everything else files as a backlog row.</em> Rounds 9 and 10 then returned
+<strong>zero Blocking, zero High, and zero findings in the deliverable at any severity</strong>.
+Round 9 produced four findings, all filing-class — they became backlog rows <code>#233</code>,
+<code>#234</code>, <code>#235</code> rather than folds. Round 10 produced none.</p>
+
+<h3>Application 2 — PR #365, a different branch, same day</h3>
+<p>PR #365 had run ten rounds of its own. After merging #366 into it, one further round was owed
+because no earlier round had seen the merged tree. Under the freeze that round produced:</p>
+<ul>
+<li><strong>Codex half: zero findings.</strong></li>
+<li><strong>Claude half: CONVERGED</strong> — one High, one Medium, one Low, and
+<strong>not one of them in the deliverable</strong>. The High was a repository setting; the Medium
+was a projection in a comment; the Low was four stale numbers in prose.</li>
+</ul>
+<p>All three were filed or corrected as prose. <strong>Nothing was folded into the deliverable, so
+nothing reset the counter.</strong></p>
+
+<div class="keep">
+<p><strong>The honest limit on this evidence.</strong> Two applications is two, not a trial. Both
+were run by the same coordinator, which is the obvious confound. What makes it more than anecdote is
+that the mechanism is <em>structural</em> — §2 shows the gates cannot both be satisfied while
+folding continues — so the prediction was derived before the measurement, not after. A third
+application that ran long under a declared freeze would genuinely refute this.</p>
+</div>
+
+<h3>A cheaper move than a round, found the same day</h3>
+<p>When the Claude half of PR #365's round reported a Medium, the finding rested on three laptop
+timings. It was sent the CI shard durations — one message — and <strong>withdrew its own
+magnitude</strong>, re-deriving the figure from the CI numbers and correcting itself from "1.8×–2.5×
+off" to "1.21× off". That cost one message. A further round costs roughly <strong>25 minutes and a
+tree reset</strong>.</p>
+<p><strong>Generalised: a reviewer handed new evidence will correct its own finding. Running another
+round to achieve the same thing is the expensive way to do it</strong> — and it also resets the
+convergence counter, which the message does not.</p>
+
+<h2><span class="n">04</span>The five levers, in measured order</h2>
+
+<h3>Lever 1 — File, don't fold</h3>
+<p>The evidence runs both ways on one branch, which is what makes this the strongest lever.</p>
+<div class="scroll">
+<table>
+<thead><tr><th>Treatment</th><th>Examples</th><th>Cost</th></tr></thead>
+<tbody>
+<tr class="cool"><td>Filed as a backlog row</td><td><code>#230</code> <code>#231</code> <code>#232</code></td>
+    <td>minutes; nothing broke; the knowledge is preserved and dated</td></tr>
+<tr class="hot"><td>Folded into the PR</td><td>r6 whitespace, r7 digit-length, r8 collision guard</td>
+    <td><strong>each generated a fresh round</strong>, because every fold is new surface the next round reviews</td></tr>
+</tbody>
+</table>
+</div>
+<p>The two groups are of comparable severity. <strong>The difference in cost is a decision, not a
+property of the findings.</strong></p>
+
+<h3>Lever 2 — Declare the freeze</h3>
+<p>Covered in §2 and now measured in §3. Listed separately because it is the lever that makes the
+gates <em>satisfiable</em>; the others only make the loop cheaper.</p>
+
+<h3>Lever 3 — Stop writing structural claims in comments</h3>
+<p>At least three rounds were generated by sentences asserting more than the code kept. All real,
+all from one file:</p>
+<div class="scroll">
+<table>
+<thead><tr><th>Comment claimed</th><th>Refuted by</th></tr></thead>
+<tbody>
+<tr><td>"every string that matches is one <code>int()</code> accepts"</td><td>a 4,301-digit run</td></tr>
+<tr><td>"a third flag is one dict entry, and disagreement is IMPOSSIBLE"</td><td>a hyphenated key</td></tr>
+<tr><td>"this loop and the mode check in <code>main</code> are its only two readers"</td><td>there were five</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each was plausible, each was false, each was found by the next reviewer — and each cost a round.
+The pattern predates this PR; the same file records at <code>:4288</code>: <em>"I WROTE 'AND THE
+OBVIOUS ENTRY IS IMPOSSIBLE' HERE, AND IT WAS FALSE — r14 Medium, refuted by construction."</em></p>
+
+<h3>Lever 4 — Scope each round to the deliverable diff</h3>
+<p>Not to the previous fold. Rounds 1 and 5 reviewed <code>ci.yml</code> and it held both times;
+rounds 2, 3, 4, 6, 7 and 8 reviewed the instrument.</p>
+
+<h3>Lever 5 — Push earlier, let CI measure</h3>
+<p>Local sweeps were an unreliable instrument on this machine and cost roughly two hours.
+<code>check-surface-recall --self-test</code> takes 81 s against a 120 s <code>SUITE_TIMEOUT</code>
+— a 1.48× margin. When that control tips, the harness voids the <em>entire</em> shard: all 151
+mutations report <code>NOT MEASURED</code>, which is correct behaviour over a failed control and
+useless as evidence. CI's runners never had the problem.</p>
+<h2><span class="n">05</span>Two traps worth more than the levers</h2>
+
+<h3>A test whose cost depends on the mutation it tests</h3>
+<p>This happened <strong>twice in one hour</strong>, and both rules were already written in the file
+being edited.</p>
+<div class="scroll">
+<table>
+<thead><tr><th>The construct</th><th>Normally</th><th>Under the mutation it exists for</th></tr></thead>
+<tbody>
+<tr><td><code>main(["--mutate", ".", …])</code></td><td>refuses in milliseconds</td>
+    <td>the refusal is severed → it sweeps the whole repo → 120 s timeout → <strong>three CI shards voided</strong></td></tr>
+<tr><td><code>main(["--self-test"])</code></td><td>raises during parser construction</td>
+    <td>the guard is severed → it re-enters the suite running it → <strong>150 s recursion</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p>After the fix: <strong>120 s → 4.7 s</strong> and <strong>150 s → 5.3 s</strong>.</p>
+<div class="call">
+<p>The transferable lesson is not "read the comments". It is that <strong>a mutation harness
+deliberately disables your guard rails</strong>, so any test whose cheapness depends on a guard rail
+holding is a landmine — and it detonates only in the run that matters.</p>
+</div>
+
+<h3>The pattern was live in the file, after eight rounds of fixing it</h3>
+<p>Found while writing the first version of this page, not during any round. A comment at
+<code>check-plan-code.py:4717</code> claimed the dict had <em>"only two readers"</em>. At that commit
+there were four, and <strong>two of them had been added by round 8's own fold</strong> — the fold
+that repaired the two-readers problem created a fresh two-readers claim. That is Lever 3
+demonstrating itself, unprompted, in the tree as it stood.</p>
+
+<h2><span class="n">06</span>What earned its cost — do not cut this</h2>
+<div class="keep">
+<p>The mutation sweep caught two things a green test suite could not see, and <strong>both would
+have shipped</strong>:</p>
+<ul>
+<li><strong>a survived mutation</strong> — a test that compared a value with itself, so it would
+have passed no matter what the code did. The suite read <strong>175/175</strong> throughout.</li>
+<li><strong>a test that voided three CI shards</strong> — <strong>453 mutations</strong> reporting
+<code>NOT MEASURED</code> rather than a result.</li>
+</ul>
+<p>Neither is visible to <code>--self-test</code>, because both only matter under mutation.
+<strong>If this page reads as "do less review", that is the wrong lesson.</strong> The part that
+measures whether your tests can fail is the part that paid for itself.</p>
+</div>
+
+<h2><span class="n">07</span>The honest counter-argument</h2>
+<p>Stated as strongly as it deserves, because the case above is one-sided without it.</p>
+<p><strong>Every finding was real.</strong> Nothing folded was invented, nothing was make-work, and
+several were serious — round 7 found a documented command that printed <code>169/169 passed</code>
+and exited 0 while validating nothing, which is the single outcome that tool exists to prevent. A
+reviewer that stops reporting Lows is a worse reviewer.</p>
+<p>So the question is not whether the findings were valid. It is <strong>who decides which are worth
+money — and that is not the reviewer's job</strong>. Dual adversarial review is excellent at
+generating findings and has no opinion about cost. Without a filing discipline on the other side it
+will consume unbounded time on an instrument that was already adequate several rounds ago. That
+decision was available throughout and simply was not made.</p>
+
+<h2><span class="n">08</span>Five more levers, measured on 2026-10-06</h2>
+
+<div class="new"><span class="newtag">New · all five are from the session that merged #366 and finished #365</span>
+<p>These are not proposals. Each one is a mistake that was made, caught, and cost something
+measurable on the same day — which is the only reason they are worth your attention over the
+general advice you could get anywhere.</p>
+</div>
+
+<h3>Lever 6 — A measurement names the tree it came from, or it is not a measurement</h3>
+<p><strong>Three wrong claims in one session, all the same shape: right pattern, wrong
+population.</strong></p>
+<div class="scroll">
+<table>
+<thead><tr><th>Claim</th><th>Why it was wrong</th><th>Truth</th></tr></thead>
+<tbody>
+<tr><td>"the reference implementation is gone"</td><td>searched the main tree; the file is in a <em>worktree</em></td><td>it exists, and is tracked</td></tr>
+<tr><td>"zero pages carry the switcher"</td><td>same tree, same reason</td><td>one page does</td></tr>
+<tr><td>"63 explainer pages, 21 recomposable"</td><td>counted a working directory, not the tracked base</td><td><strong>58 and 16</strong> on <code>origin/master</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The third was put in front of a human on a decision card. <strong>The rule: a measurement that
+informs a decision states its ref</strong> — <code>origin/master</code>, a worktree path, a commit —
+not just a number. A bare count invites the reader to assume it came from the obvious place.</p>
+
+<h3>Lever 7 — A withdrawn claim must be withdrawn everywhere it reached</h3>
+<p>A review finding cited three laptop timings and concluded a modelled figure was off by
+1.8×–2.5×. Within twenty minutes that reasoning was in <strong>four places</strong>: a backlog row,
+a dashboard entry, a commit message and a pull-request body. The reviewer then re-derived the figure
+from CI data and <strong>withdrew it</strong> — the real answer was 1.21×.</p>
+<p>The conclusion the number supported was still correct. <strong>The reason for it was not</strong>,
+and a wrong reason sitting beside a right conclusion is the hardest kind to find later, because
+nothing it touches looks broken. <strong>The rule: when a claim is withdrawn, enumerate its sites
+before correcting any of them.</strong></p>
+
+<h3>Lever 8 — Send the reviewer new evidence instead of running another round</h3>
+<p>Covered in §3. One message beat one round: the half corrected its own magnitude, and unlike a
+round it did not reset the convergence counter.</p>
+
+<h3>Lever 9 — Tree identity has four answers, and the round is the most expensive</h3>
+<p><code>review-method.md</code> lists them cheapest-first: land editorial fixes <em>before</em> the
+final round; keep the last fixes uncommitted so the reviewer sees what ships; declare
+<code>NO-REVIEW: &lt;reason&gt;</code>; run another round — <em>last</em>. It also says never to spend
+a round on this before offering the first three.</p>
+<p>Measured the same day: after the final verdict, a <strong>one-word comment correction</strong>
+(<code>29 of 37</code> → <code>27 of 37</code>) — requested by that very round — re-triggered the
+gate. <code>NO-REVIEW:</code> closed it in a sentence. A round would have cost ~25 minutes to
+re-review a comment it had itself asked for.</p>
+
+<h3>Lever 10 — Grep for the concept's existing spelling before you name a mechanism</h3>
+<p>A control was reimplemented in shared code under new names — <code>data-textscheme</code>,
+<code>data-ts</code>, <code>yps-textscheme</code> — while a shipping page already used
+<code>data-scheme</code>, <code>data-s</code>, <code>explainer-scheme</code>. Shipping both would
+have put <strong>two coordination vocabularies on one concern</strong>: this repository's
+most-measured defect, <strong>17 instances</strong>, and the second spelling is always the one that
+drifts.</p>
+<p><strong>The rule: before introducing a coordination name, grep the concept across
+<code>scripts/</code> and every worktree</strong> — not just the name you were about to use, which
+by construction finds nothing.</p>
+<h2><span class="n">09</span>Six rules you could paste into dev-process.md</h2>
+
+<p>The first three were in the earlier version and have now been exercised; the last three are new
+from §8. Each is written so a reader can tell when it has been broken.</p>
+
+<div class="rulebox">
+<h4>1 · The filing rule</h4>
+<p>A finding aimed at the <em>instrument</em> and below High is recorded as a backlog row, not fixed
+in the PR that found it. Only Blocking or High <em>in the deliverable</em> is folded mid-review.</p>
+<p class="why">Exercised: rounds 9–11 produced seven findings under this rule and folded none.</p>
+</div>
+
+<div class="rulebox">
+<h4>2 · The freeze rule</h4>
+<p>Every PR declares a freeze point. After it, findings are filed rather than fixed unless Blocking
+or High in the deliverable — because "non-trivial fixes → CONTINUE" means fixing and converging
+cannot happen at the same time.</p>
+<p class="why">Exercised twice: #366 converged two rounds after the freeze; #365 converged in one.</p>
+</div>
+
+<div class="rulebox">
+<h4>3 · The comment rule</h4>
+<p>A comment may describe what the code does. It may not assert a universal — <em>every</em>,
+<em>impossible</em>, <em>only N</em> — unless a case pins that claim. An unpinned universal is a
+finding waiting for the next reviewer.</p>
+<p class="why">Cost at least three rounds, and a fresh instance was live in the file after eight
+rounds of fixing that exact pattern.</p>
+</div>
+
+<div class="rulebox">
+<h4>4 · The provenance rule <span class="k">new</span></h4>
+<p>A number that informs a decision names where it was measured — a ref, a worktree, a commit, a
+run. A bare count is read as coming from the obvious place, and three times in one session it was
+not.</p>
+<p class="why"><strong>Fails if:</strong> a decision card or a backlog row carries a count with no
+ref beside it.</p>
+</div>
+
+<div class="rulebox">
+<h4>5 · The withdrawal rule <span class="k">new</span></h4>
+<p>When a claim is withdrawn, enumerate every site it reached before correcting any of them, and
+record the withdrawal rather than silently editing. A right conclusion resting on a withdrawn reason
+looks healthy from every direction.</p>
+<p class="why"><strong>Fails if:</strong> a corrected figure appears in one document and its original
+still stands in another.</p>
+</div>
+
+<div class="rulebox">
+<h4>6 · The second-spelling rule <span class="k">new</span></h4>
+<p>Before introducing a name for a mechanism, grep the <em>concept</em> across <code>scripts/</code>
+and every worktree — not the name you are about to use, which by construction finds nothing.</p>
+<p class="why"><strong>Fails if:</strong> two names for one coordination concern are live at the same
+commit. 17 instances measured; <code>check-vocabulary-collisions.py</code> exists for this.</p>
+</div>
+
+<div class="keep">
+<p><strong>One free speedup that needs no rule.</strong> Under a freeze, the two review halves can
+run <em>concurrently</em> rather than alternating. The method requires alternation "because a
+concurrent pair never reviews the fixes" — under a freeze there <em>are</em> no fixes, so the reason
+for alternating does not apply and the round costs one wall-clock half instead of two.</p>
+
+<div class="rulebox qa">
+<h4><span class="k asked">Asked on this page · answered 2026-10-07</span></h4>
+<p class="q"><strong>Q:</strong> How are these recommended new rules related to the 10 levers in the
+ previous section?</p>
+
+<p><strong>Six of the ten levers became rules; four could not. The test is whether the lever can be
+ written with a <em>Fails if</em>.</strong> The mapping is near-verbatim, which is exactly why the
+ page should have drawn it and didn’t — the second time you have found that same gap on this page.</p>
+
+<table><thead><tr><th>Lever (§8)</th><th>Rule (§9)</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>1 · File, don’t fold</td><td><strong>1 · the filing rule</strong></td><td>pre-existing, now exercised</td></tr>
+<tr><td>2 · Declare the freeze</td><td><strong>2 · the freeze rule</strong></td><td>pre-existing, exercised twice</td></tr>
+<tr><td>3 · Stop writing structural claims in comments</td><td><strong>3 · the comment rule</strong></td><td>pre-existing, cost ≥3 rounds</td></tr>
+<tr><td>6 · A measurement names the tree it came from</td><td><strong>4 · the provenance rule</strong></td><td class="hot">new</td></tr>
+<tr><td>7 · A withdrawn claim must be withdrawn everywhere</td><td><strong>5 · the withdrawal rule</strong></td><td class="hot">new</td></tr>
+<tr><td>10 · Grep for the concept’s existing spelling</td><td><strong>6 · the second-spelling rule</strong></td><td class="hot">new</td></tr>
+<tr><td>4 · Scope each round to the deliverable diff</td><td class="cool">— none</td><td rowspan="4" class="cool">these four are decisions about <em>where to spend a round</em>. None can name an observation that would show it violated, so a rule would be a decision wearing a checkbox</td></tr>
+<tr><td>5 · Push earlier, let CI measure</td><td class="cool">— none</td></tr>
+<tr><td>8 · Send the reviewer new evidence instead of another round</td><td class="cool">— none</td></tr>
+<tr><td>9 · Tree identity has four answers</td><td class="cool">— none</td></tr>
+</tbody></table>
+
+<p><strong>Why that line falls where it does.</strong> A rule here has to be checkable by someone who
+ was not in the room, which is why rules 4–6 each carry an explicit <em>Fails if</em> and rules 1–3
+ cite what they already cost. The four unmapped levers are real and measured, but each is a judgement
+ about effort — <em>scope this round narrowly</em>, <em>push now rather than later</em>, <em>answer the
+ reviewer instead of re-running</em>, <em>pick the cheapest of four tree-identity answers</em>. There
+ is no state of the repository that shows any of them broken. Writing them as rules would produce
+ four checkboxes nobody can fail, which is the thing this project’s own gate policy refuses.</p>
+
+<p class="why"><strong>And the free speedup above is a seventh non-rule, for the same reason</strong> —
+ running the halves concurrently under a freeze is permission, not an obligation, so there is nothing
+ to violate. It is listed separately rather than numbered among the six.</p>
+
+<p class="why"><strong>⚠ Two of the six are now backlog rows rather than prose.</strong> The provenance
+ and second-spelling rules describe conditions a script can check, and §11’s candidates became
+ <strong>#250</strong>, <strong>#251</strong> and <strong>#252</strong> on 2026-10-07. Where a rule can
+ be a script this project’s own instruction is to write the script and leave a pointer — so expect
+ rules 4 and 6 to shrink to pointers if those rows land.</p>
+</div>
+
+</div>
+
+<h2><span class="n">10</span>Measured vs inferred</h2>
+<p>Stated so you can discount the right parts.</p>
+<div class="scroll">
+<table>
+<thead><tr><th>Claim</th><th>Status</th></tr></thead>
+<tbody>
+<tr class="cool"><td>line counts, round counts, finding counts, shard durations</td><td><strong>measured</strong> — from <code>git diff --stat</code>, the round documents, and CI job timings</td></tr>
+<tr class="cool"><td>the two gates cannot both be satisfied while folding continues</td><td><strong>derived</strong> from the rules as written, and then observed</td></tr>
+<tr class="cool"><td>the freeze ends the loop in about two rounds</td><td><strong>measured, twice</strong> — #366 (2 rounds) and #365 (1)</td></tr>
+<tr><td>"≈ caused by this fold"</td><td><strong>approximate</strong> — counted from each round's own wording, not from a classifier</td></tr>
+<tr><td>the five new levers in §8</td><td><strong>single instances</strong>, each measured once on 2026-10-06. Treat as hypotheses with one data point, not as established rates</td></tr>
+<tr class="hot"><td>that these rules generalise beyond this repository</td><td><strong>not established.</strong> Everything here is one codebase, one reviewer pair, two branches</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2><span class="n">11</span>Can a fix's defects be caught before review?</h2>
+
+<div class="new"><span class="newtag">New · open question, not a decision — raised 2026-10-06 21:05 PDT, to be considered 2026-10-07</span>
+<p>§3 showed the freeze stops the loop. It does not stop the <em>fixes</em> from being defective — it
+only stops them generating more rounds. So: <strong>of the defects found in one session's own fixes,
+how many could a mechanical check have caught before a reviewer ran at all?</strong></p>
+<p><strong>Nothing here is agreed.</strong> The classification is measured; the three candidates are
+proposals with costs attached and one of them is recommended <em>against</em>.</p>
+</div>
+
+<h3>The dataset — who actually caught what</h3>
+<p>Every defect found in the coordinator's own fixes during the session of 2026-10-06, classified by
+<em>who caught it</em> rather than by severity. That split is the finding.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Caught by</th><th>n</th><th>Examples</th></tr></thead>
+<tbody>
+<tr class="cool"><td><strong>A mechanical guard, before any review</strong></td><td class="num">6</td>
+  <td><code>check-fixture-variation</code> (twice — the same mistake), <code>check-selftest-counts</code>
+      (declared-count drift, 4×), <code>check-main-drivable</code> (a new guard not drivable), a
+      blanket-merge <code>SyntaxError</code> that surfaced as six red guards</td></tr>
+<tr><td><strong>The author, immediately, by reading output</strong></td><td class="num">8</td>
+  <td><code>$?</code> read after a pipe (2×), <code>×</code> vs <code>x</code> match failure, an
+      off-by-one line range, wrong variable names, cases inserted after the count print, a probe
+      sampling the wrong element</td></tr>
+<tr class="hot"><td><strong>Review, and only review</strong></td><td class="num">9</td>
+  <td>two Highs, a withdrawn measurement, a false attribution, a false "filed" claim, four stale
+      figures</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>The guards already do most of this work.</strong> Fourteen of twenty-three never reached a
+reviewer. The question is only about the last row.</p>
+
+<h3>The nine that only review caught, and whether each has a shape</h3>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Defect</th><th>Shape</th><th>Catchable?</th></tr></thead>
+<tbody>
+<tr><td>a fold could be reverted verbatim with the suite green</td>
+    <td><strong>a changed behaviour with no test that fails when reverted</strong></td>
+    <td><strong>yes</strong> — verified: <strong>0</strong> manifest entries touch the two lines the fix added</td></tr>
+<tr><td>a compliance case could not fail in CI</td>
+    <td><strong>a case that binds in dev and not in the gate environment</strong></td>
+    <td>yes, but costly — needs per-mutation runs in a stripped environment</td></tr>
+<tr><td>"FILED, NOT FOLDED" while filing nothing</td>
+    <td><strong>a prose claim the repository state contradicts</strong></td>
+    <td><strong>yes — cheap and exact</strong></td></tr>
+<tr><td>a discrepancy blamed on "tree state"</td>
+    <td>a rule hand-rolled beside a module that exports it</td>
+    <td>partial — <code>check-vocabulary-collisions</code> is the nearest existing mechanism</td></tr>
+<tr><td>a figure labelled MEASURED that the adjacent code refutes</td>
+    <td>a stated number the computation next to it disagrees with</td>
+    <td>fragile in general</td></tr>
+<tr class="hot"><td>a conclusion resting on an unverified input</td>
+    <td>judgement</td><td><strong>no</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="rulebox qa">
+<h4><span class="k asked">Asked on this page · answered 2026-10-07</span></h4>
+<p class="q"><strong>Q:</strong> How are these suggested solutions related to the previous table
+ (“The nine that only review caught…”)?</p>
+
+<p><strong>One candidate per catchable row, and the table’s last column is the selection rule.</strong>
+ The page put the two side by side and left you to infer the join, which was the gap your question
+ found. Explicitly:</p>
+
+<table><thead><tr><th>Row in the table above</th><th>Its verdict</th><th>Candidate</th></tr></thead>
+<tbody>
+<tr><td>“FILED, NOT FOLDED” while filing nothing</td><td>yes — cheap and exact</td><td><strong>C1</strong></td></tr>
+<tr><td>a fold could be reverted verbatim with the suite green</td><td>yes — verified</td><td><strong>C2</strong></td></tr>
+<tr><td>a figure labelled MEASURED that the adjacent code refutes</td><td>fragile in general</td><td><strong>C3</strong>, recommended against</td></tr>
+<tr><td>a compliance case could not fail in CI</td><td>yes, but costly</td><td class="cool">none — needs per-mutation runs in a stripped environment</td></tr>
+<tr><td>a discrepancy blamed on “tree state”</td><td>partial</td><td class="cool">none — <code>check-vocabulary-collisions</code> is the nearest existing mechanism, and a second one would duplicate it</td></tr>
+<tr><td>a conclusion resting on an unverified input</td><td>no</td><td class="cool">none — judgement has no shape</td></tr>
+</tbody></table>
+
+<p>So the three candidates are not a programme for the nine; they are the three rows that survived
+ the <em>Catchable?</em> column. Three rows deliberately get nothing, and the reason is in the
+ column rather than in the candidate list — which is what made the relationship invisible.</p>
+
+<p><strong>⭐ And there is now a seventh shape the table does not have, with better evidence than C1.</strong>
+ Measured on 2026-10-07, after this page was written:</p>
+
+<div class="rulebox">
+<h4>C4 · The unbound anchor <span class="k">cheap · exact · five instances in one session</span></h4>
+<p>A mutation entry names the text it severs. When an edit elsewhere changes that text, the entry
+ stops applying — and the harness then refuses to report on <em>any</em> entry in that file rather
+ than quietly report the rest.</p>
+<p class="why"><strong>Why it outranks C1:</strong> it happened <strong>five times in one session</strong>.
+ Once from a correct refactor that extracted a shared computation — which cost <strong>14m58s</strong>
+ of CI to surface as <code>NOT MEASURED — 175 of 176</code> on one shard — and four times in my own
+ work, twice inside a commit whose own purpose was to fix the first instance. Every one was invisible
+ to the suite, which stayed green.</p>
+<p class="why"><strong>The check:</strong> for every manifest, assert each <code>edits</code>
+ find-string occurs <strong>exactly once</strong> in its target, before any tree is staged. Measured
+ over the real repository: <strong>1,414 anchors across 59 manifests, sub-second</strong>. It extends
+ to the sibling failure for free — every <code>expect</code> must resolve to exactly one case name,
+ which is how a case <em>rename</em> silently unbinds an entry’s attribution.</p>
+<p class="why"><strong>⚠ Not quoting a fixed duration on purpose.</strong> Drafts said 437 ms, a
+ reviewer measured 63 ms, a later run 289 ms. “Sub-second” is the claim the evidence supports; a
+ precise figure here would be noise dressed as evidence.</p>
+</div>
+
+<div class="rulebox qa">
+<h4><span class="k asked">Asked on this page · answered 2026-10-07</span></h4>
+<p class="q"><strong>Q:</strong> Let’s file a backlog for recommended checks C1, C2, C4.</p>
+<p><strong>Filed.</strong> Three rows, on the <code>ci-watch-checkrun-shape</code> branch beside
+ <code>#249</code>, which is the same class of proposal:</p>
+<table><thead><tr><th>Row</th><th>Candidate</th><th>Marker</th><th>Why that marker</th></tr></thead>
+<tbody>
+<tr><td><strong>#250</strong></td><td>C1 · the filing claim</td><td>🟠</td>
+ <td>cheap and exact; an <em>extension</em> of <code>check-backlog-closure.py</code>, which already reads the closing direction and has no checker for the filing one. WARN-only, like its sibling</td></tr>
+<tr><td><strong>#251</strong></td><td>C2 · the unmutated change</td><td class="hot">🔴</td>
+ <td>raised above the others: it is the only one whose absence has been measured letting a <em>live gate-removing</em> defect through — twice on PR #364 (#241, then #248)</td></tr>
+<tr><td><strong>#252</strong></td><td>C4 · the unbound anchor</td><td>🟠</td>
+ <td>five instances in one session, one costing 14m58s of CI to report <code>NOT MEASURED — 175 of 176</code>; sub-second to check across 1,414 anchors</td></tr>
+</tbody></table>
+<p><strong>C3 was deliberately not filed.</strong> This page recommends against it, and filing a row
+ for something recorded as a bad idea would invite someone to build it — the row would outlive the
+ paragraph explaining why not. It stays here, in the candidate list, labelled.</p>
+<p class="why"><strong>⚠ One id note, so it does not become a duplicate.</strong> A row proposing the
+ same pass as C4 already exists on the unmerged PR #364 branch (id 245 there, absent from
+ <code>master</code>). <strong>#252 supersedes it</strong>: when those branches merge, keep #252 and
+ close the other. <code>master</code>’s backlog stops at 237 and ids 238–248 live only on that branch,
+ which is why these are numbered from 250 rather than 238.</p>
+</div>
+
+
+<p>C4 also sharpens <strong>C2</strong> rather than competing with it. C2 asks whether a changed line
+ has <em>any</em> entry covering it; C4 asks whether the entries that exist still <em>bind</em>. The
+ second is cheaper, exact, and catches a failure mode C2 cannot see — an entry that looks like
+ coverage and is inert.</p>
+</div>
+
+
+<h3>Three candidates, with costs — none adopted</h3>
+
+<div class="rulebox">
+<h4>C1 · The filing claim <span class="k">cheap · exact</span></h4>
+<p>A commit message claiming <code>FILED</code> must add at least one backlog row in the same commit.</p>
+<p class="why"><strong>Not a new guard.</strong> <code>check-backlog-closure.py</code> already reads
+merged commit subjects and compares them to rows — it catches <em>"this commit closes #N but the row
+isn't ticked"</em>. The <em>filing</em> direction has no checker. Extending it keeps one mechanism per
+concern. <strong>Falsifier pair already measured:</strong> one commit claims FILED and adds 0 rows (must
+fire); another claims FILED and adds 1 (must not).</p>
+</div>
+
+<div class="rulebox">
+<h4>C2 · The unmutated change <span class="k">highest value</span></h4>
+<p>A diff that changes executable behaviour and adds no mutation entry covering it is invisible to a
+manifest-driven sweep.</p>
+<p class="why">This is the one that produced a <strong>High</strong>. The sweep is excellent at
+defending what someone enumerated and <strong>blind to what they just wrote</strong> — and a fix is by
+definition newly written. Cost: moderate; false positives expected on comments and pure refactors, so
+it likely warns rather than blocks.</p>
+</div>
+
+<div class="rulebox">
+<h4>C3 · The number beside the computation <span class="k">recommended AGAINST</span></h4>
+<p>Flag a stated percentage or total in prose that the code adjacent to it computes differently.</p>
+<p class="why">Listed for completeness and <strong>not recommended</strong>: it would be expected to
+false-fire more than it catches, and backlog #56's measured verdict is that a gate which is red
+without cause gets switched off. Recorded so the next person does not re-derive it as a good idea.</p>
+</div>
+
+<div class="keep">
+<p><strong>What the data says about "partial review" as a human checklist.</strong> It argues against
+one. Six of the nine review-only defects were in code written in the preceding hour, so the cheap
+intervention is not a longer checklist — it is <strong>a pass scoped to the fix diff alone</strong>,
+asking one question: <em>can each changed line be reverted with the suite still green?</em> That single
+question would have caught the most expensive defect of the session before a reviewer ran.</p>
+</div>
+
+<div class="foot">
+<p><strong>Sources.</strong> PR #366 (backlog #217) rounds 1–10 and PR #365 round 11, in
+<code>docs/reviews/{claude,codex}/</code>; <code>docs/review-method.md</code> for the stop condition
+and the tree-identity options; <code>docs/backlog.md</code> rows #230–#237;
+<code>.github/workflows/ci.yml</code> for the matrix and its sizing table. Shard durations are from
+the <code>mutation-sweep</code> matrix run on <code>70ad61d1</code>.</p>
+<p>If a number here disagrees with the repository, the repository is right and this page is stale —
+it is a snapshot, and §10 is where to start.</p>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var r=document.documentElement, box=document.getElementById('schemer');
+  if(!box) return;
+  var saved=null; try{ saved=localStorage.getItem('explainer-scheme'); }catch(e){}
+  function set(s){
+    if(s==='3'){ r.removeAttribute('data-scheme'); } else { r.setAttribute('data-scheme',s); }
+    var bs=box.querySelectorAll('button[data-s]');
+    for(var i=0;i<bs.length;i++){
+      var on = bs[i].getAttribute('data-s')===s;
+      bs[i].className = on?'on':'';
+      bs[i].setAttribute('aria-pressed', String(on));
+    }
+    try{ localStorage.setItem('explainer-scheme',s); }catch(e){}
+  }
+  box.addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;
+    if(b) set(b.getAttribute('data-s'));
+  });
+  set(saved==='1'||saved==='2'?saved:'3');
+})();
+</script>

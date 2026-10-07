@@ -14569,3 +14569,59 @@ sentence and changes no executable line.
 
 Verification after the fold: binding pass **0 problems**; **82/82**, **22/22**, **178/178**; scoped
 run **44 mutations, 44 killed, 44 attributed, 0 survivors**; resolver still returns `gpt-6.1-sol`.
+
+## 2026-10-07
+A page written this morning was deleted nine minutes later, reported as gone for good, and then
+found intact in the transcript of the agent that had written it. It is back, and committed this
+time, along with three other pages that were sitting in the same unprotected state.
+
+The deletion was not careless. A skill document says explainer pages belong outside the repository
+and that the author writes nothing inside it. The directory it names as "outside" is a symlink to
+the directory inside, so the two are one place, and the instruction to move the files out could only
+ever be carried out as a delete. The repository's own ignore file says the opposite, in plain terms:
+these pages are tracked, because the HTML is the work and losing it loses the work. Seventy-eight of
+them are tracked today. Only one of those two documents is read by a program.
+
+The recovery failed the first time for a separate reason worth keeping. The search looked for pages
+written with the file-writing tool. This one had been written with a shell command instead, so it
+carried no filename to match, and the search reported honestly that nothing was found — of the
+wrong population. Widening it to any large write naming the directory found the page immediately.
+
+The page itself is about why rules written as prose do not get applied when they are needed, which
+is what it had just demonstrated. That account is now its last section.
+
+<!--tech-->
+**Restored:** `docs/explainers/2026-10-07-topic-retrieval-fixed-gap-open.{html,fragment.html}` —
+recovered from `…/subagents/agent-a0541407b7579904d.jsonl`, a `Bash` heredoc of 27,724 chars written
+`17:22:56Z`, deleted ~9 min later. Recomposed through `brief-compose.py` to **40,409 bytes before
+§11 — the destroyed page's recorded size**. ⚠ The fragment does NOT match: 27,937 vs the recorded
+29,288, so ~1.3 KB of edits made after the heredoc are **not** recovered and the restoration is
+faithful to the write, not to the final file.
+
+⛔ **The composer REFUSED the first recomposition** and wrote nothing: the fragment's light palette
+declared none of `--defect --good --ink-faint --ink-soft --structure`, which the OS-dark shim
+supplies, and a media query loses to any `:root` — the half-live toggle that measured 1.03:1 on
+2026-09-08. Added to all three blocks, mapped onto the fragment's existing semantics
+(`--hot`/`--cool`/`--fg2`/`--fg3`/`--rule`), not invented.
+⚠ My first read of that refusal recorded `rc=0`; it was `tail`'s exit code through a pipe. The
+evidence that it refused was the **absent output file**, not the status.
+
+**§11 added** — the loss chain with per-row evidence, and the two defects separated:
+(1) `explainer-delivery.md` states *"writes nothing inside the repository"* three times against
+`.gitignore:143-145`'s *"is TRACKED … losing it loses the work"*; ⭐ and the contract's own stated
+purpose inverts — §1 puts the page outside the repo *"so it outlives its session"*, but outside the
+repo means untracked, and an untracked file outlives nothing.
+(2) the recovery searched `tool_use.file_path` (Write only) → **0 hits**, vs any `tool_use` body
+>8 KB naming `explainers` over `subagents/*.jsonl` → **1 hit, the page**. The eleventh recorded
+instance of *measure the population the code actually sees*.
+
+**Also committed, same exposure, different subject:** `2026-10-06-brief-dev-process-speed.{html,fragment.html}`
+— untracked since 07:59 with two reader answers in it. `stat -f %l` = 1 on all four: single copy.
+The three untracked `docs/memory/*.md` are NOT in this commit — they have independent copies under
+`~/.claude/projects/…/memory/`, so they are not at this risk.
+⚠ Correction to the prior handoff: `docs/memory/MEMORY.md` is **not** hardlinked — `links=1`.
+
+**Verified:** 7 document guards green in this worktree (exit code propagated, not discarded);
+page serves HTTP 200 with 11 `<h2>`, `id="s11"`, the Ask tray and balanced tables; rendered in a
+browser and read. ⛔ **`check-page-contrast.py` NOT RUN** — it lives only on `unify-explainer-style`,
+needs Chromium, and measures every served page; treat contrast as unmeasured, not as passed.
