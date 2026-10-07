@@ -1,0 +1,451 @@
+<title>Recall went 3/20 to 20/20, and the rules were still broken</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#1c1d21;--fg2:#3d4049;--fg3:#6b7080;--rule:#e2ded4;--card:#fffefb;
+--hot:#9c2b1f;--hotbg:#fdf1ef;--cool:#1f5c4a;--coolbg:#eef7f3;--warn:#8a5a0b;--warnbg:#fdf6e8;
+--verified:#1f5c4a;--verified-br:#bcd9cc;--ink:#2a2c33;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+--defect:#9c2b1f;--good:#1f5c4a;--ink-soft:#3d4049;--ink-faint:#6b7080;--structure:#e2ded4}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15161a;--fg:#eceae4;--fg2:#c6c4bd;
+--fg3:#9a9890;--rule:#32343b;--card:#1c1e23;--hot:#f09c92;--hotbg:#2b1b19;--cool:#8fd3ba;--coolbg:#16241f;
+--warn:#e6bd73;--warnbg:#2a2118;--verified:#8fd3ba;--verified-br:#2f4f44;--ink:#eceae4;
+--defect:#f09c92;--good:#8fd3ba;--ink-soft:#c6c4bd;--ink-faint:#9a9890;--structure:#32343b}}
+:root[data-theme="dark"]{--bg:#15161a;--fg:#eceae4;--fg2:#c6c4bd;--fg3:#9a9890;--rule:#32343b;--card:#1c1e23;
+--hot:#f09c92;--hotbg:#2b1b19;--cool:#8fd3ba;--coolbg:#16241f;--warn:#e6bd73;--warnbg:#2a2118;
+--verified:#8fd3ba;--verified-br:#2f4f44;--ink:#eceae4;
+--defect:#f09c92;--good:#8fd3ba;--ink-soft:#c6c4bd;--ink-faint:#9a9890;--structure:#32343b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:880px;margin:0 auto;padding:40px 20px 90px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--fg3);font-size:15px;margin:0 0 4px}
+h2{font-size:21px;margin:46px 0 12px;padding-top:14px;border-top:1px solid var(--rule);position:relative}
+h3{font-size:17px;margin:28px 0 8px;position:relative}
+h2 .n{display:inline-block;min-width:1.6em;color:var(--fg3);font:600 13px/1 var(--mono);vertical-align:3px}
+p{margin:11px 0;color:var(--fg2)}
+li{margin:6px 0;color:var(--fg2)}
+code{font:13px/1.5 var(--mono);background:var(--card);border:1px solid var(--rule);border-radius:3px;padding:1px 4px;color:var(--ink)}
+pre{background:var(--card);border:1px solid var(--rule);border-radius:7px;padding:12px 14px;overflow-x:auto;white-space:pre;margin:12px 0}
+pre code{background:none;border:0;padding:0;font-size:12.5px}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.5px}
+th,td{border:1px solid var(--rule);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:var(--card);font-weight:600;font-size:13px;color:var(--fg3);text-transform:uppercase;letter-spacing:.03em}
+.scroll{overflow-x:auto;margin:14px 0}
+.box{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--fg3);border-radius:0 7px 7px 0;padding:12px 15px;margin:16px 0}
+.box.hot{border-left-color:var(--hot);background:var(--hotbg)}
+.box.cool{border-left-color:var(--cool);background:var(--coolbg)}
+.box.warn{border-left-color:var(--warn);background:var(--warnbg)}
+.box h4{margin:0 0 6px;font-size:15px;color:var(--fg)}
+.lede{font-size:17.5px;color:var(--fg);border-left:3px solid var(--verified);padding-left:15px;margin:22px 0}
+.k{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:3px 6px;border-radius:3px;
+background:var(--card);border:1px solid var(--rule);color:var(--fg3);vertical-align:2px}
+.k.hot{color:var(--hot);border-color:var(--hot)}.k.cool{color:var(--cool);border-color:var(--cool)}
+.m{color:var(--cool);font-weight:600}.i{color:var(--warn);font-weight:600}
+.howto{background:var(--card);border:1px solid var(--verified-br);border-radius:8px;padding:13px 16px;margin:20px 0;font-size:14px}
+.howto code{font-size:12.5px}
+.toc{columns:2;column-gap:28px;font-size:14px;margin:18px 0}
+.toc a{color:var(--fg2);text-decoration:none;display:block;padding:2px 0}
+.toc a:hover{color:var(--fg);text-decoration:underline}
+.cite{font-size:13.5px;color:var(--fg3);font-style:italic}
+hr{border:0;border-top:1px solid var(--rule);margin:30px 0}
+</style>
+
+<div class="wrap">
+
+<h1>Recall went 3/20 to 20/20, and the rules were still broken</h1>
+<p class="sub"><strong>What this page is:</strong> a test report. A page written on 2026-09-27 argued that
+memory recall here had no matcher and that <em>mechanism must be primary</em>. A matcher shipped five days
+later and measures near-perfect. This page reports what happened to the gap afterwards — it did not close.</p>
+<p class="sub">If you came for "how do I build semantic search over Claude Code memory": <strong>it already
+exists in this repo, shipped and firing</strong>, and §3 shows it would not have prevented a single defect
+of 2026-10-06/07. <em>As of 2026-10-07 10:15 PDT · <code>origin/master</code> <code>f8ae6d5d</code> ·
+open PRs 364, 367, 368.</em></p>
+
+<div class="howto">
+<strong>This page is live at <code>http://127.0.0.1:7391/latest</code></strong> — that URL always points at the
+newest explainer. <strong>To ask a question:</strong> select any text, or hover a heading, → <em>ask</em> →
+type → <strong>Send</strong>, then say <em>"read my questions"</em> in chat.
+<br><strong>If that URL does not load:</strong> run <code>python3 scripts/explainer-serve.py</code> (safe to run
+twice). <strong>A reboot stops the server</strong> — that is the one moment you will need this line. A
+<code>file://</code> copy still reads fine and only loses <strong>Send</strong>.
+</div>
+
+<div class="toc">
+<a href="#s1">1 · The prediction, and the five-day gap</a>
+<a href="#s2">2 · Retrieval is solved here — the numbers</a>
+<a href="#s3">3 · The gap did not close</a>
+<a href="#s4">4 · What the 09-27 page got right, and its one blind spot</a>
+<a href="#s5">5 · The enforcement ratio, re-counted</a>
+<a href="#s6">6 · The rows that turn a rule into a program</a>
+<a href="#s7">7 · The principle: a check that cannot report nothing</a>
+<a href="#s8">8 · The honest limit</a>
+<a href="#s9">9 · The PDF's MCP proposal, assessed</a>
+<a href="#s10">10 · Measured vs inferred</a>
+</div>
+
+<p class="lede">The 09-27 page asked how to organise memory so recall stops failing. Recall stopped failing.
+The rules were broken anyway — five orphaned anchors, a grep miss graded <strong>High</strong>, and one claim
+asserted as measured twice. <strong>That is a direct test of its central argument, and the argument held.</strong></p>
+
+<h2 id="s1"><span class="n">01</span>The prediction, and the five-day gap</h2>
+
+<p>The earlier page measured, in its §10, that this repository had no retrieval step at all. Quoted from
+<code>~/explainers/2026-09-27-topic-memory-recall-taxonomy.fragment.html</code>, section
+<em>"(3) measured: there is no matcher, but the socket for one exists"</em>:</p>
+
+<div class="box">
+<p>"No file in the <code>remember</code> plugin references <code>MEMORY.md</code> at all — zero matches, with a
+control proving the search works (111 hits for another term in the same tree). … <strong>133 rows on disk, 133
+rows delivered into this session. Unfiltered.</strong> … But the socket is real. A <code>UserPromptSubmit</code>
+hook already fires on every message you send … <strong>Nothing needs inventing except the matcher itself.</strong>"</p>
+</div>
+
+<p>That is a prediction with a date on it. Here is what <code>git</code> says about when the matcher arrived:</p>
+
+<div class="scroll"><pre><code>$ git log --format='%h %ad %s' --date=short --diff-filter=A -- scripts/recall-llm.py
+5128b99b 2026-10-02 Nine rounds found the same defect, so the tenth asked why instead — ADR-0014 and D1 (#360)
+
+$ git log --format='%h %ad %s' --date=short --diff-filter=A -- .claude/hooks/surface-recall.sh
+5128b99b 2026-10-02 Nine rounds found the same defect, so the tenth asked why instead — ADR-0014 and D1 (#360)</code></pre></div>
+
+<p>Both the matcher and its caller entered the tree in <strong>one commit</strong>, <code>5128b99b</code>, on
+<strong>2026-10-02</strong> — five days after the page, by the page's slug date. The socket was filled exactly
+where §10 said it would be: a hook, invoking a matcher, with nothing else invented.</p>
+
+<div class="box warn">
+<h4>⚠ One date I cannot verify, said plainly</h4>
+<p>The page's <em>authoring</em> date rests only on its slug. Every file in <code>~/explainers/</code> carries
+mtime <code>2026-10-02 05:05</code> — the signature of a bulk restyle (<code>~/explainers/_restyle.py</code>
+exists), so the filesystem cannot corroborate 09-27. <strong>"Five days" is derived from the slug, not from a
+timestamp.</strong> The matcher's own date is firm: it is a commit date.</p>
+</div>
+
+<h2 id="s2"><span class="n">02</span>Retrieval is solved here — the numbers</h2>
+
+<p>The matcher is live, not merely present. Three independent confirmations:</p>
+
+<div class="scroll"><pre><code>$ git show origin/master:scripts/recall-llm.py | head -1
+#!/usr/bin/env python3                                  # on master, not a branch
+
+$ grep -n "recall-llm" .claude/hooks/surface-recall.sh
+60:MATCHER="${1:-$REPO_ROOT/scripts/recall-llm.py}"       # the hook calls it
+
+$ grep -rn "surface-recall" .claude/settings*.json
+.claude/settings.json:57:  "command": "bash .claude/hooks/surface-recall.sh"   # the hook is registered</code></pre></div>
+
+<p>Its own docstring states the contract: <em>"Which recorded lesson fires at this moment? — matched by MEANING,
+one model call per PLAN."</em> And backlog <strong>#191</strong> measured it against the lexical matcher it
+replaced, on a labelled set committed <strong>before either arm ran</strong> — 20 must-fire paraphrases written by
+an agent that never saw the triggers, 60 dull engineering moments written by an agent that never saw any of it:</p>
+
+<div class="scroll"><table>
+<thead><tr><th>arm</th><th>must-fire</th><th>negatives held</th><th>false-fire rate</th></tr></thead>
+<tbody>
+<tr><td>lexical, top-1</td><td>3 / 20</td><td>53 / 60</td><td class="i">11.7%</td></tr>
+<tr><td>semantic, 2 runs (33)</td><td>20 / 20</td><td>13 / 13</td><td class="m">0%</td></tr>
+<tr><td><strong>semantic, isolated (80 mixed)</strong></td><td class="m"><strong>20 / 20</strong></td><td class="m"><strong>60 / 60</strong></td><td class="m"><strong>0%</strong></td></tr>
+</tbody></table></div>
+
+<p class="cite">Source: <code>~/.claude/projects/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/memory/backlog-191-semantic-recall-replicated.md</code>.
+⚠ That file also records that branch <code>c5-recall-matcher</code> <strong>must not be merged</strong>, and that
+its self-test is red at 1 of 48 <em>deliberately</em> — the red case is the refuted mechanism executing.</p>
+
+<p><strong>So retrieval went from absent, to measured at 20/20 with zero false fires, in five days.</strong>
+Whatever else is true, "Claude cannot find the rule" stopped being the explanation on 2026-10-02.</p>
+
+<h2 id="s3"><span class="n">03</span>The gap did not close</h2>
+
+<p>On 2026-10-06/07, with that matcher live and firing, three recorded lessons were in context and were
+violated. Each is a row in the injected index, so each was present in the model's context window for the whole
+session — this is not a retrieval failure in any sense.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Memory, in context</th><th>What happened anyway</th><th>Cost</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>a-mutation-anchor-is-unbound-by-any-edit-nearby</code></td>
+  <td><strong>Five</strong> mutation anchors orphaned in one session — twice inside a commit whose own purpose was to fix the first instance</td>
+  <td class="i">One cost a <strong>14m58s</strong> CI shard reporting <code>NOT MEASURED — 175 of 176</code>: 176 entries bought no verdict because one could not bind</td>
+</tr>
+<tr>
+  <td><code>measure-the-population-the-code-actually-sees</code><br><span class="cite">flagged ⭐⭐⭐, 11 prior instances, and it <strong>explicitly lists "a wrapped line"</strong></span></td>
+  <td>A phrase was grepped, returned <strong>one</strong> hit, and the file was reported clean. The live assertion wrapped across two source lines</td>
+  <td class="i">A reviewer graded the miss <strong>High</strong>; the file had been asserting a false claim and its own retraction ten lines apart</td>
+</tr>
+<tr>
+  <td><code>an-inference-stated-as-measured</code></td>
+  <td>Asserted twice about one vendor claim — and the <em>correction</em> was also unlicensed by the cited source</td>
+  <td class="i">Two review rounds, two separate reviewers</td>
+</tr>
+</tbody></table></div>
+
+<div class="box hot">
+<h4>⛔ This is the test, and it is why the page exists</h4>
+<p>The 09-27 page's argument was that mechanism must come first <em>because</em> notes compete with thousands of
+lines and lose. The obvious objection was always: <em>fix the recall and the notes will win.</em> Recall was
+then fixed, to 20/20 with no false fires — and the notes still lost. <strong>Surfacing a rule and complying with
+it are different problems, and only the first one has been solved here.</strong></p>
+</div>
+
+<h2 id="s4"><span class="n">04</span>What the 09-27 page got right, and its one blind spot</h2>
+
+<p>Its <em>promotion rule</em> is the sharpest thing in it, and last night tested that too:</p>
+
+<div class="box cool">
+<p>"A memory entry graduates to a hook when its trigger is <strong>exactly decidable from the text of a tool
+call</strong>. … Entries whose trigger needs judgement cannot be promoted. <strong>'Measure the population the
+code actually sees' has no tool-call signature.</strong>"</p>
+</div>
+
+<p>It named that exact memory as unpromotable — and that exact memory is the one that failed hardest, at the
+cost of a High. The prediction held in both directions: the promotable kind can be mechanised, and this one
+could not be, and it duly failed.</p>
+
+<div class="box hot">
+<h4>⭐ The blind spot: there is a third option the promotion rule does not consider</h4>
+<p>The rule offers two outcomes — <strong>promote to a hook</strong>, or <strong>leave as prose</strong>. But the
+wrapped-line miss was not a judgement failure. It was a <strong>tool</strong> failure: a line-based search cannot
+see a phrase split across lines, and no amount of remembering fixes that. The memory says <em>"measure what the
+code actually sees"</em>; the operator did measure, with an instrument that silently could not see.</p>
+<p><strong>So the third option is: replace the fallible instrument.</strong> That removes the need to remember
+anything, without the trigger ever being decidable from a tool call. It is filed as <strong>#258</strong>, and it
+is the one genuinely new idea on this page.</p>
+</div>
+
+<h2 id="s5"><span class="n">05</span>The enforcement ratio, re-counted</h2>
+
+<p>The other half of the question was process checklists. <code>docs/process-checklists.md</code> holds
+<strong>16</strong> sections across <strong>833</strong> lines on <code>master</code>. How many are enforced by a
+program?</p>
+
+<div class="box warn">
+<h4>⚠ I was briefed "3 of 16" and that is wrong — the answer is 4, or 5 counting a partial</h4>
+<p>Reporting this because the page is <em>about</em> checking numbers. The brief named three; grepping every
+section title against <code>scripts/*.py</code> and <code>.claude/hooks/*.sh</code> finds a fourth with a
+refusing hook, and a fifth enforced in part.</p>
+</div>
+
+<div class="scroll"><table>
+<thead><tr><th>Section</th><th>Mechanism</th><th>Strength</th></tr></thead>
+<tbody>
+<tr><td>Post-Plan Gate Checklist</td><td><code>check-plan-gate.sh</code>, <code>block-implementation-before-plan-gate.sh</code>, <code>check-plan-task-order.py</code></td><td class="m">refuses (PreToolUse)</td></tr>
+<tr><td>Writing a RATCHET</td><td><code>check-ratchet-contract.py</code></td><td class="m">refuses</td></tr>
+<tr><td>Closing a job: the CHECK / RESULT table</td><td><code>check-closing-table.py</code>, <code>block-idle-stop.sh</code></td><td class="m">refuses</td></tr>
+<tr><td>Presenting a DECISION to the human</td><td><code>check-selection-card.py</code>, <code>enforce-selection-card.sh</code></td><td class="m">refuses</td><tr>
+<tr><td>A SIDE JOB gets a name before it gets work</td><td><code>check-banner-armed.py</code></td><td class="i">partial — warn-only, and only the banner half</td></tr>
+<tr><td colspan="2"><em>The other eleven</em> — Per-Task Checklist · TDD Policy · PRIOR ART · Spec content · coherence section · Writing a GATE · gate AS EVIDENCE · NOMINATED FALSIFIER · Qualify every number in prose · Reduce defect INJECTION · Architecture review topology</td><td class="i">prose; nothing reads them</td></tr>
+</tbody></table></div>
+
+<p>Two further details decide how much that file can be trusted:</p>
+
+<ul>
+<li><strong>The enforced ones can still be shallow, and one says so.</strong>
+<code>docs/dev-process.md:142</code> records of the selection-card guard: <em>"SHAPE ONLY: it cannot see two
+options that are the SAME WORK, which is the defect §19 exists for"</em> — and
+<code>check-selection-card.py:441</code> carries a case asserting exactly that blindness. So "enforced" is a
+spectrum, not a flag.</li>
+<li><strong>The file has no line budget.</strong> <code>check-docs.py</code> budgets
+<code>docs/dev-process.md</code> at 220 (it currently stands at 220) and <code>docs/plugins.md</code> at 260
+(standing at 249). <code>process-checklists.md</code> has none — and the spine carries one <em>because</em>
+<code>dev-process.md:209</code> records it reaching <strong>576 lines</strong> and becoming unread. The
+checklists file is <strong>833</strong> lines: longer than the length that was judged unreadable.</li>
+</ul>
+
+<div class="box hot">
+<h4>⛔ The evidence was inside the file the whole time</h4>
+<p><em>Qualify every number in prose</em> has sat in that file, unenforced, since <strong>2026-08-27</strong>
+(<code>process-checklists.md:376</code>). It was violated three times in one night by an author who had read it:
+a count of 1,414 anchors that belonged to a different tree (the delivered tree held 1,416), a 437 ms timing that
+re-measured at 63 ms and 289 ms, and "3 unbound" where the number was 2.</p>
+</div>
+
+<h2 id="s6"><span class="n">06</span>The rows that turn a rule into a program</h2>
+
+<p>The response to all of the above was not more prose. Nine backlog rows were filed on 2026-10-07, each
+converting a rule into something a program can refuse. They are spread across three unmerged branches, which is
+why a single <code>docs/backlog.md</code> will not show them all:</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Row</th><th>The rule it mechanises</th><th>Branch</th></tr></thead>
+<tbody>
+<tr><td>#250</td><td>a commit claiming <code>FILED</code> must add a backlog row</td><td><code>six-process-rules</code></td></tr>
+<tr><td><strong>#251</strong> <span class="k hot">🔴</span></td><td>a changed behavioural line with no mutation entry reaching it</td><td><code>six-process-rules</code></td></tr>
+<tr><td>#252</td><td>an anchor that no longer binds, or an <code>expect</code> naming no case</td><td><code>six-process-rules</code></td></tr>
+<tr><td>#253 · #254 · #255</td><td>the sentinel race · the mixed-cache refusal · <code>--clear</code>'s return code</td><td><code>ci-watch-checkrun-shape</code></td></tr>
+<tr><td>#256</td><td>provenance — a number names where it was measured</td><td><code>six-process-rules</code></td></tr>
+<tr><td>#257</td><td>withdrawal — a corrected figure must not survive elsewhere</td><td><code>six-process-rules</code></td></tr>
+<tr><td><strong>#258</strong> <span class="k hot">🔴</span></td><td><strong>there is no tool for finding a claim</strong></td><td><code>six-process-rules</code></td></tr>
+</tbody></table></div>
+
+<p>#251 and #258 are red for the same reason: each is a defect in an <em>instrument</em>, so every claim checked
+through it inherits the fault. #245 on <code>unify-explainer-style</code> proposed what #252 now covers and is
+superseded by it.</p>
+
+<h2 id="s7"><span class="n">07</span>The principle: a check that cannot report nothing</h2>
+
+<p>#258 is worth the page's last section because it generalises. The measurement, run against a file
+<strong>known</strong> to contain two copies of a phrase — one of them wrapped:</p>
+
+<div class="scroll"><table>
+<thead><tr><th>method</th><th>hits</th><th>verdict</th></tr></thead>
+<tbody>
+<tr><td>line-based <code>grep</code></td><td class="i">1</td><td>the original trap</td></tr>
+<tr><td><code>grep -z</code> + ERE</td><td class="i"><strong>0</strong></td><td><strong>silently worse</strong> — zero reads as <em>clean</em></td></tr>
+<tr><td><code>rg -U 'a\s+b'</code></td><td class="m">2</td><td>correct</td></tr>
+<tr><td><code>tr '\n' ' '</code> ∣ <code>grep -o</code></td><td class="m">2</td><td>correct; loses line numbers</td></tr>
+<tr><td>Python <code>re</code> with <code>\s+</code></td><td class="m">2</td><td>correct; keeps line numbers</td></tr>
+</tbody></table></div>
+
+<p>⚠ <code>grep</code> on this machine is <strong>ugrep 7.8.4</strong> wearing the name, so GNU's documentation
+for <code>-z</code> — the textbook fix for precisely this problem — does not describe what runs. A recipe copied
+from the manual would have been believed.</p>
+
+<div class="box cool">
+<h4>⭐ The design rule, and why it is a tool rather than a one-liner</h4>
+<p><strong>A search must be unable to report "nothing found" without first proving it can find something.</strong>
+Give it a control pattern known to hit; a run whose control misses is <code>CANNOT RUN</code>, never
+<em>no matches</em>. That is this repository's existing law — <em>a check that cannot reach its subject is a
+failure, never a pass</em> — applied to search, and it is exactly what a shell pipeline cannot have. Precedent
+exists: the <code>$HOME</code>-literal audit in <code>check-plan-code.py</code> is described there as a
+<em>control-backed grep</em>.</p>
+</div>
+
+<h2 id="s8"><span class="n">08</span>The honest limit</h2>
+
+<p>Not everything can become a program, and claiming otherwise would repeat the error this page documents.</p>
+
+<ul>
+<li><strong>Two of the six new rules stayed prose</strong> — the <em>freeze</em> rule (declare a freeze point per
+PR) and the <em>comment</em> rule (no unpinned universals in comments). Both are judgement calls with no clean
+mechanical shape, and they are labelled as advice-with-a-price rather than gates.</li>
+<li><strong>Four of ten candidate levers deliberately became no rule at all</strong> — scope the round to the
+diff · push earlier · send the reviewer evidence instead of another round · pick the cheapest of four
+tree-identity answers. No state of the repository shows any of them broken. <strong>A rule with no falsifier is
+a decision wearing a checkbox</strong>, and writing four of those would have made the file longer and no more
+enforceable.</li>
+</ul>
+
+<h2 id="s9"><span class="n">09</span>The PDF's MCP proposal, assessed</h2>
+
+<p>The question arrived attached to <code>Claude_Code_Memory_Retrieval_Layer.pdf</code> (4 pages; found on the
+<strong>Desktop</strong>, not <code>~/explainers/</code> as the prompt gave it; text extracted with
+<code>pypdf</code> in a throwaway venv because no PDF extractor was installed here). Its second half proposes
+building a local MCP server — <code>fastmcp</code> + <code>chromadb</code> + <code>sentence-transformers</code>,
+a <code>search_memory</code> tool over <code>~/.claude/projects/*/memory/</code>, registered via stdio.</p>
+
+<p>Its first half is accurate about the native design and worth keeping: CLAUDE.md always loaded;
+<code>MEMORY.md</code> as a capped index of short pointers; detail files read only if relevant;
+<strong>grep/keyword</strong> lookup; and the instruction to <em>"treat retrieved memories as hints, not
+authoritative truths"</em>.</p>
+
+<div class="scroll"><table>
+<thead><tr><th></th><th>shipped <code>recall-llm.py</code></th><th>proposed MCP server</th></tr></thead>
+<tbody>
+<tr><td>matching</td><td>by meaning, one model call per plan</td><td>embeddings, no model call per query</td></tr>
+<tr><td>measured here</td><td class="m">20/20, 0% false fire (#191)</td><td class="i">unmeasured in this repo</td></tr>
+<tr><td>scope</td><td>this project's memory, per plan step</td><td class="m">cross-project, on demand</td></tr>
+<tr><td>moving parts</td><td>one script + one registered hook</td><td class="i">a server, a vector store, an embedding model, a registration</td></tr>
+<tr><td>fixes the measured gap?</td><td colspan="2" class="i"><strong>Neither. §3 is the reason: the rules were in context and were broken anyway.</strong></td></tr>
+</tbody></table></div>
+
+<p>So the fair verdict: the MCP route would add genuine reach — <em>cross-project</em> recall and no per-plan
+model call are both real advantages this repo does not have. But it would be a <strong>second mechanism for a
+concern that already has one</strong>, which is a shape this repository hunts with a dedicated script
+(<code>check-vocabulary-collisions.py</code>, 17 measured instances). And on the evidence of §3 it would improve
+the half that is already at 20/20 and leave the failing half untouched.</p>
+
+<h2 id="s10"><span class="n">10</span>Measured vs inferred</h2>
+
+<div class="scroll"><table>
+<thead><tr><th>Claim</th><th>Status</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>Matcher + hook both first appear in <code>5128b99b</code>, 2026-10-02</td><td class="m">measured</td><td><code>git log --diff-filter=A</code> on both paths</td></tr>
+<tr><td><code>recall-llm.py</code> on master; hook calls it; hook registered at <code>settings.json:57</code></td><td class="m">measured</td><td><code>git show</code> + two greps</td></tr>
+<tr><td>#191: lexical 3/20 @ 11.7% vs semantic 20/20 @ 0%</td><td class="m">measured</td><td>quoted from the #191 memory file; labelled set committed before either arm ran</td></tr>
+<tr><td>16 sections, 833 lines in <code>process-checklists.md</code></td><td class="m">measured</td><td><code>grep -c "^## "</code> and <code>wc -l</code> on <code>origin/master</code></td></tr>
+<tr><td><strong>4 sections enforced + 1 partial</strong> (brief said 3)</td><td class="m">measured</td><td>every section title grepped against <code>scripts/*.py</code> and <code>.claude/hooks/*.sh</code></td></tr>
+<tr><td>Budgets: dev-process 220/220, plugins 249/260, checklists none</td><td class="m">measured</td><td>parsed from <code>check-docs.py</code>'s budget dict</td></tr>
+<tr><td>Spine hit 576 lines and became unread</td><td class="m">measured</td><td><code>dev-process.md:209</code></td></tr>
+<tr><td>Search table: grep 1 · <code>grep -z</code> 0 · <code>rg -U</code> 2 · tr 2 · python 2</td><td class="m">measured</td><td>all five run against a file known to hold two copies</td></tr>
+<tr><td>Three memories in context and violated; costs as stated</td><td class="m">measured</td><td>this session's own transcript, CI job durations, reviewer severities</td></tr>
+<tr><td>The 09-27 page predates the matcher by five days</td><td class="i">inferred</td><td>its slug attests 09-27; every <code>~/explainers/</code> mtime is a bulk-restyle artifact, so nothing corroborates it</td></tr>
+<tr><td>The MCP route would not close the gap</td><td class="i">inferred</td><td>reasoning from §3, not a trial. Nobody has built it here</td></tr>
+<tr><td>#258's control-backed search would have caught the wrapped miss</td><td class="i">inferred</td><td>the tool does not exist yet; the row is a proposal</td></tr>
+<tr><td>Rules 2 and 3 have no clean mechanical shape</td><td class="i">inferred</td><td>a judgement about their form, not a measurement</td></tr>
+</tbody></table></div>
+
+
+<h2 id="s11"><span class="n">11</span>This page was destroyed by one of these rules, and recovered from a transcript</h2>
+
+<p>Everything above was written on 2026-10-07 and deleted the same morning, about nine minutes after it was
+composed. It exists again only because the bytes survived somewhere nobody had thought to look. The incident is
+not an aside — it is the cleanest instance of the gap this page is about, because the <em>enforced</em> statement
+was correct, the <em>prose</em> statement was wrong, and the prose was the one obeyed.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>time (PDT)</th><th>what happened</th><th>evidence</th></tr></thead>
+<tbody>
+<tr><td>10:11</td><td><code>/explain-topic</code> asked how to close the enforcement gap, citing
+  <code>file:///Users/kujinlee/explainers/Claude_Code_Memory_Retrieval_Layer.pdf</code></td>
+  <td class="m">that path held no PDF; the file is on the Desktop only, 135,276 bytes, dated 10-02</td></tr>
+<tr><td>10:22:56</td><td>the authoring fork wrote the fragment — through a <strong>Bash heredoc</strong>, not the
+  Write tool</td><td class="m">one <code>tool_use</code> of 27,724 chars, <code>cat &gt; ~/explainers/…</code></td></tr>
+<tr><td>~10:23</td><td>the page was composed, 40,409 bytes. <strong>Neither file was ever committed.</strong></td>
+  <td class="m">no commit touches either path in any branch</td></tr>
+<tr><td>~10:31</td><td>a cleanup pass deleted both, to honour the contract's rule that pages live outside the
+  repository</td><td class="m"><code>readlink ~/explainers</code> → <code>docs/explainers</code>: the two paths
+  are <strong>one directory</strong>, so "move it out" was a no-op and the <code>rm</code> was the whole act</td></tr>
+<tr><td>11:19</td><td>recovered from the fork's own transcript and committed this time</td>
+  <td class="m">fragment restored, recomposed to <strong>40,409 bytes</strong> — the destroyed page's recorded size</td></tr>
+</tbody></table></div>
+
+<h3>Defect 1 — two documents disagree, and only one of them is read by a program</h3>
+
+<p><code>.claude/skills/shared/explainer-delivery.md</code> states it three times: <em>"It writes nothing inside
+the repository — page and fragment go to <code>~/explainers/</code>"</em>, <em>"Outside the repository,
+deliberately"</em>. <code>.gitignore:143-145</code> states the opposite and is the one that is true:</p>
+
+<blockquote><p><code>docs/explainers/</code> is TRACKED: the authored topic/brief pages have no source in git —
+the HTML <strong>IS</strong> the artifact, so losing it loses the work.</p></blockquote>
+
+<p><strong>78 files under <code>docs/explainers/</code> are tracked today</strong>, so the repository had already
+decided. ⛔ And the contract's own justification inverts: §1 says the page goes outside the repo <em>"so it
+outlives its session"</em> — but outside the repo means <strong>untracked</strong>, and an untracked file
+outlives nothing. A tracked file survives an <code>rm</code>; this one did not. <strong>The mechanism defeats the
+purpose stated for it in the same sentence</strong>, and no program could notice, because a skill document is
+prose read by a model and <code>.gitignore</code> is a file read by <code>git</code>.</p>
+
+<h3>Defect 2 — the recovery searched a population the write was not in</h3>
+
+<p>The first attempt to recover the page scanned the transcripts for <code>Write</code> calls whose
+<code>file_path</code> matched the slug, found none, and concluded <em>"I never held that page's content"</em>.
+That conclusion was false, and the reason is mechanical: a heredoc write is a <code>Bash</code> call, so its
+<code>file_path</code> is empty and the 27 KB of HTML sits in the <code>command</code> field.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>search</th><th>population</th><th>result</th></tr></thead>
+<tbody>
+<tr><td><code>tool_use.file_path</code> matches the slug</td><td>Write calls only</td>
+  <td class="m">0 hits → reported as unrecoverable</td></tr>
+<tr><td>any <code>tool_use</code> body &gt; 8 KB naming <code>explainers</code></td>
+  <td>Write <em>and</em> Bash, over <code>subagents/*.jsonl</code></td>
+  <td class="m">1 hit, 27,724 chars — the page</td></tr>
+</tbody></table></div>
+
+<p>This is the repository's most-repeated failure wearing new clothes: <em>measure the population the code
+actually sees</em>, eleven recorded instances. The content was one grep away for the twenty minutes it was
+believed gone, and the belief was stated as a measurement.</p>
+
+<h3>What would have refused it</h3>
+
+<p>⚠ Stated as a candidate, not a finding — nothing has measured it yet. The delivery loop has steps for
+composing, serving, verifying and answering, and <strong>no step that makes the artifact durable</strong>. The
+falsifier is cheap and names an observation: <em>fails when a page under <code>docs/explainers/</code> is
+untracked at the end of the loop that produced it</em>. That is a thing <code>git status --porcelain</code> can
+answer, which is the whole test from §07 — a check that can report nothing is a check.</p>
+
+<hr>
+<p class="cite">Builds on <code>~/explainers/2026-09-27-topic-memory-recall-taxonomy.html</code> — §10
+<em>"(3) measured: there is no matcher, but the socket for one exists"</em> and §7 <em>"Part A — mechanism is
+primary"</em>. That page argued the design; this one reports the outcome. ⚠ Its §10 now states a present-tense
+claim that events have overtaken, and it does not know that.</p>
+
+</div>
