@@ -154,8 +154,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'render_sentinel.plan_rel', 'split_step.arg',),
     'brief-compose.py': (
         'assert_theme_complete.also_read', 'assert_theme_complete.fragment_css',
-        'assert_theme_complete.live_control', 'compose.title', 'declared_vars.css',
+        'assert_theme_complete.live_control', 'compose.title',
         'find_source.explicit', 'referenced_vars.css', 'vars_read_anywhere.css',),
+        # ⟳ 2026-10-06: `declared_vars.css` REMOVED -- it now varies. The text-style slice
+        # added cases that pass it the scheme CSS and a page's CSS, so the guard can tell a
+        # clause reading it from one that ignores it. A ratchet entry is a debt, and this one
+        # is paid; leaving it would let the parameter silently stop varying again.
     'check-anchors.py': (
         'audit.cutoff', 'audit.docs', 'audit.subdirs',),
     'check-anon-exposure.py': (

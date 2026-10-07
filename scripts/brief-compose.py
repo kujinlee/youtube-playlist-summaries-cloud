@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 125 cases
+    python3 scripts/brief-compose.py --self-test  # 132 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -91,7 +91,29 @@ SHIM = """
           --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
           --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
   html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
-         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
   /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
      one page's invention — every recent fragment has been re-declaring them privately to get past
      assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
@@ -495,7 +517,20 @@ def assert_shimmed(tray_css: str, content_css: str) -> None:
     deliberate. Nothing could have caught it by reading; it took measuring computed styles in a
     browser. Now a tray that grows a new dependency fails the compose instead of shipping.
     """
-    missing = sorted(referenced_vars(tray_css) - declared_vars(SHIM) - declared_vars(content_css))
+    # ⟳ 2026-10-06: `- declared_vars(tray_css)` ADDED, and it is a false-positive fix, not a
+    # loosening. The three subtractions name the three places a value can legitimately come
+    # from; this one was missing, so a name the tray BOTH declares and reads was reported as
+    # defined by nobody. Reached the moment the tray grew its first self-contained block (the
+    # text-style scheme declares `--head`/`--prose`/`--emph` on `:root` and then spends them in
+    # its own consumption rules) -- before that the tray only ever READ names, which is why the
+    # omission was invisible for as long as it was.
+    # ⚠ IT ADDS NO NEW BLIND SPOT. `declared_vars` is textual, so a declaration inside a
+    # `@media` block that never applies counts as a declaration -- but that is equally true of
+    # the two terms already subtracted, so this widens the existing weakness to a third place
+    # rather than introducing a different kind. What it must NOT do is make a genuinely
+    # undefined name pass, and the case below severs exactly that.
+    missing = sorted(referenced_vars(tray_css) - declared_vars(SHIM)
+                     - declared_vars(content_css) - declared_vars(tray_css))
     if missing:
         raise SystemExit(
             "brief-compose: the tray reads custom properties nothing defines: "
@@ -765,8 +800,14 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
     if page_chrome.missing_palettes(content + page_chrome.theme_control()):
         return (page_chrome.chrome_css(),
                 '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
-    return (page_chrome.chrome_css(),
-            page_chrome.chrome_bar("", generated_at, refresh=False),
+    # ⛔ THE ONE `textstyle=True` IN THE REPOSITORY. `chrome_bar` defaults it OFF because
+    # four of its five callers are dense tabular pages the three-role scheme was never
+    # tuned against; the explainer family is the prose one, and the only scope the reader
+    # asked for. Reached only on this branch -- the two returns above add a STAMP ONLY,
+    # so a fragment that brings its own chrome or lacks a palette gets no switcher either,
+    # which is correct: both are the fail-silent this module exists to prevent.
+    return (page_chrome.chrome_css() + page_chrome.text_style_css(),
+            page_chrome.chrome_bar("", generated_at, refresh=False, textstyle=True),
             f"<script>{page_chrome.chrome_script()}</script>")
 
 
@@ -827,8 +868,21 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # reads tokens with no fallback of its own — `--bg` among them — so those are read by every
     # page whether or not the fragment names them. Omitting it made `--bg` required only when the
     # fragment happened to mention it.
+    # ⛔ THE SCHEME CSS IS PART OF THE READ CORPUS TOO, and it was not until 2026-10-06.
+    # `chrome_for` returns `chrome_css() + text_style_css()` and the whole thing is written
+    # into the page's <style>, but BOTH guards were handed `chrome_css()` alone — so the
+    # three-role scheme's `var(--accent)` / `var(--em)` reached every composed page while
+    # nothing verified they resolve. That is the same class as F3 above (SHIM omitted from
+    # the corpus), one layer newer: a block appended to every page must be read as such, or
+    # its dependencies are checked on no page at all.
+    # ⚠ HOW IT WAS FOUND, because it matters: NOT by review. An end-to-end compose of a
+    # realistic fragment passed every assertion, and the finding came from asking which
+    # STRING each guard actually receives. The guards were green about a corpus that did
+    # not contain the subject.
+    scheme_css = page_chrome.text_style_css()
     assert_theme_complete(page_css, live_control,
-                          css + "\n" + page_chrome.chrome_css() + "\n" + SHIM)
+                          css + "\n" + page_chrome.chrome_css() + "\n"
+                          + scheme_css + "\n" + SHIM)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
     body = body + "\n" + chrome_bar + "\n" + chrome_js
     # ⭐ THE TRAY REGION IS DELIMITED AT BOTH ENDS (backlog #106). `extract_tray` reads back
@@ -1444,9 +1498,65 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
         case("…unless the CONTENT page defines it", True)
     except SystemExit:
         case("…unless the CONTENT page defines it", False)
+    # ⟳ 2026-10-06, the third subtraction. A name the TRAY declares and then spends is
+    # defined — it was reported as defined by nobody until the term was added.
+    # ⚠ ASSERTED ON `assert_shimmed` DIRECTLY, not through `compose`. The first draft of
+    # this case fed a self-declaring `:root` rule through `compose`, and it FAILED — because
+    # `extract_tray` lifts a fixed set of selectors and drops `:root`, so the declaration
+    # never reached `tray_css` and the case was measuring extract_tray's filtering rather
+    # than this rule. The real instance arrives by a different route: `text_style_css()` is
+    # concatenated onto the chrome CSS directly, never lifted.
+    # ⚠ `assert_shimmed` IS CALLED DIRECTLY AT EACH SITE, WITH LITERAL ARGUMENTS — not
+    # through a helper. `check-fixture-variation` refused two successive drafts that routed
+    # the calls through one wrapper: the guard reads the ARGUMENT EXPRESSIONS at each call
+    # site, so a single `assert_shimmed(tray, content)` inside a helper is ONE value however
+    # many different fixtures reach it. Varying the fixture behind a constant expression is
+    # exactly the shape it exists to refuse, and it was right twice.
+    try:
+        assert_shimmed(":root{--own-role:#0a0}#tray{color:var(--own-role)}", "")
+        case("assert_shimmed accepts a name the TRAY declares and spends", True)
+    except SystemExit:
+        case("assert_shimmed accepts a name the TRAY declares and spends", False)
+    # THE FALSIFIER for that widening: declared-where-read must not become declared-nowhere.
+    try:
+        assert_shimmed("#tray{color:var(--nobody-declares-this)}", "/*no decls*/")
+        case("…while a name declared NOWHERE is still refused", False)
+    except SystemExit as e:
+        case("…while a name declared NOWHERE is still refused",
+             "--nobody-declares-this" in str(e))
+    # content_css carries the resolution here — the same name, supplied by the PAGE.
+    try:
+        assert_shimmed("#tray{color:var(--page-supplies-this)}",
+                       ":root{--page-supplies-this:#333}")
+        case("…and a name only the CONTENT declares is accepted", True)
+    except SystemExit:
+        case("…and a name only the CONTENT declares is accepted", False)
+    # ...and a content declaring something ELSE must not rescue it.
+    try:
+        assert_shimmed("#tray{color:var(--page-supplies-this)}",
+                       ":root{--page-declares-the-wrong-one:#333}")
+        case("…but a content declaring a DIFFERENT name does not rescue it", False)
+    except SystemExit as e:
+        case("…but a content declaring a DIFFERENT name does not rescue it",
+             "--page-supplies-this" in str(e))
+    # ⭐ THE REAL INSTANCE: the scheme declares its three roles and spends them in one block.
+    try:
+        assert_shimmed(page_chrome.text_style_css(), ":root{--ink:#111}")
+        case("the text-style scheme's own three roles resolve", True)
+    except SystemExit:
+        case("the text-style scheme's own three roles resolve", False)
+    case("…and its roles are genuinely declared, not merely referenced",
+         {"--head", "--prose", "--emph"} <= declared_vars(page_chrome.text_style_css()))
+
     case("shim covers the names the real tray needs",
          {"--structure", "--structure-br", "--structure-bg", "--bg", "--good", "--defect"}
          <= declared_vars(SHIM))
+    # ⭐ MEASURED 2026-10-06: 6 of the 21 recomposable pages declare no `--accent` and 8 no
+    # `--em`, so the scheme resolves to nothing on a third of them unless the shim supplies
+    # both. This is the case that makes "the switcher works on every page it ships to" a
+    # measurement rather than a hope.
+    case("…and the two tokens the text-style scheme SPENDS",
+         set(page_chrome.TEXT_TOKENS) <= declared_vars(SHIM))
 
     case("has_tray rejects a page with no tray", not has_tray("<html><body>nope</body></html>"))
 
