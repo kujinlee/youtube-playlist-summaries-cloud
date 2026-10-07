@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 80 cases
+    python3 scripts/page_chrome.py --self-test          # 89 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -58,37 +58,41 @@ CHROME_SCRIPT_MARK = "yps-chrome-v1"
 _PALETTE_RE = ':root[{attr}="{theme}"]'
 
 # ── THE TEXT-STYLE SWITCHER ───────────────────────────────────────────────────────
-# ⛔ COLOUR IS THE DEFAULT AND THEREFORE THE NO-ATTRIBUTE RENDERING, at the reader's
-# explicit instruction (2026-10-06: "Default value should be color"). Only the two
-# OPT-OUTS are ever stamped on the root or written to storage.
+# ⛔ EVERY NAME HERE IS THE PROTOTYPE'S, NOT A NEW ONE, AND THAT IS THE POINT.
+# `docs/explainers/2026-10-05-topic-why-x-not-y.fragment.html` has shipped this control
+# since 2026-10-05 with its own inline copy — `data-scheme`, `data-s`, `explainer-scheme`,
+# schemes numbered 3/2/1. A first draft of this module invented `data-textscheme`,
+# `data-ts`, `yps-textscheme` and named schemes, which would have put TWO coordination
+# vocabularies on ONE concern the moment that page merged. That is this repository's
+# most-measured defect (17 instances, `check-vocabulary-collisions.py`), and the second
+# spelling is always the one that drifts. The prototype is the spelling with pages behind
+# it, so it wins; this module is where it stops being hand-copied.
 #
-# ⚠ THE DEFAULT AND THE MECHANISM HAD TO MOVE TOGETHER. The earlier draft made `plain`
-# the no-attribute rendering *so that a page with JS disabled or failed still rendered
-# correctly*. Inverting the default while leaving colour to be applied BY the script
-# would have kept the sentence "colour is the default" true and made a JS failure
-# deliver the one scheme the reader did not choose — true of the name, silent about the
-# layer. Colour is therefore what the CSS does with no attribute at all.
-TEXT_ATTR = "data-textscheme"
-TEXT_KEY = "yps-textscheme"
-TEXT_DEFAULT = "colour"
-TEXT_OPT_OUTS = ("headings", "plain")
-TEXT_SCHEMES = (TEXT_DEFAULT,) + TEXT_OPT_OUTS
+# ⛔ COLOUR IS SCHEME 3 AND SCHEME 3 IS THE NO-ATTRIBUTE RENDERING — already true in the
+# prototype, which calls `removeAttribute` for it and loads with
+# `set(saved==='1'||saved==='2'?saved:'3')`. ⚠ An earlier draft of this file claimed the
+# default was being INVERTED from plain to colour and that "the mechanism had to invert
+# with it". THAT WAS FALSE: nothing needed inverting, because colour was the no-attribute
+# default from the start. The behaviour was right and the stated reason was invented —
+# recorded here rather than quietly deleted, because an invented justification that
+# happens to sit beside correct code is the hardest kind to find later.
+TEXT_ATTR = "data-scheme"
+TEXT_KEY = "explainer-scheme"
+# value -> label, in the order the control renders them. The DEFAULT is the one whose
+# value never reaches the attribute or storage.
+TEXT_DEFAULT = "3"
+TEXT_SCHEMES = (("3", "colour"), ("2", "headings only"), ("1", "plain"))
+TEXT_OPT_OUTS = ("1", "2")
 
-# The page-local tokens the scheme SPENDS. MEASURED 2026-10-06 across the 21 explainer
-# pages that can be recomposed: `--fg`, `--fg2` and `--bg` are on all 21 — but
-# `--accent` on only 15 and `--em` on only 13. So the scheme cannot simply reference
-# them: on 6 and 8 pages respectively `var(--accent)` resolves to nothing, the role
-# inherits, and the switcher becomes a control that changes an attribute nothing
-# styles — this module's own documented fail-silent, rebuilt one layer up.
-#
-# ⛔ AND THE FIX IS NOT A `var(..., #hex)` FALLBACK. "MECHANISM SHARED, PALETTE LOCAL"
-# is this module's central decision: six generated pages deliberately look different,
-# and a literal here would flatten them while reporting success. A fallback would also
-# re-create the defect the three-role scheme exists to remove — scheme 1 rendered
-# heading, prose and emphasis as one identical colour, and any shared fallback puts two
-# of the three roles back on the same value. So the page supplies the tokens and this
-# module REFUSES a page that carries the control without them, exactly as
-# `missing_palettes` refuses a theme control with no palettes.
+# The page-local tokens the scheme SPENDS. MEASURED 2026-10-06 over the 16 explainer pages
+# on `origin/master` that have a surviving fragment and can therefore be recomposed:
+# `--fg`, `--fg2` and `--bg` are universal, but `--accent` and `--em` are not. So the
+# scheme cannot simply reference them — where they are undeclared the role resolves to
+# nothing and the switcher becomes a control that changes an attribute nothing styles,
+# which is this module's own documented fail-silent rebuilt one layer up.
+# ⛔ AND THE FIX IS NOT A `var(..., #hex)` FALLBACK. "MECHANISM SHARED, PALETTE LOCAL" is
+# this module's central decision, and a shared fallback also collapses two of the three
+# roles onto one value — the exact defect the three-role scheme exists to remove.
 TEXT_TOKENS = ("--accent", "--em")
 
 
@@ -128,7 +132,7 @@ def has_text_control(page: str) -> bool:
     Keyed on the control's own id for the same reason `has_control` is: a page that
     merely discusses typography in prose must not be made to supply tokens.
     """
-    return 'id="chrome-textstyle"' in page
+    return 'id="schemer"' in page
 
 
 def missing_text_tokens(page: str) -> list[str]:
@@ -148,47 +152,54 @@ def missing_text_tokens(page: str) -> list[str]:
 
 
 def text_style_control() -> str:
-    """The slim three-way control: `Text style: colour · headings only · plain`.
+    """The prototype's control, markup-for-markup: `Text style: colour · headings only · plain`.
 
-    A radio GROUP, not a cycling button. Three named destinations the reader can pick
-    directly beats a button whose next state they have to discover by pressing — and
-    `aria-pressed` per option carries which one is live.
+    `class="on"` marks the live option because the prototype's CSS keys on it
+    (`.on{border-color:var(--accent);color:var(--accent);font-weight:600}`) and that CSS is
+    already on a shipped page. `aria-pressed` is carried IN ADDITION — it is what a screen
+    reader announces, and a class alone says nothing to one. Adding it is not a second
+    mechanism: the class drives paint, the attribute drives announcement, and the script
+    sets both from one place.
     """
-    opts = (("colour", "colour"), ("headings", "headings only"), ("plain", "plain"))
     btns = "".join(
-        f'<button type="button" class="chrome-ts" data-ts="{v}" '
+        f'<button type="button" data-s="{v}"'
+        f'{' class="on"' if v == TEXT_DEFAULT else ""} '
         f'aria-pressed="{str(v == TEXT_DEFAULT).lower()}">{_html.escape(lbl)}</button>'
-        for v, lbl in opts)
-    return ('<span id="chrome-textstyle" class="chrome-tsg" role="group" '
-            'aria-label="Text style">'
-            '<span class="chrome-tslbl">Text style:</span>' + btns + '</span>')
+        for v, lbl in TEXT_SCHEMES)
+    return ('<div class="schemer" id="schemer" role="group" aria-label="Text style">'
+            '<span class="lbl">Text style:</span>' + btns + '</div>')
 
 
 def text_style_css() -> str:
-    """The three roles, the two opt-outs, and what consumes them.
+    """The three roles, the two opt-outs, and what consumes them — the prototype's values.
 
-    THE ROLES ARE STRUCTURE, NOT DECORATION — `--head` for headings, `--prose` for body
-    text, `--emph` for emphasis. The semantic palette is deliberately untouched: teal
-    (`--verified`) and red (`--warn`) MEAN *measured* and *warning* on these pages, so
-    spending either on emphasis would make every bolded phrase assert something it does
-    not mean. `--em` exists precisely because the semantic palette does not use it.
+    ⚠ `headings only` KEEPS `--prose:var(--fg2)` and drops only `--emph`. A first draft
+    took prose to `--fg` as well, on the reasoning that "headings only" means everything
+    else is plain. The prototype says otherwise and it is the version that has been looked
+    at, so it governs: the scheme removes the EMPHASIS colour, not the prose tone.
 
-    Colour is the bare `:root` block, so it is what a reader gets with no attribute set
-    — see TEXT_ATTR. The opt-outs only ever REMOVE colour, which is why they can be
-    expressed as overrides and why a failed script cannot strand the page in one.
+    THE ROLES ARE STRUCTURE, NOT DECORATION. The semantic palette is deliberately
+    untouched: teal (`--verified`) and red (`--warn`) MEAN *measured* and *warning* on
+    these pages, so spending either on emphasis would make every bolded phrase assert
+    something it does not mean. `--em` exists precisely because the semantic palette does
+    not use it.
+
+    Colour is the bare `:root` block, so it is what a reader gets with no attribute set —
+    which is also what a reader gets when the script never runs.
     """
     return (
         ":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}"
-        f':root[{TEXT_ATTR}="headings"]{{--prose:var(--fg);--emph:var(--fg)}}'
-        f':root[{TEXT_ATTR}="plain"]{{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}}'
+        f':root[{TEXT_ATTR}="1"]{{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}}'
+        f':root[{TEXT_ATTR}="2"]{{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}}'
         ".ex-body{color:var(--prose)}"
         ".ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}"
         ".ex-body strong,.ex-body b{color:var(--emph)}"
-        ".chrome-tsg{display:inline-flex;align-items:center;gap:.3em}"
-        ".chrome-tslbl{opacity:.7}"
-        ".chrome-ts{background:none;border:0;padding:0 .2em;cursor:pointer;"
-        "color:inherit;opacity:.55;font:inherit}"
-        '.chrome-ts[aria-pressed="true"]{opacity:1;text-decoration:underline}'
+        ".schemer{display:inline-flex;align-items:center;gap:.3em}"
+        ".schemer .lbl{opacity:.7}"
+        ".schemer button{background:none;border:1px solid transparent;border-radius:1em;"
+        "padding:0 .55em;cursor:pointer;color:inherit;opacity:.6;font:inherit}"
+        ".schemer button.on{border-color:var(--accent);color:var(--accent);"
+        "font-weight:600;opacity:1}"
     )
 
 
@@ -285,23 +296,27 @@ def chrome_script() -> str:
         "var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);"
         "b.setAttribute('aria-pressed',String(n==='dark'));"
         "try{localStorage.setItem(K,n);}catch(e){}});}"
-        # ── the text-style switcher. Stores ONLY the opt-outs, so an empty/absent key and a
-        # cleared key both mean COLOUR -- the default and the no-attribute rendering.
+        # ── the text-style switcher. THE PROTOTYPE'S LOGIC, not a reimplementation:
+        # `set(D)` REMOVES the attribute, load is `set(saved is an opt-out ? saved : D)`,
+        # and the live option carries class `on`. ⚠ The prototype wrote EVERY choice to
+        # storage including the default; this writes the default by REMOVING the key, so
+        # "never chosen" and "chose the default" are one state rather than two that must
+        # agree. That is the one deliberate departure, and it cannot change what renders:
+        # both end at `set(D)` on the next load.
         f"var TK={TEXT_KEY!r},TA={TEXT_ATTR!r},TD={TEXT_DEFAULT!r};"
-        "function tcur(){return R.getAttribute(TA)||TD;}"
-        "try{var ts=localStorage.getItem(TK);"
-        f"if(ts==={TEXT_OPT_OUTS[0]!r}||ts==={TEXT_OPT_OUTS[1]!r})R.setAttribute(TA,ts);}}"
-        "catch(e){}"
-        "var tg=document.getElementById('chrome-textstyle');"
-        "if(tg){var tb=tg.querySelectorAll('button[data-ts]');"
-        "function tpaint(){var c=tcur();for(var i=0;i<tb.length;i++)"
-        "tb[i].setAttribute('aria-pressed',String(tb[i].getAttribute('data-ts')===c));}"
-        "tpaint();"
-        "for(var j=0;j<tb.length;j++)tb[j].addEventListener('click',function(){"
-        "var v=this.getAttribute('data-ts');"
-        "if(v===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}"
-        "else{R.setAttribute(TA,v);try{localStorage.setItem(TK,v);}catch(e){}}"
-        "tpaint();});}"
+        "var box=document.getElementById('schemer');"
+        "if(box){"
+        "function sset(s){"
+        "if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}"
+        "else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}"
+        "var bs=box.querySelectorAll('button[data-s]');"
+        "for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;"
+        "bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}"
+        "box.addEventListener('click',function(e){"
+        "var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;"
+        "if(b)sset(b.getAttribute('data-s'));});"
+        "var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}"
+        f"sset(sv==={TEXT_OPT_OUTS[0]!r}||sv==={TEXT_OPT_OUTS[1]!r}?sv:TD);}}"
         "var r=document.getElementById('chrome-refresh'),"
         "say=document.getElementById('chrome-refresh-say');"
         "if(r){r.addEventListener('click',function(){"
@@ -597,23 +612,30 @@ def self_test() -> int:
 
 
     # ─── THE TEXT-STYLE SWITCHER ──────────────────────────────────────────────────
+    # ⛔ EVERY NAME ASSERTED HERE IS THE PROTOTYPE'S. These cases are the guard against
+    # this module drifting away from the page that already ships the control inline.
     TS = text_style_control()
     TSCSS = text_style_css()
     DECL = "<style>:root{--accent:#123456;--em:#654321}</style>"
     ts_full = f"<style>{LIGHT}{DARK}{TSCSS}</style>{DECL}{TS}<script>{chrome_script()}</script>"
 
-    case("the control offers all three schemes",
-         sorted(re.findall(r'data-ts="([a-z]+)"', TS)), sorted(TEXT_SCHEMES))
+    case("the control is the prototype's element", 'id="schemer"' in TS, True)
+    case("...with its label", "Text style:" in TS, True)
+    case("the three schemes, in the prototype's order and spelling",
+         re.findall(r'data-s="(\d)"[^>]*>([^<]*)<', TS),
+         [("3", "colour"), ("2", "headings only"), ("1", "plain")])
     case("has_text_control sees it", has_text_control(TS), True)
     case("has_text_control is keyed on the id, not the words 'text style'",
          has_text_control("<p>this page discusses text style at length</p>"), False)
     case("...so prose about text style demands no tokens",
          missing_text_tokens("<p>text style matters</p>"), [])
-    # ⛔ COLOUR IS THE DEFAULT. Exactly one option starts pressed, and it is that one.
-    case("exactly one option starts pressed",
+    # ⛔ COLOUR IS SCHEME 3 AND IS THE DEFAULT — the prototype's arrangement, not an
+    # inversion of it. Both the paint class and the announced state start on it.
+    case("exactly one option starts marked live", TS.count('class="on"'), 1)
+    case("...and it is scheme 3", 'data-s="3" class="on"' in TS, True)
+    case("...which is the default", TEXT_DEFAULT, "3")
+    case("the announced state agrees with the painted one",
          TS.count('aria-pressed="true"'), 1)
-    case("...and it is the default scheme",
-         f'data-ts="{TEXT_DEFAULT}" aria-pressed="true"' in TS, True)
 
     # --- THE FAIL-SILENT: a control whose tokens the page never declares
     case("a control declaring NEITHER token is caught",
@@ -622,33 +644,39 @@ def self_test() -> int:
          missing_text_tokens(f"<style>:root{{--accent:#123456}}</style>{TS}"), ["--em"])
     case("a control declaring both passes", missing_text_tokens(DECL + TS), [])
     case("a page with no control needs no tokens", missing_text_tokens(stamp("x")), [])
-    # ⭐ THE MEASURED TRAP, and the reason the check keys on `--accent:` and not `--accent`.
-    # A page that only USES the token is precisely the page whose role resolves to nothing;
-    # all 21 recomposable pages would have passed a check that accepted a use.
+    # ⭐ THE MEASURED TRAP, and why the check keys on `--accent:` not `--accent`: a page
+    # that only USES the token is precisely the page whose role resolves to nothing.
     case("a page that only USES a token has not DECLARED it",
          missing_text_tokens(f"<style>h1{{color:var(--accent)}}p{{color:var(--em)}}</style>{TS}"),
          list(TEXT_TOKENS))
 
-    # --- the CSS: colour is the bare :root, so it is what no attribute renders
-    case("the default scheme needs no attribute",
-         TSCSS.split("{")[0], ":root")
-    case("both opt-outs are expressed as attribute overrides",
-         all(f'[{TEXT_ATTR}="{v}"]' in TSCSS for v in TEXT_OPT_OUTS), True)
+    # --- the CSS, against the prototype's own values
+    case("the default scheme needs no attribute", TSCSS.split("{")[0], ":root")
     case("the default scheme is NOT keyed on an attribute",
          f'[{TEXT_ATTR}="{TEXT_DEFAULT}"]' in TSCSS, False)
-    # ⭐ THE DEFECT THE THREE-ROLE SCHEME EXISTS TO REMOVE. Scheme 1 computed heading,
-    # prose and emphasis to one identical colour. A test asserting "the switcher exists"
-    # passes on that version too, so assert the roles are DISTINCT.
+    case("both opt-outs are attribute overrides",
+         all(f'[{TEXT_ATTR}="{v}"]' in TSCSS for v in TEXT_OPT_OUTS), True)
+    # ⭐ THE DEFECT THE THREE-ROLE SCHEME EXISTS TO REMOVE: scheme 1 computed heading,
+    # prose and emphasis to ONE identical colour. "The switcher exists" passes on that
+    # version too, so assert the roles are DISTINCT.
     _roles = re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))", TSCSS.split("}")[0])
     case("the three roles spend three DIFFERENT tokens", len(set(_roles)), 3)
+    # ⚠ BOUNDED TO ITS OWN BLOCK. The first draft split on the selector and read the REST
+    # of the stylesheet, so it picked up scheme 2's roles too and reported 3 distinct
+    # tokens — a case that was measuring the wrong span, not a defect in the CSS.
+    _pl = TSCSS.split(f'[{TEXT_ATTR}="1"]')[1].split("}")[0]
     case("...and `plain` collapses all three onto the page's own ink",
-         len(set(re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))",
-                            TSCSS.split(f'[{TEXT_ATTR}="plain"]')[1]))), 1)
-    # ⛔ The semantic palette is RESERVED: teal means measured and red means warning on
-    # these pages, so emphasis may not spend either. Asserting the property, not the fix.
+         len(set(re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))", _pl))), 1)
+    # ⚠ `headings only` KEEPS the prose tone and drops only emphasis — the prototype's
+    # behaviour, which a first draft of this module got wrong in the other direction.
+    _h = TSCSS.split(f'[{TEXT_ATTR}="2"]')[1].split("}")[0]
+    case("`headings only` keeps the prose tone", "--prose:var(--fg2)" in _h, True)
+    case("...and drops only the emphasis colour", "--emph:var(--fg)" in _h, True)
     case("the scheme spends neither reserved semantic token",
          [v for v in re.findall(r"var\((--[a-z0-9-]+)", TSCSS)
           if v in ("--verified", "--warn")], [])
+    case("the control's live style keys on the class the prototype's CSS uses",
+         ".schemer button.on" in TSCSS, True)
 
     # --- assert_wired, the caller-facing gate
     case("assert_wired accepts a fully wired switcher", raises(ts_full), None)
@@ -663,9 +691,7 @@ def self_test() -> int:
          raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}"
                 f"<script>{chrome_script()}</script>"), None)
 
-    # --- the bar, and the opt-out the tabular pages use
-    # ⛔ OPT-IN, not opt-out. A default-on switcher reached four tabular callers and was
-    # caught by only two of their suites — see chrome_bar's docstring.
+    # --- the bar: OPT-IN, because four of five callers are tabular pages
     case("the bar does NOT carry the switcher by default",
          has_text_control(chrome_bar("s", "t")), False)
     case("...and textstyle=True adds it",
@@ -674,19 +700,22 @@ def self_test() -> int:
          (has_control(chrome_bar("s", "t")),
           has_control(chrome_bar("s", "t", textstyle=True))), (True, True))
 
-    # --- the script. ⭐ THE FALSIFIER FOR "colour is the no-attribute rendering":
-    # choosing the default must REMOVE the attribute and the stored key, never write them.
+    # --- the script, against the prototype's semantics
     _js = chrome_script()
-    case("the script removes the attribute for the default, rather than setting it",
+    case("the script removes the attribute for the default rather than setting it",
          "R.removeAttribute(TA)" in _js, True)
     case("...and clears the stored key rather than storing the default",
          "localStorage.removeItem(TK)" in _js, True)
-    case("the script never stores the default scheme's name",
+    case("the script never stores the default scheme's value",
          f"setItem(TK,{TEXT_DEFAULT!r}" in _js, False)
     case("only the two opt-outs are accepted from storage",
-         sorted(re.findall(r"ts===\'([a-z]+)\'", _js)), sorted(TEXT_OPT_OUTS))
+         sorted(re.findall(r"sv===\'(\d)\'", _js)), sorted(TEXT_OPT_OUTS))
+    case("it carries the prototype's attribute and storage key",
+         (TEXT_ATTR in _js, TEXT_KEY in _js), (True, True))
     case("a missing switcher does not throw and take the page's scripts down",
-         "if(tg){" in _js, True)
+         "if(box){" in _js, True)
+    case("the live option is marked by BOTH class and aria-pressed",
+         ("className=on?'on':''" in _js, "aria-pressed" in _js), (True, True))
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0
