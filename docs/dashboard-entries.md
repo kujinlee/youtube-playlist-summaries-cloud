@@ -14426,3 +14426,37 @@ wrong `expect` of mine first — **44 killed but 43 attributed** — because the
 passed under that mutation. A kill count would have hidden it.
 
 ⚠ **STILL NOT CONVERGED**: #249 open, and round 1's remaining Lows unfolded.
+
+## 2026-10-07
+The three pre-review checks the defect survey recommended are now written down as work, with the
+fourth left alone on purpose.
+
+The survey on the dev-process page listed candidate checks that would have caught some of last
+night's defects before a reviewer saw them. They were analysis, not work. Three of them are now
+backlog rows; the fourth is not, because the page recommends against it and a row would outlive the
+paragraph saying so.
+
+One of the three is marked more urgent than the others. It is the only one whose absence has
+actually been measured letting a defect through that removed a working safety check — twice, on the
+same branch, in one day.
+
+<!--tech-->
+Filed at the owner's instruction from the explainer page (*"let's file a backlog for recommended
+checks C1, C2, C4"*), alongside **#249** which is the same class:
+
+| Row | Candidate | Marker | Basis |
+|---|---|---|---|
+| **#250** | C1 · the filing claim | 🟠 | PR #364's round-3 fold claimed `FILED, NOT FOLDED` for **seven** deferrals and filed **zero**. An EXTENSION of `check-backlog-closure.py` (which reads the closing direction and has no filing checker), WARN-only per #56 |
+| **#251** | C2 · the unmutated change | 🔴 | the only one measured letting a live gate-removing defect through — twice: #241, then #248 (severing `if problems:` leaves 104/104 GREEN while regressions report SUCCESS) |
+| **#252** | C4 · the unbound anchor | 🟠 | FIVE instances in one session; one cost 14m58s of CI to report `NOT MEASURED — 175 of 176`. Sub-second over 1,414 anchors across 59 manifests |
+
+⛔ **C3 deliberately NOT filed.** The page recommends against it (expected to false-fire more than it
+catches; #56's verdict is that a gate red without cause gets switched off). A row would outlive the
+paragraph explaining why not, and invite someone to build it.
+
+⚠ **#252 SUPERSEDES the equivalent row on the unmerged PR #364 branch** (id 245 there, absent from
+master). When those branches merge, keep #252 and close the other — do not file twice.
+⚠ Numbered from **250**: master's backlog stops at 237 and ids 238-248 exist only on #364's branch.
+
+Answered in the page as well as here, per the delivery loop. Page recomposed from its fragment:
+**1,096 sites measured, 0 below AA, worst 4.58:1** across both themes.
