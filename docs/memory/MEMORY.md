@@ -88,7 +88,9 @@
 
 ## Working with me
 
+- [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
+- [⏳ A waiting line carries a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — asked 2026-10-06: `⏳ **13:25 PDT** — …`, with the START not just the duration. "~25 min" is unreadable an hour later
 - [⏳ Show a WAITING SIGNAL, not prose](show-a-waiting-signal-not-prose.md) — asked for 2026-09-23: lead with `⏳ **Waiting** — <what>`; "still running" buried in a paragraph does not register
 - [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — plain words, a `## ▶ STEP n of N` banner BEFORE each step, and a live progress line for background work. ⭐⭐ **3rd lapse 2026-09-23: a step that GREW to 12 findings stayed "step 5" for 20 tool calls.** Sub-divide with a ONE-LINE `▸ 5.3 — …` marker; the trail is DATA for a future workflow view
 - [⭐ A title is SCANNED, not read](a-title-is-scanned-not-read.md) — asked 2026-10-02: lead with the concrete SCOPE, then the finding. An essayistic title says what was LEARNED and hides what was TOUCHED. The body still argues

@@ -68,7 +68,7 @@ DOES NOT CHECK (round 5 L2 — stated, because an undeclared gap reads as covere
 
 Usage:
     python3 scripts/check-rc-contract.py
-    python3 scripts/check-rc-contract.py --self-test  # 55 cases
+    python3 scripts/check-rc-contract.py --self-test  # 56 cases
 """
 from __future__ import annotations
 
@@ -329,7 +329,14 @@ def observe(hook_src: str, rc: int, out: str) -> str:
 # ⛔ ONE ALLOWLIST, NAMED, AND ITS SIBLING RECONCILES AGAINST IT BY A CASE — ROUND 8 H1. The scrub
 # was hand-copied between this file and `check-surface-recall.py` with nothing comparing the two:
 # the fix for a DRIFT defect was a second copy of itself.
-SUBPROCESS_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG")
+# ⛔ `PYTHONDONTWRITEBYTECODE` IS LOAD-BEARING AND WAS MISSING — ROUND 2 MEDIUM (PR #366).
+# The scrub above is an ALLOW-LIST, so it dropped the one variable the mutation harness sets
+# to keep bytecode caches impossible while it measures. Reproduced at `77316edc`: a scrubbed
+# child importing a module wrote `__pycache__/*.pyc` with the parent holding the variable.
+# ⚠ The sibling case below asserted only that the two copies AGREE, which a wrong set held
+# consistently satisfies — so the PROPERTY ("a scrubbed spawn writes no cache") is asserted
+# directly now, over each file's own constant, and is what the mutation entries name.
+SUBPROCESS_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG", "PYTHONDONTWRITEBYTECODE")
 
 _PROBE = "PROBE-DETAIL-TEXT"
 
@@ -775,9 +782,64 @@ def _self_test() -> int:
     # site — so `check-fixture-variation.py` was right that nothing could tell it from a literal.
     # The suite is stubbed out rather than re-entered, because `main(["--self-test"])` for real is
     # unbounded recursion; `main` resolves `_self_test` from module globals at call time.
+    # ── r4 MEDIUM — ASSERT THE DICT WE OWN, NOT THE FILESYSTEM TWO PROCESSES AWAY.
+    # Three filesystem probes, three defeats, one cause: "no `.pyc` appeared" has PRECONDITIONS and
+    # they live in CPython. r2 asserted NONE of them; r3 asserted "the spawn ran"; the r3 fold
+    # asserted "the import ran"; r4 then exhibited the THIRD — *bytecode would have been written
+    # absent the key* — with a `python3` shim on PATH that adds `-B` (PATH is itself allow-listed).
+    # Both call-site mutants SURVIVED, at a clean 56/56 and 59/59. A fourth precondition row would
+    # have been a fourth widening.
+    # ⛔ SO THE MEASUREMENT MOVES UP ONE LEVEL: capture the env dict the REAL spawn hands
+    # `subprocess.run`, and assert the key is in it. We own that dict; CPython owns honouring it,
+    # and every r2–r4 defect lived in the half we do NOT own. No child process, no filesystem, no
+    # preconditions — an ambient `-B`, a `PYTHONPYCACHEPREFIX`, or a shimmed interpreter cannot
+    # reach a dict comparison.
+    # ⭐ `check-plan-code.py:3847` has asserted exactly this, for exactly this variable, in two
+    # lines, ever since the harness gained `child_env`. The right-altitude instrument already
+    # existed in this repo; it was unavailable here only because the scrub is an inline
+    # comprehension rather than a named producer. Three rounds were downstream of that.
+    _ENVELOPE = json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PostToolUse", "additionalContext": "probe"}})
+
+    def _env_handed_to_the_spawn(hook_src: str) -> dict:
+        """-> the env dict the production scrub actually passes to `subprocess.run`.
+
+        `subprocess.run` is replaced for the length of one call and restored in a `finally`; the
+        stand-in returns a well-formed envelope so the production path completes normally instead
+        of raising, which keeps the capture on the SUCCESS route rather than an error route.
+        """
+        seen: dict = {}
+        _real = subprocess.run
+        _saved = os.environ.get("PYTHONDONTWRITEBYTECODE")
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
+        def _capture(*a, **kw):
+            seen.update(kw.get("env") or {})
+            return subprocess.CompletedProcess(a[0] if a else [], 0, _ENVELOPE, "")
+
+        subprocess.run = _capture
+        try:
+            observe(hook_src, 5, _PROBE)
+        finally:
+            subprocess.run = _real
+            if _saved is None:
+                os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
+            else:
+                os.environ["PYTHONDONTWRITEBYTECODE"] = _saved
+        return seen
+
+    # ⚠ TWO DISTINCT INPUTS. `check-fixture-variation` refuses a case whose producer sees one
+    # value at every call site — the same rule `check-plan-code.py:3843` records for `child_env`.
+    _spawn_env_1 = _env_handed_to_the_spawn(_hook('  5) PAYLOAD="one" ;;\n'))
+    _spawn_env_2 = _env_handed_to_the_spawn(_hook('  6) PAYLOAD="two" ;;\n'))
+    case("the env the scrub hands the production spawn carries PYTHONDONTWRITEBYTECODE — r4 Medium",
+         (_spawn_env_1.get("PYTHONDONTWRITEBYTECODE"),
+          _spawn_env_2.get("PYTHONDONTWRITEBYTECODE")), ("1", "1"))
+
     _saved_st = globals()["_self_test"]
     globals()["_self_test"] = lambda: 99
     try:
+
         case("main dispatches --self-test to the suite", main(["--self-test"]), 99)
         case("...and an argv WITHOUT it does not reach the suite", main(["--nope"]) != 99, True)
     finally:
