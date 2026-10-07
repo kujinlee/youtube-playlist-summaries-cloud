@@ -1,0 +1,22 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 3602 chars"
+  ],
+  "dirty": {
+    "docs/Claude_Code_Memory_Retrieval_Layer.pdf": "100644 6b5ef9d763abd4223c60c705071d8fe0d27fee4f",
+    "docs/explainers/Claude_Code_Memory_Retrieval_Layer.pdf": "100644 6b5ef9d763abd4223c60c705071d8fe0d27fee4f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "fe3c82cefa3bf82d3f4a9355b862ecb191ac6a65",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/94fc1f20-5834-44e2-816f-8cb71c0ca573/scratchpad/codex-r6.log: OVERWRITTEN during the run (writer unattributed)"
+  ],
+  "model": "gpt-5.5",
+  "prompt": "/tmp/r6-codex-prompt.md",
+  "reason": "3602 chars",
+  "refused": false,
+  "review": "main-drivable-r6-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

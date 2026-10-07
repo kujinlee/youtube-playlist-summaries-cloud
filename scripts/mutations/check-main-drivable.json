@@ -1,0 +1,2382 @@
+[
+ {
+  "name": "the literal-argv discrimination is dropped, so a flag vector run over the LIVE repository counts as a constructed world and every pinned guard silently 'complies'",
+  "edits": [
+   [
+    "    return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)",
+    "    return True"
+   ]
+  ],
+  "expect": [
+   "...but a hard-coded path literal does NOT \u2014 discrimination 2, stated in the docstring"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a second POSITIONAL argument stops counting as main's world, so `main(['--decide'], stream)` reads as debt",
+  "edits": [
+   [
+    "    if len(call.args) > 1 and len(positional) > 1:",
+    "    if len(call.args) > 99 and len(positional) > 1:"
+   ]
+  ],
+  "expect": [
+   "...and so does a constructed second positional argument"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the keyword half of the param route is severed, so `main([], root=_r)` \u2014 ADR-0014's D1 verbatim \u2014 reads as debt",
+  "edits": [
+   [
+    "    declared_world = set(positional[1:]) | set(kwonly)",
+    "    declared_world = set()"
+   ]
+  ],
+  "expect": [
+   "the PARAM route: a keyword supplies a world the case built"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "every write to a global is read as a substitution, so a swap RESTORED long before the call credits the call anyway \u2014 the false credit this guard shipped on its first run",
+  "edits": [
+   [
+    "            writes.append((line, g, inert_write))",
+    "            writes.append((line, g, False))"
+   ]
+  ],
+  "expect": [
+   "...global_writes tells the substitution from the restore"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the substitution is no longer bounded by the call's own line, so a restored swap is live at every line of the case",
+  "edits": [
+   [
+    "        prior = [rs for ln, g, rs in writes if g == name and ln < lineno]",
+    "        prior = [rs for ln, g, rs in writes if g == name]"
+   ]
+  ],
+  "expect": [
+   "...while at a line inside the substituted region it is not"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the assignment target stops being WALKED, so `globals()['x'].attr = \u2026` writes nothing \u2014 after `_unpack` splits tuples, descending into an ATTRIBUTE target is the walk's only remaining job",
+  "edits": [
+   [
+    "    for node in ast.walk(target):",
+    "    for node in [target]:"
+   ]
+  ],
+  "expect": [
+   "...and substituting an ATTRIBUTE of an imported module is substituting the world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "main's world widens to every module global, so substituting a name main never reads buys a rebind credit",
+  "edits": [
+   [
+    "    seen: set[str] = set()\n    out: set[str] = set()",
+    "    seen: set[str] = set()\n    out: set[str] = set(glob)"
+   ]
+  ],
+  "expect": [
+   "...and NOT one no function on main's path reads"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "parameter shadowing is ignored, so `def main(ROOT=None)` reads the global ROOT it actually hides",
+  "edits": [
+   [
+    "                if node.id in glob and node.id not in shadowed:",
+    "                if node.id in glob:"
+   ]
+  ],
+  "expect": [
+   "...and a parameter shadowing a global is not a world read"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "main's own body stops being excluded, so a RECURSIVE call inside main counts as a case driving it",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == \"main\":\n            skip.add(id(node))",
+    "        if False:\n            skip.add(id(node))"
+   ]
+  ],
+  "expect": [
+   "...and main calling ITSELF over a built path is not a case driving it"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "forwarders stop being recognised, so check-plan-code's `_main_rc(argv)` wrapper hides a tree it really does build",
+  "edits": [
+   [
+    "                if isinstance(first, ast.Name) and first.id in params:\n                    out[node.name] = params.index(first.id)",
+    "                if isinstance(first, ast.Name) and first.id in params:\n                    pass"
+   ]
+  ],
+  "expect": [
+   "a one-level forwarder carries the computed argv through to main"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "pin_paid is dropped, so a debt can be PAID without its pin being removed and then re-accrued with nothing noticing",
+  "edits": [
+   [
+    "                problems.append(\n                    f\"[D2_pin_paid] {path} now drives main() over a constructed world \"",
+    "                problems.append(\n                    f\"[D2_pin_NOTHING] {path} now drives main() over a constructed world \""
+   ]
+  ],
+  "expect": [
+   "...a pinned guard that now COMPLIES is reported, so the debt cannot be paid silently"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 THE RESIDUE. The unpinned-guard verdict is computed and then never reported \u2014 the exact class ADR-0014 exists for, at the one layer only an end-to-end case reaches",
+  "edits": [
+   [
+    "        if path not in debt:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "main() driven over a constructed world reports the undriven guard, rc 1",
+   "assess names an unpinned guard that cannot be driven"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 THE WIRING. assess still finds every violation and main() drops the list on the floor, printing OK and exiting 0 \u2014 no unit case can see this, which is the whole argument of ADR-0014 over #213",
+  "edits": [
+   [
+    "    if problems:\n        print()\n        for p in problems:\n            print(p)\n        return 1",
+    "    if False:\n        print()\n        for p in problems:\n            print(p)\n        return 1"
+   ]
+  ],
+  "expect": [
+   "main() driven over a constructed world reports the undriven guard, rc 1"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "CANNOT RUN is removed, so an empty or unreadable population reports a clean bill \u2014 a zero over nothing read as a pass",
+  "edits": [
+   [
+    "    if unreadable or not targets:",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "...an empty population is CANNOT RUN with rc 2, never a pass"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "pin reconciliation is applied to SUBSETS too, so any path override invents a stale finding for every guard it did not happen to read",
+  "edits": [
+   [
+    "    whole = not a.paths and root == ROOT",
+    "    whole = True"
+   ]
+  ],
+  "expect": [
+   "...a world where every guard complies is rc 0"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the stale-pin rule for a renamed guard is dropped, so the debt set can rot into names that no longer exist",
+  "edits": [
+   [
+    "        for pinned in sorted(debt - set(verdicts)):",
+    "        for pinned in []:"
+   ]
+  ],
+  "expect": [
+   "...a pin for a file outside the population is reported as stale"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the stale-pin rule for a guard with no main() is dropped, so a pin that asserts nothing stays in the set forever",
+  "edits": [
+   [
+    "        for pinned in sorted(q for q in debt & set(verdicts)\n                             if not verdicts[q].has_main and verdicts[q].error is None):",
+    "        for pinned in []:"
+   ]
+  ],
+  "expect": [
+   "...and pinning a guard with no main() asserts nothing, so it is stale too"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 BLOCKING, HALF ONE. The suite-reachability rule is dropped, so a main call in a function nothing invokes earns a route again",
+  "edits": [
+   [
+    "    fwd = argv_forwarders(tree)\n    reachable = suite_reachable(tree)\n    found:",
+    "    fwd = argv_forwarders(tree)\n    reachable = set(_all_functions(tree))\n    found:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a main call in a function NOTHING invokes earns no route (r1 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 BLOCKING, HALF TWO. The statically-dead branch rule is dropped, so `if False: main([str(tmp)])` fakes compliance",
+  "edits": [
+   [
+    "    skip = _skip_ids(tree) | _dead_branch_ids(tree)\n    fwd = argv_forwarders(tree)",
+    "    skip = _skip_ids(tree)\n    fwd = argv_forwarders(tree)"
+   ]
+  ],
+  "expect": [
+   "...and neither does one inside `if False:` \u2014 the cheapest possible fake"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the suite entry is hard-coded again, so a guard whose --self-test dispatches to a SECOND suite function reads as having no suite at all",
+  "edits": [
+   [
+    "                        out.add(sub.func.id)",
+    "                        pass"
+   ]
+  ],
+  "expect": [
+   "...and complies \u2014 substitutes g['collect'] through a globals() ALIAS"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 BLOCKING, THE ALIAS. `g = globals()` stops being recognised, so the rebind route goes blind to the spelling half this repo uses",
+  "edits": [
+   [
+    "            via_alias = isinstance(base, ast.Name) and base.id in aliases",
+    "            via_alias = False"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `g = globals()` is globals() \u2014 the alias that hid a COMPLIANT guard (r1 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 BLOCKING, THE FOURTH ROUTE. A guard that drives its own entry point as a subprocess over built stdin is pinned as debt again",
+  "edits": [
+   [
+    "    if subprocess_self_calls(tree, guard_world):",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the SUBPROC route: the shipped entry point over built stdin (r1 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the subprocess route stops demanding a CONSTRUCTED world, so re-running the real guard over the real repository earns credit",
+  "edits": [
+   [
+    "                if built:\n                    out.append((node.lineno, fn))",
+    "                if True:\n                    out.append((node.lineno, fn))"
+   ]
+  ],
+  "expect": [
+   "...but re-running the real guard over the real repo earns nothing"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the subprocess route stops checking that the spawned file is THIS guard, so spawning any other script counts",
+  "edits": [
+   [
+    "            if names_self:",
+    "            if True:"
+   ]
+  ],
+  "expect": [
+   "...and spawning a DIFFERENT file is not driving this guard's entry point"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a bulk `g.update(...)` stops being a write, so a substitution it undid stays live for the rest of the case",
+  "edits": [
+   [
+    "                writes.append((node.lineno, g, mentions_saved))",
+    "                pass"
+   ]
+  ],
+  "expect": [
+   "...and a bulk `g.update(...)` restore is a write, so it ends the substitution"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 MEDIUM. The PARAM route drops its literal discrimination, so a bare `None` in the world position earns the route",
+  "edits": [
+   [
+    "        if any(_element_is_constructed(a, fn, tree, 0, world) for a in call.args[1:]):",
+    "        if True:"
+   ]
+  ],
+  "expect": [
+   "...and neither does a bare None in the world position"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the PARAM keyword route drops its literal discrimination, so handing main the SAME global it would have read earns the route",
+  "edits": [
+   [
+    "    return any(kw.arg in declared_world\n               and _element_is_constructed(kw.value, fn, tree, 0, world)\n               for kw in call.keywords)",
+    "    return any(kw.arg in declared_world for kw in call.keywords)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...but handing main the SAME global it would have read earns nothing (r1 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the helper-parameter hop is dropped, so a world arriving as a helper's parameter is unresolvable and ADR-0014's own exemplar guard is pinned as debt",
+  "edits": [
+   [
+    "        if idx is not None and _constructed_at_call_sites(tree, fn, idx, expr.id, depth, world):\n            return BUILT",
+    "        if False:\n            return BUILT"
+   ]
+  ],
+  "expect": [
+   "...and a world arriving as a HELPER'S PARAMETER is resolved at its call site"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the helper hop stops bounding its depth, so resolution recurses through call sites without limit",
+  "edits": [
+   [
+    "    if tree is None or depth > 0 or not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):",
+    "    if tree is None or not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):"
+   ]
+  ],
+  "expect": [
+   "...and resolution stops after ONE hop \u2014 two helpers deep earns nothing"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 HIGH. `whole` reaches assess as False, so pin reconciliation silently stops running while the gate still prints a verdict",
+  "edits": [
+   [
+    "    problems, verdicts = assess(texts, MAIN_DEBT, whole=whole)",
+    "    problems, verdicts = assess(texts, MAIN_DEBT, whole=False)"
+   ]
+  ],
+  "expect": [
+   "a WHOLE run reconciles the pins, so an absent pinned name is reported"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the SKIPPED notice on the gate path is dropped, so a subset run reads as a verdict about the repository",
+  "edits": [
+   [
+    "    print(summarise(verdicts))\n    if not whole:\n        print(\"  (pin reconciliation SKIPPED \u2014 a subset cannot see an absence)\")",
+    "    print(summarise(verdicts))"
+   ]
+  ],
+  "expect": [
+   "a subset run says the pin reconciliation was SKIPPED (gate path)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 1 MEDIUM. The unreadable-file refusal is dropped, so a guard this check cannot read crashes at rc 1 instead of reporting NOT CHECKED",
+  "edits": [
+   [
+    "        except OSError as exc:",
+    "        except ZeroDivisionError as exc:"
+   ]
+  ],
+  "expect": [
+   "an UNREADABLE guard is CANNOT RUN with rc 2, not a traceback (r1 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the argv= keyword branch is dropped \u2014 round 1 measured it as the ONLY code granting the argv route to a keyword call, and nothing was asserting it",
+  "edits": [
+   [
+    "    for kw in call.keywords:\n        if kw.arg == \"argv\":\n            return kw.value\n    return None",
+    "    return None"
+   ]
+  ],
+  "expect": [
+   "argv passed BY KEYWORD still reaches the argv route \u2014 the only code that grants it"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a TUPLE argv stops being read, so `main((str(f),))` loses the argv route",
+  "edits": [
+   [
+    "    if not isinstance(expr, (ast.List, ast.Tuple)):",
+    "    if not isinstance(expr, ast.List):"
+   ]
+  ],
+  "expect": [
+   "...and a TUPLE argv counts, not only a list"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "module_globals stops reading augmented assignment, so an `X += 1` module global stops being a global",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                names |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}",
+    "        if isinstance(node, (ast.Assign, ast.AnnAssign)):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                names |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}"
+   ]
+  ],
+  "expect": [
+   "an augmented module-level assignment still makes the name a global"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "world_names stops shadowing **kwargs, so a kwargs-shadowed name counts as a world read",
+  "edits": [
+   [
+    "        if fn.args.kwarg:\n            shadowed.add(fn.args.kwarg.arg)",
+    "        if fn.args.kwarg:\n            pass"
+   ]
+  ],
+  "expect": [
+   "...and a **kwargs parameter shadows a global of the same name"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "world_names stops shadowing *args, so a varargs-shadowed name counts as a world read",
+  "edits": [
+   [
+    "        if fn.args.vararg:\n            shadowed.add(fn.args.vararg.arg)",
+    "        if fn.args.vararg:\n            pass"
+   ]
+  ],
+  "expect": [
+   "...as does a *args parameter"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the route breakdown is dropped from the summary, so the only line reporting the compliant-vs-pinned split goes silently",
+  "edits": [
+   [
+    "            f\"  {complying} drive main() over a constructed world \u2014 \"\n            f\"param {by_route[PARAM]}, argv {by_route[ARGV]}, rebind {by_route[REBIND]}, \"\n            f\"subproc {by_route[SUBPROC]} \"\n            f\"(a guard may take more than one route, so these need not sum)\\n\"",
+    "            f\"  {complying} drive main() over a constructed world\\n\""
+   ]
+  ],
+  "expect": [
+   "...while the route breakdown is printed either way"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the no-suite-call detail is dropped, so a finding no longer says whether any call to main exists at all",
+  "edits": [
+   [
+    "            detail = (f\"{v.calls} suite call(s) to main(), none over a world the case built\"\n                      if v.calls else \"no suite call reaches main()\")",
+    "            detail = f\"{v.calls} suite call(s) to main(), none over a world the case built\""
+   ]
+  ],
+  "expect": [
+   "a guard whose suite never reaches main says so"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 HIGH. The fallback suite entry loses its precondition, so a suite NOTHING dispatches is credited and the rule's own sentence stops being true of it",
+  "edits": [
+   [
+    "    if dispatches_a_suite(tree):\n        out |= {n for n in SUITE_ENTRY_NAMES if n in funcs}",
+    "    if True:\n        out |= {n for n in SUITE_ENTRY_NAMES if n in funcs}"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a suite NOTHING dispatches invokes nothing, whatever it is named (r2 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the dispatch detector stops reading an IfExp, so the twelve guards that dispatch from the __main__ block are pinned as debt",
+  "edits": [
+   [
+    "        if not (isinstance(node, (ast.If, ast.IfExp)) and _mentions_self_test(node.test)):",
+    "        if not (isinstance(node, ast.If) and _mentions_self_test(node.test)):"
+   ]
+  ],
+  "expect": [
+   "...and a dispatch in the __main__ block written as an IfExp counts, which is why DELETING the fallback would have been the wrong repair"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 HIGH. The subprocess world keyword stops being inspected, so `stdin=sys.stdin` \u2014 the live process state \u2014 counts as a world the case built",
+  "edits": [
+   [
+    "                built = any(kw.arg in WORLD_KWARGS\n                            and _element_is_constructed(kw.value, fn, tree, 0, world)\n                            for kw in node.keywords) or any(",
+    "                built = any(kw.arg in WORLD_KWARGS\n                            for kw in node.keywords) or any("
+   ]
+  ],
+  "expect": [
+   "\u26d4 a subprocess over the LIVE process state builds nothing (r2 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 H2. An ATTRIBUTE is read as constructed whatever its base, so any `module.thing` passed as a world earns credit",
+  "edits": [
+   [
+    "        return world_class(expr.value, fn, tree, world, depth + 1)",
+    "        return BUILT"
+   ]
+  ],
+  "expect": [
+   "...and so is `__file__`, and a reader of the ambient world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 HIGH. The globals() alias loses its lifetime, so a name rebound to a plain dict still writes as if it were the module globals",
+  "edits": [
+   [
+    "    return bound - rebound",
+    "    return bound"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...but an alias REBOUND to a plain dict is not globals() any more (r2 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the alias binding rule walks the whole target again, so a write THROUGH the alias reads as a REBINDING of it and kills the alias on its first use",
+  "edits": [
+   [
+    "        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)\n                and id(node) not in from_globals):",
+    "        if (isinstance(node, ast.Name)\n                and id(node) not in from_globals):"
+   ]
+  ],
+  "expect": [
+   "...and a subscript write through the alias is NOT a rebinding, which is what makes the broad rule safe"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 2 MEDIUM. globals() under an imported name stops being recognised, so every substitution in such a file goes invisible",
+  "edits": [
+   [
+    "    return value.func.id == \"globals\" or value.func.id in aliased",
+    "    return value.func.id == \"globals\""
+   ]
+  ],
+  "expect": [
+   "globals() imported under another name is still globals() (r2 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the per-file import scan is dropped, so the alias table carries the PREVIOUS file's spellings into this one",
+  "edits": [
+   [
+    "    aliased = frozenset(note_globals_imports(tree))",
+    "    aliased = frozenset()"
+   ]
+  ],
+  "expect": [
+   "globals() imported under another name is still globals() (r2 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the fixture-wiring helper stops inserting the dispatch, so this file's own cases test fragments no real guard resembles",
+  "edits": [
+   [
+    "    if \"def main(\" not in src or \"def _self_test\" not in src:\n        return src",
+    "    if True:\n        return src"
+   ]
+  ],
+  "expect": [
+   "...while wiring the same fixture restores it \u2014 the fixtures were the thing at fault"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 ROUND 2 BLOCKING. The live-world test is removed, so the repository itself counts as a constructed world on three routes at once \u2014 the deepest defect this rule has had",
+  "edits": [
+   [
+    "        if expr.id in LIVE_WORLD_NAMES:\n            return LIVE",
+    "        if False:\n            return LIVE"
+   ]
+  ],
+  "expect": [
+   "...and so is `__file__`, and a reader of the ambient world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the guard's own globals stop counting as the live world, so handing main the global it would have read anyway earns the route",
+  "edits": [
+   [
+    "        if expr.id in world:\n            return LIVE\n        idx = _param_index(fn, expr.id)",
+    "        if False:\n            return LIVE\n        idx = _param_index(fn, expr.id)"
+   ]
+  ],
+  "expect": [
+   "the guard's own world global is LIVE however it is wrapped"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the live-world READERS list stops being consulted, so `os.getcwd()` reads as a world the case built",
+  "edits": [
+   [
+    "        if expr.attr in LIVE_WORLD_READERS:\n            return LIVE",
+    "        if False:\n            return LIVE"
+   ]
+  ],
+  "expect": [
+   "...and so is `__file__`, and a reader of the ambient world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an except-as target stops killing the globals alias",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.ExceptHandler) and node.name:\n            rebound.add(node.name)",
+    "        elif isinstance(node, ast.ExceptHandler) and node.name:\n            pass"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...an except-as target kills the alias too (r2 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 CLAUDE HIGH. The dispatch test stops requiring a CALL to the suite, so a conditional that merely names the flag restores the credit the precondition withholds",
+  "edits": [
+   [
+    "        if any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)\n               and c.func.id in entries for c in ast.walk(node)):\n            return True",
+    "        if True:\n            return True"
+   ]
+  ],
+  "expect": [
+   "...and neither is one in a helper that calls no suite"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the dispatch test stops excluding conditionals inside the suite, so the suite can dispatch itself",
+  "edits": [
+   [
+    "        if id(node) in inside_suite:\n            continue",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...and a suite cannot dispatch ITSELF, even by calling itself under the flag"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 CLAUDE MEDIUM. The alias-target test re-implements its rule inline again, so the imported spelling reaches one site of three",
+  "edits": [
+   [
+    "            if _is_globals_call(base, aliased) or via_alias:",
+    "            if via_alias:"
+   ]
+  ],
+  "expect": [
+   "...and a DIRECT `gl()[...] = \u2026` write is seen too, not only one through an alias (r2 Medium \u2014 the fix had reached one of three sites)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 2 CLAUDE LOW. world_names follows main's dispatch INTO the suite, so the suite's own locals count as part of main's world",
+  "edits": [
+   [
+    "                if node.id in funcs and node.id not in suite:",
+    "                if node.id in funcs:"
+   ]
+  ],
+  "expect": [
+   "a global only the SUITE reads is not part of main's world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the fixture-wiring helper goes back to a SUBSTRING idempotence test, so a fixture that merely MENTIONS the flag is left unwired and every case over it tests a fragment",
+  "edits": [
+   [
+    "        if dispatches_a_suite(ast.parse(src)):\n            return src",
+    "        if dispatches_a_suite(ast.parse(src)) or '--self-test' in src:\n            return src"
+   ]
+  ],
+  "expect": [
+   "...while a conditional that CALLS the suite is a dispatch"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 ROUND 3 BLOCKING. Resolving a local name stops re-entering the live-world test, so every direct form round 2 refused comes back the moment it is bound to a variable first",
+  "edits": [
+   [
+    "            classes = [world_class(v, fn, tree, world, depth + 1) for v in bindings]",
+    "            classes = [BUILT for v in bindings]"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `str(ROOT)` behind a local name is STILL the live world (r3 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 3 MEDIUM. A name the case BOUND stops shadowing the live-world vocabulary, so a tempdir called `home` is refused as though it were the user's home directory",
+  "edits": [
+   [
+    "        bindings = [v for _, v in _bound_values(expr.id, fn) if v is not None]",
+    "        bindings = []"
+   ]
+  ],
+  "expect": [
+   "a built world named `home` is a built world (r3 Medium \u2014 the lost-credit half)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 3 HIGH. The alias lifetime stops reading the STORE CONTEXT, so the five spellings round 3 found \u2014 and any sixth \u2014 credit a dead alias again",
+  "edits": [
+   [
+    "            rebound.add(node.id)\n        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            rebound |= ",
+    "            pass\n        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            rebound |= "
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...a TUPLE for-target kills the alias (r3 High \u2014 the third list was still incomplete, so the rule is the STORE CONTEXT now)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the alias lifetime stops reading import aliases, so `import os as g` leaves the alias alive",
+  "edits": [
+   [
+    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            rebound |= {(x.asname or x.name).split(\".\")[0] for x in node.names}",
+    "        elif isinstance(node, (ast.Import, ast.ImportFrom)):\n            pass"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ...an import alias kills the alias (r3 High \u2014 the third list was still incomplete, so the rule is the STORE CONTEXT now)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the `x = globals()` binding stops being exempted from the rebinding scan, so an alias kills itself the moment it is created",
+  "edits": [
+   [
+    "                    from_globals.add(id(tgt))",
+    "                    pass"
+   ]
+  ],
+  "expect": [
+   "...and a subscript write through the alias is NOT a rebinding, which is what makes the broad rule safe"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 THE ARCHITECTURE REVIEW's OWN SUBJECT. `guard_world_globals` goes back to `module_globals`, which counts IMPORTS \u2014 so `Path`, `tempfile` and `os` are the guard's own world again and the rule refuses 8 of 10 spellings of the repair ADR-0014 demands",
+  "edits": [
+   [
+    "    guard_world = guard_world_globals(tree)",
+    "    guard_world = frozenset(module_globals(tree))"
+   ]
+  ],
+  "expect": [
+   "...and COMPLIES by the argv route \u2014 the false positive this rule was corrected for"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the resolver stops reading `with \u2026 as`, so ADR-0014's Decision block \u2014 `with tempfile.TemporaryDirectory() as td` \u2014 leaves `td` unresolvable and the ADR's own idiom cannot be judged at all",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.withitem) and node.optional_vars is not None:",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "the resolver reads `with \u2026 as`, `for \u2026 in` and `=` alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the resolver stops reading `for \u2026 in` targets",
+  "edits": [
+   [
+    "        elif isinstance(node, (ast.For, ast.AsyncFor)):\n            for x, y in _unpack(node.target, node.iter):",
+    "        elif isinstance(node, (ast.For, ast.AsyncFor)) and False:\n            for x, y in _unpack(node.target, node.iter):"
+   ]
+  ],
+  "expect": [
+   "the resolver reads `with \u2026 as`, `for \u2026 in` and `=` alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 BUILT stops dominating-and-being-dominated correctly: a BUILT leaf wins over a LIVE one, so an expression mixing a tempdir with the live repository is credited",
+  "edits": [
+   [
+    "    if LIVE in kids:\n        return LIVE\n    if BUILT in kids:\n        return BUILT",
+    "    if BUILT in kids:\n        return BUILT\n    if LIVE in kids:\n        return LIVE"
+   ]
+  ],
+  "expect": [
+   "...and a LIVE leaf dominates a BUILT one in the same expression"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the depth bound is removed, so an unfollowable chain recurses instead of failing closed",
+  "edits": [
+   [
+    "    if depth > 8:\n        return INERT",
+    "    if False:\n        return INERT"
+   ]
+  ],
+  "expect": [
+   "a chain deeper than the bound is INERT, not credited and not a crash"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a CALL over nothing live stops counting as a value the case made, so `io.StringIO()` and the stub stream `_S(True, \u2026)` lose their credit \u2014 the second of these cost check-ci-watched.py its param route once already",
+  "edits": [
+   [
+    "        return BUILT\n    return INERT",
+    "        return INERT\n    return INERT"
+   ]
+  ],
+  "expect": [
+   "...and so does a call over literals \u2014 it is still not the live repository"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 ROUND 4 BLOCKING, HALF ONE. LIVE stops dominating across a name's bindings, so a name bound LIVE in one branch and BUILT in another is credited \u2014 the run may hand main the live repository",
+  "edits": [
+   [
+    "            if LIVE in classes:\n                return LIVE",
+    "            if False:\n                return LIVE"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a name bound LIVE in one branch and BUILT in another is LIVE (r4 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 BLOCKING, HALF TWO. The resolver walks into NESTED functions again, so a binding in a scope main never sees resolves the name",
+  "edits": [
+   [
+    "    for node in _own_scope(fn):",
+    "    for node in ast.walk(fn) if fn is not None else ():"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a name bound ONLY inside a nested def is unresolvable out here, not built"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the scope walker stops pruning nested defs, so _own_scope becomes ast.walk by another name",
+  "edits": [
+   [
+    "        if (not first and id(node) not in writes_out\n                and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,\n                                      ast.Lambda, ast.ClassDef))):\n            continue",
+    "        if False:\n            continue"
+   ]
+  ],
+  "expect": [
+   "...which is what _own_scope answers, and ast.walk does not"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 HIGH. A literal computed by concatenation stops being a literal, so `flag = '--' + 'self-test'` earns the argv route for a flag vector",
+  "edits": [
+   [
+    "    if not any(isinstance(n, (ast.Name, ast.Attribute)) for n in ast.walk(expr)):\n        return INERT",
+    "    if False:\n        return INERT"
+   ]
+  ],
+  "expect": [
+   "...and a call with a LAMBDA callee over literals is a literal in a wrapper"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 HIGH. The subprocess EXTRA-ARGV path reaches an undefined name again \u2014 a crash where a verdict belongs, on the one route branch no case covered",
+  "edits": [
+   [
+    "                    _element_is_constructed(el, fn, tree, 0, world)\n                    for el in elements",
+    "                    _element_is_constructed(el, fn, tree, 0, guard_world)\n                    for el in elements"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the subprocess EXTRA-ARGV path returns a verdict instead of raising (r4 High) \u2014 207 cases and 71 mutations all passed over a line that crashed"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 4 MEDIUM. The resolver stops reading PEP 634 captures, so a world bound by `match \u2026 case p` is unresolvable",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.Match):",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "a PEP 634 capture is a binding form, so the resolver reads it (r4 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a name's class stops being its bindings' class: an INERT binding is promoted to BUILT again, which is the clause round 4's High cost us",
+  "edits": [
+   [
+    "            return BUILT if BUILT in classes else INERT",
+    "            return BUILT if BUILT in classes else (INERT if isinstance(bindings[-1], (ast.Constant, ast.Name)) else BUILT)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a literal is a literal however it is computed \u2014 no name, no attribute, no credit (r4 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50\u2b50 THE PRE-COMMITTED FALSIFIER, GUARDED. `_expr_children` goes back to filtering children with `isinstance(c, ast.expr)` \u2014 the node-kind list the rewrite claimed did not exist \u2014 and the live world hides in a lambda default or a comprehension again",
+  "edits": [
+   [
+    "        if isinstance(child, ast.expr):\n            out.append(child)\n        else:\n            out.extend(_expr_children(child))",
+    "        if isinstance(child, ast.expr):\n            out.append(child)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a LAMBDA DEFAULT holding the live world is the live world (r4 falsifier)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 CLAUDE HIGH. The reachability floor's SECOND SITE is severed, so a helper nothing calls supplies the world at a reachable call site",
+  "edits": [
+   [
+    "                and node.name in reachable):",
+    "                ):"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a helper NOTHING calls cannot supply the world at a reachable call site (r4 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "\u2b50 ROUND 4 CLAUDE HIGH. A nested def that declares `nonlocal` is pruned again, so a tempdir the nested scope overwrites with the live world is credited",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(\n                isinstance(k, (ast.Nonlocal, ast.Global)) for k in ast.walk(node)):\n            writes_out.add(id(node))",
+    "        if False:\n            writes_out.add(id(node))"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a nested def that declares `nonlocal` is NOT a separate scope (r4 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the bare-name live-reader branch is severed, so `getcwd()` imported directly reads as a world the case built",
+  "edits": [
+   [
+    "        if expr.id in LIVE_WORLD_READERS:\n            return LIVE",
+    "        if False:\n            return LIVE"
+   ]
+  ],
+  "expect": [
+   "a BARE NAME in the live-reader vocabulary is the live world (q8: uncased branch)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the guard's world stops reading annotated and augmented module assignments, so ROOT declared with a type annotation is not the guard's world",
+  "edits": [
+   [
+    "        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                out |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}",
+    "        if isinstance(node, ast.Assign):\n            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n            for t in targets:\n                out |= {n.id for n in ast.walk(t) if isinstance(n, ast.Name)}"
+   ]
+  ],
+  "expect": [
+   "...and an ANNOTATED or AUGMENTED module assignment is the guard's world (q8)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 5 MEDIUM. The hop's KEYWORD branch is dropped, so a world handed to a helper by keyword at the call site stops resolving \u2014 the line was unexercised and could rot in silence",
+  "edits": [
+   [
+    "            arg = sub.args[idx] if len(sub.args) > idx else next(\n                (k.value for k in sub.keywords if k.arg == param), None)",
+    "            arg = sub.args[idx] if len(sub.args) > idx else None"
+   ]
+  ],
+  "expect": [
+   "the hop resolves a helper's parameter supplied BY KEYWORD at the call site (r5 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "ROUND 5 MEDIUM. computed_argv's non-list precondition is dropped, so a non-list argv crashes the rule instead of being refused",
+  "edits": [
+   [
+    "    if not isinstance(expr, (ast.List, ast.Tuple)):\n        return False\n    return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)",
+    "    return any(_element_is_constructed(el, fn, tree, 0, world) for el in expr.elts)"
+   ]
+  ],
+  "expect": [
+   "...and an opaque argv variable is not evidence of a built world"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the walrus loses its binding form, so `if (t := mkdtemp()): main([t])` resolves no value and a built world reads as debt",
+  "edits": [
+   [
+    "        elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):",
+    "        elif False and isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):"
+   ]
+  ],
+  "expect": [
+   "the resolver reads the WALRUS too \u2014 the fourth of the five forms it claims (r5 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the annotated and augmented assignment lose their binding form, so `t: str = mkdtemp()` is an unresolvable name",
+  "edits": [
+   [
+    "        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and node.value is not None:\n            if isinstance(node.target, ast.Name) and node.target.id == name:",
+    "        elif False and isinstance(node, (ast.AnnAssign, ast.AugAssign)) and node.value is not None:\n            if isinstance(node.target, ast.Name) and node.target.id == name:"
+   ]
+  ],
+  "expect": [
+   "...and the ANNOTATED and AUGMENTED assignment, which is the fifth (r5 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a position-only parameter stops being positional, so the one-hop resolution cannot find the call sites of `def _h(w, /)`",
+  "edits": [
+   [
+    "    names = [a.arg for a in fn.args.posonlyargs + fn.args.args]",
+    "    names = [a.arg for a in fn.args.args]"
+   ]
+  ],
+  "expect": [
+   "a POSITION-ONLY parameter is a positional parameter, so the one-hop resolution finds its call sites (r5 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a value naming no saved holder counts as a restore, so every substitution reads as undone and the rebind route awards nothing",
+  "edits": [
+   [
+    "    if not (names & holders):\n        return False",
+    "    if False:\n        return False"
+   ]
+  ],
+  "expect": [
+   "...global_writes tells the substitution from the restore"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "merging another case-built value into the saved one counts as a restore, so `{**saved, **extra}` silently loses its credit",
+  "edits": [
+   [
+    "    if bound_here - holders:\n        return False",
+    "    if False:\n        return False"
+   ]
+  ],
+  "expect": [
+   "...and MERGING another value the case built into the saved one is a substitution, even though it adds no literal of its own"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a MODIFIED copy counts as a restore, so `check-surface-recall.py`'s constructed world reads as a put-back and the guard goes to debt",
+  "edits": [
+   [
+    "    return not adds_literal_data(value)",
+    "    return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a MODIFIED copy of the real world is a SUBSTITUTION, not a restore (r1 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the module-qualified live readers go, so `sys.path[0]` and `os.sep` are credited as worlds the case built (r5 Blocking)",
+  "edits": [
+   [
+    "LIVE_WORLD_QUALIFIED = {(\"sys\", \"path\"), (\"sys\", \"modules\"), (\"sys\", \"prefix\"),\n                        (\"os\", \"sep\"), (\"os\", \"altsep\")}",
+    "LIVE_WORLD_QUALIFIED = set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path(sys.path[0])` is the live repository \u2014 the script's own directory (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the path constructors go, so a bare `Path()` over nothing is credited as a built world rather than the current directory (r5 Blocking)",
+  "edits": [
+   [
+    "CWD_CONSTRUCTORS = {\"Path\", \"PurePath\", \"PosixPath\", \"WindowsPath\", \"PurePosixPath\"}",
+    "CWD_CONSTRUCTORS = set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path()` is the live repository \u2014 the same, spelled with no argument at all (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a relative path literal stops being the ambient directory, so `Path('.')` is credited as a world the case built (r5 Blocking)",
+  "edits": [
+   [
+    "AMBIENT_PATH_LITERALS = {\"\", \".\", \"..\"}",
+    "AMBIENT_PATH_LITERALS = set()"
+   ]
+  ],
+  "expect": [
+   "a relative literal is the ambient directory through a NON-constructor wrapper too \u2014 `os.path.join('.', 'x')` (r5 Blocking, unmasked at r6)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a path PREFIXED with the ambient directory stops being live, so `Path('./fixtures')` is credited as built while the bare spellings still are not (r5 Blocking)",
+  "edits": [
+   [
+    "                                            or expr.value.startswith((\"./\", \"../\"))):",
+    "                                            or False):"
+   ]
+  ],
+  "expect": [
+   "a relative literal is the ambient directory through a NON-constructor wrapper too \u2014 `os.path.join('./sub', 'x')` (r5 Blocking, unmasked at r6)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a no-argument constructor call stops being examined, so `Path()` reaches the `Call -> BUILT` default that credited 13 spellings of the live repository (r5 Blocking)",
+  "edits": [
+   [
+    "        if not expr.args and not expr.keywords:",
+    "        if False and not expr.args and not expr.keywords:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path()` is the live repository \u2014 the same, spelled with no argument at all (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the qualified-reader clause goes, so an attribute is credited whenever its tail is not in the unqualified list \u2014 `sys.path`, `sys.modules`, `os.sep` (r5 Blocking)",
+  "edits": [
+   [
+    "        if isinstance(expr.value, ast.Name) and (expr.value.id, expr.attr) in LIVE_WORLD_QUALIFIED:\n            return LIVE",
+    "        if False:\n            return LIVE"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path(os.sep)` is the live repository \u2014 the live filesystem root (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`world_class` reads the literal string again instead of `LIVE_WORLD_NAMES`, so widening that constant is inert and `__spec__.origin` keeps its credit (r5 Low, and half the Blocking)",
+  "edits": [
+   [
+    "        if expr.id in LIVE_WORLD_NAMES:",
+    "        if expr.id == \"__file__\":"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path(__spec__.origin)` is the live repository \u2014 the guard's own file, through a dunder that is not `__file__` (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the rebind route stops asking anything about the substituted value, so `globals()['ROOT'] = ROOT` earns the route \u2014 round 1's Medium, recurring on the fourth route (r5 High)",
+  "edits": [
+   [
+    "                           or not substitution_changes_the_world(value, g, fn, tree, world,\n                                                                 aliased))",
+    "                           or False)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = ROOT` hands main the world it already had \u2014 \u2b50 the live world substituted WITH ITSELF (r5 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the residual leaf test stops answering, so a PURE LIVE READ counts as changing the world and substituting `os.getcwd()` or `__file__` for the guard's own root is credited (r5 High; relocated by r10's Blocking into `hands_back_the_same_world`)",
+  "edits": [
+   [
+    "    return not (free_names(value) & bound_here)",
+    "    return False"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = os.getcwd()` hands main the world it already had \u2014 the live repository, read fresh (r5 High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a redefined function resolves to its FIRST definition again, so the guard is judged against a body Python never runs (r5 Low)",
+  "edits": [
+   [
+    "            out[node.name] = node",
+    "            out.setdefault(node.name, node)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a REDEFINED function resolves to its LAST definition, the one Python actually runs \u2014 `setdefault` kept the first (r5 Low, and the severance called it dead)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`_bound_values` stops returning in source order, breaking the contract its own docstring states",
+  "edits": [
+   [
+    "    return sorted(out, key=lambda t: t[0])",
+    "    return out"
+   ]
+  ],
+  "expect": [
+   "...and `_bound_values` returns IN SOURCE ORDER, which its docstring claims and `_own_scope` does not supply \u2014 it yields these three at lines 5, 4, 2"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a forwarder called with fewer arguments than it forwards raises IndexError instead of yielding no argv \u2014 a real guard shape, crashing out of the gate (r5 Low)",
+  "edits": [
+   [
+    "        return call.args[idx] if len(call.args) > idx else None",
+    "        return call.args[idx]"
+   ]
+  ],
+  "expect": [
+   "a forwarder called with FEWER arguments than it forwards yields no argv, rather than an IndexError out of the gate (r5 Low \u2014 a shape a real guard can have)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a module with no top-level `main` raises StopIteration out of `suite_entries` instead of having no entries (r5 Low)",
+  "edits": [
+   [
+    "                     and n.name == \"main\"), None)",
+    "                     and n.name == \"main\"))"
+   ]
+  ],
+  "expect": [
+   "...and a module with NO top-level `main` has no suite entries, rather than raising StopIteration \u2014 while the same module WITH one finds its suite"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an UNEQUAL tuple assignment is zipped short instead of judged whole, so `p, q = r, s, t` silently drops a value (r5 Low)",
+  "edits": [
+   [
+    "            and len(target.elts) == len(value.elts)):",
+    "):"
+   ]
+  ],
+  "expect": [
+   "...and an UNEQUAL tuple/tuple assignment is judged whole rather than zipped short \u2014 the existing case passed a non-tuple value and never reached the length test"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`world_names` seeded with a function the module does not define raises KeyError instead of resolving to nothing (r5 Low)",
+  "edits": [
+   [
+    "    funcs = _toplevel_functions(tree)\n    if start not in funcs:\n        return set()",
+    "    funcs = _toplevel_functions(tree)\n    if False:\n        return set()"
+   ]
+  ],
+  "expect": [
+   "...and world_names over a module with no main is empty, not an error"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a script with no `main()` raises KeyError out of `classify` instead of being reported outside the population (r5 Medium, dying case 1)",
+  "edits": [
+   [
+    "    if \"main\" not in funcs:\n        return Verdict(path, frozenset(), 0, has_main=False)",
+    "    if False:\n        return Verdict(path, frozenset(), 0, has_main=False)"
+   ]
+  ],
+  "expect": [
+   "a script with no main() is outside the population"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a pinned guard absent from the population raises KeyError instead of being reported stale \u2014 round 2's own Medium, dying before it can report (r5 Medium)",
+  "edits": [
+   [
+    "        for pinned in sorted(q for q in debt & set(verdicts)",
+    "        for pinned in sorted(q for q in debt"
+   ]
+  ],
+  "expect": [
+   "...a pin for a file outside the population is reported as stale"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a global whose first write is at or after the call raises IndexError out of `live_substitutions` (r5 Medium)",
+  "edits": [
+   [
+    "        if prior and not prior[-1]:",
+    "        if not prior[-1]:"
+   ]
+  ],
+  "expect": [
+   "...and satisfies its OWN rule by the param, argv AND rebind routes"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a name that is not a parameter raises ValueError out of `_param_index` instead of resolving to None (r5 Medium)",
+  "edits": [
+   [
+    "    return names.index(name) if name in names else None",
+    "    return names.index(name)"
+   ]
+  ],
+  "expect": [
+   "the PARAM route: a keyword supplies a world the case built"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a None enclosing function raises AttributeError out of `_param_index` instead of resolving to None (r5 Medium)",
+  "edits": [
+   [
+    "    if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):\n        return None\n    names = [a.arg for a in fn.args.posonlyargs + fn.args.args]",
+    "    names = [a.arg for a in fn.args.posonlyargs + fn.args.args]"
+   ]
+  ],
+  "expect": [
+   "the same argv is the live world or a built one depending on the guard's globals"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a write to a global the case never saved raises KeyError out of `global_writes` (r5 Medium)",
+  "edits": [
+   [
+    "            inert_write = (_is_restore_value(value, saved.get(g, set()), bound)",
+    "            inert_write = (_is_restore_value(value, saved[g], bound)"
+   ]
+  ],
+  "expect": [
+   "the REBIND route: the case substitutes a global main reads"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "every call is treated as forwarded, so a direct `main(...)` raises KeyError looking itself up in the forwarder table (r5 Medium)",
+  "edits": [
+   [
+    "    if kind == \"forwarded\":",
+    "    if True:"
+   ]
+  ],
+  "expect": [
+   "...and a literal-only argv over the real world is DEBT, not a pass"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the one fail-closed handler stops catching, so an unparseable guard takes the whole run down instead of being reported (r5 Medium)",
+  "edits": [
+   [
+    "    except SyntaxError as exc:\n        return Verdict(path, frozenset(), 0, False, error=f\"unparseable: {exc.msg}\")",
+    "    except ZeroDivisionError as exc:\n        return Verdict(path, frozenset(), 0, False, error=f\"unparseable: {exc.msg}\")"
+   ]
+  ],
+  "expect": [
+   "an unparseable guard fails CLOSED even when pinned, and is NOT also called stale"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the module NAMESPACE stops being the live world, so `vars()['__file__']` and `globals()['__file__']` are credited as worlds the case built (r6 Codex Blocking)",
+  "edits": [
+   [
+    "NAMESPACE_READERS = {\"vars\", \"globals\"}\n",
+    "NAMESPACE_READERS = set()\n"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `Path(vars()['__file__'])` is the live repository \u2014 \u2b50 the module NAMESPACE subscripted \u2014 the dunder never appears as a Name at all (r6 Codex) (r5 Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the subprocess argv shape test goes, so a guard whose argv is a bare NAME raises AttributeError out of `subprocess_self_calls` (r6 Codex Medium, the tenth dying case)",
+  "edits": [
+   [
+    "            elements = argv.elts if isinstance(argv, (ast.List, ast.Tuple)) else []",
+    "            elements = argv.elts"
+   ]
+  ],
+  "expect": [
+   "...and complies \u2014 its world is a helper's parameter, resolved at the call site"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the identity test goes back to matching a BARE NAME, so `globals()['subprocess'] = [subprocess][0]` \u2014 three characters longer \u2014 hands main the module it already had and earns REBIND (r7 Claude High: 18 false credits of 36, and the regression that actually occurred)",
+  "edits": [
+   [
+    "    if _free == {name} and not _bound_values(name, fn):\n        return False",
+    "    if isinstance(value, ast.Name) and value.id == name and not _bound_values(name, fn):\n        return False"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['G'] = [G][0]` evaluates to the global itself, so it earns nothing \u2014 for an ASSIGNMENT, an IMPORT and a DEF alike (r7 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the identity test stops asking whether the case REBOUND the name, so a world built into a local that shadows the global loses its credit \u2014 the half whose absence justified deleting the test",
+  "edits": [
+   [
+    "    if _free == {name} and not _bound_values(name, fn):",
+    "    if _free == {name}:"
+   ]
+  ],
+  "expect": [
+   "...and a world built into a LOCAL that SHADOWS the global still earns the route \u2014 provenance decides the substitution, not the name it is spelled with"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a lambda body's names leak into the enclosing scope, so a restore written `(lambda _sv: _sv)(_sv)` reads as a substitution",
+  "edits": [
+   [
+    "            rec(node.body, bound | params | _walrus_bound_here(node.body))",
+    "            rec(node.body, bound)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a restore THROUGH A LAMBDA whose parameter shadows a local is still a restore (r6 Codex High \u2014 the clause deleted on the reasoning that `ast.arg` is not `ast.Name`)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a lambda's DEFAULTS are read as bound by its own parameters, when they evaluate in the enclosing scope before anything is bound",
+  "edits": [
+   [
+    "            for d in [*a.defaults, *[k for k in a.kw_defaults if k is not None]]:\n                rec(d, bound)",
+    "            for d in []:\n                rec(d, bound)"
+   ]
+  ],
+  "expect": [
+   "...and `free_names` reads Python's own scope rule off the grammar: a lambda's defaults and a comprehension's FIRST iterable evaluate OUTSIDE the binder"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a comprehension's FIRST iterable is read inside the comprehension's scope rather than outside it",
+  "edits": [
+   [
+    "            inner = bound\n            for i, gen in enumerate(node.generators):",
+    "            inner = frozenset()\n            for i, gen in enumerate(node.generators):"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a comprehension's targets stop binding, so its own loop variables read as names of the enclosing case",
+  "edits": [
+   [
+    "                inner = inner | {n.id for n in ast.walk(gen.target) if isinstance(n, ast.Name)}",
+    "                inner = inner | set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['X'] = {k: v for k, v in _sv.items()}` PUTS THE WORLD BACK, so the call after it earns nothing (r5 High \u2014 a missed restore is a FALSE credit)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a subscript INDEX counts as literal data added to a restore, so `[saved for saved in [saved]][0]` reads as a substitution",
+  "edits": [
+   [
+    "    inert_positions = {id(n) for sub in ast.walk(value) if isinstance(sub, ast.Subscript)\n                       for n in ast.walk(sub.slice)}",
+    "    inert_positions = set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a restore whose LAMBDA PARAMETER shadows the holder is still a restore \u2014 the binder binds only BENEATH itself (r6 High, the false-green half)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a path operation stops being judged by its BASE, so `next(Path(td).iterdir())` over a world the case built is refused and `os.path.abspath('sub')` is credited (r6 Claude High + Medium)",
+  "edits": [
+   [
+    "        if tail in BASE_RELATIVE_PATH_OPS:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...while the same operation over a RELATIVE base is the live cwd \u2014 `os.path.abspath('sub')` (r6 Medium: a relative path is resolved against the process directory)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a path constructor over a RELATIVE literal stops being the ambient directory, so `Path('sub')` and `Path('sub').resolve()` are credited as worlds the case built",
+  "edits": [
+   [
+    "        if tail in CWD_CONSTRUCTORS and len(expr.args) == 1 and not expr.keywords:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...while the same operation over a RELATIVE base is the live cwd \u2014 `Path('sub').resolve()` (r6 Medium: a relative path is resolved against the process directory)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`globals` imported under another name stops being recognised, so `gl()['__file__']` smuggles the guard's own source file through as a constructed world (r6 Claude High)",
+  "edits": [
+   [
+    "            aliases = note_globals_imports(tree) if tree is not None else set()",
+    "            aliases = set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the module namespace is the live world through an ALIASED `globals` too, which `_is_globals_call` has honoured since round 2 (r6 High \u2014 closed on 3 spellings of 4)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the masked reader term returns to the no-argument-call union, where its only reachable effect is to override a name the CASE BOUND (r6 Claude Low \u2014 the fourth masking pair)",
+  "edits": [
+   [
+    "            if callee & (CWD_CONSTRUCTORS | NAMESPACE_READERS | aliases):",
+    "            if callee & (CWD_CONSTRUCTORS | NAMESPACE_READERS | aliases | LIVE_WORLD_READERS):"
+   ]
+  ],
+  "expect": [
+   "...and a name the CASE BOUND wins over a collision with the reader vocabulary (r6 Low \u2014 a fourth masking pair, removed rather than covered)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`locals` and `dir` count as the module namespace again, when at a suite call site they are the case's own frame \u2014 a lost credit on the most constructed thing in the file (r6 Claude Low)",
+  "edits": [
+   [
+    "NAMESPACE_READERS = {\"vars\", \"globals\"}",
+    "NAMESPACE_READERS = {\"vars\", \"globals\", \"locals\", \"dir\"}"
+   ]
+  ],
+  "expect": [
+   "...and `locals()` / `dir()` at a suite call site are the CASE's own frame, not the module's \u2014 the mirror of the overreach above (r6 Low)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the `__file__`/`sys` element filter returns, discarding the case's own built element whenever it shadows `sys` (r6 Claude Low)",
+  "edits": [
+   [
+    "                    _element_is_constructed(el, fn, tree, 0, world)\n                    for el in elements)",
+    "                    _element_is_constructed(el, fn, tree, 0, world)\n                    for el in elements\n                    if not any(isinstance(x, ast.Name) and x.id in (\"__file__\", \"sys\")\n                               for x in ast.walk(el)))"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a case that SHADOWS `sys` with a world it built keeps the subproc route \u2014 the element filter discarded the case's own world (r6 Low)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the one-hop resolution's index bound goes, raising IndexError at case 24 of 322 so 298 cases never run (r6 Claude Medium, the eleventh dying case)",
+  "edits": [
+   [
+    "            arg = sub.args[idx] if len(sub.args) > idx else next(",
+    "            arg = sub.args[idx] if True else next("
+   ]
+  ],
+  "expect": [
+   "the hop resolves a helper's parameter supplied BY KEYWORD at the call site (r5 Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`subprocess_self_calls` stops checking that the call HAS arguments, raising on a real guard on disk (r6 Claude Medium, the twelfth dying case)",
+  "edits": [
+   [
+    "            argv = node.args[0] if node.args else None",
+    "            argv = node.args[0]"
+   ]
+  ],
+  "expect": [
+   "...and the committed MAIN_DEBT reconciles against it with no findings"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`argv_forwarders` stops checking that the call has arguments \u2014 the THIRTEENTH dying case, which no review named and only a search of the whole indexed-argument class found",
+  "edits": [
+   [
+    "                    and c.func.id == \"main\" and c.args):",
+    "                    and c.func.id == \"main\"):"
+   ]
+  ],
+  "expect": [
+   "...but passing argv BY KEYWORD is not a second parameter"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a bulk `g.update()` with no arguments raises IndexError instead of being skipped \u2014 the fourth member of the same class",
+  "edits": [
+   [
+    "                and node.func.attr == \"update\" and node.args):",
+    "                and node.func.attr == \"update\"):"
+   ]
+  ],
+  "expect": [
+   "...and a bulk `g.update()` with NO arguments is not a write, rather than an IndexError \u2014 the fourth member of the indexed-argument class"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the base-relative test goes back to `world_class(base) is INERT` as a stand-in for \"relative\", so a normaliser over an ABSOLUTE fixture path is read as the live cwd (r7 Codex Medium \u2014 a proxy for a property is not the property)",
+  "edits": [
+   [
+    "            if _is_relative_literal(base):\n                return LIVE",
+    "            if base is not None and world_class(base, fn, tree, world, depth + 1) is INERT:\n                return LIVE"
+   ]
+  ],
+  "expect": [
+   "a normaliser over an ABSOLUTE base resolves nothing against the cwd \u2014 `os.path.abspath('/tmp/fixture')` (r7 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`_is_relative_literal` stops checking for a leading separator, so every string literal base counts as relative",
+  "edits": [
+   [
+    "    return _s is not None and not _s.startswith((\"/\", \"\\\\\"))",
+    "    return _s is not None"
+   ]
+  ],
+  "expect": [
+   "a normaliser over an ABSOLUTE base resolves nothing against the cwd \u2014 `os.path.abspath('/tmp/fixture')` (r7 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "unshadowed builtins count as leaves of the case, so `next(iter([X]))` escapes the identity test (r7 Claude High, the last two wrappers of twelve)",
+  "edits": [
+   [
+    "    _free = {n for n in free_names(value)\n             if not (hasattr(builtins, n) and n not in _shadowed)}",
+    "    _free = set(free_names(value))"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['G'] = next(iter([G]))` evaluates to the global itself, so it earns nothing \u2014 for an ASSIGNMENT, an IMPORT and a DEF alike (r7 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a zero-argument path operation stops defaulting its base to the working directory, so `os.listdir()` is credited as a world the case built while `os.listdir('.')` \u2014 the same runtime value \u2014 is refused (r7 Claude High)",
+  "edits": [
+   [
+    "            if not expr.args and (base is None\n                                  or world_class(base, fn, tree, world, depth + 1) is INERT):\n                return LIVE",
+    "            if False:\n                return LIVE"
+   ]
+  ],
+  "expect": [
+   "a zero-argument path op defaults its base to the working directory \u2014 `os.listdir()` (r7 Claude High: `os.listdir()` and `os.listdir('.')` are the same runtime value)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a walrus target read LATER in the same expression counts as a free name of the case, so `(_t := saved) or _t` \u2014 a restore \u2014 earns REBIND (r7 Claude Medium, found by differential test against CPython's symtable)",
+  "edits": [
+   [
+    "    rec(value, frozenset(_walrus_bound_here(value)))",
+    "    rec(value, frozenset())"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`_is_relative_literal` stops checking it was handed a Constant, so an Attribute base raises AttributeError (r7 Claude Low, the sixteenth dying case)",
+  "edits": [
+   [
+    "    if isinstance(expr, ast.Constant):\n        return expr.value if isinstance(expr.value, str) else None",
+    "    if False:\n        return expr.value if isinstance(expr.value, str) else None"
+   ]
+  ],
+  "expect": [
+   "`relpath`'s `start` must itself be non-ambient \u2014 `os.path.relpath(tempfile.mkdtemp(), start='sub')` (r9 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a lambda's DEFAULTS are evaluated inside the lambda's own scope, so a world the case built and passed as a default reads as a restore and loses its credit (r7 Claude Medium \u2014 the scope the previous entry never tested)",
+  "edits": [
+   [
+    "            for d in [*a.defaults, *[k for k in a.kw_defaults if k is not None]]:\n                rec(d, bound)\n            params = {x.arg for x in [*a.posonlyargs, *a.args, *a.kwonlyargs]}\n            params |= {x.arg for x in (a.vararg, a.kwarg) if x is not None}",
+    "            params = {x.arg for x in [*a.posonlyargs, *a.args, *a.kwonlyargs]}\n            params |= {x.arg for x in (a.vararg, a.kwarg) if x is not None}\n            for d in [*a.defaults, *[k for k in a.kw_defaults if k is not None]]:\n                rec(d, bound | params)"
+   ]
+  ],
+  "expect": [
+   "a lambda DEFAULT evaluates in the enclosing scope, so a world the case built and passed as one is still a substitution (r7 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a module helper's RETURN stops being followed, so `globals()['ROOT'] = same_root()` \u2014 whose whole body is `return ROOT` \u2014 hands main the world it already had and earns REBIND (r8 Codex Blocking)",
+  "edits": [
+   [
+    "        if callee_returns_live(expr, tree, world, depth, fn):\n            return LIVE",
+    "        if False:\n            return LIVE"
+   ]
+  ],
+  "expect": [
+   "\u26d4 an identity substitution hidden behind a module helper earns nothing \u2014 the helper's RETURN is its caller's value (r8 Codex Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`relpath` goes back to being treated as a plain normaliser, so `os.path.relpath(td)` is credited although it reads the working directory through its default `start` (r8 Codex High)",
+  "edits": [
+   [
+    "CWD_DEFAULTED_OPS = {\"relpath\"}",
+    "CWD_DEFAULTED_OPS = set()"
+   ]
+  ],
+  "expect": [
+   "`relpath` is cwd-dependent unless `start` is supplied \u2014 `os.path.relpath(tempfile.mkdtemp())` (r8 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the `start` argument stops being read at all, so a genuinely built `relpath(td, start=td)` is refused as the live cwd \u2014 round 8's half of the rule, kept after round 9 sharpened the other half",
+  "edits": [
+   [
+    "            _start = (expr.args[1] if len(expr.args) > 1\n                      else next((k.value for k in expr.keywords if k.arg == \"start\"), None))",
+    "            _start = None"
+   ]
+  ],
+  "expect": [
+   "`relpath` is cwd-dependent unless `start` is supplied \u2014 `os.path.relpath(tempfile.mkdtemp(), start=tempfile.mkdtemp())` (r8 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the symtable oracle stops carrying what ANCESTOR scopes bound, so a name a nested lambda merely closes over reads as the enclosing case's and the differential test goes false-positive (r8 Codex Medium \u2014 the finding was against the measuring instrument)",
+  "edits": [
+   [
+    "            for ch in sc.get_children():\n                out |= walk(ch, bound | here)",
+    "            for ch in sc.get_children():\n                out |= walk(ch, bound)"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a read of the module dict stops being resolved by its KEY, so `g['OTHER']` \u2014 a different global \u2014 reads as the same world and loses its credit (r8 Claude High, the control half)",
+  "edits": [
+   [
+    "        return _key is not None and _key != name",
+    "        return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `g = globals()` then `globals()['ROOT'] = g['ROOT']` is a pure no-op \u2014 the WRITE and the READ use different spellings of the module dict, which defeated both the target rule and the restore rule (r8 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "only the literal `globals()` spelling is resolved, so `g = globals()` then `globals()['ROOT'] = g['ROOT']` \u2014 a pure no-op using the repo's own idiom in eight guards \u2014 earns REBIND (r8 Claude High, the sixth masking pair)",
+  "edits": [
+   [
+    "    if _recv is not None and (_is_globals_call(_recv, aliased)\n                              or (isinstance(_recv, ast.Name)\n                                  and _recv.id in globals_aliases(fn, aliased))):",
+    "    if _recv is not None and _is_globals_call(_recv):"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `g = globals()` then `globals()['ROOT'] = g['ROOT']` is a pure no-op \u2014 the WRITE and the READ use different spellings of the module dict, which defeated both the target rule and the restore rule (r8 Claude High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a returned PARAMETER stops resolving to its default, so `def same(p=ROOT): return p` hands main the global and earns the route (r8 Claude Medium)",
+  "edits": [
+   [
+    "    return [defaults.get(r.id, r) if isinstance(r, ast.Name) else r for r in _ret_exprs(defn)]",
+    "    return list(_ret_exprs(defn))"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = same_p()` hands main the global it already had \u2014 a returned PARAMETER, via its default (r8 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a YIELD stops counting as a return, so a generator helper hands main the global and earns the route (r8 Claude Medium)",
+  "edits": [
+   [
+    "            if isinstance(child, (ast.Return, ast.Yield, ast.YieldFrom)) and child.value is not None:",
+    "            if isinstance(child, ast.Return) and child.value is not None:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = next(same_y())` hands main the global it already had \u2014 a YIELD is a return here (r8 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the returns walk reads only the definition's DIRECT children, so a `return ROOT` nested in an `if` is invisible and the identity earns the route (r8 Claude Low; r10 gave it a case of its own \u2014 before that the only thing reddening here was the YIELD case, a mutation credited through a sibling)",
+  "edits": [
+   [
+    "                out.append(child.value)\n            rec(child)",
+    "                out.append(child.value)"
+   ]
+  ],
+  "expect": [
+   "...while the descent THROUGH statements is what sees a `return ROOT` nested in an `if` \u2014 this definition's return, whatever statement it sits under"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a walrus inside a LAMBDA BODY is collected as binding in the case, so a name the case genuinely reads is hidden \u2014 PEP 572 scopes it to the lambda (r8 Claude Medium)",
+  "edits": [
+   [
+    "        if isinstance(n, ast.Lambda):\n            return                      # its walruses are its own",
+    "        if False:\n            return                      # its walruses are its own"
+   ]
+  ],
+  "expect": [
+   "\u2b50 free_names agrees with CPython's own symbol table on every binding form it claims to read off the grammar (r7 Claude Medium \u2014 3 of 41 shapes diverged before this)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a literal in a conditional TEST counts as data the value adds, so `_g if True else _g` \u2014 which evaluates to `_g` either way \u2014 reads as a modified copy",
+  "edits": [
+   [
+    "    inert_positions |= {id(n) for x in ast.walk(value) if isinstance(x, ast.IfExp)\n                        for n in ast.walk(x.test)}",
+    "    inert_positions |= set()"
+   ]
+  ],
+  "expect": [
+   "...and an alias of the global through any wrapper earns nothing, while a MODIFIED copy still does \u2014 a TEST is not data, a dict key is"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the helper branch stops checking it was given a tree, raising AttributeError wherever `world_class` is called without one (r8 Claude Low, the seventeenth dying case)",
+  "edits": [
+   [
+    "    if tree is None:\n        return False",
+    "    if False:\n        return False"
+   ]
+  ],
+  "expect": [
+   "...and the plain put-back beside it IS a restore"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "`iglob` leaves the base-relative set while `glob` stays, so one stdlib operation gets opposite verdicts under its two names \u2014 the instance-not-class defect inside the repair written about instance-not-class (r8 Claude Medium)",
+  "edits": [
+   [
+    "                          \"listdir\", \"scandir\", \"walk\", \"fwalk\", \"iterdir\", \"glob\", \"iglob\",\n                          \"rglob\"}",
+    "                          \"listdir\", \"scandir\", \"walk\", \"iterdir\", \"glob\"}"
+   ]
+  ],
+  "expect": [
+   "`glob` and `iglob` are one operation and get one answer \u2014 `glob.iglob('*.py')` (r8 Claude M2)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a Windows separator stops counting as absolute, so `os.path.abspath('\\\\\\\\srv\\\\share')` \u2014 a world the case named \u2014 is refused as the ambient directory (r8 Claude Low)",
+  "edits": [
+   [
+    "not _s.startswith((\"/\", \"\\\\\"))",
+    "not _s.startswith(\"/\")"
+   ]
+  ],
+  "expect": [
+   "an absolute literal is absolute on both separators, so a Windows path is a world the case named rather than the ambient directory (r8 Claude Low)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "supplying `start` is treated as removing the cwd default whatever `start` is, so `relpath(target, start='sub')` \u2014 which resolves 'sub' against the live cwd too \u2014 is credited as a world the case built (r9 Codex High)",
+  "edits": [
+   [
+    "            if _start is None or _is_relative_literal(_start):",
+    "            if _start is None:"
+   ]
+  ],
+  "expect": [
+   "`relpath`'s `start` must itself be non-ambient \u2014 `os.path.relpath(tempfile.mkdtemp(), start='sub')` (r9 Codex High)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a METHOD's return stops being followed, so `C().same()` \u2014 whose body is `return ROOT` \u2014 hands main the global and earns REBIND (r9 Codex High)",
+  "edits": [
+   [
+    "    if isinstance(func, ast.Attribute):",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a METHOD that returns the global hands main the world it already had (r9 Codex High) \u2014 and the rule is asked BEFORE the child check, because the receiver is BUILT"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an AMBIGUOUS method name is resolved by GUESSING the first candidate class, when two classes sharing one method name cannot be told apart without types (r10 Claude M3 collapsed the two clauses this used to anchor on; the general one is the only owner now)",
+  "edits": [
+   [
+    "        if named and all(_ret_exprs(f) for f in named):\n            return named",
+    "        if named and all(_ret_exprs(f) for f in named):\n            return named[0]"
+   ]
+  ],
+  "expect": [
+   "...and an AMBIGUOUS name is decided when EVERY candidate is live, declined when they disagree \u2014 which is the line between reading and guessing"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a module-dict `.get()` stops being keyed, so `globals().get('OTHER')` reads as the same world as `globals().get('ROOT')` and a real substitution loses its route (r9 Codex Medium)",
+  "edits": [
+   [
+    "    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)\n            and value.func.attr == \"get\" and value.args",
+    "    if (False and isinstance(value.func, ast.Attribute)\n            and value.func.attr == \"get\" and value.args"
+   ]
+  ],
+  "expect": [
+   "a module-dict `.get()` is keyed like the subscript \u2014 the same global earns nothing, a DIFFERENT one is a change (r9 Codex Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the single callee-identity owner stops being asked above the child-dominance check, so ONE argument the case built makes `kids` answer BUILT and every identity closure is bypassed on three of four routes (r9 Claude Blocking)",
+  "edits": [
+   [
+    "        # \u2b50 ONE CALLEE-IDENTITY QUESTION, ASKED ONCE, ABOVE `kids`. See\n        # `callee_returns_live` for why the position is part of the rule.\n        if callee_returns_live(expr, tree, world, depth, fn):\n            return LIVE\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "\u26d4 an identity substitution hidden behind a module helper earns nothing \u2014 the helper's RETURN is its caller's value (r8 Codex Blocking)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a `@property` stops being resolved, so `C().prop` \u2014 the same member access without parentheses \u2014 hands main the global and earns the route (r9 Claude Medium)",
+  "edits": [
+   [
+    "        if tree is not None and not isinstance(expr.ctx, ast.Store):\n            _prop = _resolve_callee(expr, tree, fn)",
+    "        if False:\n            _prop = _resolve_callee(expr, tree, fn)"
+   ]
+  ],
+  "expect": [
+   "...and the owner resolves a method, a NESTED class's method, and a @property alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a NESTED class's methods become invisible to the callee owner, so `C.Inner().nested()` hands main the global (r9 Claude Medium)",
+  "edits": [
+   [
+    "        named = [f for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)",
+    "        named = [f for cls in tree.body if isinstance(cls, ast.ClassDef)"
+   ]
+  ],
+  "expect": [
+   "...and the owner resolves a method, a NESTED class's method, and a @property alike"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an ambiguous method name is declined even when EVERY candidate returns the live world, where which receiver it is cannot matter (r9 Claude High)",
+  "edits": [
+   [
+    "        if named and all(_ret_exprs(f) for f in named):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...and an AMBIGUOUS name is decided when EVERY candidate is live, declined when they disagree \u2014 which is the line between reading and guessing"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an f-string with no interpolation stops being a string literal, so one `f` flips nine relative-literal refusals into credits (r9 Claude High)",
+  "edits": [
+   [
+    "    if isinstance(expr, ast.JoinedStr) and all(",
+    "    if False and all("
+   ]
+  ],
+  "expect": [
+   "an f-string IS the literal it spells, so `Path(f\".\")` answers as `Path('.')` does (r9 Claude High \u2014 9 of 9 shapes flipped on one `f`)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an f-string literal stops reaching the classifier itself, so it is only caught by the path clauses \u2014 and `os.path.join(f'.', td)`, where LIVE must dominate BUILT, is credited",
+  "edits": [
+   [
+    "    _lit = string_literal(expr) if not isinstance(expr, ast.Constant) else None",
+    "    _lit = None"
+   ]
+  ],
+  "expect": [
+   "...and an f-string literal MIXED with a built value is still the live world, because LIVE dominates \u2014 the row that proves the literal reaches the classifier"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the `else` of a statically-TRUE test stops being dead, so the cheapest fake compliance written the other way round is credited (r9 Claude Medium)",
+  "edits": [
+   [
+    "            elif isinstance(node, ast.If):\n                for stmt in node.orelse:",
+    "            elif False:\n                for stmt in node.orelse:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 the `else` of a statically-TRUE test is the same dead branch written the other way round, and round 1 called this the cheapest fake compliance (r9 Claude Medium)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the flag test goes back to the name-contains shortcut that `suite_entries` records as tried and REJECTED, so any identifier containing `self_test` reads as a suite dispatch (r9 Claude Low)",
+  "edits": [
+   [
+    "    if any(isinstance(n, ast.Attribute) and n.attr in (\"self_test\", \"_self_test\")\n           for n in ast.walk(test)):\n        return True\n    if any(isinstance(n, ast.Name) and n.id in (\"self_test\", \"_self_test\")\n           for n in ast.walk(test)):\n        return True",
+    "    if \"self_test\" in ast.dump(test):\n        return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 an identifier merely CONTAINING `self_test` is not the flag test \u2014 the shortcut `suite_entries` records as REJECTED (r9 Claude Low)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the rebind route stops asking which world the substituted value hands back, so the leaf-level PROXY returns and every identity routed through a helper, a method or a parameter default re-opens on the fourth route (r10 Claude Blocking)",
+  "edits": [
+   [
+    "        return not hands_back_the_same_world(value, name, fn, tree, world)",
+    "        return True"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ONE argument the case built must not reopen the helper identity \u2014 REBIND (r9 Claude Blocking: the repair sat below the child-dominance check)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the world identity is compared the wrong way round, so the global being replaced reads as a CHANGE and a different one reads as an identity \u2014 the module-dict branch's `_key != name` generalised, inverted (r10 Claude Blocking)",
+  "edits": [
+   [
+    "            return value.id == name",
+    "            return value.id != name"
+   ]
+  ],
+  "expect": [
+   "\u26d4 ONE argument the case built must not reopen the helper identity \u2014 REBIND (r9 Claude Blocking: the repair sat below the child-dominance check)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a BRANCHED binding stops being dominated by its same-world alternative, so a case whose world depends on a branch is credited although the run may hand `main` the world it already had \u2014 `world_class`'s own rule for the same shape, with the quantifier flipped (r10 Claude Blocking)",
+  "edits": [
+   [
+    "            return any(hands_back_the_same_world(v, name, fn, tree, world, depth + 1)",
+    "            return all(hands_back_the_same_world(v, name, fn, tree, world, depth + 1)"
+   ]
+  ],
+  "expect": [
+   "...and EVERY binding of a branched name is read \u2014 the same-world answer dominates, while a branch between two DIFFERENT worlds is still a substitution"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a value that is NOT LIVE stops being excluded, so a `tempfile.mkdtemp()` alternative reaches the residual leaf test, reads as the live world there, and a real substitution loses its credit (r10 Claude Blocking)",
+  "edits": [
+   [
+    "    if world_class(value, fn, tree, world, depth) is not LIVE:\n        return False",
+    "    if False:\n        return False"
+   ]
+  ],
+  "expect": [
+   "...and EVERY binding of a branched name is read \u2014 the same-world answer dominates, while a branch between two DIFFERENT worlds is still a substitution"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a resolvable call stops being replaced by its RETURNS, so `same_root(td)` is judged by the names in its text instead of the world it hands back and the Blocking's three exhibits are credited again (r10 Claude Blocking)",
+  "edits": [
+   [
+    "        defn = _resolve_callee(value.func, tree, fn)\n        if defn is not None:",
+    "        defn = _resolve_callee(value.func, tree, fn)\n        if False:"
+   ]
+  ],
+  "expect": [
+   "\u26d4 `globals()['ROOT'] = same_root(td)` hands main the world it already had \u2014 a helper that DISCARDS its argument (r8 Codex Blocking) (r10 Claude Blocking: the leaf test discarded `world_class`'s verdict)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a callee's return is judged in the CALL SITE's scope instead of the callee's own, so a name the case bound counts as reaching a value inside a helper that cannot see it (r10 Claude Blocking \u2014 the scope substitution is what makes `same_root(td)` hand back `ROOT`)",
+  "edits": [
+   [
+    "                return any(hands_back_the_same_world(r, name, one, tree, world, depth + 1)",
+    "                return any(hands_back_the_same_world(r, name, fn, tree, world, depth + 1)"
+   ]
+  ],
+  "expect": [
+   "...and the residual leaf test is asked in the CALLEE's scope, not the call site's \u2014 a name the case bound does not exist inside the helper (a stated limit: the refusing direction, and it disagrees with the direct spelling)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a callee's SEVERAL returns stop being dominated by the same-world one, so a helper that hands back the replaced global on one path is credited although source text cannot say which path runs (r10 Claude Blocking)",
+  "edits": [
+   [
+    "                return any(hands_back_the_same_world(r, name, one, tree, world, depth + 1)\n                           for one, r in pairs)",
+    "                return all(hands_back_the_same_world(r, name, one, tree, world, depth + 1)\n                           for one, r in pairs)"
+   ]
+  ],
+  "expect": [
+   "...and over a callee's SEVERAL returns too \u2014 one path handing back the global being replaced is enough, because source text cannot say which path runs"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a bare-name callee stops being resolved through the enclosing scopes, so a helper defined INSIDE the suite does not resolve and round 8's Blocking is defeated by one indent on three routes (r10 Claude H2)",
+  "edits": [
+   [
+    "        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):\n            scopes.append(cur)",
+    "        if False:\n            scopes.append(cur)"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a helper defined INSIDE the suite is still a helper \u2014 round 8's Blocking input verbatim, one indent down, on all four routes (r10 Claude H2)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a REDEFINED name resolves to the FIRST definition rather than the last, so a guard that redefines a helper is judged against the body Python does not execute (r5 L1's recorded correction, now the rule's own)",
+  "edits": [
+   [
+    "            return here[-1]",
+    "            return here[0]"
+   ]
+  ],
+  "expect": [
+   "...and a def inside an `if` is bound in the enclosing scope, while a REDEFINED name resolves to the LAST definition, which is the one that runs"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a CLASS BODY stops being a scope boundary, so a method is offered as what a bare name resolves to \u2014 a namespace a bare name can never reach, and the error that makes `_all_functions` the wrong repair for H2 (r10 Claude H2)",
+  "edits": [
+   [
+    "            if isinstance(child, (ast.Lambda, ast.ClassDef)):\n                continue",
+    "            if isinstance(child, ast.Lambda):\n                continue"
+   ]
+  ],
+  "expect": [
+   "...and a CLASS METHOD of the same name is not what a bare `h()` resolves to, so the world the module-level `h` builds keeps its credit (what `_all_functions` \u2014 flat by name and built by `ast.walk` \u2014 would have got wrong)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the scope's definitions are read from its direct statements only, so a `def` inside an `if` or a `try` is not seen as the scope's name although Python binds it there (r10 Claude H2)",
+  "edits": [
+   [
+    "                out.append(child)\n                continue\n            if isinstance(child, (ast.Lambda, ast.ClassDef)):\n                continue\n            rec(child)",
+    "                out.append(child)\n                continue\n            if isinstance(child, (ast.Lambda, ast.ClassDef)):\n                continue"
+   ]
+  ],
+  "expect": [
+   "...and a def inside an `if` is bound in the enclosing scope, while a REDEFINED name resolves to the LAST definition, which is the one that runs"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the returns walk descends into NESTED definitions again, so a nested function's `return ROOT` is collected as its parent's and a helper that builds a world loses its credit to it (r10 Claude M1)",
+  "edits": [
+   [
+    "            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):\n                continue",
+    "            if False:\n                continue"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a NESTED definition's `return` is not its parent's \u2014 a helper that hands back a world it built keeps its credit with an unrelated `def inner(): return ROOT` in it (r10 Claude M1)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a KEYWORD argument stops covering its parameter, so `same_p(p=td)` resolves `p` to its default and a world the case passed by name loses its credit (r10 Claude M2)",
+  "edits": [
+   [
+    "    out = {k.arg for k in call.keywords if k.arg is not None}",
+    "    out = set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a returned parameter the CALL SITE supplies does not resolve to its default \u2014 positionally and by keyword (r10 Claude M2)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a POSITIONAL argument stops covering its parameter, so `same_p(td)` resolves `p` to its default and adding a default to a parameter the call OVERRIDES loses the credit (r10 Claude M2)",
+  "edits": [
+   [
+    "        out |= set(named[offset:offset + len(call.args)])",
+    "        out |= set()"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a returned parameter the CALL SITE supplies does not resolve to its default \u2014 positionally and by keyword (r10 Claude M2)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a `*args` unpacking at the call site stops being undecidable, so positional coverage is guessed and a default is dropped on a guess \u2014 the direction that GRANTS a route (r10 Claude M2)",
+  "edits": [
+   [
+    "    if not any(isinstance(a, ast.Starred) for a in call.args):",
+    "    if True:"
+   ]
+  ],
+  "expect": [
+   "...while a `*args` unpacking leaves the defaults in force \u2014 positional coverage is undecidable and dropping a default is the direction that GRANTS a route"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the RECEIVER stops consuming a method's first positional parameter, so `o.m(x)` is read as covering `self` and the parameter the call actually supplies keeps its default (r10 Claude M2)",
+  "edits": [
+   [
+    "    offset = 1 if isinstance(call.func, ast.Attribute) else 0",
+    "    offset = 0"
+   ]
+  ],
+  "expect": [
+   "...and a RECEIVER consumes the first positional parameter, so `o.m(x)` covers `a` and never `self` \u2014 while the identical bare `f(x)` covers `a` too"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the static truth of a test is read off a bare `Constant` again, so a literal COLLECTION is not a literal and `if (1,): pass / else: main(...)` credits a branch no interpreter enters (r10 Claude M4)",
+  "edits": [
+   [
+    "        return (bool(ast.literal_eval(test)),)",
+    "        return (bool(test.value),) if isinstance(test, ast.Constant) else None"
+   ]
+  ],
+  "expect": [
+   "\u26d4 a LITERAL COLLECTION is a literal, so a branch it decides is dead whichever way it falls \u2014 `if (1,):`'s else, `if ():`'s body and `if []:`'s body (r10 Claude M4)"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "an UNDECIDABLE test answers `True` instead of no-answer, so the `else` of every test this rule cannot fold is struck dead and a real drive behind `if not False: \u2026 else:` is refused (r10 Claude M4 \u2014 the tuple wrapper exists so a FALSY answer is not an absent one)",
+  "edits": [
+   [
+    "    except (ValueError, TypeError, SyntaxError, MemoryError):\n        return None",
+    "    except (ValueError, TypeError, SyntaxError, MemoryError):\n        return (True,)"
+   ]
+  ],
+  "expect": [
+   "...while `not False` and `1 and 2` stay CREDITED \u2014 `ast.literal_eval` refuses both, so closing them needs a constant folder, which is backlog #224's shape not this rule's"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "a `while` stops being asked for a statically-false test, so `while False: main([str(td)])` \u2014 named in round 1's own docstring \u2014 credits a body no interpreter enters (r10: the `else` asymmetry made this half easy to lose, and nothing asserted it)",
+  "edits": [
+   [
+    "        _truth = _static_truth(node.test) if isinstance(node, (ast.If, ast.While)) else None",
+    "        _truth = _static_truth(node.test) if isinstance(node, ast.If) else None"
+   ]
+  ],
+  "expect": [
+   "...and a falsy `while`'s BODY is dead too \u2014 which is what `While` is in the condition for, the half the `else` asymmetry made easy to lose"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ },
+ {
+  "name": "the per-tree parent map stops being built, so the scope chain collapses to the call's own scope plus the module and a helper defined in an ENCLOSING scope does not resolve (r10 Claude H2 \u2014 the only shape that distinguishes the chain from its two endpoints, which is why the first version of this entry SURVIVED)",
+  "edits": [
+   [
+    "            out[id(child)] = node",
+    "            pass"
+   ]
+  ],
+  "expect": [
+   "...and a helper in the ENCLOSING scope resolves for a call one scope deeper \u2014 the middle of the chain, which neither the call's own scope nor the module supplies"
+  ],
+  "file": "scripts/check-main-drivable.py"
+ }
+]

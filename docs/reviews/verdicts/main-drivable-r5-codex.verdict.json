@@ -1,0 +1,20 @@
+{
+  "attempts": [
+    "  gpt-5.5: ok \u2014 2667 chars"
+  ],
+  "dirty": {
+    "docs/Claude_Code_Memory_Retrieval_Layer.pdf": "100644 6b5ef9d763abd4223c60c705071d8fe0d27fee4f",
+    "docs/explainers/Claude_Code_Memory_Retrieval_Layer.pdf": "100644 6b5ef9d763abd4223c60c705071d8fe0d27fee4f"
+  },
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b17a34f61a116fbd2164ac402fb7fd70e0e9e258",
+  "intrusions": [],
+  "model": "gpt-5.5",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/32e6fece-8622-45ac-b3ea-8ab3c65fd15c/scratchpad/codex-r5.md",
+  "reason": "2667 chars",
+  "refused": false,
+  "review": "main-drivable-r5-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

@@ -300,6 +300,65 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "check-main-drivable.py": (
+        # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
+        # `case_locals` are GONE, deliberately: the review measured that the rule
+        # dispatched on an expression's TOP NODE and defaulted to True — 21 of 21
+        # element-level credits on disk exited that default without a child being
+        # examined — so the whole expression rule was replaced by `world_class`, three
+        # leaf classes recursing over the grammar. Those keys retire WITH their
+        # functions and `world_class`'s own parameters take their place.
+        # ⚠ DERIVED BY RUNNING `analyse()`, not edited by hand: a first attempt added
+        # `_bound_values` and `guard_world_globals`, which this guard does not examine
+        # because the suite does not drive them at two call sites — and it said so.
+        "argv_forwarders.tree",
+        "assess.debt",
+        "assess.texts",
+        "assess.whole",
+        "classify.path",
+        "classify.text",
+        "computed_argv.expr",
+        "computed_argv.fn",
+        "computed_argv.tree",
+        "computed_argv.world",
+        "dispatches_a_suite.tree",
+        "global_writes.aliased",
+        "global_writes.fn",
+        "globals_aliases.aliased",
+        "globals_aliases.fn",
+        "live_substitutions.aliased",
+        "live_substitutions.fn",
+        "live_substitutions.lineno",
+        "live_substitutions.writes",
+        "main.argv",
+        "main.root",
+        "module_globals.tree",
+        "note_globals_imports.tree",
+        "suite_main_calls.tree",
+        "suite_reachable.tree",
+        "world_class.depth",
+        "world_class.expr",
+        "world_class.fn",
+        "world_class.tree",
+        "world_class.world",
+        "world_names.start",
+        "world_names.tree",
+    ),
+    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
+    # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
+    # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not
+    # transcribed: six keys over four pure functions, `findings = []` on the first run.
+    # ⟳ 2026-10-01 — THREE KEYS RETIRED WITH THEIR SUBJECT, and this guard was right to demand
+    # the deletion be deliberate. `dangling_detail` is GONE, and `verdict` no longer takes
+    # `dangling`. R3 was four successive PROXIES for a semantic property — "does this sentence
+    # promise a detail it does not have?" — and each proxy had a boundary a later round found:
+    # adjacency (r3 M4), label spellings (r5 H1), the position of $OUT (r6 B1), render-invariance
+    # (the r6 repair, defeated the same day). Measured over one eleven-arm corpus: the label
+    # vocabulary caught 5 of 11, the render comparison that replaced it caught 3 — FEWER — and the
+    # equality that replaced both catches 11. So the rule is now `undeclared_render`: what the hook
+    # renders with no detail must EQUAL a hand-authored sentence in DECLARED_RENDER. No judgement
+    # is computed; it moved to a human in a diff, which is the only authority a semantic question
+    # has. The three keys below are its replacements.
     # ⟳ 2026-10-02, backlog #221: the contrast harness, pinned in the commit that creates it —
     # this guard REFUSED the file until it was, and separately caught `summarise(samples=…)`
     # being passed one value at its only call site, which a `summarise` ignoring its argument
@@ -330,21 +389,6 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "verdict.baseline",
         "verdict.samples",
     ),
-    # ⟳ 2026-09-30, backlog #201/#202: the guard that reconciles the matcher's exit codes with its
-    # hook's `case` arms. Pinned in the same commit that creates it — this guard REFUSED the file
-    # until it was. DERIVED by running this module's own `analyse()` on the delivered source, not
-    # transcribed: six keys over four pure functions, `findings = []` on the first run.
-    # ⟳ 2026-10-01 — THREE KEYS RETIRED WITH THEIR SUBJECT, and this guard was right to demand
-    # the deletion be deliberate. `dangling_detail` is GONE, and `verdict` no longer takes
-    # `dangling`. R3 was four successive PROXIES for a semantic property — "does this sentence
-    # promise a detail it does not have?" — and each proxy had a boundary a later round found:
-    # adjacency (r3 M4), label spellings (r5 H1), the position of $OUT (r6 B1), render-invariance
-    # (the r6 repair, defeated the same day). Measured over one eleven-arm corpus: the label
-    # vocabulary caught 5 of 11, the render comparison that replaced it caught 3 — FEWER — and the
-    # equality that replaced both catches 11. So the rule is now `undeclared_render`: what the hook
-    # renders with no detail must EQUAL a hand-authored sentence in DECLARED_RENDER. No judgement
-    # is computed; it moved to a human in a diff, which is the only authority a semantic question
-    # has. The three keys below are its replacements.
     "check-rc-contract.py": (
         'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
         'defined_codes.matcher_src', 'handled_codes.codes', 'handled_codes.hook_src',

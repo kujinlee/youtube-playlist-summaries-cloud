@@ -85,6 +85,10 @@ POPULATION: frozenset[str] = frozenset({
     # because this guard REFUSED a file that declares a count nothing verifies — which is the
     # right refusal: a number in a docstring with no owner is this repo's most-measured rot.
     "check-page-contrast.py",
+    # ⟳ 2026-10-02, ADR-0014's rule D2: pinned in the commit that creates it. Its suite went
+    # 46 → 73 → 74 → 76 → 79 while it was being written, each step for a real reason, so a
+    # docstring count nothing verifies would have been wrong four times in one evening.
+    "check-main-drivable.py",
     "check-memory-link.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the
