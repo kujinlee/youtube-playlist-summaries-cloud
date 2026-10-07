@@ -14230,3 +14230,59 @@ entries for the palette path including the `extra = ""` severance) and L2 (no en
 own default, which is the only path production uses). Both are new code and new ratchet surface;
 folding was stopped on a thrashing verdict, so that is the owner's call, not mine. `verify` stays RED
 on `check-review-recorded`; #242 remains open; merging is the human gate.
+
+## 2026-10-07
+The second reviewer was finally reachable, and it immediately found something the first one had
+checked and passed.
+
+Every change here is meant to go past two independent reviewers. One of them has been unreachable,
+so last night's round ran with one — and the note explaining why was itself wrong, which is a
+separate story. With both reviewers present, the second one took thirty seconds to break a claim the
+first had confirmed.
+
+The claim was a paragraph describing what the new test coverage does and does not reach. It had
+already been corrected once for overstating itself. The second reviewer showed it was *still*
+overstating: one of the three things it claimed to cover — the part that reports a contrast failure
+— can be switched off by a single line, and every test still passes. The gate's actual job, refusing
+a change that makes text unreadable, is removable without anything going red.
+
+Two people wrote that list carefully and both were wrong, so the list itself was the problem. It is
+gone. In its place is a pointer to the tool that can actually answer the question. The hole is
+written down as work rather than quietly closed.
+
+<!--tech-->
+Round 5 **Codex half ran and is FILED** — `docs/reviews/codex/unify-explainer-style-r5-codex.md`,
+verdict `gate_ran: true`, model `gpt-5.5`, 4,963 chars, head `d03bdddd`, 0 intrusions. The earlier
+`REVIEW GAP: codex` is CLOSED, and was never justified: see the separate entry on
+`codex-frontier-model.py`.
+
+⛔ **CODEX HIGH, REPRODUCED BY ME:** `if problems:` → `if False and problems:` in `main()` leaves
+`--self-test` at **104/104 GREEN** and a one-entry scoped run reports **1 mutation, 0 killed, 1
+SURVIVOR**. Control is real: unsevered, `rc=1` with `FAILED — 1 contrast regression(s)`. So
+*verdict rendering* was NOT covered, which v2 of the bound claimed it was.
+⭐ **Codex refuted a claim the Claude half had CONFIRMED** — the two halves are not redundant.
+
+Four more routes equally unwitnessed (Codex Medium, all reproduced at 104/104 green):
+`--write-baseline` disabled, `--report` disabled, `summarise(samples)` → `summarise([])`,
+`population_notes` advisory loop emptied.
+
+⭐ **THE BOUND PARAGRAPH IS NOW ON ITS THIRD VERSION AND GIVES NO LIST AT ALL.** v1 named four
+components (Claude refuted palette selection); v2 named three (Codex refuted verdict rendering).
+Two careful enumerations, both wrong — so the enumeration is the defect, not the care. A
+hand-written coverage list is asserted by its author and checked by nobody. The authority is
+`check-plan-code.py --mutate .` + `scripts/mutations/*.json`, and the paragraph now says so.
+Corrected at the seam and on all three closure rows (#239/#240/#241), which carried it identically.
+
+**#248 FILED 🔴** for the five uncovered routes — raised above #246/#247 because it is not a ratchet
+gap about future change: one line removes the gate's verdict *today*. Filed not folded, per the
+owner's standing choice for this branch.
+
+⚠ Codex independently confirmed, by running them: suite 94→104, manifest 12→16, sum 1407→1411, the
+repo-wide anchor pass (59 manifests, 1,411 entries, 1,419 find-strings, 0 unbound), `HARNESS_TREE`
+staging `playwright exists False / typescript exists True`, and #236's branch-protection claim. It
+also ruled that editing `EXPECTED_MUTATIONS` in a pruned COPY does not invalidate the scoped result
+— it only balances the pruned manifest — while noting it proves nothing about the repo-wide sum,
+which it checked separately.
+
+⚠ **STILL NOT CONVERGED**: #242, #246, #247, #248 open; `verify` RED on `check-review-recorded`;
+merging is the human gate.

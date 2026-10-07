@@ -920,8 +920,25 @@ def main(argv: list[str], root: Path = ROOT, measure_fn=measure) -> int:
     instead of what a reader sees — and the comment three lines above that branch says so in
     writing. So the honest statement is:
 
-        COVERED by the cases below: corpus resolution, verdict rendering, refusal routing.
-        NOT COVERED: palette selection, and the probe.
+        ⛔ NO COVERAGE LIST IS GIVEN HERE, AND THAT IS THE THIRD VERSION OF THIS PARAGRAPH.
+        v1 claimed four components; round 5's Claude half measured that one of them (palette
+        selection) was unwitnessed. v2 claimed three; round 5's CODEX half then measured that
+        another of them — verdict rendering — was unwitnessed too, by severing `if problems:`
+        to `if False and problems:` and watching the suite stay 104/104 GREEN while contrast
+        regressions reported SUCCESS. Reproduced by the coordinator, with four more routes:
+
+            if problems:                  -> if False and problems:   104/104 GREEN
+            if args.write_baseline:       -> if False and ...         104/104 GREEN
+            if args.report:               -> if False and ...         104/104 GREEN
+            sm = summarise(samples)       -> summarise([])            104/104 GREEN
+            for note in population_notes(...)  -> for note in []      104/104 GREEN
+
+        Two authors enumerating carefully got it wrong twice, so the ENUMERATION is the defect,
+        not the care taken over it: a hand-written coverage list is asserted by whoever wrote it
+        and checked by nobody. THE AUTHORITY ON WHAT IS PROTECTED IS
+        `python3 scripts/check-plan-code.py --mutate .` AND `scripts/mutations/*.json`. Ask it.
+        What the seam does is make a browserless case POSSIBLE; it does not make `main()` covered,
+        and the cases below witness exactly their own assertions and nothing more.
 
     ⚠ THE MECHANISM IS #239'S OWN SHAPE, INSIDE THE FIX FOR #239. `_recorder` records
     `root` — a deliberate sentinel, asserted — and absorbs `extra_css` into a default it
