@@ -78,8 +78,8 @@ judgement is the call site, and a file passes on its best one.
 5. `pin_stale` reconciles only against the WHOLE population: a path override or a constructed root
    reports no pin findings at all, and prints that it skipped them.
 
-THE DEBT SET IS NOT A BASELINE OF ZERO. 27 of the 37 guards with a `main()` do not satisfy this
-today — this file is in its own population and is one of the 10 that do — and backlog #56's measured
+THE DEBT SET IS NOT A BASELINE OF ZERO. 27 of the 38 guards with a `main()` do not satisfy this
+today — this file is in its own population and is one of the 11 that do — and backlog #56's measured
 verdict is that a gate red from birth gets switched off. `MAIN_DEBT`
 pins them by name and is reconciled in BOTH directions: a pinned guard that now complies is a
 violation naming itself (so the debt cannot be paid silently and then re-accrued), and a pinned
@@ -128,6 +128,17 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-catalog-coverage.py",
     "scripts/check-docs.py",
     "scripts/check-explainer-delivery.py",
+    # ⟳⟳ 2026-10-06: `check-page-contrast.py` WAS PINNED HERE FOR ABOUT AN HOUR AND THE PIN
+    # WAS WRONG. The reasoning was that driving `main()` needs node and a browser, so a case
+    # would be "driving a path that cannot measure anything". Round 3 refuted it by running
+    # it: over an EMPTY constructed world `main()` returns 2 — the file's own CANNOT-RUN
+    # contract, an advertised outcome — with no node and no browser. The guard now drives
+    # its own `main()` and the name is removed in the same commit that makes it comply,
+    # which is what the block above requires.
+    # ⚠ The pin was not neutral while it stood: it deferred exactly the case that exercises
+    # `main()`'s wiring, and that wiring had a live defect (its `root` is not threaded into
+    # `measure()`), which THIS guard structurally cannot see because it reads call-site
+    # source text rather than running anything.
     "scripts/check-features.py",
     "scripts/check-function-revokes.py",
     "scripts/check-gate-falsifiability.py",

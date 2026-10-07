@@ -1284,7 +1284,7 @@ EXPECTED_MUTATIONS = {
     # specific temp path — and couples the entry to one failure mode of the case even when it does
     # not. That still supports converting the raise to a value (the case `driving /src/ never
     # consults the environment`), which is why the decision stands and only its reason changed.
-    "scripts/explainer-serve.py": 46,
+    "scripts/explainer-serve.py": 47,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1431,6 +1431,13 @@ EXPECTED_MUTATIONS = {
     # the rule, retargeted onto the code that now owns it. Its 20 -> 14 and this 0 -> 11 are ONE
     # move, and the declared sum rises 1158 -> 1163 net of two retirements whose subject is gone.
     "scripts/check-surface-recall.py": 21,
+    # ⟳ 2026-10-02, backlog #221: the contrast harness, manifested in the commit that creates it.
+    # ⭐ THREE OF THESE EIGHT WERE MISLABELLED ON FIRST WRITE and the sweep said so: "collapse
+    # stops deduplicating" still deduplicated (the dict key does that work; what broke was the
+    # COUNT), and "the verdict stops reporting CROSSED" still reported — `worsened` catches the
+    # same element, so the severance changes the MESSAGE and not the detection. Both are renamed
+    # to what they sever. An entry whose NAME is wrong is a false claim with a green tick.
+    "scripts/check-page-contrast.py": 16,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -3385,6 +3392,7 @@ def _self_test() -> int:
                                       "scripts/check-main-drivable.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
+                                      "scripts/check-page-contrast.py",
                                       "scripts/check-paid-caller-arrival.py",
                                       "scripts/check-plan-code.py",
                                       # ⟳ 2026-09-08: the plan-mode retirement's replacement
@@ -4904,6 +4912,13 @@ def _self_test() -> int:
     # mutate the SAME regex line, so they take DISTINCT SUBSTRINGS of it: the duplicate
     # refusal keys on exact tuple equality of the find-strings, and it refused the first
     # draft. The figure is the guard's own, read from its failure message.
+    # ⟳ 2026-10-06, MERGING origin/master (#366, the sharded sweep) INTO THIS BRANCH:
+    # 1211 -> 1224. Two sides, no collision: master took `check-surface-recall` 19 -> 21
+    # while this branch added `check-page-contrast` (12) for the contrast harness, so the
+    # union keeps master's bumped count AND this branch's new target. ⚠ 1224 is the
+    # GUARD'S OWN FIGURE, read from `got 1224 want 1211` — not computed by hand, and
+    # deliberately not reconciled against an arithmetic guess, because a sum that agrees
+    # with a guess is still a guess.
     # ⟳ 2026-10-06, MERGING origin/master (#366) INTO THIS BRANCH: 1211 -> 1394. The delta is
     # exactly `check-main-drivable`'s 183 entries, which is this branch's whole contribution to
     # the manifest — the two sides' manifests do not collide, so the dict auto-merged and only
@@ -4911,7 +4926,26 @@ def _self_test() -> int:
     # #366 took master 1178 -> 1211). ⚠ 1394 is the GUARD'S OWN FIGURE, read from
     # `got 1394 want 1211`, not computed by hand — the arithmetic above is a cross-check that
     # agrees, and agreement is not provenance.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1394)
+    # ⟳⟳ 2026-10-06, SECOND merge of master into this branch, now that PR #365 has landed
+    # (squash `f8ae6d5d`): 1394 -> 1407. Master arrived carrying #365's 183-entry
+    # `check-main-drivable` manifest; this branch contributes `check-page-contrast`. Both
+    # survive — the union is additive on every target and no file's count changed on both
+    # sides.
+    # ⚠ THE FIRST ATTEMPT AT THIS MERGE WAS WRONG AND THE GUARD CAUGHT IT. Four conflicts
+    # were resolved by a blanket "keep both sides", which is right for a LIST entry and
+    # wrong here: both sides were the same `case(...)` call, so the union declared the sum
+    # TWICE (1224 and 1394). Collapsed to one. A rule that fits three of four conflicts is
+    # not a rule, and the fourth is the one that would have shipped.
+    # ⚠ 1407 is the GUARD'S OWN FIGURE, read from `got 1407 want 1394`.
+    # ⟳ 2026-10-06, Phase 6 Q1's `measure_fn` seam: 1407 -> 1411. `check-page-contrast`
+    # goes 12 -> 16 — the corpus severance, the root no longer forwarded (backlog #239),
+    # the success line losing its denominator, and the NOT A WHOLE-CORPUS PASS warning
+    # firing on the inverted population. All four are the gaps #240 and #241 named, and
+    # none of them could be manifested before the seam existed: every severance inside
+    # `main()` funnelled into one `return 2`, which the only case asserting it could not
+    # tell apart from any other CannotRun.
+    # ⚠ 1411 is the GUARD'S OWN FIGURE, read from `got 1411 want 1407`.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1411)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

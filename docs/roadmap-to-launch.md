@@ -2214,7 +2214,7 @@ job vs ~14 min for the local sweep alone). **The sweep is the most VISIBLE cost 
       183 mutations, two CI steps). It admits **three** routes — a world parameter, an `argv` that
       names a computed path, and a global substitution that is still LIVE at the call — so the
       drafted false positive never shipped: `check-fixture-variation.py` passes on `argv+rebind`.
-      ⭐ **Measured exposure 27 of 37, pinned by name in `MAIN_DEBT`** and reconciled in both
+      ⭐ **Measured exposure 27 of 38, pinned by name in `MAIN_DEBT`** and reconciled in both
       directions; the set came from the tool's own run, not from a list written beside it, and the
       hand-written list it replaced was wrong about two files. ⛔ **Three defects the first live run
       found in the rule itself**, each now a named regression case: an order-dependent single-route

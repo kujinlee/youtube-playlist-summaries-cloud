@@ -14113,3 +14113,176 @@ And the only guarded-code change after round 11's verdict is a one-word **commen
 `ci.yml` (`29 of 37` → `27 of 37`) that round 11 itself asked for, declared `NO-REVIEW:` per
 `review-method.md:118` rather than spending a round re-reviewing a comment — the cost PR #302 paid
 twice.
+
+## 2026-10-06
+A check that was supposed to protect the look of the explainer pages could not actually fail in the
+one place it runs, and that is now fixed and proven rather than argued about.
+
+The check measures text contrast on all 58 pages. To do that it needs a real browser, and the
+browser is not available where the check runs automatically — so the part of it that decides *which
+pages to look at* was never really being tested. Last night's architecture review said this could be
+repaired for two lines of code. It was, and the repair also fixed two other problems that turned out
+to be the same problem wearing different labels.
+
+What makes this worth reporting is how it was proven. Simply showing the new tests pass would have
+proved nothing, because they also pass in the easy case — so the old code was run through the same
+machinery first to watch it fail. Old code: the fault slips through undetected. New code: all sixteen
+deliberate faults caught, each by the specific test that names it. Same machinery, same conditions,
+opposite results.
+
+Along the way this turned up a live failure already sitting on the branch. A tidy-up two commits ago
+removed a line of code that one of these deliberate-fault tests was pinned to by name. The test
+stopped applying, and the machinery then refused to report on **any** of the 176 faults in that batch
+rather than quietly report 175 — which is the right behaviour, but it took fifteen minutes of
+automated checking to say so. The same problem was found locally in four seconds, so a quick
+up-front check has been written down as worth building.
+
+<!--tech-->
+Phase 6 Q1's seam, landed: `main(argv, root=ROOT, measure_fn=measure)` and
+`measure_fn(pages, extra_css=extra, root=root)` in `scripts/check-page-contrast.py`. Defaults keep
+behaviour identical; `main` and `measure` have one production caller each and the only other importer
+takes the pure `contrast()`, so zero external call sites change.
+
+Closes **#239** (root half-threaded — the live trap: threading it alone destroys the only binding the
+D2 case has), **#240** (the un-pin case cannot fail in CI) and **#241** (the coverage fold has no
+falsifier). Phase 6's verdict that #240 and #241 are one defect wearing two severities held.
+
+⭐ **The harness is structurally browserless, which is stronger than the world #240 argued about.**
+`HARNESS_TREE` stages `node_modules/typescript` ONLY, and `page-contrast-probe.mjs:28` is
+`import { chromium } from 'playwright'` — so `measure()` can never succeed in a staged tree, in CI or
+locally. The `PLAYWRIGHT_BROWSERS_PATH` world built first was unnecessary; finding out why is what
+stopped an ambiguous green being read as a result.
+
+Evidence is a NEGATIVE CONTROL, not a pass — "killed" is expected in both worlds:
+pre-seam corpus severance (`root`→`ROOT`) → **1 mutation, 0 killed, 1 SURVIVOR**;
+post-seam full manifest → **16 killed, 16 attributed to the case each names, 0 survivors**.
+
+D2 classification moved with the fix, read from `check-main-drivable.classify`: routes
+`{param}` → `{argv, param}`, call sites 2 → 6. This guard is no longer the only `param`-only one, so
+#240's "nothing else carries its compliance" note is obsolete by the repair.
+
+Counts, each taken from the guard's own failure message: suite 94 → 104 cases; manifest 12 → 16;
+`EXPECTED_MUTATIONS` for that file 12 → 16; declared sum **1407 → 1411** (`got 1411 want 1407`).
+
+**#245 filed** — `c0200f60`'s correct `coverage()` extraction deleted the anchor line of entry *'the
+VANISHED advisory is silenced'*; present at `de1b66eb`, 0 occurrences after. `mutation-sweep (4)` on
+`470f4ba5`: `anchor NOT FOUND … NOT MEASURED — 175 of 176` after 14m58s. Retargeted to
+`if not vanished:` / `return []`, preserving the entry's declared meaning. The class wants a
+sub-second eager anchor-binding pass before any tree is staged.
+
+⚠ **BOUND:** the seam covers `main()`'s DECISION path — corpus resolution, palette selection, verdict
+rendering, refusal routing. It does NOT cover the probe and must not be described as testing the
+measurement. The cases are RECORDERS, not stubs.
+
+⚠ **#364 is NOT CONVERGED and `verify` stays RED on `check-review-recorded`** ("4 round(s) ran and
+guarded code was committed after every one of them") — red before this commit, and this commit adds
+guarded code. #242 remains open and now has the falsifier it lacked. Folding was stopped on a
+thrashing verdict; merging is the human gate.
+
+## 2026-10-06
+Correcting the entry above, within the hour, because its own "here is what this does not cover"
+paragraph was the part that was wrong.
+
+That entry said the repair covered four things. A review checked, and it covers three. The missing
+one is the part that decides which stylesheet gets measured — and one of the ways it can silently
+break is the exact bug this whole piece of work exists to prevent: the check going back to measuring
+the raw files instead of what a reader actually sees. The tests would not have noticed.
+
+Nothing shipped is worse than it was, and the three things the entry claimed about the look of the
+pages all hold. What was wrong was a sentence advertising its own honesty. The gap is now written
+down accurately in four places and tracked as work rather than quietly closed.
+
+<!--tech-->
+Round 5, Claude half standing in for Codex (`REVIEW GAP: codex` — no frontier model resolvable, both
+cached models are `visibility: "hide"`). **NOT CONVERGED: 1 High, 1 Medium, 5 Low; the High is in the
+deliverable.** Full doc: `docs/reviews/claude/unify-explainer-style-r5-claude.md`.
+
+**H1 — the BOUND named four components and measures three.** VERIFIED BY ME, not taken on trust:
+severing the palette path four ways each leaves the suite at **104/104 GREEN** — `extra = ""`,
+`--raw`/default inverted, the `--extra-css` branch, and `extra_css` dropped from the call site. ⛔ The
+first REINSTATES #221. The mechanism is **#239's own shape inside the fix for #239**: `_recorder`
+records `root` (a sentinel, asserted) and absorbs `extra_css` into a default it never reads.
+
+**M1 — the code comments named the wrong missing dependency.** Measured: this laptop has working
+Chromium (`measure()` → 214 samples in the real worktree) and the staged tree still refuses, with
+`ERR_MODULE_NOT_FOUND` for `playwright` — module resolution, before any browser lookup. Two
+environments, two different missing pieces: CI's `verify` job lacks the BROWSER; the mutation harness
+lacks the PACKAGE, because `HARNESS_TREE` stages `node_modules/typescript` only. Both code sites now
+say so; the backlog rows already did. Third pass over that one sentence.
+
+Corrected here: H1's and M1's prose, L1 (#245 cited 4.0s — a whole 16-mutation run — for a claim
+about an anchor pass; the pass itself measures **91 ms** over 1,411 entries / 1,419 find-strings,
+0 unbound), L3 (#236's present-tense **1,394** → **1,411**), L4 (the bound sat on #241 alone, now on
+all three closure rows), L5 (a dead `mkdir` beside its load-bearing twin).
+
+**#236 CLOSED as a side-effect of L3** — its premise is now false, verified from the API:
+`required_status_checks.contexts` is `["verify","schema-gates","mutation-sweep-complete"]` and
+`rulesets` is length 0, so the aggregator IS required.
+
+⭐ **CI on `2025da34`: all 8 shards PASS and `mutation-sweep-complete` PASS** — 1,411 entries,
+0 survivors. Shard 7 `[73/176] main() resolves its corpus from the MODULE root` and shard 8
+`[73/176] the measurement stops being handed the root (#239)` were both killed AND **attributed**,
+in CI's own browserless world. Shard 4 passes where `470f4ba5` gave `NOT MEASURED — 175 of 176`. So
+Phase 6 Q1 is verified by the whole-manifest run, not only by my scoped copy.
+
+⚠ **STILL OPEN AND DELIBERATELY NOT DONE:** H1's capability half (witness `extra_css`, plus manifest
+entries for the palette path including the `extra = ""` severance) and L2 (no entry severs the seam's
+own default, which is the only path production uses). Both are new code and new ratchet surface;
+folding was stopped on a thrashing verdict, so that is the owner's call, not mine. `verify` stays RED
+on `check-review-recorded`; #242 remains open; merging is the human gate.
+
+## 2026-10-07
+The second reviewer was finally reachable, and it immediately found something the first one had
+checked and passed.
+
+Every change here is meant to go past two independent reviewers. One of them has been unreachable,
+so last night's round ran with one — and the note explaining why was itself wrong, which is a
+separate story. With both reviewers present, the second one took thirty seconds to break a claim the
+first had confirmed.
+
+The claim was a paragraph describing what the new test coverage does and does not reach. It had
+already been corrected once for overstating itself. The second reviewer showed it was *still*
+overstating: one of the three things it claimed to cover — the part that reports a contrast failure
+— can be switched off by a single line, and every test still passes. The gate's actual job, refusing
+a change that makes text unreadable, is removable without anything going red.
+
+Two people wrote that list carefully and both were wrong, so the list itself was the problem. It is
+gone. In its place is a pointer to the tool that can actually answer the question. The hole is
+written down as work rather than quietly closed.
+
+<!--tech-->
+Round 5 **Codex half ran and is FILED** — `docs/reviews/codex/unify-explainer-style-r5-codex.md`,
+verdict `gate_ran: true`, model `gpt-5.5`, 4,963 chars, head `d03bdddd`, 0 intrusions. The earlier
+`REVIEW GAP: codex` is CLOSED, and was never justified: see the separate entry on
+`codex-frontier-model.py`.
+
+⛔ **CODEX HIGH, REPRODUCED BY ME:** `if problems:` → `if False and problems:` in `main()` leaves
+`--self-test` at **104/104 GREEN** and a one-entry scoped run reports **1 mutation, 0 killed, 1
+SURVIVOR**. Control is real: unsevered, `rc=1` with `FAILED — 1 contrast regression(s)`. So
+*verdict rendering* was NOT covered, which v2 of the bound claimed it was.
+⭐ **Codex refuted a claim the Claude half had CONFIRMED** — the two halves are not redundant.
+
+Four more routes equally unwitnessed (Codex Medium, all reproduced at 104/104 green):
+`--write-baseline` disabled, `--report` disabled, `summarise(samples)` → `summarise([])`,
+`population_notes` advisory loop emptied.
+
+⭐ **THE BOUND PARAGRAPH IS NOW ON ITS THIRD VERSION AND GIVES NO LIST AT ALL.** v1 named four
+components (Claude refuted palette selection); v2 named three (Codex refuted verdict rendering).
+Two careful enumerations, both wrong — so the enumeration is the defect, not the care. A
+hand-written coverage list is asserted by its author and checked by nobody. The authority is
+`check-plan-code.py --mutate .` + `scripts/mutations/*.json`, and the paragraph now says so.
+Corrected at the seam and on all three closure rows (#239/#240/#241), which carried it identically.
+
+**#248 FILED 🔴** for the five uncovered routes — raised above #246/#247 because it is not a ratchet
+gap about future change: one line removes the gate's verdict *today*. Filed not folded, per the
+owner's standing choice for this branch.
+
+⚠ Codex independently confirmed, by running them: suite 94→104, manifest 12→16, sum 1407→1411, the
+repo-wide anchor pass (59 manifests, 1,411 entries, 1,419 find-strings, 0 unbound), `HARNESS_TREE`
+staging `playwright exists False / typescript exists True`, and #236's branch-protection claim. It
+also ruled that editing `EXPECTED_MUTATIONS` in a pruned COPY does not invalidate the scoped result
+— it only balances the pruned manifest — while noting it proves nothing about the repo-wide sum,
+which it checked separately.
+
+⚠ **STILL NOT CONVERGED**: #242, #246, #247, #248 open; `verify` RED on `check-review-recorded`;
+merging is the human gate.

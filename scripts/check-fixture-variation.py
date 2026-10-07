@@ -359,6 +359,36 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # renders with no detail must EQUAL a hand-authored sentence in DECLARED_RENDER. No judgement
     # is computed; it moved to a human in a diff, which is the only authority a semantic question
     # has. The three keys below are its replacements.
+    # ⟳ 2026-10-02, backlog #221: the contrast harness, pinned in the commit that creates it —
+    # this guard REFUSED the file until it was, and separately caught `summarise(samples=…)`
+    # being passed one value at its only call site, which a `summarise` ignoring its argument
+    # would have survived. DERIVED by running this module's own `analyse()` on the delivered
+    # source, never transcribed. Twelve keys over seven pure functions; `findings = []`.
+    # ⟳ 2026-10-02, round 1 of #221: +2 keys for `dump_baseline`, which this guard
+    # refused for having a single call site. DERIVED by running analyse(), not typed.
+    "check-page-contrast.py": (
+        "baseline_payload.samples",
+        "baseline_payload.summary",
+        "collapse.rows",
+        "composite.bg",
+        "composite.fg",
+        "contrast.bg",
+        "contrast.fg",
+        "dump_baseline.obj",
+        "dump_baseline.path",
+        "is_served_page.text",
+        "load_baseline.path",
+        "luminance.rgb",
+        "parse_color.css",
+        "population_notes.baseline",
+        "population_notes.samples",
+        "sample_key.s",
+        "summarise.samples",
+        "threshold_for.px",
+        "threshold_for.weight",
+        "verdict.baseline",
+        "verdict.samples",
+    ),
     "check-rc-contract.py": (
         'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
         'defined_codes.matcher_src', 'handled_codes.codes', 'handled_codes.hook_src',
