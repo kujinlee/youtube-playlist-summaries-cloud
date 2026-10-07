@@ -1437,7 +1437,7 @@ EXPECTED_MUTATIONS = {
     # COUNT), and "the verdict stops reporting CROSSED" still reported — `worsened` catches the
     # same element, so the severance changes the MESSAGE and not the detection. Both are renamed
     # to what they sever. An entry whose NAME is wrong is a false claim with a green tick.
-    "scripts/check-page-contrast.py": 12,
+    "scripts/check-page-contrast.py": 16,
     # ⟳⟳ 2026-09-30, round 3 H1: 91 -> 94. `unanswerable_if_armed` and its two boundaries —
     # `prepared_prompt` and `do_arm` — because #202 fixed the conjunction on `--fire` and left it
     # alive on `--arm`, which is B1's error a third time.
@@ -4937,7 +4937,15 @@ def _self_test() -> int:
     # TWICE (1224 and 1394). Collapsed to one. A rule that fits three of four conflicts is
     # not a rule, and the fourth is the one that would have shipped.
     # ⚠ 1407 is the GUARD'S OWN FIGURE, read from `got 1407 want 1394`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1407)
+    # ⟳ 2026-10-06, Phase 6 Q1's `measure_fn` seam: 1407 -> 1411. `check-page-contrast`
+    # goes 12 -> 16 — the corpus severance, the root no longer forwarded (backlog #239),
+    # the success line losing its denominator, and the NOT A WHOLE-CORPUS PASS warning
+    # firing on the inverted population. All four are the gaps #240 and #241 named, and
+    # none of them could be manifested before the seam existed: every severance inside
+    # `main()` funnelled into one `return 2`, which the only case asserting it could not
+    # tell apart from any other CannotRun.
+    # ⚠ 1411 is the GUARD'S OWN FIGURE, read from `got 1411 want 1407`.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1411)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

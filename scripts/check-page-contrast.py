@@ -41,12 +41,14 @@ this guard protects nothing on its own, and saying so is the only honest state.
 says TREAT THIS AS NOT RUN. A contrast gate that goes quiet when it cannot see is worse than none,
 because the silence is indistinguishable from "everything is readable".
 
-    python3 scripts/check-page-contrast.py --self-test  # 94 cases
+    python3 scripts/check-page-contrast.py --self-test  # 104 cases
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import gzip
+import io
 import json
 import os
 import re
@@ -780,6 +782,102 @@ def _self_test() -> int:
         case("...and --raw over a DIFFERENT empty world refuses identically",
              main(["--raw"], root=_rootB), 2)
 
+
+    # ─── the `measure_fn` seam: what `root` ALONE could not bind ────────────────────────
+    # ⛔ THE CASES ABOVE RETURN 2 FOR A REASON THEY DO NOT ASSERT, AND THAT IS THE WHOLE
+    # DEFECT — backlog #240, confirmed by Phase 6 Q1 across five worlds. `main()` funnels
+    # every CannotRun into one `return 2`: probe missing, no pages, node absent, the browser
+    # run exiting non-zero. So severing the corpus line (`root` → `ROOT`) swaps one refusal
+    # cause for another and the integer never moves. MEASURED: that mutant is killed only
+    # where a browser exists, and SURVIVES in the world CI actually has — node present,
+    # Chromium absent (`ci.yml:53-57` installs node 22; nothing installs Chromium).
+    # ⚠ #240's own FAILS IF named a no-node runner, which is not that world. Corrected in
+    # the row; as first written it could have been satisfied by installing node.
+    # The seam is what lets a case reach PAST the browser and read the DECISION instead.
+
+    def _world(tmp: Path, names: tuple[str, ...]) -> Path:
+        """A constructed corpus. The viewport meta is what `is_served_page` keys on."""
+        (tmp / "docs" / "explainers").mkdir(parents=True)
+        (tmp / "scripts").mkdir()
+        for n in names:
+            (tmp / "docs" / "explainers" / n).write_text(
+                '<meta name="viewport" content="width=device-width"><p>hello</p>',
+                encoding="utf-8")
+        return tmp
+
+    # ⛔ A RECORDER, NOT A STUB. It asserts the real page list `main()` computed, so the
+    # binding is to the production value rather than to a fixture. `root=None` is a SENTINEL:
+    # the only way it survives to the assertion is if the call site stopped forwarding `root`,
+    # which is exactly backlog #239's half of this change.
+    def _recorder(samples: list[dict]):
+        seen: dict = {"pages": None, "root": None}
+
+        def fn(pages, extra_css: str = "", root=None, **kw):
+            seen["pages"] = sorted(q.name for q in pages)
+            seen["root"] = root
+            return samples
+        return fn, seen
+
+    # ⚠ TWO DISTINCT WORLDS WITH DISTINCT PAGE NAMES. `check-fixture-variation` has refused
+    # four drafts in this file for passing one value at every call site — a clause that
+    # IGNORED `root` would pass a suite that only ever built one world.
+    with tempfile.TemporaryDirectory() as _tdC:
+        _wC = _world(Path(_tdC), ("alpha.html", "beta.html"))
+        _fnC, _seenC = _recorder([s(9.0)])
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(["--raw"], root=_wC, measure_fn=_fnC)
+        case("main() measures exactly the pages of the world it was GIVEN, not the repo's",
+             _seenC["pages"], ["alpha.html", "beta.html"])
+        case("...and FORWARDS that same world to the measurement — backlog #239's half",
+             _seenC["root"], _wC)
+    with tempfile.TemporaryDirectory() as _tdD:
+        _wD = _world(Path(_tdD), ("gamma.html",))
+        _fnD, _seenD = _recorder([s(9.0)])
+        with contextlib.redirect_stdout(io.StringIO()):
+            main(["--raw"], root=_wD, measure_fn=_fnD)
+        case("...and a DIFFERENT world yields a DIFFERENT page list, so `root` is READ",
+             _seenD["pages"], ["gamma.html"])
+        case("...and the forwarded root tracks that second world too",
+             _seenD["root"], _wD)
+
+    # ─── the verdict LINE carries its own denominator, and says so when partial ─────────
+    # ⛔ ROUND 3 HIGH 1 SHIPPED AS PROSE WITH NO FALSIFIER — backlog #241. `coverage()` is
+    # pure and cased above; what was untestable was the RENDERING, because the browser sat
+    # between `main()` and its own output. With the seam it does not.
+    with tempfile.TemporaryDirectory() as _tdE:
+        _wE = _world(Path(_tdE), ("delta.html",))
+        _sE1 = s(9.0, page="delta.html")
+        _sE2 = s(8.0, page="delta.html", selector="body>h1")
+        _bE = _wE / "base.json.gz"
+        dump_baseline({"samples": {sample_key(_sE1): 9.0, sample_key(_sE2): 8.0},
+                       "summary": {"below_aa": 0}}, _bE)
+
+        # measured ONE of the TWO baselined sites -> 50% and the partial warning
+        _fnE, _ = _recorder([_sE1])
+        _bufE = io.StringIO()
+        with contextlib.redirect_stdout(_bufE):
+            _rcE = main(["--raw", "--against", str(_bE)], root=_wE, measure_fn=_fnE)
+        _outE = _bufE.getvalue()
+        case("a partial run still exits 0 — this ratchets, it does not bar", _rcE, 0)
+        case("...and the SUCCESS LINE names the fraction of baseline it covered",
+             "50.0% of baseline (1 of 2 site(s))" in _outE, True)
+        case("...and says NOT A WHOLE-CORPUS PASS, so it cannot read as whole-corpus",
+             "NOT A WHOLE-CORPUS PASS" in _outE, True)
+
+        # measured BOTH -> 100% and SILENCE about partiality. The pair is what makes the
+        # warning falsifiable in BOTH directions: a branch hard-wired to fire fails here,
+        # and a branch emptied out fails above.
+        _fnF, _ = _recorder([_sE1, _sE2])
+        _bufF = io.StringIO()
+        with contextlib.redirect_stdout(_bufF):
+            _rcF = main(["--raw", "--against", str(_bE)], root=_wE, measure_fn=_fnF)
+        _outF = _bufF.getvalue()
+        case("a WHOLE-corpus run reports full coverage", _rcF, 0)
+        case("...and names it as 100%, a different number from the same code path",
+             "100.0% of baseline (2 of 2 site(s))" in _outF, True)
+        case("...and stays SILENT about partiality rather than warning always",
+             "NOT A WHOLE-CORPUS PASS" in _outF, False)
+
     print(f"\n{ok}/{ok + fail} self-test cases passed")
 
     return 1 if fail else 0
@@ -787,8 +885,24 @@ def _self_test() -> int:
 
 # ── entry point ─────────────────────────────────────────────────────────────────────────────────
 
-def main(argv: list[str], root: Path = ROOT) -> int:
-    """⛔ `root` IS DEFAULTED SO A CASE CAN DRIVE THIS OVER A WORLD IT BUILT — ADR-0014."""
+def main(argv: list[str], root: Path = ROOT, measure_fn=measure) -> int:
+    """⛔ `root` IS DEFAULTED SO A CASE CAN DRIVE THIS OVER A WORLD IT BUILT — ADR-0014.
+
+    ⛔ `measure_fn` IS THE SEAM, AND IT EXISTS BECAUSE `root` ALONE DID NOT BIND. Phase 6
+    (`docs/reviews/architecture-review-2026-10-06-contrast-layer.md`, Q1) measured the four
+    worlds: severing this function's corpus line (`root` → `ROOT`) is KILLED only where a
+    browser exists, and SURVIVES in the world CI actually has — node present, Chromium absent.
+    Backlog #240. The cause is that every CannotRun funnels into one `return 2`, so a severance
+    that swaps one refusal cause for another is invisible to a case asserting the integer.
+
+    ⚠ THE BOUND, STATED RATHER THAN HIDDEN. A `measure_fn` double covers this function's
+    DECISION path — corpus resolution, palette selection, verdict rendering, refusal routing.
+    It does NOT cover the probe, and `a-mocked-boundary-tests-the-contract-you-imagined` is why
+    that is said plainly: the probe is already unexercised by the suite in CI (no Chromium), so
+    the seam adds coverage without removing any. It must not be described as testing the
+    measurement. The cases below are RECORDERS, not stubs — they assert the real page list
+    this function computed, so the binding is to the production value, not to a fixture.
+    """
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--write-baseline", metavar="PATH")
@@ -822,7 +936,13 @@ def main(argv: list[str], root: Path = ROOT) -> int:
         else:
             import page_chrome
             extra = re.sub(r"</?style>", "", page_chrome.standard_palette_css())
-        samples = measure(pages, extra_css=extra)
+        # ⛔ `root=root` IS LOAD-BEARING AND MUST NOT BE REMOVED — backlog #239, and
+        # ⛔ IT MUST NOT BE ADDED WITHOUT THE `measure_fn` SEAM EITHER. Measured in Phase 6:
+        # threading `root` on its own moves the probe-missing refusal AHEAD of the corpus
+        # path, so control and severed produce an IDENTICAL rc and an IDENTICAL message
+        # even with a browser present — destroying the only binding the D2 case had.
+        # #239 and #240 are one change or neither.
+        samples = measure_fn(pages, extra_css=extra, root=root)
     except CannotRun as exc:
         print(f"FAILED: {exc}")
         return 2

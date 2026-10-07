@@ -14113,3 +14113,68 @@ And the only guarded-code change after round 11's verdict is a one-word **commen
 `ci.yml` (`29 of 37` → `27 of 37`) that round 11 itself asked for, declared `NO-REVIEW:` per
 `review-method.md:118` rather than spending a round re-reviewing a comment — the cost PR #302 paid
 twice.
+
+## 2026-10-06
+A check that was supposed to protect the look of the explainer pages could not actually fail in the
+one place it runs, and that is now fixed and proven rather than argued about.
+
+The check measures text contrast on all 58 pages. To do that it needs a real browser, and the
+browser is not available where the check runs automatically — so the part of it that decides *which
+pages to look at* was never really being tested. Last night's architecture review said this could be
+repaired for two lines of code. It was, and the repair also fixed two other problems that turned out
+to be the same problem wearing different labels.
+
+What makes this worth reporting is how it was proven. Simply showing the new tests pass would have
+proved nothing, because they also pass in the easy case — so the old code was run through the same
+machinery first to watch it fail. Old code: the fault slips through undetected. New code: all sixteen
+deliberate faults caught, each by the specific test that names it. Same machinery, same conditions,
+opposite results.
+
+Along the way this turned up a live failure already sitting on the branch. A tidy-up two commits ago
+removed a line of code that one of these deliberate-fault tests was pinned to by name. The test
+stopped applying, and the machinery then refused to report on **any** of the 176 faults in that batch
+rather than quietly report 175 — which is the right behaviour, but it took fifteen minutes of
+automated checking to say so. The same problem was found locally in four seconds, so a quick
+up-front check has been written down as worth building.
+
+<!--tech-->
+Phase 6 Q1's seam, landed: `main(argv, root=ROOT, measure_fn=measure)` and
+`measure_fn(pages, extra_css=extra, root=root)` in `scripts/check-page-contrast.py`. Defaults keep
+behaviour identical; `main` and `measure` have one production caller each and the only other importer
+takes the pure `contrast()`, so zero external call sites change.
+
+Closes **#239** (root half-threaded — the live trap: threading it alone destroys the only binding the
+D2 case has), **#240** (the un-pin case cannot fail in CI) and **#241** (the coverage fold has no
+falsifier). Phase 6's verdict that #240 and #241 are one defect wearing two severities held.
+
+⭐ **The harness is structurally browserless, which is stronger than the world #240 argued about.**
+`HARNESS_TREE` stages `node_modules/typescript` ONLY, and `page-contrast-probe.mjs:28` is
+`import { chromium } from 'playwright'` — so `measure()` can never succeed in a staged tree, in CI or
+locally. The `PLAYWRIGHT_BROWSERS_PATH` world built first was unnecessary; finding out why is what
+stopped an ambiguous green being read as a result.
+
+Evidence is a NEGATIVE CONTROL, not a pass — "killed" is expected in both worlds:
+pre-seam corpus severance (`root`→`ROOT`) → **1 mutation, 0 killed, 1 SURVIVOR**;
+post-seam full manifest → **16 killed, 16 attributed to the case each names, 0 survivors**.
+
+D2 classification moved with the fix, read from `check-main-drivable.classify`: routes
+`{param}` → `{argv, param}`, call sites 2 → 6. This guard is no longer the only `param`-only one, so
+#240's "nothing else carries its compliance" note is obsolete by the repair.
+
+Counts, each taken from the guard's own failure message: suite 94 → 104 cases; manifest 12 → 16;
+`EXPECTED_MUTATIONS` for that file 12 → 16; declared sum **1407 → 1411** (`got 1411 want 1407`).
+
+**#245 filed** — `c0200f60`'s correct `coverage()` extraction deleted the anchor line of entry *'the
+VANISHED advisory is silenced'*; present at `de1b66eb`, 0 occurrences after. `mutation-sweep (4)` on
+`470f4ba5`: `anchor NOT FOUND … NOT MEASURED — 175 of 176` after 14m58s. Retargeted to
+`if not vanished:` / `return []`, preserving the entry's declared meaning. The class wants a
+sub-second eager anchor-binding pass before any tree is staged.
+
+⚠ **BOUND:** the seam covers `main()`'s DECISION path — corpus resolution, palette selection, verdict
+rendering, refusal routing. It does NOT cover the probe and must not be described as testing the
+measurement. The cases are RECORDERS, not stubs.
+
+⚠ **#364 is NOT CONVERGED and `verify` stays RED on `check-review-recorded`** ("4 round(s) ran and
+guarded code was committed after every one of them") — red before this commit, and this commit adds
+guarded code. #242 remains open and now has the falsifier it lacked. Folding was stopped on a
+thrashing verdict; merging is the human gate.

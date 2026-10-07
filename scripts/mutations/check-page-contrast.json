@@ -99,12 +99,12 @@
   "expect": "a gradient-backed site is not counted as below AA, however bad its nominal ratio"
  },
  {
-  "name": "the VANISHED advisory is silenced, so a baselined page absent from a run says nothing",
+  "name": "the VANISHED advisory is silenced unconditionally, so a baselined page absent from a run says nothing",
   "file": "scripts/check-page-contrast.py",
   "edits": [
    [
-    "    vanished = sorted(k for k in baseline.get(\"samples\", {}) if k not in seen)",
-    "    vanished = []"
+    "    if not vanished:\n        return []",
+    "    return []"
    ]
   ],
   "expect": "a baselined site NOT measured this run is reported"
@@ -130,5 +130,61 @@
    ]
   ],
   "expect": "a gradient-backed site is NOT written into the baseline"
+ },
+ {
+  "name": "main() resolves its corpus from the MODULE root instead of the one it was given, so a case cannot build the world it measures",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        pages = corpus(root / \"docs\" / \"explainers\")",
+    "        pages = corpus(ROOT / \"docs\" / \"explainers\")"
+   ]
+  ],
+  "expect": [
+   "main() measures exactly the pages of the world it was GIVEN, not the repo's",
+   "...and a DIFFERENT world yields a DIFFERENT page list, so `root` is READ"
+  ]
+ },
+ {
+  "name": "the measurement stops being handed the root it was given (backlog #239's half), so the probe is looked for in the repo rather than the constructed world",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        samples = measure_fn(pages, extra_css=extra, root=root)",
+    "        samples = measure_fn(pages, extra_css=extra)"
+   ]
+  ],
+  "expect": [
+   "...and FORWARDS that same world to the measurement — backlog #239's half",
+   "...and the forwarded root tracks that second world too"
+  ]
+ },
+ {
+  "name": "the success line drops its denominator and reverts to the pre-round-3 wording, so a 54%-coverage green reads as whole-corpus again",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        print(f\"  OK over {_cov} — no element crossed below AA and none already failing got worse\")",
+    "        print(\"  OK — no element crossed below AA and none already failing got worse\")"
+   ]
+  ],
+  "expect": [
+   "...and the SUCCESS LINE names the fraction of baseline it covered",
+   "...and names it as 100%, a different number from the same code path"
+  ]
+ },
+ {
+  "name": "the NOT A WHOLE-CORPUS PASS warning fires on the wrong population — silent when the run was partial, loud when it was complete",
+  "file": "scripts/check-page-contrast.py",
+  "edits": [
+   [
+    "        if _missed:",
+    "        if not _missed:"
+   ]
+  ],
+  "expect": [
+   "...and says NOT A WHOLE-CORPUS PASS, so it cannot read as whole-corpus",
+   "...and stays SILENT about partiality rather than warning always"
+  ]
  }
 ]
