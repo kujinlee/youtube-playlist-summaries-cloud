@@ -728,6 +728,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # (`promotion_path`, `promote`), the one overwrite policy (`overwrite_refusal`), the id's
     # validation (`review_identity`), and the pure helpers this file already had cases for but had
     # never pinned (`case_line`, `timeout_advice`, `unredirected`, `reviewed_state.repo_root`).
+    # ⚠ DERIVED BY RUNNING `analyse()`, not written by hand — this dict's own rule.
+    # Newly examined 2026-10-07: the file gained a `--self-test`, which is what puts it in
+    # this population at all. `usable_models` is the pure ordering rule split out of the
+    # cache read so it could be cased on a machine with no `~/.codex` — which CI is.
+    'codex-frontier-model.py': (
+        'refusal_message.data',
+        'usable_models.data',
+    ),
     'codex-review.py': (
         'case_line.got', 'case_line.name', 'case_line.ok', 'case_line.reason',
         'case_line.want', 'classify.exit_code', 'classify.message', 'classify.min_chars',

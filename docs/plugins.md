@@ -125,16 +125,28 @@ Both must complete before marking a task done. ⛔ **SPAWNING THE SUBAGENT FOR T
 | Adversarial review | `codex:rescue` | codex |
 
 **Codex model — resolve the current frontier dynamically, never hard-code a version.**
-OpenAI rotates frontier model names (gpt-5.3 → gpt-5.4 → gpt-5.5 → …) and removes old ones
+OpenAI rotates frontier model names (gpt-5.3 → gpt-5.4 → gpt-5.5 → gpt-5.6-* → gpt-6-* → gpt-6.1-sol → …) and removes old ones
 from the ChatGPT-account (OAuth) auth path. The codex CLI leaves `--model` unset by default and
 falls back to a slug baked into the binary, which can be a removed model → HTTP 400. So the
 adversarial review must select whatever OpenAI currently ships as frontier:
 
 ```bash
 # Prints the current frontier slug from the live ~/.codex/models_cache.json (lowest priority).
-python3 scripts/codex-frontier-model.py            # e.g. gpt-5.5 today
+python3 scripts/codex-frontier-model.py            # e.g. gpt-6.1-sol on 2026-10-07
 python3 scripts/codex-frontier-model.py --write-config   # also syncs ~/.codex/config.toml
 ```
+
+⛔ **THE MODEL LIST IS KEYED TO THE CLI VERSION, and a stale CLI takes this gate offline while
+looking like a Codex outage.** Measured 2026-10-07: on CLI 0.142.5 the cache held TWO models, both
+`visibility: "hide"`; after `codex update` to 0.160.1 the same account had **10, seven `list`**,
+topped by `gpt-6.1-sol` — two generations the old client was never offered. ⚠ **NEVER loosen the
+resolver to accept a hidden model.** It is a SELECTION POLICY — use only models marked `list`.
+**No claim is made about what `visibility` MEANS**: the vendor documents it as *"Visibility of a
+model in the picker **or APIs**"*, so neither "withdrawn" nor "the picker, not callability" is
+licensed. The before/after is an ASSOCIATION, not a measured server-side cause. If it refuses, READ ITS MESSAGE (it names the hidden near-misses, the `client_version` and
+`codex update`) and verify Codex separately with `codex exec -m <slug>` **from inside a git
+worktree** before recording a `REVIEW GAP`. Full account:
+[`process-rationale.md`](process-rationale.md) → *The review gate that reported an outage it did not have*.
 
 Run `--write-config` to keep `~/.codex/config.toml`'s `model` in sync (a managed, auto-derived
 block — do not hand-edit the slug); or pass it explicitly, `codex … -m "$(python3 scripts/codex-frontier-model.py)"`.
