@@ -14113,3 +14113,173 @@ And the only guarded-code change after round 11's verdict is a one-word **commen
 `ci.yml` (`29 of 37` → `27 of 37`) that round 11 itself asked for, declared `NO-REVIEW:` per
 `review-method.md:118` rather than spending a round re-reviewing a comment — the cost PR #302 paid
 twice.
+
+## 2026-10-07
+A warning that fired on every single stop was wrong, and you had to be the one to notice — twice
+over, because it was wrong for two separate reasons.
+
+There is a check whose whole job is to say "CI is running and nobody is watching it", so a result
+never quietly goes unread. It had started saying that constantly, naming twelve checks as still
+running on a commit whose CI had been finished and green for hours. It also said nothing was
+watching when something was.
+
+The first cause: GitHub reports a check's progress in one of two different shapes, and the check
+only understood one of them. For the shape it did not understand it found a blank where it expected
+a status — and, sensibly, treats anything it does not recognise as "still running". So every
+finished check read as unfinished. The caution was right; it just did not know the answer was
+written in a different field.
+
+The second cause: the little file recording "someone is watching this" was being written per
+checkout. Work happening in a second checkout wrote it there, while the check looked in the first
+one, found nothing, and concluded nobody was watching. It now lives in one place the whole
+repository shares.
+
+And the message itself has gone from eleven lines to three. Most of it was instructions addressed to
+the assistant — how to arm a watcher, which command to run — printed where a person reads. The fact
+that CI is unwatched is worth your attention; the procedure for fixing it is not.
+
+<!--tech-->
+`scripts/check-ci-watched.py`. ⛔ **Root cause: `statusCheckRollup` mixes two GraphQL types that
+share no field.** `CheckRun` carries `status` + `conclusion` and **no `state`**; `StatusContext`
+carries `state` and no `status`. `unresolved_checks` keyed on `state` alone, so
+`str(None).upper()` produced the string `"NONE"`, in neither set, and the deliberate fail-closed
+fallback counted every CheckRun as pending. MEASURED on PR #366 (merged, 12/12 completed): 12 of 12
+reported unresolved. Split into a pure `row_is_resolved(row)` that dispatches on which field is
+PRESENT; fail-closed intent kept for unknown values and unknown shapes.
+
+⛔ **Second defect, raised by the owner:** `SENTINEL = ROOT / ".claude/ci-watching"` is
+**per-worktree**. A watcher armed from `wt-364` was invisible to the hook running in the main tree,
+so "NOTHING IS WATCHING" was false while a Monitor streamed all 8 jobs. Now resolved against
+`git rev-parse --git-common-dir`, which returns the same absolute path from every worktree.
+⚠ `sentinel_for(common_dir, root)` is **pure and split from the fetch** — the first draft did the
+subprocess and the decision together and went RED inside the mutation harness, whose staged copy is
+not a git repo. A red control is `NOT MEASURED`, worse than no case. The repo's own
+`separate-the-rule-from-the-fetch`.
+
+⚠ **The message was for the assistant, not the reader** — asked directly: *"these lines are not
+adding value to human. Are these for yourself?"* They were. 11 lines → 3, with the one remaining
+instruction explicitly marked as the agent's. The consequence clause stayed because a case asserts
+it, and the case is defending a real property.
+
+⭐ **A correct refactor orphaned two PRE-EXISTING mutation anchors** — the second time in one
+session, after the one that cost a 14m58s `NOT MEASURED` in CI. Found by running the eager
+anchor-binding pass **backlog #245** proposes: **437 ms** over every manifest, 3 unbound. Entries 1
+and 3 retargeted onto `row_is_resolved` with their meaning preserved. That is now two measured
+instances arguing for #245 rather than one.
+
+Counts: suite **58 → 72** cases; manifest **30 → 35** (3 retargeted, 5 added); `EXPECTED_MUTATIONS`
+30 → 35; declared sum **1394 → 1399**, the guard's own figure. Scoped verification: **35 mutation(s),
+35 killed, 35 attributed to the case each names, 0 survivor(s)** in 12.8s.
+
+⚠ **EXPECT A CONFLICT WITH PR #364**, which moves the same declared-sum line 1407 → 1411. Two
+branches bumping one counter is the recorded `parallel-branches-append-to-one-log` shape — resolve by
+RE-DERIVING from the merged dict, never by picking a side.
+
+Also rides here: the two memory files from the #364 session (`a-bound-enumerates-what-is-witnessed`,
+`scoped-mutation-run-in-four-seconds`) and their index rows. ⚠ `docs/memory/` is HARDLINKED to the
+live memory directory, and master held one memory row the main tree's checkout lacked — so only the
+two new rows were applied, never the whole file.
+
+## 2026-10-07
+And the adversarial review gate was not actually broken — it had been switched off by a one-word
+mismatch, and the session before this one wrote the outage down as a fact.
+
+Every change here goes past two independent reviewers, one of which is a different company's model.
+Last night that second reviewer could not be reached, the session recorded "unavailable", fell back
+to a single reviewer, and moved on. That was wrong. The tool was installed, logged in and working
+the whole time. What failed was the small script that picks which model to ask for: it only accepted
+models the vendor marks as *visible in the picker*, and both models currently offered are marked
+hidden — while also being marked usable. Asking for one by name works first time.
+
+So a review gate reported itself unavailable while the thing it gates was fine, and the cost was a
+whole review round done by one reviewer instead of two. Visibility is now a preference rather than a
+requirement: listed models first, hidden-but-usable ones after, and a refusal only when there is
+genuinely nothing to ask.
+
+<!--tech-->
+`scripts/codex-frontier-model.py`. ⛔ **The predicate required `visibility == "list"`.** Measured
+2026-10-07: `~/.codex/models_cache.json` (fetched 02:42Z, client 0.142.5) holds exactly two models —
+`gpt-5.5` (priority 13) and `codex-auto-review` (priority 43) — **both `supported_in_api: true`,
+both `visibility: "hide"`**. So `resolve_candidates()` found none and exited 1, and
+`codex-review.py` could not resolve a model: PR #364's round-5 Codex half was filed as
+`REVIEW GAP: codex`.
+
+⭐ **THE GAP WAS NOT REAL, and a smoke test is all it took:**
+`codex exec -m gpt-5.5 -s danger-full-access --output-last-message <f>` run **from inside a git
+worktree** returns rc=0 and writes `CODEX-OK`. `"hide"` means *absent from the model picker*, not
+*unusable* — `supported_in_api` is the field that answers usability, and it said yes.
+⚠ The first two smoke attempts failed for MY reasons, not Codex's: run from the scratchpad (*"Not
+inside a trusted directory"*) and with stdin left open. A tool reporting a real failure for an
+invocation error is the thing to rule out before believing an outage.
+
+New pure `usable_models(data)`: listed tier first, then hidden, each by ascending `priority`;
+excludes anything not `supported_in_api`, without a numeric priority (⚠ **including a BOOLEAN one —
+`True` is an `int` in Python**), or without a slug. The refusal now fires only when no API-supported
+model exists at all, and says how many models were present.
+
+Gained a `--self-test` (**12 cases**, pure, no `~/.codex` needed — which is what CI is). ⚠ Adding it
+is what pulled the file into `check-fixture-variation`'s population; its key set
+(`usable_models.data`) is pinned in `EXAMINED_KEYS`, **derived by running `analyse()`** per that
+dict's own rule rather than written by hand.
+
+⚠ **The earlier claim that "Codex is genuinely unavailable" was wrong and is corrected here.** It
+was stated after one sanctioned retry of `--write-config`, which fails for the same reason — a retry
+of the broken path is not evidence about the dependency. The r5 Codex half has been re-dispatched
+with `--model gpt-5.5` explicitly, since PR #364's tree still carries the old resolver.
+
+## 2026-10-07
+Correcting the entry above: the fix it describes was the wrong fix, and you caught it with one
+question.
+
+That entry said the model-picking script had been too strict, and that loosening it to accept models
+the vendor marks as hidden was the repair. You asked why we would use a hidden model instead of a
+listed one. The honest answer turned out to be that there were no listed ones — and the reason for
+that was not the script at all. The tool was eighteen versions out of date, and the vendor decides
+which models to offer based on the version asking.
+
+After a one-command update, the same account is offered ten models instead of two, seven of them
+listed, headed by one described as the latest model for coding work. The original strict rule now
+works exactly as written, unchanged.
+
+So the loosening is gone. Had it shipped, every review would quietly have run on a model the vendor
+labels "Legacy" while two newer generations sat available, and nothing would ever have said so. What
+stays is a refusal that explains itself: it names what it found, the version it asked as, and the
+one command that fixes it.
+
+<!--tech-->
+⛔ **REVERTED: `visibility == "list"` is REQUIRED again.** The earlier entry's `usable_models`
+accepted hidden models; that is withdrawn. ⚠ Its second candidate would have been
+`codex-auto-review` — `tool_mode: code_mode_only`, purpose-built for approval review — so once
+`gpt-5.5` is withdrawn the resolver would have silently selected a special-purpose model and
+reviews would have run on the wrong kind of thing WHILE REPORTING SUCCESS.
+
+⭐ **MEASURED BEFORE AND AFTER `codex update` (0.142.5 → 0.160.1), same account:**
+
+| | models | `visibility: list` | resolver returns |
+|---|---|---|---|
+| 0.142.5 | 2 | **0** | refuses |
+| 0.160.1 | **10** | **7** | **`gpt-6.1-sol`** |
+
+The old client was never offered `gpt-6.1-sol` ("Latest workhorse model for coding and everyday
+work"), `gpt-6-astra` ("Frontier intelligence for the most demanding work"), or any `gpt-6-*`/
+`gpt-5.6-*` at all. `hide` was the server saying *not this one*, and it was right.
+
+What ships instead of the loosening: a **diagnostic refusal** (`refusal_message`, pure) naming the
+hidden near-misses WITH their descriptions, the `client_version` the server keyed its answer to,
+`codex update`, and explicitly that a refusal here is **not** evidence Codex is unavailable — the
+inference that cost a whole review round. **7 mutation entries** pin exactly those sentences plus
+the api/bool/order filters; entry 1 severs the LISTED requirement itself.
+
+Counts: resolver self-test **19 cases** (new file in `check-selftest-counts.POPULATION` and in
+`check-fixture-variation.EXAMINED_KEYS`, keys `usable_models.data` + `refusal_message.data`, derived
+by running `analyse()`); new manifest **7 entries**; declared sum **1399 → 1406**. Scoped run across
+both changed manifests: **42 mutation(s), 42 killed, 42 attributed, 0 survivor(s)**.
+
+⚠ `docs/plugins.md` was 4 lines over its 260-line budget after this; `check-docs.py` refused and
+said move detail rather than raise the budget, so the full account is in
+`process-rationale.md` → *The review gate that reported an outage it did not have*, with a pointer
+left behind. Its stale `# e.g. gpt-5.5 today` example is now `gpt-6.1-sol`.
+
+⚠ **PR #364's round-5 Codex half was run on `gpt-5.5`** — before this was understood. It still found
+a real High, but a re-run on `gpt-6.1-sol` would be a stronger gate and is worth considering before
+that branch merges.

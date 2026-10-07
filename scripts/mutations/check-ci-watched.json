@@ -1,11 +1,11 @@
 [
   {
-    "name": "the unknown-state fallback is dropped, so a state GitHub adds later reads as finished and the warning goes silent on exactly the case it was not designed for",
+    "name": "the unknown-state fallback is dropped, so a state GitHub adds later reads as finished and the warning goes silent on exactly the case it was not designed for ⟳ retargeted 2026-10-07: the row-shape fix moved this clause into `row_is_resolved`",
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "if state in UNRESOLVED or state not in {\"SUCCESS\", \"FAILURE\", \"CANCELLED\", \"SKIPPED\",\n                                                \"NEUTRAL\", \"TIMED_OUT\", \"STALE\", \"ERROR\"}:",
-        "if state in UNRESOLVED:"
+        "        return s not in UNRESOLVED and s in RESOLVED_STATES",
+        "        return s not in UNRESOLVED"
       ]
     ],
     "expect": [
@@ -26,12 +26,12 @@
     ]
   },
   {
-    "name": "case folding is dropped, so a lowercase terminal state is misread as unresolved",
+    "name": "case folding is dropped, so a lowercase terminal state is misread as unresolved ⟳ retargeted 2026-10-07 (same refactor)",
     "file": "scripts/check-ci-watched.py",
     "edits": [
       [
-        "state = str(r.get(\"state\", \"\")).upper()",
-        "state = str(r.get(\"state\", \"\"))"
+        "        s = str(state).upper()",
+        "        s = str(state)"
       ]
     ],
     "expect": [
@@ -383,5 +383,69 @@
       ]
     ],
     "expect": "a WARN appends exactly ONE line, and it is the `unwatched` class"
+  },
+  {
+    "name": "a CheckRun's status is read as a verdict whatever it says, so an IN_PROGRESS check reports finished",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        return str(status).upper() == \"COMPLETED\"",
+        "        return str(status).upper() != \"COMPLETED\""
+      ]
+    ],
+    "expect": [
+      "an IN_PROGRESS CheckRun is UNRESOLVED",
+      "...and a QUEUED one is too"
+    ]
+  },
+  {
+    "name": "the row-shape dispatch is inverted, so CheckRun rows fall through to the absent `state` field again (the original false alarm)",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    status = r.get(\"status\")\n    if status is not None:",
+        "    status = r.get(\"status\")\n    if status is None:"
+      ]
+    ],
+    "expect": [
+      "⭐ a COMPLETED CheckRun is RESOLVED even though its `state` is None",
+      "⭐ twelve finished CheckRuns and nothing armed -> QUIET, not a warning"
+    ]
+  },
+  {
+    "name": "a row of unknown shape is read as FINISHED instead of failing closed",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        return s not in UNRESOLVED and s in RESOLVED_STATES\n    return False",
+        "        return s not in UNRESOLVED and s in RESOLVED_STATES\n    return True"
+      ]
+    ],
+    "expect": "a row carrying NEITHER field is UNRESOLVED, because the shape is unknown"
+  },
+  {
+    "name": "an EMPTY git-common-dir answer is treated as the repo root instead of as unreachable, so the sentinel lands beside a path that does not exist",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    if not common_dir:",
+        "    if common_dir is None:"
+      ]
+    ],
+    "expect": "...and an EMPTY answer is treated as unreachable, not as the repo root"
+  },
+  {
+    "name": "the sentinel ignores the common git dir and goes back to a per-worktree .claude/ path, so arming in one worktree is invisible in another",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "    d = Path(common_dir)\n    return (d if d.is_absolute() else (root / d).resolve()) / \"ci-watching\"",
+        "    return root / \".claude/ci-watching\""
+      ]
+    ],
+    "expect": [
+      "⭐ an ABSOLUTE common git dir puts the sentinel there, so every worktree shares one",
+      "...and against a DIFFERENT root it lands somewhere else, so `root` is READ"
+    ]
   }
 ]

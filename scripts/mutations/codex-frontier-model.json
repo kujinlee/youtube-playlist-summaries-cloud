@@ -1,0 +1,79 @@
+[
+  {
+    "name": "the LISTED requirement is loosened to accept hidden models, silently committing every adversarial review to a model the vendor has stopped offering",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    listed = sorted((m for m in api if m.get(\"visibility\") == \"list\"),",
+        "    listed = sorted((m for m in api if m.get(\"visibility\") != \"nope\"),"
+      ]
+    ],
+    "expect": "⭐ a HIDDEN model is EXCLUDED even when supported_in_api — `hide` means not this one"
+  },
+  {
+    "name": "the supported_in_api filter is dropped, so a model the API cannot serve is offered to --model",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "           if m.get(\"supported_in_api\")\n           and isinstance(m.get(\"priority\"), (int, float))",
+        "           if isinstance(m.get(\"priority\"), (int, float))"
+      ]
+    ],
+    "expect": "a model not supported in the API is excluded"
+  },
+  {
+    "name": "the boolean-priority guard is dropped, so True ranks as priority 1 and sorts ahead of every real model",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "           and not isinstance(m.get(\"priority\"), bool)   # True is an int in Python\n",
+        ""
+      ]
+    ],
+    "expect": "...and a BOOLEAN priority is excluded, because True is an int in Python"
+  },
+  {
+    "name": "the ordering is reversed, so the LEAST frontier model is offered first",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    listed = sorted((m for m in api if m.get(\"visibility\") == \"list\"),\n                    key=lambda m: m[\"priority\"])",
+        "    listed = sorted((m for m in api if m.get(\"visibility\") == \"list\"),\n                    key=lambda m: -m[\"priority\"])"
+      ]
+    ],
+    "expect": "...ordered by ASCENDING priority, most-frontier first"
+  },
+  {
+    "name": "the refusal stops naming the hidden near-misses, which are the only clue to what is wrong",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "        bits.append(\"  hidden but otherwise usable: \"\n                    + \", \".join(f\"{m['slug']} ({m.get('description') or 'no description'})\"\n                                for m in near))",
+        "        bits.append(\"  some models are hidden\")"
+      ]
+    ],
+    "expect": "the refusal NAMES the hidden near-misses, which are the whole clue"
+  },
+  {
+    "name": "the refusal stops naming `codex update`, leaving the reader with a predicate and no action",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    bits.append(\"  MOST LIKELY CAUSE: this Codex CLI is behind, and the server keys the model list \"\n                \"to client_version. Run `codex update`, then re-run this.\")",
+        "    bits.append(\"  cause unknown.\")"
+      ]
+    ],
+    "expect": "...and the one command that changes any of it"
+  },
+  {
+    "name": "the refusal drops the sentence saying it is NOT evidence Codex is unavailable — the inference that cost a whole review round",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    bits.append(\"  ⛔ TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is \"",
+        "    bits.append(\"  ⛔ Codex appears to be unavailable. (\""
+      ]
+    ],
+    "expect": "...and says explicitly that this is NOT evidence Codex is unavailable"
+  }
+]

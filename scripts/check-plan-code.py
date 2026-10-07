@@ -841,7 +841,8 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 30,
+    "scripts/check-ci-watched.py": 35,
+    "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -3415,6 +3416,7 @@ def _self_test() -> int:
                                       # manifest — and it is NOT a `check-*` guard, so this list is
                                       # the only place that names it. Its R4 debt is dropped from
                                       # WIDENED_MANIFEST_DEBT in the same commit.
+                                      "scripts/codex-frontier-model.py",
                                       "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
@@ -4911,7 +4913,31 @@ def _self_test() -> int:
     # #366 took master 1178 -> 1211). ⚠ 1394 is the GUARD'S OWN FIGURE, read from
     # `got 1394 want 1211`, not computed by hand — the arithmetic above is a cross-check that
     # agrees, and agreement is not provenance.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1394)
+    # ⟳ 2026-10-07, the CI-watch row-shape fix: 1394 -> 1399. `check-ci-watched` goes 30 -> 35
+    # — FIVE new entries: the CheckRun status read as a verdict whatever it says, the row-shape
+    # dispatch inverted (which IS the original false alarm), an unknown row shape read as finished
+    # instead of failing closed, an empty git-common-dir answer treated as the repo root, and the
+    # sentinel ignoring that answer to go back to a per-worktree `.claude/` path.
+    # ⚠ TWO PRE-EXISTING ENTRIES WERE RETARGETED IN THE SAME COMMIT, not added: splitting
+    # `row_is_resolved` out of `unresolved_checks` ORPHANED entries 1 and 3, whose anchors named
+    # the old combined condition. Found by the eager anchor pass backlog #245 asks for (437 ms
+    # over every manifest), which is the second time in one session a correct refactor silently
+    # unbound an anchor — the first cost a 14m58s `NOT MEASURED` in CI.
+    # ⚠ 1399 is the GUARD'S OWN FIGURE; the intermediate 1398 in an earlier draft of this
+    # comment was wrong because the fifth entry had not been written yet.
+    # ⚠ EXPECT A CONFLICT WITH PR #364, which moves the same line 1407 -> 1411 on its own
+    # branch. Two branches bumping one declared sum is the recorded `parallel-branches-append-to-
+    # one-log` shape; resolve by RE-DERIVING from the merged dict, never by picking a side.
+    # ⟳ SAME COMMIT, SECOND MOVE: 1399 -> 1406. A NEW manifest arrives —
+    # `scripts/mutations/codex-frontier-model.json`, 7 entries — because that file gained a
+    # `--self-test`, and `check-ratchet-contract` R4 then required a manifest or a written
+    # NO-MUTATIONS escape. A MANIFEST is the right answer rather than the escape: the whole
+    # subject of this change is that the LISTED-model requirement must never be loosened
+    # silently again, and entry 1 severs exactly that. The other six pin the api/bool/order
+    # filters and the three sentences that make the refusal actionable.
+    # ⚠ 1406 is the GUARD'S OWN FIGURE, read from `got 1406 want 1399`. 1398 and 1399 in the
+    # trail above were intermediate drafts of THIS commit, not shipped states.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1406)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

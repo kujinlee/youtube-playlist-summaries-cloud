@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 58 cases
+    python3 scripts/check-ci-watched.py --self-test  # 74 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -60,7 +60,54 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observer_log  # noqa: E402  — the ONE owner of the record grammar (backlog #166, #170)
 
-SENTINEL = ROOT / ".claude/ci-watching"
+def sentinel_for(common_dir: str | None, root: Path) -> Path:
+    """-> where the armed-watcher record belongs, given `git rev-parse --git-common-dir`. PURE.
+
+    ⛔ SPLIT OUT OF THE FETCH BECAUSE THE FETCH'S ANSWER IS NOT AVAILABLE WHERE THIS IS TESTED.
+    The first version did the subprocess and the decision in one function, and asserted the
+    property directly — which went RED inside the mutation harness, because the harness stages a
+    COPY that is not a git repo, so `git rev-parse` fails there and the fallback is taken. A red
+    control makes the whole file unmeasurable: `NOT MEASURED`, which is worse than having no case
+    at all. This is the repo's own `separate-the-rule-from-the-fetch` — three ratchets once went
+    eight days untestable for exactly this reason.
+
+    `None` means git could not be reached; the per-worktree path is then the honest fallback,
+    because a sentinel somewhere beats no sentinel.
+    """
+    if not common_dir:
+        return root / ".claude/ci-watching"
+    d = Path(common_dir)
+    return (d if d.is_absolute() else (root / d).resolve()) / "ci-watching"
+
+
+def _repo_sentinel() -> Path:
+    """Where the armed-watcher record lives. ONE PER REPOSITORY, shared by every worktree.
+
+    ⛔ IT USED TO BE `ROOT / ".claude/ci-watching"`, WHICH IS PER-WORKTREE, AND THAT MADE THE
+    WARNING LIE. Measured 2026-10-07: a watcher was armed from a linked worktree (`--watching`
+    recorded that worktree's HEAD), the Stop hook ran in the MAIN tree, read a DIFFERENT file,
+    found it absent, and reported "NOTHING IS WATCHING" while a watcher was in fact streaming all
+    eight CI jobs. The human had to point it out. A guard that cries wolf gets switched off
+    (`docs/backlog.md` #56), so a false "nothing is watching" is expensive, not merely untidy.
+
+    `git rev-parse --git-common-dir` resolves to the SAME absolute path from the main tree and
+    from every linked worktree, so one file there is shared by construction. It also sits outside
+    any working tree, so it is not a tracked file and needs no `.gitignore` entry.
+
+    ⚠ Not via `_run`: that is defined below this, and module import order is not a thing to be
+    clever about. Falls back to the old per-worktree path if `git` cannot be reached at all — a
+    sentinel somewhere beats no sentinel.
+    """
+    try:
+        pr = subprocess.run(["git", "rev-parse", "--git-common-dir"],
+                            cwd=ROOT, capture_output=True, text=True, timeout=10)
+        common = pr.stdout.strip() if pr.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        common = None
+    return sentinel_for(common, ROOT)
+
+
+SENTINEL = _repo_sentinel()
 # ⛔ THE EVIDENCE BASE, and the reason it is a FILE and not stderr. This guard warns on a
 # Stop hook, where the wrapper shows stderr once and keeps nothing. MEASURED 2026-09-22: a
 # PR was opened with CI unwatched, the failure this guard exists to catch, and the question
@@ -84,23 +131,50 @@ UNRESOLVED = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "ACTIO
 
 # ── Pure core ─────────────────────────────────────────────────────────────────────────────────
 
-def unresolved_checks(rows: list[dict]) -> list[str]:
-    """Names of checks that have not reached a verdict. PURE.
+RESOLVED_STATES = {"SUCCESS", "FAILURE", "CANCELLED", "SKIPPED", "NEUTRAL", "TIMED_OUT",
+                   "STALE", "ERROR"}
 
-    An unknown state counts as UNRESOLVED. A checker that treats a state it has never seen as
-    "done" reports silence over exactly the case it was not designed for.
+
+def row_is_resolved(r: dict) -> bool:
+    """-> has this one check reached a verdict? PURE.
+
+    ⛔ TWO ROW SHAPES, AND READING ONLY ONE OF THEM COST A FALSE ALARM ON EVERY STOP.
+    `statusCheckRollup` mixes two GraphQL types and they do not share a field:
+
+        CheckRun      -> `status` ("QUEUED"|"IN_PROGRESS"|"COMPLETED") + `conclusion`,
+                         and **`state` is absent/None**
+        StatusContext -> `state` ("PENDING"|"SUCCESS"|...), and no `status`
+
+    The previous version keyed on `state` alone, so `str(None).upper()` produced the STRING
+    `"NONE"`, which is in neither set — and the deliberate fail-closed fallback then counted
+    every CheckRun as unresolved. MEASURED 2026-10-07 on PR #366 (merged, all checks finished):
+    12 of 12 rows reported pending, on a commit whose CI had been green for hours, and the Stop
+    hook said "CI IS RUNNING AND NOTHING IS WATCHING" on every single stop.
+
+    ⚠ THE FAIL-CLOSED INTENT IS KEPT AND IS WHY THE BUG LOOKED LIKE CAUTION. An unknown
+    value, and a row carrying NEITHER field, still count as UNRESOLVED — a checker that reads
+    a shape it was not designed for as "done" reports silence over exactly that case. What was
+    wrong was not the caution; it was that `None` is not an unknown STATE, it is the absence of
+    the field, and the row says so in `status` instead.
     """
-    # ⚠ `state in UNRESOLVED` is DEFENSIVE, not decisive, and deliberately not mutation-tested:
-    # the two sets are disjoint, so it always implies the second disjunct and NO input can tell
-    # the two apart. It earns its place by catching a future edit that wrongly moves a pending
-    # state into the resolved list — a mistake the fallback alone would not survive.
-    out = []
-    for r in rows:
-        state = str(r.get("state", "")).upper()
-        if state in UNRESOLVED or state not in {"SUCCESS", "FAILURE", "CANCELLED", "SKIPPED",
-                                                "NEUTRAL", "TIMED_OUT", "STALE", "ERROR"}:
-            out.append(str(r.get("name", "?")))
-    return out
+    status = r.get("status")
+    if status is not None:
+        # A CheckRun. Only COMPLETED is a verdict; `conclusion` then says WHICH verdict, which
+        # is not this function's question. An unrecognised status is NOT completed -> unresolved.
+        return str(status).upper() == "COMPLETED"
+    state = r.get("state")
+    if state is not None:
+        # A StatusContext. `state in UNRESOLVED` is DEFENSIVE, not decisive — the two sets are
+        # disjoint so it always implies the second clause, and it earns its place by catching a
+        # future edit that wrongly moves a pending state into RESOLVED_STATES.
+        s = str(state).upper()
+        return s not in UNRESOLVED and s in RESOLVED_STATES
+    return False
+
+
+def unresolved_checks(rows: list[dict]) -> list[str]:
+    """Names of checks that have not reached a verdict. PURE."""
+    return [str(r.get("name", "?")) for r in rows if not row_is_resolved(r)]
 
 
 def decide(head_sha: str | None, watching_sha: str | None,
@@ -124,19 +198,18 @@ def decide(head_sha: str | None, watching_sha: str | None,
              f"push un-arms it BY DESIGN, so that one no longer covers this commit)\n"
              if watching_sha else "")
 
+    # ⚠ THREE LINES, AND THE INSTRUCTION IS MARKED AS THE ASSISTANT'S. This used to print an
+    # eleven-line briefing — "arm a watcher", "run `--watching`" — onto a channel the HUMAN reads.
+    # Asked 2026-10-07: *"these lines are not adding value to human. Are these for yourself?"*
+    # They were. A hook's audience is whoever sees its output, and this one's output lands in the
+    # transcript, so guidance addressed to the agent is clutter charged to the reader's attention.
+    # The fact belongs there; the procedure does not. Cf. `a-gates-channel-can-be-weaker-than-the-gate`.
     return WARN, (
-        f"⚠ CI IS RUNNING AND NOTHING IS WATCHING — {len(pending)} unresolved check(s) on "
-        f"{head_sha[:8]}: {', '.join(pending)}\n"
+        f"⚠ CI is running on {head_sha[:8]} and nothing is watching it — "
+        f"{len(pending)} pending: {', '.join(pending)}\n"
         f"{stale}"
-        "\n"
-        "   Nothing is blocked. If this turn ends here, the result arrives with no notification\n"
-        "   and somebody has to remember to ask — which is the failure this exists to catch.\n"
-        "\n"
-        "   Arm a watcher (one notification, exits on ANY terminal state including failure):\n"
-        "     run a background poll of `gh pr checks <N>` until it leaves PENDING, then\n"
-        "     scripts/check-ci-watched.py --watching\n"
-        "\n"
-        "   Already armed one this turn? Run `--watching` so this stops asking about this commit.")
+        "   Nothing is blocked, but the result arrives with no notification — so the next\n"
+        "   step is the agent's: arm a `gh pr checks` poll, then `--watching`.")
 
 
 def warn_reason(watching_sha: str | None, head_sha: str) -> str:
@@ -478,8 +551,73 @@ def _self_test() -> int:
     case("the warning names the unresolved check", "verify" in decide(SHA, None, PEND)[1])
     case("the warning says plainly that nothing is blocked",
          "Nothing is blocked" in decide(SHA, None, PEND)[1])
+
+    # ── the TWO ROW SHAPES — the false alarm that fired on every stop ─────────────────
+    # ⛔ THE REGRESSION CASE, with the EXACT payload `gh` returned. Reading `state` alone turned
+    # `None` into the string "NONE", which is in neither set, so the fail-closed fallback counted
+    # all 12 finished checks as pending. Measured on PR #366, merged and green for hours.
+    RUN_OK = {"name": "verify", "state": None, "status": "COMPLETED",
+              "conclusion": "SUCCESS", "__typename": "CheckRun"}
+    RUN_SKIP = {"name": "prod-drift", "state": None, "status": "COMPLETED",
+                "conclusion": "SKIPPED", "__typename": "CheckRun"}
+    RUN_BUSY = {"name": "mutation-sweep (1)", "state": None, "status": "IN_PROGRESS",
+                "conclusion": None, "__typename": "CheckRun"}
+    RUN_QUEUED = {"name": "mutation-sweep (2)", "state": None, "status": "QUEUED",
+                  "conclusion": None, "__typename": "CheckRun"}
+
+    case("⭐ a COMPLETED CheckRun is RESOLVED even though its `state` is None",
+         safe(lambda: unresolved_checks([RUN_OK]) == []))
+    case("...and a COMPLETED/SKIPPED one too — skipped is a verdict, not a wait",
+         safe(lambda: unresolved_checks([RUN_SKIP]) == []))
+    case("⭐ twelve finished CheckRuns and nothing armed -> QUIET, not a warning",
+         safe(lambda: decide(SHA, None, [dict(RUN_OK, name=f"c{i}") for i in range(12)])[0]
+              == QUIET))
+    case("an IN_PROGRESS CheckRun is UNRESOLVED",
+         safe(lambda: unresolved_checks([RUN_BUSY]) == ["mutation-sweep (1)"]))
+    case("...and a QUEUED one is too",
+         safe(lambda: unresolved_checks([RUN_QUEUED]) == ["mutation-sweep (2)"]))
+    case("...and only the unfinished one is NAMED, beside finished siblings",
+         safe(lambda: unresolved_checks([RUN_OK, RUN_BUSY, RUN_SKIP])
+              == ["mutation-sweep (1)"]))
+    case("an UNRECOGNISED status is UNRESOLVED — the fail-closed intent is kept",
+         safe(lambda: unresolved_checks([dict(RUN_OK, status="TELEPORTING")])
+              == ["verify"]))
+    # ⚠ THE OLDER SHAPE MUST KEEP WORKING, and the two paths are chosen by which field is
+    # PRESENT — so a StatusContext (no `status` key at all) still goes down the `state` branch.
+    case("a StatusContext PENDING row is still UNRESOLVED",
+         safe(lambda: unresolved_checks([{"name": "legacy", "state": "PENDING"}]) == ["legacy"]))
+    case("...and a StatusContext SUCCESS row is still RESOLVED",
+         safe(lambda: unresolved_checks([{"name": "legacy", "state": "SUCCESS"}]) == []))
+    case("a row carrying NEITHER field is UNRESOLVED, because the shape is unknown",
+         safe(lambda: unresolved_checks([{"name": "shapeless"}]) == ["shapeless"]))
     case("the warning explains the CONSEQUENCE of ending the turn",
          "no notification" in decide(SHA, None, PEND)[1])
+
+    # ⚠ AGAINST THE PURE RULE, NOT THE LIVE REPO — the first draft of this case called
+    # `_repo_sentinel()` and went red inside the mutation harness, whose staged copy is not a git
+    # repo. Three inputs, because the ABSOLUTE and RELATIVE branches are different clauses and a
+    # single fixture cannot tell a function that reads `common_dir` from one that ignores it.
+    # ⛔ Deliberately NOT asserting ".claude" is absent from the path — this session's own
+    # worktrees live under `~/.claude-tmp/`, so that test would pass for the wrong reason.
+    # ⚠ TWO DISTINCT ROOTS, AND `check-fixture-variation` REFUSED THE FIRST DRAFT FOR PASSING
+    # ONE. Four call sites all handed it `_R`, so no case could tell a clause that READS `root`
+    # from one that hardcodes a path — the same defect shape as PR #364's round-5 High, which was
+    # one argument witnessed and its sibling ignored. Both root-reading branches are now exercised
+    # at both roots.
+    _R = Path("/repo")
+    _R2 = Path("/elsewhere/checkout")
+    case("⭐ an ABSOLUTE common git dir puts the sentinel there, so every worktree shares one",
+         safe(lambda: sentinel_for("/main/.git", _R) == Path("/main/.git/ci-watching")))
+    case("...and the root is IGNORED when the answer is absolute, which is the whole point",
+         safe(lambda: sentinel_for("/main/.git", _R2) == Path("/main/.git/ci-watching")))
+    case("...a RELATIVE one resolves against the root, not the cwd",
+         safe(lambda: sentinel_for(".git", _R) == (_R / ".git").resolve() / "ci-watching"))
+    case("...and against a DIFFERENT root it lands somewhere else, so `root` is READ",
+         safe(lambda: sentinel_for(".git", _R2) == (_R2 / ".git").resolve() / "ci-watching"))
+    case("...while git being unreachable falls back to the per-worktree path, documented as such",
+         safe(lambda: sentinel_for(None, _R) == _R / ".claude/ci-watching"))
+    case("...and an EMPTY answer is treated as unreachable, not as the repo root",
+         safe(lambda: sentinel_for("", _R2) == _R2 / ".claude/ci-watching"))
 
     # ── fails closed ───────────────────────────────────────────────────────────────────────
     code, msg = decide(SHA, None, None)

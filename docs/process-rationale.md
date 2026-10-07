@@ -968,3 +968,44 @@ Specific beat general the whole time and the general list was read over it.
 ⚠ **What did NOT change:** merging is still the human gate, and **a PR is a separate judgement** —
 opening one asserts the work is ready for that gate, so it is not opened for work that has not
 converged.
+
+---
+
+## The review gate that reported an outage it did not have
+
+**Measured 2026-10-07.** PR #364's round-5 Codex half was filed as `REVIEW GAP: codex` on the
+strength of `scripts/codex-frontier-model.py` exiting 1 with *"no visible, API-supported model with
+a priority found in cache"*. `docs/plugins.md` sanctions exactly one retry (`--write-config`) and
+then an immediate fallback to a Claude-only review, which is what happened. The round ran with one
+reviewer instead of two.
+
+**Codex was never unavailable.** `codex exec -m gpt-5.5 -s danger-full-access` from inside a git
+worktree returned rc=0 on the first attempt. The cache held two models, `gpt-5.5` (*"Legacy coding
+model."*) and `codex-auto-review`, both `supported_in_api: true` and both `visibility: "hide"`.
+
+Three things made the wrong conclusion the easy one, and each is a transferable lesson:
+
+1. **The sanctioned retry could not disconfirm anything.** `--write-config` calls the same resolver,
+   so its failure was re-evidence of the bug, not evidence about the dependency. A retry that
+   exercises the broken path is not a second opinion.
+2. **The refusal named a predicate, not a world.** *"no visible, API-supported model with a
+   priority"* says which test failed and nothing about what was seen, so the only available reading
+   was "the dependency is down". It now names the hidden near-misses with their descriptions, the
+   `client_version` the server keyed its answer to, `codex update`, and explicitly that it is NOT
+   evidence Codex is unavailable. Seven manifest entries pin those sentences.
+3. **The first fix was at the wrong layer.** An earlier draft made `visibility == "list"` a
+   preference and accepted hidden models. It worked — and would have run every adversarial review on
+   a model labelled *Legacy*, reporting success, indefinitely. The owner refused it with one
+   question: *"why do we have to use hidden model? why not use a listed model?"*
+
+**The actual cause was the CLI being 18 minor versions behind** (0.142.5 against 0.160.1), and the
+server keys its model list to `client_version`. After `codex update` the same account's cache held
+**10 models, SEVEN of them `visibility: "list"`**, topped by `gpt-6.1-sol` and `gpt-6-astra`. The
+strict resolver, unchanged, then resolves `gpt-6.1-sol`. **`hide` was the server telling us "not
+this one", and it was right.**
+
+⚠ The first two attempts to smoke-test Codex ALSO failed, for reasons of mine — run from a
+non-git directory (*"Not inside a trusted directory"*) and with stdin left open. A dependency
+reporting a real failure for an invocation error is the thing to rule out before believing an
+outage.
+
