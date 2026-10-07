@@ -55,8 +55,14 @@ Keeping §5b in the parent also **dissolves two problems rather than solving the
 * **Name it at spawn.** An unnamed fork is not addressable and §6's second half has nowhere to go.
 * **Give it an explicit `as of <commit/time>`**, so the page states its own horizon instead of
   implying it is current.
-* **It writes nothing inside the repository** — page and fragment go to `~/explainers/`, notes to its
-  scratchpad. ⚠ The Codex review wrapper snapshots `docs/reviews/` non-recursively and its intrusion
+* **It writes the page and fragment to `~/explainers/`, and nothing else anywhere in the tree** —
+  notes go to its scratchpad. ⛔ `~/explainers/` **IS** `<repo>/docs/explainers/` — a symlink made by
+  `scripts/bootstrap-explainers.sh`, so "outside the repo" and "inside it" name ONE directory.
+  **The page is TRACKED and MUST BE COMMITTED** (`.gitignore:142-161`: *the HTML IS the artifact, so
+  losing it loses the work*; 78 files tracked). ⚠ Measured 2026-10-07: an earlier wording here said
+  the fork *"writes nothing inside the repository"*, a cleanup obeyed it, and the `rm` destroyed the
+  only copy of a finished 40KB page — recovered only from a transcript. Backlog **#259**.
+  ⚠ The Codex review wrapper snapshots `docs/reviews/` non-recursively and its intrusion
   detector fires on **any** concurrent write; on the failure path it has **moved a concurrent file
   out of the tree**. ✅ **MEASURED 2026-09-08 (backlog #89 T4): a fork that honours this rule is
   invisible to that detector, so the two may overlap.** A page write landed at `10:21:28` inside a
@@ -77,10 +83,12 @@ Keeping §5b in the parent also **dissolves two problems rather than solving the
 ~/explainers/YYYY-MM-DD-<kind>-<slug>.html
 ```
 
-Date first so the directory sorts by time. **Outside the repository, deliberately** — no
-`.gitignore` entry, nothing to commit by accident, and it outlives the session that made it. Do not
-write inside the repo, and do not use a session-scoped temp directory: an explainer nobody can find
-later is the same as no explainer.
+Date first so the directory sorts by time. ⛔ **Inside the repository and TRACKED** — `~/explainers/`
+is a symlink to `docs/explainers/`. There **is** a `.gitignore` stanza (142-161) and it says the
+opposite of what this paragraph used to: the authored pages have no source in git, the HTML **is**
+the artifact; only the four generated pairs and the server's runtime files are ignored. **Committing is what makes a page
+outlive its session**; an uncommitted one is a single `rm` from gone, which has now happened. Do not
+use a session-scoped temp directory: an explainer nobody can find later is the same as no explainer.
 
 ## 2. The artifact must survive on its own
 
@@ -243,9 +251,9 @@ will never have a fragment — a repo-side ratchet would be permanently red with
 remedy unable to clear it, which is exactly the failure `check-live-schema`'s accepted-additions
 list exists to prevent. §5b already runs once per page, at the only moment the answer is knowable.
 
-**What it protects:** §6 requires answers be written **into** the page, and §1 puts the page outside
-the repo so it outlives its session. Without the fragment those two rules contradict each other the
-moment the building session ends — and the page's own §5a block promises *"say read my questions"*
+**What it protects:** §6 requires answers be written **into** the page, and §1 puts the page in
+`docs/explainers/`, where **committing it** is what makes it outlive its session. Without the
+fragment those two rules contradict each other the moment the building session ends — and the page's own §5a block promises *"say read my questions"*
 as the cross-session fallback, a promise the write half cannot keep.
 
 ⛔ **`element.click()` IS NOT A TEST OF A BUTTON.** It fires the handler regardless of where the

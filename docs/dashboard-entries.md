@@ -14773,3 +14773,52 @@ dependency rather than leaving the next implementer to rediscover it.
 ⚠ Raised 🔴: this is a defect in the instrument of verification. Every claim-checking task here —
 review rounds, closure audits, stale-figure hunts — currently runs through a search measured
 returning a false negative.
+
+## 2026-10-07
+The instruction that destroyed a page this morning has been corrected, so the next agent reading it
+is told the truth instead.
+
+A skill document told any agent building an explainer page that those pages belong outside the
+repository and that it must write nothing inside it. The directory it named as "outside" is a
+shortcut pointing at a directory inside, so the two are one place and the instruction could only ever
+be carried out by deleting. One sentence in it was wrong three times over in a row: it said there was
+no ignore-file entry for the directory, that there was nothing there to commit by accident, and that
+keeping pages outside the repository is what makes them survive past the session that wrote them.
+There is an entry, the pages are meant to be committed, and an uncommitted page survives nothing —
+which is how a finished page came to be lost.
+
+The correction says what is actually true: the directory is inside the repository, its pages are
+tracked, and committing one is what makes it last. The paragraph explaining why pages go there now
+agrees with the paragraph telling you to put them there.
+
+Nothing else in the document changed. The guidance it carries about avoiding collisions with the
+review tooling was already correct and is kept word for word.
+
+<!--tech-->
+`.agents/skills/shared/explainer-delivery.md` — three passages, 28 changed lines, no executable file.
+⚠ The live path is `.agents/…`; `.claude/skills/shared` is a **symlink** to it (same inode, verified),
+and `.claude/`'s own `.gitignore` is a bare `*`, so `git checkout -- .claude/…` answers *"did not
+match any file(s) known to git"* — backlog #86's shape, met again while testing this very edit.
+
+**(1) §1's bullet** — *"It writes nothing inside the repository"* → the fork writes page + fragment to
+`~/explainers/` and nothing else in the tree, **plus** the fact that makes the old wording lethal:
+`~/explainers/` **IS** `<repo>/docs/explainers/` via `scripts/bootstrap-explainers.sh`, the pages are
+TRACKED, and they MUST be committed. The Codex-wrapper hazard (`docs/reviews/` snapshot,
+non-recursive, backlog #89 T4) is **kept verbatim** — it was always true and is unrelated.
+
+**(2) §2's location block** — the three-false-claims sentence: *"Outside the repository, deliberately
+— no `.gitignore` entry, nothing to commit by accident, and it outlives the session that made it."*
+Measured against the repo: there **is** a stanza (`.gitignore:142-161`, *"Explainer pages (backlog
+#194)"*) whose own comment reads *the HTML IS the artifact, so losing it loses the work*; **78** files
+are tracked there; and only the four generated pairs plus the server's runtime files are ignored.
+
+**(3) §5b's rationale** — *"§1 puts the page outside the repo so it outlives its session"* → *"puts
+the page in `docs/explainers/`, where **committing it** is what makes it outlive its session."* ⭐ This
+is the one that mattered most: the contract's stated PURPOSE was defeated by its own MECHANISM, in a
+single sentence, and that is invisible to every guard because a skill document is prose read by a
+model while `.gitignore` is a file read by `git`.
+
+**Verified:** 11 guards rc=0 including `check-explainer-delivery.py` (the one that owns this file's
+contract) and `check-vocabulary-collisions.py`. The edit was first applied in a throwaway worktree,
+tested, and reverted to a byte-identical 20,204 before being made here.
+⛔ `NO-REVIEW:` declared — see the PR body for the reason and its bound.
