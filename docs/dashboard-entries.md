@@ -14625,3 +14625,151 @@ The three untracked `docs/memory/*.md` are NOT in this commit — they have inde
 page serves HTTP 200 with 11 `<h2>`, `id="s11"`, the Ask tray and balanced tables; rendered in a
 browser and read. ⛔ **`check-page-contrast.py` NOT RUN** — it lives only on `unify-explainer-style`,
 needs Chromium, and measures every served page; treat contrast as unmeasured, not as passed.
+The six rules from last night's survey are now part of the process — though not in the file you
+might expect, and the reason is the file's own rule.
+
+The survey measured why two pull requests took eight and eleven review rounds, and ended with six
+rules written so a reader can tell when each has been broken. They were analysis. They are now
+written down where the process is written down.
+
+They did not go into the short spine document that describes the workflow, because that file was
+exactly full — two hundred and twenty lines against a limit of two hundred and twenty. That limit
+exists because the same file once grew to five hundred and seventy-six lines and became unread,
+and it says plainly what to do instead: if a rule can be a script, write the script; if it cannot,
+put it with the detailed checklists. Four of the six can be scripts and are already filed as work.
+So the rules went to the checklists, and the spine's existing pointer now names them without the
+file growing by a single line.
+
+One of the seven candidates was deliberately left out. The survey recommends against it, and
+writing it down as a rule would outlive the paragraph explaining why.
+
+<!--tech-->
+Added at the owner's instruction from the explainer page (*"let's add these six rules"*).
+
+⛔ **NOT in `dev-process.md`, and that is the spine's own instruction rather than a dodge.** Measured
+before writing: `check-docs.py` budgets it at **220** lines and it stood at **220 — zero headroom**.
+The file says: *"Before adding a rule here, ask whether it can be a script. If it can, write the
+script and add a pointer row. If it cannot, it belongs in the checklists, method, or rationale doc
+— not the spine."* So the rules live in `docs/process-checklists.md` (no budget, and it already
+carries *Reduce defect INJECTION, not just detection*, which is what all six are), and the spine's
+EXISTING pointer row was extended **in place**: `dev-process.md` is still **219** lines.
+
+The six, each with its `Fails if:` — which is the test that made them rules at all. §8 offered ten
+levers; the four that could not be written this way (scope the round, push earlier, send evidence
+instead of a round, pick the cheapest tree-identity answer) deliberately became **no rule**, because
+a rule with no falsifier is a decision wearing a checkbox.
+
+1 · filing · 2 · freeze · 3 · comment — pre-existing, now exercised (rounds 9–11 of #366 produced
+seven findings under rule 1 and folded none; #366 converged two rounds after its freeze, #365 in
+one; rule 3 cost at least three rounds and a fresh instance was live after eight rounds of fixing
+that same pattern). 4 · provenance · 5 · withdrawal · 6 · second-spelling — new from §8.
+
+⭐ **Rule 2 carries a free speedup rather than a seventh rule:** under a freeze the two review halves
+may run CONCURRENTLY, because `review-method.md` requires alternation *"since a concurrent pair never
+reviews the fixes"* — and under a freeze there are no fixes. It is permission, not obligation, so
+there is nothing to violate.
+
+⛔ **C3 deliberately omitted** — recommended against in the survey (expected to false-fire more than
+it catches; #56's verdict is that a gate red without cause gets switched off).
+⤳ Scriptable halves already filed: **#250** (rule 1's filing direction), **#251** (a changed
+behavioural line with no mutation entry reaching it), **#252** (an anchor that no longer binds). Where
+those land, the corresponding rule text shrinks to a pointer.
+
+Guards: `check-docs`, `check-gate-falsifiability`, `check-features`, `check-anchors`,
+`check-explainer-delivery`, `check-roadmap-consistency`, `check-backlog-closure` all rc=0.
+
+## 2026-10-07
+Correcting the entry above: I said the six rules were now part of the process. Writing them down is
+not the same thing, and you asked the question that showed it.
+
+You asked whether the items in that checklist file are really checked. I measured it rather than
+guessing: sixteen sections, three of which have a program behind them. The other thirteen are
+writing. Nothing reads them.
+
+The evidence that this matters was already sitting in the same file. It has carried a section about
+qualifying every number since August. Last night I broke that exact rule three times — a count that
+belonged to a different tree, a timing nobody can reproduce, and a figure that was two rather than
+three. And two of the six new rules were broken within an hour of my writing them, both caught by a
+reviewer and neither by anything automatic.
+
+So two more of them are now written down as work instead: the one about saying where a number came
+from, and the one about correcting a claim everywhere it reached rather than in one place. That makes
+five of the six into things a program can check, and leaves two as what they honestly are — advice
+with a measured price tag.
+
+<!--tech-->
+⛔ **THE ENTRY ABOVE OVERCLAIMED.** It said the six rules were "now part of the process". **Measured
+2026-10-07**, prompted by the owner asking whether checklist items are *"really checked faithfully"*:
+**3 of `process-checklists.md`'s 16 sections have a named enforcing script** — Post-Plan Gate
+(`check-plan-gate.sh`, `check-plan-task-order.py`), *Writing a RATCHET*
+(`check-ratchet-contract.py`), *Closing a job: the CHECK / RESULT table* (`check-closing-table.py`).
+The other 13 are prose and nothing reads them. ⚠ The file also has **no line budget**, unlike
+`dev-process.md` (220) and `plugins.md` (260) — and the spine has one *because* it grew to 576 lines
+and became unread. This file is **longer than that**.
+
+⭐ **THE EVIDENCE WAS ALREADY IN THE FILE.** *Qualify every number in prose* has been there,
+unenforced, since 2026-08-27 — and I violated it three times in one night: `1,414` anchors quoted as
+the delivered count when the tree held **1,416**; `437 ms` for a pass a reviewer measured at **63 ms**
+and a later run at **289 ms**; `3 unbound` where the number was **2**. Rules 4 and 5 were then broken
+the same day they were written. Every one caught by a reviewer, none by a machine.
+
+**FILED:** **#256** (rule 4, provenance — a number names where it was measured; scope deliberately
+narrow, WARN-only per #56, and the fuzziness of *"beside"* is named in the row rather than hidden)
+and **#257** (rule 5, withdrawal — its `Fails if` IS a cross-document grep, which is literally how
+the reviewer caught both instances; the row names the hard part, that `⟳` trails and review docs
+quote superseded figures ON PURPOSE and must be exempt or the check is red forever).
+
+⤳ So **five of six** are rows now: #250, #251, #252, #256, #257. ⚠ That leaves rules **2 (freeze)**
+and **3 (comment)** prose-resident, and they are the two with the weakest mechanical shape. The file
+now says so in its own section rather than implying all six are enforced.
+
+⚠ Of the six, #257 is the one I had argued least for while it had the strongest case — I filed three
+scriptable rules and left the most grep-able one in prose.
+
+## 2026-10-07
+We do not have a tool for finding a claim, and that absence hid a real problem for a whole review
+round.
+
+Searching this repository for a sentence is done with ordinary line-by-line search. A sentence that
+happens to wrap onto a second line is invisible to it. That is how a false statement sat in a file
+for a round while I reported the file clean — I searched, found one copy, and did not notice the
+second was split in half.
+
+The standard fix for this in the search tool is a flag that treats the whole file as one line. Tested
+against a file known to contain two copies, that flag found **zero**. Zero is worse than one, because
+one looks like an undercount and zero looks like an answer.
+
+So this is now written down as needing a tool rather than a technique — and the thing that makes it a
+tool rather than a one-liner is that it should be unable to report "nothing found" without first
+proving it can find something.
+
+<!--tech-->
+Filed as **#258** at the owner's instruction (*"we need better tool for find"*).
+
+⛔ **MEASURED AGAINST A KNOWN POSITIVE** — the pre-fold `scripts/codex-frontier-model.py`, which
+genuinely holds **two** copies of the phrase:
+
+| method | hits |
+|---|---|
+| line-based `grep` | **1** ← the trap |
+| `grep -z` + ERE | **0** ← silently worse |
+| `rg -U 'a\s+b'` | **2** |
+| `tr '\n' ' '` \| `grep -o` | **2** |
+| Python `re` with `\s+` | **2** |
+
+⚠ `grep` here is **ugrep 7.8.4** wearing the name, so GNU's documentation for `-z` does not describe
+what runs. A recipe copied from the manual would have been believed.
+
+⭐ **THE DESIGN POINT, AND WHY IT IS A TOOL AND NOT A ONE-LINER:** it should take a control pattern
+known to hit, and a run whose control misses must be **CANNOT RUN**, never *no matches*. That is this
+repository's own *a check that cannot reach its subject is a failure, never a pass* applied to search
+— and a shell pipeline cannot have it. Precedent exists: the `$HOME`-literal audit in
+`check-plan-code.py` is described there as a *control-backed grep*.
+
+⛔ **PREREQUISITE FOR #257.** The withdrawal rule's check IS a cross-document search for a superseded
+value; implemented line-based it would read as enforced and catch nothing. #257 now names #258 as its
+dependency rather than leaving the next implementer to rediscover it.
+
+⚠ Raised 🔴: this is a defect in the instrument of verification. Every claim-checking task here —
+review rounds, closure audits, stale-figure hunts — currently runs through a search measured
+returning a false negative.

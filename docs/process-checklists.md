@@ -831,3 +831,126 @@ not restate its threshold here, and read it rather than recalling it.
 the row describe the same job, and nothing can — three names agreeing is a judgement. Nothing
 detects a side job that stays under the size question's bar and then grows past it; the honest
 mitigation is to ask the question again when it does, not to lower the bar.
+
+---
+
+## The six rules from the 2026-10-06 round-cost survey (added 2026-10-07)
+
+**Read when:** starting a PR that will go through review rounds. These six came out of measuring
+why PR #366 ran to **eight** rounds and PR #365 to **eleven**; the survey is
+`docs/explainers/2026-10-06-brief-dev-process-speed.html` §§8–9.
+
+⛔ **THEY ARE HERE AND NOT IN `dev-process.md` BECAUSE THE SPINE HAD ZERO LINES OF HEADROOM** —
+220 of 220 against `check-docs.py`'s budget on the day they were adopted. That is not an accident
+of timing; it is the spine's own instruction working: *"Before adding a rule here, ask whether it
+can be a script. If it can, write the script and add a pointer row. If it cannot, it belongs in the
+checklists, method, or rationale doc — not the spine."* Four of the six can be scripts and are filed
+as such (below). The spine's existing pointer row names this section instead of growing.
+
+⚠ **EACH IS WRITTEN SO A READER CAN TELL WHEN IT HAS BEEN BROKEN.** A rule with no such sentence is
+a decision wearing a checkbox — the gate policy in `dev-process.md` refuses those, and the four §8
+levers that could not be written this way deliberately became no rule at all.
+
+### 1 · The filing rule — *exercised*
+
+A finding aimed at the **instrument** and **below High** is recorded as a backlog row, not fixed in
+the PR that found it. Only **Blocking or High in the deliverable** is folded mid-review.
+
+**Fails if:** a round produces a sub-High instrument finding and the same PR fixes it.
+⤳ Exercised: rounds 9–11 of #366 produced seven findings under this rule and folded none.
+⤳ **Scriptable half filed as backlog #250** — a commit claiming `FILED` that adds no row. Measured:
+#364's round-3 fold claimed *"FILED, NOT FOLDED"* for seven deferrals and filed **zero**.
+
+### 2 · The freeze rule — *exercised twice*
+
+Every PR declares a **freeze point**. After it, findings are filed rather than fixed unless Blocking
+or High in the deliverable — because *"non-trivial fixes → CONTINUE"* means fixing and converging
+cannot happen at the same time.
+
+**Fails if:** a PR reaches round 3 with no freeze declared, or a post-freeze round folds a sub-High.
+⤳ #366 converged two rounds after its freeze; #365 converged in one.
+⭐ **And the freeze buys a free speedup:** under it the two review halves may run **concurrently**
+rather than alternating. `review-method.md` requires alternation *"because a concurrent pair never
+reviews the fixes"* — under a freeze there are no fixes, so the reason does not apply and the round
+costs one wall-clock half instead of two. **Permission, not obligation**, so there is nothing to
+violate and it is not a seventh rule.
+
+### 3 · The comment rule — *cost at least three rounds*
+
+A comment may describe what the code **does**. It may not assert a universal — *every*,
+*impossible*, *only N* — unless a **case pins that claim**.
+
+**Fails if:** a comment asserts a universal and no case fails when that universal is broken.
+⤳ An unpinned universal is a finding waiting for the next reviewer: a fresh instance was live in the
+file **after eight rounds of fixing that exact pattern**.
+
+### 4 · The provenance rule — *new*
+
+A number that informs a decision names **where it was measured** — a ref, a worktree, a commit, a
+run. A bare count is read as coming from the obvious place, and three times in one session it was not.
+
+**Fails if:** a decision card or a backlog row carries a count with no ref beside it.
+⤳ See also *Qualify every number in prose* above, which this sharpens from "say what it counts" to
+"say where it came from".
+⤳ **Filed as backlog #256.** ⛔ And it was broken THREE TIMES on the day it was written — `1,414`
+anchors quoted as the delivered count when the tree held 1,416, `437 ms` for a pass measured
+elsewhere at 63 ms and 289 ms, `3 unbound` where the number was 2. Each caught by a reviewer, none
+by a machine.
+
+### 5 · The withdrawal rule — *new*
+
+When a claim is withdrawn, **enumerate every site it reached before correcting any of them**, and
+record the withdrawal rather than silently editing.
+
+**Fails if:** a corrected figure appears in one document while its original still stands in another.
+⛔ **A right conclusion resting on a withdrawn reason looks healthy from every direction** — which is
+why the enumeration comes first. Measured 2026-10-07: a withdrawn sentence about a model cache stood
+in **three** documents as the stated reason for softening a claim, and the softening was itself wrong.
+⤳ **Filed as backlog #257**, and of the six this is the most mechanical — its `Fails if` IS a grep,
+which is exactly how a reviewer caught it. ⛔ Broken WITHIN AN HOUR of being written: a vendor-meaning
+claim was corrected in this directory's rationale doc and left standing in `plugins.md`.
+
+### 6 · The second-spelling rule — *new*
+
+Before introducing a name for a mechanism, **grep the concept** across `scripts/` and every
+worktree — not the name you are about to use, which by construction finds nothing.
+
+**Fails if:** two names for one coordination concern are live at the same commit.
+⤳ 17 instances measured; `scripts/check-vocabulary-collisions.py` exists for this and is the
+mechanism to extend rather than duplicate.
+
+### What is NOT here, and why
+
+⛔ The survey's **C3** — flagging a stated percentage the adjacent code computes differently — is
+recorded in the page as **recommended against** and is deliberately not a rule and not a backlog
+row. It would be expected to false-fire more than it catches, and backlog #56's measured verdict is
+that a gate red without cause gets switched off. Writing it down as work would outlive the paragraph
+explaining why not.
+
+### ⛔ How much of this file is actually CHECKED — measured, because it was asked
+
+**Measured 2026-10-07, prompted by the owner asking whether checklist items are *"really checked
+faithfully"*: 3 of this file's 16 sections have a named enforcing script.** Post-Plan Gate
+(`check-plan-gate.sh`, `check-plan-task-order.py`), *Writing a RATCHET*
+(`check-ratchet-contract.py`), and *Closing a job: the CHECK / RESULT table*
+(`check-closing-table.py`). The other thirteen are prose, and nothing reads them.
+
+⛔ **SO BEING WRITTEN HERE IS NOT THE SAME AS BEING ENFORCED, AND THE EVIDENCE IS IN THIS VERY
+SECTION.** *Qualify every number in prose* has been above since 2026-08-27, unenforced, and was
+violated three times in one night by an author who had read it. Rules 4 and 5 below were broken the
+same day they were written. ⚠ This file also has **no line budget**, unlike
+[`dev-process.md`](dev-process.md) (220) and [`plugins.md`](plugins.md) (260) — and the spine carries
+a budget precisely because it once grew to 576 lines and became unread. This file is longer than
+that.
+
+⤳ **Five of the six are therefore filed as rows rather than trusted as prose:** **#250** (rule 1's
+filing direction), **#251** (rule 1's coverage half — a changed behavioural line with no mutation
+entry reaching it; the survey's highest-value candidate), **#252** (an anchor that no longer binds,
+or an `expect` naming no case), **#256** (rule 4), **#257** (rule 5). Where each lands, the rule text
+here shrinks to a pointer.
+
+⚠ **That leaves rules 2 and 3 as the only genuinely prose-resident ones**, and they are the two with
+the weakest mechanical shape: *declare a freeze* is a per-PR judgement, and *no unpinned universals
+in comments* is partly checkable and partly not. Treat them as what they are — advice with a
+measured cost attached — not as gates.
+
