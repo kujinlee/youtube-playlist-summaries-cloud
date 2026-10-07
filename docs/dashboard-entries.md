@@ -14016,3 +14016,81 @@ a second home.
 today are `["verify","schema-gates"]`. ✅ `ci.yml` carries **no `paths:` filter**, so that context
 always reports on a PR to master — it therefore **cannot** recreate #137's pending-forever shape.
 Nine rounds warned about the danger; round 9 was the first to establish why it is clear.
+
+## 2026-10-06 [needs-you]
+**The check that was being killed now finishes.** PR #365 adds a safety check with 183 individual
+tests. On its own branch those ran inside a job with a thirty-minute ceiling and were **killed 26
+minutes into an 85-minute run** — so the work shipped unmeasured. Merging the sharding change (#366)
+into it splits that run across eight parallel jobs, and all eight now pass. That was the whole
+blockage, and it is gone.
+
+One more review round ran on the merged result, because no earlier round had seen it. Both halves
+came back clean, and **nothing either half found is in the thing being shipped** — the two real
+findings are about notes and a repository setting.
+
+**What needs you — two things, and the second is not new:**
+1. **Merging #365.** Merging is yours; the branch is ready on the gates, and the reviewer was explicit
+   that "converged" is a statement about the code and *not* a recommendation to merge while item 2 is
+   open.
+2. **One GitHub setting**, still outstanding from the last entry: add `mutation-sweep-complete` to the
+   required checks for `master`. Until it lands, a failing mutation is reported but **cannot block the
+   merge button** — which is most of what #365 is for.
+
+<!--tech-->
+**PR #365: `origin/master` (#366) MERGED in as `70ad61d1`; round 11 CONVERGED; now at `26b3f142`.**
+
+MERGED, not rebased — the branch carries a prior merge commit and 28 commits, so a rebase replays 27
+of them through the two files with real semantic conflicts. The repo squash-merges, so the delivered
+diff is identical. **Three conflicts, not the five a `comm -12` predicted** (`ci.yml` and
+`roadmap-to-launch.md` auto-merged); `scripts/mutations/*.json` did not collide, so the 183-entry
+manifest arrived untouched and no anchor was hand-merged.
+
+⭐ **THE SWEEP COMPLETES, MEASURED — and the filed margin was wrong.** All 8 shards plus
+`mutation-sweep-complete` green at `70ad61d1`, the first matrix run that actually contained these 183
+entries:
+
+| | |
+|---|---|
+| per-shard wall clock | 1310 / 977 / 659 / 856 / 1228 / 1304 / 1289 / **1377** s |
+| slowest · mean | **1377 s = 22.9 min** · 1125 s |
+| margin vs the 30-min cap | **1.31×** — *not* the 1.9× backlog #231 was filed with |
+| #231's own `FAILS IF` trigger | 1,500 s — **not breached, but 123 s below it**: 8% of headroom, not 25% |
+
+**Round 11's Medium is why that number moved, and it refuted an inherited figure rather than a
+defect.** `ci.yml:563-564`, `ci.yml:636-639` and #231 all rested on `check-main-drivable.py
+--self-test` costing `~30s` — a figure with **no measurement behind it**. Three direct timings: 54.47 s
+warm, 64.11 s cold, **74.40 s** under the `PYTHONDONTWRITEBYTECODE=1` that `child_env` actually sets,
+i.e. 1.8×–2.5× the model. The round deliberately refused to turn laptop spread into a CI prediction
+and said so; its estimate from the most favourable timing (~1.23×) landed **within 0.08 of CI's
+1.31×**. #231 amended with CI's numbers and the commit they came from, and raised 🟡 → 🟠.
+⛔ The lever stays **N**, never `timeout-minutes` — the ~214 s control floor does not divide by N,
+which is why N=8 bought 5.0× and not 8×.
+
+**Round 11, both halves, on the tree that merges — 0 Blocking, 0 in the deliverable.**
+
+- **Codex: zero findings.** It independently rescanned every manifest `find` against the delivered
+  source (0 missing, 0 ambiguous) and **refuted my own caveat**: I had flagged that stubbing
+  `run_suite` might make my anchor result an artefact of the stub, and it showed the concern is void —
+  `run_mutations` resolves the anchor before it ever calls `run_suite` (`check-plan-code.py:1960`).
+- **Claude: CONVERGED**, 1 High + 1 Medium + 1 Low, none in the deliverable. It established *why*
+  that is credible rather than thin: `check-main-drivable.py` is blob `34ffb91a` at **both** parents,
+  so rounds 1–10's subject never moved across the merge — only its environment did.
+- ⭐ **It derived provenance my own merge commit said it lacked.** That message settled for *"1211 +
+  183 = 1394 is a cross-check that agrees, and agreement is not provenance."* It is derivable:
+  1178/57 at the merge base, 1361/58 and 1211/57 at the two parents, 1394/58 at `HEAD`, with
+  1178 + 183 + 33 = 1394 — and **zero files had their count changed on both sides**, so there was no
+  collision candidate anywhere in the dict. I understated my own evidence.
+
+**Four stale figures corrected** to the verified **438 cases / 183 mutations / 27 pinned** —
+`ci.yml:390`, two roadmap sites, one dashboard figure. All four were TRUE at `840a7b43`; round 1's
+`5d3f3c2c` moved them and **no round re-read those files in 21 commits**. The two prose sites also
+disagreed with each other (73 vs 74), which is the tell that neither was derived. Checked for the
+**absence** of the old values, not just the presence of the new ones.
+
+⚠ **ONE QUIET ROUND, NOT TWO, and the tree question is WAIVED rather than passed.**
+`review-method.md:103-107` counts ROUNDS, and round 10's Claude half had 1 Blocking + 3 High in the
+deliverable — so (a)-convergence wants a second consecutive quiet round on the letter of the rule.
+And the only guarded-code change after round 11's verdict is a one-word **comment** correction in
+`ci.yml` (`29 of 37` → `27 of 37`) that round 11 itself asked for, declared `NO-REVIEW:` per
+`review-method.md:118` rather than spending a round re-reviewing a comment — the cost PR #302 paid
+twice.
