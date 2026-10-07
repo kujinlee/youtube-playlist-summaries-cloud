@@ -14725,3 +14725,51 @@ now says so in its own section rather than implying all six are enforced.
 
 ⚠ Of the six, #257 is the one I had argued least for while it had the strongest case — I filed three
 scriptable rules and left the most grep-able one in prose.
+
+## 2026-10-07
+We do not have a tool for finding a claim, and that absence hid a real problem for a whole review
+round.
+
+Searching this repository for a sentence is done with ordinary line-by-line search. A sentence that
+happens to wrap onto a second line is invisible to it. That is how a false statement sat in a file
+for a round while I reported the file clean — I searched, found one copy, and did not notice the
+second was split in half.
+
+The standard fix for this in the search tool is a flag that treats the whole file as one line. Tested
+against a file known to contain two copies, that flag found **zero**. Zero is worse than one, because
+one looks like an undercount and zero looks like an answer.
+
+So this is now written down as needing a tool rather than a technique — and the thing that makes it a
+tool rather than a one-liner is that it should be unable to report "nothing found" without first
+proving it can find something.
+
+<!--tech-->
+Filed as **#258** at the owner's instruction (*"we need better tool for find"*).
+
+⛔ **MEASURED AGAINST A KNOWN POSITIVE** — the pre-fold `scripts/codex-frontier-model.py`, which
+genuinely holds **two** copies of the phrase:
+
+| method | hits |
+|---|---|
+| line-based `grep` | **1** ← the trap |
+| `grep -z` + ERE | **0** ← silently worse |
+| `rg -U 'a\s+b'` | **2** |
+| `tr '\n' ' '` \| `grep -o` | **2** |
+| Python `re` with `\s+` | **2** |
+
+⚠ `grep` here is **ugrep 7.8.4** wearing the name, so GNU's documentation for `-z` does not describe
+what runs. A recipe copied from the manual would have been believed.
+
+⭐ **THE DESIGN POINT, AND WHY IT IS A TOOL AND NOT A ONE-LINER:** it should take a control pattern
+known to hit, and a run whose control misses must be **CANNOT RUN**, never *no matches*. That is this
+repository's own *a check that cannot reach its subject is a failure, never a pass* applied to search
+— and a shell pipeline cannot have it. Precedent exists: the `$HOME`-literal audit in
+`check-plan-code.py` is described there as a *control-backed grep*.
+
+⛔ **PREREQUISITE FOR #257.** The withdrawal rule's check IS a cross-document search for a superseded
+value; implemented line-based it would read as enforced and catch nothing. #257 now names #258 as its
+dependency rather than leaving the next implementer to rediscover it.
+
+⚠ Raised 🔴: this is a defect in the instrument of verification. Every claim-checking task here —
+review rounds, closure audits, stale-figure hunts — currently runs through a search measured
+returning a false negative.
