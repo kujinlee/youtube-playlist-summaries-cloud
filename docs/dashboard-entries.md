@@ -14460,3 +14460,112 @@ master). When those branches merge, keep #252 and close the other — do not fil
 
 Answered in the page as well as here, per the delivery loop. Page recomposed from its fragment:
 **1,096 sites measured, 0 below AA, worst 4.58:1** across both themes.
+
+## 2026-10-07
+Round two found nothing serious, and two of the five things it did find were me breaking rules I
+adopted an hour earlier.
+
+The round existed because the merge gate asked for it: the previous round had not seen the files that
+fixed its own findings. It came back with no blocking or high issues, which is why this branch can
+merge. It found three middling things and two small ones.
+
+Two are worth naming because of what they are. I had corrected a claim about what a vendor field
+means in one document and left the same claim standing in another — which is precisely what the
+withdrawal rule adopted today says not to do. And I had quoted a count of 1,414 without saying which
+tree it came from; the real number for the delivered tree is 1,416, because the two entries this
+change added were not in the tree I measured. That is the provenance rule, also adopted today.
+
+The other three are real defects in the code, all small, and all now written down as work rather
+than fixed here — because fixing them would change the files the round just cleared and send the
+merge back to the start. That is the filing rule, adopted today as well.
+
+<!--tech-->
+Round 2 **Codex half** via `gpt-6.1-sol`: `gate_ran: true`, head `93e3133a`, 5,277 chars, 0
+intrusions. Doc: `docs/reviews/codex/ci-watch-checkrun-shape-r2-codex.md`.
+**No Blocking, no High. 3 Medium, 2 Low. NOT CONVERGED.**
+⭐ Scope was `2780b05a..93e3133a` — the range `check-review-recorded` named as unreviewed.
+
+**CORRECTED (false claims, not optional):**
+- **Medium 3** — the vendor-meaning fix was incomplete. `process-rationale.md` correctly dropped it;
+ `plugins.md` still read *"`visibility` governs the picker; `supported_in_api` says whether a model
+ works"*. The source says *"Visibility of a model in the picker **or APIs**"*, so that is ALSO
+ unlicensed. **No claim is made now** about what `visibility` means. ⚠ This is rule 5 (withdrawal)
+ broken on the day it was adopted: enumerate every site BEFORE correcting any.
+- **Low 1** — "1,414 anchors across 59 manifests" is the count at `2780b05a`. At `93e3133a` it is
+ **1,416**, because this change's own two entries were not in the tree measured. Corrected with a
+ ref. ⚠ Rule 4 (provenance) broken the same day.
+
+**FILED NOT FOLDED (rule 1, adopted today):**
+- **#253** 🟠 a concurrent `--clear` between `iterdir()` and `stat()` raises `FileNotFoundError` —
+ reproduced. ⚠ The third layer of one subject: per-worktree records LOST arms, one shared record
+ CLOBBERED them, per-sha records opened a WINDOW.
+- **#254** 🟠 the refusal still says "none is listed" when a `list`-visible model exists that fails a
+ different requirement — the mixed-cache case. Second correction of the same sentence.
+- **#255** 🟡 `--clear` returns QUIET when HEAD is unreadable and nothing was cleared.
+
+⛔ Filing rather than folding is deliberate and is the rule's whole point: these three touch guarded
+files, so fixing them would re-open `check-review-recorded` and oblige round 3. Corrections above are
+docs-only (`PROSE_DIRS = ("docs/",)`), so they do not.
+
+⚠ Codex independently re-verified: 82/82, 22/22, 178/178, docs OK; pruned copy **44 mutations, 44
+killed, 44 attributed, 0 survivors**; every `expect` matching exactly one case through the real
+`parse_fail_names`; `decide`'s AST unchanged and all six `watching_sha` entries intact; concurrent
+arms preserving both files; mtime ties preserving each HEAD's own arm; a FILE at `SENTINEL` degrading
+to WARN without crashing; PRs 364/366/367 each **12 rows, zero `state` keys**; and the saved cache
+confirming **0.142.5, two hidden models, no `gpt-6*`**.
+⚠ It also noted deleted-worktree records have no cleanup mechanism and stay eligible as other-arm
+explanations — not filed separately; it is the accumulation half of #253's subject.
+
+## 2026-10-07
+The second reviewer on round two found that the commit which fixed the previous round's worst
+finding had written the false sentence back in, ten lines above its own retraction.
+
+The file ended up saying both things: that a cache no longer exists to compare against, and that
+saying so was false. The false half was the live claim; the correction sat below it reading as though
+the problem were historical. It was not — both lines arrived in the same commit.
+
+I had checked for this and reported it clean. The check was wrong: the live sentence wraps across two
+lines, and a line-by-line search cannot see a phrase split that way. Measured against a file known to
+contain two copies: a plain search finds one, and the standard flag for the problem finds zero, which
+is worse because zero reads as clean. Two tools do find both.
+
+That is folded now, and so is a stray pair of asterisks that rendered as literal text in a backlog
+row. Three smaller findings about the code are written down as work rather than fixed here.
+
+<!--tech-->
+Round 2 **Claude half**: `docs/reviews/claude/ci-watch-checkrun-shape-r2-claude.md` (473 lines).
+**NOT CONVERGED: 0 Blocking, 1 High, 4 Medium, 3 Low. The High was in the deliverable.**
+
+⛔ **H1 FOLDED — the docstring asserted BOTH halves of a contradiction.**
+`codex-frontier-model.py:84` read *"the 0.142.5 cache no longer exists to compare against"* while
+`:93` read *"AN EARLIER DRAFT SAID … AND THAT WAS FALSE"*. Not an earlier draft: both lines were `+`
+in the same commit. ⭐ **AND I HAD VERIFIED IT CLEAN** — my grep matched the phrase on ONE line and
+found only the retraction, because the live assertion **wraps**: `…no longer exists to` /
+`compare against`.
+
+⭐ **Measured, against a known positive (the pre-fold file, which has 2):**
+`grep` line-based → **1** · `grep -z` + ERE → **0** (silently worse; `grep` here is ugrep 7.8.4) ·
+`rg -U 'a\s+b'` → **2** · `tr '\n' ' '` + `grep -o` → **2** · Python `re` with `\s+` → **2**.
+⤳ So the recipe is `rg -U` or Python `re`, never a line-based grep, for any claim-hunting over prose.
+⚠ This is a **prerequisite for #257** — the withdrawal check IS a cross-document search, and a
+line-based implementation of it would silently pass.
+
+Also folded: **L1** — `docs/backlog.md` row #252 carried `****1,416`, which
+`page_markup.render_inline` renders as `*<strong>*1,416…`. `check-docs.py` is blind to it. Verified
+through the renderer `gen-backlog-page.py` actually calls, not by eye.
+
+**FILED, not folded** (the filing rule): **#253** (a concurrent `--clear` racing `iterdir()`/`stat()`
+— and r2's Claude half refuted my rationale: the race does not add noise, it **deletes the warning**,
+since the crash at `:512` precedes `decide` at `:516`), **#254** (the refusal still says "none is
+listed" when a `list`-visible model exists), **#255** (`--clear` returns QUIET having cleared nothing).
+
+⚠ **MERGE PLAN, as the reviewer verified it through the gate's own code:** all staged paths classify
+prose via the real `is_prose`; `guarded_changes(staged) == []`; `tail_verdict` simulated post-commit
+returned rc=0. ⛔ But H1's fold edits a GUARDED file, so this commit carries a
+`NO-REVIEW:` declaration in the PR body — `review-method.md` ranks that exit **above** another round
+and ⛔ forbids spending a round before offering it. Precedent: PR #365's one-word `ci.yml` comment.
+The declared reason is narrow and on the record: a docstring correction that DELETES a false
+sentence and changes no executable line.
+
+Verification after the fold: binding pass **0 problems**; **82/82**, **22/22**, **178/178**; scoped
+run **44 mutations, 44 killed, 44 attributed, 0 survivors**; resolver still returns `gpt-6.1-sol`.

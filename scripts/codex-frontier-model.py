@@ -81,9 +81,9 @@ def usable_models(data: dict) -> "list[str]":
     question: *"why do we have to use hidden model? why not use a listed model?"* The CLI was 18
     minor versions behind (0.142.5 against 0.160.1), and after `codex update` the same account was
     offered seven listed models where it had had none. ⚠ **THAT IS AN ASSOCIATION, NOT A PROVEN
-    SERVER-SIDE CAUSE** — round 1 Codex Medium 3 again: the 0.142.5 cache no longer exists to
-    compare against, so "the server keys its answer to `client_version`" is the best explanation
-    available and not something measured here. What IS measured is the before/after pair itself.
+    SERVER-SIDE CAUSE** — round 1 Codex Medium 3: *"the server keys its answer to `client_version`"*
+    is the best explanation available for the before/after pair, and is not itself measured here.
+    What IS measured is the pair — and BOTH HALVES OF IT ARE ON DISK; see the paragraph below.
 
     ⭐ CONFIRMED BY DOING IT, AND THE BEFORE HALF IS ON DISK. After `codex update` to 0.160.1
     the same account's cache went from 2 models (both hidden) to **10, SEVEN of them `list`**,
