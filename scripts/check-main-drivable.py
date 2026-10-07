@@ -128,17 +128,17 @@ MAIN_DEBT: frozenset[str] = frozenset({
     "scripts/check-catalog-coverage.py",
     "scripts/check-docs.py",
     "scripts/check-explainer-delivery.py",
-    # ⟳ 2026-10-06, backlog #221 merging master: PINNED, and route (a) is not available
-    # rather than merely harder. `main()` already takes `root: Path = ROOT` and its
-    # docstring already claims a case can drive it — but its live path calls `measure()`,
-    # which runs `scripts/page-contrast-probe.mjs` through `subprocess` and therefore
-    # needs node AND a browser. `ci.yml` states in its own comment that the runner has
-    # neither and that NOTHING runs the live gate. A case driving `main()` would either
-    # need Chromium in CI or would be driving a path that cannot measure anything.
-    # ⚠ THE DEFAULTED PARAMETER IS THE TELL THIS WAS ALREADY BELIEVED DONE: the signature
-    # was repaired for ADR-0014 and no case ever used it, so the docstring asserted a
-    # compliance the suite never reached — the comment-asserts-a-universal shape again.
-    "scripts/check-page-contrast.py",
+    # ⟳⟳ 2026-10-06: `check-page-contrast.py` WAS PINNED HERE FOR ABOUT AN HOUR AND THE PIN
+    # WAS WRONG. The reasoning was that driving `main()` needs node and a browser, so a case
+    # would be "driving a path that cannot measure anything". Round 3 refuted it by running
+    # it: over an EMPTY constructed world `main()` returns 2 — the file's own CANNOT-RUN
+    # contract, an advertised outcome — with no node and no browser. The guard now drives
+    # its own `main()` and the name is removed in the same commit that makes it comply,
+    # which is what the block above requires.
+    # ⚠ The pin was not neutral while it stood: it deferred exactly the case that exercises
+    # `main()`'s wiring, and that wiring had a live defect (its `root` is not threaded into
+    # `measure()`), which THIS guard structurally cannot see because it reads call-site
+    # source text rather than running anything.
     "scripts/check-features.py",
     "scripts/check-function-revokes.py",
     "scripts/check-gate-falsifiability.py",

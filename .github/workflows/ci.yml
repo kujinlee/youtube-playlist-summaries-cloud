@@ -402,7 +402,7 @@ jobs:
       # questions and the ADR was bought by eleven instances of the second: every `main` resolved
       # its world from module globals, so `main` was the one region no case could reach, and the
       # standard repair (extract the rule) acts on the callee and can never empty that region.
-      # Ships with 28 of 38 guards PINNED as identity debt — backlog #56's measured verdict is that
+      # Ships with 27 of 38 guards PINNED as identity debt — backlog #56's measured verdict is that
       # a gate red from birth gets switched off, so the pin set is the baseline and it reconciles in
       # both directions: paying a debt without removing its pin is itself a finding.
       - name: Every guard's self-test can drive its own main() over a constructed world

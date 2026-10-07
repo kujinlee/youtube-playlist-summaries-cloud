@@ -41,7 +41,7 @@ this guard protects nothing on its own, and saying so is the only honest state.
 says TREAT THIS AS NOT RUN. A contrast gate that goes quiet when it cannot see is worse than none,
 because the silence is indistinguishable from "everything is readable".
 
-    python3 scripts/check-page-contrast.py --self-test  # 85 cases
+    python3 scripts/check-page-contrast.py --self-test  # 94 cases
 """
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -187,6 +188,24 @@ def collapse(rows: list[dict]) -> list[dict]:
     return out
 
 
+def coverage(samples: list[dict], baseline: dict | None) -> tuple[int, int, list[str]]:
+    """PURE. -> (baselined sites measured this run, baselined sites total, the ones missed).
+
+    ⛔ ONE COMPUTATION, TWO READERS — round 3 HIGH 1. The advisory and the success line are
+    statements about the same population, and before this they derived it separately: the
+    advisory counted what vanished and the verdict line counted nothing at all, so a green
+    verdict sat directly beneath "29,950 sites were not measured" and read as whole-corpus.
+    A second derivation of the same set is the shape this repository has measured drifting
+    seventeen times; here the two did not even disagree, because only one of them existed.
+    """
+    if baseline is None:
+        return (0, 0, [])
+    seen = {sample_key(s) for s in samples}
+    total = set(baseline.get("samples", {}))
+    missed = sorted(total - seen)
+    return (len(total & seen), len(total), missed)
+
+
 def population_notes(samples: list[dict], baseline: dict | None) -> list[str]:
     """PURE. -> ADVISORY notes about the measured population. Never fatal.
 
@@ -202,8 +221,7 @@ def population_notes(samples: list[dict], baseline: dict | None) -> list[str]:
     """
     if baseline is None:
         return []
-    seen = {sample_key(s) for s in samples}
-    vanished = sorted(k for k in baseline.get("samples", {}) if k not in seen)
+    _measured, _total, vanished = coverage(samples, baseline)
     if not vanished:
         return []
     by_page: dict[str, int] = {}
@@ -714,7 +732,56 @@ def _self_test() -> int:
     case("...and counts distinct pages, not elements",
          summarise([s(9.0), s(8.0, text="b"), s(7.0, page="q.html", text="c")])["pages"], 2)
 
+    # ─── coverage(): the denominator the verdict line was missing (round 3 HIGH 1) ──────
+    # ⚠ `samples` AND `root` BOTH VARY ACROSS CALL SITES. `check-fixture-variation` refused the
+    # first draft: five calls passing one `_s` make the parameter indistinguishable from a
+    # constant, so no case could tell a clause that READS it from one that ignores it. It
+    # caught the same mistake twice in one session, which is the point of having it.
+    _s1 = [{"page": "a.html", "scheme": "light", "selector": "p", "px": 16.0, "weight": 400,
+            "text": "x", "ratio": 9.0, "threshold": 4.5}]
+    _s2 = [{"page": "b.html", "scheme": "dark", "selector": "h2", "px": 24.0, "weight": 700,
+            "text": "y", "ratio": 7.1, "threshold": 3.0}]
+    _k1, _k2 = sample_key(_s1[0]), sample_key(_s2[0])
+
+    case("coverage with no baseline measures nothing and claims nothing",
+         coverage(_s1, None), (0, 0, []))
+    case("a baseline whose every site was measured reports full coverage",
+         coverage(_s2, {"samples": {_k2: {}}})[:2], (1, 1))
+    case("...and names nothing as missed",
+         coverage(_s1, {"samples": {_k1: {}}})[2], [])
+    # ⭐ THE CASE THAT WOULD HAVE CAUGHT THE DEFECT: a baseline holding sites this run did not
+    # measure must report PARTIAL coverage and name them. The old code reported neither.
+    case("a baseline with unmeasured sites reports partial coverage",
+         coverage(_s2, {"samples": {_k2: {}, "gone.html|light|y": {}}})[:2], (1, 2))
+    case("...and names exactly the ones missed",
+         coverage(_s1, {"samples": {_k1: {}, "gone.html|light|y": {}}})[2], ["gone.html|light|y"])
+    # a DIFFERENT samples list against the SAME baseline must change the answer — the pair is
+    # what proves the parameter is read rather than ignored.
+    case("a run that measured none of the baseline reports zero coverage",
+         coverage(_s2, {"samples": {_k1: {}}})[:2], (0, 1))
+    case("population_notes agrees with coverage about how many were missed",
+         ("2 baselined site(s)" in (population_notes(
+             _s1, {"samples": {_k1: {}, "g1|light|y": {}, "g2|light|z": {}}}) or [""])[0]), True)
+
+    # ─── ADR-0014 rule D2: a case DRIVES main() over a world it built ───────────────────
+    # ⛔ THIS CASE REFUTES A PIN ADDED AN HOUR EARLIER. `check-page-contrast.py` was put in
+    # `MAIN_DEBT` on the reasoning that driving `main()` needs node and a browser. Round 3
+    # refuted it by RUNNING it: over an empty constructed world `main()` returns 2 — the file's
+    # own CANNOT-RUN contract, an advertised outcome — with no node and no browser.
+    with tempfile.TemporaryDirectory() as _tdA, tempfile.TemporaryDirectory() as _tdB:
+        _rootA, _rootB = Path(_tdA), Path(_tdB)
+        for _r in (_rootA, _rootB):
+            (_r / "docs" / "explainers").mkdir(parents=True)
+            (_r / "scripts").mkdir()
+        case("main() over an EMPTY constructed world refuses with the CANNOT-RUN code",
+             main([], root=_rootA), 2)
+        # a SECOND, distinct world — so `root` is not a constant to the suite either, and the
+        # refusal is shown to be about the world rather than about one particular path.
+        case("...and --raw over a DIFFERENT empty world refuses identically",
+             main(["--raw"], root=_rootB), 2)
+
     print(f"\n{ok}/{ok + fail} self-test cases passed")
+
     return 1 if fail else 0
 
 
@@ -799,7 +866,23 @@ def main(argv: list[str], root: Path = ROOT) -> int:
             if len(problems) > 40:
                 print(f"  … and {len(problems) - 40} more")
             return 1
-        print("  OK — no element crossed below AA and none already failing got worse")
+        # ⛔ THE SUCCESS LINE CARRIES ITS OWN COVERAGE — round 3 HIGH 1. It used to say only
+        # "no element crossed below AA", printed directly beneath an ADVISORY reporting that
+        # 29,950 of 66,732 baselined sites were not measured. MEASURED: that green covered
+        # 55.1% of its own baseline, and regenerating the four gitignored derived pages made
+        # the identical command exit 1 with ten NEW below-AA sites.
+        # ⚠ A verdict that omits its denominator is read as whole-corpus by every reader
+        # INCLUDING THE ONE WHO WROTE IT: the coordinator quoted this line as proof that a fold
+        # was verified while the advisory sat two lines above it in the same output. The
+        # docstring of `population_notes` even states the derived pages are 45.7% of the
+        # baseline — the number was known and simply never reached the verdict.
+        _measured, _total, _missed = coverage(samples, base)
+        _cov = (f"{_measured / _total * 100:.1f}% of baseline ({_measured} of {_total} site(s))"
+                if _total else "no baseline")
+        print(f"  OK over {_cov} — no element crossed below AA and none already failing got worse")
+        if _missed:
+            print(f"  \u26a0 NOT A WHOLE-CORPUS PASS: {len(_missed)} baselined site(s) were not "
+                  f"measured (see the ADVISORY above). Regenerate the derived pages and re-run.")
         return 0
 
     # ⚠ `--report` WAS A DECLARED NO-OP — round 1 L2. The flag was documented in the usage block
