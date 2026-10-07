@@ -892,6 +892,10 @@ run. A bare count is read as coming from the obvious place, and three times in o
 **Fails if:** a decision card or a backlog row carries a count with no ref beside it.
 ⤳ See also *Qualify every number in prose* above, which this sharpens from "say what it counts" to
 "say where it came from".
+⤳ **Filed as backlog #256.** ⛔ And it was broken THREE TIMES on the day it was written — `1,414`
+anchors quoted as the delivered count when the tree held 1,416, `437 ms` for a pass measured
+elsewhere at 63 ms and 289 ms, `3 unbound` where the number was 2. Each caught by a reviewer, none
+by a machine.
 
 ### 5 · The withdrawal rule — *new*
 
@@ -902,6 +906,9 @@ record the withdrawal rather than silently editing.
 ⛔ **A right conclusion resting on a withdrawn reason looks healthy from every direction** — which is
 why the enumeration comes first. Measured 2026-10-07: a withdrawn sentence about a model cache stood
 in **three** documents as the stated reason for softening a claim, and the softening was itself wrong.
+⤳ **Filed as backlog #257**, and of the six this is the most mechanical — its `Fails if` IS a grep,
+which is exactly how a reviewer caught it. ⛔ Broken WITHIN AN HOUR of being written: a vendor-meaning
+claim was corrected in this directory's rationale doc and left standing in `plugins.md`.
 
 ### 6 · The second-spelling rule — *new*
 
@@ -920,8 +927,30 @@ row. It would be expected to false-fire more than it catches, and backlog #56's 
 that a gate red without cause gets switched off. Writing it down as work would outlive the paragraph
 explaining why not.
 
-⤳ **Scriptable rules are filed, not restated:** #250 (rule 1's filing direction), #251 (a changed
-behavioural line with no mutation entry reaching it — the survey's highest-value candidate), #252
-(an anchor that no longer binds, or an `expect` naming no case). Where those land, the corresponding
-rule text here shrinks to a pointer.
+### ⛔ How much of this file is actually CHECKED — measured, because it was asked
+
+**Measured 2026-10-07, prompted by the owner asking whether checklist items are *"really checked
+faithfully"*: 3 of this file's 16 sections have a named enforcing script.** Post-Plan Gate
+(`check-plan-gate.sh`, `check-plan-task-order.py`), *Writing a RATCHET*
+(`check-ratchet-contract.py`), and *Closing a job: the CHECK / RESULT table*
+(`check-closing-table.py`). The other thirteen are prose, and nothing reads them.
+
+⛔ **SO BEING WRITTEN HERE IS NOT THE SAME AS BEING ENFORCED, AND THE EVIDENCE IS IN THIS VERY
+SECTION.** *Qualify every number in prose* has been above since 2026-08-27, unenforced, and was
+violated three times in one night by an author who had read it. Rules 4 and 5 below were broken the
+same day they were written. ⚠ This file also has **no line budget**, unlike
+[`dev-process.md`](dev-process.md) (220) and [`plugins.md`](plugins.md) (260) — and the spine carries
+a budget precisely because it once grew to 576 lines and became unread. This file is longer than
+that.
+
+⤳ **Five of the six are therefore filed as rows rather than trusted as prose:** **#250** (rule 1's
+filing direction), **#251** (rule 1's coverage half — a changed behavioural line with no mutation
+entry reaching it; the survey's highest-value candidate), **#252** (an anchor that no longer binds,
+or an `expect` naming no case), **#256** (rule 4), **#257** (rule 5). Where each lands, the rule text
+here shrinks to a pointer.
+
+⚠ **That leaves rules 2 and 3 as the only genuinely prose-resident ones**, and they are the two with
+the weakest mechanical shape: *declare a freeze* is a per-PR judgement, and *no unpinned universals
+in comments* is partly checkable and partly not. Treat them as what they are — advice with a
+measured cost attached — not as gates.
 

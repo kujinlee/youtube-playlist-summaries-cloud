@@ -14677,3 +14677,51 @@ those land, the corresponding rule text shrinks to a pointer.
 
 Guards: `check-docs`, `check-gate-falsifiability`, `check-features`, `check-anchors`,
 `check-explainer-delivery`, `check-roadmap-consistency`, `check-backlog-closure` all rc=0.
+
+## 2026-10-07
+Correcting the entry above: I said the six rules were now part of the process. Writing them down is
+not the same thing, and you asked the question that showed it.
+
+You asked whether the items in that checklist file are really checked. I measured it rather than
+guessing: sixteen sections, three of which have a program behind them. The other thirteen are
+writing. Nothing reads them.
+
+The evidence that this matters was already sitting in the same file. It has carried a section about
+qualifying every number since August. Last night I broke that exact rule three times — a count that
+belonged to a different tree, a timing nobody can reproduce, and a figure that was two rather than
+three. And two of the six new rules were broken within an hour of my writing them, both caught by a
+reviewer and neither by anything automatic.
+
+So two more of them are now written down as work instead: the one about saying where a number came
+from, and the one about correcting a claim everywhere it reached rather than in one place. That makes
+five of the six into things a program can check, and leaves two as what they honestly are — advice
+with a measured price tag.
+
+<!--tech-->
+⛔ **THE ENTRY ABOVE OVERCLAIMED.** It said the six rules were "now part of the process". **Measured
+2026-10-07**, prompted by the owner asking whether checklist items are *"really checked faithfully"*:
+**3 of `process-checklists.md`'s 16 sections have a named enforcing script** — Post-Plan Gate
+(`check-plan-gate.sh`, `check-plan-task-order.py`), *Writing a RATCHET*
+(`check-ratchet-contract.py`), *Closing a job: the CHECK / RESULT table* (`check-closing-table.py`).
+The other 13 are prose and nothing reads them. ⚠ The file also has **no line budget**, unlike
+`dev-process.md` (220) and `plugins.md` (260) — and the spine has one *because* it grew to 576 lines
+and became unread. This file is **longer than that**.
+
+⭐ **THE EVIDENCE WAS ALREADY IN THE FILE.** *Qualify every number in prose* has been there,
+unenforced, since 2026-08-27 — and I violated it three times in one night: `1,414` anchors quoted as
+the delivered count when the tree held **1,416**; `437 ms` for a pass a reviewer measured at **63 ms**
+and a later run at **289 ms**; `3 unbound` where the number was **2**. Rules 4 and 5 were then broken
+the same day they were written. Every one caught by a reviewer, none by a machine.
+
+**FILED:** **#256** (rule 4, provenance — a number names where it was measured; scope deliberately
+narrow, WARN-only per #56, and the fuzziness of *"beside"* is named in the row rather than hidden)
+and **#257** (rule 5, withdrawal — its `Fails if` IS a cross-document grep, which is literally how
+the reviewer caught both instances; the row names the hard part, that `⟳` trails and review docs
+quote superseded figures ON PURPOSE and must be exempt or the check is red forever).
+
+⤳ So **five of six** are rows now: #250, #251, #252, #256, #257. ⚠ That leaves rules **2 (freeze)**
+and **3 (comment)** prose-resident, and they are the two with the weakest mechanical shape. The file
+now says so in its own section rather than implying all six are enforced.
+
+⚠ Of the six, #257 is the one I had argued least for while it had the strongest case — I filed three
+scriptable rules and left the most grep-able one in prose.
