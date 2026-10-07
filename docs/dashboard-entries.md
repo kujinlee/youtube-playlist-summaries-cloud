@@ -14043,7 +14043,12 @@ MERGED, not rebased — the branch carries a prior merge commit and 28 commits, 
 of them through the two files with real semantic conflicts. The repo squash-merges, so the delivered
 diff is identical. **Three conflicts, not the five a `comm -12` predicted** (`ci.yml` and
 `roadmap-to-launch.md` auto-merged); `scripts/mutations/*.json` did not collide, so the 183-entry
-manifest arrived untouched and no anchor was hand-merged.
+manifest arrived untouched and no anchor was hand-merged. ⚠ Round 11 found my own merge commit
+under-enumerated the true merges: **`docs/memory/MEMORY.md` is a sixth one, named nowhere in it** (a
+clean union). It also verified the backlog result is exactly `A ∪ B` — 233 rows, 0 duplicates, with
+220/221 absent from *both* parents rather than lost — and that `check-python-pin` passes **and is
+falsifiable**: removing the `mutation-sweep` pin in memory yields `['ci.yml:mutation-sweep']`, so the
+pass is not vacuous. Neither my own verification list nor Codex's had falsified it.
 
 ⭐ **THE SWEEP COMPLETES, MEASURED — and the filed margin was wrong.** All 8 shards plus
 `mutation-sweep-complete` green at `70ad61d1`, the first matrix run that actually contained these 183
@@ -14056,15 +14061,29 @@ entries:
 | margin vs the 30-min cap | **1.31×** — *not* the 1.9× backlog #231 was filed with |
 | #231's own `FAILS IF` trigger | 1,500 s — **not breached, but 123 s below it**: 8% of headroom, not 25% |
 
-**Round 11's Medium is why that number moved, and it refuted an inherited figure rather than a
-defect.** `ci.yml:563-564`, `ci.yml:636-639` and #231 all rested on `check-main-drivable.py
---self-test` costing `~30s` — a figure with **no measurement behind it**. Three direct timings: 54.47 s
-warm, 64.11 s cold, **74.40 s** under the `PYTHONDONTWRITEBYTECODE=1` that `child_env` actually sets,
-i.e. 1.8×–2.5× the model. The round deliberately refused to turn laptop spread into a CI prediction
-and said so; its estimate from the most favourable timing (~1.23×) landed **within 0.08 of CI's
-1.31×**. #231 amended with CI's numbers and the commit they came from, and raised 🟡 → 🟠.
-⛔ The lever stays **N**, never `timeout-minutes` — the ~214 s control floor does not divide by N,
-which is why N=8 bought 5.0× and not 8×.
+**Round 11's Medium is why that number moved — and the round then CORRECTED ITSELF, against its own
+magnitude, which is the part worth recording.** `ci.yml:563-564`, `ci.yml:636-639` and #231 all rested
+on `check-main-drivable.py --self-test` costing `~30s`, a figure with no measurement behind it. The
+round first offered three laptop timings (54.47 s warm, 64.11 s cold, 74.40 s under the
+`PYTHONDONTWRITEBYTECODE=1` that `child_env` sets) and called the model off by 1.8×–2.5× — and I wrote
+that into #231 and into this entry. ⛔ **ITS AUTHOR THEN WITHDREW THOSE TIMINGS AS CI EVIDENCE**, having
+re-derived the per-suite cost from the shard numbers above: mean 1125 s less the 221 s control floor
+leaves ~904 s over ~24.9 suite runs = **~36.3 s each, 1.21× the model, not 1.8×–2.5×**. The laptop
+overstates this runner by 1.5×–2.0×.
+
+⭐ **So the margin (1.31×) is CI's and stands; only the EXPLANATION moved, and it moved to a narrower
+and more durable one:** `183/8 × 30s` omits the per-suite cost **and the two extra control runs per
+shard, which do not divide by N** — the same non-dividing floor that makes N=8 worth 5.0× rather than
+8×. ⚠ The round's prediction landed within 6% of actual **partly by luck, two errors in opposite
+directions** — its words, not a hedge I added. ⚠ Measured spread across shards is **2.09×** against
+the 1.15× `ci.yml:648-649` predicts. #231 amended with CI's numbers, then corrected, raised 🟡 → 🟠.
+⛔ The lever stays **N**, never `timeout-minutes`.
+
+⚠ **AND THE HIGH WAS UNFILED, so it is now #236.** Neither #230 (what the aggregator *observes*) nor
+#235 (two specific whole-manifest checks that lost their `verify` home) has *"the aggregator is not a
+required context"* as its subject, so closing either would have left it standing. `rulesets` is empty
+too, so neither protection mechanism supplies it. **A green sweep is not a blocking sweep** — all
+eight shards passed on `70ad61d1` and that changes nothing about this.
 
 **Round 11, both halves, on the tree that merges — 0 Blocking, 0 in the deliverable.**
 
