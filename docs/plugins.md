@@ -140,8 +140,10 @@ python3 scripts/codex-frontier-model.py --write-config   # also syncs ~/.codex/c
 looking like a Codex outage.** Measured 2026-10-07: on CLI 0.142.5 the cache held TWO models, both
 `visibility: "hide"`; after `codex update` to 0.160.1 the same account had **10, seven `list`**,
 topped by `gpt-6.1-sol` — two generations the old client was never offered. ⚠ **NEVER loosen the
-resolver to accept a hidden model**: that pins every review to something described as *Legacy*,
-silently. If it refuses, READ ITS MESSAGE (it names the hidden near-misses, the `client_version` and
+resolver to accept a hidden model.** It is a SELECTION POLICY — use what the vendor lists in its
+default picker — NOT a claim that hidden means withdrawn (`visibility` governs the picker;
+`supported_in_api` says whether a model works), and the before/after is an ASSOCIATION, not a
+measured server-side cause. If it refuses, READ ITS MESSAGE (it names the hidden near-misses, the `client_version` and
 `codex update`) and verify Codex separately with `codex exec -m <slug>` **from inside a git
 worktree** before recording a `REVIEW GAP`. Full account:
 [`process-rationale.md`](process-rationale.md) → *The review gate that reported an outage it did not have*.

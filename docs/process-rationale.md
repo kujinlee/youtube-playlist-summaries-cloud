@@ -998,11 +998,41 @@ Three things made the wrong conclusion the easy one, and each is a transferable 
    a model labelled *Legacy*, reporting success, indefinitely. The owner refused it with one
    question: *"why do we have to use hidden model? why not use a listed model?"*
 
-**The actual cause was the CLI being 18 minor versions behind** (0.142.5 against 0.160.1), and the
-server keys its model list to `client_version`. After `codex update` the same account's cache held
-**10 models, SEVEN of them `visibility: "list"`**, topped by `gpt-6.1-sol` and `gpt-6-astra`. The
-strict resolver, unchanged, then resolves `gpt-6.1-sol`. **`hide` was the server telling us "not
-this one", and it was right.**
+**The CLI was 18 minor versions behind** (0.142.5 against 0.160.1). After `codex update` the same
+account's cache held **10 models, SEVEN of them `visibility: "list"`**, topped by `gpt-6.1-sol` and
+`gpt-6-astra`, and the strict resolver — unchanged — resolves `gpt-6.1-sol`.
+
+⚠ **AND THE FIRST VERSION OF THIS SECTION OVERSTATED BOTH HALVES OF THAT, which round 1's Codex
+half on PR #367 refuted with sources (Medium 3).** It said the server "keys its model list to
+`client_version`" and that *"`hide` was the server telling us not this one, and it was right"*.
+Neither is established:
+
+* **⚠ CORRECTED AGAIN, round 1 Claude HIGH:** this said "the 0.142.5 cache no longer exists to
+  compare against" and that was **false** — `~/.codex/models_cache.json.bak-2026-10-07` is a copy
+  taken at 03:20 before the update, and the reviewer read it. `client_version: 0.142.5`, 2 models,
+  both `hide`, **and no `gpt-6*` entry at all**. So the difference is in the SERVER'S RESPONSE
+  rather than local filtering, which is *stronger* than the "association" this section had
+  downgraded it to. Codex's own wording was careful — *"unverifiable from the current cache"* —
+  and the draft widened it into a claim about the world. The honest remaining gap is narrow:
+  `client_version` is the likeliest, not the only, thing that changed in those eleven minutes.
+* **⚠ AND THE REPLACEMENT VENDOR CLAIM WAS ALSO UNLICENSED, round 1 Claude Medium.** The draft
+  said `visibility` governs the picker and not whether a model works, citing two files. Read:
+  `openai_models.rs` documents the field as *"Visibility of a model in the picker **or APIs**"*,
+  and `ModelListParams.json` never mentions `visibility`. So it cited a file that is silent and
+  overrode the one that is not, and there is a third value (`ModelVisibility::None`) besides.
+  **NO claim is made now about what `visibility` governs.** Requiring `list` is a deliberate
+  NARROWING — the conservative direction for a gate — and that is the whole justification.
+
+**The policy survives both corrections, on ground that needs no theory at all.** `list` is the
+narrower set and the vendor marks it; narrowing is the conservative direction for a gate. The cost
+is stated rather than hidden — it excludes API-supported hidden models (today `gpt-reserve`,
+`gpt-5.5`, `codex-auto-review`) — and that is a choice, not a deduction.
+
+⚠ **THE SHAPE OF THIS SECTION IS ITSELF THE LESSON.** Three drafts, each corrected by a different
+reviewer, and every error was the same kind: a true observation extended into a claim about why.
+"The CLI is 18 versions behind" was measured. "The server keys its list to `client_version`" was
+not. "`hide` means withdrawn" was not. "`hide` governs the picker, not callability" was not. The
+measured part never needed any of them.
 
 ⚠ The first two attempts to smoke-test Codex ALSO failed, for reasons of mine — run from a
 non-git directory (*"Not inside a trusted directory"*) and with stdin left open. A dependency

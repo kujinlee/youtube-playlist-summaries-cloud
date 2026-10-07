@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 19 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 22 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
@@ -50,9 +50,27 @@ END = "# <<< codex-frontier <<<"
 def usable_models(data: dict) -> "list[str]":
     """LISTED, API-supported model slugs, most-frontier FIRST (ascending `priority`). PURE.
 
-    ⛔ `visibility == "list"` IS REQUIRED, AND THAT REQUIREMENT IS THE POINT. `"hide"` is the
-    server saying *not this one* — so accepting a hidden model silently commits every adversarial
-    review to whatever the vendor has stopped advertising. Measured 2026-10-07: a FRESH fetch
+    ⛔ `visibility == "list"` IS REQUIRED. THIS IS A SELECTION POLICY, NOT A CLAIM ABOUT VENDOR
+    INTENT — and TWO successive drafts of this docstring got that wrong, each refuted by a
+    different half of round 1.
+
+    Draft 1 said `"hide"` means the vendor has WITHDRAWN the model. Codex (Medium 3) refuted it.
+    Draft 2 then said `visibility` governs the picker and "NOT whether a model works" — and the
+    Claude half refuted THAT by reading the source: `openai_models.rs` documents the field as
+    *"Visibility of a model in the picker **or APIs**"*, and
+    `app-server-protocol/schema/json/v2/ModelListParams.json` does not mention `visibility` at
+    all. So the second draft cited a file that says nothing on the subject and overrode the one
+    that does.
+
+    ⛔ SO NO CLAIM IS MADE HERE ABOUT WHAT `visibility` GOVERNS. What is known: the field exists,
+    it takes `list`/`hide`/`none`, and `supported_in_api` is a separate field. Anything further
+    about vendor intent is inference, and this docstring has now been wrong twice by making it.
+
+    THE POLICY STANDS ON ITS OWN GROUND AND NEEDS NO SUCH CLAIM: `list` is the narrower set, the
+    vendor marks it, and narrowing is the conservative direction for a gate. ⚠ The cost is real
+    and stated: this excludes API-supported hidden models — today `gpt-reserve`, `gpt-5.5`,
+    `codex-auto-review` — and that exclusion is a CHOICE, not a deduction from anything the
+    vendor says. Measured 2026-10-07: a FRESH fetch
     returned exactly two models, both hidden — `gpt-5.5`, whose own `description` is **"Legacy
     coding model."**, and `codex-auto-review`, which is `tool_mode: code_mode_only` and
     purpose-built for approval review. A loosened predicate would have picked the legacy one today
@@ -60,18 +78,26 @@ def usable_models(data: dict) -> "list[str]":
     downgraded-gate-that-still-reports failure `docs/plugins.md` warns about above all others.
 
     ⚠ AN EARLIER DRAFT OF THIS FUNCTION DID LOOSEN IT, and the owner caught the mistake with one
-    question: *"why do we have to use hidden model? why not use a listed model?"* The answer was
-    that the CLI was 18 minor versions behind (0.142.5 against 0.160.1) and the server keys its
-    answer to `client_version`, so this client was being offered no current model at all. The fix
-    belongs at THAT layer, not here. What belongs here is a refusal that says so — see
-    `refusal_message`.
+    question: *"why do we have to use hidden model? why not use a listed model?"* The CLI was 18
+    minor versions behind (0.142.5 against 0.160.1), and after `codex update` the same account was
+    offered seven listed models where it had had none. ⚠ **THAT IS AN ASSOCIATION, NOT A PROVEN
+    SERVER-SIDE CAUSE** — round 1 Codex Medium 3 again: the 0.142.5 cache no longer exists to
+    compare against, so "the server keys its answer to `client_version`" is the best explanation
+    available and not something measured here. What IS measured is the before/after pair itself.
 
-    ⭐ CONFIRMED BY DOING IT. After `codex update` to 0.160.1 the same account's cache went from
-    2 models (both hidden) to **10, SEVEN of them `list`**, topped by `gpt-6.1-sol` ("Latest
-    workhorse model for coding and everyday work") and `gpt-6-astra` ("Frontier intelligence for
-    the most demanding work"). This function, unchanged and strict, resolves `gpt-6.1-sol`. Two
-    whole model generations were invisible to the old client, and the loosened draft would have
-    run every adversarial review on the Legacy one instead — silently, and forever.
+    ⭐ CONFIRMED BY DOING IT, AND THE BEFORE HALF IS ON DISK. After `codex update` to 0.160.1
+    the same account's cache went from 2 models (both hidden) to **10, SEVEN of them `list`**,
+    topped by `gpt-6.1-sol` and `gpt-6-astra`. This function, unchanged and strict, resolves
+    `gpt-6.1-sol`.
+
+    ⚠ AN EARLIER DRAFT SAID THE 0.142.5 CACHE "no longer exists to compare against" AND THAT WAS
+    FALSE — round 1 Claude HIGH. `~/.codex/models_cache.json.bak-2026-10-07` is a copy I took at
+    03:20 before updating: `client_version: 0.142.5`, 2 models, both `hide`, both
+    `supported_in_api`, fetched 10:20:48Z against the new cache's 10:31:31Z. **It contains no
+    `gpt-6*` entry at all.** So the difference is in the SERVER'S RESPONSE, not in local
+    filtering — which is STRONGER evidence than the "association" the same draft downgraded it
+    to. I had the data and asserted I did not; the remaining honest gap is narrow, that
+    `client_version` is the likeliest but not the only thing that changed in those eleven minutes.
     """
     api = [m for m in data.get("models", [])
            if m.get("supported_in_api")
@@ -97,11 +123,17 @@ def refusal_message(data: dict) -> str:
     server keyed its answer to, and the one command that changes any of it.
     """
     models = data.get("models", [])
+    # ⚠ THE SAME FILTERS `usable_models` APPLIES, MINUS VISIBILITY — round 1 Codex Medium 2. The
+    # first version omitted the priority requirements, so it labelled a model with a null or
+    # boolean priority "hidden but otherwise usable" when the resolver would reject it even if
+    # listed. A near-miss has to actually be a near-miss.
     near = sorted((m for m in models
-                   if m.get("supported_in_api") and m.get("visibility") != "list"
-                   and m.get("slug")),
-                  key=lambda m: m.get("priority") if isinstance(m.get("priority"), (int, float))
-                  else 1e9)
+                   if m.get("supported_in_api")
+                   and isinstance(m.get("priority"), (int, float))
+                   and not isinstance(m.get("priority"), bool)
+                   and m.get("slug")
+                   and m.get("visibility") != "list"),
+                  key=lambda m: m["priority"])
     bits = [f"error: no LISTED, API-supported model in {CACHE}"]
     bits.append(f"  the cache holds {len(models)} model(s), fetched by client_version "
                 f"{data.get('client_version') or '?'}")
@@ -109,10 +141,21 @@ def refusal_message(data: dict) -> str:
         bits.append("  hidden but otherwise usable: "
                     + ", ".join(f"{m['slug']} ({m.get('description') or 'no description'})"
                                 for m in near))
-        bits.append("  `hide` means the server is NOT offering it — do not reach for it; a model "
-                    "the vendor stopped advertising is one it is withdrawing.")
-    bits.append("  MOST LIKELY CAUSE: this Codex CLI is behind, and the server keys the model list "
-                "to client_version. Run `codex update`, then re-run this.")
+        bits.append("  this tool's POLICY is to use only models marked `list`. That is a "
+                    "deliberate narrowing, not a claim about what `hide` means.")
+        # ⚠ CONDITIONAL — round 1 Codex Medium 2. The first version printed this whatever the
+        # data said, so it diagnosed an outdated CLI even when the cache held no usable model for
+        # some entirely different reason. It is only the likely cause when models ARE on offer
+        # and none of them is listed.
+        bits.append("  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but none "
+                    "is listed. Run `codex update`, then re-run this.")
+    elif models:
+        bits.append("  ⚠ and NONE of them is a near-miss: every entry fails a requirement other "
+                    "than visibility (API support, or a numeric non-boolean priority, or a slug). "
+                    "Inspect the cache rather than assuming the CLI is stale.")
+    else:
+        bits.append("  the cache is EMPTY. Run `codex` once to populate it; if it stays empty, "
+                    "check `codex login status`.")
     bits.append("  ⛔ TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is "
                 "unavailable — verify that separately with `codex exec -m <slug> ...` from inside "
                 "a git worktree before recording a REVIEW GAP.")
@@ -244,9 +287,28 @@ def _self_test() -> int:
              M("solo-model", 1, "hide", description="Something else.")]})
           and "gpt-5.5" not in refusal_message({"client_version": "9.9.9", "models": [
              M("solo-model", 1, "hide", description="Something else.")]})), True)
-    case("...and an EMPTY cache still reports the count and the likely cause",
+    # ⛔ THE DIAGNOSIS IS CONDITIONAL NOW, AND THESE THREE CASES ARE WHAT MAKE IT SO — round 1
+    # Codex Medium 2. An earlier version printed "this CLI is behind" whatever the data said, so
+    # it diagnosed staleness over an empty cache and over models that fail for other reasons.
+    case("an EMPTY cache says so, and does NOT blame the CLI version",
          ("0 model(s)" in refusal_message({"models": []})
-          and "codex update" in refusal_message({"models": []})), True)
+          and "cache is EMPTY" in refusal_message({"models": []})
+          and "codex update" not in refusal_message({"models": []})), True)
+    _NOT_API = {"client_version": "1.2.3", "models": [M("x", 1, "list", api=False)]}
+    case("...and models that fail for a reason OTHER than visibility are not blamed on it either",
+         ("NONE of them is a near-miss" in refusal_message(_NOT_API)
+          and "codex update" not in refusal_message(_NOT_API)), True)
+    # ⚠ A MALFORMED PRIORITY IS NOT A NEAR-MISS — round 1 Codex Medium 2: the first near-miss
+    # predicate omitted the priority requirements, so it advertised as "otherwise usable" a model
+    # the resolver would reject even if it were listed.
+    _BADP = {"client_version": "1.2.3", "models": [M("badpriority", None, "hide")]}
+    case("...and a model with a malformed priority is NOT advertised as otherwise usable",
+         "badpriority" not in refusal_message(_BADP), True)
+    # ⚠ AND THE VENDOR-MEANING CLAIM IS GONE (round 1 Codex Medium 3): the message states the
+    # POLICY and what `visibility` actually governs, and never asserts withdrawal.
+    case("the message states a POLICY and never claims the vendor withdrew anything",
+         ("POLICY" in refusal_message(LIVE)
+          and "withdraw" not in refusal_message(LIVE).lower()), True)
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

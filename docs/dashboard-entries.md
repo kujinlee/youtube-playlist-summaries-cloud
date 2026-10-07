@@ -14283,3 +14283,146 @@ left behind. Its stale `# e.g. gpt-5.5 today` example is now `gpt-6.1-sol`.
 ⚠ **PR #364's round-5 Codex half was run on `gpt-5.5`** — before this was understood. It still found
 a real High, but a re-run on `gpt-6.1-sol` would be a stronger gate and is worth considering before
 that branch merges.
+
+## 2026-10-07
+The newly-reachable second reviewer read the work that fixed it, and corrected two of my numbers and
+one of my explanations.
+
+With the review tool working again, the first thing it reviewed was the change that repaired it. It
+agreed the repair works and reproduced the evidence independently. It also found that I had
+explained *why* it works in terms the vendor does not actually support, and that two counts in the
+entry above are simply wrong.
+
+The explanation: I said a model marked "hidden" is one the vendor has withdrawn. The published
+schema says something narrower — hidden means *not shown in the default picker*, and a separate flag
+says whether the model works at all. So choosing only listed models is a sound policy, but my reason
+for it was invented. The policy stands; the justification is now the honest one, and the cost of it
+is written down instead of implied.
+
+The numbers: the entry above says one test suite went from 58 to 72 cases and that three existing
+checks were re-pointed. It is 58 to 74, and two. Both corrected here.
+
+Also corrected: the message that reports unwatched CI is three lines, not always — it is four when
+it has a stale watcher to explain.
+
+<!--tech-->
+Round 1, **Codex half via `gpt-6.1-sol`** — the repaired resolver picked it unaided from 7
+candidates: `gate_ran: true`, 8,020 chars, head `2780b05a`, 0 intrusions. Doc:
+`docs/reviews/codex/ci-watch-checkrun-shape-r1-codex.md`. **NOT CONVERGED: 4 Medium, 2 Low, no
+Blocking or High.**
+
+⛔ **Medium 3 — `hide` == withdrawn was INFERENCE STATED AS VENDOR MEANING.** Codex cited
+`codex-rs/app-server-protocol/schema/json/v2/ModelListParams.json` and
+`codex-rs/protocol/src/openai_models.rs`: `visibility` governs the DEFAULT PICKER,
+`supported_in_api` separately governs callability. Hidden therefore does NOT mean withdrawn,
+deprecated or unsuitable. ⚠ It also ruled the before/after an **ASSOCIATION, not a measured
+server-side cause** — the 0.142.5 cache cannot be re-read. Corrected at the docstring,
+`plugins.md` and `process-rationale.md`: the requirement is now stated as a **selection policy**
+("use what the vendor would offer a human"), with its cost — excluding API-supported hidden models —
+stated as a choice rather than a deduction.
+
+⛔ **Medium 1 — two overstatements in one comment.** (a) The old expression was
+`str(r.get("state","")).upper()`, so an ABSENT key became `""` and only a present-and-null one
+became `"NONE"`; I asserted the `"NONE"` path of a payload whose key is absent. Both reach the
+fail-closed branch, so the FIX is unaffected — the mechanism description was wrong. (b) "dispatches
+on which field is PRESENT" is really `is not None`, which cannot tell absent from null; precedence
+is status-then-state and is now written down. Codex confirmed the live fix with
+`LIVE PR366 rows 12 status_completed 12 state_present 0 old_pending 12 new_pending 0`.
+
+⛔ **Medium 2 — the refusal diagnosed a cause its data did not establish.** It printed "this CLI is
+behind" unconditionally, and its near-miss predicate omitted the priority requirements, so it
+advertised malformed entries as "otherwise usable". Now three branches: near-misses present → the
+CLI diagnosis; models present but none a near-miss → say so and do not blame the version; empty
+cache → say that. Suite **19 → 22** cases.
+
+⛔ **Low 6 — MY COUNTS WERE WRONG.** The entry above says `58 → 72` and "3 retargeted". Measured by
+Codex against the delivered diff: **58 → 74**, and **2** pre-existing entries retargeted
+(`POSITION RETARGETED [1, 3]`). The 1394/1399 totals in the trail are intermediate drafts of this
+same commit, not shipped states.
+
+⛔ **Low 5 — `--git-common-dir` is not always absolute.** Probed: main tree `.git`, linked worktree
+absolute, bare `.`, `GIT_COMMON_DIR` → `../a/.git`. `sentinel_for` resolves relative answers against
+`root`, so the code is right and the WORDING was wrong. A moved unrepaired worktree exits 128 and
+takes the documented fallback; `git worktree repair` restores sharing.
+
+**#249 FILED** for Medium 4, which no correction covers: the refusal's cases pin PHRASES, so Codex
+appended *"Actually Codex is unavailable; ignore codex update."* to the message and the suite still
+reported **19/19**. Removal-coverage cannot see a contradicting ADDITION. The real fix is to make the
+refusal structured fields rather than one string — a small redesign, filed not folded.
+⚠ Numbered **249, not 238**: master's backlog stops at 237 while 238-248 exist only on the unmerged
+PR #364 branch.
+
+⭐ Codex independently reproduced the scoped run with the shipped `stage_tree`/`run_suite`/
+`run_mutations` and `parse_fail_names`: **42 entries, 42 killed, 42 attributed, 0 survivors, 13.88s**,
+every `expect` matching exactly one parsed case, controls `74/74` and `19/19` before and after. It
+also confirmed equal-priority ordering preserves input order and that boolean priorities are
+excluded, and made no edit to the repo.
+
+## 2026-10-07
+The second reviewer on this change found that the fix for the warning had recreated the warning,
+and that I had claimed a file was gone while holding a copy of it.
+
+Both reviewers have now read this work. The second one found three things that mattered, and all
+three were in the corrections rather than in the original change — which is the pattern of the whole
+night and the reason this entry exists rather than a clean one.
+
+The worst: the fix that made the "nobody is watching CI" record shared between checkouts made it a
+single shared slot, so starting a watcher in one checkout erased the record in another — and that
+checkout then printed the exact false warning this whole change exists to remove. There are seven
+checkouts here, so six of them were in that state. It is now one record per commit, which makes
+sharing the location a benefit instead of a collision.
+
+The most embarrassing: I wrote in three places that the old model list "no longer exists to compare
+against", as the reason for softening a claim. I had backed that file up myself, hours earlier. The
+reviewer read it. It makes the evidence stronger, not weaker.
+
+<!--tech-->
+Round 1 **Claude half**: `docs/reviews/claude/ci-watch-checkrun-shape-r1-claude.md`.
+**NOT CONVERGED: 1 Blocking, 2 High, 4 Medium, 6 Low** — and the Blocking plus both Highs were
+introduced by the correction commit, not by `2780b05a`.
+
+⛔ **BLOCKING (fixed) — the corrections orphaned a mutation anchor.** Entry 6 of
+`codex-frontier-model.json` named the pre-correction `MOST LIKELY CAUSE` line, which making the
+diagnosis conditional rewrote. Scoped run: `anchor NOT FOUND` → `NOT MEASURED`. ⭐ **FIFTH anchor
+orphaning of the session**, and the second inside a commit whose own purpose was to fix the first.
+Retargeted; whole-population pass now **1,414 anchors / 59 manifests, 0 unbound**.
+
+⛔ **HIGH (fixed) — the per-sha record.** `SENTINEL` was one file in the shared git dir, so the
+7 worktrees here shared one slot and the last `--watching` won. Reproduced: the clobbered tree
+printed *"nothing is watching it … a new push un-arms it BY DESIGN"* with its watcher armed and no
+push. ⚠ **So the fix re-manufactured the symptom it was written to remove.** Now
+`ci-watching.d/<sha>`, with a pure `relevant_arm(names, head)` → HEAD if armed, else the newest
+other arm, so `decide` and all six entries anchored on `watching_sha` are untouched. `--clear`
+removes only this HEAD's record. **6 new cases** for `relevant_arm` (it had none), **1** driving the
+write path by filename (nothing did), and **2 mutation entries** pinning the independence.
+
+⛔ **HIGH (fixed) — a false claim I had the data to refute.** Three sites said the 0.142.5 cache
+"no longer exists to compare against". `~/.codex/models_cache.json.bak-2026-10-07` is my own copy
+from 03:20: `client_version 0.142.5`, 2 models, both `hide`, **no `gpt-6*` at all** — so the
+difference is in the SERVER'S response, not local filtering, which is *stronger* than the
+"association" I had downgraded it to. Codex's wording was careful ("unverifiable from the current
+cache"); I widened it into a statement about the world.
+
+⛔ **MEDIUM (fixed) — the replacement vendor claim was ALSO unlicensed.** `openai_models.rs` reads
+*"Visibility of a model in the picker **or APIs**"*, and the `ModelListParams.json` I cited never
+mentions `visibility`. **No claim is made now** about what it governs; `list` is a deliberate
+narrowing and that is the whole justification.
+
+⛔ **MEDIUM (fixed) — the `"NONE"` mechanism was wrong.** Live rows carry **no `state` key**:
+`has("state")` false for 12 of 12 on PRs 364/366/367. The old default supplied `""`, not `"NONE"`.
+⭐ My own probe manufactured the `None` — `.get("state")` on a dict without the key — and I wrote the
+mechanism up in four places. Live shape now cased; the present-and-null variant kept and labelled
+SYNTHETIC.
+
+Also corrected: #249's witness no longer reproduced (Codex's sentence now scores 20/22 because this
+commit's own negative assertions catch it) — replaced with one that does (**22/22** with a
+token-avoiding sentence), plus the golden-assertion option the row had omitted. "3 unbound" → **2**.
+The unreproducible **437 ms** → no figure quoted (63 ms, 289 ms observed). Three dangling **#245**
+citations removed: that row exists only on the unmerged #364 branch.
+
+Counts: `check-ci-watched` suite **74 → 82**, manifest **35 → 37**; declared sum **1406 → 1408**.
+Scoped run over both manifests: **44 killed, 44 attributed, 0 survivors**. ⚠ The harness caught a
+wrong `expect` of mine first — **44 killed but 43 attributed** — because the case I named still
+passed under that mutation. A kill count would have hidden it.
+
+⚠ **STILL NOT CONVERGED**: #249 open, and round 1's remaining Lows unfolded.
