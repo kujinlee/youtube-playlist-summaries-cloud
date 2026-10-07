@@ -14625,3 +14625,55 @@ The three untracked `docs/memory/*.md` are NOT in this commit — they have inde
 page serves HTTP 200 with 11 `<h2>`, `id="s11"`, the Ask tray and balanced tables; rendered in a
 browser and read. ⛔ **`check-page-contrast.py` NOT RUN** — it lives only on `unify-explainer-style`,
 needs Chromium, and measures every served page; treat contrast as unmeasured, not as passed.
+The six rules from last night's survey are now part of the process — though not in the file you
+might expect, and the reason is the file's own rule.
+
+The survey measured why two pull requests took eight and eleven review rounds, and ended with six
+rules written so a reader can tell when each has been broken. They were analysis. They are now
+written down where the process is written down.
+
+They did not go into the short spine document that describes the workflow, because that file was
+exactly full — two hundred and twenty lines against a limit of two hundred and twenty. That limit
+exists because the same file once grew to five hundred and seventy-six lines and became unread,
+and it says plainly what to do instead: if a rule can be a script, write the script; if it cannot,
+put it with the detailed checklists. Four of the six can be scripts and are already filed as work.
+So the rules went to the checklists, and the spine's existing pointer now names them without the
+file growing by a single line.
+
+One of the seven candidates was deliberately left out. The survey recommends against it, and
+writing it down as a rule would outlive the paragraph explaining why.
+
+<!--tech-->
+Added at the owner's instruction from the explainer page (*"let's add these six rules"*).
+
+⛔ **NOT in `dev-process.md`, and that is the spine's own instruction rather than a dodge.** Measured
+before writing: `check-docs.py` budgets it at **220** lines and it stood at **220 — zero headroom**.
+The file says: *"Before adding a rule here, ask whether it can be a script. If it can, write the
+script and add a pointer row. If it cannot, it belongs in the checklists, method, or rationale doc
+— not the spine."* So the rules live in `docs/process-checklists.md` (no budget, and it already
+carries *Reduce defect INJECTION, not just detection*, which is what all six are), and the spine's
+EXISTING pointer row was extended **in place**: `dev-process.md` is still **219** lines.
+
+The six, each with its `Fails if:` — which is the test that made them rules at all. §8 offered ten
+levers; the four that could not be written this way (scope the round, push earlier, send evidence
+instead of a round, pick the cheapest tree-identity answer) deliberately became **no rule**, because
+a rule with no falsifier is a decision wearing a checkbox.
+
+1 · filing · 2 · freeze · 3 · comment — pre-existing, now exercised (rounds 9–11 of #366 produced
+seven findings under rule 1 and folded none; #366 converged two rounds after its freeze, #365 in
+one; rule 3 cost at least three rounds and a fresh instance was live after eight rounds of fixing
+that same pattern). 4 · provenance · 5 · withdrawal · 6 · second-spelling — new from §8.
+
+⭐ **Rule 2 carries a free speedup rather than a seventh rule:** under a freeze the two review halves
+may run CONCURRENTLY, because `review-method.md` requires alternation *"since a concurrent pair never
+reviews the fixes"* — and under a freeze there are no fixes. It is permission, not obligation, so
+there is nothing to violate.
+
+⛔ **C3 deliberately omitted** — recommended against in the survey (expected to false-fire more than
+it catches; #56's verdict is that a gate red without cause gets switched off).
+⤳ Scriptable halves already filed: **#250** (rule 1's filing direction), **#251** (a changed
+behavioural line with no mutation entry reaching it), **#252** (an anchor that no longer binds). Where
+those land, the corresponding rule text shrinks to a pointer.
+
+Guards: `check-docs`, `check-gate-falsifiability`, `check-features`, `check-anchors`,
+`check-explainer-delivery`, `check-roadmap-consistency`, `check-backlog-closure` all rc=0.
