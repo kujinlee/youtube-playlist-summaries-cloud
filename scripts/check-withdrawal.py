@@ -405,7 +405,7 @@ def self_test() -> int:
         ("hit_offset over a DIFFERENT text and a different hit",
          hit_offset("aa\nbb\nzz", _find_claim().find_in_text(
              "aa\nbb\nzz", _find_claim().build_pattern("zz"), "q")[0]), 6),
-        ("is_history_context's replacement prong fires on a bare figure match",
+        ("is_history_context's corrected-FORM prong fires on a bare figure match",
          is_history_context("the tree held 1,416 not 1,414", ("1,416",)), True),
         ("⭐ the matcher is IMPORTED, and it still finds a wrapped claim here",
          len(fc.find_in_text("holds 1,414\nanchors", fc.build_pattern("holds 1,414 anchors"), "t.md")), 1),

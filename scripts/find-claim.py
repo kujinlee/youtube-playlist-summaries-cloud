@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 46 cases
+    python3 scripts/find-claim.py --self-test        # 53 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -81,8 +81,43 @@ import re
 import sys
 from pathlib import Path
 
-# Extensions we will read as text. A claim lives in prose or source, never in a PNG, and
-# attempting the whole tree is how a search tool becomes too slow to use.
+# ⛔ THE SUFFIX FILTER IS A DENY-LIST, AND THE DIRECTION IS THE WHOLE POINT — round 1 Claude
+# HIGH (H1), which is round 1 Codex's HIGH surviving one function earlier. The first version
+# allow-listed `TEXT_SUFFIXES` and dropped everything else from a directory walk in silence, so:
+#
+#     $ find-claim --pattern "the claim is still live" --control "control phrase" \
+#           --expect absent /tmp/fc3/          # ok — absent … so the search worked.   rc=0
+#     $ find-claim … /tmp/fc3/ok.md /tmp/fc3/notes.rst /tmp/fc3/Dockerfile
+#                                              # FOUND — 2 occurrence(s)                rc=1
+#
+# Same three files, opposite answers, because `.rst` and a suffixless `Dockerfile` were never
+# subjects in the first form. A control proves the search WORKS; it cannot prove the search
+# REACHED a file that was excluded before it ran — and for an excluded file the control speaks
+# even less than it did for the undecodable one that bought the Codex finding.
+#
+# So: a file is a subject unless its suffix is KNOWN-BINARY. An unknown extension is now
+# searched rather than dropped, which flips the failure direction — a type we did not think of
+# becomes a loud `rc=2` (undecodable bytes are already reported by `search_files`) instead of a
+# silent miss. MEASURED 2026-10-07 over this repo: 2,962 subjects, walk 0.11s + read 0.74s,
+# 0 undecodable; the old allow-list saw 2,948, so 14 files were being dropped without a word —
+# and one of them is the kind `.gitignore` is, which is the literal subject of backlog #259,
+# one of the twelve rows this branch closes.
+BINARY_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".bmp", ".tiff", ".pdf",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".zip", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".jar",
+    ".mp3", ".mp4", ".mov", ".avi", ".webm", ".wav",
+    ".pyc", ".pyo", ".so", ".dylib", ".dll", ".wasm", ".o", ".a",
+}
+
+# Directories never walked. `.git` alone holds thousands of suffixless binary objects, so a
+# deny-list filter without this would read the object store and report `rc=2` on every run.
+# Pruning is reported, not silent: `main` prints the constant whenever a directory was walked.
+PRUNED_DIRS = {".git", "node_modules", "__pycache__", ".next", ".venv", ".mypy_cache"}
+
+# The explicit allow-list a CALLER may still pass as `suffixes=` — not the default any more.
+# Retained because it is the only way to ask a narrow question ("just the markdown"), and two
+# self-test cases drive `collect_files` through it at two distinct sets.
 TEXT_SUFFIXES = {
     ".md", ".py", ".sh", ".txt", ".yml", ".yaml", ".json", ".toml", ".cfg", ".ini",
     ".ts", ".tsx", ".js", ".jsx", ".sql", ".html", ".css", ".mjs",
@@ -144,7 +179,8 @@ def find_in_text(text: str, pattern: re.Pattern, path: str = "<text>") -> list[H
     return hits
 
 
-def verdict(n_hits: int, n_control: int, expect: str) -> tuple[int, str]:
+def verdict(n_hits: int, n_control: int, expect: str,
+            n_skipped: int = 0) -> tuple[int, str]:
     """(exit_code, message) from the three numbers that decide it. PURE.
 
     ⛔ THE CONTROL ARM COMES FIRST AND THAT ORDER IS THE POINT. If the control did not hit, we
@@ -152,6 +188,14 @@ def verdict(n_hits: int, n_control: int, expect: str) -> tuple[int, str]:
     the subject, and those must not share an exit code. Putting the expectation first and the
     control second would reproduce backlog #258 inside the fix for backlog #258.
     """
+    # ⛔ A REPORTED EXCLUSION IS THE DIFFERENCE BETWEEN "absent" AND "absent HERE" — round 1
+    # Claude H1. `collect_files` drops binary files from a directory walk, and a claim cannot be
+    # ruled out of a file that was never opened. The count rides on every answer rather than
+    # only the clean one, because an exclusion understates a FOUND total too.
+    skip_note = ""
+    if n_skipped:
+        skip_note = (f"  ⚠ {n_skipped} file(s) were EXCLUDED from the walk by suffix and never "
+                     f"searched, so this answer is about the files that WERE.")
     if n_control == 0:
         return 2, (
             "CANNOT RUN — the control pattern matched NOTHING in the searched files, so this "
@@ -160,17 +204,19 @@ def verdict(n_hits: int, n_control: int, expect: str) -> tuple[int, str]:
         )
     if expect == "absent":
         if n_hits:
-            return 1, f"FOUND — {n_hits} occurrence(s) of a claim that was expected to be absent."
-        return 0, f"ok — absent, and the control hit {n_control} time(s), so the search worked."
+            return 1, (f"FOUND — {n_hits} occurrence(s) of a claim that was expected to be "
+                       f"absent." + skip_note)
+        return 0, (f"ok — absent in the searched files, and the control hit {n_control} "
+                   f"time(s), so the search worked." + skip_note)
     if expect == "present":
         if n_hits:
-            return 0, f"ok — present, {n_hits} occurrence(s)."
+            return 0, f"ok — present, {n_hits} occurrence(s)." + skip_note
         return 1, (
             "MISSING — the claim is absent, and the control proves the search reached the files, "
             "so this is a real absence rather than a broken search."
         )
     if expect == "report":
-        return 0, f"{n_hits} occurrence(s); control hit {n_control} time(s)."
+        return 0, f"{n_hits} occurrence(s); control hit {n_control} time(s)." + skip_note
     raise ValueError(f"unknown expectation: {expect!r}")
 
 
@@ -185,25 +231,45 @@ def wrap_path_exercised(control_hits: list[Hit]) -> bool:
 
 # ── the filesystem half, deliberately separate ───────────────────────────────
 
-def collect_files(paths: list[str], suffixes: set[str] | None = None) -> tuple[list[Path], str]:
-    """(files, error). A directory contributes its text files recursively.
+def collect_files(paths: list[str],
+                  suffixes: set[str] | None = None) -> tuple[list[Path], list[Path], str]:
+    """(files, skipped, error). A directory contributes every non-binary file recursively.
+
+    ⛔ `skipped` IS RETURNED RATHER THAN DISCARDED, for the reason `search_files` returns
+    `unreadable`: an excluded file is a subject the search never reached, and a caller that
+    cannot see the exclusion will report a confident absence over it. Round 1 Claude H1.
+
+    An EXPLICITLY NAMED file is always a subject, whatever its suffix — naming it is the
+    caller saying it is one. Only a directory walk filters, because only a directory walk is
+    guessing. If a named file turns out to be binary, `search_files` reports it undecodable
+    and `main` exits 2, which is the loud answer rather than the quiet one.
 
     `separate-the-rule-from-the-fetch`: three ratchets in this repo went eight days untestable
     because their entry point needed a live service. Everything above this line is pure.
     """
-    sfx = TEXT_SUFFIXES if suffixes is None else suffixes
     out: list[Path] = []
+    skipped: list[Path] = []
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            out.extend(sorted(q for q in p.rglob("*") if q.is_file() and q.suffix in sfx))
+            for q in sorted(p.rglob("*")):
+                if not q.is_file():
+                    continue
+                if set(q.parts) & PRUNED_DIRS:
+                    continue
+                if suffixes is not None:
+                    (out if q.suffix in suffixes else skipped).append(q)
+                elif q.suffix.lower() in BINARY_SUFFIXES:
+                    skipped.append(q)
+                else:
+                    out.append(q)
         elif p.is_file():
             out.append(p)
         else:
-            return [], f"CANNOT RUN — {raw} is neither a file nor a directory."
+            return [], [], f"CANNOT RUN — {raw} is neither a file nor a directory."
     if not out:
-        return [], "CANNOT RUN — the given paths contain no readable text files."
-    return out, ""
+        return [], skipped, "CANNOT RUN — the given paths contain no readable text files."
+    return out, skipped, ""
 
 
 def search_files(files: list[Path], pattern: re.Pattern) -> tuple[list[Hit], list[str]]:
@@ -331,8 +397,35 @@ def _unreadable_probe() -> tuple:
         d = Path(td)
         (d / "ok.md").write_text("live claim here\n")
         (d / "bad.md").write_bytes(b"live claim\xff\n")
-        files, _err = collect_files([str(d)])
+        files, _skipped, _err = collect_files([str(d)])
         return search_files(files, build_pattern("live claim"))
+
+
+def _h1_witness() -> tuple:
+    """(dir_hits, explicit_hits, skipped, pruned_subjects) over round 1 Claude H1's witness.
+
+    The directory holds a control in `ok.md`, the claim in `notes.rst` and the claim again in a
+    suffixless `Dockerfile`, plus a `logo.png` and a file inside a `.git/` subdirectory. Before
+    H1 the first two numbers DISAGREED — the directory walk said 0 and the explicit-file form
+    said 2 — and the directory form printed "so the search worked" over it.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("the control phrase lives here\n")
+        (d / "notes.rst").write_text("THE CLAIM IS STILL LIVE here\n")
+        (d / "Dockerfile").write_text("THE CLAIM IS STILL LIVE here\n")
+        (d / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n binary, not a subject\n")
+        (d / ".git").mkdir()
+        (d / ".git" / "COMMIT_EDITMSG").write_text("the claim is still live\n")
+        pat = build_pattern("the claim is still live")
+        walked, skipped, _ = collect_files([str(d)])
+        named, _, _ = collect_files(
+            [str(d / "ok.md"), str(d / "notes.rst"), str(d / "Dockerfile")])
+        return (len(search_files(walked, pat)[0]),
+                len(search_files(named, pat)[0]),
+                len(skipped),
+                [q for q in walked if ".git" in q.parts])
 
 
 def self_test() -> int:
@@ -384,6 +477,24 @@ def self_test() -> int:
          wrap_path_exercised([]), False),
         ("wrap_path_exercised is True when a hit crossed a newline",
          wrap_path_exercised(find_in_text("x\ny", build_pattern("x y"), "w.md")), True),
+        # ── round 1 Claude H1: the directory walk and the explicit-file form must AGREE ──
+        # ⛔ THE FALSIFIER FOR THE DENY-LIST. Restore the allow-list and the first of these
+        # two goes 2 -> 0 while the second stays 2: the exact disagreement H1 reported, in
+        # which the quieter number was the one that printed "so the search worked".
+        ("⭐ H1: the DIRECTORY form reaches a `.rst` and a suffixless file",
+         _h1_witness()[0], 2),
+        ("...and the EXPLICIT-file form agrees with it, which it did not before",
+         _h1_witness()[1], 2),
+        ("a known-BINARY suffix is skipped, and the skip is RETURNED not discarded",
+         _h1_witness()[2], 1),
+        ("a file inside a PRUNED directory is not a subject at all",
+         _h1_witness()[3], []),
+        ("⭐ verdict NAMES the exclusion rather than reporting a bare absence",
+         "EXCLUDED from the walk by suffix" in verdict(0, 3, "absent", 7)[1], True),
+        ("...and says nothing about exclusions when nothing was excluded",
+         "EXCLUDED" in verdict(0, 2, "absent", 0)[1], False),
+        ("a FOUND total is qualified too, because an exclusion understates it",
+         "EXCLUDED from the walk by suffix" in verdict(4, 1, "absent", 2)[1], True),
     ]
 
     total = (len(PATTERN_CASES) + len(LINE_CASES) + len(VERDICT_CASES)
@@ -461,7 +572,7 @@ def main() -> int:
         print("CANNOT RUN — give at least one file or directory to search.", file=sys.stderr)
         return 2
 
-    files, err = collect_files(args.paths)
+    files, skipped, err = collect_files(args.paths)
     if err:
         print(err, file=sys.stderr)
         return 2
@@ -481,7 +592,7 @@ def main() -> int:
             print(f"    {u}", file=sys.stderr)
         return 2
 
-    code, message = verdict(len(hits), len(control_hits), expect)
+    code, message = verdict(len(hits), len(control_hits), expect, len(skipped))
 
     for h in hits:
         shown = " ".join(h.text.split())
@@ -495,7 +606,13 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    print(f"{message}  ({len(files)} file(s) searched)")
+    walked_a_dir = any(Path(x).is_dir() for x in args.paths)
+    tail = f"  ({len(files)} file(s) searched"
+    if skipped:
+        tail += f", {len(skipped)} skipped by suffix"
+    if walked_a_dir:
+        tail += f", {'/'.join(sorted(PRUNED_DIRS))} not walked"
+    print(f"{message}{tail})")
     return code
 
 

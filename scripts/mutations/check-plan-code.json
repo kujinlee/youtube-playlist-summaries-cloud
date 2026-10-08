@@ -1343,16 +1343,16 @@
     ]
   },
   {
-    "name": "#252: an expect naming no case stops warning",
+    "name": "#252: an expect naming no case stops being reported at all ⟳ r1 Claude M1: retargeted — the M1 split rewrote `if ex not in lits[tgt]:` into an `if ex in lits[tgt]: continue` guard plus a two-severity branch, so this entry's anchor went with it. `--binding` caught the orphan in 1.0s.",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if ex not in lits[tgt]:",
-        "            if False:"
+        "            if expect_explained(ex, lits[tgt]):\n                warnings.append(",
+        "            if True:\n                warnings.append("
       ]
     ],
     "expect": [
-      "an expect naming nothing warns, and WARNS rather than errs (4.3% are f-strings)"
+      "⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning"
     ]
   },
   {
@@ -1444,6 +1444,45 @@
     ],
     "expect": [
       "⭐ a helper nested in an ORDINARY function is reported under its OWN name"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M1 — expect_explained always says yes, so a renamed-away expect is summarised beside 67 f-string names again: B1's exact concealment",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return any(len(lit) >= floor and (lit in expect or expect in lit) for lit in literals)",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M1 — the overlap floor drops to 0, so any shared scrap of text 'explains' an expect and the separator stops separating",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECT_OVERLAP_FLOOR = 12",
+        "EXPECT_OVERLAP_FLOOR = 0"
+      ]
+    ],
+    "expect": [
+      "the overlap FLOOR refuses a coincidence — a short shared literal explains nothing"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M1 — containment runs ONE way only, which is the version measured to leave 2 live files falsely MISSING (`] missing file is CANNOT RUN: got `)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "(lit in expect or expect in lit)",
+        "(lit in expect)"
+      ]
+    ],
+    "expect": [
+      "...and so does one CONTAINED IN a literal — the containment runs BOTH ways, which a one-directional test got wrong on 2 live files"
     ]
   }
 ]

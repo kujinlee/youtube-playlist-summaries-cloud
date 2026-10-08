@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 211 cases
+    python3 scripts/check-plan-code.py --self-test          # 217 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -698,7 +698,8 @@ EXPECTED_MUTATIONS = {
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 10,
     "scripts/check-withdrawal.py": 9,
-    "scripts/find-claim.py": 8,
+    "scripts/find-claim.py": 11,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
+                                   # returned skip set, and the verdict that names it.
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
@@ -1042,7 +1043,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 118,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 121,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1507,6 +1508,39 @@ def case_name_literals(source: str) -> set:
             if isinstance(n, ast.Constant) and isinstance(n.value, str)}
 
 
+# ⟳ r1 Claude M1. An `expect` naming no literal has TWO causes and they are not the same
+# defect: a name BUILT BY AN F-STRING cannot be recovered statically (benign, 67 of them, and
+# why this half warns rather than refuses), versus a name that was RENAMED AWAY — B1's shape,
+# where the expect can never match any case again and the mutation silently stops showing which
+# case is the guard. Summarising both together is what let B1 through: the count moved 67 -> 68
+# and a count whose only reader is a human remembering last run is not a signal.
+#
+# THE SEPARATOR, and it is not similarity. MEASURED 2026-10-07 over all 1,461 entries:
+#   difflib ratio — B1's stale expect scores 0.75 and THIRTY-ONE legitimate f-string expects
+#                   score >= 0.75. Useless: a static segment is a substring of the expect, so
+#                   high similarity is the f-string SIGNATURE, not evidence of a rename.
+#   bidirectional containment — an expect is EXPLAINED when the target holds a literal that
+#                   either contains it or is contained in it. Direction matters both ways:
+#                   `gen-dashboard` has 'open_prs' + ': a missing binary …' (literal INSIDE
+#                   expect), `check-handoff-path` has '] missing file is CANNOT RUN: got '
+#                   (expect INSIDE literal). A one-directional test leaves 2-4 false MISSINGs.
+# At a 12-character floor: 67 unmatched, **0 MISSING**, and B1's own stale expect IS flagged.
+# So this starts GREEN and can REFUSE rather than warn — the first failure appears at a floor of
+# 16, so 12 carries four characters of margin. A floor exists at all because a 3-character
+# overlap explains nothing.
+EXPECT_OVERLAP_FLOOR = 12
+
+
+def expect_explained(expect: str, literals: set, floor: int = EXPECT_OVERLAP_FLOOR) -> bool:
+    """Could some literal in the target have PRODUCED this expect? PURE.
+
+    True means an f-string plausibly built the case name, so the expect naming no whole literal
+    is noise. False means nothing in the file can produce it — the case was renamed away, and
+    the mutation that names it can no longer show which case is the guard.
+    """
+    return any(len(lit) >= floor and (lit in expect or expect in lit) for lit in literals)
+
+
 def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
     """(errors, warnings) for anchors that do not bind and expects that name no case. PURE.
 
@@ -1562,8 +1596,16 @@ def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
         if tgt not in lits:
             lits[tgt] = case_name_literals(src)
         for ex in expects_of(e):
-            if ex not in lits[tgt]:
+            if ex in lits[tgt]:
+                continue
+            # ⟳ r1 Claude M1 — two populations, two severities. See EXPECT_OVERLAP_FLOOR.
+            if expect_explained(ex, lits[tgt]):
                 warnings.append(f"{name}: expect {ex[:60]!r} matches no string literal in {tgt}")
+            else:
+                errors.append(f"{name}: its expect names a case that is GONE from {tgt} — no "
+                              f"literal there can produce it, so this mutation can no longer "
+                              f"show WHICH case is the guard"
+                              f"\n      {ex[:90]!r}")
     return errors, warnings
 
 
@@ -1797,8 +1839,9 @@ def run_binding(root: pathlib.Path, quiet: bool = False, verbose: bool = False) 
         return 1
     if not quiet:
         print(f"binding OK — {anchors} anchor(s) across {len(entries)} entries each resolve to "
-              f"exactly one site; {len(warnings)} expect(s) could not be matched to a literal "
-              f"(f-string names are not statically recoverable).")
+              f"exactly one site; {len(warnings)} expect(s) name no whole literal but ARE "
+              f"explained by one (f-string case names; a renamed-away expect is an ERROR above, "
+              f"not part of this count — r1 Claude M1).")
     return 0
 
 
@@ -5284,7 +5327,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1458)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1464)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5380,11 +5423,51 @@ def _self_test() -> int:
     case("an expect naming a real case literal produces no warning",
          binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
                             "expect": ["the name"]}], _SRC)[1], [])
-    case("an expect naming nothing warns, and WARNS rather than errs (4.3% are f-strings)",
+    # ── r1 Claude M1: the expect half has TWO populations and two severities ──────────────
+    # ⟳ THIS CASE USED TO ASSERT (1, 0) — "WARNS rather than errs (4.3% are f-strings)" — and
+    # that lenience is what let B1 through: a renamed-away expect was summarised beside 67
+    # f-string names. The 4.3% figure was right about f-strings and wrong as a reason to
+    # forgive every unmatched expect. Now an UNEXPLAINED one errs; an EXPLAINED one still warns.
+    case("⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning",
          (len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
                                  "expect": ["no such case"]}], _SRC)[1]),
           len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
-                                 "expect": ["no such case"]}], _SRC)[0])), (1, 0))
+                                 "expect": ["no such case"]}], _SRC)[0])), (0, 1))
+    _FSTR = {"scripts/b.py": "case(f'{x} produced by an f-string', 1, 1)\n"}
+    case("...but one a literal INSIDE it could have produced still only WARNS",
+         (len(binding_problems([{"name": "m", "file": "scripts/b.py",
+                                 "edits": [["f-string", "g-string"]],
+                                 "expect": ["a name produced by an f-string"]}], _FSTR)[1]),
+          len(binding_problems([{"name": "m", "file": "scripts/b.py",
+                                 "edits": [["f-string", "g-string"]],
+                                 "expect": ["a name produced by an f-string"]}], _FSTR)[0])),
+         (1, 0))
+    _PREF = {"scripts/c.py": "print(f'[ok] missing file is CANNOT RUN: got {c}')\n"}
+    case("...and so does one CONTAINED IN a literal — the containment runs BOTH ways, which a "
+         "one-directional test got wrong on 2 live files",
+         len(binding_problems([{"name": "m", "file": "scripts/c.py",
+                                "edits": [["CANNOT RUN", "CANNOT WALK"]],
+                                "expect": ["missing file is CANNOT RUN"]}], _PREF)[1]), 1)
+    # ⚠ THE FIXTURE MUST HOLD A SHORT LITERAL THAT **WOULD** MATCH BELOW THE FLOOR, or the case
+    # passes for an ambient reason. The first version used literals none of which appeared in the
+    # expect at any length, so dropping the floor to 0 changed nothing and the mutation SURVIVED
+    # a green suite — `a-case-can-pass-for-an-ambient-reason`, caught by the sweep, not by me.
+    # "case" (4 chars) IS inside the expect, so this case is the floor and nothing else.
+    case("the overlap FLOOR refuses a coincidence — a short shared literal explains nothing",
+         expect_explained("a renamed case title", {"case", "title", "a re"}), False)
+    case("...and the same fixture at a floor of 0 WOULD be explained, which is what makes the "
+         "line above a test of the floor rather than of the fixture",
+         expect_explained("a renamed case title", {"case", "title", "a re"}, floor=0), True)
+    case("⭐ THE WITNESS: B1's own stale expect is refused by this rule",
+         expect_explained(
+             "the replacement figure beside the old one means the text is correcting itself",
+             {"the CORRECTED FORM beside the old claim means the text is correcting itself",
+              "one of several corrected forms is enough"}), False)
+    case("...while the case it was RETARGETED to is accepted, so the fix is what makes it pass",
+         expect_explained(
+             "the CORRECTED FORM beside the old claim means the text is correcting itself",
+             {"the CORRECTED FORM beside the old claim means the text is correcting itself"}),
+         True)
     case("⭐ expects_of accepts a bare STRING — 726 of 1,435 live entries are written that way, "
          "and iterating one walks it character by character",
          expects_of({"expect": "one name"}), ["one name"])

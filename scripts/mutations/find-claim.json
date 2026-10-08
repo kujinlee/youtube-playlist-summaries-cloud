@@ -65,12 +65,12 @@
     ]
   },
   {
-    "name": "a found claim under --expect absent stops being a violation",
+    "name": "a found claim under --expect absent stops being a violation ⟳ r1 Claude H1: the anchor was retargeted when the H1 fix wrapped this return in parentheses to append `skip_note`. `--binding` caught it in 1.0s, which is the whole case for #252 — the other signal is a 15-minute shard.",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "return 1, f\"FOUND",
-        "return 0, f\"FOUND"
+        "return 1, (f\"FOUND",
+        "return 0, (f\"FOUND"
       ]
     ],
     "expect": [
@@ -101,6 +101,45 @@
     ],
     "expect": [
       "a control matching on one line does NOT prove it"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude H1 — the directory walk reverts to an ALLOW-list, so an unknown suffix and a suffixless file stop being subjects while the run still says the search worked",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "                elif q.suffix.lower() in BINARY_SUFFIXES:\n                    skipped.append(q)\n                else:\n                    out.append(q)",
+        "                elif q.suffix in TEXT_SUFFIXES:\n                    out.append(q)\n                else:\n                    skipped.append(q)"
+      ]
+    ],
+    "expect": [
+      "⭐ H1: the DIRECTORY form reaches a `.rst` and a suffixless file"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude H1 — the skipped set is DISCARDED on the way out, which is the shape the r1 Codex High already cost once for `unreadable`: an exclusion nobody can see",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "    return out, skipped, \"\"",
+        "    return out, [], \"\""
+      ]
+    ],
+    "expect": [
+      "a known-BINARY suffix is skipped, and the skip is RETURNED not discarded"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude H1 — the verdict stops NAMING the exclusion, so an absence over a partially-walked tree reads as an absence over the whole of it",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "    if n_skipped:\n        skip_note = ",
+        "    if False:\n        skip_note = "
+      ]
+    ],
+    "expect": [
+      "⭐ verdict NAMES the exclusion rather than reporting a bare absence"
     ]
   }
 ]

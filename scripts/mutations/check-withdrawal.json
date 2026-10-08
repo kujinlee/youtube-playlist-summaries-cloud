@@ -26,7 +26,7 @@
     ]
   },
   {
-    "name": "the replacement prong stops exempting, so a self-correcting sentence reads as a survivor ⟳ retargeted in the r1 fold: the fix for the Codex finding rewrote the line this bound to",
+    "name": "the corrected-FORM prong stops exempting, so a self-correcting sentence reads as a survivor ⟳ r1 Claude B1: the r1 fold retargeted this entry's ANCHOR to the rewritten line and left its EXPECT naming the case title the same fix had renamed away, so the entry went red with `expect matched 0 red case(s)` and put the mutation shard red. The anchor and the expect are two bindings, and fixing one is not fixing the other.",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
@@ -35,7 +35,7 @@
       ]
     ],
     "expect": [
-      "the replacement figure beside the old one means the text is correcting itself"
+      "the CORRECTED FORM beside the old claim means the text is correcting itself"
     ]
   },
   {
