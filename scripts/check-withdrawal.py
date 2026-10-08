@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 71 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 81 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -236,7 +236,26 @@ def is_exempt_path(path: str) -> bool:
     return any(path.startswith(d) or f"/{d}" in path for d in EXEMPT_DIRS)
 
 
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n")
+# ⟳ r2 Codex HIGH — A BARE `\n` IS NOT A SENTENCE BOUNDARY, and treating it as one made this
+# guard's answer depend on where a line happens to WRAP. Measured witness:
+#
+#     the sweep holds 1,414 anchors today (was wrong).     -> suppressed, rc=0
+#     the sweep holds\n1,414 anchors today (was wrong).     -> SURVIVOR, rc=1
+#
+# Same claim, same marker, opposite verdicts. Wrap-insensitivity is the entire premise of
+# backlog #258 and of `find-claim`, which this file IMPORTS precisely so a wrapped claim is
+# still found — and then the sentence rule reintroduced the sensitivity one function away.
+#
+# A sentence therefore ends at `.!?`, at a PARAGRAPH break, or where a markdown BLOCK begins
+# (a table row, heading, quote or list item) — those are genuinely separate statements, and two
+# table rows must never share a sentence. MEASURED over 47,990 figure occurrences in non-exempt
+# docs/: weak-marker suppressions 2,330 -> 3,688, median sentence 96 -> 180 chars against a
+# 360-char window, and the table-row fixture still refuses to leak a marker between rows.
+SENTENCE_SPLIT = re.compile(
+    r"(?<=[.!?])\s+"                               # ordinary end of sentence
+    r"|\n\s*\n"                                    # a paragraph break
+    r"|\n(?=\s*(?:[|#>]|[*+-]\s|\d+\.\s))"        # the start of a markdown block
+)
 
 
 def sentence_around(window: str, at: int) -> str:
@@ -265,6 +284,28 @@ def suppression_line(counts: "collections.Counter") -> str:
         return ""
     detail = ", ".join(f"{k!r}x{v}" for k, v in counts.most_common())
     return f"  suppressed as history: {sum(counts.values())} hit(s) — {detail}"
+
+
+def figure_offset_in_hit(hit_text: str, figure: str) -> int:
+    """Where the FIGURE sits inside the matched signature. PURE.
+
+    ⛔ r2 Codex HIGH — THE SIGNATURE IS NOT THE FIGURE, and conflating them reinstated M4.
+    `signature_of` returns the figure plus up to `CONTEXT_WORDS` words either side, so the
+    match can begin a sentence earlier than the number it is about. The caller passed the
+    SIGNATURE's offset as `figure_at`, and the witness is two commits in a real repository:
+
+        The status was green. count 1,414 anchors today     -> suppressed by 'was ', rc=0
+        The status is  green. count 1,414 anchors today     -> SURVIVOR, rc=1
+
+    The figure's own sentence holds no marker in either case. One word in the PREVIOUS sentence
+    decided it, which is exactly the cross-sentence suppression M4 exists to stop.
+
+    The figure never contains whitespace, so it cannot be split by a wrap inside the match;
+    a figure the match somehow does not contain falls back to 0, which is the old behaviour and
+    no worse than it.
+    """
+    i = hit_text.find(figure)
+    return i if i >= 0 else 0
 
 
 def figure_offset_in_window(start: int, span: int = CONTEXT_CHARS) -> int:
@@ -548,8 +589,34 @@ def self_test() -> int:
         # and no case could tell `window` from a constant. It refused this file for exactly that.
         ("...and a DIFFERENT window splits on ITS OWN sentence boundaries",
          sentence_around("Alpha ends here? Beta runs on.", 20), "Beta runs on."),
-        ("...and a newline is a boundary too, which is how a markdown table row ends",
-         sentence_around("row one\nrow two here\nrow three", 12), "row two here\n"),
+        # ⟳ r2 Codex HIGH — THIS CASE USED TO ASSERT THAT A BARE `\n` IS A BOUNDARY, which is
+        # the behaviour that made the verdict depend on line wrapping. A markdown BLOCK start
+        # is a boundary; a wrap inside a sentence is not.
+        ("a markdown TABLE ROW is its own sentence — a marker must not leak between rows",
+         sentence_around("| 1 | it was fine |\n| 2 | holds 1,414 here |", 24),
+         "| 2 | holds 1,414 here |"),
+        ("⭐ ...but a WRAPPED sentence is ONE sentence, so a wrap cannot change the verdict",
+         sentence_around("the sweep holds\n1,414 anchors today (was wrong).", 16),
+         "the sweep holds\n1,414 anchors today (was wrong)."),
+        ("...and a PARAGRAPH break is still a boundary",
+         sentence_around("it was fine\n\nholds 1,414 here", 15), "holds 1,414 here"),
+        # ── the figure's offset inside the signature (r2 Codex High) ────────────────────────
+        ("⭐ figure_offset_in_hit locates the FIGURE, not the signature's start",
+         figure_offset_in_hit("green. count 1,414 anchors", "1,414"), 13),
+        ("...and a second hit text at a different figure gives its own offset, so neither is "
+         "a constant",
+         figure_offset_in_hit("holds 1,416 now", "1,416"), 6),
+        ("...and a figure the match does not contain falls back to 0 rather than -1",
+         figure_offset_in_hit("no number here", "1,414"), 0),
+        ("⭐ THE WITNESS: a marker in the PREVIOUS sentence no longer reaches the figure once "
+         "the offset points at the figure instead of the signature (r2 Codex High)",
+         (lambda t, f: history_marker(
+              t, figure_offset_in_window(0) + figure_offset_in_hit(t, f))
+          )("The status was green. count 1,414 anchors today", "1,414"), ""),
+        ("...while the SAME text with the marker in the figure's own sentence still suppresses",
+         (lambda t, f: history_marker(
+              t, figure_offset_in_window(0) + figure_offset_in_hit(t, f))
+          )("The status is green. count was 1,414 anchors today", "1,414"), "was "),
         ("history_marker returns the STRONG marker it matched",
          history_marker("⟳ corrected later; the sweep holds 1,414", 34), "⟳"),
         ("...and the WEAK one when that is what exempted the hit",
@@ -571,8 +638,14 @@ def self_test() -> int:
         # ── r1 Claude L3: ONE DIFFERENCE, asserted ──────────────────────────────────────────
         ("⭐ L3: the two figure rules are DELIBERATELY different, so collapsing them back into "
          "one fails here rather than silently reinstating M2",
-         (lambda mod: (NUMBER_RE.pattern == mod.NUM_RE.pattern,
-                       bool(mod.NUM_RE.search("3 unbound")),
+         # ⟳ r2: the comparison moved with the subject. `check-provenance` no longer expresses
+         # the single-digit rule as a REGEX at all — r2 Codex Medium replaced it with a
+         # two-direction predicate — so the right question is whether that guard SEES a
+         # single-digit measurement while this one still does not, and whether the multi-digit
+         # patterns remain distinct. Asserting the old regex equality would have quietly
+         # stopped testing anything.
+         (lambda mod: (NUMBER_RE.pattern == mod.MULTI_NUM_RE.pattern,
+                       bool(mod.figures_in_span("**3 unbound**", " anchors")),
                        bool(NUMBER_RE.search("3 unbound"))))(_check_provenance()),
          (False, True, False)),
         ("⭐ the matcher is IMPORTED, and it still finds a wrapped claim here",
@@ -602,6 +675,42 @@ def self_test() -> int:
                 return main(["--strict", "--base", "HEAD~1"], root=r2)
     direct.append(("...and a second drive at a distinct argv and root is CANNOT RUN too",
                    _drive_main_strict(), 2))
+
+    # ── r2 Codex HIGH: the CALL SITE, which no unit case can reach ──────────────────────────
+    # ⛔ MUTATING THE CALLER IS WHY THIS EXISTS. The unit cases above compute `figure_at`
+    # themselves, so an entry that breaks `main`'s arithmetic left them green and SURVIVED —
+    # `unit-coverage-does-not-compose`, measured on this very fix. This builds a real
+    # repository, commits a correction, and asserts the live verdict.
+    def _drive_live(lead: str) -> int:
+        import subprocess as _sp
+        with _tf.TemporaryDirectory() as td3:
+            r3 = Path(td3)
+            def g(*a):
+                return _sp.run(["git", *a], cwd=r3, capture_output=True, text=True)
+            g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+            (r3 / "docs").mkdir()
+            # ⛔ THE LEAD MUST BE IN THE **OLD LINE** TOO, or the fixture cannot discriminate.
+            # `signature_of` takes CONTEXT_WORDS words either side OF THE OLD LINE, so with the
+            # lead only in the copy the signature begins exactly at the sentence boundary and
+            # the mutated and correct offsets land in the SAME sentence — measured:
+            #   old line "count 1,414 anchors today"              -> both offsets, marker ''
+            #   old line "<lead> count 1,414 anchors today"       -> 'was ' vs '', discriminates
+            (r3 / "docs" / "src.md").write_text(f"{lead} count 1,414 anchors today\n")
+            (r3 / "docs" / "copy.md").write_text(f"{lead} count 1,414 anchors today\n")
+            g("add", "-A"); g("commit", "-q", "-m", "base")
+            base = g("rev-parse", "HEAD").stdout.strip()
+            (r3 / "docs" / "src.md").write_text(f"{lead} count 1,416 anchors today\n")
+            g("add", "-A"); g("commit", "-q", "-m", "correct")
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                return main(["--strict", "--base", base], root=r3)
+    direct.append(("⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — "
+                   "the caller passes the FIGURE's offset, not the signature's (r2 Codex High)",
+                   _drive_live("The status was green."), 1))
+    direct.append(("...and the known positive: a marker in the figure's OWN sentence still "
+                   "suppresses it, so the case above is not just asserting rc=1 everywhere",
+                   _drive_live("The status is green. count was"), 0))
+    direct.append(("...and with no marker anywhere the survivor stands, which is the control",
+                   _drive_live("The status is green."), 1))
 
     total = (len(SIG_CASES) + len(REMOVED_CASES) + len(EXEMPT_PATH_CASES)
              + len(HISTORY_CASES) + len(REPLACEMENT_CASES) + len(REPL_SET_CASES) + len(VERDICT_CASES)
@@ -749,12 +858,14 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
                 # them, `--strict` returned rc=0 over a live claim.
                 start = hit_offset(text, hit)
                 win = window_around(text, start, start + len(hit.text))
+                # ⛔ THE FIGURE'S OFFSET, NOT THE SIGNATURE'S (r2 Codex High). The signature
+                # carries up to CONTEXT_WORDS words of lead-in, which can cross a sentence.
+                at = (figure_offset_in_window(start)
+                      + figure_offset_in_hit(hit.text, figure))
                 # the corrected FORM of this claim: the signature with each replacement swapped in
                 corrected = tuple(sig.replace(figure, r) for r in repls)
-                if is_history_context(win, corrected,
-                                      figure_at=figure_offset_in_window(start)):
-                    suppressed[history_marker(win, figure_offset_in_window(start)) or
-                               "corrected form"] += 1
+                if is_history_context(win, corrected, figure_at=at):
+                    suppressed[history_marker(win, at) or "corrected form"] += 1
                     continue
                 survivors += 1
                 print(f"  SURVIVOR {hit.path}:{hit.line}: {' '.join(hit.text.split())}")

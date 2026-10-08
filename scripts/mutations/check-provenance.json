@@ -1,10 +1,10 @@
 [
   {
-    "name": "a bolded DATE stops being stripped, so a decision marker reads as a measurement",
+    "name": "a bolded DATE stops being stripped, so a decision marker reads as a measurement ⟳ r2: retargeted — `bolded_figures` now reads the ROW so the counted noun outside the span is visible, and the DATE strip moved with it",
     "edits": [
       [
-        "NUM_RE.search(DATE_RE.sub(\"\", b))",
-        "NUM_RE.search(b)"
+        "        if figures_in_span(DATE_RE.sub(\"\", b), row[m.end():m.end() + 40]):",
+        "        if figures_in_span(b, row[m.end():m.end() + 40]):"
       ]
     ],
     "expect": [
@@ -117,7 +117,111 @@
     ]
   },
   {
-    "name": "the ref pattern loses its word boundary, so `notorigin/fiction` reads as provenance ⟳ r1 Claude M3: retargeted — the M3 fix split `|\\borigin/\\w+|\\bHEAD\\b` onto two lines so the HEAD half could be tightened, and this anchor went with it. Third orphan this fold, all three caught by `--binding` in about a second.",
+    "name": "⟳ r2 Codex MEDIUM — the HEAD clause goes back to a bare `\\bHEAD\\b`, so prose ABOUT git counts as provenance: `we cannot look at HEAD` passes, which is M3 reinstated one word away (the `\\bat` form had the same bypass)",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    r\"|`HEAD`|\\bHEAD[~^]|\\bas of\\s+HEAD\\b\"",
+        "    r\"|\\bHEAD\\b\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2: the semantic bypass — `we cannot look at HEAD` names no source"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — LABEL_BEFORE is emptied, so a number its preceding word LABELS reads as a count: `**ADR 2 says**`, `**step 2 of 5**`, `**rc 1 ...**` ⚠ `frozenset(set()) or frozenset({...})` was a NO-OP — an empty frozenset is FALSY, so `or` returned the full set and the mutation measured nothing. A mutation must produce a WRONG ANSWER, not a tautology",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "LABEL_BEFORE = frozenset({",
+        "LABEL_BEFORE = frozenset() if True else frozenset({"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and the LABEL half alone refuses this one, whose next word is not a subject word"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — SUBJECT_AFTER is emptied, so a STATUS CODE reads as a measurement: `**rc 1 is failure**` and `**Phase 1 is complete**` were both counted before this. ⚠ Mutates the SET, not the test, because the test's line is already the LABEL_BEFORE entry's anchor and the harness refuses a repeat ⚠ `frozenset(set()) or frozenset({...})` was a NO-OP — an empty frozenset is FALSY, so `or` returned the full set and the mutation measured nothing. A mutation must produce a WRONG ANSWER, not a tautology",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "SUBJECT_AFTER = frozenset({",
+        "SUBJECT_AFTER = frozenset() if True else frozenset({"
+      ]
+    ],
+    "expect": [
+      "⭐ ...while the SUBJECT half alone refuses this one, which nothing labels"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — a PARENTHESISED digit stops being a label, so row #152's own `**CANNOT RUN (2)**` becomes a figure needing provenance",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "        if m.start() in labelled:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "...and a PARENTHESISED digit is a code, which is row #152's own wording"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — the single-digit PERCENTAGE alternative goes, so `**3%** failed` is invisible again — one of the two measurements the review found MISSED",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "MULTI_NUM_RE = re.compile(r\"\\d[\\d,]*\\.?\\d+|\\d{2,}|\\d\\s*%\")",
+        "MULTI_NUM_RE = re.compile(r\"\\d[\\d,]*\\.?\\d+|\\d{2,}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: a single-digit PERCENTAGE is a measurement and was missed entirely"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — the row text stops being handed to the predicate, so a counted noun OUTSIDE the bold span is invisible: `**3** failures` reads as no figure ⚠ mutates the SLICE WIDTH, so its anchor is its own",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "row[m.end():m.end() + 40]",
+        "row[m.end():m.end()]"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: the counted noun can live OUTSIDE the bold, which the span alone cannot see"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — SINGLE_NUM_RE goes back to excluding only digits, so the `2` inside `**M2b**` and the `6` inside `**F6 (Low)**` match and two identifier rows become figures (measured)",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "SINGLE_NUM_RE = re.compile(r\"(?<![\\w.,])\\d(?![\\w.,%])\")",
+        "SINGLE_NUM_RE = re.compile(r\"(?<![\\d.,])\\d(?![\\d.,%])\")"
+      ]
+    ],
+    "expect": [
+      "a digit inside an identifier is not a standalone digit at all"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — the measurement-verb prong goes, so `measured at HEAD` stops being provenance at all: the over-correction, in the opposite direction",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    r\"|(?:measured|re-?derived|derived|taken|counted|observed|verified|sampled)\"\n    r\"(?:\\s+\\w+){0,2}\\s+HEAD\\b\"",
+        "    r\"|(?!x)x\""
+      ]
+    ],
+    "expect": [
+      "HEAD is provenance when something was MEASURED there"
+    ]
+  },
+  {
+    "name": "the ref pattern loses its word boundary, so `notorigin/fiction` reads as a ref ⟳ r2: RESTORED — I overwrote this entry's edits with the HEAD mutation because a `next()` lookup matched on its NAME, which already carried the string I searched for. A mutation silently replaced is a mutation silently lost; `--binding` could not see it, because the slot still held a well-formed entry",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
@@ -130,68 +234,16 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude M2 — the counted-noun alternative is removed, so #256's own third motivating defect (`**3 unbound**`, control clean, real number 2) goes invisible to the guard built for it",
+    "name": "⟳ r2 — figures_in_span drops the single-digit half, so the composition of the two rules silently becomes the multi-digit rule alone (`--diff-coverage` named this function as changed with no mutation reaching it) ⚠ the expect must name a case that routes THROUGH the composition: the `single_digit_figures` cases call that function directly and are blind to a mutation in its only caller",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "|(?<!exit )(?<!exits )(?<!code )\\b\\d\\s+[A-Za-z]",
-        ""
+        "    return [m.group(0) for m in MULTI_NUM_RE.finditer(span)] + single_digit_figures(span, after)",
+        "    return [m.group(0) for m in MULTI_NUM_RE.finditer(span)]"
       ]
     ],
     "expect": [
       "⭐ M2's own witness: #256's third motivating defect is no longer invisible to it"
-    ]
-  },
-  {
-    "name": "⟳ r1 Claude M2 — the `exit ` lookbehind goes, so an exit code reads as a count. ⚠ ONE lookbehind per entry: an entry stripping all three matched three red cases and could not show which one is the guard",
-    "file": "scripts/check-provenance.py",
-    "edits": [
-      [
-        "(?<!exit )(?<!exits )",
-        "(?<!exits )"
-      ]
-    ],
-    "expect": [
-      "...and an EXIT CODE is not a measurement — `exit 1 is` would match without the lookbehind"
-    ]
-  },
-  {
-    "name": "⟳ r1 Claude M2 — the `exits ` lookbehind goes, which is the spelling row #118 actually uses and the one the first fixture failed to exercise",
-    "file": "scripts/check-provenance.py",
-    "edits": [
-      [
-        "(?<!exits )(?<!code )",
-        "(?<!code )"
-      ]
-    ],
-    "expect": [
-      "...including its plural spelling, which is the shape row #118 actually uses"
-    ]
-  },
-  {
-    "name": "⟳ r1 Claude M2 — the `code ` lookbehind goes, so `code 2 means CANNOT RUN` is a figure needing provenance",
-    "file": "scripts/check-provenance.py",
-    "edits": [
-      [
-        "(?<!code )\\b\\d\\s+[A-Za-z]",
-        "\\b\\d\\s+[A-Za-z]"
-      ]
-    ],
-    "expect": [
-      "...and `code 2 means` is refused the same way"
-    ]
-  },
-  {
-    "name": "⟳ r1 Claude M3 — `HEAD` counts as provenance again wherever the bare word appears, so row #255's prose ABOUT reading HEAD excuses its unqualified `**47 s**`",
-    "file": "scripts/check-provenance.py",
-    "edits": [
-      [
-        "r\"|`HEAD`|\\bHEAD[~^]|(?:\\bat|\\bas of|\\bmeasured(?:\\s+\\w+){0,2})\\s+HEAD\\b\"",
-        "r\"|\\bHEAD\\b\""
-      ]
-    ],
-    "expect": [
-      "⭐ M3: prose ABOUT reading HEAD is not provenance for a figure beside it"
     ]
   }
 ]

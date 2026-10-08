@@ -432,6 +432,52 @@ def _self_test() -> int:
          "other arm's output",
          _GOLDEN == _GOLDEN_MIXED, False)
 
+    # ⛔ BACKLOG #249, ARMS THREE AND FOUR — r2 Codex HIGH. "Two refusal arms" was an
+    # INCOMPLETE ENUMERATION: `refusal_message` has four reachable shapes, and the review proved
+    # the other two unprotected by injecting #249's own witness into each and running the suite:
+    #
+    #     empty cache      AST-valid, rc=0, 31/31 passed   -> the contradiction SHIPPED
+    #     no near-miss     AST-valid, rc=0, 31/31 passed   -> the contradiction SHIPPED
+    #     golden-covered   AST-valid, rc=1, 29/31 passed   -> the known-positive control
+    #
+    # A denylist of phrasings could not catch it and neither could two goldens; only pinning
+    # every arm can. ⚠ A BOUND IS AN ENUMERATION OF WHAT IS WITNESSED — `a-bound-enumerates-
+    # what-is-witnessed` — so the case below asserts the arm COUNT as well, and it fails if a
+    # fifth shape is added without a golden. Both texts DERIVED by running, not typed.
+    _GOLDEN_EMPTY_IN = {"client_version": "0.99.0", "models": []}
+    _GOLDEN_EMPTY = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 0 model(s), fetched by client_version 0.99.0\n"
+        "  the cache is EMPTY. Run `codex` once to populate it; if it stays empty, check "
+        "`codex login status`.\n"
+        "  \u26d4 TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is "
+        "unavailable \u2014 verify that separately with `codex exec -m <slug> ...` from inside "
+        "a git worktree before recording a REVIEW GAP."
+    )
+    case("\u2b50 the EMPTY-cache refusal EQUALS its golden text (r2 Codex High: this arm shipped "
+         "a sentence contradicting its own guidance and the suite stayed green)",
+         refusal_message(_GOLDEN_EMPTY_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN_EMPTY)
+
+    _GOLDEN_NONEAR_IN = {"client_version": "0.98.0", "models": [
+        {"slug": "listed", "priority": 1, "visibility": "list", "supported_in_api": False}]}
+    _GOLDEN_NONEAR = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 1 model(s), fetched by client_version 0.98.0\n"
+        "  \u26a0 and NONE of them is a near-miss: every entry fails a requirement other than "
+        "visibility (API support, or a numeric non-boolean priority, or a slug). Inspect the "
+        "cache rather than assuming the CLI is stale.\n"
+        "  \u26d4 TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is "
+        "unavailable \u2014 verify that separately with `codex exec -m <slug> ...` from inside "
+        "a git worktree before recording a REVIEW GAP."
+    )
+    case("\u2b50 the NO-NEAR-MISS refusal EQUALS its golden text too, so all four reachable arms "
+         "are now pinned by equality rather than by substrings",
+         refusal_message(_GOLDEN_NONEAR_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN_NONEAR)
+
+    case("...and the four goldens are four DISTINCT texts, so no case can be satisfied by "
+         "another arm's output \u2014 the bound is the enumeration, not the count",
+         len({_GOLDEN, _GOLDEN_MIXED, _GOLDEN_EMPTY, _GOLDEN_NONEAR}), 4)
+
     case("failed_requirements names each unmet predicate for one entry",
          failed_requirements({"slug": "x", "priority": 1, "visibility": "hide",
                               "supported_in_api": False})

@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 67 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 93 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -97,7 +97,82 @@ BOLD_RE = re.compile(r"\*\*(?:(?!\*\*).)+?\*\*", re.S)
 # not two**" — a real claim with no provenance), and the firing rate is UNCHANGED at 46%
 # (102/223 against 102/222). A rule that adds a true positive and moves the rate by nothing is
 # the one worth taking.
-NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}|(?<!exit )(?<!exits )(?<!code )\b\d\s+[A-Za-z]")
+# ⟳ r2 Codex MEDIUM — THE THREE LOOKBEHINDS WERE A DENYLIST OF THREE IDIOMS, and the review
+# found the fourth, fifth and sixth immediately: `**rc 1 is failure**` and
+# `**Phase 1 is complete**` were COUNTED as measurements, while `**3%** failed` and
+# `**3** failures` were still MISSED. Growing the lookbehind list is the wrong instrument — the
+# distinction is not which word precedes the digit but which ROLE the digit plays:
+#
+#   a MEASUREMENT  puts the number before the thing counted   `3 unbound`, `2 gaps`, `5 rounds`
+#   an IDENTIFIER  puts the number after a label              `ADR 2`, `rc 1`, `step 2`, `F6`
+#   a STATUS CODE  makes the number the subject                `1 is failure`, `(2)`
+#
+# So the rule reads BOTH directions and lives in `single_digit_figures` where it can be read.
+# MEASURED 2026-10-07: 20 of 20 witnesses correct — including all four the review supplied —
+# with the live firing rate UNCHANGED at 48% (106/223) and not one row changing state. Same
+# answer where it was already right, correct where it was wrong.
+MULTI_NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}|\d\s*%")
+
+# A STANDALONE digit. ⚠ `\w` and not `\d`: `(?<![\d.,])` let the `2` inside `**M2b**` and the
+# `6` inside `**F6 (Low)**` match, so two identifier rows became figures (measured).
+# ⚠ `%` IS EXCLUDED ON THE RIGHT so that `MULTI_NUM_RE`'s `\d\s*%` alternative actually
+# OWNS the percentage case. Without this, SINGLE matched the `3` of `3%` and treated `%`
+# as the counted noun — correct by accident, and it made the percentage alternative
+# UNKILLABLE: the mutation removing it survived a green suite. One rule, one owner.
+SINGLE_NUM_RE = re.compile(r"(?<![\w.,])\d(?![\w.,%])")
+
+# A parenthesised digit is a label or an exit code, never a count — `**CANNOT RUN (2)**`, which
+# is row #152's own wording. A SHAPE rule rather than another word in a list.
+PARENTHESISED_NUM_RE = re.compile(r"\(\s*\d\s*\)")
+
+# The number is LABELLED by what precedes it, so it identifies rather than counts.
+LABEL_BEFORE = frozenset({
+    "exit", "exits", "code", "rc", "phase", "adr", "step", "round", "shard", "task", "pr",
+    "issue", "case", "row", "gate", "arm", "milestone", "part", "section", "version",
+})
+
+# The number is the SUBJECT of what follows, so again it is not counting anything.
+SUBJECT_AFTER = frozenset({
+    "is", "was", "are", "were", "be", "been", "being", "means", "meant", "says", "said",
+    "shows", "showed", "states", "stated", "reads", "from", "of", "to", "in", "on", "at",
+    "and", "or", "but", "then", "if", "that", "which", "while", "because",
+})
+
+TOKEN_STRIP = "`*_([{)]}>,.:;!?\"'"
+
+
+def single_digit_figures(span: str, after: str = "") -> list[str]:
+    """Single-digit MEASUREMENTS in a bold span, as "<digit> <noun>". PURE.
+
+    `after` is the row text following the span, because the counted noun can sit OUTSIDE the
+    bold — `**3** failures` is row-shaped and the span alone cannot see the word that makes it
+    a measurement (r2 Codex Medium).
+    """
+    out: list[str] = []
+    labelled = {m.start() + next(i for i, c in enumerate(m.group(0)) if c.isdigit())
+                for m in PARENTHESISED_NUM_RE.finditer(span)}
+    for m in SINGLE_NUM_RE.finditer(span):
+        if m.start() in labelled:
+            continue
+        before = [t for t in (w.strip(TOKEN_STRIP) for w in span[:m.start()].split()) if t]
+        tail = [t for t in (w.strip(TOKEN_STRIP)
+                            for w in (span[m.end():] + " " + after).split()) if t]
+        prev = before[-1].lower() if before else ""
+        nxt = tail[0].lower() if tail else ""
+        if prev in LABEL_BEFORE or nxt in SUBJECT_AFTER or not nxt:
+            continue
+        out.append(f"{m.group(0)} {nxt}")
+    return out
+
+
+def figures_in_span(span: str, after: str = "") -> list[str]:
+    """Every figure a bold span carries, single digits included. PURE."""
+    return [m.group(0) for m in MULTI_NUM_RE.finditer(span)] + single_digit_figures(span, after)
+
+
+# Retained as the MULTI-digit rule's name: `check-withdrawal.NUMBER_RE` is still deliberately
+# different from it (r1 Claude L3), and a case asserts that difference.
+NUM_RE = MULTI_NUM_RE
 
 # ⛔ Each alternative names WHERE a measurement happened. A bare date and a bare filename are
 # deliberately absent; including the date took the firing rate to 0 of 231, which is a rule
@@ -113,7 +188,24 @@ PROVENANCE_RE = re.compile(
     # where a number came from. MEASURED over the live file, FOUR rows pass today on a bare
     # HEAD alone (#131 #133 #134 #255) — and the ratchet reads ADDED rows, so tightening this
     # does not retro-fire on them; it stops the next one.
-    r"|`HEAD`|\bHEAD[~^]|(?:\bat|\bas of|\bmeasured(?:\s+\w+){0,2})\s+HEAD\b"
+    # ⟳⟳ r2 Codex MEDIUM — `\bat` WAS A SEMANTIC BYPASS, not just a word-boundary question.
+    # It correctly refused `format HEAD` and `lookat HEAD`, and then accepted
+    # **"we cannot look at HEAD"** — prose ABOUT git being unreadable, which is the exact class
+    # M3 was filed to stop, one word away. Measured independently by this coordinator and by the
+    # review within two minutes of each other.
+    #
+    # A ref is provenance when something was MEASURED there. So: backticked, suffixed, `as of`,
+    # or an explicit measurement verb within two words. ⚠ `the tree at HEAD held 1,416` NO
+    # LONGER counts, and that is deliberate — it is indistinguishable, by any rule short of
+    # reading English, from `we cannot look at HEAD`. MEASURED over the live file: 11 of 11
+    # witnesses correct, **ZERO rows lose provenance**, firing rate unchanged at 46% (90/195).
+    r"|`HEAD`|\bHEAD[~^]|\bas of\s+HEAD\b"
+    # ⚠ `read` IS NOT IN THIS LIST, and my first draft had it. "cannot read HEAD" is the exact
+    # prose M3 exists to refuse — row #255's own wording — so the verb that most naturally
+    # describes reading a ref is the one that cannot be trusted to mean a measurement happened.
+    # Caught by one of this file's own cases, not by inspection.
+    r"|(?:measured|re-?derived|derived|taken|counted|observed|verified|sampled)"
+    r"(?:\s+\w+){0,2}\s+HEAD\b"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -146,8 +238,11 @@ def bolded_figures(row: str) -> list[str]:
     red on half the file.
     """
     out = []
-    for b in BOLD_RE.findall(row):
-        if NUM_RE.search(DATE_RE.sub("", b)):
+    for m in BOLD_RE.finditer(row):
+        b = m.group(0)
+        # ⟳ r2 Codex Medium: the counted noun can live OUTSIDE the span (`**3** failures`), so
+        # the following text is handed over too. 40 characters is the next word and then some.
+        if figures_in_span(DATE_RE.sub("", b), row[m.end():m.end() + 40]):
             out.append(b)
     return out
 
@@ -254,11 +349,36 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     # EM-DASH, not a letter — so the counted-noun alternative never matched it and the case
     # passed because of the punctuation, not because of the lookbehind. The mutation that strips
     # the lookbehinds survived it. `fixing-a-premise-is-not-covering-the-branch`.
-    ("...and an EXIT CODE is not a measurement — `exit 1 is` would match without the lookbehind",
+    ("...and an EXIT CODE is not a measurement, because the digit is the SUBJECT of `is`",
      "**exit 1 is the same code a legitimate warning produces**", 0),
     ("...including its plural spelling, which is the shape row #118 actually uses",
      "**exits 1 from check-review-decision.py**", 0),
     ("...and `code 2 means` is refused the same way", "**code 2 means CANNOT RUN**", 0),
+    # ── r2 Codex MEDIUM's four witnesses: two MISSED measurements, two wrongly COUNTED ───────
+    ("⭐ r2: a single-digit PERCENTAGE is a measurement and was missed entirely",
+     "**3%** failed", 1),
+    ("⭐ r2: the counted noun can live OUTSIDE the bold, which the span alone cannot see",
+     "**3** failures", 1),
+    ("⭐ r2: `rc 1 is failure` is a STATUS CODE and was counted as a measurement",
+     "**rc 1 is failure**", 0),
+    ("⭐ r2: `Phase 1 is complete` is a PHASE and was counted as a measurement",
+     "**Phase 1 is complete**", 0),
+    # ⚠ `says` is itself in SUBJECT_AFTER, so `**ADR 2 says**` is refused by EITHER half and
+    # cannot tell them apart — the mutation dropping the label test survived it. This fixture's
+    # next word is NOT a subject word, so only the LABEL half can refuse it.
+    ("...and `ADR 2 says` is labelled by what PRECEDES it, which no lookbehind list reached",
+     "**ADR 2 says**", 0),
+    ("⭐ ...and the LABEL half alone refuses this one, whose next word is not a subject word",
+     "**ADR 2 requires provenance**", 0),
+    ("⭐ ...while the SUBJECT half alone refuses this one, which nothing labels",
+     "**1 is the only survivor**", 0),
+    ("...and `step 2 of 5` likewise", "**step 2 of 5**", 0),
+    ("...and a PARENTHESISED digit is a code, which is row #152's own wording",
+     "**CANNOT RUN (2)** printing nothing", 0),
+    ("...while a digit before a VERB still counts when nothing labels it — the rule is about "
+     "ROLE, not about the part of speech that follows",
+     "**2 failed**", 1),
+    ("...and a version identifier is not a count", "**v2 ships**", 0),
     ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",
      "**Five dual adversarial rounds produced 26 Blocking findings and NONE was in the "
      "predicate**", 1),
@@ -269,11 +389,32 @@ BOLD_CASES: list[tuple[str, str, int]] = [
      "**DONE** after 99 checks **42 failures**", 1),
 ]
 
+# ── r2 Codex Medium: the predicate's own cases, at two DISTINCT `after` values ─────────────
+SINGLE_DIGIT_CASES: list[tuple[str, str, str, list]] = [
+    ("a digit before the thing counted is a measurement", "**3 unbound**", "", ["3 unbound"]),
+    ("...and the noun may sit after the span", "**3**", " failures", ["3 failures"]),
+    ("a digit the previous word LABELS is not", "**ADR 2 says**", "", []),
+    ("a digit that is the SUBJECT of what follows is not", "**rc 1 is failure**", "", []),
+    ("a PARENTHESISED digit is never a count", "**CANNOT RUN (2)**", " printing", []),
+    ("a bare digit with nothing following counts nothing", "**7**", "", []),
+    ("a digit inside an identifier is not a standalone digit at all", "**M2b**", "", []),
+]
+
 PROV_CASES: list[tuple[str, str, bool]] = [
     ("a backticked commit-ish is provenance", "measured at `93e3133a`", True),
     ("a ref is provenance", "measured against origin/master", True),
-    ("HEAD is provenance when it says WHERE — `at HEAD` introduces a source",
-     "the tree at HEAD held 1,416", True),
+    # ⟳ r2 Codex Medium: this case USED TO assert that bare `at HEAD` is provenance. It is not —
+    # the same three words appear in `we cannot look at HEAD`, which names no source at all.
+    ("HEAD is provenance when something was MEASURED there",
+     "measured at HEAD, the tree held 1,416", True),
+    ("...and a bare `at HEAD` is NOT, because it is indistinguishable from prose about git",
+     "the tree at HEAD held 1,416", False),
+    ("⭐ r2: the semantic bypass — `we cannot look at HEAD` names no source",
+     "**3 failures**; we cannot look at HEAD", False),
+    ("...nor does `it fails to look at HEAD`", "it fails to look at HEAD when unreadable", False),
+    ("...while `re-derived at HEAD` does, and so does any measurement verb within two words",
+     "re-derived at HEAD", True),
+    ("...and `as of HEAD` still introduces a source", "1,416 anchors as of HEAD", True),
     # ── r1 Claude M3: `HEAD` as the SUBJECT is not provenance ────────────────────────────────
     # ⛔ THE WITNESS IS ROW #255'S OWN WORDING. A bare \bHEAD\b counted prose ABOUT git, so an
     # unqualified `**47 s**` passed because the sentence happened to contain the token.
@@ -285,6 +426,8 @@ PROV_CASES: list[tuple[str, str, bool]] = [
      "measured against HEAD~1", True),
     ("...and `as of HEAD` introduces it as a source", "1,416 anchors as of HEAD", True),
     ("...while HEAD merely NAMED mid-sentence does not", "we cannot read HEAD here", False),
+    ("...and `read` is deliberately NOT a measurement verb, because that is row #255's wording",
+     "`--clear` cannot read HEAD and it cost **47 s**", False),
     ("a path WITH a line is provenance", "see `scripts/x.py:84`", True),
     ("a run id is provenance", "run `37661154718` was green", True),
     ("⛔ a bare date is NOT provenance — it is the filing date", "found 2026-10-07", False),
@@ -383,12 +526,31 @@ def self_test() -> int:
     direct.append(("...and `--all` over a backlog that parses to ZERO rows is CANNOT RUN",
                    _drive_main_all(), 2))
 
-    total = (len(BOLD_CASES) + len(PROV_CASES) + len(ROWSET_CASES)
+    total = (2 + len(BOLD_CASES) + len(SINGLE_DIGIT_CASES) + len(PROV_CASES) + len(ROWSET_CASES)
              + len(VERDICT_CASES) + len(MESSAGE_CASES) + len(direct))
     print(f"check-provenance --self-test  ({total} cases)")
 
     for name, text, want in BOLD_CASES:
         got = len(bolded_figures(text))
+        ok = got == want
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
+
+    # ⚠ DIRECT CALLS AT PAIRWISE-DISTINCT LITERALS. The table below drives this function from
+    # ONE call site, so `span` and `after` are each a single expression to
+    # `check-fixture-variation`, which reads argument EXPRESSIONS and refused the file for it.
+    for name, got, want in [
+        ("single_digit_figures over a literal span, with no trailing text",
+         single_digit_figures("**4 shards**"), ["4 shards"]),
+        ("...and over a DIFFERENT span whose noun arrives in a DIFFERENT trailing string",
+         single_digit_figures("**6**", " regressions found"), ["6 regressions"]),
+    ]:
+        ok = got == want
+        failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
+
+    for name, span, after, want in SINGLE_DIGIT_CASES:
+        got = single_digit_figures(span, after)
         ok = got == want
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")

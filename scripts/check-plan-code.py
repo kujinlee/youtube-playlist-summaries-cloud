@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 220 cases
+    python3 scripts/check-plan-code.py --self-test          # 226 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -696,9 +696,9 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
-    "scripts/check-provenance.py": 15,
-    "scripts/check-withdrawal.py": 14,
-    "scripts/find-claim.py": 11,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
+    "scripts/check-provenance.py": 19,
+    "scripts/check-withdrawal.py": 18,
+    "scripts/find-claim.py": 17,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
                                    # returned skip set, and the verdict that names it.
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
@@ -1043,7 +1043,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 122,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 125,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1504,8 +1504,58 @@ def case_name_literals(source: str) -> set:
         tree = ast.parse(source)
     except SyntaxError:
         return set()
+    # ⛔ DOCSTRINGS ARE NOT CASE NAMES — r2 Codex MEDIUM, and it cost the rule in both
+    # directions at once. Every `ast.Constant` str included module, function and class
+    # docstrings, which in this repository are hundreds of characters of prose. The review's
+    # witness: a case renamed away, whose OLD title still appears inside an unrelated docstring,
+    # was forgiven — the stale expect "matches no string literal" became a mere warning again.
+    #
+    #     '"""Historical title: the old case is gone forever"""\ncase("replacement title", 1, 1)'
+    #     expect "the old case is gone forever"  ->  explained by the DOCSTRING
+    #
+    # A bare string STATEMENT is excluded for the same reason: it is a comment wearing quotes.
+    skip = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) \
+                and isinstance(n.value.value, str):
+            skip.add(id(n.value))
     return {n.value for n in ast.walk(tree)
-            if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip}
+
+
+def case_name_patterns(source: str, min_static: int = 4) -> list:
+    """Each f-string in `source`, as a pattern its output must match. PURE.
+
+    ⛔ r2 Codex MEDIUM, THE OTHER DIRECTION. Containment at a 12-character floor REFUSED a
+    perfectly valid generated name: `case(f"{x} works", 1, 1)` produces titles like
+    `alpha works`, whose only static component is `" works"` — six characters, under the floor —
+    so the expect was reported as naming a case that is GONE and the step went red. A guard that
+    refuses a legitimate entry is worse than one that forgives an illegitimate one here, because
+    this half REFUSES rather than warns.
+    #
+    An f-string's STATIC SEGMENTS are statically recoverable even when its output is not, so it
+    reconstructs as a pattern: `f"{x} works"` -> `^.*? works$`, which `alpha works` matches
+    exactly. `min_static` keeps `f"{a}{b}"` — which would become `^.*?.*?$` and match
+    everything — out of the candidate set.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.JoinedStr):
+            continue
+        parts, static = [], 0
+        for v in n.values:
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                parts.append(re.escape(v.value))
+                static += len(v.value)
+            else:
+                parts.append(r".*?")
+        if static >= min_static:
+            out.append(re.compile("^" + "".join(parts) + "$", re.S))
+    return out
 
 
 # ⟳ r1 Claude M1. An `expect` naming no literal has TWO causes and they are not the same
@@ -1600,6 +1650,7 @@ def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
     errors: list = []
     warnings: list = []
     lits: dict = {}
+    pats: dict = {}
     for e in entries:
         tgt = e.get("file", "")
         src = source_of.get(tgt)
@@ -1630,11 +1681,14 @@ def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
                 staged = staged.replace(find, _repl, 1)
         if tgt not in lits:
             lits[tgt] = case_name_literals(src)
+            pats[tgt] = case_name_patterns(src)
         for ex in expects_of(e):
             if ex in lits[tgt]:
                 continue
             # ⟳ r1 Claude M1 — two populations, two severities. See EXPECT_OVERLAP_FLOOR.
-            if expect_explained(ex, lits[tgt]):
+            # ⟳ r2 Codex Medium — an f-string that PRODUCES this name explains it exactly, and
+            # is checked before the inexact containment rule.
+            if any(pat.match(ex) for pat in pats[tgt]) or expect_explained(ex, lits[tgt]):
                 warnings.append(f"{name}: expect {ex[:60]!r} matches no string literal in {tgt}")
             else:
                 errors.append(f"{name}: its expect names a case that is GONE from {tgt} — no "
@@ -5363,7 +5417,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1476)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1493)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5500,6 +5554,26 @@ def _self_test() -> int:
     case("...and the same fixture at a floor of 0 IS explained, which is what makes the line "
          "above a test of the floor rather than of the fixture or of the fraction",
          expect_explained("a renamed case title", {"renamed ", "case title"}, floor=0), True)
+    # ── r2 Codex MEDIUM: the candidate SET was wrong in both directions ─────────────────────
+    _DOC = ('"""Historical title: the old case is gone forever"""\n'
+            'case("replacement title", 1, 1)')
+    case("⭐ r2: a stale title surviving inside a DOCSTRING is NOT an explanation",
+         expect_explained("the old case is gone forever", case_name_literals(_DOC)), False)
+    case("...and the replacement title, being a real case name, still IS a literal",
+         "replacement title" in case_name_literals(_DOC), True)
+    _FS = 'case(f"{x} works", 1, 1)'
+    case("⭐ r2: an f-string that PRODUCES the name explains it exactly, however short its "
+         "static part",
+         any(p.match("alpha works") for p in case_name_patterns(_FS)), True)
+    case("...and it does not explain a name it could never produce",
+         any(p.match("alpha fails") for p in case_name_patterns(_FS)), False)
+    case("...and an f-string with NO static text explains nothing, or it would explain everything",
+         case_name_patterns('case(f"{a}{b}", 1, 1)'), [])
+    case("...while the same f-string at min_static=0 WOULD match anything, which is why the "
+         "floor on static text exists",
+         bool(case_name_patterns('case(f"{a}{b}", 1, 1)', min_static=0)[0].match("literally any")),
+         True)
+
     # ── the FRACTION, which the floor alone cannot express (measured 2.9% -> 0.7%) ───────────
     # A long expect sharing only a short run with some unrelated literal is the shape that
     # slipped through: 12 characters out of 80 explains nothing about the other 68.

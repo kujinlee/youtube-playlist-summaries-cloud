@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 53 cases
+    python3 scripts/find-claim.py --self-test        # 64 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -77,6 +77,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -200,7 +201,7 @@ def verdict(n_hits: int, n_control: int, expect: str,
         return 2, (
             "CANNOT RUN — the control pattern matched NOTHING in the searched files, so this "
             "search is not known to work. Treat the result as NOT RUN, not as 'no matches'. "
-            "Either the file set is wrong or the control is."
+            "Either the file set is wrong or the control is." + skip_note
         )
     if expect == "absent":
         if n_hits:
@@ -213,7 +214,7 @@ def verdict(n_hits: int, n_control: int, expect: str,
             return 0, f"ok — present, {n_hits} occurrence(s)." + skip_note
         return 1, (
             "MISSING — the claim is absent, and the control proves the search reached the files, "
-            "so this is a real absence rather than a broken search."
+            "so this is a real absence rather than a broken search." + skip_note
         )
     if expect == "report":
         return 0, f"{n_hits} occurrence(s); control hit {n_control} time(s)." + skip_note
@@ -231,9 +232,9 @@ def wrap_path_exercised(control_hits: list[Hit]) -> bool:
 
 # ── the filesystem half, deliberately separate ───────────────────────────────
 
-def collect_files(paths: list[str],
-                  suffixes: set[str] | None = None) -> tuple[list[Path], list[Path], str]:
-    """(files, skipped, error). A directory contributes every non-binary file recursively.
+def collect_files(paths: list[str], suffixes: set[str] | None = None
+                  ) -> tuple[list[Path], list[Path], list[Path], str]:
+    """(files, skipped, pruned, error). A directory contributes every non-binary file recursively.
 
     ⛔ `skipped` IS RETURNED RATHER THAN DISCARDED, for the reason `search_files` returns
     `unreadable`: an excluded file is a subject the search never reached, and a caller that
@@ -249,27 +250,56 @@ def collect_files(paths: list[str],
     """
     out: list[Path] = []
     skipped: list[Path] = []
+    pruned: list[Path] = []
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            for q in sorted(p.rglob("*")):
-                if not q.is_file():
+            # ⛔ os.walk WITH IN-PLACE PRUNING, not rglob-then-filter — r2 Codex HIGH, and the
+            # defect was that the RUN SAID SO. The filter version printed
+            # "node_modules not walked" while `os.scandir` was called 4 times inside it
+            # (measured, wrapping scandir over a fixture). A message asserting a traversal
+            # property the traversal does not have is worse than no message.
+            #
+            # ⛔ SYMLINKED DIRECTORIES ARE FOLLOWED, with cycle protection by REAL path. The
+            # filter version missed them entirely and silently: a `root/linked -> ../external`
+            # holding the claim gave `rc=0, "so the search worked"`. In THIS repository
+            # `~/explainers` is a symlink INTO `docs/explainers`, so a tool that cannot see
+            # through one cannot see this repo's own pages.
+            #
+            # ⛔ AND A DIRECTORY THE CALLER NAMED IS NEVER PRUNED. Pruning applies to
+            # directories DISCOVERED during the walk; naming one is the caller saying it is a
+            # subject. `find-claim … root/node_modules` returned zero files before.
+            seen_real: set = set()
+            for dirpath, dirnames, filenames in os.walk(p, followlinks=True):
+                real = Path(dirpath).resolve()
+                if real in seen_real:
+                    dirnames[:] = []          # a cycle through a symlink; stop descending
                     continue
-                if set(q.parts) & PRUNED_DIRS:
-                    continue
-                if suffixes is not None:
-                    (out if q.suffix in suffixes else skipped).append(q)
-                elif q.suffix.lower() in BINARY_SUFFIXES:
-                    skipped.append(q)
-                else:
-                    out.append(q)
+                seen_real.add(real)
+                keep = []
+                for d in sorted(dirnames):
+                    if d in PRUNED_DIRS:
+                        pruned.append(Path(dirpath) / d)
+                    else:
+                        keep.append(d)
+                dirnames[:] = keep            # IN PLACE: os.walk then never descends into them
+                for fn in sorted(filenames):
+                    q = Path(dirpath) / fn
+                    if not q.is_file():
+                        continue
+                    if suffixes is not None:
+                        (out if q.suffix in suffixes else skipped).append(q)
+                    elif q.suffix.lower() in BINARY_SUFFIXES:
+                        skipped.append(q)
+                    else:
+                        out.append(q)
         elif p.is_file():
             out.append(p)
         else:
-            return [], [], f"CANNOT RUN — {raw} is neither a file nor a directory."
+            return [], [], [], f"CANNOT RUN — {raw} is neither a file nor a directory."
     if not out:
-        return [], skipped, "CANNOT RUN — the given paths contain no readable text files."
-    return out, skipped, ""
+        return [], skipped, pruned, "CANNOT RUN — the given paths contain no readable text files."
+    return out, skipped, pruned, ""
 
 
 def search_files(files: list[Path], pattern: re.Pattern) -> tuple[list[Hit], list[str]]:
@@ -397,12 +427,15 @@ def _unreadable_probe() -> tuple:
         d = Path(td)
         (d / "ok.md").write_text("live claim here\n")
         (d / "bad.md").write_bytes(b"live claim\xff\n")
-        files, _skipped, _err = collect_files([str(d)])
+        files, _skipped, _pruned, _err = collect_files([str(d)])
         return search_files(files, build_pattern("live claim"))
 
 
 def _h1_witness() -> tuple:
-    """(dir_hits, explicit_hits, skipped, pruned_subjects) over round 1 Claude H1's witness.
+    """Round 1 Claude H1's witness, extended by round 2 Codex's three additions.
+
+    Returns (dir_hits, explicit_hits, n_skipped, git_subjects, scandir_calls_inside_pruned,
+    named_pruned_files, pruned_dir_names).
 
     The directory holds a control in `ok.md`, the claim in `notes.rst` and the claim again in a
     suffixless `Dockerfile`, plus a `logo.png` and a file inside a `.git/` subdirectory. Before
@@ -411,21 +444,73 @@ def _h1_witness() -> tuple:
     """
     import tempfile
     with tempfile.TemporaryDirectory() as td:
-        d = Path(td)
+        # ⛔ THE SYMLINK TARGET LIVES OUTSIDE THE WALKED ROOT, and that is the whole point.
+        # The first version put it in a sibling directory INSIDE the root, so `os.walk` reached
+        # the file by its real path whatever `followlinks` said — the mutation that turns
+        # following off SURVIVED a green suite. `a-case-can-pass-for-an-ambient-reason`.
+        outside = Path(td) / "outside"
+        outside.mkdir()
+        (outside / "linked-claim.md").write_text("the claim is still live\n")
+        d = Path(td) / "root"
+        d.mkdir()
         (d / "ok.md").write_text("the control phrase lives here\n")
         (d / "notes.rst").write_text("THE CLAIM IS STILL LIVE here\n")
         (d / "Dockerfile").write_text("THE CLAIM IS STILL LIVE here\n")
         (d / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n binary, not a subject\n")
         (d / ".git").mkdir()
         (d / ".git" / "COMMIT_EDITMSG").write_text("the claim is still live\n")
+        # ── r2 Codex HIGH's three additions to the same witness ────────────────────────────
+        # a SYMLINKED directory holding the claim; a scandir spy to prove the prune is real;
+        # and the pruned directory NAMED explicitly, which the caller is entitled to search.
+        os.symlink(outside, d / "linked")
+        (d / "node_modules").mkdir()
+        (d / "node_modules" / "dep").mkdir()
+        (d / "node_modules" / "dep" / "claim.md").write_text("the claim is still live\n")
+
         pat = build_pattern("the claim is still live")
-        walked, skipped, _ = collect_files([str(d)])
-        named, _, _ = collect_files(
+        real_scandir, calls = os.scandir, []
+
+        def _spy(path):
+            calls.append(str(path))
+            return real_scandir(path)
+
+        os.scandir = _spy
+        try:
+            walked, skipped, pruned, _ = collect_files([str(d)])
+        finally:
+            os.scandir = real_scandir
+        named, _, _, _ = collect_files(
             [str(d / "ok.md"), str(d / "notes.rst"), str(d / "Dockerfile")])
+        named_pruned, _, _, _ = collect_files([str(d / "node_modules")])
         return (len(search_files(walked, pat)[0]),
                 len(search_files(named, pat)[0]),
                 len(skipped),
-                [q for q in walked if ".git" in q.parts])
+                [q for q in walked if ".git" in q.parts],
+                len([c for c in calls if "node_modules" in c]),
+                len(named_pruned),
+                sorted({q.name for q in pruned}))
+
+
+def _tail_of_a_run(prune: bool = True) -> str:
+    """Everything `main` prints, over a built world. Drives the CLI, not a helper.
+
+    ⚠ Returns the WHOLE capture and lets the cases assert substrings. The first version sliced
+    between the outermost parentheses, and the pruned-directory names are themselves
+    parenthesised — `rfind(")")` landed inside them. A parser in a fixture is a second thing
+    that can be wrong.
+    """
+    import contextlib, io, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("the control phrase lives here\n")
+        if prune:
+            (d / "node_modules").mkdir()
+            (d / "node_modules" / "dep.md").write_text("irrelevant\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            main(["--pattern", "nothing at all here", "--control", "control phrase",
+                  "--expect", "absent", str(d)])
+        return buf.getvalue()
 
 
 def self_test() -> int:
@@ -481,20 +566,57 @@ def self_test() -> int:
         # ⛔ THE FALSIFIER FOR THE DENY-LIST. Restore the allow-list and the first of these
         # two goes 2 -> 0 while the second stays 2: the exact disagreement H1 reported, in
         # which the quieter number was the one that printed "so the search worked".
-        ("⭐ H1: the DIRECTORY form reaches a `.rst` and a suffixless file",
-         _h1_witness()[0], 2),
-        ("...and the EXPLICIT-file form agrees with it, which it did not before",
+        ("⭐ H1: the DIRECTORY form reaches a `.rst`, a suffixless file AND a symlinked one",
+         _h1_witness()[0], 3),
+        ("...and it still reaches at least everything the EXPLICIT-file form does",
          _h1_witness()[1], 2),
         ("a known-BINARY suffix is skipped, and the skip is RETURNED not discarded",
          _h1_witness()[2], 1),
         ("a file inside a PRUNED directory is not a subject at all",
          _h1_witness()[3], []),
+        # ── r2 Codex HIGH: three properties the rglob-then-filter version did not have ──────
+        ("⭐ the prune is REAL — zero `scandir` calls inside a directory the run says it did "
+         "not walk. The filter version made 4 while printing 'node_modules not walked'",
+         _h1_witness()[4], 0),
+        ("⭐ a pruned directory the CALLER NAMED is searched anyway — naming it is the caller "
+         "saying it is a subject, and the filter version returned zero files for it",
+         _h1_witness()[5], 1),
+        ("...and the run reports the directories ACTUALLY pruned, not the constant",
+         _h1_witness()[6], [".git", "node_modules"]),
+        # ⛔ THE TAIL IS PRINTED BY `main`, so only a case that DRIVES main can see it. The
+        # first attempt asserted `collect_files`' return instead, and the mutation that puts
+        # the PRUNED_DIRS constant back in the message SURVIVED — `unit-coverage-does-not-compose`.
+        ("⭐ the printed tail names only the directories this run pruned, so the message cannot "
+         "claim a traversal property the traversal does not have (r2 Codex High)",
+         "1 dir(s) not walked (node_modules)" in _tail_of_a_run(), True),
+        ("...and it does NOT name the other members of the constant, which is what the old "
+         "message did on every run that walked any directory at all",
+         any(x in _tail_of_a_run() for x in (".venv", ".mypy_cache", "__pycache__")), False),
+        ("...and a run that pruned NOTHING says nothing about pruning",
+         "not walked" in _tail_of_a_run(prune=False), False),
+        # ⚠ A SECOND, DISTINCT `argv`. `_tail_of_a_run` passes one expression, so no case could
+        # tell `main`'s argv from a constant — `check-fixture-variation` refused the file.
+        ("⭐ main() is driven at a DIFFERENT argv: a missing --control is CANNOT RUN, because a "
+         "search with no control cannot tell absence from a search that never ran",
+         main(["--pattern", "anything", "/dev/null"]), 2),
+        ("...and a third argv, with no paths at all, is CANNOT RUN too",
+         main(["--pattern", "x", "--control", "y"]), 2),
         ("⭐ verdict NAMES the exclusion rather than reporting a bare absence",
          "EXCLUDED from the walk by suffix" in verdict(0, 3, "absent", 7)[1], True),
         ("...and says nothing about exclusions when nothing was excluded",
          "EXCLUDED" in verdict(0, 2, "absent", 0)[1], False),
         ("a FOUND total is qualified too, because an exclusion understates it",
          "EXCLUDED from the walk by suffix" in verdict(4, 1, "absent", 2)[1], True),
+        # ── r2 Codex LOW: the qualification belongs on EVERY arm, not the clean ones only ───
+        ("⭐ the MISSING arm is qualified too — 'a real absence' is the strongest claim this "
+         "tool makes, so an unsearched file must not be hidden behind it",
+         "EXCLUDED from the walk by suffix" in verdict(0, 1, "present", 2)[1], True),
+        ("...and so is CANNOT RUN, where a dead control and an exclusion are two reasons the "
+         "answer is unsafe rather than one",
+         "EXCLUDED from the walk by suffix" in verdict(0, 0, "absent", 3)[1], True),
+        ("...and none of them says it when nothing was excluded",
+         any("EXCLUDED" in verdict(n, c, e, 0)[1]
+             for n, c, e in [(0, 1, "present"), (0, 0, "absent"), (4, 1, "absent")]), False),
     ]
 
     total = (len(PATTERN_CASES) + len(LINE_CASES) + len(VERDICT_CASES)
@@ -537,7 +659,12 @@ def self_test() -> int:
 
 # ── entry point ──────────────────────────────────────────────────────────────
 
-def main() -> int:
+def main(argv: "list[str] | None" = None) -> int:
+    """⟳ r2 — `argv` is a DEFAULTED PARAMETER, which is ADR-0014 rule D2's shape and also the
+    only way a case can drive this entry point over a world it built. The tail message is
+    printed HERE, so a case asserting `collect_files`' return cannot see it, and the mutation
+    that put the PRUNED_DIRS constant back in that message survived a green suite until this
+    existed."""
     ap = argparse.ArgumentParser(
         description="Find a claim across files, whitespace-insensitively, with a mandatory control."
     )
@@ -550,7 +677,7 @@ def main() -> int:
     ap.add_argument("--case-sensitive", action="store_true",
                     help="match case exactly; the default is insensitive, because a claim is prose")
     ap.add_argument("--self-test", action="store_true", help="run the case suite and exit")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
@@ -572,7 +699,7 @@ def main() -> int:
         print("CANNOT RUN — give at least one file or directory to search.", file=sys.stderr)
         return 2
 
-    files, skipped, err = collect_files(args.paths)
+    files, skipped, pruned, err = collect_files(args.paths)
     if err:
         print(err, file=sys.stderr)
         return 2
@@ -606,12 +733,15 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    walked_a_dir = any(Path(x).is_dir() for x in args.paths)
+    # ⛔ REPORT WHAT WAS ACTUALLY PRUNED, not the constant. The previous version printed the
+    # whole of PRUNED_DIRS whenever a directory was walked, which claimed a traversal property
+    # it did not have AND named directories that were nowhere near the search (r2 Codex High).
     tail = f"  ({len(files)} file(s) searched"
     if skipped:
         tail += f", {len(skipped)} skipped by suffix"
-    if walked_a_dir:
-        tail += f", {'/'.join(sorted(PRUNED_DIRS))} not walked"
+    if pruned:
+        names = sorted({d.name for d in pruned})
+        tail += f", {len(pruned)} dir(s) not walked ({'/'.join(names)})"
     print(f"{message}{tail})")
     return code
 

@@ -104,25 +104,25 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude H1 — the directory walk reverts to an ALLOW-list, so an unknown suffix and a suffixless file stop being subjects while the run still says the search worked",
+    "name": "⟳ r1 Claude H1 — the directory walk reverts to an ALLOW-list, so an unknown suffix and a suffixless file stop being subjects while the run still says the search worked ⟳ r2: retargeted — the os.walk rewrite re-indented this branch and renamed the case. Anchor AND expect, which are two bindings",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "                elif q.suffix.lower() in BINARY_SUFFIXES:\n                    skipped.append(q)\n                else:\n                    out.append(q)",
-        "                elif q.suffix in TEXT_SUFFIXES:\n                    out.append(q)\n                else:\n                    skipped.append(q)"
+        "                    elif q.suffix.lower() in BINARY_SUFFIXES:\n                        skipped.append(q)\n                    else:\n                        out.append(q)",
+        "                    elif q.suffix in TEXT_SUFFIXES:\n                        out.append(q)\n                    else:\n                        skipped.append(q)"
       ]
     ],
     "expect": [
-      "⭐ H1: the DIRECTORY form reaches a `.rst` and a suffixless file"
+      "⭐ H1: the DIRECTORY form reaches a `.rst`, a suffixless file AND a symlinked one"
     ]
   },
   {
-    "name": "⟳ r1 Claude H1 — the skipped set is DISCARDED on the way out, which is the shape the r1 Codex High already cost once for `unreadable`: an exclusion nobody can see",
+    "name": "⟳ r1 Claude H1 — the skipped set is DISCARDED on the way out, which is the shape the r1 Codex High already cost once for `unreadable`: an exclusion nobody can see ⟳ r2: retargeted — the return grew a `pruned` member",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "    return out, skipped, \"\"",
-        "    return out, [], \"\""
+        "    return out, skipped, pruned, \"\"",
+        "    return out, [], pruned, \"\""
       ]
     ],
     "expect": [
@@ -140,6 +140,84 @@
     ],
     "expect": [
       "⭐ verdict NAMES the exclusion rather than reporting a bare absence"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — symlinked directories stop being followed, so a claim behind `root/linked -> ../external` is missed SILENTLY and the run still says the search worked. In this repo `~/explainers` is such a symlink",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "for dirpath, dirnames, filenames in os.walk(p, followlinks=True):",
+        "for dirpath, dirnames, filenames in os.walk(p, followlinks=False):"
+      ]
+    ],
+    "expect": [
+      "⭐ H1: the DIRECTORY form reaches a `.rst`, a suffixless file AND a symlinked one"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — the prune goes back to filtering AFTER the walk, so the traversal descends into directories the run claims it did not walk (measured: 4 scandir calls)",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "                dirnames[:] = keep            # IN PLACE: os.walk then never descends into them",
+        "                _ = keep                      # IN PLACE: os.walk then never descends into them"
+      ]
+    ],
+    "expect": [
+      "⭐ the prune is REAL — zero `scandir` calls inside a directory the run says it did not walk. The filter version made 4 while printing 'node_modules not walked'"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — a directory the CALLER NAMED is pruned too, so naming `root/node_modules` returns nothing at all",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "        if p.is_dir():\n            # ⛔ os.walk WITH IN-PLACE PRUNING",
+        "        if p.is_dir() and p.name not in PRUNED_DIRS:\n            # ⛔ os.walk WITH IN-PLACE PRUNING"
+      ]
+    ],
+    "expect": [
+      "⭐ a pruned directory the CALLER NAMED is searched anyway — naming it is the caller saying it is a subject, and the filter version returned zero files for it"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — the tail prints the PRUNED_DIRS constant again instead of what was actually pruned, which is how it came to assert a traversal property it did not have",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "        names = sorted({d.name for d in pruned})",
+        "        names = sorted(PRUNED_DIRS)"
+      ]
+    ],
+    "expect": [
+      "⭐ the printed tail names only the directories this run pruned, so the message cannot claim a traversal property the traversal does not have (r2 Codex High)"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex LOW — the MISSING arm drops its exclusion note, so 'a real absence rather than a broken search' is asserted over files that were never opened",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "            \"so this is a real absence rather than a broken search.\" + skip_note",
+        "            \"so this is a real absence rather than a broken search.\""
+      ]
+    ],
+    "expect": [
+      "⭐ the MISSING arm is qualified too — 'a real absence' is the strongest claim this tool makes, so an unsearched file must not be hidden behind it"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex LOW — the CANNOT RUN arm drops its exclusion note, collapsing two reasons the answer is unsafe into one",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "            \"Either the file set is wrong or the control is.\" + skip_note",
+        "            \"Either the file set is wrong or the control is.\""
+      ]
+    ],
+    "expect": [
+      "...and so is CANNOT RUN, where a dead control and an exclusion are two reasons the answer is unsafe rather than one"
     ]
   }
 ]

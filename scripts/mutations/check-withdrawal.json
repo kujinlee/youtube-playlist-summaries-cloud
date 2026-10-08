@@ -180,5 +180,57 @@
     "expect": [
       "...and a DIFFERENT window splits on ITS OWN sentence boundaries"
     ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — figure_offset_in_hit stops searching and answers 0, which is the signature-start behaviour under a different name",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    i = hit_text.find(figure)\n    return i if i >= 0 else 0",
+        "    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ figure_offset_in_hit locates the FIGURE, not the signature's start"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — a bare newline becomes a sentence boundary again, so the verdict depends on where the line WRAPS: same claim, same marker, opposite answers",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|\\n(?=\\s*(?:[|#>]|[*+-]\\s|\\d+\\.\\s))\"        # the start of a markdown block",
+        "    r\"|\\n\"                                          # the start of a markdown block"
+      ]
+    ],
+    "expect": [
+      "⭐ ...but a WRAPPED sentence is ONE sentence, so a wrap cannot change the verdict"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — `|` leaves the markdown-block class, so two TABLE ROWS share a sentence and a marker leaks from one row's prose into the next row's figure. ⚠ The first attempt at this entry added a never-matching alternative and SURVIVED: a no-op edit is not a mutation",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "[|#>]",
+        "[#>]"
+      ]
+    ],
+    "expect": [
+      "a markdown TABLE ROW is its own sentence — a marker must not leak between rows"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — the LIVE caller's figure offset collapses to the signature's, caught only by the case that drives main() over a real repository",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                at = (figure_offset_in_window(start)\n                      + figure_offset_in_hit(hit.text, figure))",
+        "                at = figure_offset_in_window(start)"
+      ]
+    ],
+    "expect": [
+      "⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — the caller passes the FIGURE's offset, not the signature's (r2 Codex High)"
+    ]
   }
 ]

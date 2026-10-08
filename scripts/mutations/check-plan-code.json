@@ -1445,11 +1445,11 @@
     ]
   },
   {
-    "name": "#252: an expect naming no case stops being reported at all ⟳ r1 Claude M1: retargeted — the M1 split rewrote `if ex not in lits[tgt]:` into an `if ex in lits[tgt]: continue` guard plus a two-severity branch, so this entry's anchor went with it. `--binding` caught the orphan in 1.0s.",
+    "name": "#252: an expect naming no case stops being reported at all ⟳ r1 Claude M1: retargeted — the M1 split rewrote `if ex not in lits[tgt]:` into an `if ex in lits[tgt]: continue` guard plus a two-severity branch, so this entry's anchor went with it. `--binding` caught the orphan in 1.0s. ⟳ r2 Codex M1: retargeted again — the f-string pattern check joined this condition. SIXTH orphan this session, all six found by `--binding`",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if expect_explained(ex, lits[tgt]):\n                warnings.append(",
+        "            if any(pat.match(ex) for pat in pats[tgt]) or expect_explained(ex, lits[tgt]):\n                warnings.append(",
         "            if True:\n                warnings.append("
       ]
     ],
@@ -1598,6 +1598,45 @@
     ],
     "expect": [
       "⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 of 1,422 synthesised renames this way"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — docstrings are candidates again, so a case RENAMED AWAY is forgiven whenever its old title still appears in any docstring in the file. The review's witness is a 48-character title inside an unrelated module docstring",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) \\\n                and isinstance(n.value.value, str):\n            skip.add(id(n.value))",
+        "        if False:\n            skip.add(id(n.value))"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: a stale title surviving inside a DOCSTRING is NOT an explanation"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — f-strings stop being reconstructed as patterns, so a legitimate generated name whose static part is under the floor (`f\"{x} works\"` -> `alpha works`, 6 static characters) is REFUSED and the required step goes red",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if static >= min_static:\n            out.append(",
+        "        if False:\n            out.append("
+      ]
+    ],
+    "expect": [
+      "⭐ r2: an f-string that PRODUCES the name explains it exactly, however short its static part"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — min_static drops to 0, so `f\"{a}{b}\"` becomes `^.*?.*?$` and explains EVERY expect: the pattern half swallows the rule the containment half exists to enforce",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "def case_name_patterns(source: str, min_static: int = 4) -> list:",
+        "def case_name_patterns(source: str, min_static: int = 0) -> list:"
+      ]
+    ],
+    "expect": [
+      "...and an f-string with NO static text explains nothing, or it would explain everything"
     ]
   }
 ]
