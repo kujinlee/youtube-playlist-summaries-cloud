@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 133 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 140 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -306,12 +306,31 @@ PROVENANCE_RE = re.compile(
     # ⚠ THE COST, STATED: `measured at HEAD` without backticks no longer counts. That is
     # deliberate — it is indistinguishable, by any rule short of reading English, from
     # `we cannot look at HEAD`. Write `` `HEAD` `` and it counts.
+    # ⚠⚠ AND THAT SENTENCE OVERSTATES WHAT THE RULE DOES — r4 Claude M2. The backtick requirement
+    # applies to BARE `HEAD` only. A SUFFIXED HEAD needs no backticks, so the negation class the
+    # paragraph above says was cured survives for every suffixed form. Measured at this commit:
+    # `we cannot look at HEAD` -> False, but `we cannot look at HEAD~1` -> True,
+    # `we have not derived this from HEAD~3` -> True, `nothing was observed at HEAD^` -> True.
+    # ⛔ NOT INTRODUCED BY ANY FOLD — `git show e330ca80:` gives True for all three as well. What
+    # was wrong is this comment, which claimed a cure it never had. Nothing lexical separates
+    # `measured at HEAD~1` from `we cannot look at HEAD~1`; the honest statement is that the
+    # backtick rule narrows the bare case and leaves the suffixed case lenient.
     # ⟳ r3 Codex MEDIUM — DIGITS ONLY AFTER `~` OR `^`. `` `HEAD[~^]?\d*` `` accepted
     # `` `HEAD123` ``, which `git rev-parse --verify` rejects, and which this branch INTRODUCED
-    # (False at 31e8768a, True at e330ca80). Measured against git for each token: `HEAD`,
-    # `HEAD~1`, `HEAD~`, `HEAD^` valid and accepted; `HEAD123` invalid and now refused; `HEADS`
-    # refused by both. ⚠ `HEAD~fiction` still matches — on its `HEAD~` prefix, which IS a valid
-    # ref, so that is a ref followed by prose rather than a malformed token.
+    # (False at 31e8768a, True at e330ca80). `HEAD123` and `HEADS` are refused by both.
+    # ⟳⟳ r4 Claude M2 — AND r3's STATED LIMIT HERE IS NOW SUPERSEDED, DELIBERATELY. It read:
+    # "`HEAD~fiction` still matches — on its `HEAD~` prefix, which IS a valid ref, so that is a
+    # ref followed by prose rather than a malformed token." That is a reasoned decision and not an
+    # oversight, so it is overridden on the record rather than quietly: the same argument would
+    # admit `HEAD~garbage` and `HEAD^nonsense`, because `\d*` matches the empty string and every
+    # `HEAD~`-prefixed word therefore "contains a valid ref". The question the guard asks is
+    # whether the token AS WRITTEN names a source, and `HEAD~fiction` does not. Direction of the
+    # old answer was LENIENT — it accepted a row as sourced on a ref nobody can resolve.
+    # ⚠ THE ORACLE, CORRECTED: "measured against git for each token" is sound for MALFORMED tokens
+    # and UNSOUND for well-formed ones that merely do not resolve here. `HEAD^2` is valid syntax
+    # (the second parent of a merge) and `git rev-parse --verify HEAD^2` gives rc=128 only because
+    # HEAD is not a merge — verified both ways: `f559bdd4^2` rc=0, `HEAD^2` rc=128. So `HEAD^2`
+    # and `HEAD~1^2` are ACCEPTED and cased as such, and resolvability is not the test.
     #
     # ⛔ AND THE SEMANTIC LIMIT, STATED RATHER THAN CLAIMED AWAY: a backticked ref names a
     # SOURCE; it does not establish that a measurement happened. `we cannot measure at `HEAD``
@@ -320,7 +339,13 @@ PROVENANCE_RE = re.compile(
     # it is defensible for the same reason: `verdict` is warn-only unless `--strict`, over rows a
     # branch ADDS. The deleted verb list did not create this class and removing it did not cure
     # it — what it cured was eleven witnesses where prose asserting NO measurement counted as one.
-    r"|`HEAD(?:[~^]\d*)?`|\bHEAD[~^]\d*"
+    # ⟳ r4 Claude M2 — `\d*` MATCHES THE EMPTY STRING, so `HEAD~` followed by ANYTHING satisfied
+    # this. Measured against `git rev-parse --verify` for each token: `HEAD~fiction`, `HEAD~1x` and
+    # `HEAD^^zz` were accepted here and rejected by git (rc=128). The suffix must now be a run of
+    # `~`/`^` with optional digits, followed by neither a word character nor another ref operator —
+    # so a real suffix is required and a word glued to it refuses. The backticked arm was affected
+    # too: this alternative matches INSIDE backticks, so `` `HEAD~fiction` `` was accepted as well.
+    r"|`HEAD(?:[~^]\d*)?`|\bHEAD(?:[~^]\d*)+(?![\w~^])"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -513,9 +538,13 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("⚠ KNOWN WRONG — `tier 2 users only`", "**tier 2 users only**", 1),
     ("⚠ KNOWN WRONG — `Python 3 ships`", "**Python 3 ships**", 1),
     ("⚠ KNOWN WRONG — `Day 2 metrics`", "**Day 2 metrics**", 1),
-    # ⛔ r4 Codex LOW — FOUR OF THE FIFTEEN WITNESSES HAD NO CASE, so the sentence below ("the
+    # ⛔ r4 Codex LOW — FIVE OF THE FIFTEEN WITNESSES HAD NO CASE, so the sentence below ("the
     # witnesses above are kept as cases") was false about a third of them, and a change that made
-    # these four worse would have been invisible. Measured: 11 cases over 15 documented witnesses.
+    # those five worse would have been invisible. Measured: 11 cases over 15 documented witnesses.
+    # ⟳ r4 Claude M3 — THIS COMMENT SAID "FOUR" AND THE SAME COMMIT ADDED FIVE CASES. Four of them
+    # are here (the COUNTED arm) and the fifth, `6 that survived`, is in the MISSED arm below. The
+    # figure was wrong in a comment written to fix figures being wrong in comments, which is #261's
+    # class inside its own remedy — and it is the sixth instance of that habit on this branch.
     ("⚠ KNOWN WRONG — `option 3 chosen`", "**option 3 chosen**", 1),
     ("⚠ KNOWN WRONG — `level 2 access`", "**level 2 access**", 1),
     ("⚠ KNOWN WRONG — `attempt 2 failed the gate`", "**attempt 2 failed the gate**", 1),
@@ -527,7 +556,14 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("⚠ KNOWN MISSED — `3 or more rounds`", "**3 or more rounds**", 0),
     ("⚠ KNOWN MISSED — `6 that survived`, the fifth documented miss and the one that had no "
      "case until r4", "**6 that survived**", 0),
-    ("⚠ KNOWN MISSED — `1 in 60`, which is this repo's own phrasing for a false-fire bound",
+    # ⟳ r4 Claude L5 — RELABELLED. This read "⚠ KNOWN MISSED" while asserting **1**, i.e. that the
+    # span IS counted. Those two cannot both be true: a miss is a 0. `1 in 60` is this repository's
+    # own phrasing for a false-fire bound and IS a measurement, so counting it is the RIGHT answer
+    # and this is an ordinary case, not a witness to a known defect. It also sat inside the block
+    # headed "the FIFTEEN witnesses the rule gets WRONG" without being one of the fifteen, which is
+    # how a correct case came to be filed as a known failure for two rounds.
+    ("⭐ `1 in 60` IS a measurement — this repo's own phrasing for a false-fire bound — and is "
+     "correctly counted, which is why it is not one of the fifteen witnesses above",
      "**1 in 60**", 1),
     ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",
      "**Five dual adversarial rounds produced 26 Blocking findings and NONE was in the "
@@ -611,6 +647,33 @@ PROV_CASES: list[tuple[str, str, bool]] = [
     ("...while `` `HEAD~1` `` is one", "**47 s**; measured at `HEAD~1`", True),
     ("...and `` `HEAD` `` plain is one", "**47 s**; measured at `HEAD`", True),
     ("...and `` `HEADS` `` is not", "**47 s**; measured at `HEADS`", False),
+    # ── r4 Claude MEDIUM: `\d*` matches EMPTY, so `HEAD~` + anything was a ref ──────────────
+    # ⛔ AND THE CLASS MEMBER WAS PRINTED IN THE EVIDENCE OF THE FINDING THAT WAS FOLDED: r3's
+    # Codex half listed `'at `HEAD123`' True` and `'at HEAD~fiction' True` two lines apart; the
+    # fold acted on the first and not the second. Instance, not class, with the class visible in
+    # the same four lines of the review being folded.
+    ("⭐ r4: `HEAD~fiction` is not a ref — `git rev-parse --verify` gives rc=128",
+     "measured at HEAD~fiction", False),
+    ("...and backticking it does not make it one, because this alternative matches INSIDE "
+     "backticks and so the backticked arm carried the same hole",
+     "measured at `HEAD~fiction`", False),
+    ("...and `HEAD~1x` is not a ref either — a digit followed by a word is not a suffix",
+     "measured at HEAD~1x", False),
+    ("...nor `HEAD^^zz`, the third mismatch and the one the review did not list",
+     "measured at HEAD^^zz", False),
+    ("...while `HEAD^^` IS a ref and still passes, so the fix refused the glued word and not "
+     "the repeated operator",
+     "measured at HEAD^^", True),
+    # ⚠ THE ORACLE IS SYNTAX, NOT RESOLVABILITY, AND r3's COMMENT CONFLATED THEM. `HEAD^2` is
+    # valid git syntax — the second parent of a merge — and `git rev-parse --verify HEAD^2` gives
+    # rc=128 here only because HEAD is not a merge commit. Verified both ways at this commit:
+    # `f559bdd4^2` rc=0, `HEAD^2` rc=128. So "measured against git for each token" is a sound
+    # oracle for MALFORMED tokens and an unsound one for well-formed tokens that do not resolve,
+    # and this case pins the accept so a future tightening cannot quietly refuse a real ref form.
+    ("⚠ r4: `HEAD^2` is ACCEPTED — valid ref syntax whose rc=128 here means `HEAD has no second "
+     "parent`, not `bad token`",
+     "measured at HEAD^2", True),
+    ("...and so is `HEAD~1^2`, a compound suffix", "measured at HEAD~1^2", True),
     ("⚠ r3 STATED LIMIT: a backticked ref names a SOURCE and does not prove a measurement "
      "happened — this passes, and no pattern short of reading English refuses it",
      "**47 s**; we cannot measure at `HEAD`", True),

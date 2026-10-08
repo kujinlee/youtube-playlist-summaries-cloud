@@ -140,5 +140,31 @@
     "expect": [
       "⭐ a MALFORMED cache refuses with 2 — CANNOT RUN, not 1 — and this is the arm whose comment named rc=1 as the defect while exiting 1"
     ]
+  },
+  {
+    "name": "⛔ r4 Claude H1 — the refusal probe stops swapping `CACHE`, so every fixture falls through to the absent-cache arm: KILLED on a dev machine with a populated ~/.codex, SURVIVED under the empty HOME that is CI and child_env",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "        CACHE = path\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ the probe's world IS buildable — a VALID cache makes it RETURN, so the four cases below are reached through the fixture and not through an absent ~/.codex"
+    ]
+  },
+  {
+    "name": "⛔ r4 Claude M1 — write_config's filesystem guard is removed: an unwritable ~/.codex exits 1 with an unhandled PermissionError again, which is the cannot-run-as-violation cannot_run exists to abolish",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    try:\n        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)\n        with open(CONFIG, \"w\", encoding=\"utf-8\") as f:\n            f.write(block + existing.lstrip(\"\\n\"))\n    except OSError as e:\n        cannot_run(f\"error: cannot write {CONFIG}: {e} — the model was resolved but the config \"\n                   f\"was NOT synced, so a later run will use whatever slug is already there. \"\n                   f\"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.\")",
+        "    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)\n    with open(CONFIG, \"w\", encoding=\"utf-8\") as f:\n        f.write(block + existing.lstrip(\"\\n\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ and a READ-ONLY config directory is 2 — CANNOT RUN, where it exited 1 with an unhandled PermissionError traceback"
+    ]
   }
 ]

@@ -117,11 +117,11 @@
     ]
   },
   {
-    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again ⟳ r3: retargeted — the token pattern tightened for `HEAD123`",
+    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again ⟳ r3: retargeted — the token pattern tightened for `HEAD123` ⟳ RETARGETED r4: the r4 Claude M2 suffix fix moved this line",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "    r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD[~^]\\d*\"",
+        "    r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD(?:[~^]\\d*)+(?![\\w~^])\"",
         "    r\"|\\bHEAD\\b\""
       ]
     ],
@@ -247,12 +247,12 @@
     ]
   },
   {
-    "name": "⟳ r3 Codex MEDIUM — digits are allowed again without a `~` or `^` before them, so `` `HEAD123` `` reads as a ref. `git rev-parse --verify` rejects it",
+    "name": "⟳ r3 Codex MEDIUM — digits are allowed again without a `~` or `^` before them, so `` `HEAD123` `` reads as a ref. `git rev-parse --verify` rejects it ⟳ RETARGETED r4: same line moved; the replacement keeps the r4 suffix fix so this entry still isolates the DIGIT hole r3 closed",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD[~^]\\d*\"",
-        "r\"|`HEAD[~^]?\\d*`|\\bHEAD[~^]\\d*\""
+        "r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD(?:[~^]\\d*)+(?![\\w~^])\"",
+        "r\"|`HEAD[~^]?\\d*`|\\bHEAD(?:[~^]\\d*)+(?![\\w~^])\""
       ]
     ],
     "expect": [

@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 99 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 101 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -324,26 +324,47 @@ def mask_inline_code(text: str) -> str:
     the original, so `sentence_around` finds bounds on the mask and slices the ORIGINAL. Nothing
     downstream sees an `x`.
 
-    ⚠ TWO BOUNDS, STATED RATHER THAN HIDDEN:
+    ⚠ THREE BOUNDS, STATED RATHER THAN HIDDEN — and the third was MISSING from this list until
+    r4 Claude L1, which is the failure mode a caveat headed *stated rather than hidden* has:
       · Runs of THREE OR MORE backticks are left alone — those are fences, and the fenced-code
         case is deferred (it was already deferred before this fix, and widening the mask to
         fences risks pairing an unbalanced fence and masking prose, which fails toward MORE
         suppression: the direction that hides a stale figure).
       · An UNCLOSED inline span masks nothing. A lone backtick has no partner, so the old
         behaviour stands for it; `mask_inline_code` never guesses where a span ends.
+      · ⟳ IT MASKS EVERY `SENTENCE_SPLIT` ALTERNATIVE, NOT ONLY THE THREE NEWLINE ONES. Masking
+        whitespace inside a span also stops `(?<=[.!?])\\s+` firing there, so a version string in
+        code no longer ends a sentence. Measured: `the count was `v1. 2` and 1,414 today` gave
+        marker `''` (a SURVIVOR) before and `'was '` now. That is the RIGHT answer — a period
+        inside `v1. 2` is not a sentence end — but it is a behaviour change beyond the three
+        boundaries this function was written for, and r4 Claude L2 is that it went unstated.
+        A case pins it, so the widening is asserted rather than incidental.
     """
+    # ⛔ AN OPENER PAIRS WITH THE NEXT RUN OF EQUAL LENGTH, SKIPPING OTHERS — r4 Claude L1. The
+    # first version compared only ADJACENT runs and advanced past the opener on a mismatch, which
+    # could pair two runs that are not a span and mask the prose between them. Witness, measured:
+    #
+    #   'a `b`` c `the count was wrong:\n1,414 anchors` d'   runs = [1, 2, 1, 1]
+    #
+    # Adjacent-only pairing joined runs 2 and 3 and masked `wrong:\n`, so the colon boundary never
+    # fired and the figure kept the `was` in front of it — SUPPRESSED. Equal-length pairing joins
+    # runs 0 and 2 (run 1 is span CONTENT), leaving run 3 unclosed and `wrong:` as prose, so the
+    # boundary fires and the figure is a SURVIVOR, which is the right answer. The old direction was
+    # LENIENT, and leniency here is what hides a stale figure.
     runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]
     out = list(text)
     i = 0
-    while i + 1 < len(runs):
-        open_run, close_run = runs[i], runs[i + 1]
-        if len(open_run.group(0)) != len(close_run.group(0)):
-            i += 1                      # not a pair; the next run may open one
-            continue
-        for j in range(open_run.end(), close_run.start()):
-            if out[j].isspace():
-                out[j] = "x"
-        i += 2
+    while i < len(runs):
+        open_run = runs[i]
+        j = i + 1
+        while j < len(runs) and len(runs[j].group(0)) != len(open_run.group(0)):
+            j += 1                      # a run of a DIFFERENT length is span content, not a closer
+        if j >= len(runs):
+            break                       # no closer of equal length: an unclosed span masks nothing
+        for k in range(open_run.end(), runs[j].start()):
+            if out[k].isspace():
+                out[k] = "x"
+        i = j + 1
     return "".join(out)
 
 
@@ -798,6 +819,17 @@ def self_test() -> int:
         ("...and a FENCE is left alone, which is the deferred-fenced-code bound as an assertion "
          "rather than a sentence",
          mask_inline_code("```\nc: d\n```"), "```\nc: d\n```"),
+        # ── r4 Claude L1: pairing is EQUAL-LENGTH, not adjacent. The witness below was
+        # suppressed by the first version, which paired two runs that are not a span.
+        ("⭐ r4: runs [1,2,1,1] — the opener pairs with the next run of EQUAL length, so the "
+         "second span is UNCLOSED, `wrong:` stays prose and the figure is a SURVIVOR. "
+         "Adjacent-only pairing masked the colon and suppressed it",
+         _marker_at("a `b`` c `the count was wrong:\n1,414 anchors` d"), ""),
+        # ── r4 Claude L2: the mask also reaches the sentence-END alternative, which the
+        # docstring did not say. The new answer is the right one; the silence was the defect.
+        ("⭐ r4: a period inside a code span no longer ends a sentence, so `v1. 2` keeps the "
+         "figure in the sentence that carries `was` — it was a SURVIVOR before the mask",
+         _marker_at("the count was `v1. 2` and 1,414 today"), "was "),
         ("⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken "
          "for a clean one (r1 Claude M4)",
          suppression_line(collections.Counter({"was ": 5, "⟳": 2})),

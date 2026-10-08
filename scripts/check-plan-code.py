@@ -852,7 +852,10 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     "scripts/check-ci-watched.py": 40,
-    "scripts/codex-frontier-model.py": 12,   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
+    "scripts/codex-frontier-model.py": 14,   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
+                                            # ⟳ r4 Claude H1: +1 — the probe's own WORLD.
+                                            # The first version survived under an empty
+                                            # HOME, which is CI and child_env both.
                                             # goldens pinned the refusal TEXT, which is why
                                             # a cannot-run exiting 1 survived 39 cases.
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
@@ -1050,7 +1053,14 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 127,   # ⟳ r3 Claude H1: 128 -> 127, a
+    "scripts/check-plan-code.py": 128,   # ⟳ r4 Claude L4: +1 — the FRACTION, which had no entry
+                                         # at all. ⚠ The FLOOR gets none: its anchor is already
+                                         # taken by the r1 entry below (12 -> 0) and the harness
+                                         # REFUSES a second entry on one anchor. So the floor is
+                                         # ratcheted only at a far step, and its ±1 neighbours are
+                                         # held by suite cases alone — a residual the rule forces,
+                                         # recorded rather than worked around by splitting anchors.
+                                         # ⟳ r3 Claude H1: 128 -> 127, a
                                    # PERMITTED FALL. The bare-assign branch of
                                    # `case_name_patterns` was deleted (it had no
                                    # name test and admitted 80 of 142 candidate
@@ -5563,7 +5573,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1512)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1515)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

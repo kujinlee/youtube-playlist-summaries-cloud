@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 43 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 46 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits **2 — CANNOT RUN** with a message on stderr if
@@ -206,6 +206,11 @@ def refusal_message(data: dict) -> str:
 def cannot_run(message: str) -> NoReturn:
     """Print a refusal and exit **2**. The ONE way this module refuses. r4 Codex H1.
 
+    ⟳ r4 Claude M1 — AND THAT SENTENCE WAS FALSE WHEN WRITTEN. `write_config` could raise
+    `OSError` straight out of the process (rc=1, traceback), so "the ONE way" described an
+    intention rather than the code. Both of its filesystem paths route here now, and two cases
+    drive them over a read-only directory.
+
     ⛔ WHY 2 AND NOT 1, AND WHY THIS IS A FIX AND NOT A PREFERENCE. Every arm below used
     `sys.exit(f"error: …")`, and `sys.exit` with a STRING exits **1** — the code this repository
     reads as "a violation was found". Each arm is the opposite: the cache cannot yield a model, so
@@ -278,10 +283,24 @@ def write_config(slug: str) -> None:
     Top-level TOML keys must precede any [table], so the managed block goes first.
     Idempotent: a prior managed block is stripped before the fresh one is written.
     """
+    # ⛔ r4 Claude M1 — EVERY FILESYSTEM FAILURE HERE IS A CANNOT RUN, NOT A VIOLATION. Measured
+    # at `5f7bf286` with `~/.codex` at `chmod 500`: `--write-config` exited **1** with an unhandled
+    # `PermissionError` traceback — the same cannot-run-wearing-a-violation's-number that this
+    # file's `cannot_run` was added to abolish, one function over, in the same commit. And
+    # `cannot_run`'s docstring called itself "The ONE way this module refuses" while this path
+    # could raise, which made the claim false the moment it was written.
+    # ⚠ THIS ARM IS THE ONE A REVIEWER ACTUALLY RUNS: `docs/plugins.md` publishes
+    # `--write-config` as the recommended invocation AND as the single sanctioned retry before
+    # falling back to a Claude-only review, so a traceback here is read as "Codex is unavailable".
     existing = ""
-    if os.path.exists(CONFIG):
-        with open(CONFIG, encoding="utf-8") as f:
-            existing = f.read()
+    try:
+        if os.path.exists(CONFIG):
+            with open(CONFIG, encoding="utf-8") as f:
+                existing = f.read()
+    except OSError as e:
+        cannot_run(f"error: cannot read {CONFIG}: {e} — the managed block cannot be refreshed "
+                   f"without it, and overwriting would discard settings this script does not own. "
+                   f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
     # Remove any previous managed block.
     existing = re.sub(rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?", "", existing, flags=re.DOTALL)
     block = (
@@ -291,24 +310,47 @@ def write_config(slug: str) -> None:
         f'model = "{slug}"\n'
         f"{END}\n"
     )
-    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-    with open(CONFIG, "w", encoding="utf-8") as f:
-        f.write(block + existing.lstrip("\n"))
+    try:
+        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+        with open(CONFIG, "w", encoding="utf-8") as f:
+            f.write(block + existing.lstrip("\n"))
+    except OSError as e:
+        cannot_run(f"error: cannot write {CONFIG}: {e} — the model was resolved but the config "
+                   f"was NOT synced, so a later run will use whatever slug is already there. "
+                   f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
 
 
-def _refusal_code(cache_text: "str | None") -> int:
-    """The exit code `resolve_candidates` refuses with, for a given cache. r4 Codex H1.
+def _refusal_arm(cache_text: "str | None") -> tuple:
+    """`(exit code, which arm fired)` for a given cache. r4 Codex H1, r4 Claude H1.
 
-    ⛔ THIS PINS THE CODE, WHICH IS THE THING THAT WAS WRONG. The four goldens pin the refusal
-    TEXT, and text is exactly what the first fix got right while leaving the code at 1. A message
-    ending "TREAT THIS AS THE GATE NOT HAVING RUN" that exits 1 is a cannot-run wearing a
-    violation's number, and nothing in 39 cases could see it.
+    ⛔ IT PINS THE CODE *AND* THE ARM, AND THE SECOND HALF IS WHY. The four goldens pin the refusal
+    TEXT, and text is what the first fix got right while leaving the code at 1. But a probe that
+    returns only the code cannot tell `four arms each exit 2` from `one arm exits 2 and the other
+    three were never reached` — and that is not hypothetical:
 
-    `cache_text=None` means no cache file at all. Returns the `SystemExit.code`, or -1 if the call
-    RETURNED instead of refusing — never a passing value, because a refusal that does not happen
-    must fail the case rather than satisfy it.
+    ⛔⛔ MEASURED (r4 Claude H1) — THE FIRST VERSION OF THIS PROBE MEASURED NOTHING ON CI.
+    `CACHE` is `os.path.expanduser(...)` evaluated at IMPORT. Deleting the probe's `CACHE = path`
+    line is killed on a developer machine with a populated `~/.codex` and **survives where it
+    matters**:
+
+        sever `CACHE = path`, real HOME            rc=1  39/43   4 [FAIL]
+        sever `CACHE = path`, HOME=<empty dir>     rc=0  43/43   0 [FAIL]
+
+    An empty `HOME` is `ubuntu-latest`, and it is also what `child_env` manufactures for every
+    suite the mutation harness spawns (`check-plan-code.py`: `env["HOME"] = str(d / CHILD_HOME)`).
+    With no cache on disk every fixture falls through `except FileNotFoundError` to `cannot_run`,
+    which exits 2 — which is exactly what all four cases wanted. The ratchet reported coverage over
+    a probe whose world it could not see.
+
+    ⤳ This is r3's BLOCKING with the POLARITY REVERSED. That one was *a test whose world only
+    exists on the author's filesystem*; this one is a test whose world's ABSENCE makes the mutant
+    pass. Same root defect — a case satisfied by an ambient condition instead of by what it names.
+
+    The `-1` return and the `"returned"` arm are the buildability control: a VALID cache must make
+    this probe return `(-1, "returned")`, and that is the one observation proving the swap took.
+    Never a passing value for a refusal case.
     """
-    import tempfile
+    import contextlib, io, tempfile
     global CACHE
     saved = CACHE
     with tempfile.TemporaryDirectory() as td:
@@ -317,15 +359,83 @@ def _refusal_code(cache_text: "str | None") -> int:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(cache_text)
         CACHE = path
+        err = io.StringIO()
         try:
-            import contextlib, io
-            with contextlib.redirect_stderr(io.StringIO()):
+            with contextlib.redirect_stderr(err):
                 resolve_candidates()
-            return -1                      # it did not refuse: a FAILING sentinel, not a pass
+            return (-1, "returned")        # a FAILING sentinel for every refusal case
         except SystemExit as e:
-            return e.code if isinstance(e.code, int) else 1
+            msg = err.getvalue()
+            code = e.code if isinstance(e.code, int) else 1
+            for needle, arm in (("not found", "not-found"),
+                               ("cannot read", "cannot-read"),
+                               ("parsed but its", "malformed"),
+                               ("no LISTED", "no-candidate")):
+                if needle in msg:
+                    return (code, arm)
+            return (code, "unclassified:" + msg[:40])
         finally:
             CACHE = saved
+
+
+def _write_config_arm(readonly: bool) -> tuple:
+    """`(exit code, arm)` for `write_config` over a writable or a read-only directory. r4 Claude M1.
+
+    ⚠ THE TWO BRANCHES PASS DIFFERENT SLUG LITERALS, AND THAT IS DELIBERATE, NOT CLUMSY.
+    `check-fixture-variation.py` reads argument EXPRESSIONS at each call site, so forwarding one
+    `slug` variable records a single value however many distinct strings the cases hand in — it
+    refused this probe twice for that, first with one literal and then with a parameter. Two
+    literals at two call sites is what makes `write_config.slug` varied by construction. The
+    writable branch then reads the file back and reports whether the slug REACHED it, so "wrote"
+    cannot be satisfied by a `write_config` that ignores its argument.
+
+    ⛔ THE BUILDABILITY CONTROL IS THE `readonly=False` CALL, and it is not optional — the probe
+    one function up shipped without one and its four cases passed on any machine lacking a
+    `~/.codex` (r4 Claude H1). Here the equivalent trap is a chmod that does not take: as root, or
+    on a filesystem ignoring modes, the read-only case would simply SUCCEED and return
+    `(0, "wrote")` — which is why the writable case asserts exactly that value, so the two cases
+    cannot both be satisfied by the same world.
+    """
+    import contextlib, io, stat, tempfile
+    global CONFIG
+    saved = CONFIG
+    with tempfile.TemporaryDirectory() as td:
+        d = os.path.join(td, "cfgdir")
+        os.makedirs(d)
+        CONFIG = os.path.join(d, "config.toml")
+        if readonly:
+            os.chmod(d, stat.S_IRUSR | stat.S_IXUSR)       # r-x: listable, not writable
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                if readonly:
+                    write_config("gpt-never-written")
+                else:
+                    write_config("gpt-written-through")
+            with open(CONFIG, encoding="utf-8") as f:
+                written = f.read()
+            # The slug must appear in the file it claims to have synced — otherwise `write_config`
+            # ignored its argument and the "wrote" answer means nothing.
+            return (0, "wrote" if 'model = "gpt-written-through"' in written
+                    else "wrote-without-slug")
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else 1
+            msg = err.getvalue()
+            if "cannot write" in msg:
+                return (code, "cannot-write")
+            if "cannot read" in msg:
+                return (code, "cannot-read")
+            return (code, "unclassified:" + msg[:40])
+        except OSError:
+            # ⛔ THE PROBE CONVERTS THE CRASH INTO A VALUE. Without this, severing the guard makes
+            # the OSError escape, the SUITE dies before printing any `[FAIL]` line, and the harness
+            # reports "went RED but printed no [FAIL] line, so NOTHING COULD SEE THE KILL". A
+            # mutation must produce a wrong ANSWER; when the defect IS a crash, the probe is what
+            # turns it into one. Same pattern as `find-claim.py`'s metadata probes.
+            return (1, "raised")      # what the unguarded version did, as a VALUE
+        finally:
+            os.chmod(d, stat.S_IRWXU)
+            CONFIG = saved
 
 
 def _self_test() -> int:
@@ -482,16 +592,33 @@ def _self_test() -> int:
     # Measured at ea857e4a: every arm used `sys.exit(<string>)` and so exited 1 — including the
     # arm whose own comment named rc=1 as the defect it existed to fix. 0 = ok, 1 = violation,
     # 2 = CANNOT RUN; an unusable cache is the third of those and never the second.
+    # ⛔ THE BUILDABILITY CONTROL COMES FIRST (r4 Claude H1). If it fails, the four below were NOT
+    # RUN and must not be read as passes: a VALID cache is the only input that proves the probe's
+    # `CACHE` swap took effect, and without it all four passed on a machine with no `~/.codex`.
+    case("⛔ the probe's world IS buildable — a VALID cache makes it RETURN, so the four cases "
+         "below are reached through the fixture and not through an absent ~/.codex",
+         _refusal_arm('{"client_version":"1.2.3","models":[{"slug":"m","priority":1,'
+                      '"visibility":"list","supported_in_api":true}]}'), (-1, "returned"))
     case("⭐ a MALFORMED cache refuses with 2 — CANNOT RUN, not 1 — and this is the arm whose "
          "comment named rc=1 as the defect while exiting 1",
-         _refusal_code('{"client_version":"1.2.3","models":"oops"}'), 2),
+         _refusal_arm('{"client_version":"1.2.3","models":"oops"}'), (2, "malformed"))
     case("...and an ABSENT cache does too, so the rule is the module's and not one arm's",
-         _refusal_code(None), 2),
+         _refusal_arm(None), (2, "not-found"))
     case("...and an UNPARSEABLE cache does too",
-         _refusal_code("not json at all"), 2),
+         _refusal_arm("not json at all"), (2, "cannot-read"))
     case("...and a cache that parses and yields NO candidate does too — the arm that sent a "
          "round of PR #364 to a one-reviewer fallback",
-         _refusal_code('{"models":[]}'), 2),
+         _refusal_arm('{"models":[]}'), (2, "no-candidate"))
+    # ── r4 Claude MEDIUM: `--write-config` is the arm docs/plugins.md tells a reviewer to run,
+    # and it exited 1 with an unhandled traceback. Same file, one function over from the arm r4
+    # Codex fixed, and `cannot_run` called itself "the ONE way this module refuses" regardless.
+    case("⛔ the WRITABLE directory is the buildability control — write_config succeeds AND the "
+         "slug it was handed reaches the file, which is what proves the read-only case below "
+         "built its world rather than silently succeeding",
+         _write_config_arm(readonly=False), (0, "wrote"))
+    case("⭐ and a READ-ONLY config directory is 2 — CANNOT RUN, where it exited 1 with an "
+         "unhandled PermissionError traceback",
+         _write_config_arm(readonly=True), (2, "cannot-write"))
 
     # ⛔ BACKLOG #249, SECOND ARM — round 1 Claude H2. `refusal_message` has TWO refusal arms and
     # the golden case above reaches only the all-hidden one. The #254 arm — the one THIS branch

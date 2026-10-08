@@ -1664,5 +1664,18 @@
     "expect": [
       "⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused"
     ]
+  },
+  {
+    "name": "⛔ r4 Claude L4 — EXPECT_OVERLAP_FRACTION 0.3 -> 0.4: the step that survived 234/234 until r4 Codex L3 bracketed it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECT_OVERLAP_FRACTION = 0.3",
+        "EXPECT_OVERLAP_FRACTION = 0.4"
+      ]
+    ],
+    "expect": [
+      "⭐ a 36-char literal explains a 97-char expect at need=29, which a fraction of 0.4 refuses at need=38 — the step that was free before this case"
+    ]
   }
 ]
