@@ -218,5 +218,18 @@
     "expect": [
       "⛔ r5: a MALFORMED cache under a temp dir literally named `not found` still classifies as malformed — the path is stripped before matching, where it used to supply the needle"
     ]
+  },
+  {
+    "name": "⛔ r5 Claude M2 — write_config DISCARDS every setting it does not own: the managed block is written without the rest of the file. Survived 50/50 with zero [FAIL] because no `pre` state had a READABLE existing config",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "f.write(block + existing.lstrip(\"\\n\"))",
+        "f.write(block)"
+      ]
+    ],
+    "expect": [
+      "⭐ r5: an EXISTING setting this script does not own SURVIVES both writes — the only `pre` state with a readable config, and without it truncation looked identical to preservation"
+    ]
   }
 ]

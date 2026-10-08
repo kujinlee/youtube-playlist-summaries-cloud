@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 144 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 152 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -350,7 +350,22 @@ PROVENANCE_RE = re.compile(
     # rejected it (rc=128); and `HEAD~1.5` matched on its `HEAD~1` prefix because `.` is not in
     # `[\w~^]`. Digits are `[0-9]` now, and `(?!\.\d)` refuses a decimal tail while still allowing
     # `HEAD~1.` — a ref at the end of a sentence, which a blanket `.` exclusion would have broken.
-    r"|`HEAD(?:[~^][0-9]*)?`|\bHEAD(?:[~^][0-9]*)+(?![\w~^])(?!\.\d)"
+    # ⟳⟳ r5 Claude M1 — AND THE BLACKLIST WAS THE WRONG KIND OF RULE. Excluding `[\w~^]` and then
+    # `.`+digit left `HEAD~` followed by ANY other non-word character accepted: measured against
+    # `git rev-parse --verify`, 14 more tokens passed here and were rejected there — `HEAD~-1`,
+    # `HEAD~+1`, `HEAD~1-2`, `HEAD~1,2`, `HEAD~=2`, `HEAD~/x`, `HEAD~:2`, `HEAD~%1`, `HEAD~(1)`,
+    # `HEAD~1..3`, `HEAD~*`, `HEAD~#1`, `HEAD~1@2`, `HEAD~!`. Each new exclusion bought one token,
+    # which is the shape this file has paid for three rounds running.
+    # ⭐ SO THE RULE IS INVERTED: the token must END, and the ending is a WHITELIST — whitespace,
+    # end of string, a backtick, or sentence punctuation NOT followed by a digit or another dot.
+    # Measured over all 20 malformed tokens: the blacklist refused 6, the whitelist refuses **19**,
+    # and every valid form still matches (`HEAD~`, `HEAD~1`, `HEAD^`, `HEAD^2`, `HEAD~1^2`,
+    # `HEAD^^`, and `HEAD~1.` at a sentence end).
+    # ⚠ THE ONE RESIDUAL, STATED RATHER THAN CHASED: `HEAD~!` is still accepted, because `!` has to
+    # remain a legitimate terminator for `at HEAD~1!`. Refusing it needs a bare `~`/`^` to be
+    # treated differently from a digit-suffixed one, which is one more special case for one
+    # implausible token — and the point of this change was to stop buying tokens that way.
+    r"|`HEAD(?:[~^][0-9]*)?`|\bHEAD(?:[~^][0-9]*)+(?=\s|$|`|[.,;:!?)\]](?![\d.]))"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -679,6 +694,26 @@ PROV_CASES: list[tuple[str, str, bool]] = [
      "parent`, not `bad token`",
      "measured at HEAD^2", True),
     ("...and so is `HEAD~1^2`, a compound suffix", "measured at HEAD~1^2", True),
+    # ── r5 Claude MEDIUM: the blacklist bought one token per exclusion; the token must END ───
+    ("⛔ r5: `HEAD~-1` is not a ref — the blacklist accepted every non-word tail, the whitelist "
+     "requires the token to END",
+     "measured at HEAD~-1 and more", False),
+    ("⛔ r5: ...nor `HEAD~1,2`", "measured at HEAD~1,2 and more", False),
+    ("⛔ r5: ...nor `HEAD~1..3`, a range and not a ref", "measured at HEAD~1..3 and more", False),
+    ("⛔ r5: ...nor `HEAD~(1)`", "measured at HEAD~(1) and more", False),
+    # ── r5 Claude LOW: a real ref form neither alternative reaches ────────────────────────────
+    ("⚠ r5 L3 STATED BOUND: `HEAD@{1}` is a REAL ref — `git rev-parse --verify` gives rc=0 — and "
+     "this pattern refuses it, because both arms require `[~^]` straight after HEAD. Pre-existing, "
+     "not fold-induced; pinned so a future tightening cannot record it as already handled",
+     "measured at HEAD@{1}", False),
+    ("⚠ r5 STATED RESIDUAL: `HEAD~!` IS still accepted, because `!` must stay a terminator for "
+     "`HEAD~1!` — one implausible token, not chased",
+     "measured at HEAD~! and more", True),
+    ("...and a ref ending a sentence with `!` still counts, which is what that residual buys",
+     "measured at HEAD~1!", True),
+    ("...and one followed by a COMMA in prose counts, so the whitelist did not refuse punctuation "
+     "itself — only punctuation glued to a digit",
+     "measured at HEAD~1, then rechecked", True),
     # ── r5 Codex MEDIUM: `\d` is UNICODE, and the tail assertion allowed a decimal ──────────
     ("⛔ r5: `HEAD~\u0661` (Arabic-Indic digit) is not a ref — `\\d` matched it, `[0-9]` does not",
      "measured at HEAD~\u0661", False),

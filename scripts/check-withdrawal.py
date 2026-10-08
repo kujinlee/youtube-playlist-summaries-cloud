@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 106 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 112 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -343,9 +343,17 @@ def mask_inline_code(text: str) -> str:
     ⚠ THREE BOUNDS, STATED RATHER THAN HIDDEN — and the third was MISSING from this list until
     r4 Claude L1, which is the failure mode a caveat headed *stated rather than hidden* has:
       · Runs of THREE OR MORE backticks are left alone — those are fences, and the fenced-code
-        case is deferred (it was already deferred before this fix, and widening the mask to
-        fences risks pairing an unbalanced fence and masking prose, which fails toward MORE
-        suppression: the direction that hides a stale figure).
+        case is deferred. ⟳ r5 Claude L1 — AND THE OLD JUSTIFICATION HERE WAS WRONG ABOUT WHICH
+        WAY THAT DEFERRAL FAILS. It said widening the mask to fences "risks pairing an unbalanced
+        fence and masking prose". The risk is real but it is not the live one: dropping 3+ runs
+        from the list leaves the SINGLE backticks INSIDE a fenced block free to pair with each
+        other, so the mask already reaches into fenced code — measured document-level over the 393
+        files, **597** span-level disagreements with cmark across **121** files (`anchors.md`,
+        `deploy.md`, `m1.4-finishup-checklist.md`, …). The deferral fails toward masking MORE, not
+        less, which is the same lenient direction this list warns about. No verdict change was
+        measured for it; a case below pins the behaviour so a future fence-aware rewrite moves it
+        deliberately. ⤳ Knowing where fences are is the same question as knowing where spans are,
+        and the answer is a parser — see the note at the end of this list.
       · An UNCLOSED inline span masks nothing — and ⟳ r5 Codex M1, it no longer stops the scan
         either. `break` here meant one stray backtick disabled masking for every LATER genuine
         span, turning a suppressed figure into a false SURVIVOR; the opener is skipped instead.
@@ -379,14 +387,25 @@ def mask_inline_code(text: str) -> str:
     # runs 0 and 2 (run 1 is span CONTENT), leaving run 3 unclosed and `wrong:` as prose, so the
     # boundary fires and the figure is a SURVIVOR, which is the right answer. The old direction was
     # LENIENT, and leniency here is what hides a stale figure.
-    # ⛔ AN ESCAPED BACKTICK IS NOT A DELIMITER — r5 Codex H1, measured against cmark. `\\`` is a
-    # literal backtick in prose; treating it as an opener masked the PROSE between two of them.
-    runs = [m for m in BACKTICK_RUN.finditer(text)
-            if len(m.group(0)) <= 2 and not backtick_escaped(text, m.start())]
+    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]
     out = list(text)
     i = 0
     while i < len(runs):
         open_run = runs[i]
+        # ⛔ AN ESCAPED BACKTICK CANNOT *OPEN* A SPAN — AND IT CAN STILL CLOSE ONE. r5 Codex H1
+        # found the first half; r5 Claude H1 found that applying it to BOTH halves is wrong, with
+        # cmark AND markdown-it-py agreeing against the code. CommonMark backslash escapes do not
+        # apply INSIDE a code span: once a span is open the scan for its closing run is purely
+        # lexical, so `\\`` there is a literal backslash followed by a REAL closer. Filtering
+        # escaped runs out of the whole list discarded those closers and ran the span past its end:
+        #
+        #   `a \` b` c      cmark/mdit span = ['a \']      shipped (r5 Codex) = ['a \` b']
+        #
+        # — and the masked space before `b` is PROSE, which suppressed a live figure. So the test
+        # belongs HERE, on the opener, and nowhere else.
+        if backtick_escaped(text, open_run.start()):
+            i += 1
+            continue
         j = i + 1
         while j < len(runs) and len(runs[j].group(0)) != len(open_run.group(0)):
             j += 1                      # a run of a DIFFERENT length is span content, not a closer
@@ -410,8 +429,50 @@ def mask_inline_code(text: str) -> str:
     return "".join(out)
 
 
-def sentence_around(window: str, at: int) -> str:
+_MASKED_DOCS: dict = {}
+
+
+def masked_of(text: str) -> str:
+    """`mask_inline_code(text)` for a whole document, memoised by identity. r5 Claude H2.
+
+    Every hit in one document shares one mask, and masking a large file per-hit would turn a cheap
+    guard into a slow one. Keyed on `id(text)` AND length so a recycled id cannot serve the wrong
+    document; the blobs are held for the whole run by the caller, so the ids are stable.
+    """
+    key = (id(text), len(text))
+    got = _MASKED_DOCS.get(key)
+    if got is None:
+        got = mask_inline_code(text)
+        _MASKED_DOCS[key] = got
+    return got
+
+
+def sentence_around(window: str, at: int, *, masked: str) -> str:
     """The sentence of `window` containing offset `at`. PURE.
+
+    ⛔⛔ `masked` IS KEYWORD-ONLY WITH NO DEFAULT, AND THAT IS THE WHOLE FIX FOR r5 Claude H2.
+    It must be `mask_inline_code` applied to the WHOLE DOCUMENT and then sliced to the same bounds
+    as `window` — never `mask_inline_code(window)`. A window is a raw ±CONTEXT_CHARS slice, so it
+    routinely BEGINS INSIDE a code span; the first backtick in it is then a closer whose opener is
+    outside, which inverts the parity of every backtick after it. The mask pairs that orphan with
+    the next genuine opener and masks the PROSE between them.
+
+    ⛔ MEASURED over 75,076 windows built from the 393 files `docs_files()` returns: masking the
+    FRAGMENT changed `history_marker` in **205** windows, and in **205 of 205** the change was a
+    SUPPRESSION the document-level rule calls a SURVIVOR. 0 of 205 went the other way. So the
+    fragment version's entire live effect on verdicts was false suppression — the direction that
+    hides a stale figure — while three rounds of corrections each refined a CommonMark micro-rule.
+
+    ⤳ Length preservation is what makes the fix exact: `mask_inline_code` replaces characters
+    one-for-one, so an offset in the masked document is the same offset in the document, and the
+    same window bounds slice both. The sentence is sliced from `window` (real text); only the
+    BOUNDS come from `masked`.
+
+    ⛔ NO DEFAULT, for the reason `figure_at` has none a few functions down: a default would let a
+    caller silently fall back to the fragment behaviour this exists to abolish, and this file has
+    already paid once for a parameter whose default was the old behaviour. Omitting it is a
+    TypeError — loud, at the call site. A caller whose `window` IS the whole document passes
+    `mask_inline_code(window)`, and says so.
 
     r1 Claude M4's instrument. Sentence rather than a second character budget because "near" in
     the original comment meant "in the same statement", and a tighter character window would be
@@ -419,7 +480,11 @@ def sentence_around(window: str, at: int) -> str:
     """
     # ⛔ BOUNDS ON THE MASK, SLICE THE ORIGINAL (r4 Codex M1). `mask_inline_code` is
     # length-preserving, so every offset below indexes both strings identically.
-    masked = mask_inline_code(window)
+    if len(masked) != len(window):
+        # A mask of a different length cannot share offsets, so every bound below would be wrong
+        # about a different string. Loud, not silently approximate.
+        raise ValueError(f"masked is {len(masked)} chars and window is {len(window)}; "
+                         f"sentence_around needs the SAME bounds sliced from the masked document")
     bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(masked)] + [len(window)]
     for i in range(len(bounds) - 1):
         if bounds[i] <= at < bounds[i + 1]:
@@ -496,14 +561,17 @@ def figure_offset_in_window(start: int, span: int = CONTEXT_CHARS) -> int:
     return min(start, span)
 
 
-def history_marker(window: str, figure_at: int) -> str:
+def history_marker(window: str, figure_at: int, *, masked: str) -> str:
     """The marker exempting this hit, or "". PURE — and it NAMES the marker rather than
     answering yes/no, so the live run can report what each one suppressed (r1 Claude M4).
+
+    `masked` is the document-level mask sliced to `window`'s bounds — see `sentence_around`, whose
+    docstring records the 205-of-205 false suppressions a fragment mask produced.
     """
     for mark in STRONG_MARKERS:
         if mark in window:
             return mark
-    sentence = sentence_around(window, figure_at)
+    sentence = sentence_around(window, figure_at, masked=masked)
     for mark in WEAK_MARKERS:
         if mark in sentence:
             return mark
@@ -511,7 +579,7 @@ def history_marker(window: str, figure_at: int) -> str:
 
 
 def is_history_context(window: str, corrected_forms: tuple[str, ...] = (),
-                       *, figure_at: int) -> bool:
+                       *, figure_at: int, masked: str) -> bool:
     """True when the text around a hit is a past-tense trail rather than a live claim. PURE.
 
     Two prongs:
@@ -536,7 +604,7 @@ def is_history_context(window: str, corrected_forms: tuple[str, ...] = (),
     # caller silently fall back to the window-wide rule M4 exists to narrow, and this file has
     # already paid once for a parameter whose default was the old behaviour. Missing it is a
     # TypeError — loud, at the call site.
-    if history_marker(window, figure_at):
+    if history_marker(window, figure_at, masked=masked):
         return True
     return any(cf and cf in window for cf in corrected_forms)
 
@@ -727,7 +795,7 @@ def self_test() -> int:
     # call site, so every parameter would otherwise look like a constant.
     def _marker_at(text: str, figure: str = "1,414") -> str:
         """`history_marker` at the figure's REAL offset, derived from the text. r4 Codex M1."""
-        return history_marker(text, text.index(figure))
+        return history_marker(text, text.index(figure), masked=mask_inline_code(text))
 
     direct: list[tuple[str, object, object]] = [
         ("signature_of with context_words=0 is the bare figure",
@@ -735,9 +803,10 @@ def self_test() -> int:
         ("signature_of with context_words=1 takes one word either side",
          signature_of("we hold 1,414 anchors here", "1,414", 1), "hold 1,414 anchors"),
         ("is_history_context over an empty window is False",
-         is_history_context("", figure_at=0), False),
+         is_history_context("", figure_at=0, masked=mask_inline_code("")), False),
         ("is_history_context finds a marker in a long window",
-         is_history_context("x" * 100 + " previously " + "y" * 100, figure_at=150), True),
+         is_history_context("x" * 100 + " previously " + "y" * 100, figure_at=150,
+                            masked=mask_inline_code("x" * 100 + " previously " + "y" * 100)), True),
         ("window_around with span 0 is the match itself",
          window_around("abcdef", 2, 4, 0), "cd"),
         ("is_exempt_path on a literal review path",
@@ -762,33 +831,42 @@ def self_test() -> int:
          hit_offset("aa\nbb\nzz", _find_claim().find_in_text(
              "aa\nbb\nzz", _find_claim().build_pattern("zz"), "q")[0]), 6),
         ("is_history_context's corrected-FORM prong fires on a bare figure match",
-         is_history_context("the tree held 1,416 not 1,414", ("1,416",), figure_at=24), True),
+         is_history_context("the tree held 1,416 not 1,414", ("1,416",), figure_at=24,
+                            masked=mask_inline_code("the tree held 1,416 not 1,414")), True),
         ("sentence_around returns the sentence holding the offset, not the whole window",
-         sentence_around("First one. Second one here. Third.", 14), "Second one here. "),
+         sentence_around("First one. Second one here. Third.", 14,
+                         masked=mask_inline_code("First one. Second one here. Third.")), "Second one here. "),
         # ⚠ A DIFFERENT WINDOW, not just a different offset — `check-fixture-variation` reads
         # argument EXPRESSIONS, so two calls spelled with the same literal are ONE value to it
         # and no case could tell `window` from a constant. It refused this file for exactly that.
         ("...and a DIFFERENT window splits on ITS OWN sentence boundaries",
-         sentence_around("Alpha ends here? Beta runs on.", 20), "Beta runs on."),
+         sentence_around("Alpha ends here? Beta runs on.", 20,
+                         masked=mask_inline_code("Alpha ends here? Beta runs on.")), "Beta runs on."),
         # ⟳ r2 Codex HIGH — THIS CASE USED TO ASSERT THAT A BARE `\n` IS A BOUNDARY, which is
         # the behaviour that made the verdict depend on line wrapping. A markdown BLOCK start
         # is a boundary; a wrap inside a sentence is not.
         ("a markdown TABLE ROW is its own sentence — a marker must not leak between rows",
-         sentence_around("| 1 | it was fine |\n| 2 | holds 1,414 here |", 24),
+         sentence_around("| 1 | it was fine |\n| 2 | holds 1,414 here |", 24,
+                         masked=mask_inline_code("| 1 | it was fine |\n| 2 | holds 1,414 here |")),
          "| 2 | holds 1,414 here |"),
         ("⭐ ...but a WRAPPED sentence is ONE sentence, so a wrap cannot change the verdict",
-         sentence_around("the sweep holds\n1,414 anchors today (was wrong).", 16),
+         sentence_around("the sweep holds\n1,414 anchors today (was wrong).", 16,
+                         masked=mask_inline_code("the sweep holds\n1,414 anchors today (was wrong).")),
          "the sweep holds\n1,414 anchors today (was wrong)."),
         # ── r3 Codex HIGH: three more statement boundaries, one of them LIVE ───────────────
         ("⭐ r3: a COLON lead-in ends a statement — the live instance at "
          "docs/dashboard-entries.md:10440 had `was` in the lead-in exempting the claim below",
          "was " in sentence_around(
-             "Measured, and the earlier figure was wrong:\nthe sweep holds 1,414 anchors", 48),
+             "Measured, and the earlier figure was wrong:\nthe sweep holds 1,414 anchors", 48,
+             masked=mask_inline_code(
+                 "Measured, and the earlier figure was wrong:\nthe sweep holds 1,414 anchors")),
          False),
         ("...and a markdown HARD break (two trailing spaces) is a boundary too",
-         "was " in sentence_around("the count was wrong  \nholds 1,414 here", 29), False),
+         "was " in sentence_around("the count was wrong  \nholds 1,414 here", 29,
+                                   masked=mask_inline_code("the count was wrong  \nholds 1,414 here")), False),
         ("...and `1)` is a list marker, not only `1.`",
-         "was " in sentence_around("the count was wrong\n1) holds 1,414 here", 31), False),
+         "was " in sentence_around("the count was wrong\n1) holds 1,414 here", 31,
+                                   masked=mask_inline_code("the count was wrong\n1) holds 1,414 here")), False),
         # ── r3 Codex HIGH: EVERY occurrence of the figure, not the first ───────────────────
         ("⭐ r3: figure_offsets_in_hit returns ALL occurrences, so a repeated figure cannot "
          "inherit the first one's exemption",
@@ -798,10 +876,12 @@ def self_test() -> int:
         ("...and a figure the hit does not contain falls back to [0], not an empty list",
          figure_offsets_in_hit("no number here", "1,414"), [0]),
         ("⭐ r3: the FIRST occurrence is marked and the SECOND is not, so the hit is NOT exempt",
-         (lambda t, f: [bool(history_marker(t, o)) for o in figure_offsets_in_hit(t, f)]
+         (lambda t, f: [bool(history_marker(t, o, masked=mask_inline_code(t)))
+                       for o in figure_offsets_in_hit(t, f)]
           )("was 1,414. 1,414 anchors", "1,414"), [True, False]),
         ("...and a PARAGRAPH break is still a boundary",
-         sentence_around("it was fine\n\nholds 1,414 here", 15), "holds 1,414 here"),
+         sentence_around("it was fine\n\nholds 1,414 here", 15,
+                         masked=mask_inline_code("it was fine\n\nholds 1,414 here")), "holds 1,414 here"),
         # ── the figure's offset inside the signature (r2 Codex High) ────────────────────────
         ("⭐ figure_offset_in_hit locates the FIGURE, not the signature's start",
          figure_offset_in_hit("green. count 1,414 anchors", "1,414"), 13),
@@ -813,18 +893,23 @@ def self_test() -> int:
         ("⭐ THE WITNESS: a marker in the PREVIOUS sentence no longer reaches the figure once "
          "the offset points at the figure instead of the signature (r2 Codex High)",
          (lambda t, f: history_marker(
-              t, figure_offset_in_window(0) + figure_offset_in_hit(t, f))
+              t, figure_offset_in_window(0) + figure_offset_in_hit(t, f),
+              masked=mask_inline_code(t))
           )("The status was green. count 1,414 anchors today", "1,414"), ""),
         ("...while the SAME text with the marker in the figure's own sentence still suppresses",
          (lambda t, f: history_marker(
-              t, figure_offset_in_window(0) + figure_offset_in_hit(t, f))
+              t, figure_offset_in_window(0) + figure_offset_in_hit(t, f),
+              masked=mask_inline_code(t))
           )("The status is green. count was 1,414 anchors today", "1,414"), "was "),
         ("history_marker returns the STRONG marker it matched",
-         history_marker("⟳ corrected later; the sweep holds 1,414", 34), "⟳"),
+         history_marker("⟳ corrected later; the sweep holds 1,414", 34,
+                        masked=mask_inline_code("⟳ corrected later; the sweep holds 1,414")), "⟳"),
         ("...and the WEAK one when that is what exempted the hit",
-         history_marker("The sweep was 1,414 anchors then.", 14), "was "),
+         history_marker("The sweep was 1,414 anchors then.", 14,
+                        masked=mask_inline_code("The sweep was 1,414 anchors then.")), "was "),
         ("...and \"\" when nothing exempts it, which is what makes it a SURVIVOR",
-         history_marker("The sweep holds 1,414 anchors.", 16), ""),
+         history_marker("The sweep holds 1,414 anchors.", 16,
+                        masked=mask_inline_code("The sweep holds 1,414 anchors.")), ""),
         # ── r4 Codex MEDIUM: three of r3's new boundaries also split INSIDE an inline code
         # span, so WHERE A LINE WRAPS decided the verdict. Each case below is the same prose
         # wrapped a different way; before `mask_inline_code` every wrapped one lost its marker.
@@ -886,6 +971,21 @@ def self_test() -> int:
          "where `break` let a stray backtick turn a genuine span into a false survivor",
          _marker_at("a `unclosed then ``the count was wrong:\nholds 1,414 anchors today``"),
          "was "),
+        # ── r5 Claude HIGH: the escape rule is OPENER-ONLY. cmark and markdown-it-py both end
+        # the span AT an escaped backtick inside it, because backslash escapes do not apply within
+        # a code span. Applying the test to closers too ran the span past its end and masked prose.
+        ("⛔ r5: an escaped backtick INSIDE a span still CLOSES it — the span is `a \\` and the "
+         "space before `b` is PROSE, where the opener-and-closer rule masked it",
+         mask_inline_code("`a \\` b` c"), "`ax\\` b` c"),
+        ("⛔ r5: ...so the figure after it is a SURVIVOR, where extending the span suppressed it",
+         _marker_at("`a \\` the count was wrong:\n1,414 anchors`"), ""),
+        ("⚠ r5 L1 STATED BEHAVIOUR: single backticks INSIDE a fenced block DO pair, so the mask "
+         "reaches into fenced code — 597 span-level disagreements with cmark over 121 files, no "
+         "verdict change measured. Pinned so a fence-aware rewrite moves it on purpose",
+         mask_inline_code("```md\nsee `a b` here\n```"), "```md\nsee `axb` here\n```"),
+        ("...while an escaped backtick in PROSE still cannot OPEN one, which is the r5 Codex half "
+         "of the same rule and must not be lost to this fix",
+         _marker_at("the count was \\`wrong:\n holds 1,414 anchors today \\`"), ""),
         ("...and backtick_escaped counts an EVEN run of backslashes as not escaping, so a literal "
          "backslash before a REAL delimiter still opens a span",
          backtick_escaped("a \\\\`x`", 5), False),
@@ -970,6 +1070,51 @@ def self_test() -> int:
             g("add", "-A"); g("commit", "-q", "-m", "correct")
             with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
                 return main(["--strict", "--base", base], root=r3)
+    def _drive_span_window(trailing_span: bool, suppressed: bool = False) -> int:
+        """rc from the LIVE path over a document whose window OPENS INSIDE a code span. r5 Claude H2.
+
+        ⛔ THIS IS THE CASE A FRAGMENT MASK FAILS. The leading span is longer than CONTEXT_CHARS,
+        so `window_around` begins inside it and the window's first backtick is a CLOSER whose opener
+        is outside. With `trailing_span=True` a later genuine opener exists, so a mask computed from
+        the FRAGMENT pairs the orphan with it and masks the PROSE between — including the `. ` after
+        "wrong", which kills the `(?<=[.!?])\\s+` boundary and lets the figure's sentence absorb the
+        `was`. Measured both ways on this exact text: fragment -> marker `'was '` (SUPPRESSED, rc=0);
+        document -> marker `''` (SURVIVOR, rc=1). Over the real corpus the class is 205 windows and
+        205 of 205 are false suppressions.
+
+        `suppressed=True` is the KNOWN POSITIVE: the same span shape with `was` inside the figure's
+        OWN sentence, which is a genuine history exemption and must return 0. Without it this probe
+        could return 1 for any reason at all and the case above would assert nothing.
+        ⚠ An earlier draft used "no trailing span" as the control and expected 1 from BOTH — which
+        proves nothing, and its own docstring said so while the code contradicted it.
+        """
+        import contextlib as _ctx, io as _io, subprocess as _sp, tempfile as _tf
+        lead = "`" + ("x" * 200) + " src/a.test.ts` the count was wrong."
+        tail = " in `master` today." if trailing_span else " today."
+        middle = "It holds 1,414 anchors that was" if suppressed else "It holds 1,414 anchors"
+        line = f"{lead} {middle}{tail}"
+        with _tf.TemporaryDirectory() as td:
+            r = Path(td)
+            def g(*a):
+                return _sp.run(["git", *a], cwd=r, capture_output=True, text=True)
+            g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+            (r / "docs").mkdir()
+            (r / "docs" / "src.md").write_text(line + "\n")
+            (r / "docs" / "copy.md").write_text(line + "\n")
+            g("add", "-A"); g("commit", "-q", "-m", "base")
+            base = g("rev-parse", "HEAD").stdout.strip()
+            (r / "docs" / "src.md").write_text(line.replace("1,414", "1,416") + "\n")
+            g("add", "-A"); g("commit", "-q", "-m", "correct")
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                return main(["--strict", "--base", base], root=r)
+    direct.append(("⭐⭐ r5 LIVE: a window that OPENS INSIDE a code span reports its survivor — the "
+                   "mask is decided on the DOCUMENT, where a fragment mask paired an orphan closer "
+                   "with a later opener and masked the prose boundary away (205/205 false "
+                   "suppressions measured)",
+                   _drive_span_window(trailing_span=True), 1))
+    direct.append(("...and the KNOWN POSITIVE with `was` in the figure's OWN sentence is still "
+                   "suppressed, so the case above is not asserting rc=1 for any input",
+                   _drive_span_window(trailing_span=True, suppressed=True), 0))
     direct.append(("⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — "
                    "the caller passes the FIGURE's offset, not the signature's (r2 Codex High)",
                    _drive_live("The status was green."), 1))
@@ -1032,7 +1177,8 @@ def self_test() -> int:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
 
     for name, window, figure_at, want in HISTORY_CASES:
-        got = is_history_context(window, figure_at=figure_at)
+        got = is_history_context(window, figure_at=figure_at,
+                                 masked=mask_inline_code(window))
         ok = got == want
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
@@ -1045,7 +1191,8 @@ def self_test() -> int:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
 
     for name, window, figure_at, repls, want in REPLACEMENT_CASES:
-        got = is_history_context(window, repls, figure_at=figure_at)
+        got = is_history_context(window, repls, figure_at=figure_at,
+                                 masked=mask_inline_code(window))
         ok = got == want
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
@@ -1152,6 +1299,14 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
                 # them, `--strict` returned rc=0 over a live claim.
                 start = hit_offset(text, hit)
                 win = window_around(text, start, start + len(hit.text))
+                # ⛔⛔ THE MASK IS DECIDED ON THE DOCUMENT AND SLICED, NEVER COMPUTED FROM `win`
+                # — r5 Claude H2. A window is a raw ±CONTEXT_CHARS slice that routinely opens
+                # INSIDE a code span, and a fragment mask then pairs that orphan closer with the
+                # next real opener and masks the prose between. Measured over 75,076 windows: the
+                # fragment version changed the verdict in 205 and ALL 205 were false suppressions.
+                # `masked_doc` is computed once per document by `masked_of`, because
+                # `mask_inline_code` over a large file is not free and every hit in it shares one.
+                masked_win = window_around(masked_of(text), start, start + len(hit.text))
                 # ⛔ THE FIGURE'S OFFSET, NOT THE SIGNATURE'S (r2 Codex High). The signature
                 # carries up to CONTEXT_WORDS words of lead-in, which can cross a sentence.
                 # ⛔ EVERY occurrence, not the first (r3 Codex H3). Exempt only if all are.
@@ -1159,8 +1314,10 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
                 ats = [base + off for off in figure_offsets_in_hit(hit.text, figure)]
                 # the corrected FORM of this claim: the signature with each replacement swapped in
                 corrected = tuple(sig.replace(figure, r) for r in repls)
-                if all(is_history_context(win, corrected, figure_at=a) for a in ats):
-                    suppressed[history_marker(win, ats[0]) or "corrected form"] += 1
+                if all(is_history_context(win, corrected, figure_at=a, masked=masked_win)
+                       for a in ats):
+                    suppressed[history_marker(win, ats[0], masked=masked_win)
+                               or "corrected form"] += 1
                     continue
                 survivors += 1
                 print(f"  SURVIVOR {hit.path}:{hit.line}: {' '.join(hit.text.split())}")

@@ -39,11 +39,11 @@
     ]
   },
   {
-    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim ⟳ r1 Claude M4: retargeted — the marker prong became a call to `history_marker`, which NAMES the marker instead of answering yes/no, so this anchor went with it. FOURTH orphan this fold; `--binding` found every one.",
+    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim ⟳ r1 Claude M4: retargeted — the marker prong became a call to `history_marker`, which NAMES the marker instead of answering yes/no, so this anchor went with it. FOURTH orphan this fold; `--binding` found every one. ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    if history_marker(window, figure_at):\n        return True",
+        "    if history_marker(window, figure_at, masked=masked):\n        return True",
         "    if False:\n        return True"
       ]
     ],
@@ -117,12 +117,12 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude M4 — the weak markers go back to being window-wide, so a live claim one sentence away from any past-tense prose is exempted again. Window-wide, `was ` alone covered 7,620 of 47,988 figure occurrences",
+    "name": "⟳ r1 Claude M4 — the weak markers go back to being window-wide, so a live claim one sentence away from any past-tense prose is exempted again. Window-wide, `was ` alone covered 7,620 of 47,988 figure occurrences ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    sentence = sentence_around(window, figure_at)\n    for mark in WEAK_MARKERS:\n        if mark in sentence:",
-        "    sentence = sentence_around(window, figure_at)\n    for mark in WEAK_MARKERS:\n        if mark in window:"
+        "    sentence = sentence_around(window, figure_at, masked=masked)\n    for mark in WEAK_MARKERS:\n        if mark in sentence:",
+        "    sentence = sentence_around(window, figure_at, masked=masked)\n    for mark in WEAK_MARKERS:\n        if mark in window:"
       ]
     ],
     "expect": [
@@ -286,12 +286,12 @@
     ]
   },
   {
-    "name": "⟳ r3 Codex HIGH — the caller goes back to exempting on ANY occurrence instead of ALL, which is the same defect at the call site",
+    "name": "⟳ r3 Codex HIGH — the caller goes back to exempting on ANY occurrence instead of ALL, which is the same defect at the call site ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "                if all(is_history_context(win, corrected, figure_at=a) for a in ats):",
-        "                if any(is_history_context(win, corrected, figure_at=a) for a in ats):"
+        "                if all(is_history_context(win, corrected, figure_at=a, masked=masked_win)\n                       for a in ats):",
+        "                if any(is_history_context(win, corrected, figure_at=a, masked=masked_win)\n                       for a in ats):"
       ]
     ],
     "expect": [
@@ -299,29 +299,16 @@
     ]
   },
   {
-    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance)",
+    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance) ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    runs = [m for m in BACKTICK_RUN.finditer(text)\n            if len(m.group(0)) <= 2 and not backtick_escaped(text, m.start())]",
+        "    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]",
         "    runs = []"
       ]
     ],
     "expect": [
       "⭐ r4: ...and the SAME sentence wrapped at the span's COLON is exempted too, where it used to be a survivor — a colon inside code is not a sentence boundary"
-    ]
-  },
-  {
-    "name": "⛔ r5 Codex H1 — the escaped-backtick filter is severed: `\\\\`` pairs as a delimiter again and the PROSE between two of them is masked, so a live stale figure is reported as history",
-    "file": "scripts/check-withdrawal.py",
-    "edits": [
-      [
-        "            if len(m.group(0)) <= 2 and not backtick_escaped(text, m.start())]",
-        "            if len(m.group(0)) <= 2]"
-      ]
-    ],
-    "expect": [
-      "⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its sentence boundary and the figure is a SURVIVOR — this was suppressed as history"
     ]
   },
   {
@@ -361,6 +348,32 @@
     ],
     "expect": [
       "...and backtick_escaped counts an EVEN run of backslashes as not escaping, so a literal backslash before a REAL delimiter still opens a span"
+    ]
+  },
+  {
+    "name": "⛔⛔ r5 Claude H2 — the mask is computed from the WINDOW again instead of the document: a window opening inside a code span pairs its orphan closer with a later opener and masks the prose boundary away. 205 of 205 live verdict changes were false suppressions",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                masked_win = window_around(masked_of(text), start, start + len(hit.text))",
+        "                masked_win = mask_inline_code(win)"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r5 LIVE: a window that OPENS INSIDE a code span reports its survivor — the mask is decided on the DOCUMENT, where a fragment mask paired an orphan closer with a later opener and masked the prose boundary away (205/205 false suppressions measured)"
+    ]
+  },
+  {
+    "name": "⛔ r5 Claude H1 — the opener-only escape test is removed, so an escaped backtick can open a span again and the PROSE between two of them is masked (cmark and markdown-it-py both disagree with that)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if backtick_escaped(text, open_run.start()):\n            i += 1\n            continue",
+        "        if False:\n            i += 1\n            continue"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its sentence boundary and the figure is a SURVIVOR — this was suppressed as history"
     ]
   }
 ]

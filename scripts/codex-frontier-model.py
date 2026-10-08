@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 50 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 51 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits **2 — CANNOT RUN** with a message on stderr if
@@ -436,7 +436,14 @@ def _write_config_arm(readonly: bool, pre: str) -> tuple:
         d = os.path.join(td, "cfgdir")
         os.makedirs(d)
         CONFIG = os.path.join(d, "config.toml")
-        if pre == "unreadable":
+        if pre == "keep":
+            # ⛔ r5 Claude M2 — THE ONLY STATE WITH A READABLE EXISTING CONFIG, and its absence is
+            # why `write_config` discarding every setting it does not own survived 50/50 with zero
+            # [FAIL]. The other three states all leave `existing` empty — absent, unreadable,
+            # undecodable — so no case could tell preservation from truncation.
+            with open(CONFIG, "w", encoding="utf-8") as f:
+                f.write("[profile]\nkeep_me = \"yes\"\n")
+        elif pre == "unreadable":
             with open(CONFIG, "w", encoding="utf-8") as f:
                 f.write("[existing]\nkeep = true\n")
             os.chmod(CONFIG, 0o000)
@@ -467,7 +474,14 @@ def _write_config_arm(readonly: bool, pre: str) -> tuple:
                                   and 'model = "gpt-slug-two"' in second
                                   # ⭐ THE CLAUSE A PRODUCTION CONSTANT CANNOT SATISFY:
                                   and 'model = "gpt-slug-one"' not in second)
-                    return (0, "wrote" if propagated else "wrote-ignoring-argument")
+                    if not propagated:
+                        return (0, "wrote-ignoring-argument")
+                    # ⛔ r5 Claude M2 — AND IT MUST NOT EAT WHAT IT DOES NOT OWN. The managed block
+                    # is stripped and rewritten; everything else is the user's and must survive
+                    # BOTH writes, which is also the idempotence this function claims.
+                    if pre == "keep" and 'keep_me = "yes"' not in second:
+                        return (0, "wrote-discarding-the-rest")
+                    return (0, "wrote")
             return (0, "wrote")
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else 1
@@ -684,6 +698,12 @@ def _self_test() -> int:
     case("⭐ r5: ...and an UNDECODABLE one is too — `UnicodeDecodeError` is a ValueError, not an "
          "OSError, so the first version of that guard exited 1 with a traceback",
          _write_config_arm(readonly=False, pre="undecodable"), (2, "cannot-read"))
+    # ── r5 Claude MEDIUM: nothing had a READABLE existing config, so "it preserves what it does
+    # not own" was untested — the mutation that discards everything survived 50/50, 0 [FAIL].
+    case("⭐ r5: an EXISTING setting this script does not own SURVIVES both writes — the only "
+         "`pre` state with a readable config, and without it truncation looked identical to "
+         "preservation",
+         _write_config_arm(readonly=False, pre="keep"), (0, "wrote"))
 
     # ⛔ BACKLOG #249, SECOND ARM — round 1 Claude H2. `refusal_message` has TWO refusal arms and
     # the golden case above reaches only the all-hidden one. The #254 arm — the one THIS branch
