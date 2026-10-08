@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 157 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 163 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -377,8 +377,14 @@ BACKTICK_RUN = re.compile(r"`+")
 # mask can never whiten it. For 540 of 1,620 shapes the instrument therefore always answered "the
 # paragraph ends here", and under the classification that scores `ok` or `noisy` and NEVER lenient.
 # ⤳ **So the instrument was LENIENT-BLIND on a third of the grid** — the expensive direction — and
-# that is why four rounds of reviewers never saw it: a wrong index cannot produce a false CLEAN
-# claim, only a false COST figure, so nothing ever looked alarming. Found twice independently, by
+# ⛔⛔ r9 Codex M2 — AND THE EXPLANATION I FIRST WROTE HERE WAS WRONG IN THE DANGEROUS DIRECTION.
+# It said a wrong index "cannot produce a false CLEAN claim, only a false COST figure, so nothing
+# ever looked alarming". That is self-contradictory: being lenient-BLIND *is* reporting 0 lenient
+# where lenient shapes exist, which is exactly a false clean claim. Measured — 14 r7 shapes whose
+# genuine LENIENT result scores `ok` at the old index, e.g. `'> intro\nlazy `a\n~~~\nb` x'`, where
+# all three parsers end the paragraph, the r7 mask preserves the document's first newline and
+# whitens the span's. ⤳ So the reason reviewers read past it was NOT that it failed safely; it is
+# that the only visible symptom was a noise figure nobody was auditing. Found twice independently, by
 # re-running at commit time and by r8's Claude half, agreeing to the unit. The fix is to score at
 # the SPAN's own newline, `doc.index("\n", doc.index("`a"))`.
 #
@@ -393,7 +399,12 @@ BACKTICK_RUN = re.compile(r"`+")
 # BOTH dialects agreeing, over markers × indents × {LF,CRLF} × {prose, quoted, `> > ` spaced-nested,
 # `>>` nested, 3-space-indented quote, lazy-prefixed} = 1,620 shapes, PLUS a second corpus of
 # 7 list containers × 14 middles × {LF,CRLF} = 196 shapes, which the grid above cannot express
-# because its only container spelling is a quote (that blind spot WAS r8 Claude H1):
+# because its only container spelling is a quote (that blind spot WAS r8 Claude H1), and a third of
+# 294 shapes for the classes r9 found (span opening BELOW the marker, TABBED marker runs,
+# INTERLEAVED quote/list containers). ⚠ r9 Codex M3 — THE DENOMINATOR IS NOT THE SHAPE COUNT: of
+# the 1,620 grid shapes, FOUR are excluded because the parsers disagree (strict CommonMark has no
+# tables), so 1,616 are adjudicated. A parser split is not a claim about this code, and counting it
+# either way would be a different measurement than the one reported:
 #
 #   version                                         LENIENT   noisy   total   list LENIENT
 #   `3b49db97` (r7 as shipped)                          228      88     316     138 of 196
@@ -402,6 +413,25 @@ BACKTICK_RUN = re.compile(r"`+")
 #   r8 + the fence clause in `BLANK_OR_BLOCK`             8      34      42     130 of 196
 #   r8 + the fence clause in BOTH predicates              0      34      34     130 of 196
 #   r8 + the LIST CONTENT COLUMN (r8 Claude H1)           0      34      34       0 of 196
+#   r9 + TAB COLUMNS and the INDENT fallback               0      34      34       0 of 196
+#
+# ⛔ AND THE LIST COLUMN DID NOT CLOSE THE CLASS — r9 Codex H1 and H2. Taking `cont` from the
+# paragraph's first line is wrong whenever the span opens BELOW the item's marker, because the
+# walk-back breaks AT the marker line and the continuation it lands on has no marker left to read;
+# and `m.end() - i` counted CHARACTERS, so a tab in the marker run undercounted its own column. Both
+# were LENIENT on the shape the first fix was written for. Measured over 294 shapes of the three
+# classes no earlier corpus could express:
+#
+#   version                     LENIENT   noisy    per class (lenient)
+#   r8 (the list column alone)      170       0    below-marker 130, tabbed 14, interleaved 26
+#   r9 (columns + indent)             3       0    tabbed 1, interleaved 2
+#
+# ⚠ THE THREE RESIDUAL, NAMED RATHER THAN ROUNDED AWAY: one is an ORACLE ARTIFACT — a tab at
+# column 0 is four columns of indent, so `'\t- intro …'` is an INDENTED CODE BLOCK and cmark
+# renders the whole document as `<pre><code>`, which makes "no inline code" mean "no paragraph at
+# all" rather than "a boundary" (a case below pins it, and says it is not a claim that the answer
+# is right). The other TWO are interleaved containers nested deeper than one level, which is the
+# bound `list_content_column` states in its own docstring and which #267 owns.
 #
 # ⚠ THE SECOND COLUMN IS THE ONE TO READ, AND IT FALLS: noise goes 88 → 34 and never rises. ⛔ r8
 # Claude B1 — the version of this paragraph that shipped at `d6967caa` said the count "ROSE from
@@ -473,6 +503,19 @@ BLANK_OR_BLOCK = re.compile(
                                                  # removes five LENIENT shapes; embedding the tag
                                                  # list here is the #267 design question, not a fold.
     r")")
+def _column(chunk: str, start: int) -> int:
+    """Width of `chunk` in TAB-EXPANDED columns, starting from column `start`.
+
+    ⛔ r9 Codex H2 — `m.end() - i` counted CHARACTERS. A tab advances to the next multiple-of-four
+    tab stop, so `-\t- ` is six columns wide and not four, and the undercount left a block start at
+    the real content column invisible again — LENIENT, on the shape the first fix was for.
+    """
+    col = start
+    for ch in chunk:
+        col = (col // 4 + 1) * 4 if ch == "\t" else col + 1
+    return col
+
+
 LIST_MARKER = re.compile(r"[ \t]{0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+")
 
 
@@ -519,8 +562,10 @@ def list_content_column(rest: str) -> int:
     while True:
         m = LIST_MARKER.match(rest, i)
         if not m:
-            return col
-        col += m.end() - i
+            # ⛔ r9 Codex H1 — the span may open on a line BELOW the marker, where there is no
+            # marker left to read and the only remaining evidence of the container is the INDENT.
+            return max(col, _column(rest[i:i + len(rest[i:]) - len(rest[i:].lstrip(" \t"))], col))
+        col = _column(rest[i:m.end()], col)
         i = m.end()
 
 
@@ -605,8 +650,13 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
         nxt_end = text.find("\n", nl + 1)
         nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
         d, rest = quote_depth(nxt)
-        if cont and rest[:cont].strip(" \t") == "" and len(rest) >= cont:
-            rest = rest[cont:]                 # ⛔ r8 Claude H1 — into the item's content column
+        if cont:
+            k, c = 0, 0
+            while k < len(rest) and rest[k] in " \t" and c < cont:
+                c = (c // 4 + 1) * 4 if rest[k] == "\t" else c + 1
+                k += 1
+            if c >= cont:
+                rest = rest[k:]                # ⛔ r8 Claude H1 / r9 H2 — tab-expanded columns
             d2, rest2 = quote_depth(rest)      # a `>` can sit AT that column, past QUOTE_MARKER's
             if d2 > d:                         # 3-space cap — that was the last 10 of the 130
                 return True
@@ -1400,6 +1450,44 @@ def self_test() -> int:
         ("...and a line at the content column PLUS FOUR is an indented code block INSIDE the item, "
          "which does not interrupt — a fix that widened the cap blindly would go red here",
          _marker_at("  - the count was `wrong:\n        - x\n    holds 1,414 anchors today`"),
+         "was "),
+        # ── r9 Codex H1/H2: the container must be recovered from the ENCLOSING ITEM, not from
+        # whichever line the span happens to open on, and its width is in TAB-EXPANDED columns.
+        # Measured over a 294-shape corpus of the three classes the earlier corpora could not
+        # express (span-below-marker, tabbed markers, interleaved quote/list): LENIENT 170 -> 3,
+        # noise 0 -> 0. ⚠ Of the 3 residual, ONE is an oracle artifact (see the negative below)
+        # and TWO are interleaved containers nested deeper than one level — the bound this
+        # function's docstring states and #267 owns.
+        ("⛔ r9 Codex H1: the span opens on the item's SECOND line, where there is no marker left "
+         "to read and the INDENT is the only remaining evidence of the container — the walk-back "
+         "breaks at the marker line, so `cont` came back 0 and the fix did not apply at all",
+         _marker_at("  - first\n    second the count was `wrong:\n    # h\n"
+                    "    holds 1,414 anchors today`"), ""),
+        ("⛔ r9 Codex H1: ...and INTERLEAVED quote/list containers, which the first fix read only "
+         "as far as the leading run of list markers — a bound it stated and did not close",
+         _marker_at("> - > - - first\n>   >     the count was `wrong:\n>   >     # h\n"
+                    ">   >     holds 1,414 anchors today`"), ""),
+        ("⛔ r9 Codex H2: a TAB inside the marker run is FOUR COLUMNS to the next tab stop, not one "
+         "character — `-\t- ` is six columns wide, and counting characters undercounted it to four, "
+         "which left the block start invisible again on the very shape the first fix was for",
+         _marker_at("-\t- the count was `wrong:\n        # h\n"
+                    "        holds 1,414 anchors today`"), ""),
+        ("⛔ r9 Codex M1: a THREE-DIGIT ordered marker still opens an item — `LIST_MARKER` reads "
+         "`\\d{1,9}`, and narrowing it to one digit leaves every other case in this file green",
+         _marker_at("999) the count was `wrong:\n     # h\n"
+                    "     holds 1,414 anchors today`"), ""),
+        ("...while a TAB AT COLUMN 0 is FOUR columns of indent, so the whole document is an "
+         "INDENTED CODE BLOCK and there is no paragraph for the span rule to be about. ⚠ THIS "
+         "CASE PINS CURRENT BEHAVIOUR AND IS NOT A CLAIM THAT THE ANSWER IS RIGHT: the two "
+         "parsers report `no inline code`, which the oracle construction reads as a boundary, but "
+         "here it means `no paragraph at all`. It is cased so a future fence/code-aware rewrite "
+         "moves it DELIBERATELY rather than silently (r8 Claude CANNOT RUN 5)",
+         _marker_at("\tthe count was `wrong:\n\t    # h\n\t    holds 1,414 anchors today`"),
+         "was "),
+        ("...and a 3-space-indented paragraph at TOP LEVEL gains no container, so a block start "
+         "needs the usual cap and this stays a genuine span — the clause must not turn a legal "
+         "paragraph indent into a list content column",
+         _marker_at("   the count was `wrong:\n       # h\n       holds 1,414 anchors today`"),
          "was "),
         # ── r8 Claude H2: `quote_depth`'s one-space consumption had NO case. Deleting it left the
         # suite fully green while the predicate went lenient on 208 of a 4,000-shape fuzz corpus,

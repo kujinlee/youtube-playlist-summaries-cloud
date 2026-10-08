@@ -572,12 +572,12 @@
     ]
   },
   {
-    "name": "⛔ r8 Claude H1 — `list_content_column` stops accumulating the marker run's width, so a nested opener like `- - - ` reports a content column of 0 and every block start inside the item goes back to being invisible",
+    "name": "⛔ r8 Claude H1 — `list_content_column` stops accumulating the marker run's width, so a nested opener like `- - - ` reports a content column of 0 and every block start inside the item goes back to being invisible ⟳ RETARGETED r9 Codex H2: the accumulation moved into `_column` when tab expansion replaced character counting, so the old anchor was gone — #252's class, ~42nd instance, and again inside the commit fixing a finding. The mutation now restarts each marker's width at column 0, which breaks the SAME property (the run's cumulative width)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        col += m.end() - i",
-        "        col += 0"
+        "        col = _column(rest[i:m.end()], col)",
+        "        col = _column(rest[i:m.end()], 0)"
       ]
     ],
     "expect": [
@@ -634,6 +634,45 @@
     ],
     "expect": [
       "⛔ r8 Claude L2: a MIXED run `` `~~ `` is NOT a fence, so the fence clause must read ONE character class per alternative — collapsing it to `[`~]{3,}` leaves every other fence case green"
+    ]
+  },
+  {
+    "name": "⛔ r9 Codex H2 — `_column` stops advancing a TAB to the next tab stop and counts it as one character, so a tabbed marker run undercounts its own content column and the block start at the real column goes invisible again",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        col = (col // 4 + 1) * 4 if ch == \"\\t\" else col + 1",
+        "        col = col + 1"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Codex H2: a TAB inside the marker run is FOUR COLUMNS to the next tab stop, not one character — `-\t- ` is six columns wide, and counting characters undercounted it to four, which left the block start invisible again on the very shape the first fix was for"
+    ]
+  },
+  {
+    "name": "⛔ r9 Codex H1 — `list_content_column` stops falling back to the INDENT when no marker remains on the line, so a span that opens below the item's first line reports a content column of 0 and the whole container fix stops applying",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            return max(col, _column(rest[i:i + len(rest[i:]) - len(rest[i:].lstrip(\" \\t\"))], col))",
+        "            return col"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Codex H1: the span opens on the item's SECOND line, where there is no marker left to read and the INDENT is the only remaining evidence of the container — the walk-back breaks at the marker line, so `cont` came back 0 and the fix did not apply at all"
+    ]
+  },
+  {
+    "name": "⛔ r9 Codex M1 — `LIST_MARKER` reads only a ONE-DIGIT ordered marker, so `999)` stops opening an item. Lenient, and it survived the whole 157-case suite when found",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "(?:[-*+]|\\d{1,9}[.)])",
+        "(?:[-*+]|\\d{1,1}[.)])"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Codex M1: a THREE-DIGIT ordered marker still opens an item — `LIST_MARKER` reads `\\d{1,9}`, and narrowing it to one digit leaves every other case in this file green"
     ]
   }
 ]

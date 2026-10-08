@@ -697,7 +697,10 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 49,   # ⟳ r8 Claude H1/H2/L2: +5 — the list content column
+    "scripts/check-withdrawal.py": 52,   # ⟳ r9 Codex H1/H2/M1: +3 — tab-expanded columns, the
+                                         # indent fallback when no marker remains, and the
+                                         # width of an ordered marker.
+                                         # ⟳ r8 Claude H1/H2/L2: +5 — the list content column
                                          # (three clauses: the marker-run width, the paragraph's
                                          # own column, and the quote RE-READ after the strip),
                                          # `quote_depth`'s space consumption, and the fence
@@ -5618,7 +5621,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1548)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1551)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
