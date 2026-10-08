@@ -697,7 +697,12 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 34,   # ⟳ r7: +1 — LAZY CONTINUATION, which is what took the
+    "scripts/check-withdrawal.py": 39,   # ⟳ r7 Claude M1: +1 — the GFM table lookahead.
+                                         # ⟳ r7 Claude B1/H1/H2: +4 — thematic breaks, HTML
+                                         # blocks, the NUMBER-one ordered rule, and `\r` on the
+                                         # setext anchor. All four were LENIENT shapes my own
+                                         # 380-case grid could not contain.
+                                         # ⟳ r7: +1 — LAZY CONTINUATION, which is what took the
                                          # LENIENT count from 32 to 0.
                                          # ⟳ r7 Codex H1: +1 — the quote-CONTINUATION rule.
                                          # ⟳ r6 Claude M1: +1 — PARA_END's measured block-start
@@ -2906,8 +2911,12 @@ def parse_fail_names(out: str) -> list[str]:
     implementation of one rule, drifted on the day it was written. Both sides call this now.
 
     Two clauses, and the second is easy to miss:
-      * only a line STARTING with `[FAIL] ` is a case name. A mid-line marker is not — measured
-        round 5, where slicing `[7:]` blind produced a confident, wrong name;
+      * only a line whose STRIPPED form starts with `[FAIL] ` is a case name. A mid-line marker is
+        not — measured round 5, where slicing `[7:]` blind produced a confident, wrong name.
+        ⟳ r7 Claude L2 — THIS CLAUSE USED TO SAY "a line STARTING with", omitting the `.strip()`
+        the code applies, and the gap cost a measurement cycle: a reviewer and I both wrote
+        `startswith("[FAIL] ")` against this suite's INDENTED output, read zero kills, and believed
+        it. The docstring was stricter than the code and the code is right — a suite may indent;
       * the name is truncated at the LAST `": got "`, because the canonical line is
         `[FAIL] {name}: got {got!r} want {want!r}` and a case name may itself contain a colon.
 
@@ -5597,7 +5606,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1533)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1538)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 128 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 139 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -315,7 +315,14 @@ def is_exempt_path(path: str) -> bool:
 SENTENCE_SPLIT = re.compile(
     r"(?<=[.!?])\s+"                               # ordinary end of sentence
     r"|\n\s*\n"                                    # a paragraph break
-    r"|(?<=:)\n"                                    # a colon lead-in ENDS a statement
+    r"|(?<=:)\r?\n"                                 # a colon lead-in ENDS a statement — `\r?` because
+                                                   # under CRLF the char before `\n` is `\r`, not
+                                                   # `:`, so this boundary never fired and the
+                                                   # figure's sentence absorbed the lead-in. Found
+                                                   # folding r7 Claude H2, whose own point is that a
+                                                   # CR fix in ONE alternative is a fix in one
+                                                   # alternative. The other four handle `\r` already:
+                                                   # `\s+` and `\s*` both match it.
     r"|(?<=\s\s)\n"                                # a markdown hard break
     r"|\n(?=\s*(?:[|#>]|[*+-]\s|\d+[.)]\s))"      # a markdown block start; `1)` too
 )
@@ -351,41 +358,73 @@ BACKTICK_RUN = re.compile(r"`+")
 # put the marker on the SAME LINE as the figure (`---1,414`), so it never tested a bare `---` — the
 # probe was wrong, not the parsers. The `[-=]+[ \t]*$` clause above covers it.
 #
-# ⭐⭐ MEASURED RESIDUAL, 2026-10-08, over 380 generated marker/indent/quote shapes with cmark and
-# markdown-it-py as a two-oracle check (they agreed on 377 of 380):
+# ⭐⭐ MEASURED — AND THIS NOTE HAS NOW BEEN WRONG TWICE, THE SAME WAY, SO THE SHAPE OF THE ERROR
+# MATTERS MORE THAN THE NUMBER. It first said "zero lenient over 380 generated shapes". ⛔ Zero was a
+# property of THE GRID. r7's Claude half filed that Blocking and was right: one step outside the grid
+# — thematic breaks, HTML blocks, zero-padded ordered markers, CRLF throughout, GFM tables — the same
+# code was LENIENT 196 times. Re-measured on 1,400 shapes with cmark-gfm AND markdown-it in gfm mode
+# (they disagreed with each other on 14, excluded; GFM is the operative dialect because GitHub renders
+# this repository):
 #
-#   version                              LENIENT (hides a figure)   noisy (spurious warning)   total
-#   `54625c75` (before this fold)                   28                        28                 56
-#   this fold, FIRST attempt                        32                         4                 36
-#   this fold, SHIPPED                               0                        28                 28
+#   version                                LENIENT (hides a figure)   noisy   total
+#   `54625c75` (before this fold)                    308                56      364
+#   this fold AS FIRST PUSHED                        196                93      289
+#   + thematic / HTML / NUMBER-one / CR                12               128      140
+#   + the GFM table lookahead                          0               132      132
 #
-# ⛔ THE FIRST ATTEMPT HALVED THE TOTAL AND MADE THE EXPENSIVE DIRECTION WORSE — 28 lenient to 32 —
-# and the aggregate would have read as an improvement. That is the trap this repository names: a
-# metric that moves while the direction that matters moves the other way. The shipped version has
-# **zero** lenient disagreements across all 380 shapes, which is the right profile for a guard whose
-# own docstring says a false negative is the expensive one.
+# ⤳ **0 lenient over 1,400 shapes, two GFM oracles.** The claim names its corpus because the previous
+# two versions of this claim did not, and both were false one step outside the corpus they measured.
+# ⚠ A SYNTHETIC GRID IS NOT A POPULATION: it contains exactly the shapes I thought of, so the ones it
+# omits are precisely the ones it cannot report. The only reason 196 is known is that a reviewer
+# generated shapes I had not.
 #
-# ⚠ THE 28 THAT REMAIN ARE ALL NOISY, i.e. the mask declines a span a parser would keep, which costs
-# a dismissible warning. They are concentrated in block-quote contexts and come from lazy-continuation
-# shapes the broad `ANY_BLOCK_ISH` test refuses conservatively.
+# ⚠ THE 132 THAT REMAIN ARE ALL NOISY — the mask declines a span a parser would keep, costing a
+# dismissible warning. Most are the conservative HTML clause (`<span>` is not a block tag, and the
+# alternative is embedding CommonMark's ~60-tag list) and `ANY_BLOCK_ISH` refusing lazily-continued
+# lines, including a bare `=`. That is the direction this guard's docstring calls cheap.
+#
+# ⚠ AND THE DIRECTION LESSON HELD ON EVERY CORPUS: the first attempt improved the TOTAL while making
+# LENIENT worse (56→36 with 28→32 on the 380; 364→289 with 308→196 is the pushed version's gain, but
+# the FIRST attempt was 352→338 with 296→316 on the 1,320). Reporting a total alone would have read as
+# progress three times.
 #
 # ⚠⚠ AND THE DESIGN QUESTION IS STILL THE OWNER'S — filed as backlog #267. SEVEN rounds have refined
 # this predicate; each refinement was individually right and each was followed by another shape. The
 # structural options are (a) depend on a real CommonMark parser, which CI would have to install, or
 # (b) keep the conservative direction and stop tracking the spec at all. This fold happens to land
 # close to (b) by measurement rather than by decision, and saying so is the honest version.
+# ⛔ EVERY `$`-ANCHORED ALTERNATIVE CARRIES `\r?` — r7 Claude H2. r6's CR fix went into ONE of the
+# five, so under CRLF a bare setext underline and an empty ATX heading were still missed, and both
+# failed LENIENT. A character class fixed in one alternative is fixed in one alternative.
 BLANK_OR_BLOCK = re.compile(
-    r"[ \t\r]*$"                                # blank — `\r` so a CRLF break still counts (r6 L1)
+    r"[ \t\r]*$"                                # blank
     r"|[ \t]{0,3}(?:[-*+][ \t]+\S"              # a NON-EMPTY bullet
-    r"|[-=]+[ \t]*$"                            # a setext underline (`-` alone, `=` alone)
-    r"|1[.)][ \t]+\S"                           # an ordered item, and only a `1` interrupts
-    r"|#{1,6}(?:[ \t]|$)"                        # an ATX heading, at most six hashes
+    r"|(?:[-*_][ \t]*){3,}\r?$"                  # a THEMATIC BREAK — `***`, `___`, `* * *` (r7 H1)
+    r"|[-=]+[ \t]*\r?$"                          # a setext underline (`-` alone, `=` alone)
+    r"|0*1[.)][ \t]+\S"                          # an ordered item: only the NUMBER ONE interrupts,
+                                                 # and `01.`/`001)` ARE one — measured (r7 H1)
+    r"|#{1,6}(?:[ \t]|\r?$)"                     # an ATX heading, at most six hashes
+    r"|<[a-zA-Z!/?]"                             # ⚠ AN HTML BLOCK, CONSERVATIVELY. CommonMark type 6
+                                                 # is a ~60-tag list and `<span>` is NOT in it, so
+                                                 # this over-fires on inline tags. That lands in the
+                                                 # NOISY direction (a dismissible warning) and
+                                                 # removes five LENIENT shapes; embedding the tag
+                                                 # list here is the #267 design question, not a fold.
     r")")
 QUOTE_LINE = re.compile(r"[ \t]{0,3}(>+)")
+# ⛔ A GFM TABLE INTERRUPTS A PARAGRAPH, BUT ONLY WITH ITS DELIMITER ROW — r7 Claude M1, and it is
+# the one rule here that needs TWO lines of lookahead rather than a line pair. The comment above
+# excludes a bare `| ` correctly ("a GFM table needs a delimiter row") and then stops one line early:
+# when the delimiter row IS present, the table starts. ⚠ THE ORACLES SPLIT HERE and the split is the
+# answer rather than a problem: strict CommonMark has no tables, so `markdown-it` in commonmark mode
+# keeps the span, while cmark-gfm AND markdown-it in gfm mode both end the paragraph. This repo's
+# markdown is rendered by GitHub, so GFM is the operative dialect and the lenient reading was wrong
+# in the one that matters.
+TABLE_DELIM = re.compile(r"[ \t]{0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*\r?$")
 # Anything that COULD begin a block, used only for lazy continuation inside a quote (r7). Broader
 # than `BLANK_OR_BLOCK` on purpose: an empty marker cannot interrupt a fresh paragraph but it does
 # close a quote, because a non-`>` line may continue one only as plain paragraph text.
-ANY_BLOCK_ISH = re.compile(r"[ \t\r]*$|[ \t]{0,3}(?:[-*+=>#]|\d+[.)])")
+ANY_BLOCK_ISH = re.compile(r"[ \t\r]*$|[ \t]{0,3}(?:[-*+=_>#<]|\d+[.)])")
 
 
 def paragraph_ends_between(text: str, start: int, end: int) -> bool:
@@ -418,6 +457,12 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
                 return True
         elif BLANK_OR_BLOCK.match(nxt):
             return True
+        elif "|" in nxt and nxt_end != -1:
+            # a table HEADER is only a table when the next line is its DELIMITER row (r7 Claude M1)
+            after_end = text.find("\n", nxt_end + 1)
+            after = text[nxt_end + 1:after_end if after_end != -1 else len(text)]
+            if "-" in after and TABLE_DELIM.match(after):
+                return True
         nl = text.find("\n", nl + 1)
     return False
 
@@ -1138,6 +1183,40 @@ def self_test() -> int:
          _ends_in_span("> intro `a\n* \nb` x"), True),
         ("...and plain prose on a non-`>` line DOES continue it, so the span is genuine",
          _ends_in_span("> intro `a\nplain text` x"), False),
+        # ── r7 Claude BLOCKING: "zero lenient" was true of my 380-shape GRID and false of a
+        # 1,320-shape corpus — 184 lenient. These are the classes the grid never contained, each
+        # one measured LENIENT before the clause that fixes it, and each confirmed by both parsers.
+        # ── r7 Claude MEDIUM: a GFM table interrupts a paragraph only WITH its delimiter row, and
+        # that needs two lines of lookahead rather than a line pair. The oracles SPLIT here and the
+        # split is the answer: strict CommonMark has no tables; both GFM parsers end the paragraph.
+        ("⛔ r7M1: a table HEADER plus its DELIMITER row ends the paragraph — GFM is the dialect "
+         "GitHub renders, and the lenient reading was wrong in the one that matters",
+         _ends_in_span("intro `a\n| h |\n|---|\nb` x"), True),
+        ("⛔ r7M1: ...and a header with NO delimiter row does NOT — which is the distinction the "
+         "comment drew correctly and then stopped one line short of",
+         _ends_in_span("intro `a\n| h |\nb` x"), False),
+        ("...nor does a pipe appearing mid-prose, so the rule reads a DELIMITER ROW and not a `|`",
+         _ends_in_span("intro `a\nx | y\nb` x"), False),
+        ("⛔ r7B1: a THEMATIC BREAK `***` ends the paragraph — the grid had `---` and never `***`",
+         _marker_at("the count was `wrong:\n***\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7B1: ...and `___` likewise", _marker_at("the count was `wrong:\n___\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7B1: an HTML block start ends it — CONSERVATIVELY, see the clause's own caveat",
+         _marker_at("the count was `wrong:\n<div>\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7B1: `01.` IS the number one, so it interrupts — the `1`-only rule read the DIGIT and "
+         "not the NUMBER, and both parsers end the paragraph here",
+         _marker_at("the count was `wrong:\n01. holds 1,414 anchors today`"), ""),
+        ("⛔ r7B1: ...while `02.` is not one and does NOT interrupt, so the rule reads the number",
+         _marker_at("the count was `wrong:\n02. holds 1,414 anchors today`"), "was "),
+        ("⛔ r7B1+H2: a CRLF setext underline ends it — r6's `\\r` fix went into ONE of five "
+         "anchored alternatives, so this stayed LENIENT while the LF twin passed",
+         _marker_at("the count was `wrong:\r\n---\r\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7H2: ...and a CRLF `===` setext underline, which ONLY the setext alternative covers — "
+         "the thematic-break clause is `[-*_]` and does not include `=`, so this is the case that "
+         "actually pins `\\r?` there (the `---` twin passes either way, which is why its mutation "
+         "SURVIVED until this case existed)",
+         _marker_at("the count was `wrong:\r\n===\r\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7H2: ...and a CRLF EMPTY ATX heading likewise",
+         _marker_at("the count was `wrong:\r\n#\r\nholds 1,414 anchors today`"), ""),
         ("⟳ r7 L1: a bare `---` line is a SETEXT underline and ends the paragraph — my earlier "
          "measurement put the marker on the figure's own line and so never tested it",
          _marker_at("the count was `wrong:\n---\nholds 1,414 anchors today`"), ""),
@@ -1146,10 +1225,18 @@ def self_test() -> int:
         # each recorded a single value. Bounds are `len()` of the literal — derived, not counted.
         ("⚠ r7: while a `>` that OPENS a quote does interrupt, and one that DEEPENS it does too — "
          "the three quote answers differ and all three are measured against cmark",
-         paragraph_ends_between("intro `a\n> b` x", len("intro `"), len("intro `a\n> b")), True),
+         # ⛔ r7 Claude M2 — EVERY BOUND DERIVED, AND STILL A DISTINCT EXPRESSION. `len("intro `")`
+         # was `len()` of a RETYPED COPY of the prefix, coupled to nothing: perturbing the literal's
+         # prefix left 3 of 10 variants GREEN with the bounds pointing into prose, which is the
+         # hazard `_ends_in_span` exists to kill. A lambda gives `check-fixture-variation` the second
+         # expression it needs while `str.index` keeps the bounds honest.
+         (lambda d: paragraph_ends_between(d, d.index("`") + 1,
+                                           d.index("`", d.index("`") + 1)))("intro `a\n> b` x"),
+         True),
         ("...and a bare `-` line ends it as a SETEXT UNDERLINE, not as a list item — which is why "
          "`- ` alone and `* ` alone give different answers",
-         paragraph_ends_between("intro `a\n- \nb` x", len("intro `"), len("intro `a\n- \nb")),
+         (lambda d: paragraph_ends_between(d, d.index("`") + 1,
+                                           d.index("`", d.index("`") + 1)))("intro `a\n- \nb` x"),
          True),
         ("⟳ r6: a CRLF blank line is a paragraph break too — `[ \\t]*` could not cross the `\\r`",
          _marker_at("the count was `wrong\r\n\r\nholds 1,414 anchors today`"), ""),
