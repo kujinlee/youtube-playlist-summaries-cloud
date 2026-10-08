@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 52 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 54 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -400,6 +400,11 @@ def self_test() -> int:
          (lambda tx: [hit_offset(tx, h) for h in
                       _find_claim().find_in_text(tx, _find_claim().build_pattern("ab"), "t")]
           )("ab\nxx ab"), [0, 6]),
+        # ⚠ the TEXT is a literal here and a bound name at the other call site: the guard reads
+        # argument EXPRESSIONS, so two calls both spelled `tx` are one value to it.
+        ("hit_offset over a DIFFERENT text and a different hit",
+         hit_offset("aa\nbb\nzz", _find_claim().find_in_text(
+             "aa\nbb\nzz", _find_claim().build_pattern("zz"), "q")[0]), 6),
         ("is_history_context's replacement prong fires on a bare figure match",
          is_history_context("the tree held 1,416 not 1,414", ("1,416",)), True),
         ("⭐ the matcher is IMPORTED, and it still finds a wrapped claim here",
@@ -418,6 +423,17 @@ def self_test() -> int:
     direct.append(("⭐ main() is driven from a case against a BUILT world, and a world with no "
                    "git history is CANNOT RUN rather than a pass (ADR-0014 D2)",
                    _drive_main(), 2))
+
+    def _drive_main_strict():
+        """A SECOND drive, at a different argv and a different root — one call site cannot
+        tell `argv` or `root` from a constant."""
+        with _tf.TemporaryDirectory() as td2:
+            r2 = Path(td2); (r2 / "docs").mkdir()
+            (r2 / "docs" / "b.md").write_text("unrelated\n")
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                return main(["--strict", "--base", "HEAD~1"], root=r2)
+    direct.append(("...and a second drive at a distinct argv and root is CANNOT RUN too",
+                   _drive_main_strict(), 2))
 
     total = (len(SIG_CASES) + len(REMOVED_CASES) + len(EXEMPT_PATH_CASES)
              + len(HISTORY_CASES) + len(REPLACEMENT_CASES) + len(REPL_SET_CASES) + len(VERDICT_CASES)

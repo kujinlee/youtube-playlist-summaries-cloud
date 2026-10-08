@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 44 cases
+    python3 scripts/find-claim.py --self-test        # 46 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -301,6 +301,25 @@ WRAP_CASES: list[tuple[str, str, str, bool]] = [
     ("a control matching on one line does NOT prove it", "alpha beta", "alpha beta", False),
 ]
 
+_TWO_FILE_DIR: "Path | None" = None
+
+
+def _two_file_dir() -> Path:
+    """A directory holding one `.md` and one `.txt`, built once for the suite.
+
+    Kept out of `_unreadable_probe` so the two helpers drive `collect_files` and `search_files`
+    at genuinely different arguments rather than at the same expression twice.
+    """
+    global _TWO_FILE_DIR
+    if _TWO_FILE_DIR is None:
+        import tempfile
+        d = Path(tempfile.mkdtemp())
+        (d / "one.md").write_text("first subject here\n")
+        (d / "two.txt").write_text("second subject here\n")
+        _TWO_FILE_DIR = d
+    return _TWO_FILE_DIR
+
+
 def _unreadable_probe() -> tuple:
     """(hits, unreadable) over a directory holding one readable and one undecodable file.
 
@@ -334,6 +353,15 @@ def self_test() -> int:
          bool(build_pattern("Alpha Beta", ignore_case=True).search("alpha beta")), True),
         ("ignore_case=False keeps the same claim case-sensitive",
          bool(build_pattern("Alpha Beta", ignore_case=False).search("alpha beta")), False),
+        # ⚠ A SECOND, DISTINCT DRIVE of the filesystem half. `check-fixture-variation` reads
+        # CALL SITES, and `_unreadable_probe` alone passes `files` and `pattern` at one
+        # expression each — no case could then tell either parameter from a constant.
+        ("collect_files honours an explicit suffix set, and a second one yields a second answer",
+         (lambda d: (len(collect_files([str(d)], {".md"})[0]), len(collect_files([str(d)], {".txt"})[0]))
+          )(_two_file_dir()), (1, 1)),
+        ("search_files over a DIFFERENT pattern and file list finds its own hits",
+         len(search_files(collect_files([str(_two_file_dir())], {".txt"})[0],
+                          build_pattern("second subject"))[0]), 1),
         ("⭐ an UNDECODABLE file is REPORTED, not silently skipped (r1 Codex High)",
          _unreadable_probe()[1] != [], True),
         ("...and a readable file alongside it still yields its hits",

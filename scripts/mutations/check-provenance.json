@@ -1,18 +1,5 @@
 [
   {
-    "name": "the bold-span length cap goes, so a bolded sentence counts as a figure",
-    "edits": [
-      [
-        "        if len(b) > MAX_BOLD:\n            continue",
-        "        if False:\n            continue"
-      ]
-    ],
-    "expect": [
-      "a bold span longer than MAX_BOLD is a sentence, not a figure"
-    ],
-    "file": "scripts/check-provenance.py"
-  },
-  {
     "name": "a bolded DATE stops being stripped, so a decision marker reads as a measurement",
     "edits": [
       [
@@ -114,6 +101,32 @@
     ],
     "expect": [
       "row_id on a non-row is empty"
+    ]
+  },
+  {
+    "name": "the bold regex stops pairing delimiters, so a figure between two bold spans is lost",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "BOLD_RE = re.compile(r\"\\*\\*(?:(?!\\*\\*).)+?\\*\\*\", re.S)",
+        "BOLD_RE = re.compile(r\"\\*\\*[^*]*?\\d[\\d,]*\\.?\\d*[^*]*?\\*\\*\")"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and the span it returns is the REAL figure, not the text between two bold runs"
+    ]
+  },
+  {
+    "name": "the ref pattern loses its word boundary, so `notorigin/fiction` reads as provenance",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "r\"|\\borigin/\\w+|\\bHEAD\\b\"",
+        "r\"|origin/\\w+|\\bHEAD\\b\""
+      ]
+    ],
+    "expect": [
+      "⭐ `notorigin/fiction` is NOT a ref — the word boundary (r1 Codex Medium)"
     ]
   }
 ]

@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 52 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 54 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -199,6 +199,9 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",
      "**Five dual adversarial rounds produced 26 Blocking findings and NONE was in the "
      "predicate**", 1),
+    # ⚠ COUNTED, AND THAT WAS NOT ENOUGH. The unbalanced pattern also returns ONE span here —
+    # the wrong one, `** after 99 checks **` — so a count-only case could not tell the two
+    # apart and the mutation survived. The CONTENT is the assertion.
     ("⭐ bold spans pair the way a reader pairs them, so the real figure is not lost",
      "**DONE** after 99 checks **42 failures**", 1),
 ]
@@ -257,6 +260,8 @@ def self_test() -> int:
     ]
 
     direct: list[tuple[str, object, object]] = [
+        ("⭐ ...and the span it returns is the REAL figure, not the text between two bold runs",
+         bolded_figures("**DONE** after 99 checks **42 failures**"), ["**42 failures**"]),
         ("bolded_figures on a literal row with a figure",
          len(bolded_figures("| 9 | **1,416** rows |")), 1),
         ("bolded_figures on a literal row with none",
@@ -292,6 +297,16 @@ def self_test() -> int:
     direct.append(("⭐ main() is driven from a case against a BUILT world, and a world with no "
                    "backlog is CANNOT RUN rather than a pass (ADR-0014 D2)",
                    _drive_main(), 2))
+
+    def _drive_main_all():
+        """A SECOND drive, at a different argv and root."""
+        with _tf.TemporaryDirectory() as td2:
+            r2 = Path(td2); (r2 / "docs").mkdir()
+            (r2 / "docs" / "backlog.md").write_text("no rows here\n")
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                return main(["--all"], root=r2)
+    direct.append(("...and `--all` over a backlog that parses to ZERO rows is CANNOT RUN",
+                   _drive_main_all(), 2))
 
     total = (len(BOLD_CASES) + len(PROV_CASES) + len(ROWSET_CASES)
              + len(VERDICT_CASES) + len(MESSAGE_CASES) + len(direct))

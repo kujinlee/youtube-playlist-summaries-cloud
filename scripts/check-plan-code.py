@@ -696,7 +696,7 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
-    "scripts/check-provenance.py": 9,
+    "scripts/check-provenance.py": 10,
     "scripts/check-withdrawal.py": 9,
     "scripts/find-claim.py": 8,
     "scripts/observer_log.py": 19,
@@ -5284,7 +5284,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1457)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1458)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
