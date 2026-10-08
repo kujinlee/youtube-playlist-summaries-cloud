@@ -166,5 +166,57 @@
     "expect": [
       "⭐ and a READ-ONLY config directory is 2 — CANNOT RUN, where it exited 1 with an unhandled PermissionError traceback"
     ]
+  },
+  {
+    "name": "⛔ r5 Codex M2 — write_config IGNORES its slug and writes a constant: the old single-literal readback passed this 46/46 because it compared a hardcoded literal with a hardcoded literal",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "f'model = \"{slug}\"\\n'",
+        "'model = \"gpt-written-through\"\\n'"
+      ]
+    ],
+    "expect": [
+      "⛔ the buildability control AND the propagation test in one: two writes with DIFFERENT slugs, and the first must be GONE after the second — a write_config that ignored its argument passed the old single-literal readback 46/46 (r5 Codex M2)"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex M3 — the config-read guard stops catching a DECODING failure, so a config.toml holding byte 0xff exits 1 with a UnicodeDecodeError traceback instead of CANNOT RUN",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError) as e:",
+        "    except OSError as e:"
+      ]
+    ],
+    "expect": [
+      "⭐ r5: ...and an UNDECODABLE one is too — `UnicodeDecodeError` is a ValueError, not an OSError, so the first version of that guard exited 1 with a traceback"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex M3 (second arm) — the whole config-READ guard is removed: an existing unreadable config crashes instead of reporting CANNOT RUN. No case reached this side before r5",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    existing = \"\"\n    try:\n        if os.path.exists(CONFIG):\n            with open(CONFIG, encoding=\"utf-8\") as f:\n                existing = f.read()\n    except (OSError, UnicodeDecodeError) as e:\n        # ⛔ r5 Codex M3 — `UnicodeDecodeError` IS NOT AN `OSError`. It is a `ValueError`, so the\n        # first version of this guard let a `config.toml` containing byte 0xff exit **1** with a\n        # traceback: measured by the reviewer on the real command. Reading a file is two failure\n        # modes, not one, and naming only the first is the shape this whole file keeps paying for.\n        cannot_run(f\"error: cannot read {CONFIG}: {e} — the managed block cannot be refreshed \"\n                   f\"without it, and overwriting would discard settings this script does not own. \"\n                   f\"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.\")\n",
+        "    existing = \"\"\n    if os.path.exists(CONFIG):\n        with open(CONFIG, encoding=\"utf-8\") as f:\n            existing = f.read()\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r5: an EXISTING UNREADABLE config is 2 — CANNOT RUN. No case reached the read side before this one, so deleting the whole read guard left the suite 46/46 green"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex L1 — the refusal classifier stops stripping the cache PATH, so a temp directory named `not found` makes a malformed cache classify as the absent-cache arm",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "            msg = err.getvalue().replace(str(CACHE), \"<CACHE>\")",
+        "            msg = err.getvalue()"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: a MALFORMED cache under a temp dir literally named `not found` still classifies as malformed — the path is stripped before matching, where it used to supply the needle"
+    ]
   }
 ]

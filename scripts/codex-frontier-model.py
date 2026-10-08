@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 46 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 50 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits **2 — CANNOT RUN** with a message on stderr if
@@ -297,7 +297,11 @@ def write_config(slug: str) -> None:
         if os.path.exists(CONFIG):
             with open(CONFIG, encoding="utf-8") as f:
                 existing = f.read()
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
+        # ⛔ r5 Codex M3 — `UnicodeDecodeError` IS NOT AN `OSError`. It is a `ValueError`, so the
+        # first version of this guard let a `config.toml` containing byte 0xff exit **1** with a
+        # traceback: measured by the reviewer on the real command. Reading a file is two failure
+        # modes, not one, and naming only the first is the shape this whole file keeps paying for.
         cannot_run(f"error: cannot read {CONFIG}: {e} — the managed block cannot be refreshed "
                    f"without it, and overwriting would discard settings this script does not own. "
                    f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
@@ -365,7 +369,11 @@ def _refusal_arm(cache_text: "str | None") -> tuple:
                 resolve_candidates()
             return (-1, "returned")        # a FAILING sentinel for every refusal case
         except SystemExit as e:
-            msg = err.getvalue()
+            # ⛔ r5 Codex L1 — CLASSIFY ON THE MESSAGE WITH THE PATH REMOVED. Every refusal
+            # interpolates `CACHE`, and `tempfile` honours `TMPDIR`, so a temp directory named
+            # `not found` made the MALFORMED arm classify as `not-found`: the fixture's own path
+            # supplied the needle. Measured by the reviewer. The path is replaced before matching.
+            msg = err.getvalue().replace(str(CACHE), "<CACHE>")
             code = e.code if isinstance(e.code, int) else 1
             for needle, arm in (("not found", "not-found"),
                                ("cannot read", "cannot-read"),
@@ -378,23 +386,48 @@ def _refusal_arm(cache_text: "str | None") -> tuple:
             CACHE = saved
 
 
-def _write_config_arm(readonly: bool) -> tuple:
-    """`(exit code, arm)` for `write_config` over a writable or a read-only directory. r4 Claude M1.
+def _refusal_arm_in_dir(dirname: str) -> tuple:
+    """`_refusal_arm` for a MALFORMED cache while the temp path itself contains a needle. r5 L1.
 
-    ⚠ THE TWO BRANCHES PASS DIFFERENT SLUG LITERALS, AND THAT IS DELIBERATE, NOT CLUMSY.
-    `check-fixture-variation.py` reads argument EXPRESSIONS at each call site, so forwarding one
-    `slug` variable records a single value however many distinct strings the cases hand in — it
-    refused this probe twice for that, first with one literal and then with a parameter. Two
-    literals at two call sites is what makes `write_config.slug` varied by construction. The
-    writable branch then reads the file back and reports whether the slug REACHED it, so "wrote"
-    cannot be satisfied by a `write_config` that ignores its argument.
+    ⛔ THE FIXTURE'S OWN PATH SUPPLIED THE ANSWER. Every refusal interpolates `CACHE`, and
+    `tempfile` honours `TMPDIR`, so with a temp directory named `not found` the malformed-cache
+    refusal classified as `(2, "not-found")` — the reviewer measured exactly this. The classifier
+    strips the path before matching; this case is what notices if that strip is removed, and it is
+    here because the fix otherwise had no falsifier at all.
+    """
+    import tempfile
+    saved = tempfile.tempdir
+    with tempfile.TemporaryDirectory() as outer:
+        hostile = os.path.join(outer, dirname)
+        os.makedirs(hostile)
+        tempfile.tempdir = hostile
+        try:
+            return _refusal_arm('{"client_version":"1.2.3","models":"oops"}')
+        finally:
+            tempfile.tempdir = saved
 
-    ⛔ THE BUILDABILITY CONTROL IS THE `readonly=False` CALL, and it is not optional — the probe
-    one function up shipped without one and its four cases passed on any machine lacking a
-    `~/.codex` (r4 Claude H1). Here the equivalent trap is a chmod that does not take: as root, or
-    on a filesystem ignoring modes, the read-only case would simply SUCCEED and return
-    `(0, "wrote")` — which is why the writable case asserts exactly that value, so the two cases
-    cannot both be satisfied by the same world.
+
+def _write_config_arm(readonly: bool, pre: str) -> tuple:
+    """`(exit code, arm)` for `write_config` over a prepared config. r4 Claude M1, r5 Codex M2/M3.
+
+    `pre` is the state of `config.toml` BEFORE the call: "absent", "unreadable" (chmod 000 file),
+    or "undecodable" (a 0xff byte). `readonly` makes the containing DIRECTORY unwritable.
+
+    ⛔⛔ r5 Codex M2 — THE FIRST READBACK PROVED NOTHING, and this is the repo's own
+    *a case is satisfied by the CONSTANT its own fixture supplies*. It asserted
+    `'model = "gpt-written-through"' in written` after calling `write_config("gpt-written-through")`
+    — a hardcoded literal compared against a hardcoded literal. Measured by the reviewer: replace
+    the production `f'model = "{slug}"'` with the constant `'model = "gpt-written-through"'` and the
+    suite still passed **46/46 with no [FAIL]**, because a `write_config` that ignores its argument
+    writes exactly what the case expects.
+
+    ⭐ SO PROPAGATION IS TESTED WITH TWO WRITES AND TWO DIFFERENT SLUGS, and the discriminating
+    clause is the THIRD one: the first slug must be ABSENT after the second write. A production
+    constant writes the same bytes twice and fails that, whatever the constant is.
+
+    ⚠ `pre="unreadable"`/`"undecodable"` exist because r5 Codex M3 measured that NO case reached
+    the read side at all — both earlier cases entered with the file absent, so deleting the whole
+    read guard left 46/46 green.
     """
     import contextlib, io, stat, tempfile
     global CONFIG
@@ -403,38 +436,57 @@ def _write_config_arm(readonly: bool) -> tuple:
         d = os.path.join(td, "cfgdir")
         os.makedirs(d)
         CONFIG = os.path.join(d, "config.toml")
+        if pre == "unreadable":
+            with open(CONFIG, "w", encoding="utf-8") as f:
+                f.write("[existing]\nkeep = true\n")
+            os.chmod(CONFIG, 0o000)
+        elif pre == "undecodable":
+            with open(CONFIG, "wb") as f:
+                f.write(b"[existing]\nkeep = \xff\n")
         if readonly:
             os.chmod(d, stat.S_IRUSR | stat.S_IXUSR)       # r-x: listable, not writable
         err = io.StringIO()
         try:
+            # ⛔ NO SELF-GRANTED PASS: if a chmod did not take (root, or a mode-ignoring
+            # filesystem) the world is not the one the case names, and the sentinel FAILS.
+            if pre == "unreadable" and os.access(CONFIG, os.R_OK):
+                return (-1, "world-not-built")
+            if readonly and os.access(d, os.W_OK):
+                return (-1, "world-not-built")
             with contextlib.redirect_stderr(err):
                 if readonly:
                     write_config("gpt-never-written")
                 else:
-                    write_config("gpt-written-through")
-            with open(CONFIG, encoding="utf-8") as f:
-                written = f.read()
-            # The slug must appear in the file it claims to have synced — otherwise `write_config`
-            # ignored its argument and the "wrote" answer means nothing.
-            return (0, "wrote" if 'model = "gpt-written-through"' in written
-                    else "wrote-without-slug")
+                    write_config("gpt-slug-one")
+                    with open(CONFIG, encoding="utf-8") as f:
+                        first = f.read()
+                    write_config("gpt-slug-two")
+                    with open(CONFIG, encoding="utf-8") as f:
+                        second = f.read()
+                    propagated = ('model = "gpt-slug-one"' in first
+                                  and 'model = "gpt-slug-two"' in second
+                                  # ⭐ THE CLAUSE A PRODUCTION CONSTANT CANNOT SATISFY:
+                                  and 'model = "gpt-slug-one"' not in second)
+                    return (0, "wrote" if propagated else "wrote-ignoring-argument")
+            return (0, "wrote")
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else 1
-            msg = err.getvalue()
+            msg = err.getvalue().replace(str(CONFIG), "<CONFIG>")
             if "cannot write" in msg:
                 return (code, "cannot-write")
             if "cannot read" in msg:
                 return (code, "cannot-read")
             return (code, "unclassified:" + msg[:40])
         except OSError:
-            # ⛔ THE PROBE CONVERTS THE CRASH INTO A VALUE. Without this, severing the guard makes
-            # the OSError escape, the SUITE dies before printing any `[FAIL]` line, and the harness
-            # reports "went RED but printed no [FAIL] line, so NOTHING COULD SEE THE KILL". A
-            # mutation must produce a wrong ANSWER; when the defect IS a crash, the probe is what
-            # turns it into one. Same pattern as `find-claim.py`'s metadata probes.
-            return (1, "raised")      # what the unguarded version did, as a VALUE
+            # ⛔ THE PROBE CONVERTS THE CRASH INTO A VALUE, so a severed guard produces a wrong
+            # answer rather than killing the suite before any `[FAIL]` line can be printed.
+            return (1, "raised")
+        except UnicodeDecodeError:
+            return (1, "raised-decode")       # r5 M3: what the OSError-only guard did, as a VALUE
         finally:
             os.chmod(d, stat.S_IRWXU)
+            if os.path.exists(CONFIG):
+                os.chmod(CONFIG, stat.S_IRUSR | stat.S_IWUSR)
             CONFIG = saved
 
 
@@ -609,16 +661,29 @@ def _self_test() -> int:
     case("...and a cache that parses and yields NO candidate does too — the arm that sent a "
          "round of PR #364 to a one-reviewer fallback",
          _refusal_arm('{"models":[]}'), (2, "no-candidate"))
+    # ── r5 Codex LOW: the arm was classified from text in the TEMP PATH, not the diagnosis ───
+    case("⛔ r5: a MALFORMED cache under a temp dir literally named `not found` still classifies "
+         "as malformed — the path is stripped before matching, where it used to supply the needle",
+         _refusal_arm_in_dir("not found"), (2, "malformed"))
+    case("...and one named `cannot read` does not steal the arm either, so the strip is not a "
+         "special case for one phrase",
+         _refusal_arm_in_dir("cannot read"), (2, "malformed"))
     # ── r4 Claude MEDIUM: `--write-config` is the arm docs/plugins.md tells a reviewer to run,
     # and it exited 1 with an unhandled traceback. Same file, one function over from the arm r4
     # Codex fixed, and `cannot_run` called itself "the ONE way this module refuses" regardless.
-    case("⛔ the WRITABLE directory is the buildability control — write_config succeeds AND the "
-         "slug it was handed reaches the file, which is what proves the read-only case below "
-         "built its world rather than silently succeeding",
-         _write_config_arm(readonly=False), (0, "wrote"))
+    case("⛔ the buildability control AND the propagation test in one: two writes with DIFFERENT "
+         "slugs, and the first must be GONE after the second — a write_config that ignored its "
+         "argument passed the old single-literal readback 46/46 (r5 Codex M2)",
+         _write_config_arm(readonly=False, pre="absent"), (0, "wrote"))
     case("⭐ and a READ-ONLY config directory is 2 — CANNOT RUN, where it exited 1 with an "
          "unhandled PermissionError traceback",
-         _write_config_arm(readonly=True), (2, "cannot-write"))
+         _write_config_arm(readonly=True, pre="absent"), (2, "cannot-write"))
+    case("⭐ r5: an EXISTING UNREADABLE config is 2 — CANNOT RUN. No case reached the read side "
+         "before this one, so deleting the whole read guard left the suite 46/46 green",
+         _write_config_arm(readonly=False, pre="unreadable"), (2, "cannot-read"))
+    case("⭐ r5: ...and an UNDECODABLE one is too — `UnicodeDecodeError` is a ValueError, not an "
+         "OSError, so the first version of that guard exited 1 with a traceback",
+         _write_config_arm(readonly=False, pre="undecodable"), (2, "cannot-read"))
 
     # ⛔ BACKLOG #249, SECOND ARM — round 1 Claude H2. `refusal_message` has TWO refusal arms and
     # the golden case above reaches only the all-hidden one. The #254 arm — the one THIS branch

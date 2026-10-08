@@ -1677,5 +1677,18 @@
     "expect": [
       "⭐ a 36-char literal explains a 97-char expect at need=29, which a fraction of 0.4 refuses at need=38 — the step that was free before this case"
     ]
+  },
+  {
+    "name": "⛔ r5 Codex L2 — EXPECT_OVERLAP_FLOOR 12 -> 11, the direction r4 recorded as impossible. It is NOT: anchoring on the line WITH its newline is a distinct string the loader accepts, so the residual was a choice and is now closed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECT_OVERLAP_FLOOR = 12\n",
+        "EXPECT_OVERLAP_FLOOR = 11\n"
+      ]
+    ],
+    "expect": [
+      "...and an 11-char literal over the SAME expect does NOT, so the floor is bracketed from both sides and a floor of 11 breaks this one"
+    ]
   }
 ]

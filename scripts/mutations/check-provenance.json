@@ -117,11 +117,11 @@
     ]
   },
   {
-    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again ⟳ r3: retargeted — the token pattern tightened for `HEAD123` ⟳ RETARGETED r4: the r4 Claude M2 suffix fix moved this line",
+    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again ⟳ r3: retargeted — the token pattern tightened for `HEAD123` ⟳ RETARGETED r4: the r4 Claude M2 suffix fix moved this line ⟳ RETARGETED r5: the r5 Codex M4 digit fix moved this line — the SIXTH orphan on this one regex across rounds 4-5 (#252)",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "    r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD(?:[~^]\\d*)+(?![\\w~^])\"",
+        "    r\"|`HEAD(?:[~^][0-9]*)?`|\\bHEAD(?:[~^][0-9]*)+(?![\\w~^])(?!\\.\\d)\"",
         "    r\"|\\bHEAD\\b\""
       ]
     ],
@@ -208,11 +208,11 @@
     ]
   },
   {
-    "name": "⟳ r2 Claude HIGH — the BACKTICKED form stops being accepted, leaving only the suffixed one, so the convention this repo actually writes refs in is refused ⚠ anchors the BACKTICKED alternative alone; the sibling entry anchors the whole clause, and the harness refuses two entries sharing a find-string ⟳ r3: retargeted — same reason",
+    "name": "⟳ r2 Claude HIGH — the BACKTICKED form stops being accepted, leaving only the suffixed one, so the convention this repo actually writes refs in is refused ⚠ anchors the BACKTICKED alternative alone; the sibling entry anchors the whole clause, and the harness refuses two entries sharing a find-string ⟳ r3: retargeted — same reason ⟳ RETARGETED r5: the r5 Codex M4 digit fix moved this line — the SIXTH orphan on this one regex across rounds 4-5 (#252)",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "`HEAD(?:[~^]\\d*)?`|",
+        "`HEAD(?:[~^][0-9]*)?`|",
         ""
       ]
     ],
@@ -247,12 +247,12 @@
     ]
   },
   {
-    "name": "⟳ r3 Codex MEDIUM — digits are allowed again without a `~` or `^` before them, so `` `HEAD123` `` reads as a ref. `git rev-parse --verify` rejects it ⟳ RETARGETED r4: same line moved; the replacement keeps the r4 suffix fix so this entry still isolates the DIGIT hole r3 closed",
+    "name": "⟳ r3 Codex MEDIUM — digits are allowed again without a `~` or `^` before them, so `` `HEAD123` `` reads as a ref. `git rev-parse --verify` rejects it ⟳ RETARGETED r4: same line moved; the replacement keeps the r4 suffix fix so this entry still isolates the DIGIT hole r3 closed ⟳ RETARGETED r5: the r5 Codex M4 digit fix moved this line — the SIXTH orphan on this one regex across rounds 4-5 (#252)",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD(?:[~^]\\d*)+(?![\\w~^])\"",
-        "r\"|`HEAD[~^]?\\d*`|\\bHEAD(?:[~^]\\d*)+(?![\\w~^])\""
+        "r\"|`HEAD(?:[~^][0-9]*)?`|\\bHEAD(?:[~^][0-9]*)+(?![\\w~^])(?!\\.\\d)\"",
+        "r\"|`HEAD[~^]?[0-9]*`|\\bHEAD(?:[~^][0-9]*)+(?![\\w~^])(?!\\.\\d)\""
       ]
     ],
     "expect": [

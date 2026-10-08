@@ -697,7 +697,13 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 24,   # ⟳ r4 Codex M1: +1 — the inline-code mask. Three
+    "scripts/check-withdrawal.py": 28,   # ⟳ r5 #251: +1 — backtick_escaped's parity, which
+                                         # --diff-coverage flagged as reached by no mutation.
+                                         # ⟳ r5 Codex H1+M1: +3 — escaped backticks, the
+                                         # blank-line bound, and skipping an unmatched
+                                         # opener. THIRD round of corrections to one
+                                         # function; see its docstring and backlog #262.
+                                         # ⟳ r4 Codex M1: +1 — the inline-code mask. Three
                                          # of r3's new sentence boundaries also split inside
                                          # a code span, making the wrap decide the verdict.
     "scripts/find-claim.py": 25,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
@@ -852,7 +858,7 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     "scripts/check-ci-watched.py": 40,
-    "scripts/codex-frontier-model.py": 14,   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
+    "scripts/codex-frontier-model.py": 18,   # ⟳ r5 Codex M2/M3/L1: +4   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
                                             # ⟳ r4 Claude H1: +1 — the probe's own WORLD.
                                             # The first version survived under an empty
                                             # HOME, which is CI and child_env both.
@@ -1053,13 +1059,14 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 128,   # ⟳ r4 Claude L4: +1 — the FRACTION, which had no entry
-                                         # at all. ⚠ The FLOOR gets none: its anchor is already
-                                         # taken by the r1 entry below (12 -> 0) and the harness
-                                         # REFUSES a second entry on one anchor. So the floor is
-                                         # ratcheted only at a far step, and its ±1 neighbours are
-                                         # held by suite cases alone — a residual the rule forces,
-                                         # recorded rather than worked around by splitting anchors.
+    "scripts/check-plan-code.py": 129,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+                                         # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
+                                         # as IMPOSSIBLE — "the harness REFUSES a second entry on
+                                         # one anchor" — and that was wrong: the refusal is on
+                                         # IDENTICAL anchor strings, and the line WITH its newline
+                                         # is a different one. Measured by r5: 1,516 entries loaded
+                                         # with no problem and both directions killed their case.
+                                         # A residual I called forced was a choice I had not tested.
                                          # ⟳ r3 Claude H1: 128 -> 127, a
                                    # PERMITTED FALL. The bare-assign branch of
                                    # `case_name_patterns` was deleted (it had no
@@ -5573,7 +5580,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1515)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1524)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

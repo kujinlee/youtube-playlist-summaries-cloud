@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 140 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 144 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -345,7 +345,12 @@ PROVENANCE_RE = re.compile(
     # `~`/`^` with optional digits, followed by neither a word character nor another ref operator —
     # so a real suffix is required and a word glued to it refuses. The backticked arm was affected
     # too: this alternative matches INSIDE backticks, so `` `HEAD~fiction` `` was accepted as well.
-    r"|`HEAD(?:[~^]\d*)?`|\bHEAD(?:[~^]\d*)+(?![\w~^])"
+    # ⟳ r5 Codex M4 — `\d` IS UNICODE AND THE TAIL LET A DECIMAL THROUGH. `\d` matches `١`
+    # (Arabic-Indic) and `１` (fullwidth), so `HEAD~١` passed while `git rev-parse --verify`
+    # rejected it (rc=128); and `HEAD~1.5` matched on its `HEAD~1` prefix because `.` is not in
+    # `[\w~^]`. Digits are `[0-9]` now, and `(?!\.\d)` refuses a decimal tail while still allowing
+    # `HEAD~1.` — a ref at the end of a sentence, which a blanket `.` exclusion would have broken.
+    r"|`HEAD(?:[~^][0-9]*)?`|\bHEAD(?:[~^][0-9]*)+(?![\w~^])(?!\.\d)"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -674,6 +679,15 @@ PROV_CASES: list[tuple[str, str, bool]] = [
      "parent`, not `bad token`",
      "measured at HEAD^2", True),
     ("...and so is `HEAD~1^2`, a compound suffix", "measured at HEAD~1^2", True),
+    # ── r5 Codex MEDIUM: `\d` is UNICODE, and the tail assertion allowed a decimal ──────────
+    ("⛔ r5: `HEAD~\u0661` (Arabic-Indic digit) is not a ref — `\\d` matched it, `[0-9]` does not",
+     "measured at HEAD~\u0661", False),
+    ("⛔ r5: ...nor `HEAD~\uff11` (fullwidth digit)", "measured at HEAD~\uff11", False),
+    ("⛔ r5: ...nor `HEAD~1.5` — it matched on its `HEAD~1` prefix because `.` is not a word char",
+     "measured at HEAD~1.5", False),
+    ("⚠ r5: ...while `HEAD~1.` at the END OF A SENTENCE still counts, which is why the rule "
+     "refuses `.` followed by a DIGIT and not `.` itself",
+     "measured at HEAD~1.", True),
     ("⚠ r3 STATED LIMIT: a backticked ref names a SOURCE and does not prove a measurement "
      "happened — this passes, and no pattern short of reading English refuses it",
      "**47 s**; we cannot measure at `HEAD`", True),

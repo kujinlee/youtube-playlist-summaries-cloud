@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 101 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 106 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -301,6 +301,22 @@ SENTENCE_SPLIT = re.compile(
 
 
 BACKTICK_RUN = re.compile(r"`+")
+BLANK_LINE = re.compile(r"\n[ \t]*\n")
+
+
+def backtick_escaped(text: str, pos: int) -> bool:
+    """True when the character at `pos` is backslash-escaped. PURE. r5 Codex H1.
+
+    An ODD number of preceding backslashes escapes; an even number is itself escaped backslashes.
+    `\\`code`` is a literal backslash followed by a REAL delimiter, and treating it as escaped
+    would stop masking a genuine span.
+    """
+    n = 0
+    i = pos - 1
+    while i >= 0 and text[i] == "\\":
+        n += 1
+        i -= 1
+    return n % 2 == 1
 
 
 def mask_inline_code(text: str) -> str:
@@ -330,8 +346,20 @@ def mask_inline_code(text: str) -> str:
         case is deferred (it was already deferred before this fix, and widening the mask to
         fences risks pairing an unbalanced fence and masking prose, which fails toward MORE
         suppression: the direction that hides a stale figure).
-      · An UNCLOSED inline span masks nothing. A lone backtick has no partner, so the old
-        behaviour stands for it; `mask_inline_code` never guesses where a span ends.
+      · An UNCLOSED inline span masks nothing — and ⟳ r5 Codex M1, it no longer stops the scan
+        either. `break` here meant one stray backtick disabled masking for every LATER genuine
+        span, turning a suppressed figure into a false SURVIVOR; the opener is skipped instead.
+      · ⟳ r5 Codex H1 — AN ESCAPED BACKTICK IS NOT A DELIMITER, and A SPAN CANNOT CONTAIN A BLANK
+        LINE. Both were measured against cmark: `the count was \\`wrong: … \\`` and the same text
+        with a paragraph break are PROSE, and pairing their backticks masked the prose between
+        them, inheriting a `was` that belongs to a different statement. Both failed LENIENT — a
+        live stale figure reported as history, which is the expensive direction.
+      ⚠ THIS IS THE THIRD ROUND OF CORRECTIONS TO THIS ONE FUNCTION (r4 L1 pairing, r4 L2 scope,
+        r5 H1+M1 escapes/blank lines/unmatched openers). Every fix has been a markdown rule
+        re-derived by hand. The structural answer is to ask a real CommonMark parser where the
+        code spans are rather than to keep adding rules, and that belongs to the Phase 6 review
+        backlog #262 already arms — recorded here so the next reader meets the pattern, not just
+        the latest rule.
       · ⟳ IT MASKS EVERY `SENTENCE_SPLIT` ALTERNATIVE, NOT ONLY THE THREE NEWLINE ONES. Masking
         whitespace inside a span also stops `(?<=[.!?])\\s+` firing there, so a version string in
         code no longer ends a sentence. Measured: `the count was `v1. 2` and 1,414 today` gave
@@ -351,7 +379,10 @@ def mask_inline_code(text: str) -> str:
     # runs 0 and 2 (run 1 is span CONTENT), leaving run 3 unclosed and `wrong:` as prose, so the
     # boundary fires and the figure is a SURVIVOR, which is the right answer. The old direction was
     # LENIENT, and leniency here is what hides a stale figure.
-    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]
+    # ⛔ AN ESCAPED BACKTICK IS NOT A DELIMITER — r5 Codex H1, measured against cmark. `\\`` is a
+    # literal backtick in prose; treating it as an opener masked the PROSE between two of them.
+    runs = [m for m in BACKTICK_RUN.finditer(text)
+            if len(m.group(0)) <= 2 and not backtick_escaped(text, m.start())]
     out = list(text)
     i = 0
     while i < len(runs):
@@ -360,7 +391,18 @@ def mask_inline_code(text: str) -> str:
         while j < len(runs) and len(runs[j].group(0)) != len(open_run.group(0)):
             j += 1                      # a run of a DIFFERENT length is span content, not a closer
         if j >= len(runs):
-            break                       # no closer of equal length: an unclosed span masks nothing
+            # ⛔ SKIP THE UNMATCHED OPENER, DO NOT STOP — r5 Codex M1. `break` here let one stray
+            # backtick prevent every LATER genuine span from being masked, which produced a false
+            # SURVIVOR: the noisy direction, but still a wrong answer from a stray character.
+            i += 1
+            continue
+        # ⛔ A CODE SPAN CANNOT CONTAIN A BLANK LINE — r5 Codex H1, second witness. A blank line
+        # ends the paragraph, so two backticks either side of one are not a span, and pairing them
+        # masked every boundary in between. Any equal-length run BEFORE the blank line would have
+        # been found first, so rejecting this candidate means the opener closes nothing.
+        if BLANK_LINE.search(text[open_run.end():runs[j].start()]):
+            i += 1
+            continue
         for k in range(open_run.end(), runs[j].start()):
             if out[k].isspace():
                 out[k] = "x"
@@ -830,6 +872,24 @@ def self_test() -> int:
         ("⭐ r4: a period inside a code span no longer ends a sentence, so `v1. 2` keeps the "
          "figure in the sentence that carries `was` — it was a SURVIVOR before the mask",
          _marker_at("the count was `v1. 2` and 1,414 today"), "was "),
+        # ── r5 Codex HIGH + MEDIUM: the mask suppressed LIVE PROSE two ways, and one stray
+        # backtick disabled it entirely. Measured by the reviewer against cmark (cmarkgfm), which
+        # rendered both H1 inputs as prose with NO <code> span, and confirmed here on the shipped
+        # functions. Both H1 directions are LENIENT — a real stale figure reported as history.
+        ("⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its "
+         "sentence boundary and the figure is a SURVIVOR — this was suppressed as history",
+         _marker_at("the count was \\`wrong:\n holds 1,414 anchors today \\`"), ""),
+        ("⛔ r5: ...and a BLANK LINE cannot sit inside a code span — a paragraph break ends it, so "
+         "these two backticks are not a pair and the figure is a SURVIVOR",
+         _marker_at("the count was `wrong\n\nholds 1,414 anchors today`"), ""),
+        ("⛔ r5: ...and ONE unmatched opener no longer disables every later span — it is SKIPPED, "
+         "where `break` let a stray backtick turn a genuine span into a false survivor",
+         _marker_at("a `unclosed then ``the count was wrong:\nholds 1,414 anchors today``"),
+         "was "),
+        ("...and backtick_escaped counts an EVEN run of backslashes as not escaping, so a literal "
+         "backslash before a REAL delimiter still opens a span",
+         backtick_escaped("a \\\\`x`", 5), False),
+        ("...while an ODD run does escape", backtick_escaped("a \\`x", 3), True),
         ("⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken "
          "for a clean one (r1 Claude M4)",
          suppression_line(collections.Counter({"was ": 5, "⟳": 2})),

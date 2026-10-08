@@ -299,16 +299,68 @@
     ]
   },
   {
-    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor",
+    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]",
+        "    runs = [m for m in BACKTICK_RUN.finditer(text)\n            if len(m.group(0)) <= 2 and not backtick_escaped(text, m.start())]",
         "    runs = []"
       ]
     ],
     "expect": [
       "⭐ r4: ...and the SAME sentence wrapped at the span's COLON is exempted too, where it used to be a survivor — a colon inside code is not a sentence boundary"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex H1 — the escaped-backtick filter is severed: `\\\\`` pairs as a delimiter again and the PROSE between two of them is masked, so a live stale figure is reported as history",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            if len(m.group(0)) <= 2 and not backtick_escaped(text, m.start())]",
+        "            if len(m.group(0)) <= 2]"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its sentence boundary and the figure is a SURVIVOR — this was suppressed as history"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if BLANK_LINE.search(text[open_run.end():runs[j].start()]):\n            i += 1\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ...and a BLANK LINE cannot sit inside a code span — a paragraph break ends it, so these two backticks are not a pair and the figure is a SURVIVOR"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex M1 — an unmatched opener STOPS the scan again, so one stray backtick disables masking for every later genuine span and turns a suppressed figure into a false survivor",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            i += 1\n            continue\n        # ⛔ A CODE SPAN CANNOT CONTAIN A BLANK LINE",
+        "            break\n        # ⛔ A CODE SPAN CANNOT CONTAIN A BLANK LINE"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ...and ONE unmatched opener no longer disables every later span — it is SKIPPED, where `break` let a stray backtick turn a genuine span into a false survivor"
+    ]
+  },
+  {
+    "name": "⛔ r5 (#251 --diff-coverage) — backtick_escaped inverts its PARITY: an odd run of backslashes stops escaping and an even one starts, so a literal backslash before a real delimiter closes the span and `\\\\`` opens one",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return n % 2 == 1",
+        "    return n % 2 == 0"
+      ]
+    ],
+    "expect": [
+      "...and backtick_escaped counts an EVEN run of backslashes as not escaping, so a literal backslash before a REAL delimiter still opens a span"
     ]
   }
 ]
