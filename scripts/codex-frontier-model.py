@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 22 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 28 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
@@ -109,6 +109,29 @@ def usable_models(data: dict) -> "list[str]":
     return [m["slug"] for m in listed]
 
 
+def failed_requirements(m: dict) -> list[str]:
+    """Which of `usable_models`' requirements this entry fails, named. PURE.
+
+    ⛔ Backlog #254 exists because the refusal named a CONDITION ("a visibility near-miss
+    exists") and reported a CONCLUSION ("none is listed", "the CLI is stale") that the condition
+    does not support. Measured on a cache holding a `hide` model that is otherwise fine AND a
+    `list` model that fails `supported_in_api`: `usable_models` was `[]` and the message said no
+    model is listed — while one was. Naming the predicate per entry is what makes that
+    impossible to say by accident.
+    """
+    out: list[str] = []
+    if not m.get("slug"):
+        out.append("no slug")
+    if not m.get("supported_in_api"):
+        out.append("not supported in the API")
+    pr = m.get("priority")
+    if not isinstance(pr, (int, float)) or isinstance(pr, bool):
+        out.append("no numeric priority")
+    if m.get("visibility") != "list":
+        out.append(f"visibility is {m.get('visibility') or 'unset'!r}, not 'list'")
+    return out
+
+
 def refusal_message(data: dict) -> str:
     """Why no model could be resolved, in terms the operator can ACT on. PURE.
 
@@ -127,6 +150,9 @@ def refusal_message(data: dict) -> str:
     # first version omitted the priority requirements, so it labelled a model with a null or
     # boolean priority "hidden but otherwise usable" when the resolver would reject it even if
     # listed. A near-miss has to actually be a near-miss.
+    # #254: the two populations the message must not confuse — models that fail ONLY visibility,
+    # and models that ARE listed yet fail something else.
+    listed = [m for m in models if m.get("visibility") == "list"]
     near = sorted((m for m in models
                    if m.get("supported_in_api")
                    and isinstance(m.get("priority"), (int, float))
@@ -147,8 +173,21 @@ def refusal_message(data: dict) -> str:
         # data said, so it diagnosed an outdated CLI even when the cache held no usable model for
         # some entirely different reason. It is only the likely cause when models ARE on offer
         # and none of them is listed.
-        bits.append("  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but none "
-                    "is listed. Run `codex update`, then re-run this.")
+        # ⟳ ⛔ AND THAT CONDITION WAS STILL WRONG — backlog #254, round 2 Codex Medium 2, the
+        # SECOND correction of this same sentence. "A near-miss exists" does not imply "nothing
+        # is listed": a `list`-visible model can be present and fail `supported_in_api`. The
+        # branch now asks the question the sentence answers.
+        if not listed:
+            bits.append("  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but "
+                        "none is listed. Run `codex update`, then re-run this.")
+        else:
+            bits.append("  ⛔ NOT A STALE CLI: " + str(len(listed)) + " model(s) ARE `list`-visible "
+                        "and fail a DIFFERENT requirement — "
+                        + "; ".join(f"{m.get('slug') or '<no slug>'}: "
+                                    + ", ".join(r for r in failed_requirements(m)
+                                                if "visibility" not in r)
+                                    for m in listed)
+                        + ". Inspect those entries; `codex update` will not change them.")
     elif models:
         bits.append("  ⚠ and NONE of them is a near-miss: every entry fails a requirement other "
                     "than visibility (API support, or a numeric non-boolean priority, or a slug). "
@@ -309,6 +348,33 @@ def _self_test() -> int:
     case("the message states a POLICY and never claims the vendor withdrew anything",
          ("POLICY" in refusal_message(LIVE)
           and "withdraw" not in refusal_message(LIVE).lower()), True)
+
+    # ⛔ BACKLOG #254 — THE MIXED CACHE, and the SECOND correction of this one sentence. r1 made
+    # the stale-CLI diagnosis conditional on a near-miss existing; that condition is still too
+    # weak, because "a near-miss exists" does not imply "nothing is listed". Measured on a cache
+    # holding a `hide` model that is otherwise fine AND a `list` model failing `supported_in_api`.
+    _MIXED = {"client_version": "0.160.1", "models": [
+        {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True},
+        {"slug": "listed", "priority": 2, "visibility": "list", "supported_in_api": False}]}
+    case("⭐ a cache containing a `list`-visible model never says none is listed",
+         "none is listed" not in refusal_message(_MIXED), True)
+    case("...and it does not blame a stale CLI, because `codex update` cannot change that entry",
+         "codex update`, then re-run" not in refusal_message(_MIXED), True)
+    case("...and it NAMES the requirement that actually failed, rather than the one that did not",
+         "not supported in the API" in refusal_message(_MIXED), True)
+    # the all-hidden cache must STILL diagnose a stale CLI — the r1 behaviour is preserved, and a
+    # fix that traded one wrong answer for another would pass the three cases above alone.
+    _ALLHIDDEN = {"client_version": "0.142.5", "models": [
+        {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True}]}
+    case("...while a cache with NO listed model still names the stale CLI as the likely cause",
+         "none is listed" in refusal_message(_ALLHIDDEN), True)
+    case("failed_requirements names each unmet predicate for one entry",
+         failed_requirements({"slug": "x", "priority": 1, "visibility": "hide",
+                              "supported_in_api": False})
+         == ["not supported in the API", "visibility is 'hide', not 'list'"], True)
+    case("...and returns empty for an entry that meets them all",
+         failed_requirements({"slug": "y", "priority": 2, "visibility": "list",
+                              "supported_in_api": True}) == [], True)
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

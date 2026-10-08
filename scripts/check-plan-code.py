@@ -844,8 +844,8 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 37,
-    "scripts/codex-frontier-model.py": 7,
+    "scripts/check-ci-watched.py": 40,
+    "scripts/codex-frontier-model.py": 9,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -4955,7 +4955,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1428)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1433)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

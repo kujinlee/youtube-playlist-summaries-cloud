@@ -75,5 +75,31 @@
       ]
     ],
     "expect": "...and says explicitly that this is NOT evidence Codex is unavailable"
+  },
+  {
+    "name": "#254: the stale-CLI diagnosis fires even when a list-visible model exists",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "        if not listed:",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ a cache containing a `list`-visible model never says none is listed"
+    ]
+  },
+  {
+    "name": "#254: failed_requirements stops naming the API-support predicate",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    if not m.get(\"supported_in_api\"):\n        out.append(\"not supported in the API\")",
+        "    if False:\n        out.append(\"not supported in the API\")"
+      ]
+    ],
+    "expect": [
+      "failed_requirements names each unmet predicate for one entry"
+    ]
   }
 ]
