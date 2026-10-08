@@ -271,5 +271,44 @@
     "expect": [
       "⭐ an explicit allow-list matches case-INSENSITIVELY, as the deny-list branch does"
     ]
+  },
+  {
+    "name": "⟳ r3 Codex MEDIUM — the classification guard goes, so a metadata failure crashes with an unhandled OSError and exits 1, which this repo's rc convention reads as 'violation found' rather than 'cannot run'",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "                    try:\n                        if not q.is_file():\n                            continue\n                    except OSError as exc:\n                        unreadable_dirs.append(f\"{q}: {type(exc).__name__}\")\n                        continue",
+        "                    if not q.is_file():\n                        continue"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a classification failure is rc=2, where it used to be an unhandled traceback exiting 1 — which this repo reads as 'violation found'"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex LOW — directory identity goes back to a RESOLVED STRING, so on a case-insensitive filesystem two spellings of one directory are two directories and its files are counted twice",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "                    st = os.stat(dirpath)\n                    real = (st.st_dev, st.st_ino)",
+        "                    st = os.stat(dirpath)\n                    real = str(Path(dirpath).resolve())"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: two symlinks to ONE case-variant directory are walked once, not twice"
+    ]
+  },
+  {
+    "name": "⟳ r3 — the `onerror` callback stops RECORDING, so `os.walk` hands it every traversal error and it drops them: the library default with extra steps",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "        unreadable_dirs.append(f\"{exc.filename}: {type(exc).__name__}\")",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ an unreadable DIRECTORY is CANNOT RUN, not a confident absence (r2 Claude H1)"
+    ]
   }
 ]

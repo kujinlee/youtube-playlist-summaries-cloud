@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 81 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 90 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -265,10 +265,31 @@ def is_exempt_path(path: str) -> bool:
 # break (two trailing spaces), and a `1)` list marker where only `1.` is modelled. Those are
 # known-open, not fixed, and recovering them is three more alternatives in a regex that has
 # three. Filed rather than left implied.
+# ⟳ r3 Codex HIGH — THE COLON LOOPHOLE HAD A LIVE INSTANCE, which upgrades it from the
+# "acknowledged, constructed" list round 2 left it on. `docs/dashboard-entries.md:10440`:
+#
+#     ⚠ The API was used *instead of* `fly deploy` deliberately:
+#     the running image is ...
+#     **177 commits** since, **6 touching shipped code** ...
+#
+# A lead-in ending in `:` is a separate statement from what follows it, and `was` in the lead-in
+# was exempting the current claim below. Measured: changing only `deliberately:` to
+# `deliberately.` flipped the verdict from rc=0 to rc=1 reporting the survivor.
+#
+# Three boundaries added, closing three of the five shapes round 2's Claude half listed: the
+# colon lead-in, a markdown HARD break (two trailing spaces), and `1)` as well as `1.`.
+# MEASURED over 48,046 figure occurrences: weak suppressions 3,688 -> 3,630 (58 fewer false
+# negatives), median sentence 180 -> 177, and a genuine wrap is still ONE sentence.
+#
+# ⚠ TWO SHAPES REMAIN OPEN AND ARE NOT CLAIMED FIXED: two unterminated prose lines (genuinely
+# ambiguous — that IS what a wrap looks like), and a fenced code block, which needs fence state
+# a regex cannot carry. Both were constructed, not live.
 SENTENCE_SPLIT = re.compile(
     r"(?<=[.!?])\s+"                               # ordinary end of sentence
     r"|\n\s*\n"                                    # a paragraph break
-    r"|\n(?=\s*(?:[|#>]|[*+-]\s|\d+\.\s))"        # the start of a markdown block
+    r"|(?<=:)\n"                                    # a colon lead-in ENDS a statement
+    r"|(?<=\s\s)\n"                                # a markdown hard break
+    r"|\n(?=\s*(?:[|#>]|[*+-]\s|\d+[.)]\s))"      # a markdown block start; `1)` too
 )
 
 
@@ -320,6 +341,28 @@ def figure_offset_in_hit(hit_text: str, figure: str) -> int:
     """
     i = hit_text.find(figure)
     return i if i >= 0 else 0
+
+
+def figure_offsets_in_hit(hit_text: str, figure: str) -> list[int]:
+    """EVERY offset at which `figure` occurs inside the matched signature. PURE.
+
+    ⛔ r3 Codex HIGH — `find` TAKES THE FIRST OCCURRENCE, so a repeated figure inherited the
+    first one's exemption. The witness is two commits in a real repository:
+
+        was 1,414. 1,414 anchors today      -> suppressed by 'was ', rc=0
+
+    The first `1,414` is in a sentence carrying `was `; the second is in a live claim with no
+    marker at all, and the run reported `2 figure(s) corrected, none survives`. The review notes
+    that `rfind` merely picks a DIFFERENT occurrence rather than preserving identity — so the
+    answer is not to choose one. A hit is exempt only when EVERY occurrence of the figure in it
+    is exempt, which errs toward reporting a survivor: in a warn-only tool a false negative is
+    the expensive direction, and this is the cheap one.
+    """
+    out, i = [], hit_text.find(figure)
+    while i >= 0:
+        out.append(i)
+        i = hit_text.find(figure, i + 1)
+    return out or [0]
 
 
 def figure_offset_in_window(start: int, span: int = CONTEXT_CHARS) -> int:
@@ -612,6 +655,27 @@ def self_test() -> int:
         ("⭐ ...but a WRAPPED sentence is ONE sentence, so a wrap cannot change the verdict",
          sentence_around("the sweep holds\n1,414 anchors today (was wrong).", 16),
          "the sweep holds\n1,414 anchors today (was wrong)."),
+        # ── r3 Codex HIGH: three more statement boundaries, one of them LIVE ───────────────
+        ("⭐ r3: a COLON lead-in ends a statement — the live instance at "
+         "docs/dashboard-entries.md:10440 had `was` in the lead-in exempting the claim below",
+         "was " in sentence_around(
+             "Measured, and the earlier figure was wrong:\nthe sweep holds 1,414 anchors", 48),
+         False),
+        ("...and a markdown HARD break (two trailing spaces) is a boundary too",
+         "was " in sentence_around("the count was wrong  \nholds 1,414 here", 29), False),
+        ("...and `1)` is a list marker, not only `1.`",
+         "was " in sentence_around("the count was wrong\n1) holds 1,414 here", 31), False),
+        # ── r3 Codex HIGH: EVERY occurrence of the figure, not the first ───────────────────
+        ("⭐ r3: figure_offsets_in_hit returns ALL occurrences, so a repeated figure cannot "
+         "inherit the first one's exemption",
+         figure_offsets_in_hit("was 1,414. 1,414 anchors", "1,414"), [4, 11]),
+        ("...and a single occurrence still yields one offset",
+         figure_offsets_in_hit("holds 1,414 anchors", "1,414"), [6]),
+        ("...and a figure the hit does not contain falls back to [0], not an empty list",
+         figure_offsets_in_hit("no number here", "1,414"), [0]),
+        ("⭐ r3: the FIRST occurrence is marked and the SECOND is not, so the hit is NOT exempt",
+         (lambda t, f: [bool(history_marker(t, o)) for o in figure_offsets_in_hit(t, f)]
+          )("was 1,414. 1,414 anchors", "1,414"), [True, False]),
         ("...and a PARAGRAPH break is still a boundary",
          sentence_around("it was fine\n\nholds 1,414 here", 15), "holds 1,414 here"),
         # ── the figure's offset inside the signature (r2 Codex High) ────────────────────────
@@ -725,6 +789,33 @@ def self_test() -> int:
                    _drive_live("The status is green. count was"), 0))
     direct.append(("...and with no marker anywhere the survivor stands, which is the control",
                    _drive_live("The status is green."), 1))
+
+    # ── r3 Codex HIGH, at the CALL SITE: a REPEATED figure ──────────────────────────────────
+    # ⛔ The unit cases above compute the markers themselves, so the entry that flips the
+    # caller's `all(...)` to `any(...)` left them green and SURVIVED. Only driving `main` over a
+    # real repository sees it — `unit-coverage-does-not-compose`, twice in this file now.
+    def _drive_repeated(line: str) -> int:
+        import subprocess as _sp
+        with _tf.TemporaryDirectory() as td4:
+            r4 = Path(td4)
+            def g(*a):
+                return _sp.run(["git", *a], cwd=r4, capture_output=True, text=True)
+            g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+            (r4 / "docs").mkdir()
+            (r4 / "docs" / "src.md").write_text(line + "\n")
+            (r4 / "docs" / "live.md").write_text(line + "\n")
+            g("add", "-A"); g("commit", "-q", "-m", "base")
+            base = g("rev-parse", "HEAD").stdout.strip()
+            (r4 / "docs" / "src.md").write_text(line.replace("1,414", "1,416") + "\n")
+            g("add", "-A"); g("commit", "-q", "-m", "fix")
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                return main(["--strict", "--base", base], root=r4)
+    direct.append(("⭐ LIVE r3: a repeated figure whose FIRST occurrence is marked and second is "
+                   "not is a SURVIVOR — the caller requires every occurrence to be exempt",
+                   _drive_repeated("was 1,414. 1,414 anchors today"), 1))
+    direct.append(("...and when EVERY occurrence is marked it is still suppressed, so the case "
+                   "above is not asserting rc=1 for all repeated figures",
+                   _drive_repeated("was 1,414 and was 1,414 again"), 0))
 
     total = (len(SIG_CASES) + len(REMOVED_CASES) + len(EXEMPT_PATH_CASES)
              + len(HISTORY_CASES) + len(REPLACEMENT_CASES) + len(REPL_SET_CASES) + len(VERDICT_CASES)
@@ -874,12 +965,13 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
                 win = window_around(text, start, start + len(hit.text))
                 # ⛔ THE FIGURE'S OFFSET, NOT THE SIGNATURE'S (r2 Codex High). The signature
                 # carries up to CONTEXT_WORDS words of lead-in, which can cross a sentence.
-                at = (figure_offset_in_window(start)
-                      + figure_offset_in_hit(hit.text, figure))
+                # ⛔ EVERY occurrence, not the first (r3 Codex H3). Exempt only if all are.
+                base = figure_offset_in_window(start)
+                ats = [base + off for off in figure_offsets_in_hit(hit.text, figure)]
                 # the corrected FORM of this claim: the signature with each replacement swapped in
                 corrected = tuple(sig.replace(figure, r) for r in repls)
-                if is_history_context(win, corrected, figure_at=at):
-                    suppressed[history_marker(win, at) or "corrected form"] += 1
+                if all(is_history_context(win, corrected, figure_at=a) for a in ats):
+                    suppressed[history_marker(win, ats[0]) or "corrected form"] += 1
                     continue
                 survivors += 1
                 print(f"  SURVIVOR {hit.path}:{hit.line}: {' '.join(hit.text.split())}")

@@ -195,12 +195,12 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex HIGH — a bare newline becomes a sentence boundary again, so the verdict depends on where the line WRAPS: same claim, same marker, opposite answers",
+    "name": "⟳ r2 Codex HIGH — a bare newline becomes a sentence boundary again, so the verdict depends on where the line WRAPS: same claim, same marker, opposite answers ⟳ r3: retargeted — the block-start alternative gained `1)`",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    r\"|\\n(?=\\s*(?:[|#>]|[*+-]\\s|\\d+\\.\\s))\"        # the start of a markdown block",
-        "    r\"|\\n\"                                          # the start of a markdown block"
+        "    r\"|\\n(?=\\s*(?:[|#>]|[*+-]\\s|\\d+[.)]\\s))\"      # a markdown block start; `1)` too",
+        "    r\"|\\n\"                                          # a markdown block start; `1)` too"
       ]
     ],
     "expect": [
@@ -221,16 +221,81 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex HIGH — the LIVE caller's figure offset collapses to the signature's, caught only by the case that drives main() over a real repository",
+    "name": "⟳ r2 Codex HIGH — the LIVE caller's figure offset collapses to the signature's, caught only by the case that drives main() over a real repository ⟳ r3: retargeted — the caller now builds a LIST of per-occurrence offsets",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "                at = (figure_offset_in_window(start)\n                      + figure_offset_in_hit(hit.text, figure))",
-        "                at = figure_offset_in_window(start)"
+        "                base = figure_offset_in_window(start)\n                ats = [base + off for off in figure_offsets_in_hit(hit.text, figure)]",
+        "                base = figure_offset_in_window(start)\n                ats = [base]"
       ]
     ],
     "expect": [
       "⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — the caller passes the FIGURE's offset, not the signature's (r2 Codex High)"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the COLON boundary goes, so a `was` in a lead-in exempts the separate claim below it. LIVE at docs/dashboard-entries.md:10440",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?<=:)\\n\"                                    # a colon lead-in ENDS a statement\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a COLON lead-in ends a statement — the live instance at docs/dashboard-entries.md:10440 had `was` in the lead-in exempting the claim below"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the markdown HARD-break boundary goes",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?<=\\s\\s)\\n\"                                # a markdown hard break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and a markdown HARD break (two trailing spaces) is a boundary too"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — `1)` stops being a list marker, so only `1.` is modelled",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "\\d+[.)]\\s",
+        "\\d+[.]\\s"
+      ]
+    ],
+    "expect": [
+      "...and `1)` is a list marker, not only `1.`"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — only the FIRST occurrence of a repeated figure is considered, so a marked first occurrence exempts an unmarked second. The witness is two commits in a real repository: `was 1,414. 1,414 anchors today`",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    out, i = [], hit_text.find(figure)\n    while i >= 0:\n        out.append(i)\n        i = hit_text.find(figure, i + 1)\n    return out or [0]",
+        "    i = hit_text.find(figure)\n    return [i] if i >= 0 else [0]"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: figure_offsets_in_hit returns ALL occurrences, so a repeated figure cannot inherit the first one's exemption"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the caller goes back to exempting on ANY occurrence instead of ALL, which is the same defect at the call site",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                if all(is_history_context(win, corrected, figure_at=a) for a in ats):",
+        "                if any(is_history_context(win, corrected, figure_at=a) for a in ats):"
+      ]
+    ],
+    "expect": [
+      "⭐ LIVE r3: a repeated figure whose FIRST occurrence is marked and second is not is a SURVIVOR — the caller requires every occurrence to be exempt"
     ]
   }
 ]

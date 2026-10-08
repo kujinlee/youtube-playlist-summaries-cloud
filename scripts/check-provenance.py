@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 123 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 128 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -306,7 +306,21 @@ PROVENANCE_RE = re.compile(
     # ⚠ THE COST, STATED: `measured at HEAD` without backticks no longer counts. That is
     # deliberate — it is indistinguishable, by any rule short of reading English, from
     # `we cannot look at HEAD`. Write `` `HEAD` `` and it counts.
-    r"|`HEAD[~^]?\d*`|\bHEAD[~^]\d*"
+    # ⟳ r3 Codex MEDIUM — DIGITS ONLY AFTER `~` OR `^`. `` `HEAD[~^]?\d*` `` accepted
+    # `` `HEAD123` ``, which `git rev-parse --verify` rejects, and which this branch INTRODUCED
+    # (False at 31e8768a, True at e330ca80). Measured against git for each token: `HEAD`,
+    # `HEAD~1`, `HEAD~`, `HEAD^` valid and accepted; `HEAD123` invalid and now refused; `HEADS`
+    # refused by both. ⚠ `HEAD~fiction` still matches — on its `HEAD~` prefix, which IS a valid
+    # ref, so that is a ref followed by prose rather than a malformed token.
+    #
+    # ⛔ AND THE SEMANTIC LIMIT, STATED RATHER THAN CLAIMED AWAY: a backticked ref names a
+    # SOURCE; it does not establish that a measurement happened. `we cannot measure at `HEAD``
+    # passes, and so does a `HEAD` appearing in a code span about git syntax. That is beyond any
+    # pattern short of reading English, it is the same class as M2's single-digit heuristic, and
+    # it is defensible for the same reason: `verdict` is warn-only unless `--strict`, over rows a
+    # branch ADDS. The deleted verb list did not create this class and removing it did not cure
+    # it — what it cured was eleven witnesses where prose asserting NO measurement counted as one.
+    r"|`HEAD(?:[~^]\d*)?`|\bHEAD[~^]\d*"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -582,6 +596,15 @@ PROV_CASES: list[tuple[str, str, bool]] = [
      "1,416 anchors as of HEAD", False),
     ("...while `as of `HEAD`` does", "1,416 anchors as of `HEAD`", True),
     ("...while HEAD merely NAMED mid-sentence does not", "we cannot read HEAD here", False),
+    # ── r3 Codex MEDIUM: a MALFORMED HEAD token is not a ref ────────────────────────────────
+    ("⭐ r3: `` `HEAD123` `` is not a ref — git rejects it, and this branch INTRODUCED it",
+     "**47 s**; measured at `HEAD123`", False),
+    ("...while `` `HEAD~1` `` is one", "**47 s**; measured at `HEAD~1`", True),
+    ("...and `` `HEAD` `` plain is one", "**47 s**; measured at `HEAD`", True),
+    ("...and `` `HEADS` `` is not", "**47 s**; measured at `HEADS`", False),
+    ("⚠ r3 STATED LIMIT: a backticked ref names a SOURCE and does not prove a measurement "
+     "happened — this passes, and no pattern short of reading English refuses it",
+     "**47 s**; we cannot measure at `HEAD`", True),
     ("...and row #255's own wording stays refused, which is what M3 was filed for",
      "`--clear` cannot read HEAD and it cost **47 s**", False),
     ("a path WITH a line is provenance", "see `scripts/x.py:84`", True),

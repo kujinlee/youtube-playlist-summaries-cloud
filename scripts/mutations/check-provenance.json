@@ -117,11 +117,11 @@
     ]
   },
   {
-    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again",
+    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again ⟳ r3: retargeted — the token pattern tightened for `HEAD123`",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "    r\"|`HEAD[~^]?\\d*`|\\bHEAD[~^]\\d*\"",
+        "    r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD[~^]\\d*\"",
         "    r\"|\\bHEAD\\b\""
       ]
     ],
@@ -208,11 +208,11 @@
     ]
   },
   {
-    "name": "⟳ r2 Claude HIGH — the BACKTICKED form stops being accepted, leaving only the suffixed one, so the convention this repo actually writes refs in is refused ⚠ anchors the BACKTICKED alternative alone; the sibling entry anchors the whole clause, and the harness refuses two entries sharing a find-string",
+    "name": "⟳ r2 Claude HIGH — the BACKTICKED form stops being accepted, leaving only the suffixed one, so the convention this repo actually writes refs in is refused ⚠ anchors the BACKTICKED alternative alone; the sibling entry anchors the whole clause, and the harness refuses two entries sharing a find-string ⟳ r3: retargeted — same reason",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "`HEAD[~^]?\\d*`|",
+        "`HEAD(?:[~^]\\d*)?`|",
         ""
       ]
     ],
@@ -244,6 +244,32 @@
     ],
     "expect": [
       "⭐ M2's own witness: #256's third motivating defect is no longer invisible to it"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex MEDIUM — digits are allowed again without a `~` or `^` before them, so `` `HEAD123` `` reads as a ref. `git rev-parse --verify` rejects it",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "r\"|`HEAD(?:[~^]\\d*)?`|\\bHEAD[~^]\\d*\"",
+        "r\"|`HEAD[~^]?\\d*`|\\bHEAD[~^]\\d*\""
+      ]
+    ],
+    "expect": [
+      "⭐ r3: `` `HEAD123` `` is not a ref — git rejects it, and this branch INTRODUCED it"
+    ]
+  },
+  {
+    "name": "⟳ r3 — `after_within_cell` stops clipping at the cell and returns the flat window, so the counted noun comes from the next column again (`--diff-coverage` named this function as changed with no mutation reaching it)",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    end = min(nxt.start(), at + limit) if nxt else at + limit",
+        "    end = at + limit"
+      ]
+    ],
+    "expect": [
+      "⭐ after_within_cell stops at the figure's own cell boundary (r2 Claude M3)"
     ]
   }
 ]

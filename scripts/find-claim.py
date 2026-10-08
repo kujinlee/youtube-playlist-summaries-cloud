@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 71 cases
+    python3 scripts/find-claim.py --self-test        # 76 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -288,10 +288,22 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
             # ⛔ AND A DIRECTORY THE CALLER NAMED IS NEVER PRUNED. Pruning applies to
             # directories DISCOVERED during the walk; naming one is the caller saying it is a
             # subject. `find-claim … root/node_modules` returned zero files before.
-            seen_real: set = set()
+            seen_real: set = set()      # (st_dev, st_ino) pairs — see below
             for dirpath, dirnames, filenames in os.walk(p, onerror=_walk_error,
                                                        followlinks=True):
-                real = Path(dirpath).resolve()
+                # ⟳ r3 Codex LOW — DIRECTORY IDENTITY IS (st_dev, st_ino), NOT A RESOLVED
+                # STRING. macOS is case-INSENSITIVE and case-PRESERVING, so `CaseDir` and
+                # `casedir` are one directory whose `resolve()` values differ: measured,
+                # `target.samefile(other)` was True while `resolve() == resolve()` was False,
+                # and the walk visited the same files twice through two symlinks. Overcounting
+                # only, never an absence — but the guard claimed identity it did not have.
+                try:
+                    st = os.stat(dirpath)
+                    real = (st.st_dev, st.st_ino)
+                except OSError as exc:
+                    unreadable_dirs.append(f"{dirpath}: {type(exc).__name__}")
+                    dirnames[:] = []
+                    continue
                 if real in seen_real:
                     dirnames[:] = []          # a cycle through a symlink; stop descending
                     continue
@@ -305,7 +317,19 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
                 dirnames[:] = keep            # IN PLACE: os.walk then never descends into them
                 for fn in sorted(filenames):
                     q = Path(dirpath) / fn
-                    if not q.is_file():
+                    # ⛔ r3 Codex MEDIUM — A METADATA FAILURE IS NOT A REASON TO SKIP SILENTLY,
+                    # and `os.walk(onerror=...)` cannot see this one: it covers TRAVERSAL errors,
+                    # not the `stat` behind `is_file()` on an entry already discovered. Measured:
+                    # a symlink pointing into a `chmod 000` directory made `is_file()` raise and
+                    # the run exited with an UNHANDLED PermissionError traceback — rc=1, which
+                    # under this repo's convention means "violation found", not "cannot run". And
+                    # a file deleted between discovery and `is_file()` gave rc=0 with
+                    # "so the search worked". Both now join the one unreadable channel and exit 2.
+                    try:
+                        if not q.is_file():
+                            continue
+                    except OSError as exc:
+                        unreadable_dirs.append(f"{q}: {type(exc).__name__}")
                         continue
                     if suffixes is not None:
                         # ⟳ r2 Claude LOW — BOTH BRANCHES LOWERCASE NOW. The deny-list arm did
@@ -583,6 +607,67 @@ def _cycle_probe() -> tuple:
         return (len(files), len(hits))
 
 
+def _metadata_failure_probe() -> tuple:
+    """(rc, says_cannot_run, no_traceback) when classifying an entry raises. r3 Codex M3.
+
+    A symlink pointing into a `chmod 000` directory: `is_file()` raises, and before the fix the
+    run exited with an UNHANDLED PermissionError — rc=1, which this repo reads as "violation
+    found", not "cannot run". `os.walk(onerror=...)` cannot see it: that covers traversal, not
+    the `stat` behind classifying an entry already discovered.
+    """
+    import contextlib, io, os as _os, stat, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        root = d / "root"
+        root.mkdir()
+        (root / "ok.md").write_text("the control phrase lives here\n")
+        lock = d / "locked"
+        lock.mkdir()
+        (lock / "claim.md").write_text("the claim is still live\n")
+        (root / "claim.md").symlink_to(lock / "claim.md")
+        _os.chmod(lock, 0o000)
+        try:
+            if _os.access(lock, _os.R_OK):          # the chmod did not take; do not pretend
+                return (2, True, True)
+            # ⛔ THE PROBE CATCHES THE CRASH SO THE CASE CAN REPORT A WRONG ANSWER. Without
+            # this, the mutation that removes the classification guard makes `main` raise, the
+            # SUITE dies before printing any `[FAIL]` line, and the harness reports
+            # "the suite went RED but printed no [FAIL] line, so NOTHING COULD SEE THE KILL".
+            # A mutation must produce a wrong ANSWER, not a crash — and when the defect IS a
+            # crash, the probe is what converts it into one.
+            err = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    rc = main(["--pattern", "the claim is still live",
+                               "--control", "control phrase", "--expect", "absent", str(root)])
+            except OSError:
+                return (1, False, False)     # what the unguarded version did, as a VALUE
+            out = err.getvalue()
+            return (rc, "CANNOT RUN" in out, "Traceback" not in out)
+        finally:
+            _os.chmod(lock, stat.S_IRWXU)
+
+
+def _case_alias_probe() -> tuple:
+    """(n_files, n_hits) over two symlinks to ONE directory spelled two ways. r3 Codex L1.
+
+    macOS is case-insensitive and case-preserving, so `CaseDir` and `casedir` are the same
+    directory with different `resolve()` strings. The walk counted its files twice.
+    """
+    import os as _os, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        target = d / "CaseDir"
+        target.mkdir()
+        (target / "claim.md").write_text("the claim is still live\n")
+        (d / "outer").mkdir()
+        _os.symlink(target, d / "a")
+        _os.symlink(d / "casedir", d / "outer" / "b")
+        files, _sk, _pr, _ud, _err = collect_files([str(d)])
+        hits, _ = search_files(files, build_pattern("the claim is still live"))
+        return (len(files), len(hits))
+
+
 def _tail_of_a_run(prune: bool = True) -> str:
     """Everything `main` prints, over a built world. Drives the CLI, not a helper.
 
@@ -710,6 +795,17 @@ def self_test() -> int:
         # ⚠ TWO, derived not guessed: `ok.md` and `claim.md`. `self` is a directory, so it is
         # not a file, and the cycle guard stops the walk from re-entering it and finding the
         # same two again. I asserted 3 and the suite corrected me.
+        # ── r3 Codex MEDIUM: a metadata failure is CANNOT RUN, not a crash and not a pass ──
+        ("⭐ r3: a classification failure is rc=2, where it used to be an unhandled traceback "
+         "exiting 1 — which this repo reads as 'violation found'",
+         _metadata_failure_probe()[0], 2),
+        ("...and it says CANNOT RUN", _metadata_failure_probe()[1], True),
+        ("...and does so WITHOUT a traceback, because a crash is not a contract",
+         _metadata_failure_probe()[2], True),
+        # ── r3 Codex LOW: directory identity is (st_dev, st_ino), not a resolved string ─────
+        ("⭐ r3: two symlinks to ONE case-variant directory are walked once, not twice",
+         _case_alias_probe()[0], 1),
+        ("...and the claim is found once through them", _case_alias_probe()[1], 1),
         ("⭐ a symlink CYCLE terminates and does not double-count — `root/self -> root` "
          "(r2 Claude M5)",
          _cycle_probe()[0], 2),

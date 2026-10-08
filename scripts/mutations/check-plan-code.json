@@ -1640,16 +1640,42 @@
     ]
   },
   {
-    "name": "⟳ r2 Claude MEDIUM — the ≥2-positional-argument test drops to ≥1, so `print(f\"...\")` becomes a case-name candidate and any output template can forgive a renamed-away expect. My own first attempt at this rule did exactly that, and the case below caught it",
+    "name": "⟳ r3 Codex H1/M1 — the case-call NAME test is dropped, so any call with a first-argument f-string becomes a case-name producer again: `.split(sep, 1)`, `re.compile(p, f)`, `.replace(a, b)`. MEASURED: 11 of 62 files carry such a template",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if isinstance(n, ast.Call) and len(n.args) >= 2:",
-        "        if isinstance(n, ast.Call) and len(n.args) >= 1:"
+        "            if CASE_CALL_RE.fullmatch(name or \"\"):",
+        "            if True or CASE_CALL_RE.fullmatch(name or \"\"):"
       ]
     ],
     "expect": [
       "⭐ r2: an f-string that is NOT in a case-name position supplies no pattern — an output template could forgive a stale expect in 62 of 62 files before this"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex H1 — the KEYWORD form stops being accepted, so `case(name=f\"...\", ...)` is falsely reported GONE. A false refusal in the half that REFUSES reddens a required check for a legitimate case",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                cands += [kw.value for kw in n.keywords\n                          if (kw.arg or \"\") in CASE_NAME_KEYWORDS]",
+        "                cands += []"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex H1 — a case name ASSIGNED to a plain name first stops being a producer, which is the third form the positional rule falsely refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            elif len(targets) == 1:\n                cands = [n.value]",
+        "            elif False:\n                cands = [n.value]"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a case name ASSIGNED to a variable first is accepted too"
     ]
   }
 ]
