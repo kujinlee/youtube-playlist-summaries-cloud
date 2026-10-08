@@ -1597,7 +1597,7 @@
       ]
     ],
     "expect": [
-      "⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 of 1,455 synthesised renames this way"
+      "⭐ a 13-char overlap does NOT explain a 55-char expect — the floor alone forgave 41 of 1,455 synthesised renames this way"
     ]
   },
   {

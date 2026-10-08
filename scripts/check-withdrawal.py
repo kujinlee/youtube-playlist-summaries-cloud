@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 90 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 99 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -300,6 +300,53 @@ SENTENCE_SPLIT = re.compile(
 )
 
 
+BACKTICK_RUN = re.compile(r"`+")
+
+
+def mask_inline_code(text: str) -> str:
+    """`text` with whitespace INSIDE inline code spans replaced by `x`. PURE, LENGTH-PRESERVING.
+
+    ⛔ r4 Codex M1 — WITHOUT THIS, WHERE A LINE WRAPS DECIDES THE VERDICT. Three of
+    `SENTENCE_SPLIT`'s alternatives are newline-based, and a newline inside an inline code span
+    satisfied them, so the span was cut in half and the history marker before it fell outside the
+    sentence. Measured on the shipped functions at `ea857e4a`, same prose, same figure:
+
+        the count was `anchors: 1,414` today        -> marker 'was ', suppressed, rc=0
+        the count was `anchors:\n1,414` today       -> marker '',     SURVIVOR  docs/live.md:2
+        the count was `anchors  \n1,414` today      -> marker '',     SURVIVOR
+        the count was `anchors\n1) 1,414` today     -> marker '',     SURVIVOR
+
+    The first and the rest are the SAME SENTENCE differing only in where it wraps, which is a
+    property of the editor and not of the claim. A boundary inside code is never a sentence
+    boundary, because code is not prose.
+
+    ⚠ LENGTH-PRESERVING IS THE WHOLE TRICK: every offset in the masked copy is the same offset in
+    the original, so `sentence_around` finds bounds on the mask and slices the ORIGINAL. Nothing
+    downstream sees an `x`.
+
+    ⚠ TWO BOUNDS, STATED RATHER THAN HIDDEN:
+      · Runs of THREE OR MORE backticks are left alone — those are fences, and the fenced-code
+        case is deferred (it was already deferred before this fix, and widening the mask to
+        fences risks pairing an unbalanced fence and masking prose, which fails toward MORE
+        suppression: the direction that hides a stale figure).
+      · An UNCLOSED inline span masks nothing. A lone backtick has no partner, so the old
+        behaviour stands for it; `mask_inline_code` never guesses where a span ends.
+    """
+    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]
+    out = list(text)
+    i = 0
+    while i + 1 < len(runs):
+        open_run, close_run = runs[i], runs[i + 1]
+        if len(open_run.group(0)) != len(close_run.group(0)):
+            i += 1                      # not a pair; the next run may open one
+            continue
+        for j in range(open_run.end(), close_run.start()):
+            if out[j].isspace():
+                out[j] = "x"
+        i += 2
+    return "".join(out)
+
+
 def sentence_around(window: str, at: int) -> str:
     """The sentence of `window` containing offset `at`. PURE.
 
@@ -307,7 +354,10 @@ def sentence_around(window: str, at: int) -> str:
     the original comment meant "in the same statement", and a tighter character window would be
     one more number with no reason behind it.
     """
-    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(window)] + [len(window)]
+    # ⛔ BOUNDS ON THE MASK, SLICE THE ORIGINAL (r4 Codex M1). `mask_inline_code` is
+    # length-preserving, so every offset below indexes both strings identically.
+    masked = mask_inline_code(window)
+    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(masked)] + [len(window)]
     for i in range(len(bounds) - 1):
         if bounds[i] <= at < bounds[i + 1]:
             return window[bounds[i]:bounds[i + 1]]
@@ -612,6 +662,10 @@ def self_test() -> int:
     # Direct calls with literal, pairwise-distinct arguments, inside the suite function:
     # `check-fixture-variation.py` reads call sites in the SUITE BODY, and a table loop is one
     # call site, so every parameter would otherwise look like a constant.
+    def _marker_at(text: str, figure: str = "1,414") -> str:
+        """`history_marker` at the figure's REAL offset, derived from the text. r4 Codex M1."""
+        return history_marker(text, text.index(figure))
+
     direct: list[tuple[str, object, object]] = [
         ("signature_of with context_words=0 is the bare figure",
          signature_of("we hold 1,414 anchors", "1,414", 0), "1,414"),
@@ -708,6 +762,42 @@ def self_test() -> int:
          history_marker("The sweep was 1,414 anchors then.", 14), "was "),
         ("...and \"\" when nothing exempts it, which is what makes it a SURVIVOR",
          history_marker("The sweep holds 1,414 anchors.", 16), ""),
+        # ── r4 Codex MEDIUM: three of r3's new boundaries also split INSIDE an inline code
+        # span, so WHERE A LINE WRAPS decided the verdict. Each case below is the same prose
+        # wrapped a different way; before `mask_inline_code` every wrapped one lost its marker.
+        # ⛔ THE OFFSET IS DERIVED, NOT TYPED. The first draft of these cases hard-coded it and
+        # three of six pointed INSIDE `anchors:` rather than at the figure — they passed for the
+        # wrong reason, and the single one that FAILED is the only reason I looked. The
+        # `figure_offset_in_hit` docstring in this file already says a case that lies about where
+        # the figure is tests nothing; a typed offset is how that lie gets written.
+        ("⭐ r4: the control — a figure inside an inline span, on ONE line, is exempted by `was`",
+         _marker_at("the count was `anchors: 1,414` today"), "was "),
+        ("⭐ r4: ...and the SAME sentence wrapped at the span's COLON is exempted too, where it "
+         "used to be a survivor — a colon inside code is not a sentence boundary",
+         _marker_at("the count was `anchors:\n1,414` today"), "was "),
+        ("⭐ r4: ...and wrapped at a markdown HARD BREAK inside the span",
+         _marker_at("the count was `anchors  \n1,414` today"), "was "),
+        ("⭐ r4: ...and wrapped at a `1)` list-looking line inside the span",
+         _marker_at("the count was `anchors\n1) 1,414` today"), "was "),
+        ("⛔ r4: and the boundary STILL FIRES outside a span — r3's colon rule is intact, which "
+         "is what stops this fix from being a quiet revert of it",
+         _marker_at("the count was:\n1,414 anchors today"), ""),
+        ("⛔ r4: an UNCLOSED span masks NOTHING, so the colon still cuts and the marker is lost "
+         "— the stated bound, asserted rather than assumed",
+         _marker_at("the count was `anchors:\n1,414 today"), ""),
+        # ⛔ THREE DISTINCT INPUTS, because one cannot tell the parameter from a constant —
+        # `check-fixture-variation.py` refused the first draft of this case for exactly that
+        # (`mask_inline_code(text=…)` passed the SAME value at every call site). Asserting the
+        # CONTENT rather than the length is also stronger: equality proves length preservation
+        # and proves nothing else was touched.
+        ("...and mask_inline_code rewrites ONLY whitespace inside a span, byte-for-byte elsewhere "
+         "— which is what makes every offset above index the mask and the original identically",
+         mask_inline_code("a `b:\nc` d"), "a `b:xc` d"),
+        ("...and prose with NO span comes back unchanged, so the mask never rewrites prose",
+         mask_inline_code("a b:\nc d"), "a b:\nc d"),
+        ("...and a FENCE is left alone, which is the deferred-fenced-code bound as an assertion "
+         "rather than a sentence",
+         mask_inline_code("```\nc: d\n```"), "```\nc: d\n```"),
         ("⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken "
          "for a clean one (r1 Claude M4)",
          suppression_line(collections.Counter({"was ": 5, "⟳": 2})),

@@ -127,5 +127,18 @@
     "expect": [
       "⭐ the MIXED cache's refusal EQUALS its golden text too, so the #254 arm this branch wrote is covered by equality rather than by substrings (r1 Claude H2)"
     ]
+  },
+  {
+    "name": "⛔ r4 Codex H1 — `cannot_run` exits 1 again: an unusable cache is reported as a VIOLATION, which is the rc the malformed-cache comment itself named as the defect",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "    sys.exit(2)",
+        "    sys.exit(1)"
+      ]
+    ],
+    "expect": [
+      "⭐ a MALFORMED cache refuses with 2 — CANNOT RUN, not 1 — and this is the arm whose comment named rc=1 as the defect while exiting 1"
+    ]
   }
 ]

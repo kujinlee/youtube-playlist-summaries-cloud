@@ -310,5 +310,18 @@
     "expect": [
       "⭐ an unreadable DIRECTORY is CANNOT RUN, not a confident absence (r2 Claude H1)"
     ]
+  },
+  {
+    "name": "⛔ r4 Codex M2 — r3's guard on the TOP-LEVEL classification is severed: a NAMED path whose parent is unreadable crashes instead of reporting CANNOT RUN",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "        try:\n            is_dir, is_file = p.is_dir(), p.is_file()\n        except OSError as exc:\n            unreadable_dirs.append(f\"{raw}: {type(exc).__name__}\")\n            continue",
+        "        is_dir, is_file = p.is_dir(), p.is_file()"
+      ]
+    ],
+    "expect": [
+      "⭐ r4: a NAMED path whose parent is unreadable is rc=2, where deleting r3's guard gave an unhandled PermissionError exiting 1"
+    ]
   }
 ]

@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 234 cases
+    python3 scripts/check-plan-code.py --self-test          # 237 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -697,9 +697,14 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 23,
-    "scripts/find-claim.py": 24,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
+    "scripts/check-withdrawal.py": 24,   # ⟳ r4 Codex M1: +1 — the inline-code mask. Three
+                                         # of r3's new sentence boundaries also split inside
+                                         # a code span, making the wrap decide the verdict.
+    "scripts/find-claim.py": 25,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
                                    # returned skip set, and the verdict that names it.
+                                   # ⟳ r4 Codex M2: +1 — the guard r3 added to the TOP-LEVEL
+                                   # classification. Deleting it left the suite 79/79 green, so
+                                   # the ratchet could not see the one site that had no case.
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
@@ -847,7 +852,9 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     "scripts/check-ci-watched.py": 40,
-    "scripts/codex-frontier-model.py": 11,
+    "scripts/codex-frontier-model.py": 12,   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
+                                            # goldens pinned the refusal TEXT, which is why
+                                            # a cannot-run exiting 1 survived 39 cases.
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -5556,7 +5563,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1509)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1512)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5744,7 +5751,7 @@ def _self_test() -> int:
     # A long expect sharing only a short run with some unrelated literal is the shape that
     # slipped through: 12 characters out of 80 explains nothing about the other 68.
     _LONGEX = "the REVISED wording counts as unresolved, never as done"
-    case("⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 "
+    case("⭐ a 13-char overlap does NOT explain a 55-char expect — the floor alone forgave 41 "
          "of 1,455 synthesised renames this way",
          expect_explained(_LONGEX, {"never as done"}), False)
     case("...and the SAME pair is forgiven when the fraction is dropped, so the case tests the "
@@ -5753,6 +5760,26 @@ def _self_test() -> int:
     case("...while a literal covering most of the expect still explains it, which is what keeps "
          "the 67 live f-string names out of the error list",
          expect_explained(_LONGEX, {"wording counts as unresolved, never as done"}), True)
+
+    # ⛔ r4 Codex LOW — BOTH CONSTANTS WERE UNPINNED, AND A SURVIVING MUTATION IS NOT A TEST.
+    # Measured over this file's own suite, in memory, with the control green at 234/234: FLOOR
+    # 12->11 passed 234/234, FLOOR 12->13 passed 234/234, FRACTION 0.3->0.4 passed 234/234. Only
+    # 0.3->0.2 was killed. Three of four adjacent steps bought nothing, so either constant could
+    # be retuned by a future reader with the suite still green — which is the state the ratchet
+    # exists to forbid. These three cases bracket each constant from the side the old ones did
+    # not: the floor from ABOVE and BELOW, and the fraction at the step that was free.
+    _SHORTEX = "the fold is clean and converged"                     # 31 chars; int(31*0.3) = 9,
+    _LONG97 = ("the replacement figure beside the old one means this text is correcting itself "
+               "today and tomorrow")                                 # 97 chars; int(97*0.3) = 29
+    case("⭐ a 12-char literal explains a 31-char expect, because the FLOOR and not the fraction "
+         "is what governs a short expect — this is the case a floor of 13 breaks",
+         expect_explained(_SHORTEX, {"is clean and"}), True)
+    case("...and an 11-char literal over the SAME expect does NOT, so the floor is bracketed from "
+         "both sides and a floor of 11 breaks this one",
+         expect_explained(_SHORTEX, {"is clean an"}), False)
+    case("⭐ a 36-char literal explains a 97-char expect at need=29, which a fraction of 0.4 "
+         "refuses at need=38 — the step that was free before this case",
+         expect_explained(_LONG97, {"figure beside the old one means this"}), True)
     case("⭐ THE WITNESS: B1's own stale expect is refused by this rule",
          expect_explained(
              "the replacement figure beside the old one means the text is correcting itself",

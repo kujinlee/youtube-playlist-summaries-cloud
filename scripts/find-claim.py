@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 79 cases
+    python3 scripts/find-claim.py --self-test        # 86 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -353,9 +353,24 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
                     # not the `stat` behind `is_file()` on an entry already discovered. Measured:
                     # a symlink pointing into a `chmod 000` directory made `is_file()` raise and
                     # the run exited with an UNHANDLED PermissionError traceback — rc=1, which
-                    # under this repo's convention means "violation found", not "cannot run". And
-                    # a file deleted between discovery and `is_file()` gave rc=0 with
-                    # "so the search worked". Both now join the one unreadable channel and exit 2.
+                    # under this repo's convention means "violation found", not "cannot run".
+                    #
+                    # ⛔ r4 Codex L1 — AND THE SECOND HALF OF WHAT THIS COMMENT USED TO CLAIM WAS
+                    # FALSE. It said a file DELETED between discovery and `is_file()` "now joins
+                    # the one unreadable channel and exits 2". It does not, and cannot: measured
+                    # under python 3.12, `Path.is_file()` RETURNS FALSE for a path that no longer
+                    # exists — it does not raise — so `except OSError` never fires and the entry
+                    # takes the `continue` below and is silently dropped. Only the RAISING half
+                    # was ever fixed. The claim was written in the same commit as the fix and
+                    # nothing executed it.
+                    #
+                    # The skip is left in place deliberately, and the reason is a policy question
+                    # rather than an oversight: every non-file entry reaches this branch, broken
+                    # symlinks included, and exiting 2 on one would make a repo containing a
+                    # dangling link permanently CANNOT RUN. Whether a vanished file should instead
+                    # be CANNOT RUN — the search did not reach a subject it had already found — is
+                    # filed as backlog #263. The case below pins what the code ACTUALLY does, so
+                    # the answer is not re-derived from this comment.
                     try:
                         if not q.is_file():
                             continue
@@ -609,8 +624,14 @@ def _unreadable_dir_probe() -> tuple:
         (locked / "claim.md").write_text("the claim is still live\n")
         _os.chmod(locked, 0o000)
         try:
+            # ⛔ r4 (found folding r4, reported by neither half) — INSTANCE, NOT CLASS. r3
+            # removed exactly this self-granted pass from `_metadata_failure_probe` and left its
+            # SIBLING, in the same file, three functions up. This used to `return (2, True, True)`
+            # — the answer the three cases below exist to check — so under root, or on a
+            # filesystem that ignores modes, all three passed having measured nothing. The
+            # sentinel fails the comparison instead, and the buildability case names why.
             if _os.access(locked, _os.R_OK):      # the chmod did not take; do not pretend
-                return (2, True, True)
+                return (-1, False, False)
             buf = io.StringIO()
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(buf):
                 rc = main(["--pattern", "the claim is still live",
@@ -636,6 +657,71 @@ def _cycle_probe() -> tuple:
         files, _sk, _pr, _ud, _err = collect_files([str(d)])
         hits, _ = search_files(files, build_pattern("the claim is still live"))
         return (len(files), len(hits))
+
+
+def _nonfile_entry_probe() -> tuple:
+    """(n_files, n_unreadable) when the walk discovers an entry that is NOT a file. r4 Codex L1.
+
+    A DANGLING SYMLINK is the constructible instance of the branch a vanished file also takes:
+    `is_file()` returns False without raising, so `except OSError` never sees it and the entry is
+    dropped by `continue`. This case exists because the comment at that branch asserted the
+    opposite — that such an entry joins the unreadable channel and exits 2 — and nothing ran it.
+
+    Pins the CURRENT behaviour, not a preference: 2 real files found, 0 unreadable, no crash.
+    If backlog #263 decides a vanished subject should be CANNOT RUN, this case goes red and that
+    red is the alarm, which is the point of writing it down as data.
+    """
+    import os as _os, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("the control phrase lives here\n")
+        (d / "claim.md").write_text("the claim is still live\n")
+        _os.symlink(d / "nowhere-at-all.md", d / "dangling.md")
+        files, _sk, _pr, unreadable, _err = collect_files([str(d)])
+        return (len(files), len(unreadable))
+
+
+def _top_level_named_probe() -> tuple:
+    """(rc, says_cannot_run, no_traceback) when classifying a NAMED path raises. r4 Codex M2.
+
+    The sibling of `_metadata_failure_probe`, one layer out. That one covers the WALK's
+    `is_file()`; this one covers the classification of a path the caller named on the command
+    line, which `collect_files` reaches before any walk begins. The guard for it was added by r3
+    and had NO case: measured in r4, deleting the whole `try/except` left the suite at 79/79 with
+    no `[FAIL]` line, while `find-claim <chmod-000-dir>/claim.md ok.md` went from rc=2 to an
+    unhandled PermissionError traceback — rc=1, which this repo reads as "violation found".
+
+    The world: the claim in `locked/claim.md`, the control in `ok.md`, `chmod 000 locked`. The
+    PARENT is what is unreadable, because `is_dir()` stats the path itself and needs `+x` on the
+    parent — a `chmod 000` on the named file would not raise at all.
+    """
+    import contextlib, io, os as _os, stat, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("the control phrase lives here\n")
+        locked = d / "locked"
+        locked.mkdir()
+        named = locked / "claim.md"
+        named.write_text("the claim is still live\n")
+        _os.chmod(locked, 0o000)
+        try:
+            # ⛔ NO SELF-GRANTED PASS — the sentinel fails, it does not pass. See the sibling.
+            if _os.access(locked, _os.R_OK):
+                return (-1, False, False)
+            # ⛔ THE PROBE CONVERTS THE CRASH INTO A VALUE, so the mutation produces a wrong
+            # ANSWER rather than killing the suite before any `[FAIL]` line can be printed.
+            err = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    rc = main(["--pattern", "the claim is still live",
+                               "--control", "control phrase", "--expect", "absent",
+                               str(named), str(d / "ok.md")])
+            except OSError:
+                return (1, False, False)     # what the unguarded version did, as a VALUE
+            out = err.getvalue()
+            return (rc, "CANNOT RUN" in out, "Traceback" not in out)
+        finally:
+            _os.chmod(locked, stat.S_IRWXU)
 
 
 def _metadata_failure_probe() -> tuple:
@@ -821,6 +907,9 @@ def self_test() -> int:
         ("...and a third argv, with no paths at all, is CANNOT RUN too",
          main(["--pattern", "x", "--control", "y"]), 2),
         # ── r2 Claude HIGH: an unreadable DIRECTORY is as unsafe as an unreadable file ───────
+        ("⛔ the chmod-000 world IS buildable here — if THIS fails, the three cases below were "
+         "NOT RUN and must not be read as passes (r4: the sibling's missing sentinel)",
+         _unreadable_dir_probe()[0] != -1, True),
         ("⭐ an unreadable DIRECTORY is CANNOT RUN, not a confident absence (r2 Claude H1)",
          _unreadable_dir_probe()[0], 2),
         ("...and it says CANNOT RUN rather than reporting a clean search",
@@ -841,6 +930,25 @@ def self_test() -> int:
         ("...and it says CANNOT RUN", _metadata_failure_probe()[1], True),
         ("...and does so WITHOUT a traceback, because a crash is not a contract",
          _metadata_failure_probe()[2], True),
+        # ── r4 Codex LOW: what a NON-FILE entry actually does, against a comment that said
+        # the opposite. A dangling symlink is `is_file() is False` with no exception raised.
+        ("⭐ r4: a dangling symlink is SKIPPED, not CANNOT RUN — the two real files are found",
+         _nonfile_entry_probe()[0], 2),
+        ("...and it adds NOTHING to the unreadable channel, which is what the comment at that "
+         "branch wrongly claimed it did (backlog #263 owns whether that is the right policy)",
+         _nonfile_entry_probe()[1], 0),
+        # ── r4 Codex MEDIUM: the guard r3 added to the TOP-LEVEL classification had no case ─
+        # Deleting the whole try/except left 79/79 green with no [FAIL] line. The guard was
+        # correct and load-bearing; what was missing was anything that could notice its removal.
+        ("⛔ the chmod-000 world IS buildable here — if THIS fails, the three cases below were "
+         "NOT RUN (r4 Codex M2)",
+         _top_level_named_probe()[0] != -1, True),
+        ("⭐ r4: a NAMED path whose parent is unreadable is rc=2, where deleting r3's guard gave "
+         "an unhandled PermissionError exiting 1",
+         _top_level_named_probe()[0], 2),
+        ("...and it says CANNOT RUN", _top_level_named_probe()[1], True),
+        ("...and without a traceback — the guard the WALK had, applied to the named path too",
+         _top_level_named_probe()[2], True),
         # ── r3 Codex LOW: directory identity is (st_dev, st_ino), not a resolved string ─────
         # ⭐ r3 Claude BLOCKING: the SHAPE of the identity, which differs on every platform.
         # The behavioural case below cannot discriminate on a case-SENSITIVE filesystem — which

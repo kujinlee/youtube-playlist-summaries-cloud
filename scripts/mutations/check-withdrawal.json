@@ -169,11 +169,11 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude M4 — sentence_around returns the WHOLE window, so weak markers are window-wide again by the back door: the function M4 added is the one the sweep did not reach (`--diff-coverage` said so before this entry existed)",
+    "name": "⟳ r1 Claude M4 — sentence_around returns the WHOLE window, so weak markers are window-wide again by the back door: the function M4 added is the one the sweep did not reach (`--diff-coverage` said so before this entry existed) ⟳ RETARGETED r4: the r4 M1 mask moved this line (#252's 8th instance, again inside the commit fixing a finding)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(window)] + [len(window)]",
+        "    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(masked)] + [len(window)]",
         "    bounds = [0, len(window)]"
       ]
     ],
@@ -296,6 +296,19 @@
     ],
     "expect": [
       "⭐ LIVE r3: a repeated figure whose FIRST occurrence is marked and second is not is a SURVIVOR — the caller requires every occurrence to be exempt"
+    ]
+  },
+  {
+    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]",
+        "    runs = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r4: ...and the SAME sentence wrapped at the span's COLON is exempted too, where it used to be a survivor — a colon inside code is not a sentence boundary"
     ]
   }
 ]

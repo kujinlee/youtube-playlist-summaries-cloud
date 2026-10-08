@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 128 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 133 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -513,11 +513,20 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("⚠ KNOWN WRONG — `tier 2 users only`", "**tier 2 users only**", 1),
     ("⚠ KNOWN WRONG — `Python 3 ships`", "**Python 3 ships**", 1),
     ("⚠ KNOWN WRONG — `Day 2 metrics`", "**Day 2 metrics**", 1),
+    # ⛔ r4 Codex LOW — FOUR OF THE FIFTEEN WITNESSES HAD NO CASE, so the sentence below ("the
+    # witnesses above are kept as cases") was false about a third of them, and a change that made
+    # these four worse would have been invisible. Measured: 11 cases over 15 documented witnesses.
+    ("⚠ KNOWN WRONG — `option 3 chosen`", "**option 3 chosen**", 1),
+    ("⚠ KNOWN WRONG — `level 2 access`", "**level 2 access**", 1),
+    ("⚠ KNOWN WRONG — `attempt 2 failed the gate`", "**attempt 2 failed the gate**", 1),
+    ("⚠ KNOWN WRONG — `table 3 lists them`", "**table 3 lists them**", 1),
     ("⚠ KNOWN MISSED — `2 and 3 were red` is a genuine count and is not seen",
      "**2 and 3 were red**", 0),
     ("⚠ KNOWN MISSED — `4 from the sweep`", "**4 from the sweep**", 0),
     ("⚠ KNOWN MISSED — `2 in total`", "**2 in total**", 0),
     ("⚠ KNOWN MISSED — `3 or more rounds`", "**3 or more rounds**", 0),
+    ("⚠ KNOWN MISSED — `6 that survived`, the fifth documented miss and the one that had no "
+     "case until r4", "**6 that survived**", 0),
     ("⚠ KNOWN MISSED — `1 in 60`, which is this repo's own phrasing for a false-fire bound",
      "**1 in 60**", 1),
     ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",

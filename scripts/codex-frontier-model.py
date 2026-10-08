@@ -10,12 +10,13 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 39 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 43 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
-pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
-the cache is missing or yields no candidate (caller should fall back to `codex`'s own
-default or pass --model explicitly).
+pick the one with the smallest `priority`. Exits **2 — CANNOT RUN** with a message on stderr if
+the cache is missing, unreadable, malformed, or yields no candidate (caller should fall back to
+`codex`'s own default or pass --model explicitly). ⛔ 2 AND NOT 1: none of those is a violation,
+and `sys.exit(<string>)` — which every arm used until r4 — exits 1. See `cannot_run`.
 
 KNOWN LIMITATION — this script CANNOT guarantee the slug it prints is runnable.
 The cache carries no minimum-client-version field, so a model newer than the pinned Codex
@@ -40,6 +41,7 @@ import json
 import os
 import re
 import sys
+from typing import NoReturn
 
 CACHE = os.path.expanduser("~/.codex/models_cache.json")
 CONFIG = os.path.expanduser("~/.codex/config.toml")
@@ -201,6 +203,32 @@ def refusal_message(data: dict) -> str:
     return "\n".join(bits)
 
 
+def cannot_run(message: str) -> NoReturn:
+    """Print a refusal and exit **2**. The ONE way this module refuses. r4 Codex H1.
+
+    ⛔ WHY 2 AND NOT 1, AND WHY THIS IS A FIX AND NOT A PREFERENCE. Every arm below used
+    `sys.exit(f"error: …")`, and `sys.exit` with a STRING exits **1** — the code this repository
+    reads as "a violation was found". Each arm is the opposite: the cache cannot yield a model, so
+    nothing was measured. The malformed-shape arm made this explicit and then contradicted itself:
+    its own comment named `rc=1` as the defect it was fixing ("which this repository's rc
+    convention reads as a VIOLATION rather than a cannot-run") and its text ends ⛔ TREAT THIS AS
+    THE GATE NOT HAVING RUN — while exiting 1. Measured at `ea857e4a` with
+    `{"client_version":"1.2.3","models":"oops"}`: **rc=1**. The fix changed the message and left
+    the condition its own rationale identified.
+
+    `0 = ok, 1 = violation, 2 = CANNOT RUN` is this repo's contract, and *cannot run is a FAILURE,
+    never a pass* — but it is also never an accusation. A caller that falls back on either code
+    still wants to know which happened, and `scripts/codex-review.py` reports 1 as "the gate did
+    NOT run" and 2 as "CANNOT RUN": both fall back, and only one is true here.
+
+    ⚠ NOT CHANGED BY THIS, AND FILED INSTEAD (backlog #264): a `SystemExit` raised through
+    `codex-review.py`'s `resolve_candidates()` call still bypasses `emit`, so no verdict is
+    written and nothing outside the process records that the gate did not run.
+    """
+    print(message, file=sys.stderr)
+    sys.exit(2)
+
+
 def resolve_candidates() -> "list[str]":
     """All usable model slugs, most-frontier FIRST (ascending `priority`).
 
@@ -213,9 +241,9 @@ def resolve_candidates() -> "list[str]":
         with open(CACHE, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        sys.exit(f"error: {CACHE} not found — run `codex` once to populate the model cache")
+        cannot_run(f"error: {CACHE} not found — run `codex` once to populate the model cache")
     except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"error: cannot read {CACHE}: {e}")
+        cannot_run(f"error: cannot read {CACHE}: {e}")
 
     # ⛔ r3 Claude LOW — A WELL-FORMED DOCUMENT OF THE WRONG SHAPE WAS A CRASH. The handlers
     # above catch a missing file, an unreadable one and invalid JSON; they do not catch VALID
@@ -223,15 +251,19 @@ def resolve_candidates() -> "list[str]":
     # "models":"oops"}`: `AttributeError: 'str' object has no attribute 'get'`, rc=1 — which
     # this repository's rc convention reads as a VIOLATION rather than a cannot-run, and which
     # `codex-review.py` would see as a failed gate rather than an unusable cache.
+    # ⟳ r4 Codex H1 — AND THE FIRST FIX DID NOT ACHIEVE THAT. It replaced the crash with
+    # `sys.exit(<string>)`, which ALSO exits 1, so the rc this comment calls the defect survived
+    # its own repair and only the message improved. Refusal now goes through `cannot_run`, which
+    # exits 2, and four cases pin the CODE rather than the wording.
     if not isinstance(data, dict) or not isinstance(data.get("models"), list):
-        sys.exit(f"error: {CACHE} parsed but its `models` is "
+        cannot_run(f"error: {CACHE} parsed but its `models` is "
                  f"{type(data.get('models') if isinstance(data, dict) else data).__name__}, not a "
                  f"list — the cache is malformed. Run `codex` once to repopulate it. "
                  f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
 
     slugs = usable_models(data)
     if not slugs:
-        sys.exit(refusal_message(data))
+        cannot_run(refusal_message(data))
     return slugs
 
 
@@ -262,6 +294,38 @@ def write_config(slug: str) -> None:
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
     with open(CONFIG, "w", encoding="utf-8") as f:
         f.write(block + existing.lstrip("\n"))
+
+
+def _refusal_code(cache_text: "str | None") -> int:
+    """The exit code `resolve_candidates` refuses with, for a given cache. r4 Codex H1.
+
+    ⛔ THIS PINS THE CODE, WHICH IS THE THING THAT WAS WRONG. The four goldens pin the refusal
+    TEXT, and text is exactly what the first fix got right while leaving the code at 1. A message
+    ending "TREAT THIS AS THE GATE NOT HAVING RUN" that exits 1 is a cannot-run wearing a
+    violation's number, and nothing in 39 cases could see it.
+
+    `cache_text=None` means no cache file at all. Returns the `SystemExit.code`, or -1 if the call
+    RETURNED instead of refusing — never a passing value, because a refusal that does not happen
+    must fail the case rather than satisfy it.
+    """
+    import tempfile
+    global CACHE
+    saved = CACHE
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "models_cache.json")
+        if cache_text is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(cache_text)
+        CACHE = path
+        try:
+            import contextlib, io
+            with contextlib.redirect_stderr(io.StringIO()):
+                resolve_candidates()
+            return -1                      # it did not refuse: a FAILING sentinel, not a pass
+        except SystemExit as e:
+            return e.code if isinstance(e.code, int) else 1
+        finally:
+            CACHE = saved
 
 
 def _self_test() -> int:
@@ -413,6 +477,21 @@ def _self_test() -> int:
     case("⭐ the refusal for a fixed cache EQUALS its golden text — an appended sentence "
          "contradicting the guidance cannot pass (backlog #249)",
          refusal_message(_GOLDEN_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN)
+
+    # ── r4 Codex H1: the refusal CODE, which no case pinned while four pinned its wording ─────
+    # Measured at ea857e4a: every arm used `sys.exit(<string>)` and so exited 1 — including the
+    # arm whose own comment named rc=1 as the defect it existed to fix. 0 = ok, 1 = violation,
+    # 2 = CANNOT RUN; an unusable cache is the third of those and never the second.
+    case("⭐ a MALFORMED cache refuses with 2 — CANNOT RUN, not 1 — and this is the arm whose "
+         "comment named rc=1 as the defect while exiting 1",
+         _refusal_code('{"client_version":"1.2.3","models":"oops"}'), 2),
+    case("...and an ABSENT cache does too, so the rule is the module's and not one arm's",
+         _refusal_code(None), 2),
+    case("...and an UNPARSEABLE cache does too",
+         _refusal_code("not json at all"), 2),
+    case("...and a cache that parses and yields NO candidate does too — the arm that sent a "
+         "round of PR #364 to a one-reviewer fallback",
+         _refusal_code('{"models":[]}'), 2),
 
     # ⛔ BACKLOG #249, SECOND ARM — round 1 Claude H2. `refusal_message` has TWO refusal arms and
     # the golden case above reaches only the all-hidden one. The #254 arm — the one THIS branch
