@@ -695,6 +695,7 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
+    "scripts/check-provenance.py": 6,
     "scripts/check-withdrawal.py": 7,
     "scripts/find-claim.py": 7,
     "scripts/observer_log.py": 19,
@@ -3398,6 +3399,7 @@ def _self_test() -> int:
                                       "scripts/check-producer-enumeration.py",
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
+                                      "scripts/check-provenance.py",
                                       "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
                                       "scripts/check-rc-contract.py",
@@ -4953,7 +4955,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1422)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1428)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

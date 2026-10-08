@@ -300,6 +300,18 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "check-provenance.py": (
+        # DERIVED by running `analyse()`; 0 findings.
+        "added_rows.diff_text",
+        "bolded_figures.row",
+        "findings_for.rows",
+        "has_provenance.row",
+        "is_backlog_row.line",
+        "row_id.line",
+        "verdict.n_findings",
+        "verdict.n_rows",
+        "verdict.strict",
+    ),
     "check-withdrawal.py": (
         # DERIVED by running `analyse()`; 0 findings alongside this set.
         "is_exempt_path.path",

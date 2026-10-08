@@ -1,0 +1,80 @@
+[
+  {
+    "name": "the bold-span length cap goes, so a bolded sentence counts as a figure",
+    "edits": [
+      [
+        "        if len(b) > MAX_BOLD:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a bold span longer than MAX_BOLD is a sentence, not a figure"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "a bolded DATE stops being stripped, so a decision marker reads as a measurement",
+    "edits": [
+      [
+        "NUM_RE.search(DATE_RE.sub(\"\", b))",
+        "NUM_RE.search(b)"
+      ]
+    ],
+    "expect": [
+      "⛔ a bolded DATE is a decision marker, not a measurement"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "⭐ provenance is always satisfied, so a figure with only a filing date passes",
+    "edits": [
+      [
+        "    return bool(PROVENANCE_RE.search(row))",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ a row with a bolded figure and only a date FIRES"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "the provenance test is dropped at the call site, so every figure row is a finding",
+    "edits": [
+      [
+        "if figs and not has_provenance(line):",
+        "if figs:"
+      ]
+    ],
+    "expect": [
+      "a row naming a commit passes"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "--strict stops being strict",
+    "edits": [
+      [
+        "return (1 if strict else 0), (",
+        "return 0, ("
+      ]
+    ],
+    "expect": [
+      "findings under --strict exit 1"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "an empty row set stops being ok and falls through to the figure arms",
+    "edits": [
+      [
+        "    if n_rows == 0:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ no rows touched says so, rather than claiming everything passed"
+    ],
+    "file": "scripts/check-provenance.py"
+  }
+]
