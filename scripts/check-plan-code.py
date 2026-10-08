@@ -697,7 +697,16 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 52,   # ⟳ r9 Codex H1/H2/M1: +3 — tab-expanded columns, the
+    "scripts/check-withdrawal.py": 54,   # ⛔ r9 Claude: and a SANCTIONED FALL of 2 — the
+                                         # indent fallback is DEAD CODE (0 of 2,466 shapes)
+                                         # because the walk-back's `cont_seen` subsumes it, so
+                                         # it is DELETED and its two entries are RETIRED WITH
+                                         # THEIR SUBJECT rather than left orphaned.
+                                         # ⟳ r9 Claude B1/H1/H2/M2: +4 — the walk-back's content
+                                         # column across lazy lines, the nested-quote
+                                         # comparison AND what it compares, and the indent
+                                         # fallback's marker guard.
+                                         # ⟳ r9 Codex H1/H2/M1: +3 — tab-expanded columns, the
                                          # indent fallback when no marker remains, and the
                                          # width of an ordered marker.
                                          # ⟳ r8 Claude H1/H2/L2: +5 — the list content column
@@ -5621,7 +5630,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1551)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1553)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

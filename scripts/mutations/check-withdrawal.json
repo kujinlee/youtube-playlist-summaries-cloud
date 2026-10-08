@@ -585,11 +585,11 @@
     ]
   },
   {
-    "name": "⛔ r8 Claude H1 — the paragraph's first line stops being asked for its list content column, which is the whole fix: `cont` is pinned to 0 and the `[ \\t]{0,3}` cap applies inside a list item, where it is wrong",
+    "name": "⛔ r8 Claude H1 — the paragraph's first line stops being asked for its list content column, which is the whole fix: `cont` is pinned to 0 and the `[ \\t]{0,3}` cap applies inside a list item, where it is wrong ⟳ RETARGETED r9 Claude H1: the line gained the `cont_seen` max when the walk-back began carrying the column across lazy continuations, so the old anchor was gone. Pinning 0 breaks the SAME property. #252's class, ~43rd instance, THIRD consecutive fold.",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    cont = list_content_column(first_rest)",
+        "    cont = max(cont_seen, list_content_column(first_rest))",
         "    cont = 0"
       ]
     ],
@@ -598,12 +598,12 @@
     ]
   },
   {
-    "name": "⛔ r8 Claude H1 — the quote depth is NOT re-read after the container indent is stripped, so a `>` sitting AT the content column stays hidden behind `QUOTE_MARKER`'s 3-space cap. This is the clause the last 10 of the 130 lenient shapes needed",
+    "name": "⛔ r8 Claude H1 — the quote depth is NOT re-read after the container indent is stripped, so a `>` sitting AT the content column stays hidden behind `QUOTE_MARKER`'s 3-space cap. This is the clause the last 10 of the 130 lenient shapes needed ⟳ RETARGETED r9 Claude H2: the comparison this named was CORRECTED to `d + d2 > depth`, and r9 Claude H2 now owns that line. This entry keeps the property it was written for — that the depth is RE-READ past the content column at all — by killing the re-read itself.",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "            if d2 > d:",
-        "            if False:"
+        "            d2, rest2 = quote_depth(rest)",
+        "            d2, rest2 = 0, rest"
       ]
     ],
     "expect": [
@@ -650,19 +650,6 @@
     ]
   },
   {
-    "name": "⛔ r9 Codex H1 — `list_content_column` stops falling back to the INDENT when no marker remains on the line, so a span that opens below the item's first line reports a content column of 0 and the whole container fix stops applying",
-    "file": "scripts/check-withdrawal.py",
-    "edits": [
-      [
-        "            return max(col, _column(rest[i:i + len(rest[i:]) - len(rest[i:].lstrip(\" \\t\"))], col))",
-        "            return col"
-      ]
-    ],
-    "expect": [
-      "⛔ r9 Codex H1: the span opens on the item's SECOND line, where there is no marker left to read and the INDENT is the only remaining evidence of the container — the walk-back breaks at the marker line, so `cont` came back 0 and the fix did not apply at all"
-    ]
-  },
-  {
     "name": "⛔ r9 Codex M1 — `LIST_MARKER` reads only a ONE-DIGIT ordered marker, so `999)` stops opening an item. Lenient, and it survived the whole 157-case suite when found",
     "file": "scripts/check-withdrawal.py",
     "edits": [
@@ -673,6 +660,45 @@
     ],
     "expect": [
       "⛔ r9 Codex M1: a THREE-DIGIT ordered marker still opens an item — `LIST_MARKER` reads `\\d{1,9}`, and narrowing it to one digit leaves every other case in this file green"
+    ]
+  },
+  {
+    "name": "⛔ r9 Claude H1 — the walk-back stops carrying the list content column across lazy continuations, so a span opening on a line that omits the item's prefix reports 0 and the container is lost. 130 of 196 shapes, unmoved by the two folds before it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            cont_seen = max(cont_seen, list_content_column(prest))\n            break",
+        "            break"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Claude H1: the span opens on a LAZY continuation — a line that omits the item's prefix entirely, so there is neither a marker NOR an indent to read and `cont` came back 0. All three generations of this fix missed it: 130 of 196 shapes, unmoved by r8 and r9"
+    ]
+  },
+  {
+    "name": "⛔ r9 Claude H2 — the nested-quote test forgets the depth already stripped from the line and reads `d2 > d`, which is structurally DEAD at every quote depth >= 1 (`1 > 1` is false) — exactly the context the clause was added for. ⚠ `d2 > 0` was a STRICTLY BETTER predicate that all 163 cases accepted, so this pins the comparison, not the clause",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            if d + d2 > depth:",
+        "            if d2 > d:"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Claude H2/B1: a list inside ONE quote whose block start is a nested quote. `d2 > d` is structurally DEAD at quote depth >= 1 — `1 > 1` is false — which is exactly where the clause was added for. The test that belongs there is `d + d2 > depth`. ⚠ AND THE FOLD MISATTRIBUTED THIS SHAPE to 'interleaved containers nested deeper than one level' and handed it to #267: there is ONE quote and ONE item, and `cont` is already correct"
+    ]
+  },
+  {
+    "name": "⛔ r9 Claude M1 — the content-column strip is skipped entirely, which also shows the clause is load-bearing BELOW column 4 and refutes the fold's bolded claim that the defect is exactly content column >= 4",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if cont:\n            k, c = 0, 0",
+        "        if False:\n            k, c = 0, 0"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Claude M1: `cont` is LOAD-BEARING below 4, which refutes the fold's bolded claim that the defect is exactly content column >= 4 — the strip runs on a remainder whose quote marker is already gone, so the 2 columns it removes are not the 2 that `BLANK_OR_BLOCK`'s own cap would have covered. `if cont >= 4:` kept all 163 cases green"
     ]
   }
 ]

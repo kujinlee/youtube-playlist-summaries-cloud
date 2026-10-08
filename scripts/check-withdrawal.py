@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 163 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 168 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -414,6 +414,13 @@ BACKTICK_RUN = re.compile(r"`+")
 #   r8 + the fence clause in BOTH predicates              0      34      34     130 of 196
 #   r8 + the LIST CONTENT COLUMN (r8 Claude H1)           0      34      34       0 of 196
 #   r9 + TAB COLUMNS and the INDENT fallback               0      34      34       0 of 196
+#   r9 Claude + the LAZY column, the quote COMPARISON       0      34      34       0 of 196
+#     and the indent fallback DELETED as dead code
+#
+# ⚠ THE GRID AND THE LIST CORPUS HAVE READ 0/34 AND 0/0 FOR FOUR CONSECUTIVE VERSIONS, AND
+# THAT IS THE WARNING, NOT THE REASSURANCE — three of those versions had a LENIENT class
+# running into the hundreds that neither corpus can express. A corpus that stops moving has
+# stopped being evidence; what moved the measurement every time was a NEW corpus.
 #
 # ⛔ AND THE LIST COLUMN DID NOT CLOSE THE CLASS — r9 Codex H1 and H2. Taking `cont` from the
 # paragraph's first line is wrong whenever the span opens BELOW the item's marker, because the
@@ -426,12 +433,36 @@ BACKTICK_RUN = re.compile(r"`+")
 #   r8 (the list column alone)      170       0    below-marker 130, tabbed 14, interleaved 26
 #   r9 (columns + indent)             3       0    tabbed 1, interleaved 2
 #
-# ⚠ THE THREE RESIDUAL, NAMED RATHER THAN ROUNDED AWAY: one is an ORACLE ARTIFACT — a tab at
-# column 0 is four columns of indent, so `'\t- intro …'` is an INDENTED CODE BLOCK and cmark
-# renders the whole document as `<pre><code>`, which makes "no inline code" mean "no paragraph at
-# all" rather than "a boundary" (a case below pins it, and says it is not a claim that the answer
-# is right). The other TWO are interleaved containers nested deeper than one level, which is the
-# bound `list_content_column` states in its own docstring and which #267 owns.
+# ⛔⛔ THAT SENTENCE SAID "THREE RESIDUAL" AND WAS WRONG IN BOTH HALVES — r9 Claude B1, and it is
+# the sixth consecutive round in which a figure here was a property of the grid that produced it.
+#   · THE COUNT WAS NOT THREE. Three was the residual of the 294-shape corpus this file wrote for
+#     itself. Over 3,902 adjudicated shapes the residual at `47e33e71` was 1,199, in FOUR classes.
+#   · AND THE TWO IT NAMED WERE MISATTRIBUTED, which is the half that misdirects. It called them
+#     "interleaved containers nested deeper than one level" and handed them to #267 — a structural
+#     redesign that is the owner's call. They are a SINGLE quote around a SINGLE item, where
+#     `list_content_column` already returns the right column and the defect was the COMPARISON:
+#     `d2 > d` forgets the depth already stripped from the line, so it is dead at every quote depth
+#     >= 1. One token (`d + d2 > depth`) closed all ten, free in both directions. ⤳ Parking a
+#     comparison bug as a design question is how eight of nine rounds handed the next round a
+#     false floor.
+#
+# What this fold closed, and what is genuinely left — each figure re-derived on its own corpus:
+#
+#   class                                                     LENIENT before   after
+#   C1  the span opens on a LAZY continuation (196)                      130       0
+#   C2  a list inside ONE quote, block start a nested `>` (10)            10       0
+#   C5  a legal 1-3 space TOP-LEVEL paragraph indent (192)           0 / 132 noisy  0 / 0
+#   C3  a block start between the OUTER and INNER column (120)            72      72
+#   C4  an ordered marker other than `1` inside an item (672)            672     672
+#
+# ⛔⛔ C3 AND C4 ARE NOT LOCALLY FIXABLE, AND THAT IS THE POINT. C3: `cont` is ONE integer, and
+# CommonMark ends the item's paragraph for a block start at ANY column from the OUTER container's
+# content column up — no scalar can express a SET of columns, so the repair is a stack of open
+# container columns, i.e. block-structure parsing. It bites this file's own fixture: `- - - ` is
+# pinned at column 6 and is LENIENT at 4 and 5. C4: `0*1[.)]` is right at top level, where only
+# `1` can interrupt a paragraph, and wrong inside an item, where ANY ordered number CLOSES it —
+# which is r8 Claude H1's mistake (a rule correct at top level, wrong in a container) for the
+# THIRD consecutive round. Both are recorded on #267 as evidence; the decision is the owner's.
 #
 # ⚠ THE SECOND COLUMN IS THE ONE TO READ, AND IT FALLS: noise goes 88 → 34 and never rises. ⛔ r8
 # Claude B1 — the version of this paragraph that shipped at `d6967caa` said the count "ROSE from
@@ -544,9 +575,14 @@ def list_content_column(rest: str) -> int:
         `- - - `  (6)                                 26           0
         `1. 1. `  (6)                                 26           0
 
-    ⚠ COLUMNS 2 AND 3 CONTRIBUTE ZERO, which is the rule stated precisely: the defect is exactly
-    CONTENT COLUMN >= 4, because 3 is already inside the existing cap. A fix that widened the cap
-    blindly would have been unfalsifiable against this corpus.
+    ⚠ COLUMNS 2 AND 3 CONTRIBUTE ZERO *ON THAT CORPUS*, and the earlier version of this note drew
+    a bolded rule from it — "the defect is exactly CONTENT COLUMN >= 4". ⛔ r9 Claude M1: FALSE, and
+    a mutation proved it while all 163 cases stayed green. `if cont >= 4:` adds 24 LENIENT shapes,
+    because the strip runs on a remainder whose QUOTE MARKER HAS ALREADY BEEN REMOVED, so the two
+    columns it takes off are not the two `BLANK_OR_BLOCK`'s own cap would have covered. Witness,
+    `cont` = 2 and load-bearing: `'- > - first\n  >   the count was `wrong:\n  >     # h\n…'`.
+    ⤳ The honest statement is narrower: on a corpus of SIMPLE containers at top level, columns 2
+    and 3 contribute nothing. Inside a quote they do.
 
     ⚠ DIRECTION, STATED RATHER THAN HIDDEN: stripping the container indent can only make MORE
     lines match a block start, so this fails NOISY (a dismissible warning) and never lenient.
@@ -562,9 +598,19 @@ def list_content_column(rest: str) -> int:
     while True:
         m = LIST_MARKER.match(rest, i)
         if not m:
-            # ⛔ r9 Codex H1 — the span may open on a line BELOW the marker, where there is no
-            # marker left to read and the only remaining evidence of the container is the INDENT.
-            return max(col, _column(rest[i:i + len(rest[i:]) - len(rest[i:].lstrip(" \t"))], col))
+            # ⛔ r9 CLAUDE: THIS USED TO FALL BACK TO THE BARE INDENT, and the fallback is now DEAD
+            # CODE — measured 0 of 2,466 shapes distinguish it from `return col`. r9 Codex H1 added
+            # it because the span may open on a line BELOW the marker, where no marker is left to
+            # read; the walk-back in `paragraph_ends_between` now carries `cont_seen` across the
+            # continuation lines INCLUDING the one that breaks it, which is where the marker lives,
+            # so it answers that case more generally and this answered it twice. ⤳ Two mechanisms
+            # for one property, and the spare one was UNKILLABLE: its mutation survived the whole
+            # suite because the other mechanism supplied the same answer. Deleted rather than
+            # shipped, and its manifest entry is RETIRED WITH ITS SUBJECT.
+            # ⚠ AND IT WAS NOT MERELY REDUNDANT: returning the bare indent made `cont` 3 for a
+            # legal 1-3 space paragraph indent at TOP LEVEL, where this function's docstring
+            # promises 0 — 132 noisy shapes (r9 Claude M2). The promise is structural again now.
+            return col
         col = _column(rest[i:m.end()], col)
         i = m.end()
 
@@ -636,16 +682,19 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
     # line — lazy lines inherit the container — and take the greatest depth seen on the way.
     line_start = text.rfind("\n", 0, nl) + 1
     depth, _ = quote_depth(text[line_start:nl])
-    scan = line_start
+    scan, cont_seen = line_start, 0
     while scan > 0:
         prev_start = text.rfind("\n", 0, scan - 1) + 1
         pd, prest = quote_depth(text[prev_start:scan - 1])
         if BLANK_OR_BLOCK.match(prest):
+            cont_seen = max(cont_seen, list_content_column(prest))
             break                              # that line starts a block, so the paragraph begins here
         depth = max(depth, pd)
+        cont_seen = max(cont_seen, list_content_column(prest))
         scan = prev_start
     _, first_rest = quote_depth(text[scan:text.find("\n", scan)])
-    cont = list_content_column(first_rest)     # ⛔ r8 Claude H1 — 0 at top level, a no-op there
+    cont = max(cont_seen, list_content_column(first_rest))     # ⛔ r8 Claude H1 / r9 Claude H1:
+                                               # `cont_seen` is what makes a LAZY continuation work
     while nl != -1 and nl < end:
         nxt_end = text.find("\n", nl + 1)
         nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
@@ -658,7 +707,7 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
             if c >= cont:
                 rest = rest[k:]                # ⛔ r8 Claude H1 / r9 H2 — tab-expanded columns
             d2, rest2 = quote_depth(rest)      # a `>` can sit AT that column, past QUOTE_MARKER's
-            if d2 > d:                         # 3-space cap — that was the last 10 of the 130
+            if d + d2 > depth:                         # 3-space cap — that was the last 10 of the 130
                 return True
             rest = rest2
         if d > depth:
@@ -1445,17 +1494,52 @@ def self_test() -> int:
          "the strip, not the strip alone",
          _marker_at("  - the count was `wrong:\n    > q\n    holds 1,414 anchors today`"), ""),
         ("...while content column 2 was ALREADY inside the old cap, so this case passed before the "
-         "fix too and is here to bound it: the defect is exactly content column >= 4",
+         "fix too and is here to bound it. ⚠ It does NOT establish the bolded rule the fold "
+         "drew from it — inside a quote `cont` is load-bearing at 2 (r9 Claude M1)",
          _marker_at("- the count was `wrong:\n  - x\n  holds 1,414 anchors today`"), ""),
         ("...and a line at the content column PLUS FOUR is an indented code block INSIDE the item, "
          "which does not interrupt — a fix that widened the cap blindly would go red here",
          _marker_at("  - the count was `wrong:\n        - x\n    holds 1,414 anchors today`"),
          "was "),
+        # ── r9 CLAUDE B1/H1/H2/M1/M2. Four of these pin properties the fold ASSERTED and did
+        # not test, and the last one is the case that would have caught 132 noisy shapes.
+        ("⛔ r9 Claude H1: the span opens on a LAZY continuation — a line that omits the item's "
+         "prefix entirely, so there is neither a marker NOR an indent to read and `cont` came back "
+         "0. All three generations of this fix missed it: 130 of 196 shapes, unmoved by r8 and r9",
+         _marker_at("  - first\nthe count was `wrong:\n    - x\n"
+                    "    holds 1,414 anchors today`"), ""),
+        ("⛔ r9 Claude H2/B1: a list inside ONE quote whose block start is a nested quote. `d2 > d` "
+         "is structurally DEAD at quote depth >= 1 — `1 > 1` is false — which is exactly where the "
+         "clause was added for. The test that belongs there is `d + d2 > depth`. ⚠ AND THE FOLD "
+         "MISATTRIBUTED THIS SHAPE to 'interleaved containers nested deeper than one level' and "
+         "handed it to #267: there is ONE quote and ONE item, and `cont` is already correct",
+         _marker_at(">   - the count was `wrong:\n>     > q\n"
+                    ">     holds 1,414 anchors today`"), ""),
+        ("⛔ r9 Claude M1: `cont` is LOAD-BEARING below 4, which refutes the fold's bolded claim "
+         "that the defect is exactly content column >= 4 — the strip runs on a remainder whose "
+         "quote marker is already gone, so the 2 columns it removes are not the 2 that "
+         "`BLANK_OR_BLOCK`'s own cap would have covered. `if cont >= 4:` kept all 163 cases green",
+         _marker_at("- > - first\n  >   the count was `wrong:\n  >     # h\n"
+                    "  >     holds 1,414 anchors today`"), ""),
+        ("⛔ r9 Claude M2: a TOP-LEVEL paragraph with a legal 1-3 space indent gains NO container, "
+         "and the block start sits at column 4 — the column that DISCRIMINATES. The indent "
+         "fallback used to return the bare indent here, making `cont` 3 at top level where the "
+         "docstring promised 0, and declaring a boundary the parsers do not: 132 noisy shapes. "
+         "⚠ THIS IS THE CASE THE FOLD SHOULD HAVE WRITTEN AND DID NOT",
+         _marker_at("   the count was `wrong:\n    # h\n    holds 1,414 anchors today`"),
+         "was "),
+        ("...and the same shape with the block start at column 7, which is the column the FOLD's "
+         "own negative used. ⛔ It passed at r8 AND at HEAD and could not tell the two apart: four "
+         "columns past the indent, `BLANK_OR_BLOCK`'s cap declines it either way. A case that "
+         "passes for an ambient reason is not covering the branch it names",
+         _marker_at("   the count was `wrong:\n       # h\n"
+                    "       holds 1,414 anchors today`"), "was "),
         # ── r9 Codex H1/H2: the container must be recovered from the ENCLOSING ITEM, not from
         # whichever line the span happens to open on, and its width is in TAB-EXPANDED columns.
         # Measured over a 294-shape corpus of the three classes the earlier corpora could not
         # express (span-below-marker, tabbed markers, interleaved quote/list): LENIENT 170 -> 3,
-        # noise 0 -> 0. ⚠ Of the 3 residual, ONE is an oracle artifact (see the negative below)
+        # noise 0 -> 0. ⚠ THAT 3 WAS A PROPERTY OF THIS CORPUS — over 3,902 shapes it was
+        # 1,199 (r9 Claude B1). Of this corpus's 3, one is an oracle artifact (the negative below)
         # and TWO are interleaved containers nested deeper than one level — the bound this
         # function's docstring states and #267 owns.
         ("⛔ r9 Codex H1: the span opens on the item's SECOND line, where there is no marker left "
