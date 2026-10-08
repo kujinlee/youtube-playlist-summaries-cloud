@@ -420,8 +420,8 @@
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "            if not pq or len(nq.group(1)) > len(pq.group(1)):",
-        "            if True:"
+        "        if d > depth:",
+        "        if d > depth or d > 0:"
       ]
     ],
     "expect": [
@@ -433,8 +433,8 @@
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        elif pq:",
-        "        elif False:"
+        "            if ANY_BLOCK_ISH.match(nxt):",
+        "            if False:"
       ]
     ],
     "expect": [
@@ -498,12 +498,77 @@
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        elif \"|\" in nxt and nxt_end != -1:",
-        "        elif False:"
+        "        elif \"|\" in rest and nxt_end != -1:",
+        "        elif False and nxt_end != -1:"
       ]
     ],
     "expect": [
       "⛔ r7M1: a table HEADER plus its DELIMITER row ends the paragraph — GFM is the dialect GitHub renders, and the lenient reading was wrong in the one that matters"
+    ]
+  },
+  {
+    "name": "⛔ r8 Codex H1 — `quote_depth` stops after the FIRST marker and takes the remainder from before it, which is the pre-r8 pairwise behaviour: a nested quote reads as depth one, so the line that OPENS the inner quote is classified against the outer level and masks straight through",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        i = m.end()",
+        "        return depth, line[i:]"
+      ]
+    ],
+    "expect": [
+      "⛔ r8H1: a NESTED quote `> > ` is depth TWO and interrupts the quoted paragraph — the pairwise version matched contiguous `(>+)` only, read depth one, and masked through it"
+    ]
+  },
+  {
+    "name": "⛔ r8 Codex H3 — the open paragraph's depth is RE-DERIVED from each line, so one lazy continuation erases the quote the paragraph is still inside and an empty `* ` is then judged by the fresh-paragraph rule, which permits it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        d, rest = quote_depth(nxt)",
+        "        d, rest = quote_depth(nxt)\n        depth = d"
+      ]
+    ],
+    "expect": [
+      "⛔ r8H3: quote state SURVIVES a lazy-continuation line — after `plain` the next line carries no marker, and an empty `* ` was then judged by the FRESH-paragraph rule, which permits it, instead of the quote rule, which closes on it"
+    ]
+  },
+  {
+    "name": "⛔ r8 — the paragraph's depth stops being taken from its FIRST line, so a span opening on a lazy continuation reads depth 0 and everything after it is judged by the fresh-paragraph rule. All 42 shapes still lenient after H1-H3 were this one construction",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        depth = max(depth, pd)",
+        "        depth = depth"
+      ]
+    ],
+    "expect": [
+      "⛔ r8: ...and a span OPENING on a lazy line inherits the quote too — depth comes from the PARAGRAPH's first line, and all 42 shapes still lenient after H1-H3 were this one"
+    ]
+  },
+  {
+    "name": "⛔ r8 own-corpus — the FENCE clause leaves `BLANK_OR_BLOCK`, so a ``` or ~~~ line stops ending a paragraph and the span masks straight through it. This was LIVE on 16 of 1,620 shapes, and the note above had already claimed zero over a grid that contained no fence",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?:`{3,}|~{3,})\"                      # ⛔ A FENCE — three or more backticks OR\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ r8 own-corpus: a TILDE fence ends the paragraph — 16 of 1,620 shapes were lenient on this class and the grid that scored zero had never contained a fence at all"
+    ]
+  },
+  {
+    "name": "⛔ r8 own-corpus — the fence characters leave `ANY_BLOCK_ISH`, so a fence on a LAZY line inside a quote stops ending the paragraph. Fixing only `BLANK_OR_BLOCK` left exactly these four shapes",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "[-*+=_>#<~`]",
+        "[-*+=_>#<]"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 own-corpus: ...and a fence on a LAZY line inside a quote, which `ANY_BLOCK_ISH` governs — four shapes survived fixing only `BLANK_OR_BLOCK`, so the clause went in BOTH"
     ]
   }
 ]

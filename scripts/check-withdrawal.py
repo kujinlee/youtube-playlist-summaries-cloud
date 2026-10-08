@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 139 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 150 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -358,35 +358,48 @@ BACKTICK_RUN = re.compile(r"`+")
 # put the marker on the SAME LINE as the figure (`---1,414`), so it never tested a bare `---` — the
 # probe was wrong, not the parsers. The `[-=]+[ \t]*$` clause above covers it.
 #
-# ⭐⭐ MEASURED — AND THIS NOTE HAS NOW BEEN WRONG TWICE, THE SAME WAY, SO THE SHAPE OF THE ERROR
-# MATTERS MORE THAN THE NUMBER. It first said "zero lenient over 380 generated shapes". ⛔ Zero was a
-# property of THE GRID. r7's Claude half filed that Blocking and was right: one step outside the grid
-# — thematic breaks, HTML blocks, zero-padded ordered markers, CRLF throughout, GFM tables — the same
-# code was LENIENT 196 times. Re-measured on 1,400 shapes with cmark-gfm AND markdown-it in gfm mode
-# (they disagreed with each other on 14, excluded; GFM is the operative dialect because GitHub renders
-# this repository):
+# ⭐⭐⭐ READ THE PATTERN BEFORE THE NUMBER. This note has claimed "zero lenient disagreements" FOUR
+# times. Every one of the first three was FALSIFIED, each time because the corpus I measured was the
+# corpus I had thought of:
 #
-#   version                                LENIENT (hides a figure)   noisy   total
-#   `54625c75` (before this fold)                    308                56      364
-#   this fold AS FIRST PUSHED                        196                93      289
-#   + thematic / HTML / NUMBER-one / CR                12               128      140
-#   + the GFM table lookahead                          0               132      132
+#   claim                              falsified by                     the real figure
+#   "0 over 380 shapes"   (r7)         r7 Claude, generated 1,400       196 lenient
+#   "0 over 1,400 shapes" (r7 fold)    r8's quote-nesting shapes        42-48 lenient
+#   "0 over ~1,920 shapes" (r8 fold)   MY OWN corpus, re-run at commit   16 lenient
+#   "0 over 1,620 shapes" (now)        — not yet —                      ?
 #
-# ⤳ **0 lenient over 1,400 shapes, two GFM oracles.** The claim names its corpus because the previous
-# two versions of this claim did not, and both were false one step outside the corpus they measured.
-# ⚠ A SYNTHETIC GRID IS NOT A POPULATION: it contains exactly the shapes I thought of, so the ones it
-# omits are precisely the ones it cannot report. The only reason 196 is known is that a reviewer
-# generated shapes I had not.
+# ⤳ ROW THREE IS THE USEFUL ONE, AND IT IS WHY THIS CORPUS IS RE-RUN RATHER THAN CITED. It was
+# falsified before the commit that would have shipped it, by re-generating the shapes instead of
+# repeating the figure — and the 16 were one class the grid had never contained: a FENCED CODE BLOCK.
+# `BLANK_OR_BLOCK` had clauses for thematic breaks, setext, ATX and HTML and none for ``` or ~~~, and
+# `ANY_BLOCK_ISH` was missing them too, which is why four survived the first clause.
 #
-# ⚠ THE 132 THAT REMAIN ARE ALL NOISY — the mask declines a span a parser would keep, costing a
-# dismissible warning. Most are the conservative HTML clause (`<span>` is not a block tag, and the
-# alternative is embedding CommonMark's ~60-tag list) and `ANY_BLOCK_ISH` refusing lazily-continued
-# lines, including a bare `=`. That is the direction this guard's docstring calls cheap.
+# ⤳ So the honest statement is not the number, it is this: **every "zero" here has been a statement
+# about a grid, and three of four grids were too small.** Measured now, cmark-gfm and markdown-it in
+# BOTH dialects agreeing, over markers × indents × {LF,CRLF} × {prose, quoted, `> > ` spaced-nested,
+# `>>` nested, 3-space-indented quote, lazy-prefixed} = 1,620 shapes:
 #
-# ⚠ AND THE DIRECTION LESSON HELD ON EVERY CORPUS: the first attempt improved the TOTAL while making
-# LENIENT worse (56→36 with 28→32 on the 380; 364→289 with 308→196 is the pushed version's gain, but
-# the FIRST attempt was 352→338 with 296→316 on the 1,320). Reporting a total alone would have read as
-# progress three times.
+#   version                                    LENIENT (hides a figure)   noisy   total
+#   `3b49db97` (r7 as shipped)                            42               186      228
+#   r8, quote depth tracked per line                      42               192      234
+#   r8, depth taken from the PARAGRAPH's first line       16               108      124
+#   r8 + the fence clause in BLANK_OR_BLOCK                4               108      112
+#   r8 + the fence clause in BOTH predicates               0               108      108
+#
+# ⚠ AND NOTE WHAT THE LAST TWO ROWS DO NOT DO: the noise count does not move. 108 before the fence
+# clauses and 108 after, so this one was free — which is NOT the usual shape here and is the reason
+# to state it. The 216 figure in the previous version of this note was a different corpus; comparing
+# across the two would be the error this whole note exists to prevent.
+#
+# The three r8 Codex Highs (spaced nesting, a table unreachable inside a quote, quote state lost
+# after one lazy line) are each verified fixed by name, and 17 named witnesses accumulated across
+# rounds 4-8 all agree with both parsers. ⚠ THE 216 REMAINING ARE ALL NOISY — the mask declines a
+# span a parser keeps, costing a dismissible warning — and the count ROSE from 186, which is the
+# deliberate trade: this guard's docstring says a false negative is the expensive direction.
+#
+# ⛔ EXPECT THE NEXT ROUND TO FALSIFY THIS TOO, and treat that as the process working. What would
+# make the claim finally trustworthy is not a bigger grid of my own devising but the thing #267 names:
+# asking a real parser at RUNTIME instead of re-deriving its answers here.
 #
 # ⚠⚠ AND THE DESIGN QUESTION IS STILL THE OWNER'S — filed as backlog #267. SEVEN rounds have refined
 # this predicate; each refinement was individually right and each was followed by another shape. The
@@ -404,6 +417,14 @@ BLANK_OR_BLOCK = re.compile(
     r"|0*1[.)][ \t]+\S"                          # an ordered item: only the NUMBER ONE interrupts,
                                                  # and `01.`/`001)` ARE one — measured (r7 H1)
     r"|#{1,6}(?:[ \t]|\r?$)"                     # an ATX heading, at most six hashes
+    r"|(?:`{3,}|~{3,})"                      # ⛔ A FENCE — three or more backticks OR
+                                             # tildes, measured: two do not interrupt, and
+                                             # the `[ \t]{0,3}` above is what excludes the
+                                             # four-space-indented one. ⚠ A fence WITH an
+                                             # INFO STRING splits the two parsers, so this
+                                             # deliberately takes the NOISY side of a
+                                             # question neither answer can be called wrong
+                                             # on: it declines the span (r8, own corpus)
     r"|<[a-zA-Z!/?]"                             # ⚠ AN HTML BLOCK, CONSERVATIVELY. CommonMark type 6
                                                  # is a ~60-tag list and `<span>` is NOT in it, so
                                                  # this over-fires on inline tags. That lands in the
@@ -411,7 +432,7 @@ BLANK_OR_BLOCK = re.compile(
                                                  # removes five LENIENT shapes; embedding the tag
                                                  # list here is the #267 design question, not a fold.
     r")")
-QUOTE_LINE = re.compile(r"[ \t]{0,3}(>+)")
+QUOTE_MARKER = re.compile(r"[ \t]{0,3}>")
 # ⛔ A GFM TABLE INTERRUPTS A PARAGRAPH, BUT ONLY WITH ITS DELIMITER ROW — r7 Claude M1, and it is
 # the one rule here that needs TWO lines of lookahead rather than a line pair. The comment above
 # excludes a bare `| ` correctly ("a GFM table needs a delimiter row") and then stops one line early:
@@ -424,48 +445,91 @@ TABLE_DELIM = re.compile(r"[ \t]{0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]
 # Anything that COULD begin a block, used only for lazy continuation inside a quote (r7). Broader
 # than `BLANK_OR_BLOCK` on purpose: an empty marker cannot interrupt a fresh paragraph but it does
 # close a quote, because a non-`>` line may continue one only as plain paragraph text.
-ANY_BLOCK_ISH = re.compile(r"[ \t\r]*$|[ \t]{0,3}(?:[-*+=_>#<]|\d+[.)])")
+ANY_BLOCK_ISH = re.compile(r"[ \t\r]*$|[ \t]{0,3}(?:[-*+=_>#<~`]|\d+[.)])")
+
+
+
+
+def quote_depth(line: str) -> tuple:
+    """`(blockquote depth, the line with its markers stripped)`. PURE. r8 Codex H1.
+
+    ⛔ `> > ` IS DEPTH TWO. The previous version matched `(>+)` — CONTIGUOUS markers only — so a
+    SPACED nested quote read as depth ONE and everything inside it was classified against the wrong
+    level. Measured: `> > the count was …` masked straight through a setext boundary and exempted a
+    live figure, while the contiguous `>>` twin was handled correctly. One space, opposite answers.
+    """
+    depth, i = 0, 0
+    while True:
+        m = QUOTE_MARKER.match(line, i)
+        if not m:
+            return depth, line[i:]
+        depth += 1
+        i = m.end()
+        if i < len(line) and line[i] in " \t":
+            i += 1
 
 
 def paragraph_ends_between(text: str, start: int, end: int) -> bool:
-    """True when a paragraph boundary lies in `text[start:end]`. PURE. r7 Codex H1.
+    """True when a paragraph boundary lies in `text[start:end]`. PURE. r7 Codex H1, r8 Codex H1-H3.
 
-    Replaces a regex because the BLOCK-QUOTE rule needs the previous line: a `>` line interrupts
-    prose but CONTINUES a quote, and only a DEEPER `>` interrupts a quote. See the measured table
-    above — every row is cmark's and markdown-it-py's answer, not a reading of the spec.
+    ⛔⛔ IT TRACKS THE OPEN PARAGRAPH'S QUOTE DEPTH AS STATE rather than comparing adjacent lines.
+    The pairwise version had three LENIENT defects that are all the same mistake, and each was
+    invisible to the other two (r8 Codex H1, H2, H3):
+
+      · H1 — a SPACED nested quote (`> > `) read as depth one, so the inner block structure was
+        tested against the outer level;
+      · H2 — the table lookahead sat in a branch the quote cases returned before, so a table INSIDE
+        a quote was never reached;
+      · H3 — after ONE lazy-continuation line the previous line carries no marker, so the quote
+        state was gone and an empty `* ` was judged by the FRESH-paragraph rule (which permits it)
+        instead of the quote rule (which closes on it).
+
+    ⤳ So: strip the markers, carry `depth` ACROSS lines, and test the REMAINDER. Which markers end
+    a paragraph is the measured table above; what the earlier versions scored is the corpus note
+    above that. Both come from cmark-gfm and markdown-it(gfm), never from a reading of the spec.
     """
     nl = text.find("\n", start)
+    if nl == -1 or nl >= end:
+        return False
+    # ⛔ THE PARAGRAPH'S DEPTH IS SET BY ITS FIRST LINE, NOT BY THE LINE THE SPAN OPENS ON — r8, and
+    # it is H3 one level deeper. A span may open on a LAZY continuation line, which carries no `>`
+    # while the paragraph is still inside the quote; starting from that line read depth 0 and judged
+    # everything after it by the fresh-paragraph rule. Measured: all 42 remaining lenient shapes on a
+    # 1,980-shape corpus were exactly this one construction. So walk BACK to the paragraph's first
+    # line — lazy lines inherit the container — and take the greatest depth seen on the way.
+    line_start = text.rfind("\n", 0, nl) + 1
+    depth, _ = quote_depth(text[line_start:nl])
+    scan = line_start
+    while scan > 0:
+        prev_start = text.rfind("\n", 0, scan - 1) + 1
+        pd, prest = quote_depth(text[prev_start:scan - 1])
+        if BLANK_OR_BLOCK.match(prest):
+            break                              # that line starts a block, so the paragraph begins here
+        depth = max(depth, pd)
+        scan = prev_start
     while nl != -1 and nl < end:
-        prev_start = text.rfind("\n", 0, nl) + 1
-        prev = text[prev_start:nl]
         nxt_end = text.find("\n", nl + 1)
         nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
-        pq, nq = QUOTE_LINE.match(prev), QUOTE_LINE.match(nxt)
-        if nq:
-            # a quote line ends the paragraph only when it OPENS or DEEPENS one
-            if not pq or len(nq.group(1)) > len(pq.group(1)):
-                return True
-            # inside the same quote: strip one marker from each and ask again
-            if BLANK_OR_BLOCK.match(nxt[nq.end():].lstrip(" \t")):
-                return True
-        elif pq:
-            # ⛔ LAZY CONTINUATION — r7, measured. Inside a quote a line WITHOUT `>` continues the
-            # paragraph only if it is plain paragraph text. Anything that could begin a block ends
-            # the quote, and "could begin" is broader here than for a fresh paragraph: even an EMPTY
-            # `* ` marker closes it, where in prose an empty marker cannot interrupt.
+        d, rest = quote_depth(nxt)
+        if d > depth:
+            return True                        # the quote OPENS or DEEPENS
+        if d < depth:
+            # Fewer markers continues the paragraph ONLY as plain prose (lazy continuation);
+            # anything that could begin a block closes the quote instead. ⛔ `depth` is NOT
+            # re-derived here — that is H3: one lazy line must not erase the quote the paragraph
+            # is still inside.
             if ANY_BLOCK_ISH.match(nxt):
                 return True
-        elif BLANK_OR_BLOCK.match(nxt):
+        elif BLANK_OR_BLOCK.match(rest):
             return True
-        elif "|" in nxt and nxt_end != -1:
-            # a table HEADER is only a table when the next line is its DELIMITER row (r7 Claude M1)
+        elif "|" in rest and nxt_end != -1:
             after_end = text.find("\n", nxt_end + 1)
             after = text[nxt_end + 1:after_end if after_end != -1 else len(text)]
-            if "-" in after and TABLE_DELIM.match(after):
-                return True
+            _, after_rest = quote_depth(after)
+            if "-" in after_rest and TABLE_DELIM.match(after_rest):
+                return True                    # a header is a table only WITH its delimiter row
         nl = text.find("\n", nl + 1)
     return False
-
 
 
 def backtick_escaped(text: str, pos: int) -> bool:
@@ -1172,6 +1236,48 @@ def self_test() -> int:
         # ── r7 Codex HIGH: the regex mistook a quote CONTINUATION and an EMPTY marker for a
         # paragraph interruption. Rejecting a genuine span leaves its closer free to open another,
         # which masked the prose downstream and SUPPRESSED a live figure — the expensive direction.
+        # ── r8 Codex H1/H2/H3: three LENIENT defects of the pairwise predicate, each invisible to
+        # the other two, all fixed by carrying the paragraph's quote depth as STATE. Every fixture
+        # keeps the `:` INSIDE the span: accepting the span whitens that newline, so the marker
+        # three lines up reaches the figure — which is the lenient direction, and the only one that
+        # costs anything. Expect "" throughout; each mutation below turns one of them into "was ".
+        ("⛔ r8H1: a NESTED quote `> > ` is depth TWO and interrupts the quoted paragraph — the "
+         "pairwise version matched contiguous `(>+)` only, read depth one, and masked through it",
+         _marker_at("> the count was `wrong:\n> > holds 1,414 anchors today`"), ""),
+        ("⛔ r8H1: ...and the CONTIGUOUS `>>` spelling is the same depth — one space, and the old "
+         "code gave the two opposite answers",
+         _marker_at("> the count was `wrong:\n>> holds 1,414 anchors today`"), ""),
+        ("⛔ r8H2: a GFM table INSIDE a quote ends the paragraph — the delimiter-row lookahead sat "
+         "after a branch the quote cases returned from, so inside a quote it was unreachable",
+         _marker_at("> the count was `wrong:\n> | h |\n> |---|\n> holds 1,414 anchors today`"), ""),
+        ("⛔ r8H3: quote state SURVIVES a lazy-continuation line — after `plain` the next line "
+         "carries no marker, and an empty `* ` was then judged by the FRESH-paragraph rule, which "
+         "permits it, instead of the quote rule, which closes on it",
+         _marker_at("> the count was `wrong:\nplain\n* \nholds 1,414 anchors today`"), ""),
+        ("⛔ r8: ...and a span OPENING on a lazy line inherits the quote too — depth comes from the "
+         "PARAGRAPH's first line, and all 42 shapes still lenient after H1-H3 were this one",
+         _marker_at("> intro\nthe count was `wrong:\n* \nholds 1,414 anchors today`"), ""),
+        # ── r8, found by RE-RUNNING my own corpus at commit time rather than citing its number:
+        # a FENCED CODE BLOCK interrupts a paragraph and neither predicate knew the shape. All six
+        # verified against cmark-gfm and markdown-it in both dialects; the negatives are what stop
+        # the clause being a `~`-sniffer.
+        ("⛔ r8 own-corpus: a TILDE fence ends the paragraph — 16 of 1,620 shapes were lenient on "
+         "this class and the grid that scored zero had never contained a fence at all",
+         _marker_at("the count was `wrong:\n~~~\nholds 1,414 anchors today`"), ""),
+        ("⛔ r8 own-corpus: ...and a BACKTICK fence likewise, where the fence run is longer than "
+         "the span's own delimiter",
+         _marker_at("the count was `wrong:\n```\nholds 1,414 anchors today`"), ""),
+        ("⛔ r8 own-corpus: ...and a fence on a LAZY line inside a quote, which `ANY_BLOCK_ISH` "
+         "governs — four shapes survived fixing only `BLANK_OR_BLOCK`, so the clause went in BOTH",
+         _marker_at("> the count was `wrong:\n~~~\nholds 1,414 anchors today`"), ""),
+        ("⛔ r8 own-corpus: ...and a CRLF tilde fence",
+         _marker_at("the count was `wrong:\r\n~~~\r\nholds 1,414 anchors today`"), ""),
+        ("...while TWO tildes are not a fence and do NOT interrupt, so the rule reads the RUN "
+         "LENGTH — measured, not read off the spec",
+         _marker_at("the count was `wrong:\n~~\nholds 1,414 anchors today`"), "was "),
+        ("...nor does a FOUR-SPACE-indented fence, which is an indented code line; the `[ \\t]{0,3}` "
+         "prefix is the clause that excludes it, and without it this case goes red",
+         _marker_at("the count was `wrong:\n    ~~~\nholds 1,414 anchors today`"), "was "),
         ("⛔ r7: a `>` line CONTINUING a quote does not end the paragraph, so the span is genuine "
          "and the figure after it survives — rejecting the span made its closer open another",
          _marker_at("> intro `a\n> b` the count was wrong:\nholds 1,414 anchors today`"), ""),

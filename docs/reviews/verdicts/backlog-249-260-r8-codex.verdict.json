@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 6675 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "3b49db97b9c1af4270f0a0d7b4f654d48b2b0263",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/fdb027d3-253e-4489-98fc-63b857540d00/scratchpad/r8/codex-brief.md",
+  "reason": "6675 chars",
+  "refused": false,
+  "review": "backlog-249-260-r8-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
