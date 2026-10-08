@@ -978,7 +978,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-09, backlog #98: a NEW guard arrives with its manifest in the SAME commit.
     # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
     # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
-    "scripts/check-backlog-closure.py": 6,
+    "scripts/check-backlog-closure.py": 9,
     # ⟳ 2026-09-10, backlog #106: 33 -> 34. The harness always REFUSED a suite whose red could
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
@@ -5093,7 +5093,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1440)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1443)
 
     # ── backlog #252: the eager binding pass ────────────────────────────────────────────────
     _SRC = {"scripts/a.py": "def f():\n    return 1\n\ncase('the name', 1, 1)\n"}

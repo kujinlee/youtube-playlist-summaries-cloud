@@ -92,10 +92,11 @@ EXIT SEMANTICS, in all three directions
 
 Usage:
     python3 scripts/check-backlog-closure.py
-    python3 scripts/check-backlog-closure.py --self-test  # 20 cases
+    python3 scripts/check-backlog-closure.py --self-test  # 30 cases
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -162,6 +163,54 @@ def findings(closes: dict[str, str], markers: dict[str, str]) -> tuple[list[str]
     return stale, orphan
 
 
+# ⚠ BACKLOG #250 — THE FILING DIRECTION. The CLOSING direction above asks "this commit closes
+# #N, does the row say so"; nothing asked the mirror question. MEASURED: PR #364's round-3 fold
+# commit claimed *"FILED, NOT FOLDED"* for SEVEN deferrals and filed ZERO rows. Round 4 caught
+# it; no machine could have.
+FILING = re.compile(r"\bFILED\b")
+
+# ⚠ A ROW ADDED, not a row CHANGED. A closing edit rewrites a row, so its `+` line matches the
+# row pattern too — measured on this branch's own HEAD, which EDITS #252 and would otherwise
+# have counted as filing one. New ids are added-minus-removed.
+DIFF_ADD = re.compile(r"^\+\| *(\d+) \|")
+DIFF_DEL = re.compile(r"^-\| *(\d+) \|")
+
+
+def claims_filing(message: str) -> bool:
+    """True when a commit message claims it FILED something. PURE.
+
+    Caps-only on purpose. Lower-case *filed* appears in ordinary prose — "found 2026-10-07,
+    filed at the owner's instruction" — 142 times in 400 commits against 31 for the caps form,
+    and a rule that fires on narration is a rule nobody keeps.
+    """
+    return bool(FILING.search(message))
+
+
+def new_row_ids(diff_text: str) -> set:
+    """Row ids this diff ADDS, as opposed to rows it rewrites. PURE."""
+    add = {m.group(1) for line in diff_text.split("\n") if (m := DIFF_ADD.match(line))}
+    rem = {m.group(1) for line in diff_text.split("\n") if (m := DIFF_DEL.match(line))}
+    return add - rem
+
+
+def filing_findings(claiming_subjects: list, new_ids: set) -> list:
+    """Subjects that claimed FILED over a range that filed nothing. PURE.
+
+    ⛔ THE SCOPE IS THE BRANCH, NOT THE COMMIT, and that was chosen by measurement rather than
+    by taste. Per-commit — which is what #250's suggested falsifier pair describes — fires on
+    **31 of 31** real commits in the last 400: the convention here is to claim FILED in a fold
+    commit and add the rows in a SIBLING commit of the same branch. A gate that fires on every
+    instance of the working convention is #56's measured death. Asking the question of the
+    branch keeps the defect in view — a branch that claims FILED and files nothing — while the
+    normal two-commit rhythm passes.
+    """
+    if not claiming_subjects:
+        return []
+    if new_ids:
+        return []
+    return list(claiming_subjects)
+
+
 def _git(*args: str) -> tuple[int, str]:
     try:
         p = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
@@ -221,6 +270,38 @@ def main() -> int:
               "the thing backlog #56 measured getting switched off.")
     else:
         print("ok — every id closed by a commit carries a closed marker on its row")
+
+    # ── backlog #250: the FILING direction, over this branch ────────────────────────────────
+    base = os.environ.get("BACKLOG_FILING_BASE", "origin/master")
+    rc_r, rng = _git("rev-list", f"{base}..HEAD")
+    if rc_r != 0:
+        print(f"  (filing check skipped — {base} is not available in this clone)")
+        return 0
+    shas = [s for s in rng.split("\n") if s.strip()]
+    if not shas:
+        print("  filing: this branch adds no commit over the base — nothing to check.")
+        return 0
+    claiming = []
+    for sha in shas:
+        rc_m, body = _git("show", "--format=%B", "--no-patch", sha)
+        if rc_m == 0 and claims_filing(body):
+            claiming.append(body.strip().split("\n")[0][:90])
+    rc_d, diff = _git("diff", "--unified=0", f"{base}...HEAD", "--", "docs/backlog.md")
+    ids = new_row_ids(diff) if rc_d == 0 else set()
+    for subj in filing_findings(claiming, ids):
+        print(f"  ⚠ claims FILED and this branch adds NO backlog row: {subj}")
+    if filing_findings(claiming, ids):
+        print("WARN — a commit says it filed something and the branch files nothing. "
+              "Measured on PR #364: seven deferrals claimed FILED, zero rows added, caught by a "
+              "reviewer in round 4 (backlog #250). Warn-only, per #56.")
+    elif claiming:
+        print(f"  filing: {len(claiming)} commit(s) claim FILED and the branch adds "
+              f"{len(ids)} new row(s) — {', '.join('#' + i for i in sorted(ids, key=int))}")
+    else:
+        # ⚠ SAY SO. A check that prints nothing is indistinguishable from one that did not run,
+        # and this repository has paid for that confusion more than once.
+        print(f"  filing: no commit on this branch claims FILED "
+              f"({len(shas)} commit(s) read, {len(ids)} new row(s) added)")
     return 0
 
 
@@ -291,6 +372,32 @@ def _self_test() -> int:
          findings(CLOSE_88, row_markers(STALE_88)), (["88"], []))
     case("FALSIFIER: corrected row 88 is quiet",
          findings(CLOSE_88, row_markers(FIXED_88)), ([], []))
+
+    # ── backlog #250: the FILING direction ─────────────────────────────────────────────────
+    # ⭐ THE FALSIFIER PAIR THE ROW NAMES: a claim with no row must fire; a claim with a row
+    # must not. Both are here, at the pure-rule level, so the pair holds even though the LIVE
+    # scope is the branch rather than the commit — see `filing_findings` for why per-commit
+    # fires on 31 of 31 real commits.
+    case("⭐ a claim of FILED with no new row FIRES",
+         len(filing_findings(["FILED, NOT FOLDED: seven deferrals"], set())), 1)
+    case("⭐ ...and the same claim WITH a new row does not",
+         filing_findings(["FILED, NOT FOLDED: seven deferrals"], {"300"}), [])
+    case("no claim at all is never a finding, however many rows moved",
+         filing_findings([], set()), [])
+    case("claims_filing reads the CAPS form a fold commit uses",
+         claims_filing("round 3: FILED, NOT FOLDED"), True)
+    case("...and ignores lower-case narration, which outnumbers it 142 to 31 in 400 commits",
+         claims_filing("found 2026-10-07, filed at the owner's instruction"), False)
+    case("...and is not fooled by a longer word containing it",
+         claims_filing("the profiled run was slower"), False)
+    case("new_row_ids counts a row the diff ADDS",
+         new_row_ids("+| 300 | a new row |"), {"300"})
+    case("⭐ ...and NOT a row it merely rewrites — a closing edit emits a + line too",
+         new_row_ids("-| 300 | old text |\n+| 300 | ✅ new text |"), set())
+    case("...and ignores the diff header, which is not a row",
+         new_row_ids("+++ b/docs/backlog.md\n+| 42 | real |"), {"42"})
+    case("two added rows are both counted",
+         new_row_ids("+| 1 | a |\n+| 2 | b |"), {"1", "2"})
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0
