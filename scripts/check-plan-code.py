@@ -697,8 +697,18 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 44,   # ⟳ r8 Codex H1-H3: +2 — spaced nesting, and the
-                                         # paragraph-start depth that closed the last 42.
+    "scripts/check-withdrawal.py": 49,   # ⟳ r8 Claude H1/H2/L2: +5 — the list content column
+                                         # (three clauses: the marker-run width, the paragraph's
+                                         # own column, and the quote RE-READ after the strip),
+                                         # `quote_depth`'s space consumption, and the fence
+                                         # clause's one-character-class rule.
+                                         # ⟳ r8 Codex H1-H3 + own-corpus: +5 — spaced nesting, the
+                                         # paragraph-start depth that closed the last 42, and the
+                                         # FENCE pair. ⛔ r8 CLAUDE M1: this line read `+2` while
+                                         # the manifest grew by five; the count passed and the
+                                         # sentence a reader audits it against did not. The rule
+                                         # this file states for itself is IDENTITY, NOT
+                                         # CARDINALITY — so the trail is now diffed by NAME.
                                          # ⟳ r7 Claude M1: +1 — the GFM table lookahead.
                                          # ⟳ r7 Claude B1/H1/H2: +4 — thematic breaks, HTML
                                          # blocks, the NUMBER-one ordered rule, and `\r` on the
@@ -5608,7 +5618,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1543)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1548)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

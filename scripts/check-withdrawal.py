@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 150 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 157 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -366,7 +366,21 @@ BACKTICK_RUN = re.compile(r"`+")
 #   "0 over 380 shapes"   (r7)         r7 Claude, generated 1,400       196 lenient
 #   "0 over 1,400 shapes" (r7 fold)    r8's quote-nesting shapes        42-48 lenient
 #   "0 over ~1,920 shapes" (r8 fold)   MY OWN corpus, re-run at commit   16 lenient
-#   "0 over 1,620 shapes" (now)        — not yet —                      ?
+#   "0 over 1,620 shapes" (r8 fold)    MY OWN INSTRUMENT'S INDEX        0 held, EVERY
+#                                      — and r8 Claude B1, separately   OTHER figure wrong
+#   "0 over 1,620 + 196"  (now)        — not yet —                      ?
+#
+# ⛔⛔ ROW FOUR IS A DIFFERENT KIND OF FAILURE FROM THE FIRST THREE, AND THE MORE DANGEROUS KIND.
+# The first three were grids too small. Row four is the INSTRUMENT: the generator scored each shape
+# with `mask_inline_code(doc)[doc.index("\n")]` — the FIRST newline in the document — while one of
+# its three leads was `"> intro\nlazy"`, whose own newline sits BEFORE the span opener, where the
+# mask can never whiten it. For 540 of 1,620 shapes the instrument therefore always answered "the
+# paragraph ends here", and under the classification that scores `ok` or `noisy` and NEVER lenient.
+# ⤳ **So the instrument was LENIENT-BLIND on a third of the grid** — the expensive direction — and
+# that is why four rounds of reviewers never saw it: a wrong index cannot produce a false CLEAN
+# claim, only a false COST figure, so nothing ever looked alarming. Found twice independently, by
+# re-running at commit time and by r8's Claude half, agreeing to the unit. The fix is to score at
+# the SPAN's own newline, `doc.index("\n", doc.index("`a"))`.
 #
 # ⤳ ROW THREE IS THE USEFUL ONE, AND IT IS WHY THIS CORPUS IS RE-RUN RATHER THAN CITED. It was
 # falsified before the commit that would have shipped it, by re-generating the shapes instead of
@@ -377,25 +391,48 @@ BACKTICK_RUN = re.compile(r"`+")
 # ⤳ So the honest statement is not the number, it is this: **every "zero" here has been a statement
 # about a grid, and three of four grids were too small.** Measured now, cmark-gfm and markdown-it in
 # BOTH dialects agreeing, over markers × indents × {LF,CRLF} × {prose, quoted, `> > ` spaced-nested,
-# `>>` nested, 3-space-indented quote, lazy-prefixed} = 1,620 shapes:
+# `>>` nested, 3-space-indented quote, lazy-prefixed} = 1,620 shapes, PLUS a second corpus of
+# 7 list containers × 14 middles × {LF,CRLF} = 196 shapes, which the grid above cannot express
+# because its only container spelling is a quote (that blind spot WAS r8 Claude H1):
 #
-#   version                                    LENIENT (hides a figure)   noisy   total
-#   `3b49db97` (r7 as shipped)                            42               186      228
-#   r8, quote depth tracked per line                      42               192      234
-#   r8, depth taken from the PARAGRAPH's first line       16               108      124
-#   r8 + the fence clause in BLANK_OR_BLOCK                4               108      112
-#   r8 + the fence clause in BOTH predicates               0               108      108
+#   version                                         LENIENT   noisy   total   list LENIENT
+#   `3b49db97` (r7 as shipped)                          228      88     316     138 of 196
+#   r8, quote depth tracked per line                     30      88     118     138 of 196
+#   r8, depth from the PARAGRAPH's first line            28      34      62     138 of 196
+#   r8 + the fence clause in `BLANK_OR_BLOCK`             8      34      42     130 of 196
+#   r8 + the fence clause in BOTH predicates              0      34      34     130 of 196
+#   r8 + the LIST CONTENT COLUMN (r8 Claude H1)           0      34      34       0 of 196
 #
-# ⚠ AND NOTE WHAT THE LAST TWO ROWS DO NOT DO: the noise count does not move. 108 before the fence
-# clauses and 108 after, so this one was free — which is NOT the usual shape here and is the reason
-# to state it. The 216 figure in the previous version of this note was a different corpus; comparing
-# across the two would be the error this whole note exists to prevent.
+# ⚠ THE SECOND COLUMN IS THE ONE TO READ, AND IT FALLS: noise goes 88 → 34 and never rises. ⛔ r8
+# Claude B1 — the version of this paragraph that shipped at `d6967caa` said the count "ROSE from
+# 186", cited "216 REMAINING" ten lines under a table reading 108, and disowned the 216 as a figure
+# from "the previous version of this note". All three were wrong: 216 appears NOWHERE in r7 (which
+# carried 132), so the sentence disowning it as old was about a figure THIS commit introduced. That
+# is the exact failure mode this note exists to prevent, committed inside the note that states it.
+#
+# ⤳ What the last three rows DO show is that the two fence clauses and the list content column each
+# cost ZERO noise — 34 before and 34 after, and 0 noise on the list corpus — which is unusual here
+# and is the reason to state it. ⚠ But "free" is a property of THESE corpora, not of the clauses:
+# r8 Claude M3 found a real noise class outside them (a backtick fence's info string may not contain
+# a backtick, so ```` ```a`b ```` is NOT a fence and the paragraph continues, where this clause
+# declines the span — 18 of 132 info-string shapes). Noisy, so the regex is left alone; recorded so
+# the next round does not have to find it again.
 #
 # The three r8 Codex Highs (spaced nesting, a table unreachable inside a quote, quote state lost
-# after one lazy line) are each verified fixed by name, and 17 named witnesses accumulated across
-# rounds 4-8 all agree with both parsers. ⚠ THE 216 REMAINING ARE ALL NOISY — the mask declines a
-# span a parser keeps, costing a dismissible warning — and the count ROSE from 186, which is the
-# deliberate trade: this guard's docstring says a false negative is the expensive direction.
+# after one lazy line) and r8 Claude's H1 (a block start at a LIST ITEM's content column) are each
+# verified fixed by name, and 24 named witnesses accumulated across rounds 4-8 all agree with both
+# parsers. ⚠ THE 34 THAT REMAIN ARE ALL NOISY — the mask declines a span a parser keeps, costing a
+# dismissible warning — which is the deliberate trade: this guard's docstring says a false negative
+# is the expensive direction.
+#
+# ⚠ A SHIPPED NOISE CLASS, RECORDED RATHER THAN SILENTLY CARRIED — r8 Claude L3. In the `d < depth`
+# branch `ANY_BLOCK_ISH` is matched against the RAW next line, which still begins with `>` when
+# `0 < d < depth`, so every depth DECREASE inside a quote ends the paragraph where CommonMark
+# continues it lazily (`'> > intro `a\n> q\nb` x'`: all three parsers say the paragraph does not
+# end; this predicate says it does). ⛔ The obvious repair is NOT free and that is why it is not
+# made: matching the stripped remainder instead moves a 6,000-shape multi-line corpus from
+# LENIENT=114/noisy=851 to LENIENT=181/noisy=506 — the total improves while the expensive direction
+# gets worse, which is this note's own named trap.
 #
 # ⛔ EXPECT THE NEXT ROUND TO FALSIFY THIS TOO, and treat that as the process working. What would
 # make the claim finally trustworthy is not a bigger grid of my own devising but the thing #267 names:
@@ -421,10 +458,14 @@ BLANK_OR_BLOCK = re.compile(
                                              # tildes, measured: two do not interrupt, and
                                              # the `[ \t]{0,3}` above is what excludes the
                                              # four-space-indented one. ⚠ A fence WITH an
-                                             # INFO STRING splits the two parsers, so this
-                                             # deliberately takes the NOISY side of a
-                                             # question neither answer can be called wrong
-                                             # on: it declines the span (r8, own corpus)
+                                             # INFO STRING was measured as splitting the two
+                                             # parsers, and ⛔ r8 Claude M3: THAT WAS MY ORACLE,
+                                             # NOT THE PARSERS. The oracle stripped `<pre>` with a
+                                             # literal tag, so cmark's `<pre lang="ruby">` escaped
+                                             # the strip; with `<pre\b[^>]*>` the split goes 84 → 0
+                                             # and all three parsers AGREE the fence ends the
+                                             # paragraph. The clause takes the CORRECT side here,
+                                             # not a defensible guess — the question has an answer
     r"|<[a-zA-Z!/?]"                             # ⚠ AN HTML BLOCK, CONSERVATIVELY. CommonMark type 6
                                                  # is a ~60-tag list and `<span>` is NOT in it, so
                                                  # this over-fires on inline tags. That lands in the
@@ -432,6 +473,57 @@ BLANK_OR_BLOCK = re.compile(
                                                  # removes five LENIENT shapes; embedding the tag
                                                  # list here is the #267 design question, not a fold.
     r")")
+LIST_MARKER = re.compile(r"[ \t]{0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+")
+
+
+def list_content_column(rest: str) -> int:
+    """How far a block start may be indented and still interrupt, from a paragraph's FIRST line.
+
+    ⛔ r8 Claude H1 — `[ \t]{0,3}` is the right cap at TOP LEVEL, where four spaces is indented
+    code. Inside a LIST ITEM it is not: the block-start column is the item's CONTENT column, which
+    is 4 for `- - `, 5 for `- 1. ` and 6 for `- - - `. Every block start at that column was
+    invisible to BOTH predicates, so the mask whitened the newline and the span absorbed the
+    figure — LENIENT, the expensive direction.
+
+    ⤳ THIS IS THE SAME MOVE THE QUOTE FIX MADE, ONE CONTAINER OVER. r8's Codex half taught
+    `paragraph_ends_between` to carry the open paragraph's QUOTE DEPTH as state instead of
+    comparing adjacent lines; a list item's content column needs carrying for exactly the same
+    reason, and the predicate knowing about `>` but not about `- ` is why this survived eight
+    rounds. Measured on a 196-shape list corpus (7 containers × 14 middles × {LF, CRLF}), both
+    parsers in both dialects agreeing:
+
+        container (opener, content column)      LENIENT before   after
+        `- `      (2)                                  0           0
+        `1. `     (3)                                  0           0
+        `  - `    (4)                                 26           0
+        `- - `    (4)                                 26           0
+        `- 1. `   (5)                                 26           0
+        `- - - `  (6)                                 26           0
+        `1. 1. `  (6)                                 26           0
+
+    ⚠ COLUMNS 2 AND 3 CONTRIBUTE ZERO, which is the rule stated precisely: the defect is exactly
+    CONTENT COLUMN >= 4, because 3 is already inside the existing cap. A fix that widened the cap
+    blindly would have been unfalsifiable against this corpus.
+
+    ⚠ DIRECTION, STATED RATHER THAN HIDDEN: stripping the container indent can only make MORE
+    lines match a block start, so this fails NOISY (a dismissible warning) and never lenient.
+    Measured: noise on the list corpus is 0 before and 0 after, and the 1,620-shape grid in the
+    measurement note is UNMOVED at 0 lenient / 34 noisy — at top level `cont` is 0 and every
+    clause here is a no-op.
+
+    ⚠ IT IS STILL AN APPROXIMATION, and backlog #267 is the place that says so: interleaved
+    containers (`> - > `) are read only as far as the leading run of list markers goes. The
+    structural answer remains a real CommonMark parser.
+    """
+    col, i = 0, 0
+    while True:
+        m = LIST_MARKER.match(rest, i)
+        if not m:
+            return col
+        col += m.end() - i
+        i = m.end()
+
+
 QUOTE_MARKER = re.compile(r"[ \t]{0,3}>")
 # ⛔ A GFM TABLE INTERRUPTS A PARAGRAPH, BUT ONLY WITH ITS DELIMITER ROW — r7 Claude M1, and it is
 # the one rule here that needs TWO lines of lookahead rather than a line pair. The comment above
@@ -507,10 +599,18 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
             break                              # that line starts a block, so the paragraph begins here
         depth = max(depth, pd)
         scan = prev_start
+    _, first_rest = quote_depth(text[scan:text.find("\n", scan)])
+    cont = list_content_column(first_rest)     # ⛔ r8 Claude H1 — 0 at top level, a no-op there
     while nl != -1 and nl < end:
         nxt_end = text.find("\n", nl + 1)
         nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
         d, rest = quote_depth(nxt)
+        if cont and rest[:cont].strip(" \t") == "" and len(rest) >= cont:
+            rest = rest[cont:]                 # ⛔ r8 Claude H1 — into the item's content column
+            d2, rest2 = quote_depth(rest)      # a `>` can sit AT that column, past QUOTE_MARKER's
+            if d2 > d:                         # 3-space cap — that was the last 10 of the 130
+                return True
+            rest = rest2
         if d > depth:
             return True                        # the quote OPENS or DEEPENS
         if d < depth:
@@ -1278,6 +1378,41 @@ def self_test() -> int:
         ("...nor does a FOUR-SPACE-indented fence, which is an indented code line; the `[ \\t]{0,3}` "
          "prefix is the clause that excludes it, and without it this case goes red",
          _marker_at("the count was `wrong:\n    ~~~\nholds 1,414 anchors today`"), "was "),
+        # ── r8 Claude H1: a block start at a LIST ITEM's CONTENT COLUMN. `[ \t]{0,3}` is right at
+        # top level, where four spaces is indented code, and wrong inside an item, where the
+        # block-start column is the item's content column. Measured 130 of 196 list shapes LENIENT
+        # before `list_content_column`, 0 after, with the noise count unmoved at 0. ⚠ The two
+        # NEGATIVES are what stop this being an indent-sniffer: column 2 was already inside the old
+        # cap, and a line at cont+4 IS indented code and must still be swallowed.
+        ("⛔ r8 Claude H1: a BULLET at an item's content column 4 ends the paragraph — invisible to "
+         "both predicates for eight rounds, because the predicate knew about `>` and not about `- `",
+         _marker_at("  - the count was `wrong:\n    - x\n    holds 1,414 anchors today`"), ""),
+        ("⛔ r8 Claude H1: ...and an ATX HEADING at content column 6, which `- - - ` produces — the "
+         "column is the MARKER RUN's width, not a fixed indent",
+         _marker_at("- - - the count was `wrong:\n      # h\n      holds 1,414 anchors today`"), ""),
+        ("⛔ r8 Claude H1: ...and a QUOTE sitting AT the content column, which `QUOTE_MARKER`'s own "
+         "3-space cap hides — this was the last 10 of the 130 and needs the depth RE-READ after "
+         "the strip, not the strip alone",
+         _marker_at("  - the count was `wrong:\n    > q\n    holds 1,414 anchors today`"), ""),
+        ("...while content column 2 was ALREADY inside the old cap, so this case passed before the "
+         "fix too and is here to bound it: the defect is exactly content column >= 4",
+         _marker_at("- the count was `wrong:\n  - x\n  holds 1,414 anchors today`"), ""),
+        ("...and a line at the content column PLUS FOUR is an indented code block INSIDE the item, "
+         "which does not interrupt — a fix that widened the cap blindly would go red here",
+         _marker_at("  - the count was `wrong:\n        - x\n    holds 1,414 anchors today`"),
+         "was "),
+        # ── r8 Claude H2: `quote_depth`'s one-space consumption had NO case. Deleting it left the
+        # suite fully green while the predicate went lenient on 208 of a 4,000-shape fuzz corpus,
+        # because `QUOTE_MARKER` tolerates three leading spaces and so OVERLAPS the consumption on
+        # every spelling the other cases use. Only FOUR spaces separates the two clauses.
+        ("⛔ r8 Claude H2: a nested quote whose inner `>` is FOUR spaces in is still depth two — the "
+         "spelling that separates `quote_depth`'s space consumption from `QUOTE_MARKER`'s own cap, "
+         "and the one no other case contained",
+         _marker_at("> the count was `wrong:\n>    > q\n> holds 1,414 anchors today`"), ""),
+        ("⛔ r8 Claude L2: a MIXED run `` `~~ `` is NOT a fence, so the fence clause must read ONE "
+         "character class per alternative — collapsing it to `[`~]{3,}` leaves every other fence "
+         "case green",
+         _marker_at("the count was `wrong:\n`~~\nholds 1,414 anchors today`"), "was "),
         ("⛔ r7: a `>` line CONTINUING a quote does not end the paragraph, so the span is genuine "
          "and the figure after it survives — rejecting the span made its closer open another",
          _marker_at("> intro `a\n> b` the count was wrong:\nholds 1,414 anchors today`"), ""),

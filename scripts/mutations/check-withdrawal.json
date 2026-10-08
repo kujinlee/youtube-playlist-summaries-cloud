@@ -507,12 +507,12 @@
     ]
   },
   {
-    "name": "⛔ r8 Codex H1 — `quote_depth` stops after the FIRST marker and takes the remainder from before it, which is the pre-r8 pairwise behaviour: a nested quote reads as depth one, so the line that OPENS the inner quote is classified against the outer level and masks straight through",
+    "name": "⛔ r8 Codex H1 — `quote_depth` stops after the FIRST marker and takes the remainder from before it, which is the pre-r8 pairwise behaviour: a nested quote reads as depth one, so the line that OPENS the inner quote is classified against the outer level and masks straight through ⟳ RETARGETED r8 Claude H1: `list_content_column` repeats `i = m.end()` verbatim, so the one-line anchor stopped resolving uniquely — #252's class again, and again inside the commit fixing a finding",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        i = m.end()",
-        "        return depth, line[i:]"
+        "        depth += 1\n        i = m.end()",
+        "        depth += 1\n        return depth, line[i:]"
       ]
     ],
     "expect": [
@@ -569,6 +569,71 @@
     ],
     "expect": [
       "⛔ r8 own-corpus: ...and a fence on a LAZY line inside a quote, which `ANY_BLOCK_ISH` governs — four shapes survived fixing only `BLANK_OR_BLOCK`, so the clause went in BOTH"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H1 — `list_content_column` stops accumulating the marker run's width, so a nested opener like `- - - ` reports a content column of 0 and every block start inside the item goes back to being invisible",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        col += m.end() - i",
+        "        col += 0"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H1: ...and an ATX HEADING at content column 6, which `- - - ` produces — the column is the MARKER RUN's width, not a fixed indent"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H1 — the paragraph's first line stops being asked for its list content column, which is the whole fix: `cont` is pinned to 0 and the `[ \\t]{0,3}` cap applies inside a list item, where it is wrong",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    cont = list_content_column(first_rest)",
+        "    cont = 0"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H1: a BULLET at an item's content column 4 ends the paragraph — invisible to both predicates for eight rounds, because the predicate knew about `>` and not about `- `"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H1 — the quote depth is NOT re-read after the container indent is stripped, so a `>` sitting AT the content column stays hidden behind `QUOTE_MARKER`'s 3-space cap. This is the clause the last 10 of the 130 lenient shapes needed",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            if d2 > d:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H1: ...and a QUOTE sitting AT the content column, which `QUOTE_MARKER`'s own 3-space cap hides — this was the last 10 of the 130 and needs the depth RE-READ after the strip, not the strip alone"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H2 — `quote_depth` stops consuming the ONE optional space after each `>`, so a nested quote spelled with wider gaps collapses to depth one. The suite was 150/150 with this deleted, because every other case spells the nesting `> > ` where `QUOTE_MARKER`'s own 3-space tolerance masks the loss",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if i < len(line) and line[i] in \" \\t\":",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H2: a nested quote whose inner `>` is FOUR spaces in is still depth two — the spelling that separates `quote_depth`'s space consumption from `QUOTE_MARKER`'s own cap, and the one no other case contained"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude L2 — the fence clause collapses to ONE character class, so a MIXED run like `` `~~ `` counts as a fence. Noisy rather than lenient, but unpinned: every other fence case stayed green under it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "r\"|(?:`{3,}|~{3,})\"",
+        "r\"|(?:[`~]{3,})\""
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude L2: a MIXED run `` `~~ `` is NOT a fence, so the fence clause must read ONE character class per alternative — collapsing it to `[`~]{3,}` leaves every other fence case green"
     ]
   }
 ]
