@@ -117,16 +117,81 @@
     ]
   },
   {
-    "name": "the ref pattern loses its word boundary, so `notorigin/fiction` reads as provenance",
+    "name": "the ref pattern loses its word boundary, so `notorigin/fiction` reads as provenance ⟳ r1 Claude M3: retargeted — the M3 fix split `|\\borigin/\\w+|\\bHEAD\\b` onto two lines so the HEAD half could be tightened, and this anchor went with it. Third orphan this fold, all three caught by `--binding` in about a second.",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "r\"|\\borigin/\\w+|\\bHEAD\\b\"",
-        "r\"|origin/\\w+|\\bHEAD\\b\""
+        "r\"|\\borigin/\\w+\"",
+        "r\"|origin/\\w+\""
       ]
     ],
     "expect": [
       "⭐ `notorigin/fiction` is NOT a ref — the word boundary (r1 Codex Medium)"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M2 — the counted-noun alternative is removed, so #256's own third motivating defect (`**3 unbound**`, control clean, real number 2) goes invisible to the guard built for it",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "|(?<!exit )(?<!exits )(?<!code )\\b\\d\\s+[A-Za-z]",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ M2's own witness: #256's third motivating defect is no longer invisible to it"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M2 — the `exit ` lookbehind goes, so an exit code reads as a count. ⚠ ONE lookbehind per entry: an entry stripping all three matched three red cases and could not show which one is the guard",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "(?<!exit )(?<!exits )",
+        "(?<!exits )"
+      ]
+    ],
+    "expect": [
+      "...and an EXIT CODE is not a measurement — `exit 1 is` would match without the lookbehind"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M2 — the `exits ` lookbehind goes, which is the spelling row #118 actually uses and the one the first fixture failed to exercise",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "(?<!exits )(?<!code )",
+        "(?<!code )"
+      ]
+    ],
+    "expect": [
+      "...including its plural spelling, which is the shape row #118 actually uses"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M2 — the `code ` lookbehind goes, so `code 2 means CANNOT RUN` is a figure needing provenance",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "(?<!code )\\b\\d\\s+[A-Za-z]",
+        "\\b\\d\\s+[A-Za-z]"
+      ]
+    ],
+    "expect": [
+      "...and `code 2 means` is refused the same way"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M3 — `HEAD` counts as provenance again wherever the bare word appears, so row #255's prose ABOUT reading HEAD excuses its unqualified `**47 s**`",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "r\"|`HEAD`|\\bHEAD[~^]|(?:\\bat|\\bas of|\\bmeasured(?:\\s+\\w+){0,2})\\s+HEAD\\b\"",
+        "r\"|\\bHEAD\\b\""
+      ]
+    ],
+    "expect": [
+      "⭐ M3: prose ABOUT reading HEAD is not provenance for a figure beside it"
     ]
   }
 ]

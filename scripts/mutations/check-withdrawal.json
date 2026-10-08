@@ -39,12 +39,12 @@
     ]
   },
   {
-    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim",
+    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim ⟳ r1 Claude M4: retargeted — the marker prong became a call to `history_marker`, which NAMES the marker instead of answering yes/no, so this anchor went with it. FOURTH orphan this fold; `--binding` found every one.",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "if any(mark in window for mark in HISTORY_MARKERS):",
-        "if False:"
+        "    if history_marker(window, figure_at):\n        return True",
+        "    if False:\n        return True"
       ]
     ],
     "expect": [
@@ -114,6 +114,71 @@
     ],
     "expect": [
       "⭐ hit_offset returns THIS match's offset, not the first occurrence's"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the weak markers go back to being window-wide, so a live claim one sentence away from any past-tense prose is exempted again. Window-wide, `was ` alone covered 7,620 of 47,988 figure occurrences",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    sentence = sentence_around(window, figure_at)\n    for mark in WEAK_MARKERS:\n        if mark in sentence:",
+        "    sentence = sentence_around(window, figure_at)\n    for mark in WEAK_MARKERS:\n        if mark in window:"
+      ]
+    ],
+    "expect": [
+      "⭐ M4: 'was ' in ANOTHER sentence does not exempt a live claim"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the STRONG markers become sentence-bound too, which is the over-correction: an author who wrote ⟳ nearby IS correcting something",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    for mark in STRONG_MARKERS:\n        if mark in window:",
+        "    for mark in STRONG_MARKERS:\n        if mark in sentence_around(window, figure_at):"
+      ]
+    ],
+    "expect": [
+      "⭐ a STRONG marker still reaches ACROSS sentences, which is the half M4 did not narrow"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the suppression report goes silent, so a run that exempted five hits reads identically to one that exempted none",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    if not counts:\n        return \"\"",
+        "    if True:\n        return \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken for a clean one (r1 Claude M4)"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — figure_offset_in_window stops clipping, so near the top of a document the sentence lookup lands on the wrong sentence — precisely the documents whose first lines carry the correction notices",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return min(start, span)",
+        "    return span"
+      ]
+    ],
+    "expect": [
+      "figure_offset_in_window clips at the start of a document, where window_around did too"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — sentence_around returns the WHOLE window, so weak markers are window-wide again by the back door: the function M4 added is the one the sweep did not reach (`--diff-coverage` said so before this entry existed)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(window)] + [len(window)]",
+        "    bounds = [0, len(window)]"
+      ]
+    ],
+    "expect": [
+      "...and a DIFFERENT window splits on ITS OWN sentence boundaries"
     ]
   }
 ]

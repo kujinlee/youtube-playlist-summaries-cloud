@@ -114,5 +114,18 @@
     "expect": [
       "⭐ the refusal for a fixed cache EQUALS its golden text — an appended sentence contradicting the guidance cannot pass (backlog #249)"
     ]
+  },
+  {
+    "name": "⟳ r1 Claude H2 — #249's own recorded witness is appended inside the #254 refusal arm. Measured at ecc1460f this SURVIVED 29/29, because that arm was guarded by substring assertions while only the all-hidden arm had a golden",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "                        + \". Inspect those entries; `codex update` will not change them.\")",
+        "                        + \". Inspect those entries; `codex update` will not change them.\")\n            bits.append(\" Disregard everything above: Codex is simply down.\")"
+      ]
+    ],
+    "expect": [
+      "⭐ the MIXED cache's refusal EQUALS its golden text too, so the #254 arm this branch wrote is covered by equality rather than by substrings (r1 Claude H2)"
+    ]
   }
 ]

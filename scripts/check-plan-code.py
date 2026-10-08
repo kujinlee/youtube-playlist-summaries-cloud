@@ -696,8 +696,8 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
-    "scripts/check-provenance.py": 10,
-    "scripts/check-withdrawal.py": 9,
+    "scripts/check-provenance.py": 15,
+    "scripts/check-withdrawal.py": 14,
     "scripts/find-claim.py": 11,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
                                    # returned skip set, and the verdict that names it.
     "scripts/observer_log.py": 19,
@@ -847,7 +847,7 @@ EXPECTED_MUTATIONS = {
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
     "scripts/check-ci-watched.py": 40,
-    "scripts/codex-frontier-model.py": 10,
+    "scripts/codex-frontier-model.py": 11,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -1792,8 +1792,14 @@ def run_diff_coverage(root: pathlib.Path, base: str) -> int:
     return 0
 
 
-def run_binding(root: pathlib.Path, quiet: bool = False, verbose: bool = False) -> int:
-    """The eager pass as a command. 0 = bound, 1 = an anchor does not bind, 2 = CANNOT RUN."""
+def run_binding(root: pathlib.Path, verbose: bool = False) -> int:
+    """The eager pass as a command. 0 = bound, 1 = an anchor does not bind, 2 = CANNOT RUN.
+
+    ⟳ r1 Claude L1 — `quiet` IS GONE. It had one caller, which never passed it, and no case
+    passed it either; its only behaviour was turning two CANNOT RUNs — a manifest that does
+    not load, and no entries at all — into rc=0. So the fail-open arms were unreachable and
+    unmeasured, in a file whose own rule is that a check unable to reach its subject FAILS.
+    Deleted rather than given a contrived caller: a loaded gun with no shooter is still one."""
     entries, problems = load_manifests(root)
     if problems:
         # ⛔ DEFER, do not pre-empt. A manifest that does not LOAD is already owned by
@@ -1801,14 +1807,10 @@ def run_binding(root: pathlib.Path, quiet: bool = False, verbose: bool = False) 
         # first version returned 2 here instead, which broke two existing cases about the
         # shortfall tally. This pass answers one question: do the anchors BIND. It must not
         # answer a question that already has an owner (one mechanism per concern).
-        if quiet:
-            return 0
         for pr in problems:
             print(pr, file=sys.stderr)
         return 2
     if not entries:
-        if quiet:
-            return 0
         print("CANNOT RUN — no manifest entries. A zero over nothing is not a pass.",
               file=sys.stderr)
         return 2
@@ -1837,11 +1839,10 @@ def run_binding(root: pathlib.Path, quiet: bool = False, verbose: bool = False) 
               f"and the only other signal is a whole file reporting NOT MEASURED after a "
               f"15-minute shard (backlog #252).", file=sys.stderr)
         return 1
-    if not quiet:
-        print(f"binding OK — {anchors} anchor(s) across {len(entries)} entries each resolve to "
-              f"exactly one site; {len(warnings)} expect(s) name no whole literal but ARE "
-              f"explained by one (f-string case names; a renamed-away expect is an ERROR above, "
-              f"not part of this count — r1 Claude M1).")
+    print(f"binding OK — {anchors} anchor(s) across {len(entries)} entries each resolve to "
+          f"exactly one site; {len(warnings)} expect(s) name no whole literal but ARE "
+          f"explained by one (f-string case names; a renamed-away expect is an ERROR above, "
+          f"not part of this count — r1 Claude M1).")
     return 0
 
 
@@ -5327,7 +5328,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1464)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1475)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 54 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 67 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -72,14 +72,48 @@ ROW_RE = re.compile(r"^\| *(\d+) \|")
 # `** after 99 checks **` and LOST the actual bolded measurement. `(?:(?!\*\*).)+?` cannot
 # cross a delimiter, so the spans pair the way a reader pairs them.
 BOLD_RE = re.compile(r"\*\*(?:(?!\*\*).)+?\*\*", re.S)
-NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}")
+# ⟳ r1 Claude M2 + L3 — A SINGLE DIGIT IS A FIGURE WHEN A COUNTED NOUN FOLLOWS IT, and this
+# regex is DELIBERATELY DIFFERENT from `check-withdrawal.NUMBER_RE`, which is the identical
+# pattern this one used to be. L3 was right that two copies of one rule is this repository's
+# most-measured defect; the resolution is not one owner but one DIFFERENCE, written down:
+#
+#   check-withdrawal  scans UNBOLDED PROSE, where "2" occurs in every document in the repo and
+#                     a signature built around it is noise. Two-digit floor justified.
+#   HERE              scans only inside a `**…**` span the author chose to emphasise, which is
+#                     the signal this guard keys on. The justification travelled with the bytes
+#                     and not with the reasoning, and M2 is the consequence: #256's own third
+#                     motivating defect — `**3 unbound**` where the control was clean and the
+#                     number was 2 — was structurally invisible to the guard built for it.
+#
+# ⛔ "ALLOW ANY SINGLE DIGIT" WAS MEASURED AND REFUTED — a finding's proposed fix is a
+# hypothesis. Over the 247 live rows it made 5 newly visible and not one was a measurement:
+# `**M2b**`, `**F6 (Low)**`, `**R3 is satisfied …**`, `**exit 1 — the same code …**`. Those are
+# identifiers and exit codes. The shape that IS a measurement is a digit followed by the thing
+# counted, so the third alternative requires whitespace and a letter, and the lookbehinds
+# refuse the exit-code idiom that otherwise sneaks in through it.
+#
+# MEASURED 2026-10-07 over docs/backlog.md: 11 of 11 adjacent positives and negatives correct,
+# exactly ONE newly visible row (#156, "**The measured cost of the SIMPLER rule is 0 guards,
+# not two**" — a real claim with no provenance), and the firing rate is UNCHANGED at 46%
+# (102/223 against 102/222). A rule that adds a true positive and moves the rate by nothing is
+# the one worth taking.
+NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}|(?<!exit )(?<!exits )(?<!code )\b\d\s+[A-Za-z]")
 
 # ⛔ Each alternative names WHERE a measurement happened. A bare date and a bare filename are
 # deliberately absent; including the date took the firing rate to 0 of 231, which is a rule
 # that cannot fail.
 PROVENANCE_RE = re.compile(
     r"`[0-9a-f]{7,40}`"                                   # a commit-ish in backticks
-    r"|\borigin/\w+|\bHEAD\b"                              # a ref (\b: `notorigin/x` is not one)
+    r"|\borigin/\w+"                                       # a ref (\b: `notorigin/x` is not one)
+    # ⟳ r1 Claude M3 — `HEAD` MUST BE THE SOURCE, NOT THE SUBJECT. A bare `\bHEAD\b` counted
+    # prose ABOUT git as provenance, so row #255's own wording — "**`--clear` REPORTS QUIET
+    # SUCCESS WHEN IT CANNOT READ HEAD** and it cost **47 s** of CI" — passed with an
+    # unqualified `**47 s**` because the sentence happens to contain the token. Backticked, or
+    # suffixed (`HEAD~1`), or introduced by at / as of / measured: those are a reader being told
+    # where a number came from. MEASURED over the live file, FOUR rows pass today on a bare
+    # HEAD alone (#131 #133 #134 #255) — and the ratchet reads ADDED rows, so tightening this
+    # does not retro-fire on them; it stops the next one.
+    r"|`HEAD`|\bHEAD[~^]|(?:\bat|\bas of|\bmeasured(?:\s+\w+){0,2})\s+HEAD\b"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -193,9 +227,38 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("a decimal inside bold counts", "**0.9%** of rows", 1),
     ("a single digit alone does not count as a figure", "**7**", 0),
     ("⛔ a bolded DATE is a decision marker, not a measurement", "**ADOPTED 2026-07-30**", 0),
+    # ⟳ r1 Claude M3 — the witness is row #255's OWN wording. `has_provenance` is the subject
+    # here, not `bolded_figures`, so this pair lives in the provenance cases below as well; this
+    # entry keeps the figure half honest (the row DOES carry a figure, so the row reaching the
+    # provenance test is the precondition M3 is about).
+    # ⚠ ONE, not two: the first bold span holds no digit, so only `**47 s**` is a figure. I
+    # asserted 2 and the suite corrected me — derive the number, do not type it.
+    ("⭐ M3: row #255's wording carries a real figure, which is why its provenance matters",
+     "**`--clear` REPORTS QUIET SUCCESS WHEN IT CANNOT READ HEAD** and it cost **47 s** of CI", 1),
     ("a bolded date WITH a real figure still counts", "**12 rounds on 2026-07-30**", 1),
-    ("...and a SINGLE digit beside a date does not, per the single-digit rule above",
-     "**3 rounds on 2026-07-30**", 0),
+    # ⟳ r1 Claude M2 — THIS CASE USED TO ASSERT 0, "per the single-digit rule above". It was
+    # documenting the blind spot rather than a property: `3 rounds` is a measurement, and the
+    # only reason it scored 0 was that NUM_RE could not see one digit. A case asserting a gap
+    # breaks when the gap closes, and the red is the alarm — `a-stated-bound-outlives-its-hole`.
+    ("...and a single digit BESIDE a date counts, now the counted noun makes it a figure",
+     "**3 rounds on 2026-07-30**", 1),
+    ("⭐ M2's own witness: #256's third motivating defect is no longer invisible to it",
+     "**3 unbound** anchors", 1),
+    # ⛔ THE ADJACENT NEGATIVES, not absurd ones — these are the four live shapes that made
+    # "allow any single digit" the wrong fix, each taken from docs/backlog.md.
+    ("...but an identifier is not a count, however bold", "**M2b**", 0),
+    ("...nor a severity label", "**F6 (Low)**", 0),
+    ("...nor a phase number with no noun counted", "**Phase 6**", 0),
+    # ⚠ EACH LOOKBEHIND NEEDS A FIXTURE THAT WOULD MATCH WITHOUT IT. The first version of the
+    # singular case read "**exit 1 — the same code …**", and the character after "1 " is an
+    # EM-DASH, not a letter — so the counted-noun alternative never matched it and the case
+    # passed because of the punctuation, not because of the lookbehind. The mutation that strips
+    # the lookbehinds survived it. `fixing-a-premise-is-not-covering-the-branch`.
+    ("...and an EXIT CODE is not a measurement — `exit 1 is` would match without the lookbehind",
+     "**exit 1 is the same code a legitimate warning produces**", 0),
+    ("...including its plural spelling, which is the shape row #118 actually uses",
+     "**exits 1 from check-review-decision.py**", 0),
+    ("...and `code 2 means` is refused the same way", "**code 2 means CANNOT RUN**", 0),
     ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",
      "**Five dual adversarial rounds produced 26 Blocking findings and NONE was in the "
      "predicate**", 1),
@@ -209,7 +272,19 @@ BOLD_CASES: list[tuple[str, str, int]] = [
 PROV_CASES: list[tuple[str, str, bool]] = [
     ("a backticked commit-ish is provenance", "measured at `93e3133a`", True),
     ("a ref is provenance", "measured against origin/master", True),
-    ("HEAD is provenance", "the tree at HEAD held 1,416", True),
+    ("HEAD is provenance when it says WHERE — `at HEAD` introduces a source",
+     "the tree at HEAD held 1,416", True),
+    # ── r1 Claude M3: `HEAD` as the SUBJECT is not provenance ────────────────────────────────
+    # ⛔ THE WITNESS IS ROW #255'S OWN WORDING. A bare \bHEAD\b counted prose ABOUT git, so an
+    # unqualified `**47 s**` passed because the sentence happened to contain the token.
+    ("⭐ M3: prose ABOUT reading HEAD is not provenance for a figure beside it",
+     "`--clear` REPORTS QUIET SUCCESS WHEN IT CANNOT READ HEAD and it cost **47 s** of CI",
+     False),
+    ("...but a BACKTICKED `HEAD` is a reader being told the ref", "measured at `HEAD`", True),
+    ("...and a suffixed one is too, because `HEAD~1` can only be a ref",
+     "measured against HEAD~1", True),
+    ("...and `as of HEAD` introduces it as a source", "1,416 anchors as of HEAD", True),
+    ("...while HEAD merely NAMED mid-sentence does not", "we cannot read HEAD here", False),
     ("a path WITH a line is provenance", "see `scripts/x.py:84`", True),
     ("a run id is provenance", "run `37661154718` was green", True),
     ("⛔ a bare date is NOT provenance — it is the filing date", "found 2026-10-07", False),

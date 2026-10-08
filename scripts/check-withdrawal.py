@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 54 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 71 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -64,6 +64,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import collections
 import importlib.util
 import re
 import subprocess
@@ -77,22 +78,74 @@ EXEMPT_DIRS = ("docs/reviews/", "docs/explainers/")
 
 # A hit sitting near one of these is a past-tense trail, not a live claim. Kept deliberately
 # small: every token added here is a way for a real survivor to hide.
-HISTORY_MARKERS = (
-    "⟳", "CORRECTED", "corrected", "superseded", "was ", "(was", "earlier",
+# ⟳ r1 Claude M4 — THE LIST IS SPLIT, BECAUSE ITS MEMBERS ARE NOT EQUALLY GOOD EVIDENCE.
+# `⟳` and `superseded` are written BY an author performing a correction. `"was "` is an English
+# past-tense auxiliary, and in a 360-character window (CONTEXT_CHARS either side) it is simply
+# common prose. Measured over every figure occurrence in non-exempt `docs/`:
+#
+#     figure occurrences                         47,988
+#     exempted, every marker window-wide         12,559  (26.2%)
+#     `"was "` alone, as first marker             7,620  (15.9%)
+#
+# This prong became load-bearing in the same fold that tightened the corrected-form prong, and
+# that fold ADDED a token ("quoted") to a list whose own comment says "every token added here is
+# a way for a real survivor to hide". In a warn-only tool a false NEGATIVE is the expensive
+# direction — a suppressed survivor is invisible, a spurious warning is merely dismissed — so a
+# marker that exempts more than every other combined needs a tighter binding than co-occurrence.
+#
+# STRONG markers still hold anywhere in the window: an author who wrote `⟳` nearby is correcting
+# something. WEAK markers must sit in THE SAME SENTENCE as the figure, which is what "near" was
+# always meant to approximate. MEASURED: exemption falls 26.2% -> 15.1%, un-suppressing 5,297
+# occurrences, of which `"was "` accounts for 4,940.
+STRONG_MARKERS = (
+    "⟳", "CORRECTED", "corrected", "superseded",
     "previously", "no longer", "historical", "stale", "used to",
-    # ⟳ r1 fold: text saying a figure was QUOTED is narrating it, not asserting it. Added after
-    # the replacement prong was tightened (below) re-exposed two narrative passages.
-    "quoted",
 )
+
+# ⚠ EVERY MEMBER HERE IS ORDINARY PROSE that happens to be past-tense, so each is required to
+# share a sentence with the figure it exempts. "quoted" joined in the r1 fold; "earlier" and
+# "was " predate it. Together they were 8,108 of the 12,559 exemptions.
+WEAK_MARKERS = ("was ", "(was", "earlier", "quoted")
+
+# Retained as the union so a reader (and `check-vocabulary-collisions`) still finds one name for
+# the concept. ⛔ NOT the thing `is_history_context` tests — it tests the two halves separately,
+# and a future edit that collapses this back into one membership test re-opens M4.
+HISTORY_MARKERS = STRONG_MARKERS + WEAK_MARKERS
 
 # A figure worth tracking: at least two digits, optional thousands separators and decimals.
 # ⚠ One digit is excluded ON PURPOSE. "2" occurs in every document in this repository, and a
 # signature built around it is noise — the guard would report hundreds of survivors and be
 # switched off within a day (#56).
+#
+# ⟳ r1 Claude L3 — THIS PATTERN AND `check-provenance.NUM_RE` WERE BYTE-IDENTICAL AND MUST NOT
+# BE AGAIN. L3 was right that a second implementation of one rule is this repository's
+# most-measured defect (17 instances), and wrong that the answer here is one owner: the two
+# guards read DIFFERENT TEXT, so they need different rules. The exclusion above is justified by
+# UNBOLDED PROSE, which is what this guard scans. `check-provenance` scans only inside a
+# `**…**` span an author chose to emphasise, so there the same exclusion made #256's own third
+# motivating defect invisible — M2. The justification travelled with the bytes and not with the
+# reasoning, which is how one correct rule became one correct and one wrong.
+#
+# ⛔ The difference is ASSERTED BY A CASE ("the two figure rules are DELIBERATELY different"),
+# so a future de-duplication that collapses them fails loudly instead of silently reinstating
+# M2. That is the one thing a comment cannot do.
 NUMBER_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}")
 
 CONTEXT_WORDS = 2       # words of context either side of the figure, forming the signature
 CONTEXT_CHARS = 180     # window around a hit searched for a history marker
+
+
+def _check_provenance():
+    """Import the sibling guard, to ASSERT its figure rule differs from this one (r1 Claude L3).
+
+    Read-only and only from the suite: this guard does not depend on that one at runtime. The
+    import exists so the DIFFERENCE between two deliberately-different rules has a falsifier.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "check_provenance", REPO / "scripts/check-provenance.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _find_claim():
@@ -183,7 +236,64 @@ def is_exempt_path(path: str) -> bool:
     return any(path.startswith(d) or f"/{d}" in path for d in EXEMPT_DIRS)
 
 
-def is_history_context(window: str, corrected_forms: tuple[str, ...] = ()) -> bool:
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n")
+
+
+def sentence_around(window: str, at: int) -> str:
+    """The sentence of `window` containing offset `at`. PURE.
+
+    r1 Claude M4's instrument. Sentence rather than a second character budget because "near" in
+    the original comment meant "in the same statement", and a tighter character window would be
+    one more number with no reason behind it.
+    """
+    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(window)] + [len(window)]
+    for i in range(len(bounds) - 1):
+        if bounds[i] <= at < bounds[i + 1]:
+            return window[bounds[i]:bounds[i + 1]]
+    return window
+
+
+def suppression_line(counts: "collections.Counter") -> str:
+    """One line naming what each marker suppressed, or "" when nothing was. PURE.
+
+    ⟳ r1 Claude M4. The run reported `ok — none of them survives elsewhere` and a reader could
+    not tell that from *five survivors each within 180 characters of the word "was"*. Extracted
+    rather than inlined in `main` so it has a case: the live corpus currently suppresses NOTHING,
+    so an inline version would have been unreachable code asserting its own correctness.
+    """
+    if not counts:
+        return ""
+    detail = ", ".join(f"{k!r}x{v}" for k, v in counts.most_common())
+    return f"  suppressed as history: {sum(counts.values())} hit(s) — {detail}"
+
+
+def figure_offset_in_window(start: int, span: int = CONTEXT_CHARS) -> int:
+    """Where the hit sits inside `window_around`'s result. PURE.
+
+    ONE owner for the arithmetic, because `window_around` CLIPS at 0: near the top of a document
+    the hit is at `start`, not at `span`, and a caller that assumed the centre would hand
+    `history_marker` the wrong sentence for exactly the documents whose first lines carry the
+    correction notices.
+    """
+    return min(start, span)
+
+
+def history_marker(window: str, figure_at: int) -> str:
+    """The marker exempting this hit, or "". PURE — and it NAMES the marker rather than
+    answering yes/no, so the live run can report what each one suppressed (r1 Claude M4).
+    """
+    for mark in STRONG_MARKERS:
+        if mark in window:
+            return mark
+    sentence = sentence_around(window, figure_at)
+    for mark in WEAK_MARKERS:
+        if mark in sentence:
+            return mark
+    return ""
+
+
+def is_history_context(window: str, corrected_forms: tuple[str, ...] = (),
+                       *, figure_at: int) -> bool:
     """True when the text around a hit is a past-tense trail rather than a live claim. PURE.
 
     Two prongs:
@@ -204,7 +314,11 @@ def is_history_context(window: str, corrected_forms: tuple[str, ...] = ()) -> bo
     **6 of 7** including the counterexample; the corrected-form prong exempts **0 of 7** and
     correctly refuses the counterexample, with the markers doing the real work.
     """
-    if any(mark in window for mark in HISTORY_MARKERS):
+    # ⛔ `figure_at` IS KEYWORD-ONLY AND HAS NO DEFAULT, deliberately. A default would let a
+    # caller silently fall back to the window-wide rule M4 exists to narrow, and this file has
+    # already paid once for a parameter whose default was the old behaviour. Missing it is a
+    # TypeError — loud, at the call site.
+    if history_marker(window, figure_at):
         return True
     return any(cf and cf in window for cf in corrected_forms)
 
@@ -315,39 +429,59 @@ EXEMPT_PATH_CASES: list[tuple[str, str, bool]] = [
     ("a nested review path is exempt too", "a/b/docs/reviews/x.md", True),
 ]
 
-HISTORY_CASES: list[tuple[str, str, bool]] = [
-    ("a ⟳ trail is history", "⟳ 2026-09-08: the count was 1,414 then", True),
-    ("an explicit CORRECTED marker is history", "CORRECTED: it is not 1,414", True),
-    ("'superseded' is history", "superseded by the 1,416 figure", True),
-    ("'no longer' is history", "that cache no longer holds 1,414", True),
-    ("a bare live claim is NOT history", "the sweep holds 1,414 anchors", False),
-    ("a nearby unrelated sentence is NOT history", "we ship 1,414 anchors in CI", False),
+# ⟳ r1 Claude M4 — the third column is the FIGURE'S OFFSET in the window. Each value was
+# computed by locating the figure, not typed: a weak marker is now only history when it shares
+# the figure's SENTENCE, so a case that lies about where the figure is tests nothing.
+HISTORY_CASES: list[tuple[str, str, int, bool]] = [
+    ("a ⟳ trail is history", "⟳ 2026-09-08: the count was 1,414 then", 28, True),
+    ("an explicit CORRECTED marker is history", "CORRECTED: it is not 1,414", 21, True),
+    ("'superseded' is history", "superseded by the 1,416 figure", 18, True),
+    ("'no longer' is history", "that cache no longer holds 1,414", 27, True),
+    ("a bare live claim is NOT history", "the sweep holds 1,414 anchors", 16, False),
+    ("a nearby unrelated sentence is NOT history", "we ship 1,414 anchors in CI", 8, False),
+    # ── M4's witness: a WEAK marker must share the figure's sentence ─────────────────────────
+    # ⛔ "was " is an English past-tense auxiliary. Window-wide it exempted 7,620 of 47,988
+    # figure occurrences — more than every other marker combined — so a live claim one sentence
+    # away from any past-tense prose was invisible. These two differ ONLY in the sentence break.
+    ("⭐ M4: 'was ' in ANOTHER sentence does not exempt a live claim",
+     "The plan was approved last week. The sweep holds 1,414 anchors.", 46, False),
+    ("...but 'was ' in the SAME sentence still does, which is the case the marker is for",
+     "The sweep was 1,414 anchors before the merge.", 15, True),
+    ("...and 'earlier' is weak the same way", "We shipped earlier. It holds 1,414 now.", 31, False),
+    ("...as is 'quoted', the token the r1 fold added to a list warning against additions",
+     "The figure was quoted elsewhere. The sweep holds 1,414 anchors.", 48, False),
+    # a STRONG marker is deliberately NOT sentence-bound — an author who wrote ⟳ nearby is
+    # correcting something, whichever sentence it landed in.
+    ("⭐ a STRONG marker still reaches ACROSS sentences, which is the half M4 did not narrow",
+     "⟳ Corrected in the r1 fold. The sweep holds 1,414 anchors.", 42, True),
+    ("history_marker NAMES the marker rather than answering yes/no, so a run can report it",
+     "superseded by the 1,416 figure", 18, True),
 ]
 
 # ⭐ The replacement prong, measured against the seven live survivors of `1,414` in this repo:
 # markers alone gave 4 correct and 2 FALSE POSITIVES, both within 180 chars of `1,416`.
-REPLACEMENT_CASES: list[tuple[str, str, tuple[str, ...], bool]] = [
+REPLACEMENT_CASES: list[tuple[str, str, int, tuple[str, ...], bool]] = [
     # ⚠ NO HISTORY MARKER IN THESE STRINGS, deliberately. The first version of this table used
     # "I had quoted 1,414 …", and once `quoted` joined HISTORY_MARKERS that case passed through
     # the MARKER prong while claiming to exercise the replacement prong — an ambient pass inside
     # the table written to test the thing it stopped testing.
     ("the CORRECTED FORM beside the old claim means the text is correcting itself",
-     "holds 1,414 anchors today; it holds 1,416 anchors now",
+     "holds 1,414 anchors today; it holds 1,416 anchors now", 6,
      ("holds 1,416 anchors",), True),
     ("⭐ mere PROXIMITY to the replacement number is NOT a correction (r1 Codex Medium)",
-     "the sweep holds 1,414 anchors today. Another suite holds 1,416 tests.",
+     "the sweep holds 1,414 anchors today. Another suite holds 1,416 tests.", 16,
      ("sweep holds 1,416 anchors",), False),
     ("...and with no corrected form nearby the same sentence stays a live claim",
-     "sub-second over 1,414 anchors across 59 manifests", ("over 1,416 anchors",), False),
+     "sub-second over 1,414 anchors across 59 manifests", 16, ("over 1,416 anchors",), False),
     ("an empty tuple falls back to markers alone",
-     "sub-second over 1,414 anchors", (), False),
+     "sub-second over 1,414 anchors", 16, (), False),
     ("a marker still wins with no corrected form present",
-     "⟳ it was 1,414 back then", (), True),
+     "⟳ it was 1,414 back then", 9, (), True),
     ("one of several corrected forms is enough",
-     "we said holds 1,414 anchors, then holds 1,416 anchors",
+     "we said holds 1,414 anchors, then holds 1,416 anchors", 14,
      ("nope 999 nope", "holds 1,416 anchors"), True),
     ("an empty corrected form never exempts, however many are passed",
-     "holds 1,414 anchors", ("", ""), False),
+     "holds 1,414 anchors", 6, ("", ""), False),
 ]
 
 VERDICT_CASES: list[tuple[str, int, int, bool, int]] = [
@@ -379,9 +513,9 @@ def self_test() -> int:
         ("signature_of with context_words=1 takes one word either side",
          signature_of("we hold 1,414 anchors here", "1,414", 1), "hold 1,414 anchors"),
         ("is_history_context over an empty window is False",
-         is_history_context(""), False),
+         is_history_context("", figure_at=0), False),
         ("is_history_context finds a marker in a long window",
-         is_history_context("x" * 100 + " previously " + "y" * 100), True),
+         is_history_context("x" * 100 + " previously " + "y" * 100, figure_at=150), True),
         ("window_around with span 0 is the match itself",
          window_around("abcdef", 2, 4, 0), "cd"),
         ("is_exempt_path on a literal review path",
@@ -406,7 +540,41 @@ def self_test() -> int:
          hit_offset("aa\nbb\nzz", _find_claim().find_in_text(
              "aa\nbb\nzz", _find_claim().build_pattern("zz"), "q")[0]), 6),
         ("is_history_context's corrected-FORM prong fires on a bare figure match",
-         is_history_context("the tree held 1,416 not 1,414", ("1,416",)), True),
+         is_history_context("the tree held 1,416 not 1,414", ("1,416",), figure_at=24), True),
+        ("sentence_around returns the sentence holding the offset, not the whole window",
+         sentence_around("First one. Second one here. Third.", 14), "Second one here. "),
+        # ⚠ A DIFFERENT WINDOW, not just a different offset — `check-fixture-variation` reads
+        # argument EXPRESSIONS, so two calls spelled with the same literal are ONE value to it
+        # and no case could tell `window` from a constant. It refused this file for exactly that.
+        ("...and a DIFFERENT window splits on ITS OWN sentence boundaries",
+         sentence_around("Alpha ends here? Beta runs on.", 20), "Beta runs on."),
+        ("...and a newline is a boundary too, which is how a markdown table row ends",
+         sentence_around("row one\nrow two here\nrow three", 12), "row two here\n"),
+        ("history_marker returns the STRONG marker it matched",
+         history_marker("⟳ corrected later; the sweep holds 1,414", 34), "⟳"),
+        ("...and the WEAK one when that is what exempted the hit",
+         history_marker("The sweep was 1,414 anchors then.", 14), "was "),
+        ("...and \"\" when nothing exempts it, which is what makes it a SURVIVOR",
+         history_marker("The sweep holds 1,414 anchors.", 16), ""),
+        ("⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken "
+         "for a clean one (r1 Claude M4)",
+         suppression_line(collections.Counter({"was ": 5, "⟳": 2})),
+         "  suppressed as history: 7 hit(s) — 'was 'x5, '⟳'x2"),
+        ("...and an empty counter yields NO line, so a clean run stays quiet",
+         suppression_line(collections.Counter()), ""),
+        ("figure_offset_in_window clips at the start of a document, where window_around did too",
+         (figure_offset_in_window(12), figure_offset_in_window(4000)), (12, CONTEXT_CHARS)),
+        # ⚠ `span` AT A SECOND, EXPLICIT VALUE. Both calls above take the default, so the guard
+        # saw one expression and no case could tell `span` from the constant 180.
+        ("...and `span` is a parameter, so a narrower window clips sooner",
+         (figure_offset_in_window(12, span=5), figure_offset_in_window(99, span=40)), (5, 40)),
+        # ── r1 Claude L3: ONE DIFFERENCE, asserted ──────────────────────────────────────────
+        ("⭐ L3: the two figure rules are DELIBERATELY different, so collapsing them back into "
+         "one fails here rather than silently reinstating M2",
+         (lambda mod: (NUMBER_RE.pattern == mod.NUM_RE.pattern,
+                       bool(mod.NUM_RE.search("3 unbound")),
+                       bool(NUMBER_RE.search("3 unbound"))))(_check_provenance()),
+         (False, True, False)),
         ("⭐ the matcher is IMPORTED, and it still finds a wrapped claim here",
          len(fc.find_in_text("holds 1,414\nanchors", fc.build_pattern("holds 1,414 anchors"), "t.md")), 1),
     ]
@@ -460,8 +628,8 @@ def self_test() -> int:
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
 
-    for name, window, want in HISTORY_CASES:
-        got = is_history_context(window)
+    for name, window, figure_at, want in HISTORY_CASES:
+        got = is_history_context(window, figure_at=figure_at)
         ok = got == want
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
@@ -473,8 +641,8 @@ def self_test() -> int:
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
 
-    for name, window, repls, want in REPLACEMENT_CASES:
-        got = is_history_context(window, repls)
+    for name, window, figure_at, repls, want in REPLACEMENT_CASES:
+        got = is_history_context(window, repls, figure_at=figure_at)
         ok = got == want
         failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
@@ -564,6 +732,10 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
             continue
 
     survivors = 0
+    # ⟳ r1 Claude M4 — WHAT EACH MARKER SUPPRESSED IS REPORTED, not inferred. The run used to
+    # say "none of them survives elsewhere" and a reader could not tell that from "five
+    # survivors each within 180 characters of the word was".
+    suppressed: dict = collections.Counter()
     for path, old_line, figure, repls in corrections:
         sig = signature_of(old_line, figure)
         if len(sig.split()) < 2:        # a bare figure is not a claim; skip rather than spam
@@ -579,7 +751,10 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
                 win = window_around(text, start, start + len(hit.text))
                 # the corrected FORM of this claim: the signature with each replacement swapped in
                 corrected = tuple(sig.replace(figure, r) for r in repls)
-                if is_history_context(win, corrected):
+                if is_history_context(win, corrected,
+                                      figure_at=figure_offset_in_window(start)):
+                    suppressed[history_marker(win, figure_offset_in_window(start)) or
+                               "corrected form"] += 1
                     continue
                 survivors += 1
                 print(f"  SURVIVOR {hit.path}:{hit.line}: {' '.join(hit.text.split())}")
@@ -587,6 +762,9 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
 
     code, msg = verdict(survivors, len(corrections), args.strict)
     print(f"{msg}  ({len(corrections)} correction(s) examined across {len(blobs)} document(s))")
+    line = suppression_line(suppressed)
+    if line:
+        print(line)
     return code
 
 
