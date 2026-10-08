@@ -697,7 +697,9 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 30,   # ⟳ r6 Codex M1: +1 — opener TRUNCATION, not deletion.
+    "scripts/check-withdrawal.py": 32,   # ⟳ r6 Claude M1: +1 — PARA_END's measured block-start
+                                         # rule. ⟳ r6 Claude H1: +1 — the memo keyed by VALUE.
+                                         # ⟳ r6 Codex M1: +1 — opener TRUNCATION, not deletion.
                                          # ⟳ r5 Claude H1+H2: +2 — the opener-only escape test
                                          # and the DOCUMENT-level mask. H2 was the function's
                                          # entire live effect: 205/205 false suppressions.
@@ -5592,7 +5594,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1529)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1531)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

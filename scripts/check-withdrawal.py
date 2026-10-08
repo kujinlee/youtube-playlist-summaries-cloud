@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 114 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 121 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -291,6 +291,27 @@ def is_exempt_path(path: str) -> bool:
 # ⚠ TWO SHAPES REMAIN OPEN AND ARE NOT CLAIMED FIXED: two unterminated prose lines (genuinely
 # ambiguous — that IS what a wrap looks like), and a fenced code block, which needs fence state
 # a regex cannot carry. Both were constructed, not live.
+# ⛔ TWO RULES, TWO QUESTIONS — and r6 Claude M1 was right about the defect and wrong about the fix.
+# It found that `mask_inline_code` recognised only a BLANK line as a paragraph end, so it whitened
+# the `\n` before a list item and erased the boundary `SENTENCE_SPLIT` adds for exactly that (37
+# disagreeing inputs in 29 shapes, every one containing `\n* `). Real defect. Its proposed fix was to
+# share ONE constant between the two — and MEASURED against cmark and markdown-it-py, that is wrong,
+# because the two constants answer different questions:
+#
+#   next line starts    paragraph ENDS (both parsers)    SENTENCE_SPLIT wants a boundary
+#   `- `  `* `  `+ `              yes                                 yes
+#   `1. ` `1) `                   yes                                 yes
+#   `2. ` `2) `                   **NO** — an ordered item can         yes — it reads as a new
+#                                 interrupt a paragraph ONLY           statement whatever its
+#                                 if it starts with 1                  number
+#   `| `                          **NO** — a GFM table needs a         yes — a table row is its
+#                                 delimiter row                        own statement (r2 Codex)
+#   `    - ` (4 spaces)           **NO** — indented code               yes
+#
+# So `SENTENCE_SPLIT` keeps its own broader rule for PROSE, and the mask gets `PARA_END`, derived
+# from what the parsers actually do. ⤳ One rule per QUESTION is the honest form of one-rule-one-place
+# here; collapsing them would have made `` `anchors\n2) 1,414` `` stop being code, which both
+# parsers say it is.
 SENTENCE_SPLIT = re.compile(
     r"(?<=[.!?])\s+"                               # ordinary end of sentence
     r"|\n\s*\n"                                    # a paragraph break
@@ -301,7 +322,16 @@ SENTENCE_SPLIT = re.compile(
 
 
 BACKTICK_RUN = re.compile(r"`+")
-BLANK_LINE = re.compile(r"\n[ \t]*\n")
+# A code span cannot cross the END OF A PARAGRAPH. A blank line is one way; a block start that can
+# INTERRUPT a paragraph is the other, and which ones can is MEASURED (see the table above), not
+# guessed: bullets, `1.`/`1)` only, an ATX heading, a block quote, and at most three spaces of
+# indent. ⚠ Deliberately absent: `2.`/`2)`, `|`, `---`, and four-space indents — both parsers keep
+# the code span across all of those, so treating them as paragraph ends would break real code.
+# ⟳ r6 Claude L1 — `\r` IS IN THE CLASS. A CRLF-written blank line is `\r\n\r\n`, and `[ \t]*`
+# cannot cross the `\r`, so a CR-written paragraph break was not a paragraph break and the mask ran
+# straight through it. Zero live reach in today's corpus (every file is LF) and one character to fix.
+PARA_END = re.compile(r"\n[ \t\r]*\n"
+                      r"|\n {0,3}(?:[-*+][ \t]|1[.)][ \t]|#{1,6}[ \t]|>)")
 
 
 def backtick_escaped(text: str, pos: int) -> bool:
@@ -419,8 +449,10 @@ def mask_inline_code(text: str) -> str:
             i += 1
             continue
         cs = runs[j][0]
-        # A code span cannot contain a blank line — a paragraph break ends it.
-        if BLANK_LINE.search(text[e:cs]):
+        # A code span cannot cross the end of a PARAGRAPH — a blank line ends one, and so does a
+        # markdown block start (r6 Claude M1). Both live in `PARA_END`, which shares its block-start
+        # string with `SENTENCE_SPLIT` so the two cannot disagree again.
+        if PARA_END.search(text[e:cs]):
             i += 1
             continue
         for k in range(e, cs):
@@ -434,18 +466,69 @@ _MASKED_DOCS: dict = {}
 
 
 def masked_of(text: str) -> str:
-    """`mask_inline_code(text)` for a whole document, memoised by identity. r5 Claude H2.
+    """`mask_inline_code(text)` for a whole document, memoised BY VALUE. r5 Claude H2, r6 Claude H1.
 
     Every hit in one document shares one mask, and masking a large file per-hit would turn a cheap
-    guard into a slow one. Keyed on `id(text)` AND length so a recycled id cannot serve the wrong
-    document; the blobs are held for the whole run by the caller, so the ids are stable.
+    guard into a slow one.
+
+    ⛔⛔ IT USED TO KEY ON `(id(text), len(text))`, AND THE SENTENCE DEFENDING THAT WAS FALSE IN THE
+    ONE WAY THAT MATTERS. It read: "keyed on `id(text)` AND length so a recycled id cannot serve the
+    wrong document". The length is not an independent discriminator — it is IMPLIED by the
+    collision. `id()` in CPython is the object's address and the allocator reuses an address for an
+    object OF THE SAME SIZE, so same-length is exactly what a recycled id has in common. Measured on
+    the real entry point, two equal-length documents driven through `main()` alternately in one
+    process, with the memo instrumented to recompute and compare on every hit:
+
+        40 main() runs:  misses=7  hits=33  WRONG=18     cache size at end: 7
+
+    **18 of 33 hits served a mask computed from a DIFFERENT document**, and seven misses for forty
+    runs is the tell on its own. ⚠ The r6 Codex half cleared this as sound, correctly but too
+    narrowly: `blobs` does hold every document for the whole run, so no collision is possible WITHIN
+    one `main()`. The cache was module-global and never cleared, so entries outlived the list that
+    justified them — the hazard is ACROSS invocations, and `--self-test` alone left 7 entries behind.
+    ⚠ And the length check added to `sentence_around` the same round cannot catch it: a stale mask
+    from a same-length document has exactly the right length and the wrong content.
+
+    ⤳ SO THE KEY IS THE TEXT ITSELF. A dict keyed by value cannot serve another document's mask, a
+    string caches its own hash after the first lookup, and the masking it guards is already O(n).
+    `main` also clears the memo on entry, which bounds it to one run's documents — the scope this
+    docstring claimed all along.
     """
-    key = (id(text), len(text))
+    key = text
     got = _MASKED_DOCS.get(key)
     if got is None:
         got = mask_inline_code(text)
         _MASKED_DOCS[key] = got
     return got
+
+
+def _memo_key_probe() -> tuple:
+    """`(mask is right, id-key entry ignored, a 2nd equal-length doc gets its own)`. r6 Claude H1.
+
+    ⛔ DETERMINISTIC, BECAUSE AN id-COLLISION IS NOT. Reproducing the real collision needs the
+    allocator to recycle an address, which no case can require. So this plants the entry an
+    id-KEYED memo would hit — `(id(text), len(text))` — and asserts the memo ignores it. Under the
+    old key that planted value is returned; under the current key it cannot be.
+
+    ⚠ A verdict-level case CANNOT replace this: measured over the real entry point the collision
+    served 18 wrong masks in 33 hits and the verdict did not flip in that pair, so rc is green for a
+    real reason while the input is wrong. The mask is the input to every sentence boundary, so what
+    stood between this and an arbitrary verdict was only that no case's answer depended on it.
+    """
+    text = "`a b` and the count was 1,414 today"
+    other = "xa bx and the count was 1,414 today"      # SAME LENGTH, different content
+    assert len(text) == len(other)
+    _MASKED_DOCS.clear()
+    masked_of(text)                                   # populate under the real key
+    _MASKED_DOCS[(id(text), len(text))] = "X" * len(text)   # what an id-keyed memo would serve
+    served = masked_of(text)
+    # ⛔ AND A SECOND, EQUAL-LENGTH DOCUMENT GETS ITS OWN MASK. This is the property the whole fix
+    # is about, and passing a different document is also what makes `masked_of`'s parameter VARIED —
+    # `check-fixture-variation` reads argument EXPRESSIONS and refused one call site spelled `text`
+    # at both places, which is the fourth time it has caught exactly that on this branch.
+    return (served == mask_inline_code(text),
+            served != "X" * len(text),
+            masked_of(other) == mask_inline_code(other))
 
 
 def sentence_around(window: str, at: int, *, masked: str) -> str:
@@ -926,8 +1009,23 @@ def self_test() -> int:
          _marker_at("the count was `anchors:\n1,414` today"), "was "),
         ("⭐ r4: ...and wrapped at a markdown HARD BREAK inside the span",
          _marker_at("the count was `anchors  \n1,414` today"), "was "),
-        ("⭐ r4: ...and wrapped at a `1)` list-looking line inside the span",
-         _marker_at("the count was `anchors\n1) 1,414` today"), "was "),
+        # ⟳⟳ r6 Claude M1 — THIS CASE WAS WRONG AND THE PARSERS SAY SO. r4 asserted that a `1)`
+        # line inside a span is masked ("was "). It is not a span at all: an ordered list item CAN
+        # interrupt a paragraph when it starts with 1, so cmark and markdown-it-py both report NO
+        # code span here, and the figure is a SURVIVOR. The expectation is flipped, not deleted —
+        # the input still exercises the boundary, it just has the right answer now.
+        ("⟳ r6: a `1)` line ENDS the paragraph, so these backticks are not a span and the figure "
+         "survives — r4 asserted the opposite and both parsers refute it",
+         _marker_at("the count was `anchors\n1) 1,414` today"), ""),
+        ("⭐ r6: ...but `2)` CANNOT interrupt a paragraph — only a `1` can — so THIS one IS a span "
+         "and its newline is masked. The two differ by one character and by one CommonMark rule",
+         _marker_at("the count was `anchors\n2) 1,414` today"), "was "),
+        ("⭐ r6: a bullet line ends it too", _marker_at("the count was `anchors\n- 1,414` today"), ""),
+        ("⟳ r6: a CRLF blank line is a paragraph break too — `[ \\t]*` could not cross the `\\r`",
+         _marker_at("the count was `wrong\r\n\r\nholds 1,414 anchors today`"), ""),
+        ("⭐ r6: ...and a `|` table row does NOT, because a GFM table needs a delimiter row — which "
+         "is why the mask has its own rule instead of sharing SENTENCE_SPLIT's",
+         _marker_at("the count was `anchors\n| 1,414` today"), "was "),
         ("⛔ r4: and the boundary STILL FIRES outside a span — r3's colon rule is intact, which "
          "is what stops this fix from being a quiet revert of it",
          _marker_at("the count was:\n1,414 anchors today"), ""),
@@ -978,6 +1076,17 @@ def self_test() -> int:
         # ── r6 Codex MEDIUM: an escaped FIRST backtick truncates the run, it does not delete it.
         ("r6: an escaped FIRST backtick truncates the opener, it does not delete the run",
          _marker_at("the count was \\``v1:\n2` and 1,414 today"), "was "),
+        # ── r6 Claude HIGH: the mask memo keyed on `id(text)`, and same-length is exactly what a
+        # recycled id has in common. 18 of 33 hits served another document's mask over 40 real
+        # `main()` runs. Keyed by VALUE now, and `main` clears it per run.
+        ("⛔ r6: the mask memo ignores the entry an id-KEYED cache would serve, so a recycled "
+         "address cannot hand one document another's mask",
+         _memo_key_probe()[0], True),
+        ("...and what it serves is not the planted value, which is what the old key returned",
+         _memo_key_probe()[1], True),
+        ("...and a SECOND document of the SAME LENGTH gets its own mask, which is the property the "
+         "id-key could not provide — same length is exactly what a recycled address has in common",
+         _memo_key_probe()[2], True),
         ("...and a LONE escaped backtick still delimits nothing, which is the same rule at length 1",
          mask_inline_code("a \\` b c"), "a \\` b c"),
         ("⛔ r5: an escaped backtick INSIDE a span still CLOSES it — the span is `a \\` and the "
@@ -1076,12 +1185,12 @@ def self_test() -> int:
             g("add", "-A"); g("commit", "-q", "-m", "correct")
             with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
                 return main(["--strict", "--base", base], root=r3)
-    def _drive_span_window(trailing_span: bool, suppressed: bool = False) -> int:
+    def _drive_span_window(suppressed: bool = False) -> int:
         """rc from the LIVE path over a document whose window OPENS INSIDE a code span. r5 Claude H2.
 
         ⛔ THIS IS THE CASE A FRAGMENT MASK FAILS. The leading span is longer than CONTEXT_CHARS,
         so `window_around` begins inside it and the window's first backtick is a CLOSER whose opener
-        is outside. With `trailing_span=True` a later genuine opener exists, so a mask computed from
+        is outside. A later genuine opener always exists here, so a mask computed from
         the FRAGMENT pairs the orphan with it and masks the PROSE between — including the `. ` after
         "wrong", which kills the `(?<=[.!?])\\s+` boundary and lets the figure's sentence absorb the
         `was`. Measured both ways on this exact text: fragment -> marker `'was '` (SUPPRESSED, rc=0);
@@ -1096,7 +1205,12 @@ def self_test() -> int:
         """
         import contextlib as _ctx, io as _io, subprocess as _sp, tempfile as _tf
         lead = "`" + ("x" * 200) + " src/a.test.ts` the count was wrong."
-        tail = " in `master` today." if trailing_span else " today."
+        # ⟳ r6 Claude L3 — THE later-span FLAG IS GONE. After r5 replaced the control with a
+        # known positive it had ONE live value, so its False branch was unexercised code wearing the
+        # shape of a choice. The later span is what creates the spurious pair, so it is now
+        # unconditional. (The identifier is spelled out nowhere here on purpose: an earlier attempt
+        # at this comment named it, and the assertion that no reference survived caught my own text.)
+        tail = " in `master` today."
         middle = "It holds 1,414 anchors that was" if suppressed else "It holds 1,414 anchors"
         line = f"{lead} {middle}{tail}"
         with _tf.TemporaryDirectory() as td:
@@ -1117,10 +1231,10 @@ def self_test() -> int:
                    "mask is decided on the DOCUMENT, where a fragment mask paired an orphan closer "
                    "with a later opener and masked the prose boundary away (205/205 false "
                    "suppressions measured)",
-                   _drive_span_window(trailing_span=True), 1))
+                   _drive_span_window(), 1))
     direct.append(("...and the KNOWN POSITIVE with `was` in the figure's OWN sentence is still "
                    "suppressed, so the case above is not asserting rc=1 for any input",
-                   _drive_span_window(trailing_span=True, suppressed=True), 0))
+                   _drive_span_window(suppressed=True), 0))
     direct.append(("⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — "
                    "the caller passes the FIGURE's offset, not the signature's (r2 Codex High)",
                    _drive_live("The status was green."), 1))
@@ -1261,6 +1375,11 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
     if args.self_test:
         return self_test()
 
+    # ⛔ r6 Claude H1 — ONE RUN, ONE MEMO. The cache is module-global and `main` is called many
+    # times per process (the suite alone drives it through four probes), so entries outlived the
+    # `blobs` list that justified them. Keying by value already makes a stale entry harmless; this
+    # keeps the memo's SIZE matched to its stated scope instead of to the process lifetime.
+    _MASKED_DOCS.clear()
     fc = _find_claim()
     diff, err = git_diff(args.base, root)
     if err:

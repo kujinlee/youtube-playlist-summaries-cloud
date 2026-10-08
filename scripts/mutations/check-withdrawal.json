@@ -312,11 +312,11 @@
     ]
   },
   {
-    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252) ⟳ RETARGETED r6: BLANK_LINE became PARA_END when r6 Claude M1 added the measured block-start rule",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        if BLANK_LINE.search(text[e:cs]):\n            i += 1\n            continue\n",
+        "        if PARA_END.search(text[e:cs]):\n            i += 1\n            continue\n",
         ""
       ]
     ],
@@ -387,6 +387,32 @@
     ],
     "expect": [
       "r6: an escaped FIRST backtick truncates the opener, it does not delete the run"
+    ]
+  },
+  {
+    "name": "⛔ r6 Claude H1 — the mask memo keys on `id(text)` again: CPython reuses an address for an object of the SAME SIZE, so the length in the key is implied by the collision rather than guarding it, and 18 of 33 hits served another document's mask over 40 real main() runs",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    key = text",
+        "    key = (id(text), len(text))"
+      ]
+    ],
+    "expect": [
+      "⛔ r6: the mask memo ignores the entry an id-KEYED cache would serve, so a recycled address cannot hand one document another's mask"
+    ]
+  },
+  {
+    "name": "⛔ r6 Claude M1 — PARA_END forgets that a markdown BLOCK START ends a paragraph, so backticks pair across a list item and the mask erases the very boundary SENTENCE_SPLIT adds for it. 37 disagreeing inputs in 29 shapes, every one containing a list marker ⟳ RETARGETED r6: the L1 `\\r` fix moved this definition",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "PARA_END = re.compile(r\"\\n[ \\t\\r]*\\n\"\n                      r\"|\\n {0,3}(?:[-*+][ \\t]|1[.)][ \\t]|#{1,6}[ \\t]|>)\")",
+        "PARA_END = re.compile(r\"\\n[ \\t\\r]*\\n\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r6: a bullet line ends it too"
     ]
   }
 ]
