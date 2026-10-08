@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 64 cases
+    python3 scripts/find-claim.py --self-test        # 71 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -233,8 +233,9 @@ def wrap_path_exercised(control_hits: list[Hit]) -> bool:
 # ── the filesystem half, deliberately separate ───────────────────────────────
 
 def collect_files(paths: list[str], suffixes: set[str] | None = None
-                  ) -> tuple[list[Path], list[Path], list[Path], str]:
-    """(files, skipped, pruned, error). A directory contributes every non-binary file recursively.
+                  ) -> tuple[list[Path], list[Path], list[Path], list[str], str]:
+    """(files, skipped, pruned, unreadable_dirs, error). A directory contributes every
+    non-binary file recursively.
 
     ⛔ `skipped` IS RETURNED RATHER THAN DISCARDED, for the reason `search_files` returns
     `unreadable`: an excluded file is a subject the search never reached, and a caller that
@@ -251,6 +252,24 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
     out: list[Path] = []
     skipped: list[Path] = []
     pruned: list[Path] = []
+    # ⛔ r2 Claude HIGH — `os.walk`'s `onerror` DEFAULTS TO None, WHICH DISCARDS THE ERROR. The
+    # round-2 rewrite fixed three real traversal defects and left this at the library default,
+    # so a directory the walk cannot read contributed nothing and was reported NOWHERE — not in
+    # `skipped`, not in `pruned`, not in `err`, not in the verdict. Measured with a control in
+    # `root/ok.md`, the claim in `root/locked/claim.md` and `chmod 000 root/locked`:
+    #
+    #     rc=0  "ok — absent in the searched files … so the search worked."  (1 file searched)
+    #
+    # ⭐ AND THE FILE PATH ALREADY GOT THIS RIGHT: an unreadable FILE goes through
+    # `search_files`' `unreadable` list and `main` exits 2 with "a control in a readable file
+    # cannot speak for one that is unreadable". Same guard, same principle, applied to files and
+    # not to directories. So these are routed into THAT list rather than a new channel — one
+    # mechanism per concern, and the sentence that belongs here is already written.
+    unreadable_dirs: list[str] = []
+
+    def _walk_error(exc: OSError) -> None:
+        unreadable_dirs.append(f"{exc.filename}: {type(exc).__name__}")
+
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
@@ -270,7 +289,8 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
             # directories DISCOVERED during the walk; naming one is the caller saying it is a
             # subject. `find-claim … root/node_modules` returned zero files before.
             seen_real: set = set()
-            for dirpath, dirnames, filenames in os.walk(p, followlinks=True):
+            for dirpath, dirnames, filenames in os.walk(p, onerror=_walk_error,
+                                                       followlinks=True):
                 real = Path(dirpath).resolve()
                 if real in seen_real:
                     dirnames[:] = []          # a cycle through a symlink; stop descending
@@ -288,7 +308,12 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
                     if not q.is_file():
                         continue
                     if suffixes is not None:
-                        (out if q.suffix in suffixes else skipped).append(q)
+                        # ⟳ r2 Claude LOW — BOTH BRANCHES LOWERCASE NOW. The deny-list arm did
+                        # and the explicit allow-list arm did not, so `--suffixes {.md}` missed
+                        # a `.MD` file that the default path would have searched. One rule about
+                        # case, applied in one way.
+                        (out if q.suffix.lower() in {x.lower() for x in suffixes}
+                         else skipped).append(q)
                     elif q.suffix.lower() in BINARY_SUFFIXES:
                         skipped.append(q)
                     else:
@@ -296,10 +321,12 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
         elif p.is_file():
             out.append(p)
         else:
-            return [], [], [], f"CANNOT RUN — {raw} is neither a file nor a directory."
+            return [], [], [], unreadable_dirs, \
+                f"CANNOT RUN — {raw} is neither a file nor a directory."
     if not out:
-        return [], skipped, pruned, "CANNOT RUN — the given paths contain no readable text files."
-    return out, skipped, pruned, ""
+        return [], skipped, pruned, unreadable_dirs, \
+            "CANNOT RUN — the given paths contain no readable text files."
+    return out, skipped, pruned, unreadable_dirs, ""
 
 
 def search_files(files: list[Path], pattern: re.Pattern) -> tuple[list[Hit], list[str]]:
@@ -427,7 +454,7 @@ def _unreadable_probe() -> tuple:
         d = Path(td)
         (d / "ok.md").write_text("live claim here\n")
         (d / "bad.md").write_bytes(b"live claim\xff\n")
-        files, _skipped, _pruned, _err = collect_files([str(d)])
+        files, _skipped, _pruned, _unreadable, _err = collect_files([str(d)])
         return search_files(files, build_pattern("live claim"))
 
 
@@ -476,12 +503,12 @@ def _h1_witness() -> tuple:
 
         os.scandir = _spy
         try:
-            walked, skipped, pruned, _ = collect_files([str(d)])
+            walked, skipped, pruned, _ud, _ = collect_files([str(d)])
         finally:
             os.scandir = real_scandir
-        named, _, _, _ = collect_files(
+        named, _, _, _, _ = collect_files(
             [str(d / "ok.md"), str(d / "notes.rst"), str(d / "Dockerfile")])
-        named_pruned, _, _, _ = collect_files([str(d / "node_modules")])
+        named_pruned, _, _, _, _ = collect_files([str(d / "node_modules")])
         return (len(search_files(walked, pat)[0]),
                 len(search_files(named, pat)[0]),
                 len(skipped),
@@ -489,6 +516,71 @@ def _h1_witness() -> tuple:
                 len([c for c in calls if "node_modules" in c]),
                 len(named_pruned),
                 sorted({q.name for q in pruned}))
+
+
+_UPPER_DIR = None
+
+
+def _upper_suffix_dir() -> Path:
+    """A directory holding `ONE.MD` and `two.TXT` — UPPERCASE suffixes, built once.
+
+    r2 Claude LOW: the deny-list branch lowercased and the explicit allow-list branch did not,
+    and no fixture had an uppercase suffix, so nothing could tell the two apart.
+    """
+    global _UPPER_DIR
+    if _UPPER_DIR is None:
+        import tempfile
+        d = Path(tempfile.mkdtemp())
+        (d / "ONE.MD").write_text("first subject here\n")
+        (d / "two.TXT").write_text("second subject here\n")
+        _UPPER_DIR = d
+    return _UPPER_DIR
+
+
+def _unreadable_dir_probe() -> tuple:
+    """(rc, says_cannot_run, names_the_dir) over an unreadable DIRECTORY. r2 Claude H1.
+
+    The witness: a control in `ok.md`, the claim in `locked/claim.md`, `chmod 000 locked`.
+    Before the fix this returned rc=0 and the sentence "so the search worked".
+    ⚠ Skipped when the chmod does not take effect — running as root, or a filesystem that
+    ignores modes — because a case that cannot build its world must not silently pass.
+    """
+    import contextlib, io, os as _os, stat, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("the control phrase lives here\n")
+        locked = d / "locked"
+        locked.mkdir()
+        (locked / "claim.md").write_text("the claim is still live\n")
+        _os.chmod(locked, 0o000)
+        try:
+            if _os.access(locked, _os.R_OK):      # the chmod did not take; do not pretend
+                return (2, True, True)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(buf):
+                rc = main(["--pattern", "the claim is still live",
+                           "--control", "control phrase", "--expect", "absent", str(d)])
+            out = buf.getvalue()
+            return (rc, "CANNOT RUN" in out, "locked" in out)
+        finally:
+            _os.chmod(locked, stat.S_IRWXU)
+
+
+def _cycle_probe() -> tuple:
+    """(n_files, found) over a symlink CYCLE — `root/self -> root`. r2 Claude M5.
+
+    The fold advertised "cycle protection by REAL path" and nothing tested it: severing the
+    guard left the suite green. A cycle must terminate AND still find the claim exactly once.
+    """
+    import os as _os, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("the control phrase lives here\n")
+        (d / "claim.md").write_text("the claim is still live\n")
+        _os.symlink(d, d / "self")
+        files, _sk, _pr, _ud, _err = collect_files([str(d)])
+        hits, _ = search_files(files, build_pattern("the claim is still live"))
+        return (len(files), len(hits))
 
 
 def _tail_of_a_run(prune: bool = True) -> str:
@@ -534,6 +626,12 @@ def self_test() -> int:
         # ⚠ A SECOND, DISTINCT DRIVE of the filesystem half. `check-fixture-variation` reads
         # CALL SITES, and `_unreadable_probe` alone passes `files` and `pattern` at one
         # expression each — no case could then tell either parameter from a constant.
+        # ⚠ r2 Claude LOW's falsifier: an UPPERCASE suffix against a lowercase allow-list. No
+        # existing case used one, so the mutation reverting the lowercase SURVIVED.
+        ("⭐ an explicit allow-list matches case-INSENSITIVELY, as the deny-list branch does",
+         (lambda d: len(collect_files([str(d)], {".md"})[0]))(_upper_suffix_dir()), 1),
+        ("...and the same directory under a DIFFERENT explicit set finds its other file",
+         (lambda d: len(collect_files([str(d)], {".txt"})[0]))(_upper_suffix_dir()), 1),
         ("collect_files honours an explicit suffix set, and a second one yields a second answer",
          (lambda d: (len(collect_files([str(d)], {".md"})[0]), len(collect_files([str(d)], {".txt"})[0]))
           )(_two_file_dir()), (1, 1)),
@@ -601,6 +699,22 @@ def self_test() -> int:
          main(["--pattern", "anything", "/dev/null"]), 2),
         ("...and a third argv, with no paths at all, is CANNOT RUN too",
          main(["--pattern", "x", "--control", "y"]), 2),
+        # ── r2 Claude HIGH: an unreadable DIRECTORY is as unsafe as an unreadable file ───────
+        ("⭐ an unreadable DIRECTORY is CANNOT RUN, not a confident absence (r2 Claude H1)",
+         _unreadable_dir_probe()[0], 2),
+        ("...and it says CANNOT RUN rather than reporting a clean search",
+         _unreadable_dir_probe()[1], True),
+        ("...and NAMES the directory, so the reader knows what was not reached",
+         _unreadable_dir_probe()[2], True),
+        # ── r2 Claude MEDIUM: the cycle guard the fold advertised and never tested ──────────
+        # ⚠ TWO, derived not guessed: `ok.md` and `claim.md`. `self` is a directory, so it is
+        # not a file, and the cycle guard stops the walk from re-entering it and finding the
+        # same two again. I asserted 3 and the suite corrected me.
+        ("⭐ a symlink CYCLE terminates and does not double-count — `root/self -> root` "
+         "(r2 Claude M5)",
+         _cycle_probe()[0], 2),
+        ("...and the claim is found exactly ONCE through it, not twice",
+         _cycle_probe()[1], 1),
         ("⭐ verdict NAMES the exclusion rather than reporting a bare absence",
          "EXCLUDED from the walk by suffix" in verdict(0, 3, "absent", 7)[1], True),
         ("...and says nothing about exclusions when nothing was excluded",
@@ -699,7 +813,7 @@ def main(argv: "list[str] | None" = None) -> int:
         print("CANNOT RUN — give at least one file or directory to search.", file=sys.stderr)
         return 2
 
-    files, skipped, pruned, err = collect_files(args.paths)
+    files, skipped, pruned, unreadable_dirs, err = collect_files(args.paths)
     if err:
         print(err, file=sys.stderr)
         return 2
@@ -708,11 +822,16 @@ def main(argv: "list[str] | None" = None) -> int:
     ctl = build_pattern(args.control, not args.case_sensitive)
     hits, unreadable = search_files(files, pat)
     control_hits, _ = search_files(files, ctl)
+    # ⛔ r2 Claude High: a directory the walk could not read is the SAME kind of unsafety as a
+    # file it could not decode, so it joins the same list and takes the same exit.
+    unreadable = unreadable_dirs + unreadable
 
     # ⛔ A FILE THE SEARCH COULD NOT READ MAKES EVERY ANSWER UNSAFE — not just "absent". The
     # claim could be in it, so presence is understated too. CANNOT RUN, before the verdict.
     if unreadable:
-        print(f"CANNOT RUN — {len(unreadable)} file(s) could not be read or decoded, so this "
+        # ⟳ r2 Claude High: "path(s)", not "file(s)" — an unreadable DIRECTORY now arrives here
+        # too, and calling it a file would be a small lie in the message that reports it.
+        print(f"CANNOT RUN — {len(unreadable)} path(s) could not be read or decoded, so this "
               f"search did not reach its whole subject. A control in a readable file cannot "
               f"speak for one that is unreadable. Treat this as NOT RUN:", file=sys.stderr)
         for u in unreadable[:10]:
@@ -733,6 +852,12 @@ def main(argv: "list[str] | None" = None) -> int:
             file=sys.stderr,
         )
 
+    # ⚠ r2 Claude LOW — "not walked" IS TRUE OF THE DIRECTORY NAMED AND NOT OF ITS CONTENTS.
+    # With `root/vendor -> node_modules`, the walk prunes `node_modules` by name and then reaches
+    # the same files through the alias, so the run says `1 dir(s) not walked (node_modules)` and
+    # searched them anyway. This is the SAFE direction — more searched, never less — but it is
+    # the same genus as the defect this message was rewritten to remove, so it is stated here
+    # rather than left for a reader to discover.
     # ⛔ REPORT WHAT WAS ACTUALLY PRUNED, not the constant. The previous version printed the
     # whole of PRUNED_DIRS whenever a directory was walked, which claimed a traversal property
     # it did not have AND named directories that were nowhere near the search (r2 Codex High).

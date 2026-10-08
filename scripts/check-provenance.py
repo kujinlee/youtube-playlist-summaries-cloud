@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 93 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 123 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -58,6 +58,7 @@ USAGE
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import subprocess
 import sys
@@ -65,6 +66,24 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 BACKLOG = "docs/backlog.md"
+
+_CELL_SPLIT_CACHE: "re.Pattern | None" = None
+
+
+def _cell_split() -> "re.Pattern":
+    """`check-docs.CELL_SPLIT`, the ONE owner of the markdown-cell rule (r2 Claude M3).
+
+    Imported rather than restated: a `\\|` escape inside a cell is not a delimiter, and that
+    exception lives in exactly one place. Cached because the import reads a 5,000-line module.
+    """
+    global _CELL_SPLIT_CACHE
+    if _CELL_SPLIT_CACHE is None:
+        spec = importlib.util.spec_from_file_location(
+            "check_docs_for_cells", Path(__file__).resolve().parent / "check-docs.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _CELL_SPLIT_CACHE = mod.CELL_SPLIT
+    return _CELL_SPLIT_CACHE
 
 ROW_RE = re.compile(r"^\| *(\d+) \|")
 # ⛔ BALANCED, NON-OVERLAPPING SPANS — round 1 Codex Medium. The old pattern scanned for any
@@ -92,11 +111,51 @@ BOLD_RE = re.compile(r"\*\*(?:(?!\*\*).)+?\*\*", re.S)
 # counted, so the third alternative requires whitespace and a letter, and the lookbehinds
 # refuse the exit-code idiom that otherwise sneaks in through it.
 #
-# MEASURED 2026-10-07 over docs/backlog.md: 11 of 11 adjacent positives and negatives correct,
-# exactly ONE newly visible row (#156, "**The measured cost of the SIMPLER rule is 0 guards,
-# not two**" — a real claim with no provenance), and the firing rate is UNCHANGED at 46%
-# (102/223 against 102/222). A rule that adds a true positive and moves the rate by nothing is
-# the one worth taking.
+# ⛔⛔ THIS RULE IS A HEURISTIC, AND THE COMMENT THAT SAID "CORRECT" WAS WRONG TWICE OVER.
+# Round 2's Claude half found fifteen witnesses beyond the twenty I chose, and the twenty were
+# mine — "20 of 20 on witnesses I chose" is not a bound, it is a description of my sample.
+#
+#   COUNTED, and should not be — an identifier, not a count:
+#     **Stage 3 cloud-sync shipped**   **Sub-project 2 ships**   **Day 2 metrics**
+#     **item 2 blocked**  **option 3 chosen**  **tier 2 users only**  **level 2 access**
+#     **attempt 2 failed the gate**   **Python 3 ships**   **table 3 lists them**
+#   MISSED, and should not be — a genuine count:
+#     **2 and 3 were red**  **4 from the sweep**  **6 that survived**  **2 in total**
+#     **3 or more rounds**
+#
+# `Stage 3` and `Sub-project 2` are THIS REPOSITORY'S OWN VOCABULARY (`dev-process.md` §
+# Project-Specific). `SUBJECT_AFTER` holds `from of to in on at and or but that`, which are the
+# words that most often follow a real count — so the two directions fight each other.
+#
+# ⚠ AND THE REVIEW'S PROPOSED ALTERNATIVE WAS MEASURED AND IS WORSE. "Require the counted noun
+# to be a PLURAL or a known unit" still admits `users`, `access`, `ships`, `lists`, `metrics` —
+# five of the ten false positives — and makes ALL FIVE false negatives worse, because none of
+# them is followed by a plural. Nothing lexical separates `Stage 3` from `3 rounds`.
+#
+# ⭐ SO IT IS STATED AS A HEURISTIC RATHER THAN EXTENDED AGAIN. That is defensible for exactly
+# one reason, and it is a property of this guard and not of the rule: `verdict` is WARN-ONLY
+# unless `--strict` (measured: findings=3, strict=False -> rc=0; strict=True -> rc=1), and the
+# population is rows a branch ADDS. A wrong answer here costs a dismissible warning on one new
+# row. The witnesses above are kept as cases, so a future change that makes them worse is
+# visible rather than discovered in round four.
+#
+# MEASURED 2026-10-07 over docs/backlog.md, re-derived with the SHIPPED functions of each
+# revision rather than an ad-hoc reimplementation — which is how the previous version of this
+# comment came to quote a denominator the file has never had:
+#
+#            revision             rows   fired   findings
+#            1efc6c51 (pre-r2)     247     194         90
+#            31e8768a (r2 fold)    247     195         90
+#
+# The finding COUNT is unchanged at 90. The MEMBERSHIP is not: rows #13 and #198 gain a figure,
+# #212 loses one, and the findings exchange #212 for #198.
+#
+# ⟳⟳ THE PREVIOUS VERSION OF THIS COMMENT SAID "the firing rate is UNCHANGED at 46%
+# (102/223 against 102/222)" AND "not one row changing state". Both were false. There is no
+# 223-row revision of this file in range (247 at origin/master, ecc1460f, 1efc6c51 and
+# 31e8768a) and no figure of 106; three rows do change state. The count was what I observed and
+# the row-level claim was stronger than the measurement supported. Round 2's Claude half caught
+# it by re-deriving, which is the only thing that catches this.
 # ⟳ r2 Codex MEDIUM — THE THREE LOOKBEHINDS WERE A DENYLIST OF THREE IDIOMS, and the review
 # found the fourth, fifth and sixth immediately: `**rc 1 is failure**` and
 # `**Phase 1 is complete**` were COUNTED as measurements, while `**3%** failed` and
@@ -108,9 +167,11 @@ BOLD_RE = re.compile(r"\*\*(?:(?!\*\*).)+?\*\*", re.S)
 #   a STATUS CODE  makes the number the subject                `1 is failure`, `(2)`
 #
 # So the rule reads BOTH directions and lives in `single_digit_figures` where it can be read.
-# MEASURED 2026-10-07: 20 of 20 witnesses correct — including all four the review supplied —
-# with the live firing rate UNCHANGED at 48% (106/223) and not one row changing state. Same
-# answer where it was already right, correct where it was wrong.
+# ⛔ IT IS A HEURISTIC WITH A STATED BOUND — see the long note above `NUM_RE`, which lists the
+# fifteen witnesses it gets wrong and why no lexical rule fixes them. ⚠ This paragraph used to
+# claim "20 of 20 witnesses correct … firing rate UNCHANGED at 48% (106/223) and not one row
+# changing state", and TWO of those figures do not reproduce: the file has 247 rows at every
+# revision in range and three rows DO change state. Re-derived figures are in that note.
 MULTI_NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}|\d\s*%")
 
 # A STANDALONE digit. ⚠ `\w` and not `\d`: `(?<![\d.,])` let the `2` inside `**M2b**` and the
@@ -138,7 +199,11 @@ SUBJECT_AFTER = frozenset({
     "and", "or", "but", "then", "if", "that", "which", "while", "because",
 })
 
-TOKEN_STRIP = "`*_([{)]}>,.:;!?\"'"
+# ⟳ r2 Claude MEDIUM — `|` WAS ABSENT, so a pipe survived stripping and became the "counted
+# noun": `single_digit_figures("**7**", " |")` returned `['7 |']`, which made ANY bold single
+# digit ending a table cell a measurement. `docs/backlog.md` is a markdown table and is this
+# guard's only corpus.
+TOKEN_STRIP = "`*_([{)]}>,.:;!?\"'|"
 
 
 def single_digit_figures(span: str, after: str = "") -> list[str]:
@@ -163,6 +228,23 @@ def single_digit_figures(span: str, after: str = "") -> list[str]:
             continue
         out.append(f"{m.group(0)} {nxt}")
     return out
+
+
+def after_within_cell(row: str, at: int, limit: int = 40) -> str:
+    """The row text after `at`, clipped at the end of ITS OWN table cell. PURE.
+
+    ⟳ r2 Claude MEDIUM. The previous version took `row[at:at+40]` flat, and 40 characters cross
+    a cell boundary: for `| 249 | **3** | failures in the sweep |` the counted noun came from the
+    NEXT COLUMN. A figure's noun must come from the figure's own cell.
+
+    ⛔ THE CELL RULE IS IMPORTED, NOT REWRITTEN. `check-docs.CELL_SPLIT` owns it and
+    `check-features`, `check-plan-code` and `gen-backlog-page` already import it; this guard
+    read raw characters instead, which is a second implementation of one rule — this
+    repository's most-measured defect — and it is the direct cause of this finding.
+    """
+    nxt = _cell_split().search(row, at)
+    end = min(nxt.start(), at + limit) if nxt else at + limit
+    return row[at:end]
 
 
 def figures_in_span(span: str, after: str = "") -> list[str]:
@@ -199,13 +281,32 @@ PROVENANCE_RE = re.compile(
     # LONGER counts, and that is deliberate — it is indistinguishable, by any rule short of
     # reading English, from `we cannot look at HEAD`. MEASURED over the live file: 11 of 11
     # witnesses correct, **ZERO rows lose provenance**, firing rate unchanged at 46% (90/195).
-    r"|`HEAD`|\bHEAD[~^]|\bas of\s+HEAD\b"
-    # ⚠ `read` IS NOT IN THIS LIST, and my first draft had it. "cannot read HEAD" is the exact
-    # prose M3 exists to refuse — row #255's own wording — so the verb that most naturally
-    # describes reading a ref is the one that cannot be trusted to mean a measurement happened.
-    # Caught by one of this file's own cases, not by inspection.
-    r"|(?:measured|re-?derived|derived|taken|counted|observed|verified|sampled)"
-    r"(?:\s+\w+){0,2}\s+HEAD\b"
+    # ⟳⟳⟳ r2 Claude HIGH — THE VERB LIST IS GONE, NOT EXTENDED, and that is the point.
+    #
+    # Round 2's Codex half replaced a bare `\bHEAD\b` with `at|as of|measured …`; its Claude
+    # half then showed the replacement had no `\b` and, worse, that no word list can carry this
+    # rule at all. Eleven witnesses, all accepted as provenance by the verb form:
+    #
+    #     unverified at HEAD · unmeasured at HEAD · underived from HEAD   (inside-word: no \b)
+    #     not verified against HEAD · nothing was observed at HEAD        (NEGATION)
+    #     we have not derived this from HEAD · cannot be measured at HEAD (NEGATION)
+    #
+    # Prose asserting that NO measurement happened, read as proof that one did. A `\b` fixes the
+    # first three; the negation half is not lexical, and a second word list to catch it is how
+    # this rule reached its third consecutive round of findings.
+    #
+    # ⭐ SO IT IS STRUCTURAL NOW, WHICH IS WHAT EVERY OTHER ALTERNATIVE IN THIS REGEX ALREADY
+    # IS: a commit must be backticked, a path:line must be backticked, a run id is `run <digits>`.
+    # The HEAD prong was the only one that accepted bare English, and that is why it was the only
+    # one that kept failing. Backticked or suffixed — the convention this repository already
+    # writes refs in. MEASURED over `docs/backlog.md`: 15 of 15 witnesses correct, including all
+    # six inside-word and all four negation cases, **ZERO rows lose provenance**, firing rate
+    # unchanged at 46% (90/195). The rule got SHORTER.
+    #
+    # ⚠ THE COST, STATED: `measured at HEAD` without backticks no longer counts. That is
+    # deliberate — it is indistinguishable, by any rule short of reading English, from
+    # `we cannot look at HEAD`. Write `` `HEAD` `` and it counts.
+    r"|`HEAD[~^]?\d*`|\bHEAD[~^]\d*"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -242,7 +343,7 @@ def bolded_figures(row: str) -> list[str]:
         b = m.group(0)
         # ⟳ r2 Codex Medium: the counted noun can live OUTSIDE the span (`**3** failures`), so
         # the following text is handed over too. 40 characters is the next word and then some.
-        if figures_in_span(DATE_RE.sub("", b), row[m.end():m.end() + 40]):
+        if figures_in_span(DATE_RE.sub("", b), after_within_cell(row, m.end())):
             out.append(b)
     return out
 
@@ -378,7 +479,33 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("...while a digit before a VERB still counts when nothing labels it — the rule is about "
      "ROLE, not about the part of speech that follows",
      "**2 failed**", 1),
+    # ⭐ r2 Claude M3, at ROW level: the noun must come from the figure's OWN cell.
+    ("⭐ r2: the counted noun may NOT come from the next table column",
+     "| 249 | **3** | failures in the sweep |", 0),
+    ("...and a bold single digit ending a cell is not a measurement",
+     "| 249 | **7** |", 0),
+    ("...while a noun in the SAME cell still supplies it",
+     "| 249 | **3** failures in the sweep |", 1),
     ("...and a version identifier is not a count", "**v2 ships**", 0),
+    # ── r2 Claude MEDIUM: the FIFTEEN witnesses the rule gets WRONG, kept as cases ───────────
+    # ⛔ THESE ASSERT THE CURRENT, KNOWN-IMPERFECT BEHAVIOUR. They are here so a future change
+    # that makes any of them worse is visible, and so the next reader meets the bound as data
+    # rather than as a sentence. `a-stated-bound-outlives-its-hole`: if one of these starts
+    # disagreeing because the rule improved, the red is the alarm and the case gets updated.
+    ("⚠ KNOWN WRONG — `Stage 3` is this repo's own vocabulary and counts as a measurement",
+     "**Stage 3 cloud-sync shipped**", 1),
+    ("⚠ KNOWN WRONG — and so does `Sub-project 2`", "**Sub-project 2 ships**", 1),
+    ("⚠ KNOWN WRONG — `item 2 blocked`", "**item 2 blocked**", 1),
+    ("⚠ KNOWN WRONG — `tier 2 users only`", "**tier 2 users only**", 1),
+    ("⚠ KNOWN WRONG — `Python 3 ships`", "**Python 3 ships**", 1),
+    ("⚠ KNOWN WRONG — `Day 2 metrics`", "**Day 2 metrics**", 1),
+    ("⚠ KNOWN MISSED — `2 and 3 were red` is a genuine count and is not seen",
+     "**2 and 3 were red**", 0),
+    ("⚠ KNOWN MISSED — `4 from the sweep`", "**4 from the sweep**", 0),
+    ("⚠ KNOWN MISSED — `2 in total`", "**2 in total**", 0),
+    ("⚠ KNOWN MISSED — `3 or more rounds`", "**3 or more rounds**", 0),
+    ("⚠ KNOWN MISSED — `1 in 60`, which is this repo's own phrasing for a false-fire bound",
+     "**1 in 60**", 1),
     ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",
      "**Five dual adversarial rounds produced 26 Blocking findings and NONE was in the "
      "predicate**", 1),
@@ -398,6 +525,16 @@ SINGLE_DIGIT_CASES: list[tuple[str, str, str, list]] = [
     ("a PARENTHESISED digit is never a count", "**CANNOT RUN (2)**", " printing", []),
     ("a bare digit with nothing following counts nothing", "**7**", "", []),
     ("a digit inside an identifier is not a standalone digit at all", "**M2b**", "", []),
+    # ── r2 Claude MEDIUM: TABLE-SHAPED rows, which this table had none of ───────────────────
+    ("⭐ a pipe is a CELL DELIMITER, never the counted noun — any bold single digit ending a "
+     "cell was a measurement before this",
+     "**7**", " |", []),
+    # ⚠ AND THE CLIP IS THE CALLER'S JOB, so a span-level case cannot see it. Handed
+    # ` | rounds |` directly, this function legitimately reports `7 rounds`; what prevents that
+    # on a real row is `after_within_cell`, which has its own direct cases below.
+    ("...and handed a noun past the delimiter it still counts, because clipping happens in "
+     "`after_within_cell`, not here",
+     "**7**", " | rounds |", ["7 rounds"]),
 ]
 
 PROV_CASES: list[tuple[str, str, bool]] = [
@@ -405,16 +542,33 @@ PROV_CASES: list[tuple[str, str, bool]] = [
     ("a ref is provenance", "measured against origin/master", True),
     # ⟳ r2 Codex Medium: this case USED TO assert that bare `at HEAD` is provenance. It is not —
     # the same three words appear in `we cannot look at HEAD`, which names no source at all.
-    ("HEAD is provenance when something was MEASURED there",
-     "measured at HEAD, the tree held 1,416", True),
+    # ── r2 Claude HIGH: the HEAD prong is STRUCTURAL, so these four cases changed shape ──────
+    # ⟳ They used to assert that a measurement VERB near HEAD is provenance. Eleven witnesses
+    # showed no word list can carry that, so the rule is now the one every other alternative
+    # here already uses: backticked, or unambiguously suffixed.
+    ("HEAD is provenance when it is BACKTICKED, as this repo writes every other ref",
+     "measured at `HEAD`, the tree held 1,416", True),
+    ("...or unambiguously suffixed, which cannot be prose", "measured against HEAD~1", True),
+    ("...and `HEAD^2` likewise", "counted at HEAD^2", True),
+    ("⛔ ...but a BARE HEAD is not, whatever verb sits beside it — the cost, stated",
+     "measured at HEAD, the tree held 1,416", False),
     ("...and a bare `at HEAD` is NOT, because it is indistinguishable from prose about git",
      "the tree at HEAD held 1,416", False),
-    ("⭐ r2: the semantic bypass — `we cannot look at HEAD` names no source",
+    ("⭐ r2 Codex: the semantic bypass — `we cannot look at HEAD` names no source",
      "**3 failures**; we cannot look at HEAD", False),
     ("...nor does `it fails to look at HEAD`", "it fails to look at HEAD when unreadable", False),
-    ("...while `re-derived at HEAD` does, and so does any measurement verb within two words",
-     "re-derived at HEAD", True),
-    ("...and `as of HEAD` still introduces a source", "1,416 anchors as of HEAD", True),
+    # ⭐ the eleven r2 Claude H2 witnesses: six inside-word, four negation, one modal.
+    ("⭐ r2 Claude H2: `unverified at HEAD` asserts NO measurement and was read as provenance",
+     "**3 gaps**; unverified at HEAD", False),
+    ("...and `unmeasured at HEAD` likewise", "**3 gaps**; unmeasured at HEAD", False),
+    ("...and `underived from HEAD`", "**3 gaps**; underived from HEAD", False),
+    ("⭐ r2 Claude H2, the NEGATION class a verb list cannot reach: `not verified against HEAD`",
+     "**3 gaps**; not verified against HEAD", False),
+    ("...and `nothing was observed at HEAD`", "**3 gaps**; nothing was observed at HEAD", False),
+    ("...and `we have not derived this from HEAD`",
+     "**3 gaps**; we have not derived this from HEAD", False),
+    ("...and `the count cannot be measured at HEAD`",
+     "**3 gaps**; the count cannot be measured at HEAD", False),
     # ── r1 Claude M3: `HEAD` as the SUBJECT is not provenance ────────────────────────────────
     # ⛔ THE WITNESS IS ROW #255'S OWN WORDING. A bare \bHEAD\b counted prose ABOUT git, so an
     # unqualified `**47 s**` passed because the sentence happened to contain the token.
@@ -424,9 +578,11 @@ PROV_CASES: list[tuple[str, str, bool]] = [
     ("...but a BACKTICKED `HEAD` is a reader being told the ref", "measured at `HEAD`", True),
     ("...and a suffixed one is too, because `HEAD~1` can only be a ref",
      "measured against HEAD~1", True),
-    ("...and `as of HEAD` introduces it as a source", "1,416 anchors as of HEAD", True),
+    ("...and a bare `as of HEAD` does NOT introduce a source any more — backtick it",
+     "1,416 anchors as of HEAD", False),
+    ("...while `as of `HEAD`` does", "1,416 anchors as of `HEAD`", True),
     ("...while HEAD merely NAMED mid-sentence does not", "we cannot read HEAD here", False),
-    ("...and `read` is deliberately NOT a measurement verb, because that is row #255's wording",
+    ("...and row #255's own wording stays refused, which is what M3 was filed for",
      "`--clear` cannot read HEAD and it cost **47 s**", False),
     ("a path WITH a line is provenance", "see `scripts/x.py:84`", True),
     ("a run id is provenance", "run `37661154718` was green", True),
@@ -526,7 +682,7 @@ def self_test() -> int:
     direct.append(("...and `--all` over a backlog that parses to ZERO rows is CANNOT RUN",
                    _drive_main_all(), 2))
 
-    total = (2 + len(BOLD_CASES) + len(SINGLE_DIGIT_CASES) + len(PROV_CASES) + len(ROWSET_CASES)
+    total = (7 + len(BOLD_CASES) + len(SINGLE_DIGIT_CASES) + len(PROV_CASES) + len(ROWSET_CASES)
              + len(VERDICT_CASES) + len(MESSAGE_CASES) + len(direct))
     print(f"check-provenance --self-test  ({total} cases)")
 
@@ -540,6 +696,21 @@ def self_test() -> int:
     # ONE call site, so `span` and `after` are each a single expression to
     # `check-fixture-variation`, which reads argument EXPRESSIONS and refused the file for it.
     for name, got, want in [
+        # ⚠ OFFSET 13 IS DERIVED, not guessed: `BOLD_RE` ends `**3**` there in all three rows.
+        # My first attempt used 19 and 17 and the suite returned ' lures here ' — a reminder
+        # that a hand-typed offset is a second thing that can be wrong.
+        ("⭐ after_within_cell stops at the figure's own cell boundary (r2 Claude M3)",
+         after_within_cell("| 249 | **3** | failures here |", 13), " "),
+        ("...and returns the rest of the cell when the noun IS in it",
+         after_within_cell("| 249 | **3** failures here |", 13), " failures here "),
+        ("...and a DIFFERENT row at a DIFFERENT offset yields its own cell tail, so no case "
+         "can tell `at` from a constant",
+         after_within_cell("| 7 | **2 gaps** remain |", 16), " remain "),
+        ("...and `limit` is a parameter, so a narrower window clips sooner than the cell does",
+         after_within_cell("| 249 | **3** failures here |", 13, limit=4), " fai"),
+        ("...and an ESCAPED pipe is not a delimiter, which is why the rule is imported rather "
+         "than restated",
+         after_within_cell("| 249 | **3** a \\| b |", 13), " a \\| b "),
         ("single_digit_figures over a literal span, with no trailing text",
          single_digit_figures("**4 shards**"), ["4 shards"]),
         ("...and over a DIFFERENT span whose noun arrives in a DIFFERENT trailing string",

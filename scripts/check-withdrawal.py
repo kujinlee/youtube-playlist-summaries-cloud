@@ -251,6 +251,20 @@ def is_exempt_path(path: str) -> bool:
 # table rows must never share a sentence. MEASURED over 47,990 figure occurrences in non-exempt
 # docs/: weak-marker suppressions 2,330 -> 3,688, median sentence 96 -> 180 chars against a
 # 360-char window, and the table-row fixture still refuses to leak a marker between rows.
+#
+# ⛔ AND THE DIRECTION OF THAT CHANGE IS TOWARD **MORE** SUPPRESSION, which this file's own
+# docstring calls "the expensive direction" — r2 Claude MEDIUM, and the previous version of this
+# note stated the 2,330 -> 3,688 rise as evidence the prong was "narrowed, not deleted" without
+# saying which way it moved. It is a 1,358-hit INCREASE in exemptions, and 1,418 of the new
+# suppressions reach across a line break.
+#
+# ⚠ The trade is still net positive and the review agreed: it sampled the new suppressions and
+# found the majority are GENUINE WRAPS the old rule got wrong, and could not produce a live
+# false negative. But five constructed shapes are plainly separate statements that now share a
+# sentence — a colon lead-in, two unterminated prose lines, a fenced code block, a markdown hard
+# break (two trailing spaces), and a `1)` list marker where only `1.` is modelled. Those are
+# known-open, not fixed, and recovering them is three more alternatives in a regex that has
+# three. Filed rather than left implied.
 SENTENCE_SPLIT = re.compile(
     r"(?<=[.!?])\s+"                               # ordinary end of sentence
     r"|\n\s*\n"                                    # a paragraph break

@@ -117,12 +117,12 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude H1 — the skipped set is DISCARDED on the way out, which is the shape the r1 Codex High already cost once for `unreadable`: an exclusion nobody can see ⟳ r2: retargeted — the return grew a `pruned` member",
+    "name": "⟳ r1 Claude H1 — the skipped set is DISCARDED on the way out, which is the shape the r1 Codex High already cost once for `unreadable`: an exclusion nobody can see ⟳ r2: retargeted — the return grew a `pruned` member ⟳ r2 Claude H1: retargeted again — the return grew `unreadable_dirs`",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "    return out, skipped, pruned, \"\"",
-        "    return out, [], pruned, \"\""
+        "    return out, skipped, pruned, unreadable_dirs, \"\"",
+        "    return out, [], pruned, unreadable_dirs, \"\""
       ]
     ],
     "expect": [
@@ -143,12 +143,12 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex HIGH — symlinked directories stop being followed, so a claim behind `root/linked -> ../external` is missed SILENTLY and the run still says the search worked. In this repo `~/explainers` is such a symlink",
+    "name": "⟳ r2 Codex HIGH — symlinked directories stop being followed, so a claim behind `root/linked -> ../external` is missed SILENTLY and the run still says the search worked. In this repo `~/explainers` is such a symlink ⟳ r2 Claude H1: retargeted — the call gained `onerror`",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "for dirpath, dirnames, filenames in os.walk(p, followlinks=True):",
-        "for dirpath, dirnames, filenames in os.walk(p, followlinks=False):"
+        "for dirpath, dirnames, filenames in os.walk(p, onerror=_walk_error,\n                                                       followlinks=True):",
+        "for dirpath, dirnames, filenames in os.walk(p, onerror=_walk_error,\n                                                       followlinks=False):"
       ]
     ],
     "expect": [
@@ -218,6 +218,58 @@
     ],
     "expect": [
       "...and so is CANNOT RUN, where a dead control and an exclusion are two reasons the answer is unsafe rather than one"
+    ]
+  },
+  {
+    "name": "⟳ r2 Claude HIGH — `onerror` goes back to the library default, so a directory the walk cannot read is DISCARDED and the run reports a confident absence over it. Measured: `chmod 000` on a directory holding the claim gave rc=0 'so the search worked' ⚠ anchors `onerror=_walk_error` alone, so it does not share a find-string with the followlinks entry",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "os.walk(p, onerror=_walk_error,",
+        "os.walk(p,"
+      ]
+    ],
+    "expect": [
+      "⭐ an unreadable DIRECTORY is CANNOT RUN, not a confident absence (r2 Claude H1)"
+    ]
+  },
+  {
+    "name": "⟳ r2 Claude HIGH — the unreadable DIRECTORIES stop joining the unreadable list, so they are collected and then ignored, which is the defect with an extra step",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "    unreadable = unreadable_dirs + unreadable",
+        "    unreadable = unreadable"
+      ]
+    ],
+    "expect": [
+      "...and it says CANNOT RUN rather than reporting a clean search"
+    ]
+  },
+  {
+    "name": "⟳ r2 Claude MEDIUM — the CYCLE GUARD is severed. The fold advertised 'cycle protection by REAL path' and nothing tested it; severed, `root/self -> root` yields 32 files instead of 2",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "                if real in seen_real:",
+        "                if False and real in seen_real:"
+      ]
+    ],
+    "expect": [
+      "⭐ a symlink CYCLE terminates and does not double-count — `root/self -> root` (r2 Claude M5)"
+    ]
+  },
+  {
+    "name": "⟳ r2 Claude LOW — the explicit allow-list branch stops lowercasing, so it disagrees with the deny-list branch about case and `--suffixes {.md}` misses a `.MD` file",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "                        (out if q.suffix.lower() in {x.lower() for x in suffixes}\n                         else skipped).append(q)",
+        "                        (out if q.suffix in suffixes\n                         else skipped).append(q)"
+      ]
+    ],
+    "expect": [
+      "⭐ an explicit allow-list matches case-INSENSITIVELY, as the deny-list branch does"
     ]
   }
 ]

@@ -1638,5 +1638,18 @@
     "expect": [
       "...and an f-string with NO static text explains nothing, or it would explain everything"
     ]
+  },
+  {
+    "name": "⟳ r2 Claude MEDIUM — the ≥2-positional-argument test drops to ≥1, so `print(f\"...\")` becomes a case-name candidate and any output template can forgive a renamed-away expect. My own first attempt at this rule did exactly that, and the case below caught it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if isinstance(n, ast.Call) and len(n.args) >= 2:",
+        "        if isinstance(n, ast.Call) and len(n.args) >= 1:"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: an f-string that is NOT in a case-name position supplies no pattern — an output template could forgive a stale expect in 62 of 62 files before this"
+    ]
   }
 ]

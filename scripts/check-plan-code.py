@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 226 cases
+    python3 scripts/check-plan-code.py --self-test          # 230 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -698,7 +698,7 @@ EXPECTED_MUTATIONS = {
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 19,
     "scripts/check-withdrawal.py": 18,
-    "scripts/find-claim.py": 17,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
+    "scripts/find-claim.py": 21,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
                                    # returned skip set, and the verdict that names it.
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
@@ -1043,7 +1043,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 125,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 126,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1542,10 +1542,41 @@ def case_name_patterns(source: str, min_static: int = 4) -> list:
         tree = ast.parse(source)
     except SyntaxError:
         return []
+    # ⛔ r2 Claude MEDIUM — ONLY F-STRINGS IN A CASE-NAME POSITION. The first version walked
+    # EVERY `JoinedStr` in the module — print statements, error messages, paths, HTML — so any
+    # output template in the file could forgive a stale expect. Codex's original M1 asked for
+    # exactly this ("restrict candidates to expressions that supply suite case names") and the
+    # fold added a `min_static` floor instead, which does not do that work: `^.*?:.*? — .*?$`
+    # clears a floor of 4 and is nearly as broad as `^.*?.*?$`.
+    #
+    # A case name is a call's FIRST argument (`case(f"...", got, want)`) or the first element of
+    # a table row (`(f"...", got, want)`). MEASURED over all 1,497 entries: patterns
+    # 1,585 -> 96, live MISSING stays **0**, and the review's reach probe — an invented
+    # expect built from each file's own derived pattern — falls from **62 of 62 files to 2**.
+    #
+    # ⚠ THE RESIDUAL 2 IS NOT A BUG AND IS STATED RATHER THAN HIDDEN: those files genuinely
+    # build case names with an f-string, so a probe shaped exactly like that template is
+    # indistinguishable from a real generated name BY CONSTRUCTION. No positional rule can
+    # separate them; only not generating case names could. Still 0 live entries depend on it.
     out = []
     for n in ast.walk(tree):
-        if not isinstance(n, ast.JoinedStr):
-            continue
+        # ⚠ AT LEAST TWO POSITIONAL ARGUMENTS, and that is the whole discriminator. "A call's
+        # first argument" admits `print(f"...")`, which is precisely the output template the
+        # review warned about — my first attempt at this rule did exactly that and the case
+        # caught it. A CASE carries a name AND an expectation; a log line carries only a
+        # message. MEASURED: patterns 1,585 -> 96, live MISSING still 0, and the invented-expect
+        # downgrade falls from 62 of 62 files to **2**.
+        cands = []
+        if isinstance(n, ast.Call) and len(n.args) >= 2:
+            cands = [n.args[0]]
+        elif isinstance(n, (ast.Tuple, ast.List)) and len(n.elts) >= 2:
+            cands = [n.elts[0]]
+        for cand in cands:
+            if not isinstance(cand, ast.JoinedStr):
+                continue
+            out.append(cand)
+    joined, out = out, []
+    for n in joined:
         parts, static = [], 0
         for v in n.values:
             if isinstance(v, ast.Constant) and isinstance(v.value, str):
@@ -5417,7 +5448,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1493)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1498)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5569,6 +5600,16 @@ def _self_test() -> int:
          any(p.match("alpha fails") for p in case_name_patterns(_FS)), False)
     case("...and an f-string with NO static text explains nothing, or it would explain everything",
          case_name_patterns('case(f"{a}{b}", 1, 1)'), [])
+    # ── r2 Claude MEDIUM: only a CASE-NAME POSITION supplies a candidate ────────────────────
+    case("⭐ r2: an f-string that is NOT in a case-name position supplies no pattern — an output "
+         "template could forgive a stale expect in 62 of 62 files before this",
+         case_name_patterns('print(f"progress: {n} — {m} done")'), [])
+    case("...and the same f-string IN a case-name position does supply one",
+         len(case_name_patterns('case(f"progress: {n} — {m} done", 1, 1)')), 1)
+    case("...and a TABLE ROW's first element counts too, which is how most tables here are built",
+         len(case_name_patterns('CASES = [(f"{x} works", 1, 1)]')), 1)
+    case("...while a LATER argument does not, because a case name is the first one",
+         case_name_patterns('case("real name", f"{x} works", 1)'), [])
     case("...while the same f-string at min_static=0 WOULD match anything, which is why the "
          "floor on static text exists",
          bool(case_name_patterns('case(f"{a}{b}", 1, 1)', min_static=0)[0].match("literally any")),

@@ -3,8 +3,8 @@
     "name": "a bolded DATE stops being stripped, so a decision marker reads as a measurement ⟳ r2: retargeted — `bolded_figures` now reads the ROW so the counted noun outside the span is visible, and the DATE strip moved with it",
     "edits": [
       [
-        "        if figures_in_span(DATE_RE.sub(\"\", b), row[m.end():m.end() + 40]):",
-        "        if figures_in_span(b, row[m.end():m.end() + 40]):"
+        "        if figures_in_span(DATE_RE.sub(\"\", b), after_within_cell(row, m.end())):",
+        "        if figures_in_span(b, after_within_cell(row, m.end())):"
       ]
     ],
     "expect": [
@@ -117,16 +117,16 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex MEDIUM — the HEAD clause goes back to a bare `\\bHEAD\\b`, so prose ABOUT git counts as provenance: `we cannot look at HEAD` passes, which is M3 reinstated one word away (the `\\bat` form had the same bypass)",
+    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "    r\"|`HEAD`|\\bHEAD[~^]|\\bas of\\s+HEAD\\b\"",
+        "    r\"|`HEAD[~^]?\\d*`|\\bHEAD[~^]\\d*\"",
         "    r\"|\\bHEAD\\b\""
       ]
     ],
     "expect": [
-      "⭐ r2: the semantic bypass — `we cannot look at HEAD` names no source"
+      "⭐ r2 Claude H2: `unverified at HEAD` asserts NO measurement and was read as provenance"
     ]
   },
   {
@@ -182,16 +182,16 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex MEDIUM — the row text stops being handed to the predicate, so a counted noun OUTSIDE the bold span is invisible: `**3** failures` reads as no figure ⚠ mutates the SLICE WIDTH, so its anchor is its own",
+    "name": "⟳ r2 Codex MEDIUM → r2 Claude M3 — the cell clip is replaced by the flat 40-character window again, so the counted noun comes from the NEXT table column",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "row[m.end():m.end() + 40]",
-        "row[m.end():m.end()]"
+        "after_within_cell(row, m.end())",
+        "row[m.end():m.end() + 40]"
       ]
     ],
     "expect": [
-      "⭐ r2: the counted noun can live OUTSIDE the bold, which the span alone cannot see"
+      "⭐ r2: the counted noun may NOT come from the next table column"
     ]
   },
   {
@@ -208,16 +208,16 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex MEDIUM — the measurement-verb prong goes, so `measured at HEAD` stops being provenance at all: the over-correction, in the opposite direction",
+    "name": "⟳ r2 Claude HIGH — the BACKTICKED form stops being accepted, leaving only the suffixed one, so the convention this repo actually writes refs in is refused ⚠ anchors the BACKTICKED alternative alone; the sibling entry anchors the whole clause, and the harness refuses two entries sharing a find-string",
     "file": "scripts/check-provenance.py",
     "edits": [
       [
-        "    r\"|(?:measured|re-?derived|derived|taken|counted|observed|verified|sampled)\"\n    r\"(?:\\s+\\w+){0,2}\\s+HEAD\\b\"",
-        "    r\"|(?!x)x\""
+        "`HEAD[~^]?\\d*`|",
+        ""
       ]
     ],
     "expect": [
-      "HEAD is provenance when something was MEASURED there"
+      "HEAD is provenance when it is BACKTICKED, as this repo writes every other ref"
     ]
   },
   {

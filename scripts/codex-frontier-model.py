@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 31 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 36 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
@@ -477,6 +477,23 @@ def _self_test() -> int:
     case("...and the four goldens are four DISTINCT texts, so no case can be satisfied by "
          "another arm's output \u2014 the bound is the enumeration, not the count",
          len({_GOLDEN, _GOLDEN_MIXED, _GOLDEN_EMPTY, _GOLDEN_NONEAR}), 4)
+    # ⚠ r2 Claude LOW — AND THIS BOUND DOES NOT COVER EVERY REACHABLE TEXT, which the previous
+    # comment claimed ("fails if a fifth shape is added without a golden"). It cannot: the four
+    # goldens pin the four arms of the `if near / if listed / elif models / else` chain, and two
+    # FALLBACKS in the shared prefix live outside it — `client_version` absent (`:165`,
+    # `or "?"`) and a listed model with no slug (`:189`, `or "<no slug>"`). All four golden
+    # inputs supply a `client_version`, so neither fallback appears in any golden. Pinned here
+    # directly rather than left to a count that cannot see them.
+    case("\u2b50 r2: a cache with NO client_version renders the fallback, which no golden covers",
+         "client_version ?" in refusal_message({"models": []}), True)
+    # ⚠ THE INPUT IS A MIXED CACHE, derived not guessed: the `<no slug>` fallback renders in the
+    # `listed` branch, which needs a hidden near-miss ALONGSIDE the slugless listed model. My
+    # first attempt passed only the listed model and fell through to the no-near-miss arm, where
+    # the fallback never renders — so the case failed and told me the input was wrong.
+    case("...and a listed model with no slug renders ITS fallback, in the mixed-cache arm",
+         "<no slug>" in refusal_message({"client_version": "1.0", "models": [
+             {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True},
+             {"priority": 2, "visibility": "list", "supported_in_api": False}]}), True)
 
     case("failed_requirements names each unmet predicate for one entry",
          failed_requirements({"slug": "x", "priority": 1, "visibility": "hide",
