@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 168 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 172 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -415,6 +415,17 @@ BACKTICK_RUN = re.compile(r"`+")
 #   r8 + the LIST CONTENT COLUMN (r8 Claude H1)           0      34      34       0 of 196
 #   r9 + TAB COLUMNS and the INDENT fallback               0      34      34       0 of 196
 #   r9 Claude + the LAZY column, the quote COMPARISON       0      34      34       0 of 196
+#   r10 + ANY ordered number closes an open item            0      34      34       0 of 196
+#
+# ⛔ r10 — AND THE ONE REMAINING CLASS IS NOW A SINGLE QUESTION, WHICH IS THE POINT OF
+# SAYING SO. r9 Claude left FOUR lenient classes; two were comparison bugs (closed), and of
+# the two it judged structural, `0*1[.)]` turned out to be LOCALLY fixable after all: a line
+# below an open item's content column is CLOSING the item, and every ordered number does
+# that. Measured 672 -> 72 with zero added noise, and a boundary corpus running the pad to
+# col+2 puts it at 368 -> 48 with zero noise at any pad. ⤳ THE 72 AND THE 48 ARE THE SAME
+# CLASS AS THE ONE LEFT: a block start between the OUTER and INNER content column, where
+# `cont` is ONE INTEGER and the answer is a SET of columns. That is the whole of what now
+# needs #267's decision — one class, not two.
 #     and the indent fallback DELETED as dead code
 #
 # ⚠ THE GRID AND THE LIST CORPUS HAVE READ 0/34 AND 0/0 FOR FOUR CONSECUTIVE VERSIONS, AND
@@ -507,6 +518,13 @@ BACKTICK_RUN = re.compile(r"`+")
 # ⛔ EVERY `$`-ANCHORED ALTERNATIVE CARRIES `\r?` — r7 Claude H2. r6's CR fix went into ONE of the
 # five, so under CRLF a bare setext underline and an empty ATX heading were still missed, and both
 # failed LENIENT. A character class fixed in one alternative is fixed in one alternative.
+# ⛔ r10 — INSIDE AN ITEM, ANY ORDERED NUMBER CLOSES IT, not only `1`. `BLANK_OR_BLOCK`'s
+# `0*1[.)]` is correct where it was measured (r7 H1): at top level only `1` may INTERRUPT a
+# paragraph. A line indented BELOW an open item's content column is not interrupting that
+# paragraph — it is CLOSING the item, and every ordered number does that.
+CLOSES_ITEM = re.compile(r"[ \t]{0,3}\d{1,9}[.)][ \t]+\S")
+
+
 BLANK_OR_BLOCK = re.compile(
     r"[ \t\r]*$"                                # blank
     r"|[ \t]{0,3}(?:[-*+][ \t]+\S"              # a NON-EMPTY bullet
@@ -699,6 +717,7 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
         nxt_end = text.find("\n", nl + 1)
         nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
         d, rest = quote_depth(nxt)
+        below_item = False
         if cont:
             k, c = 0, 0
             while k < len(rest) and rest[k] in " \t" and c < cont:
@@ -706,6 +725,8 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
                 k += 1
             if c >= cont:
                 rest = rest[k:]                # ⛔ r8 Claude H1 / r9 H2 — tab-expanded columns
+            else:
+                below_item = True              # ⛔ r10 — it did NOT reach the content column
             d2, rest2 = quote_depth(rest)      # a `>` can sit AT that column, past QUOTE_MARKER's
             if d + d2 > depth:                         # 3-space cap — that was the last 10 of the 130
                 return True
@@ -721,6 +742,8 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
                 return True
         elif BLANK_OR_BLOCK.match(rest):
             return True
+        elif below_item and CLOSES_ITEM.match(rest):
+            return True                        # ⛔ r10 — BELOW an item's column, any number closes it
         elif "|" in rest and nxt_end != -1:
             after_end = text.find("\n", nxt_end + 1)
             after = text[nxt_end + 1:after_end if after_end != -1 else len(text)]
@@ -1501,6 +1524,31 @@ def self_test() -> int:
          "which does not interrupt — a fix that widened the cap blindly would go red here",
          _marker_at("  - the count was `wrong:\n        - x\n    holds 1,414 anchors today`"),
          "was "),
+        # ── r10: INSIDE AN ITEM, ANY ORDERED NUMBER CLOSES IT. `BLANK_OR_BLOCK`'s `0*1[.)]` is
+        # right where r7 measured it — at TOP LEVEL only `1` may INTERRUPT a paragraph — and wrong
+        # below an open item's content column, where the line is not interrupting the paragraph but
+        # CLOSING the item, and every ordered number does that. Measured 672 of 672 LENIENT before
+        # (r9 Claude H4, reproduced independently to the unit); 72 after, and those 72 are pad >= 4
+        # under a content column of 5-6, i.e. r9 Claude H3's class and not this one.
+        # ⚠ THE `pad == col` NEGATIVE BELOW IS WHY THIS CLAUSE IS GUARDED BY `below_item` AND NOT
+        # BY `cont`. The first version tested the STRIPPED remainder, so it fired on a line AT the
+        # content column too — a continuation, not a close — and added noise. The 672-shape corpus
+        # could not see it: it was built from `range(0, col)`, so the one shape that refutes the
+        # hypothesis was excluded by construction. A boundary corpus running pad to col+2 puts the
+        # clause at 368 -> 48 LENIENT with ZERO noise at any pad.
+        ("⛔ r10: an ordered marker OTHER than `1` closes an open list item, so it ends the item's "
+         "paragraph — `0*1[.)]` is a TOP-LEVEL rule and this is not top level",
+         _marker_at("- the count was `wrong:\n2) x\nholds 1,414 anchors today`"), ""),
+        ("⛔ r10: ...and the number's WIDTH is irrelevant, which `0*1` cannot express at all",
+         _marker_at("  - the count was `wrong:\n  999. x\n"
+                    "  holds 1,414 anchors today`"), ""),
+        ("...while at TOP LEVEL only `1` interrupts a paragraph, so `2)` does NOT — the r7 "
+         "measurement this clause must not overturn",
+         _marker_at("the count was `wrong:\n2) x\nholds 1,414 anchors today`"), "was "),
+        ("...and a line AT the content column is a CONTINUATION of the item, not a close, so it "
+         "does not end the paragraph either. ⛔ THIS IS THE CASE THAT CAUGHT THE FIRST VERSION OF "
+         "THE CLAUSE, which tested the stripped remainder and so fired here too",
+         _marker_at("- the count was `wrong:\n  2) x\n  holds 1,414 anchors today`"), "was "),
         # ── r9 CLAUDE B1/H1/H2/M1/M2. Four of these pin properties the fold ASSERTED and did
         # not test, and the last one is the case that would have caught 132 noisy shapes.
         ("⛔ r9 Claude H1: the span opens on a LAZY continuation — a line that omits the item's "

@@ -700,5 +700,31 @@
     "expect": [
       "⛔ r9 Claude M1: `cont` is LOAD-BEARING below 4, which refutes the fold's bolded claim that the defect is exactly content column >= 4 — the strip runs on a remainder whose quote marker is already gone, so the 2 columns it removes are not the 2 that `BLANK_OR_BLOCK`'s own cap would have covered. `if cont >= 4:` kept all 163 cases green"
     ]
+  },
+  {
+    "name": "⛔ r10 — `CLOSES_ITEM` narrows to `0*1[.)]`, which is `BLANK_OR_BLOCK`'s TOP-LEVEL rule, so the clause becomes redundant with it and an ordered marker other than `1` stops closing an open item. 672 of 672 shapes LENIENT when found (r9 Claude H4)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "CLOSES_ITEM = re.compile(r\"[ \\t]{0,3}\\d{1,9}[.)][ \\t]+\\S\")",
+        "CLOSES_ITEM = re.compile(r\"[ \\t]{0,3}0*1[.)][ \\t]+\\S\")"
+      ]
+    ],
+    "expect": [
+      "⛔ r10: an ordered marker OTHER than `1` closes an open list item, so it ends the item's paragraph — `0*1[.)]` is a TOP-LEVEL rule and this is not top level"
+    ]
+  },
+  {
+    "name": "⛔ r10 — the clause is guarded by `cont` instead of `below_item`, so it fires on a line AT the content column too. That line CONTINUES the item, it does not close it, and this is the bug the first version of the clause actually had. ⚠ The 672-shape corpus could NOT see it: built from `range(0, col)`, it excluded the one shape that refutes the hypothesis, so the adjacent negative is what caught it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        elif below_item and CLOSES_ITEM.match(rest):",
+        "        elif cont and CLOSES_ITEM.match(rest):"
+      ]
+    ],
+    "expect": [
+      "...and a line AT the content column is a CONTINUATION of the item, not a close, so it does not end the paragraph either. ⛔ THIS IS THE CASE THAT CAUGHT THE FIRST VERSION OF THE CLAUSE, which tested the stripped remainder and so fired here too"
+    ]
   }
 ]
