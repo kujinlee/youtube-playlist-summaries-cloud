@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 217 cases
+    python3 scripts/check-plan-code.py --self-test          # 220 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1043,7 +1043,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 121,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 122,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1528,17 +1528,52 @@ def case_name_literals(source: str) -> set:
 # So this starts GREEN and can REFUSE rather than warn — the first failure appears at a floor of
 # 16, so 12 carries four characters of margin. A floor exists at all because a 3-character
 # overlap explains nothing.
+#
+# ⛔ AND THE FLOOR ALONE IS NOT ENOUGH. ONE WITNESS IS NOT A BOUND, so the rule was measured
+# against a CORPUS-WIDE FALSIFIER: for all 1,422 expects that currently DO name a literal,
+# synthesise the rename the r1 fold actually performed on B1 (swap the opening words, keep the
+# tail), remove the original literal, and ask whether the rule still forgives the now-stale
+# expect. It forgave **41 of 1,422 (2.9%)** — the floor is satisfied by any 12 characters shared
+# with ANY literal in the file, and these files are full of long ones.
+#
+#   rule                   live MISSING   B1 flagged   wrongly forgiven
+#   floor 12 only                     0         yes    41/1422  = 2.9%
+#   floor 12 + 30% of expect          0         yes    10/1422  = 0.7%     <- adopted
+#   floor 12 + 40% of expect          7         yes     3/1422  = 0.2%
+#   floor 12 + 50% of expect         18         yes     0/1422  = 0.0%
+#
+# ⚠ THE DENOMINATOR IS THIS COMMIT'S. It moves whenever a manifest entry is added, so the
+# table was re-derived with the SHIPPED function after the fraction landed rather than carried
+# over from the prototype that chose it: 0 missing, 10 of 1,422.
+#
+# The overlapping literal must therefore cover at least 30% of the expect as well as clearing
+# the floor. 40% and beyond refuse live entries, and this half REFUSES rather than warns, so a
+# rule that is not green on arrival is a rule that gets switched off (#56).
+#
+# ⚠ THE RESIDUAL IS STATED RATHER THAN HIDDEN: **0.7%, 10 of 1,421 synthesised renames, still
+# slip through.** That is the honest bound. It is not "no false negatives", and a note claiming
+# that would be worse than no note, because the next reader would stop looking.
+#
+# ⤳ HOW TO RE-DERIVE, so the next reader checks rather than believes: for every expect
+# that names a literal, synthesise `" ".join(["the","REVISED","wording"] + title.split()[4:])`,
+# drop the original literal from the set, and count how many `expect_explained` forgives.
 EXPECT_OVERLAP_FLOOR = 12
+EXPECT_OVERLAP_FRACTION = 0.3
 
 
-def expect_explained(expect: str, literals: set, floor: int = EXPECT_OVERLAP_FLOOR) -> bool:
+def expect_explained(expect: str, literals: set, floor: int = EXPECT_OVERLAP_FLOOR,
+                     fraction: float = EXPECT_OVERLAP_FRACTION) -> bool:
     """Could some literal in the target have PRODUCED this expect? PURE.
 
     True means an f-string plausibly built the case name, so the expect naming no whole literal
     is noise. False means nothing in the file can produce it — the case was renamed away, and
     the mutation that names it can no longer show which case is the guard.
+
+    Measured false-forgive rate 0.7% (10 of 1,422); see the table above for how that was taken
+    and what the alternatives cost.
     """
-    return any(len(lit) >= floor and (lit in expect or expect in lit) for lit in literals)
+    need = max(floor, int(len(expect) * fraction))
+    return any(len(lit) >= need and (lit in expect or expect in lit) for lit in literals)
 
 
 def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
@@ -5328,7 +5363,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1475)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1476)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5454,11 +5489,30 @@ def _self_test() -> int:
     # expect at any length, so dropping the floor to 0 changed nothing and the mutation SURVIVED
     # a green suite — `a-case-can-pass-for-an-ambient-reason`, caught by the sweep, not by me.
     # "case" (4 chars) IS inside the expect, so this case is the floor and nothing else.
+    # ⚠ THE LITERALS HERE ARE 8 AND 10 CHARACTERS, chosen so the FLOOR is the binding
+    # constraint and the fraction is not: a 20-char expect needs int(20*0.3)=6, which both
+    # clear, and 12, which neither does. The earlier fixture used 4-5 char literals, and once
+    # the fraction term arrived it covered for the floor — the floor mutation SURVIVED a green
+    # 220/220. A class fix that makes an existing mutation unkillable is backlog #154's shape,
+    # and only the sweep sees it.
     case("the overlap FLOOR refuses a coincidence — a short shared literal explains nothing",
-         expect_explained("a renamed case title", {"case", "title", "a re"}), False)
-    case("...and the same fixture at a floor of 0 WOULD be explained, which is what makes the "
-         "line above a test of the floor rather than of the fixture",
-         expect_explained("a renamed case title", {"case", "title", "a re"}, floor=0), True)
+         expect_explained("a renamed case title", {"renamed ", "case title"}), False)
+    case("...and the same fixture at a floor of 0 IS explained, which is what makes the line "
+         "above a test of the floor rather than of the fixture or of the fraction",
+         expect_explained("a renamed case title", {"renamed ", "case title"}, floor=0), True)
+    # ── the FRACTION, which the floor alone cannot express (measured 2.9% -> 0.7%) ───────────
+    # A long expect sharing only a short run with some unrelated literal is the shape that
+    # slipped through: 12 characters out of 80 explains nothing about the other 68.
+    _LONGEX = "the REVISED wording counts as unresolved, never as done"
+    case("⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 "
+         "of 1,422 synthesised renames this way",
+         expect_explained(_LONGEX, {"never as done"}), False)
+    case("...and the SAME pair is forgiven when the fraction is dropped, so the case tests the "
+         "fraction and not the fixture",
+         expect_explained(_LONGEX, {"never as done"}, fraction=0.0), True)
+    case("...while a literal covering most of the expect still explains it, which is what keeps "
+         "the 67 live f-string names out of the error list",
+         expect_explained(_LONGEX, {"wording counts as unresolved, never as done"}), True)
     case("⭐ THE WITNESS: B1's own stale expect is refused by this rule",
          expect_explained(
              "the replacement figure beside the old one means the text is correcting itself",

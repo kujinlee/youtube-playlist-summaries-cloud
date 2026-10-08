@@ -8,7 +8,9 @@
         "        return 1, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \""
       ]
     ],
-    "expect": "a hung suite is rc 2, distinct from both pass and fail"
+    "expect": [
+      "a hung suite is rc 2, distinct from both pass and fail"
+    ]
   },
   {
     "name": "a cannot-run is credited as a catch",
@@ -33,7 +35,9 @@
         "            if src.count(find) > 99:"
       ]
     ],
-    "expect": "run_mutations refuses an AMBIGUOUS anchor rather than taking the first"
+    "expect": [
+      "run_mutations refuses an AMBIGUOUS anchor rather than taking the first"
+    ]
   },
   {
     "name": "a missing anchor is tolerated",
@@ -44,7 +48,9 @@
         "            if find not in src and False:"
       ]
     ],
-    "expect": "run_mutations refuses a missing anchor"
+    "expect": [
+      "run_mutations refuses a missing anchor"
+    ]
   },
   {
     "name": "a mid-line FAIL marker is parsed as a case name",
@@ -55,7 +61,9 @@
         "for l in out.split(\"\\n\") if \"[FAIL] \" in l]"
       ]
     ],
-    "expect": "a mid-line [FAIL] is NOT parsed as a case name"
+    "expect": [
+      "a mid-line [FAIL] is NOT parsed as a case name"
+    ]
   },
   {
     "name": "coverage may shrink silently",
@@ -66,7 +74,9 @@
         "        if got > want:"
       ]
     ],
-    "expect": "a SHRUNKEN manifest is refused by name and number"
+    "expect": [
+      "a SHRUNKEN manifest is refused by name and number"
+    ]
   },
   {
     "name": "the control BEFORE the sequence is not checked",
@@ -77,7 +87,9 @@
         "            if False:\n                report.append(f\"CANNOT RUN — control run of "
       ]
     ],
-    "expect": "a RED control is refused, not reported as catches"
+    "expect": [
+      "a RED control is refused, not reported as catches"
+    ]
   },
   {
     "name": "the control AFTER the sequence is not checked",
@@ -88,7 +100,9 @@
         "            if False:\n                ok = False\n                # The tree changed underneath"
       ]
     ],
-    "expect": "a tree that goes bad DURING the sequence invalidates the run"
+    "expect": [
+      "a tree that goes bad DURING the sequence invalidates the run"
+    ]
   },
   {
     "name": "an empty expect list disables the check",
@@ -99,7 +113,9 @@
         "        if isinstance(want, list) and not want and False:"
       ]
     ],
-    "expect": "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
+    "expect": [
+      "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
+    ]
   },
   {
     "name": "a repeated edit anchor measures nothing twice",
@@ -110,7 +126,9 @@
         "            if anchors and anchors in seen_anchors and False:"
       ]
     ],
-    "expect": "an entry REPEATING another's edit anchors is refused"
+    "expect": [
+      "an entry REPEATING another's edit anchors is refused"
+    ]
   },
   {
     "name": "an absent docstring count is silent instead of CANNOT RUN",
@@ -121,7 +139,9 @@
         "        return None"
       ]
     ],
-    "expect": "count_drift CANNOT RUN when no count is declared"
+    "expect": [
+      "count_drift CANNOT RUN when no count is declared"
+    ]
   },
   {
     "name": "count_drift stops reporting a mismatch",
@@ -132,7 +152,9 @@
         "    if int(m.group(1)) != actual and False:"
       ]
     ],
-    "expect": "count_drift reports a mismatch"
+    "expect": [
+      "count_drift reports a mismatch"
+    ]
   },
   {
     "name": "the spawned suite is handed the real HOME again",
@@ -143,7 +165,9 @@
         "timeout=SUITE_TIMEOUT)"
       ]
     ],
-    "expect": "a spawned suite resolves Path.home() into the run's own tree"
+    "expect": [
+      "a spawned suite resolves Path.home() into the run's own tree"
+    ]
   },
   {
     "name": "a home-escape route in the TARGET is ignored",
@@ -154,7 +178,9 @@
         "        for why in home_escapes(\"\"):"
       ]
     ],
-    "expect": "a target reaching the home by a route $HOME does not govern is refused"
+    "expect": [
+      "a target reaching the home by a route $HOME does not govern is refused"
+    ]
   },
   {
     "name": "a home-escape route in the MUTATION text is ignored",
@@ -165,7 +191,9 @@
         "            for why in home_escapes(\"\"):"
       ]
     ],
-    "expect": "...and a CLEAN target whose MUTATION introduces the route is refused"
+    "expect": [
+      "...and a CLEAN target whose MUTATION introduces the route is refused"
+    ]
   },
   {
     "name": "the exemption marker needs no written reason",
@@ -176,7 +204,9 @@
         "ESCAPE_EXEMPT = re.compile(r\"#\\s*not-a-home-escape:\")"
       ]
     ],
-    "expect": "...but a bare marker with NO reason does not exempt"
+    "expect": [
+      "...but a bare marker with NO reason does not exempt"
+    ]
   },
   {
     "name": "any nonzero exit is credited as a catch",
@@ -187,7 +217,9 @@
         "        caught = rc != 0"
       ]
     ],
-    "expect": "a suite exiting 3 is a SURVIVOR, not a catch"
+    "expect": [
+      "a suite exiting 3 is a SURVIVOR, not a catch"
+    ]
   },
   {
     "name": "the exemption marker is taken from any token, not only a comment",
@@ -211,7 +243,9 @@
         "            if ln in exempt:"
       ]
     ],
-    "expect": "a marker CANNOT exempt an executable route, only string data"
+    "expect": [
+      "a marker CANNOT exempt an executable route, only string data"
+    ]
   },
   {
     "name": "unparseable source is passed instead of scanned raw",
@@ -222,7 +256,9 @@
         "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return []"
       ]
     ],
-    "expect": "source that will not tokenise is scanned raw, exempting nothing"
+    "expect": [
+      "source that will not tokenise is scanned raw, exempting nothing"
+    ]
   },
   {
     "name": "the after-control stops invalidating the run, so an unusable run reports a verdict",
@@ -233,7 +269,9 @@
         "                m_report.append(\n"
       ]
     ],
-    "expect": "...and it is NOT trustworthy, though every declared mutation ran"
+    "expect": [
+      "...and it is NOT trustworthy, though every declared mutation ran"
+    ]
   },
   {
     "name": "the --mutate REFUSAL leaks a survivor count (r4 B1)",
@@ -244,7 +282,9 @@
         "            print(not_measured_line(verdict, shard)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
-    "expect": "--mutate mode refuses to print a tally it did not earn"
+    "expect": [
+      "--mutate mode refuses to print a tally it did not earn"
+    ]
   },
   {
     "name": "a control is called green on its EXIT CODE alone (r4 M1)",
@@ -255,7 +295,9 @@
         "    return rc == 0"
       ]
     ],
-    "expect": "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+    "expect": [
+      "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+    ]
   },
   {
     "name": "the case-name match becomes a SUBSTRING again (r1 F1)",
@@ -266,7 +308,9 @@
         "    unnamed = [(w, [f for f in fails if w in f]) for w in wants]"
       ]
     ],
-    "expect": "an `expect` that is a mere FRAGMENT of a real case name is REFUSED"
+    "expect": [
+      "an `expect` that is a mere FRAGMENT of a real case name is REFUSED"
+    ]
   },
   {
     "name": "a case name is truncated at its FIRST colon again (r1 F2)",
@@ -277,7 +321,9 @@
         "    return [l.strip()[7:].split(\":\", 1)[0].strip()"
       ]
     ],
-    "expect": "a case name containing a COLON is matched whole, not truncated at the first one"
+    "expect": [
+      "a case name containing a COLON is matched whole, not truncated at the first one"
+    ]
   },
   {
     "name": "EXPECTED_MUTATIONS becomes a floor, so a manifest may GROW silently (r1 F3)",
@@ -288,7 +334,9 @@
         "        if got < want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \""
       ]
     ],
-    "expect": "a GROWN manifest is refused too — the count is exact, not a floor"
+    "expect": [
+      "a GROWN manifest is refused too — the count is exact, not a floor"
+    ]
   },
   {
     "name": "the duplicate mutation NAME refusal stops firing (r1 F5a)",
@@ -299,7 +347,9 @@
         "            if nm in seen_names and False:"
       ]
     ],
-    "expect": "two entries sharing a NAME are refused, even with different anchors"
+    "expect": [
+      "two entries sharing a NAME are refused, even with different anchors"
+    ]
   },
   {
     "name": "a manifest that is not valid JSON is swallowed silently (r1 F5b)",
@@ -310,7 +360,9 @@
         "        except json.JSONDecodeError:\n            continue"
       ]
     ],
-    "expect": "a manifest that is not valid JSON is refused, not skipped"
+    "expect": [
+      "a manifest that is not valid JSON is refused, not skipped"
+    ]
   },
   {
     "name": "a manifest with no declared count stops being reported (r1 F5c)",
@@ -321,7 +373,9 @@
         "    for target in sorted(set())[:0]:"
       ]
     ],
-    "expect": "a manifest with NO declared count is named, not silently accepted"
+    "expect": [
+      "a manifest with NO declared count is named, not silently accepted"
+    ]
   },
   {
     "name": "the home-escape scan reads only the FIRST target (r1 F6)",
@@ -332,7 +386,9 @@
         "    for target in sorted(counts)[:1]:"
       ]
     ],
-    "expect": "the home-escape scan reaches EVERY target, not just the first"
+    "expect": [
+      "the home-escape scan reaches EVERY target, not just the first"
+    ]
   },
   {
     "name": "run_suite drops stderr, so a control's traceback is lost (r1 F7)",
@@ -356,7 +412,9 @@
         "r\"(\\d+) cases\""
       ]
     ],
-    "expect": "count_drift reads the DECLARATION, not the first 'N cases' in the prose"
+    "expect": [
+      "count_drift reads the DECLARATION, not the first 'N cases' in the prose"
+    ]
   },
   {
     "name": "count_drift stops being silent when the docstring MATCHES",
@@ -367,7 +425,9 @@
         "        return f\"[DRIFT] the docstring declares {m.group(1)} cases; the suite ran {actual}\"\n    return \"[DRIFT] spurious\""
       ]
     ],
-    "expect": "count_drift is silent when the docstring matches"
+    "expect": [
+      "count_drift is silent when the docstring matches"
+    ]
   },
   {
     "name": "the red-with-nothing-readable branch is dropped, so the diagnosis is generic again",
@@ -507,7 +567,9 @@
         "progress=None)"
       ]
     ],
-    "expect": "every phase of --mutate reports its position when a caller asks",
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
     "file": "scripts/check-plan-code.py"
   },
   {
@@ -936,7 +998,9 @@
         "SUITE_TIMEOUT = 3"
       ]
     ],
-    "expect": "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
+    "expect": [
+      "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
+    ]
   },
   {
     "name": "#217: the shard partition is CONTIGUOUS, so one shard takes the expensive block and its siblings idle",
@@ -1061,7 +1125,9 @@
         "        if why and False:\n            return False, [why], NotMeasured.from_counts([], None, ev_files)"
       ]
     ],
-    "expect": "⛔ a shard with NO mutations in it refuses, rather than passing vacuously"
+    "expect": [
+      "⛔ a shard with NO mutations in it refuses, rather than passing vacuously"
+    ]
   },
   {
     "name": "#217: the verdict line TRANSPOSES I and N, so shard 1 of 3 reads as shard 3 of 1",
@@ -1101,7 +1167,9 @@
         "    return f\"NOT MEASURED — {nm.reason}\""
       ]
     ],
-    "expect": "...and so does the NOT-MEASURED line"
+    "expect": [
+      "...and so does the NOT-MEASURED line"
+    ]
   },
   {
     "name": "#217: main stops obeying the shard mode refusal, so --self-test --shard rides through",
@@ -1112,7 +1180,9 @@
         "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if False:"
       ]
     ],
-    "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
+    "expect": [
+      "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
+    ]
   },
   {
     "name": "#217: a malformed --shard does not stop the run, so the sweep proceeds unsharded under a sharded log line",
@@ -1123,7 +1193,9 @@
         "        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f\"--{_f}\")\n        if why:\n            print(why, file=sys.stderr)"
       ]
     ],
-    "expect": "...and a malformed --shard refuses BEFORE any suite runs"
+    "expect": [
+      "...and a malformed --shard refuses BEFORE any suite runs"
+    ]
   },
   {
     "name": "#217: an empty shard exits 1 like a surviving mutation instead of 2 like a run that measured nothing",
@@ -1134,7 +1206,9 @@
         "            why = None"
       ]
     ],
-    "expect": "⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+    "expect": [
+      "⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+    ]
   },
   {
     "name": "the shard mode refusal stops firing, so --self-test --shard rides through as a clean exit 0",
@@ -1145,7 +1219,9 @@
         "    if shard_arg is not None and not mutate_arg and False:\n        return (f\"CANNOT RUN — {flag} {shard_arg!r} only means something with --mutate ROOT, \""
       ]
     ],
-    "expect": "⛔ a shard alongside --self-test is refused, not silently accepted — the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
+    "expect": [
+      "⛔ a shard alongside --self-test is refused, not silently accepted — the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
+    ]
   },
   {
     "name": "#217: the bytecode cache is left ON, so a mutant .pyc outlives the restore of its source",
@@ -1156,7 +1232,9 @@
         "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
       ]
     ],
-    "expect": "...and the other half of the race: no suite the harness spawns may WRITE a cache either, or this run poisons the next one"
+    "expect": [
+      "...and the other half of the race: no suite the harness spawns may WRITE a cache either, or this run poisons the next one"
+    ]
   },
   {
     "name": "#217 r2: the staged tree carries the repo's __pycache__ in, so a mutant .pyc arrives looking current",
@@ -1167,7 +1245,9 @@
         "        shutil.copytree(src, dst)"
       ]
     ],
-    "expect": "⛔ no bytecode cache reaches a staged tree — the source is copied, the compiled artefact is not, or a mutant .pyc arrives looking current and the next importer silently gets it"
+    "expect": [
+      "⛔ no bytecode cache reaches a staged tree — the source is copied, the compiled artefact is not, or a mutant .pyc arrives looking current and the next importer silently gets it"
+    ]
   },
   {
     "name": "the digit class goes back to UNICODE-WIDE `\\\\d`, so an Arabic-Indic eight parses as 8 and a CI index of `٠` becomes shard 1 of N — round 6 L1/L2",
@@ -1178,7 +1258,9 @@
         "SHARD_SPEC = re.compile(r\"^(\\d+)/(\\d+)$\")"
       ]
     ],
-    "expect": "a UNICODE digit is not a decimal integer — round 6 L2"
+    "expect": [
+      "a UNICODE digit is not a decimal integer — round 6 L2"
+    ]
   },
   {
     "name": "leading zeros are accepted again, so `00/8` is shard 1 of 8 and the word CANONICAL in the refusal is a claim the pattern does not keep — round 6 L1",
@@ -1189,7 +1271,9 @@
         "r\"^([0-9]+)/"
       ]
     ],
-    "expect": "...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps"
+    "expect": [
+      "...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps"
+    ]
   },
   {
     "name": "the zero-based conversion is dropped, so a CI matrix index of 0 names shard 0 and every shard is off by one — round 6 M1",
@@ -1200,7 +1284,9 @@
         "    if zero_based:\n        index += 0"
       ]
     ],
-    "expect": "--shard0 is ZERO-based: index 0 is shard 1"
+    "expect": [
+      "--shard0 is ZERO-based: index 0 is shard 1"
+    ]
   },
   {
     "name": "the shard spec is matched loosely again — `.match()` with `.strip()` — so a whitespace-wrapped or newline-terminated spec parses and the canonical accept set the message advertises is false at its boundary (round 6 codex Low)",
@@ -1211,7 +1297,9 @@
         "    m = SHARD_SPEC.match(spec.strip())"
       ]
     ],
-    "expect": "...and so is whitespace, including a TRAILING NEWLINE — round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
+    "expect": [
+      "...and so is whitespace, including a TRAILING NEWLINE — round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
+    ]
   },
   {
     "name": "the mode refusal goes back to asking about `a.shard` BY NAME, so any other shard-shaped flag rides through `--self-test` as a clean exit 0 over a subject no shard touched (round 7 H1, which was round 1's Codex finding reopened)",
@@ -1222,7 +1310,9 @@
         "    _mode_why = shard_mode_refusal(a.shard, a.mutate)"
       ]
     ],
-    "expect": "EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag"
+    "expect": [
+      "EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag"
+    ]
   },
   {
     "name": "the digit run loses its length bound, so a 4301-digit shard spec MATCHES and `int()` then raises — the traceback `parse_shard`'s own docstring forbids (round 7 L1)",
@@ -1233,7 +1323,9 @@
         "*)$\""
       ]
     ],
-    "expect": "a digit run longer than the bound is REFUSED on either side, never raised — r7 L1"
+    "expect": [
+      "a digit run longer than the bound is REFUSED on either side, never raised — r7 L1"
+    ]
   },
   {
     "name": "the mode refusal goes back to TRUTHINESS, so an EMPTY shard value is not shard-shaped and `--self-test --shard ''` rides through as a clean exit 0 (round 7 H1, third instance of one defect)",
@@ -1244,7 +1336,9 @@
         "    if shard_arg and not mutate_arg:"
       ]
     ],
-    "expect": "an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1"
+    "expect": [
+      "an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1"
+    ]
   },
   {
     "name": "`shard_dest` stops normalising, so a hyphenated shard flag is looked up by its raw name and `main` raises AttributeError instead of refusing — a traceback where a sentence is owed (round 7 codex Low)",
@@ -1255,7 +1349,9 @@
         "lstrip(\"-\")"
       ]
     ],
-    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    "expect": [
+      "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    ]
   },
   {
     "name": "the shard flags are enumerated again by hand instead of derived, so a flag in SHARD_FLAGS is registered and mode-checked but never PARSED and never mutually exclusive — round 8 M1",
@@ -1266,7 +1362,9 @@
         "    _given = [(_f, getattr(a, shard_dest(_f))) for _f in (\"shard\", \"shard0\")\n              if getattr(a, shard_dest(_f)) is not None]"
       ]
     ],
-    "expect": "a flag added to SHARD_FLAGS is PARSED, not merely accepted — round 8 M1"
+    "expect": [
+      "a flag added to SHARD_FLAGS is PARSED, not merely accepted — round 8 M1"
+    ]
   },
   {
     "name": "`shard_dest` drops argparse's prefix-strip step, so a leading-hyphen flag name resolves to `_shard_x` where argparse named it `shard_x` — round 8 L1",
@@ -1277,7 +1375,9 @@
         "    return opt.replace(\"-\", \"_\")"
       ]
     ],
-    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    "expect": [
+      "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    ]
   },
   {
     "name": "the SHARD_FLAGS collision guard stops firing, so a key named after an existing option produces argparse's own error, a nonsense refusal, or a silently reddened unrelated case — four shapes for one declaration mistake (r8 codex Low)",
@@ -1288,7 +1388,9 @@
         "        if False:"
       ]
     ],
-    "expect": "a SHARD_FLAGS key colliding with an existing option is refused by name — r8 codex Low"
+    "expect": [
+      "a SHARD_FLAGS key colliding with an existing option is refused by name — r8 codex Low"
+    ]
   },
   {
     "name": "#252: an absent anchor stops being an error, so a 15-minute shard is the only signal",
@@ -1447,12 +1549,12 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude M1 — expect_explained always says yes, so a renamed-away expect is summarised beside 67 f-string names again: B1's exact concealment",
+    "name": "⟳ r1 Claude M1 — expect_explained always says yes, so a renamed-away expect is summarised beside 67 f-string names again: B1's exact concealment ⟳ retargeted: the corpus falsifier added a FRACTION term to this return. FIFTH orphan in this fold, all five found by `--binding` in about a second.",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return any(len(lit) >= floor and (lit in expect or expect in lit) for lit in literals)",
-        "    return True"
+        "    need = max(floor, int(len(expect) * fraction))\n    return any(len(lit) >= need and (lit in expect or expect in lit) for lit in literals)",
+        "    need = max(floor, int(len(expect) * fraction))\n    return True"
       ]
     ],
     "expect": [
@@ -1483,6 +1585,19 @@
     ],
     "expect": [
       "...and so does one CONTAINED IN a literal — the containment runs BOTH ways, which a one-directional test got wrong on 2 live files"
+    ]
+  },
+  {
+    "name": "⟳ r2 self-review — the FRACTION term goes, leaving the floor alone. MEASURED over a corpus-wide rename falsifier: the floor alone wrongly forgives 41 of 1,422 synthesised stale expects (2.9%) against 10 (0.7%) with the fraction",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    need = max(floor, int(len(expect) * fraction))",
+        "    need = floor"
+      ]
+    ],
+    "expect": [
+      "⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 of 1,422 synthesised renames this way"
     ]
   }
 ]
