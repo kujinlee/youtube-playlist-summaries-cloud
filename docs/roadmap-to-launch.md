@@ -3016,3 +3016,46 @@ slices.**
 **Loose end:** ~~uncommitted local modifications to `docs/local-validation-findings.md` and
 `supabase/config.toml`~~ — **stale, verified 2026-07-30:** `git status` reports no modifications
 to either file.
+
+---
+
+## ⟳ 2026-10-07 — PHASE 6 IS ARMED BY THRASHING ON THE TEXT-HEURISTIC GUARD FAMILY (backlog #262)
+
+Recorded here because `dev-process.md` requires a discovered step to reach the roadmap AND the
+backlog in the same turn, and because a Phase 6 arming that lives only in a review document is
+a discovery lost at the next `/compact`.
+
+**The arming condition, met in five components where the rule needs one.** On PR #371, round 2's
+Codex half found **7 of 7** findings in round 1's own fixes; its Claude half found **11 of 13** in
+round 2's. Both rounds hit `check-provenance`, `find-claim`, `check-withdrawal`,
+`check-plan-code` and `codex-frontier-model`.
+
+**Answered in the round document: THRASHING, not a prose floor** —
+`docs/reviews/claude/backlog-249-260-r2-claude.md` § 1, with per-finding attribution. The
+distinguishing test is *can a redesign remove it?*, and for the dominant class it provably can,
+because removing a mechanism is what fixed four of the five:
+
+- [x] H2 — DELETED an eight-verb word list; `HEAD` must be backticked or suffixed, which is what
+      every other alternative in the same regex already demands. 15/15 witnesses, 0 rows lose
+      provenance, and the rule got shorter.
+- [x] M3 — IMPORTED `check-docs.CELL_SPLIT`, the existing owner of the markdown-cell rule,
+      replacing a raw 40-character read that crossed into the next column.
+- [x] M1 — made the candidate set POSITIONAL: patterns 1,585 → 96, invented-expect downgrades
+      62 of 62 files → 2.
+- [x] H1 — routed unreadable directories into the `unreadable` channel that already existed for
+      unreadable files, where the correct sentence was already written.
+
+**What is NOT closed, and is the actual Phase 6 subject:**
+
+- [ ] **#262 — should this guard family exist in this shape at all?** M2 is the residual no
+      redesign reaches: nothing lexical separates `Stage 3 cloud-sync` from `3 rounds`, and the
+      proposed plural rule measured WORSE. It ships as a stated heuristic with 15 witnesses
+      pinned as cases, defensible only because its verdict is warn-only unless `--strict`.
+      ⤳ The question no per-round review can ask.
+- [ ] **#261 — 59 scripts assert a `MEASURED` figure in a comment and nothing reads one of them.**
+      Six findings across two rounds were a comment claiming a property or number that does not
+      reproduce. `check-provenance` enforces exactly this rule over backlog ROWS. This is
+      backlog #98's inverted-direction shape, one corpus over.
+
+⛔ **Sequencing is the owner's call.** PR #371 is NOT CONVERGED and needs round 3; whether Phase 6
+runs before or after it merges changes the shape of the work and is not a mechanical choice.

@@ -171,6 +171,28 @@ jobs:
       - name: check-review-recorded self-test
         run: python3 scripts/check-review-recorded.py --self-test
 
+      # backlog #258: the claim-finder. This step is also its R3 caller — without an executor
+      # `check-ratchet-contract.py` counts it as a guard nothing runs, which is the class that
+      # froze the backlog page for five days.
+      - name: find-claim self-test
+        run: python3 scripts/find-claim.py --self-test
+
+      # backlog #257: a figure corrected in one document must not still stand in another.
+      # WARN-only by #56 — the run reports, it does not block.
+      - name: check-withdrawal self-test
+        run: python3 scripts/check-withdrawal.py --self-test
+
+      # backlog #256: a figure in a NEW backlog row must say where it was measured.
+      # A RATCHET over added rows — the 74 historical rows are grandfathered (#56).
+      - name: check-provenance self-test
+        run: python3 scripts/check-provenance.py --self-test
+
+      - name: New backlog figures name a source (warn-only, backlog #256)
+        run: python3 scripts/check-provenance.py --base origin/master
+
+      - name: Superseded figures surviving elsewhere (warn-only, backlog #257)
+        run: python3 scripts/check-withdrawal.py --base origin/master
+
       - name: brief-compose self-test
         run: python3 scripts/brief-compose.py --self-test
 
@@ -720,6 +742,22 @@ jobs:
           #                                                        (round 6 L1)
           # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
           # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+          # ⛔ BACKLOG #252 — THE EAGER BINDING PASS, BEFORE ANY TREE IS STAGED. ~0.9 s against
+          # a 15-minute shard. An anchor binds by TEXT, so an edit elsewhere in the file unbinds
+          # it silently, and the only other signal is a whole file reporting
+          # `NOT MEASURED — 175 of 176` after 14m58s. FIVE instances in one session; a sixth was
+          # found by this pass on its first live run, inside the commit that caused it.
+          # ⚠ Every shard runs it: it is cheap, and an unbound anchor is a GLOBAL fact about the
+          # manifest, not a property of one slice.
+          python3 scripts/check-plan-code.py --binding
+
+          # ⛔ BACKLOG #251, WARN-ONLY. The sweep defends what a manifest NAMES and is blind to
+          # what was just written — and a fix is by definition newly written. Granularity was
+          # chosen by measurement over a real branch: per LINE 97% uncovered (unusable), per
+          # FUNCTION 58%, per function with the suite/main/dunder/IO exemptions 32% — and on
+          # the branch that introduced this, all nine survivors were genuine gaps.
+          python3 scripts/check-plan-code.py --diff-coverage "origin/${{ github.base_ref || 'master' }}" || true
+
           python3 scripts/check-plan-code.py --mutate . \
             --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
 

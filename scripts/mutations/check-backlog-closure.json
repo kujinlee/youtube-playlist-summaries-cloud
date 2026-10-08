@@ -64,5 +64,57 @@
       ]
     ],
     "expect": "a too-short row is skipped, not crashed"
+  },
+  {
+    "name": "#250: a claim of FILED with no new row stops being reported",
+    "edits": [
+      [
+        "    if new_ids:\n        return []",
+        "    if True:\n        return []"
+      ]
+    ],
+    "expect": [
+      "⭐ a claim of FILED with no new row FIRES"
+    ],
+    "file": "scripts/check-backlog-closure.py"
+  },
+  {
+    "name": "#250: the filing token matches lower-case narration, so 142 prose mentions fire",
+    "edits": [
+      [
+        "FILING = re.compile(r\"\\bFILED\\b\")",
+        "FILING = re.compile(r\"\\bFILED\\b\", re.I)"
+      ]
+    ],
+    "expect": [
+      "...and ignores lower-case narration, which outnumbers it 142 to 31 in 400 commits"
+    ],
+    "file": "scripts/check-backlog-closure.py"
+  },
+  {
+    "name": "#250: a REWRITTEN row counts as a filed one, so a closing edit looks like filing",
+    "edits": [
+      [
+        "    return add - rem",
+        "    return add"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and NOT a row it merely rewrites — a closing edit emits a + line too"
+    ],
+    "file": "scripts/check-backlog-closure.py"
+  },
+  {
+    "name": "#251: claims_filing stops matching, so a fold commit's claim is never read",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "    return bool(FILING.search(message))",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "claims_filing reads the CAPS form a fold commit uses"
+    ]
   }
 ]

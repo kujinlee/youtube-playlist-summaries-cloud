@@ -4,11 +4,13 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return 2, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \"",
-        "        return 1, \"\", (f\"CANNOT RUN \u2014 {name} --self-test did not finish in \""
+        "        return 2, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \"",
+        "        return 1, \"\", (f\"CANNOT RUN — {name} --self-test did not finish in \""
       ]
     ],
-    "expect": "a hung suite is rc 2, distinct from both pass and fail"
+    "expect": [
+      "a hung suite is rc 2, distinct from both pass and fail"
+    ]
   },
   {
     "name": "a cannot-run is credited as a catch",
@@ -33,7 +35,9 @@
         "            if src.count(find) > 99:"
       ]
     ],
-    "expect": "run_mutations refuses an AMBIGUOUS anchor rather than taking the first"
+    "expect": [
+      "run_mutations refuses an AMBIGUOUS anchor rather than taking the first"
+    ]
   },
   {
     "name": "a missing anchor is tolerated",
@@ -44,7 +48,9 @@
         "            if find not in src and False:"
       ]
     ],
-    "expect": "run_mutations refuses a missing anchor"
+    "expect": [
+      "run_mutations refuses a missing anchor"
+    ]
   },
   {
     "name": "a mid-line FAIL marker is parsed as a case name",
@@ -55,7 +61,9 @@
         "for l in out.split(\"\\n\") if \"[FAIL] \" in l]"
       ]
     ],
-    "expect": "a mid-line [FAIL] is NOT parsed as a case name"
+    "expect": [
+      "a mid-line [FAIL] is NOT parsed as a case name"
+    ]
   },
   {
     "name": "coverage may shrink silently",
@@ -66,18 +74,22 @@
         "        if got > want:"
       ]
     ],
-    "expect": "a SHRUNKEN manifest is refused by name and number"
+    "expect": [
+      "a SHRUNKEN manifest is refused by name and number"
+    ]
   },
   {
     "name": "the control BEFORE the sequence is not checked",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN \u2014 control run of ",
-        "            if False:\n                report.append(f\"CANNOT RUN \u2014 control run of "
+        "            if not control_is_green(rc, out):\n                report.append(f\"CANNOT RUN — control run of ",
+        "            if False:\n                report.append(f\"CANNOT RUN — control run of "
       ]
     ],
-    "expect": "a RED control is refused, not reported as catches"
+    "expect": [
+      "a RED control is refused, not reported as catches"
+    ]
   },
   {
     "name": "the control AFTER the sequence is not checked",
@@ -88,7 +100,9 @@
         "            if False:\n                ok = False\n                # The tree changed underneath"
       ]
     ],
-    "expect": "a tree that goes bad DURING the sequence invalidates the run"
+    "expect": [
+      "a tree that goes bad DURING the sequence invalidates the run"
+    ]
   },
   {
     "name": "an empty expect list disables the check",
@@ -99,7 +113,9 @@
         "        if isinstance(want, list) and not want and False:"
       ]
     ],
-    "expect": "run_mutations refuses an EMPTY expect list \u2014 a declared-but-empty set"
+    "expect": [
+      "run_mutations refuses an EMPTY expect list — a declared-but-empty set"
+    ]
   },
   {
     "name": "a repeated edit anchor measures nothing twice",
@@ -110,18 +126,22 @@
         "            if anchors and anchors in seen_anchors and False:"
       ]
     ],
-    "expect": "an entry REPEATING another's edit anchors is refused"
+    "expect": [
+      "an entry REPEATING another's edit anchors is refused"
+    ]
   },
   {
     "name": "an absent docstring count is silent instead of CANNOT RUN",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        return \"CANNOT RUN \u2014 the docstring no longer declares a case count.\"",
+        "        return \"CANNOT RUN — the docstring no longer declares a case count.\"",
         "        return None"
       ]
     ],
-    "expect": "count_drift CANNOT RUN when no count is declared"
+    "expect": [
+      "count_drift CANNOT RUN when no count is declared"
+    ]
   },
   {
     "name": "count_drift stops reporting a mismatch",
@@ -132,7 +152,9 @@
         "    if int(m.group(1)) != actual and False:"
       ]
     ],
-    "expect": "count_drift reports a mismatch"
+    "expect": [
+      "count_drift reports a mismatch"
+    ]
   },
   {
     "name": "the spawned suite is handed the real HOME again",
@@ -143,7 +165,9 @@
         "timeout=SUITE_TIMEOUT)"
       ]
     ],
-    "expect": "a spawned suite resolves Path.home() into the run's own tree"
+    "expect": [
+      "a spawned suite resolves Path.home() into the run's own tree"
+    ]
   },
   {
     "name": "a home-escape route in the TARGET is ignored",
@@ -154,7 +178,9 @@
         "        for why in home_escapes(\"\"):"
       ]
     ],
-    "expect": "a target reaching the home by a route $HOME does not govern is refused"
+    "expect": [
+      "a target reaching the home by a route $HOME does not govern is refused"
+    ]
   },
   {
     "name": "a home-escape route in the MUTATION text is ignored",
@@ -165,7 +191,9 @@
         "            for why in home_escapes(\"\"):"
       ]
     ],
-    "expect": "...and a CLEAN target whose MUTATION introduces the route is refused"
+    "expect": [
+      "...and a CLEAN target whose MUTATION introduces the route is refused"
+    ]
   },
   {
     "name": "the exemption marker needs no written reason",
@@ -176,7 +204,9 @@
         "ESCAPE_EXEMPT = re.compile(r\"#\\s*not-a-home-escape:\")"
       ]
     ],
-    "expect": "...but a bare marker with NO reason does not exempt"
+    "expect": [
+      "...but a bare marker with NO reason does not exempt"
+    ]
   },
   {
     "name": "any nonzero exit is credited as a catch",
@@ -187,7 +217,9 @@
         "        caught = rc != 0"
       ]
     ],
-    "expect": "a suite exiting 3 is a SURVIVOR, not a catch"
+    "expect": [
+      "a suite exiting 3 is a SURVIVOR, not a catch"
+    ]
   },
   {
     "name": "the exemption marker is taken from any token, not only a comment",
@@ -211,7 +243,9 @@
         "            if ln in exempt:"
       ]
     ],
-    "expect": "a marker CANNOT exempt an executable route, only string data"
+    "expect": [
+      "a marker CANNOT exempt an executable route, only string data"
+    ]
   },
   {
     "name": "unparseable source is passed instead of scanned raw",
@@ -222,7 +256,9 @@
         "    except (tokenize.TokenError, IndentationError, SyntaxError):\n        return []"
       ]
     ],
-    "expect": "source that will not tokenise is scanned raw, exempting nothing"
+    "expect": [
+      "source that will not tokenise is scanned raw, exempting nothing"
+    ]
   },
   {
     "name": "the after-control stops invalidating the run, so an unusable run reports a verdict",
@@ -233,7 +269,9 @@
         "                m_report.append(\n"
       ]
     ],
-    "expect": "...and it is NOT trustworthy, though every declared mutation ran"
+    "expect": [
+      "...and it is NOT trustworthy, though every declared mutation ran"
+    ]
   },
   {
     "name": "the --mutate REFUSAL leaks a survivor count (r4 B1)",
@@ -244,7 +282,9 @@
         "            print(not_measured_line(verdict, shard)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
-    "expect": "--mutate mode refuses to print a tally it did not earn"
+    "expect": [
+      "--mutate mode refuses to print a tally it did not earn"
+    ]
   },
   {
     "name": "a control is called green on its EXIT CODE alone (r4 M1)",
@@ -255,7 +295,9 @@
         "    return rc == 0"
       ]
     ],
-    "expect": "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+    "expect": [
+      "a SILENTLY-EXITING control is not green, so the run is not trustworthy"
+    ]
   },
   {
     "name": "the case-name match becomes a SUBSTRING again (r1 F1)",
@@ -266,7 +308,9 @@
         "    unnamed = [(w, [f for f in fails if w in f]) for w in wants]"
       ]
     ],
-    "expect": "an `expect` that is a mere FRAGMENT of a real case name is REFUSED"
+    "expect": [
+      "an `expect` that is a mere FRAGMENT of a real case name is REFUSED"
+    ]
   },
   {
     "name": "a case name is truncated at its FIRST colon again (r1 F2)",
@@ -277,7 +321,9 @@
         "    return [l.strip()[7:].split(\":\", 1)[0].strip()"
       ]
     ],
-    "expect": "a case name containing a COLON is matched whole, not truncated at the first one"
+    "expect": [
+      "a case name containing a COLON is matched whole, not truncated at the first one"
+    ]
   },
   {
     "name": "EXPECTED_MUTATIONS becomes a floor, so a manifest may GROW silently (r1 F3)",
@@ -288,7 +334,9 @@
         "        if got < want:\n            drift.append(f\"{target}: manifest holds {got} mutation(s), expected {want}. \""
       ]
     ],
-    "expect": "a GROWN manifest is refused too \u2014 the count is exact, not a floor"
+    "expect": [
+      "a GROWN manifest is refused too — the count is exact, not a floor"
+    ]
   },
   {
     "name": "the duplicate mutation NAME refusal stops firing (r1 F5a)",
@@ -299,18 +347,22 @@
         "            if nm in seen_names and False:"
       ]
     ],
-    "expect": "two entries sharing a NAME are refused, even with different anchors"
+    "expect": [
+      "two entries sharing a NAME are refused, even with different anchors"
+    ]
   },
   {
     "name": "a manifest that is not valid JSON is swallowed silently (r1 F5b)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON \u2014 {exc}\")\n            continue",
+        "        except json.JSONDecodeError as exc:\n            problems.append(f\"{man.name}: not valid JSON — {exc}\")\n            continue",
         "        except json.JSONDecodeError:\n            continue"
       ]
     ],
-    "expect": "a manifest that is not valid JSON is refused, not skipped"
+    "expect": [
+      "a manifest that is not valid JSON is refused, not skipped"
+    ]
   },
   {
     "name": "a manifest with no declared count stops being reported (r1 F5c)",
@@ -321,7 +373,9 @@
         "    for target in sorted(set())[:0]:"
       ]
     ],
-    "expect": "a manifest with NO declared count is named, not silently accepted"
+    "expect": [
+      "a manifest with NO declared count is named, not silently accepted"
+    ]
   },
   {
     "name": "the home-escape scan reads only the FIRST target (r1 F6)",
@@ -332,7 +386,9 @@
         "    for target in sorted(counts)[:1]:"
       ]
     ],
-    "expect": "the home-escape scan reaches EVERY target, not just the first"
+    "expect": [
+      "the home-escape scan reaches EVERY target, not just the first"
+    ]
   },
   {
     "name": "run_suite drops stderr, so a control's traceback is lost (r1 F7)",
@@ -356,7 +412,9 @@
         "r\"(\\d+) cases\""
       ]
     ],
-    "expect": "count_drift reads the DECLARATION, not the first 'N cases' in the prose"
+    "expect": [
+      "count_drift reads the DECLARATION, not the first 'N cases' in the prose"
+    ]
   },
   {
     "name": "count_drift stops being silent when the docstring MATCHES",
@@ -367,7 +425,9 @@
         "        return f\"[DRIFT] the docstring declares {m.group(1)} cases; the suite ran {actual}\"\n    return \"[DRIFT] spurious\""
       ]
     ],
-    "expect": "count_drift is silent when the docstring matches"
+    "expect": [
+      "count_drift is silent when the docstring matches"
+    ]
   },
   {
     "name": "the red-with-nothing-readable branch is dropped, so the diagnosis is generic again",
@@ -500,14 +560,16 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase \u2014 the long one \u2014 is the one with no progress",
+    "name": "mutate_delivered keeps the reporter to itself instead of passing it down, so the 434-mutation phase — the long one — is the one with no progress",
     "edits": [
       [
         "progress=progress)",
         "progress=None)"
       ]
     ],
-    "expect": "every phase of --mutate reports its position when a caller asks",
+    "expect": [
+      "every phase of --mutate reports its position when a caller asks"
+    ],
     "file": "scripts/check-plan-code.py"
   },
   {
@@ -527,7 +589,7 @@
     "name": "the label is emitted unbounded again, so a 232-char manifest name wraps to three rows and the line that should visibly stop advancing is no longer one line",
     "edits": [
       [
-        "    return head + label[:max(room - 1, 0)] + \"\u2026\"",
+        "    return head + label[:max(room - 1, 0)] + \"…\"",
         "    return head + label"
       ]
     ],
@@ -579,8 +641,8 @@
     "name": "the merged output goes back to stdout-first, so the tail recorded in the durable evidence object is whatever a child last wrote to stderr, not the failure",
     "edits": [
       [
-        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
-        "which is also what they want.\n    \u26a0 The DIAGNOSTIC does not ride on this \u2014 see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
+        "which is also what they want.\n    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stderr + stdout).strip()",
+        "which is also what they want.\n    ⚠ The DIAGNOSTIC does not ride on this — see `diagnostic_tail`. Two rounds were spent\n    choosing an order for it; both orders lose, because the order was never the question.\n    \"\"\"\n    return (stdout + stderr).strip()"
       ]
     ],
     "expect": [
@@ -615,7 +677,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback \u2014 the regression measured across 28 of 38 suites",
+    "name": "a flooded stdout is allowed to starve stderr of its half, so a suite that crashes AFTER printing loses its traceback — the regression measured across 28 of 38 suites",
     "edits": [
       [
         "    err_keep = min(len(err), max(half, window - len(out)))",
@@ -681,7 +743,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half \u2014 at one end of the band a real control crash shows stack frames and no exception",
+    "name": "the diagnostic's split point moves, so one stream's guaranteed half is not half — at one end of the band a real control crash shows stack frames and no exception",
     "edits": [
       [
         "    half = window // 2\n    err_keep",
@@ -694,7 +756,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line \u2014 median 63 characters in this repo \u2014 cannot fit in the report",
+    "name": "the split point is pushed to the far end, so stdout is cut to one character and a [FAIL] line — median 63 characters in this repo — cannot fit in the report",
     "edits": [
       [
         "stderr.strip()\n    half = window // 2",
@@ -733,7 +795,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the AFTER-control diagnostic goes back to slicing one merged string \u2014 the identical line to the before-control site, in the same function, and it had no entry",
+    "name": "the AFTER-control diagnostic goes back to slicing one merged string — the identical line to the before-control site, in the same function, and it had no entry",
     "edits": [
       [
         "mutation. Treat this run as NOT \"\n                    f\"CHECKED.\\n    {diagnostic_tail(so, se)}\")",
@@ -746,7 +808,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved \u2014 r4 L2's shape, found by the edge sweep",
+    "name": "the diagnostic window itself shrinks, so every CANNOT RUN report is cut without one case or entry noticing the budget moved — r4 L2's shape, found by the edge sweep",
     "edits": [
       [
         "DIAGNOSTIC_WINDOW = 400",
@@ -759,7 +821,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on \u2014 no fixture could see this for five rounds",
+    "name": "the stdout half is sliced from the FRONT, so a control's report shows what it printed first and never the [FAIL] line it died on — no fixture could see this for five rounds",
     "edits": [
       [
         "                                 out[-out_keep:] if out_keep else \"\") if p)",
@@ -801,8 +863,8 @@
     "name": "the ellipsis stops paying for its own character, so a truncated line is one column over the row it is bounded to",
     "edits": [
       [
-        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"\u2026\"",
-        "        return head + label\n    return head + label[:max(room, 0)] + \"\u2026\""
+        "        return head + label\n    return head + label[:max(room - 1, 0)] + \"…\"",
+        "        return head + label\n    return head + label[:max(room, 0)] + \"…\""
       ]
     ],
     "expect": [
@@ -876,7 +938,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' \u2014 the third of the three things a reader needs \u2014 is gone",
+    "name": "the before-control phase reports its position as its own total, so every line reads [n/n] and 'out of how many' — the third of the three things a reader needs — is gone",
     "edits": [
       [
         "progress(position, len(targets), f\"control {name}\")",
@@ -915,7 +977,7 @@
     "file": "scripts/check-plan-code.py"
   },
   {
-    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop \u2014 an empty stream produced by refusing at the door rather than by running quietly",
+    "name": "the two-target declaration outlives its block again, so the silence case's root fails a count check and mutate_delivered returns BEFORE the control loop — an empty stream produced by refusing at the door rather than by running quietly",
     "edits": [
       [
         "        EXPECTED_MUTATIONS.pop(\"scripts/other.py\", None)\n        with tempfile.TemporaryDirectory() as _td:\n            _r = pathlib.Path(_td); _mini(_r)\n            _me = io.StringIO()",
@@ -936,7 +998,9 @@
         "SUITE_TIMEOUT = 3"
       ]
     ],
-    "expect": "SUITE_TIMEOUT is pinned \u2014 the budget every spawned suite runs under cannot drift silently"
+    "expect": [
+      "SUITE_TIMEOUT is pinned — the budget every spawned suite runs under cannot drift silently"
+    ]
   },
   {
     "name": "#217: the shard partition is CONTIGUOUS, so one shard takes the expensive block and its siblings idle",
@@ -948,8 +1012,8 @@
       ]
     ],
     "expect": [
-      "\u26d4 round-robin spreads ONE file's contiguous block evenly; a contiguous split cannot",
-      "\u2b50 every mutation runs in EXACTLY ONE shard and the union is the whole manifest"
+      "⛔ round-robin spreads ONE file's contiguous block evenly; a contiguous split cannot",
+      "⭐ every mutation runs in EXACTLY ONE shard and the union is the whole manifest"
     ]
   },
   {
@@ -962,7 +1026,7 @@
       ]
     ],
     "expect": [
-      "\u2b50 every mutation runs in EXACTLY ONE shard and the union is the whole manifest",
+      "⭐ every mutation runs in EXACTLY ONE shard and the union is the whole manifest",
       "...and the shards of one N are PAIRWISE DISJOINT, counted not assumed"
     ]
   },
@@ -971,8 +1035,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if m is None:\n        return None, (f\"CANNOT RUN \u2014 {flag} {spec!r} is not of the form I/N (two integers, \"",
-        "    if False:\n        return None, (f\"CANNOT RUN \u2014 {flag} {spec!r} is not of the form I/N (two integers, \""
+        "    if m is None:\n        return None, (f\"CANNOT RUN — {flag} {spec!r} is not of the form I/N (two integers, \"",
+        "    if False:\n        return None, (f\"CANNOT RUN — {flag} {spec!r} is not of the form I/N (two integers, \""
       ]
     ],
     "expect": [
@@ -985,8 +1049,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if not 1 <= index <= total:\n        return None, (f\"CANNOT RUN \u2014 {flag} {index - (1 if zero_based else 0)}/{total} names a \"",
-        "    if False:\n        return None, (f\"CANNOT RUN \u2014 {flag} {index - (1 if zero_based else 0)}/{total} names a \""
+        "    if not 1 <= index <= total:\n        return None, (f\"CANNOT RUN — {flag} {index - (1 if zero_based else 0)}/{total} names a \"",
+        "    if False:\n        return None, (f\"CANNOT RUN — {flag} {index - (1 if zero_based else 0)}/{total} names a \""
       ]
     ],
     "expect": [
@@ -1005,9 +1069,9 @@
       ]
     ],
     "expect": [
-      "\u26d4 an EMPTY shard is refused, and the refusal names the count that empties it",
-      "\u26d4 a shard with NO mutations in it refuses, rather than passing vacuously",
-      "\u26d4 a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+      "⛔ an EMPTY shard is refused, and the refusal names the count that empties it",
+      "⛔ a shard with NO mutations in it refuses, rather than passing vacuously",
+      "⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
     ]
   },
   {
@@ -1020,7 +1084,7 @@
       ]
     ],
     "expect": [
-      "\u26d4 a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+      "⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
       "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
     ]
   },
@@ -1034,7 +1098,7 @@
       ]
     ],
     "expect": [
-      "\u26d4 a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+      "⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
       "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
     ]
   },
@@ -1048,7 +1112,7 @@
       ]
     ],
     "expect": [
-      "\u26d4 a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
+      "⛔ a shard runs ONLY its own mutations, and controls ONLY the files it mutates",
       "...and shard 2 of 2 is the OTHER file, so the two together are the manifest"
     ]
   },
@@ -1061,7 +1125,9 @@
         "        if why and False:\n            return False, [why], NotMeasured.from_counts([], None, ev_files)"
       ]
     ],
-    "expect": "\u26d4 a shard with NO mutations in it refuses, rather than passing vacuously"
+    "expect": [
+      "⛔ a shard with NO mutations in it refuses, rather than passing vacuously"
+    ]
   },
   {
     "name": "#217: the verdict line TRANSPOSES I and N, so shard 1 of 3 reads as shard 3 of 1",
@@ -1083,7 +1149,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" \u2014 measured over {shard_label(shard)}\")",
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard)}\")",
         "              f\"{len(verdict.survivors)} survivor(s)\")"
       ]
     ],
@@ -1097,11 +1163,13 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return f\"NOT MEASURED \u2014 {nm.reason} \u2014 measured over {shard_label(shard)}\"",
-        "    return f\"NOT MEASURED \u2014 {nm.reason}\""
+        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}\"",
+        "    return f\"NOT MEASURED — {nm.reason}\""
       ]
     ],
-    "expect": "...and so does the NOT-MEASURED line"
+    "expect": [
+      "...and so does the NOT-MEASURED line"
+    ]
   },
   {
     "name": "#217: main stops obeying the shard mode refusal, so --self-test --shard rides through",
@@ -1112,7 +1180,9 @@
         "    _mode_why = next((_w for _w in (shard_mode_refusal(getattr(a, shard_dest(_f)), a.mutate,\n                                                       flag=f\"--{_f}\")\n                                    for _f in SHARD_FLAGS) if _w), None)\n    if False:"
       ]
     ],
-    "expect": "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
+    "expect": [
+      "--shard without --mutate is CANNOT RUN, not a silent whole-manifest run"
+    ]
   },
   {
     "name": "#217: a malformed --shard does not stop the run, so the sweep proceeds unsharded under a sharded log line",
@@ -1123,7 +1193,9 @@
         "        shard, why = parse_shard(_val, zero_based=SHARD_FLAGS[_f][0], flag=f\"--{_f}\")\n        if why:\n            print(why, file=sys.stderr)"
       ]
     ],
-    "expect": "...and a malformed --shard refuses BEFORE any suite runs"
+    "expect": [
+      "...and a malformed --shard refuses BEFORE any suite runs"
+    ]
   },
   {
     "name": "#217: an empty shard exits 1 like a surviving mutation instead of 2 like a run that measured nothing",
@@ -1134,18 +1206,22 @@
         "            why = None"
       ]
     ],
-    "expect": "\u26d4 a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+    "expect": [
+      "⛔ a shard that is empty over the real manifest exits 2 (CANNOT RUN), not 1"
+    ]
   },
   {
     "name": "the shard mode refusal stops firing, so --self-test --shard rides through as a clean exit 0",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    if shard_arg is not None and not mutate_arg:\n        return (f\"CANNOT RUN \u2014 {flag} {shard_arg!r} only means something with --mutate ROOT, \"",
-        "    if shard_arg is not None and not mutate_arg and False:\n        return (f\"CANNOT RUN \u2014 {flag} {shard_arg!r} only means something with --mutate ROOT, \""
+        "    if shard_arg is not None and not mutate_arg:\n        return (f\"CANNOT RUN — {flag} {shard_arg!r} only means something with --mutate ROOT, \"",
+        "    if shard_arg is not None and not mutate_arg and False:\n        return (f\"CANNOT RUN — {flag} {shard_arg!r} only means something with --mutate ROOT, \""
       ]
     ],
-    "expect": "\u26d4 a shard alongside --self-test is refused, not silently accepted \u2014 the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
+    "expect": [
+      "⛔ a shard alongside --self-test is refused, not silently accepted — the mode runs no mutations, so a shard over it would report success for a subject nothing touched"
+    ]
   },
   {
     "name": "#217: the bytecode cache is left ON, so a mutant .pyc outlives the restore of its source",
@@ -1156,7 +1232,9 @@
         "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
       ]
     ],
-    "expect": "...and the other half of the race: no suite the harness spawns may WRITE a cache either, or this run poisons the next one"
+    "expect": [
+      "...and the other half of the race: no suite the harness spawns may WRITE a cache either, or this run poisons the next one"
+    ]
   },
   {
     "name": "#217 r2: the staged tree carries the repo's __pycache__ in, so a mutant .pyc arrives looking current",
@@ -1167,10 +1245,12 @@
         "        shutil.copytree(src, dst)"
       ]
     ],
-    "expect": "\u26d4 no bytecode cache reaches a staged tree \u2014 the source is copied, the compiled artefact is not, or a mutant .pyc arrives looking current and the next importer silently gets it"
+    "expect": [
+      "⛔ no bytecode cache reaches a staged tree — the source is copied, the compiled artefact is not, or a mutant .pyc arrives looking current and the next importer silently gets it"
+    ]
   },
   {
-    "name": "the digit class goes back to UNICODE-WIDE `\\\\d`, so an Arabic-Indic eight parses as 8 and a CI index of `\u0660` becomes shard 1 of N \u2014 round 6 L1/L2",
+    "name": "the digit class goes back to UNICODE-WIDE `\\\\d`, so an Arabic-Indic eight parses as 8 and a CI index of `٠` becomes shard 1 of N — round 6 L1/L2",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1178,10 +1258,12 @@
         "SHARD_SPEC = re.compile(r\"^(\\d+)/(\\d+)$\")"
       ]
     ],
-    "expect": "a UNICODE digit is not a decimal integer \u2014 round 6 L2"
+    "expect": [
+      "a UNICODE digit is not a decimal integer — round 6 L2"
+    ]
   },
   {
-    "name": "leading zeros are accepted again, so `00/8` is shard 1 of 8 and the word CANONICAL in the refusal is a claim the pattern does not keep \u2014 round 6 L1",
+    "name": "leading zeros are accepted again, so `00/8` is shard 1 of 8 and the word CANONICAL in the refusal is a claim the pattern does not keep — round 6 L1",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1189,10 +1271,12 @@
         "r\"^([0-9]+)/"
       ]
     ],
-    "expect": "...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps"
+    "expect": [
+      "...and a LEADING ZERO is refused, so CANONICAL in the message is a claim the pattern keeps"
+    ]
   },
   {
-    "name": "the zero-based conversion is dropped, so a CI matrix index of 0 names shard 0 and every shard is off by one \u2014 round 6 M1",
+    "name": "the zero-based conversion is dropped, so a CI matrix index of 0 names shard 0 and every shard is off by one — round 6 M1",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1200,10 +1284,12 @@
         "    if zero_based:\n        index += 0"
       ]
     ],
-    "expect": "--shard0 is ZERO-based: index 0 is shard 1"
+    "expect": [
+      "--shard0 is ZERO-based: index 0 is shard 1"
+    ]
   },
   {
-    "name": "the shard spec is matched loosely again \u2014 `.match()` with `.strip()` \u2014 so a whitespace-wrapped or newline-terminated spec parses and the canonical accept set the message advertises is false at its boundary (round 6 codex Low)",
+    "name": "the shard spec is matched loosely again — `.match()` with `.strip()` — so a whitespace-wrapped or newline-terminated spec parses and the canonical accept set the message advertises is false at its boundary (round 6 codex Low)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1211,7 +1297,9 @@
         "    m = SHARD_SPEC.match(spec.strip())"
       ]
     ],
-    "expect": "...and so is whitespace, including a TRAILING NEWLINE \u2014 round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
+    "expect": [
+      "...and so is whitespace, including a TRAILING NEWLINE — round 6 codex Low. `$` matches before a final newline and `.strip()` swallowed the rest, so the canonical claim was false at its own boundary; the CI seam interpolates a shell value, where a stray newline is the likeliest contaminant"
+    ]
   },
   {
     "name": "the mode refusal goes back to asking about `a.shard` BY NAME, so any other shard-shaped flag rides through `--self-test` as a clean exit 0 over a subject no shard touched (round 7 H1, which was round 1's Codex finding reopened)",
@@ -1222,10 +1310,12 @@
         "    _mode_why = shard_mode_refusal(a.shard, a.mutate)"
       ]
     ],
-    "expect": "EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag"
+    "expect": [
+      "EVERY shard flag without --mutate is CANNOT RUN, and the refusal names that flag"
+    ]
   },
   {
-    "name": "the digit run loses its length bound, so a 4301-digit shard spec MATCHES and `int()` then raises \u2014 the traceback `parse_shard`'s own docstring forbids (round 7 L1)",
+    "name": "the digit run loses its length bound, so a 4301-digit shard spec MATCHES and `int()` then raises — the traceback `parse_shard`'s own docstring forbids (round 7 L1)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1233,7 +1323,9 @@
         "*)$\""
       ]
     ],
-    "expect": "a digit run longer than the bound is REFUSED on either side, never raised \u2014 r7 L1"
+    "expect": [
+      "a digit run longer than the bound is REFUSED on either side, never raised — r7 L1"
+    ]
   },
   {
     "name": "the mode refusal goes back to TRUTHINESS, so an EMPTY shard value is not shard-shaped and `--self-test --shard ''` rides through as a clean exit 0 (round 7 H1, third instance of one defect)",
@@ -1244,10 +1336,12 @@
         "    if shard_arg and not mutate_arg:"
       ]
     ],
-    "expect": "an EMPTY shard value is still a shard-shaped invocation, for every flag \u2014 round 7 H1"
+    "expect": [
+      "an EMPTY shard value is still a shard-shaped invocation, for every flag — round 7 H1"
+    ]
   },
   {
-    "name": "`shard_dest` stops normalising, so a hyphenated shard flag is looked up by its raw name and `main` raises AttributeError instead of refusing \u2014 a traceback where a sentence is owed (round 7 codex Low)",
+    "name": "`shard_dest` stops normalising, so a hyphenated shard flag is looked up by its raw name and `main` raises AttributeError instead of refusing — a traceback where a sentence is owed (round 7 codex Low)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1255,10 +1349,12 @@
         "lstrip(\"-\")"
       ]
     ],
-    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    "expect": [
+      "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    ]
   },
   {
-    "name": "the shard flags are enumerated again by hand instead of derived, so a flag in SHARD_FLAGS is registered and mode-checked but never PARSED and never mutually exclusive \u2014 round 8 M1",
+    "name": "the shard flags are enumerated again by hand instead of derived, so a flag in SHARD_FLAGS is registered and mode-checked but never PARSED and never mutually exclusive — round 8 M1",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1266,10 +1362,12 @@
         "    _given = [(_f, getattr(a, shard_dest(_f))) for _f in (\"shard\", \"shard0\")\n              if getattr(a, shard_dest(_f)) is not None]"
       ]
     ],
-    "expect": "a flag added to SHARD_FLAGS is PARSED, not merely accepted \u2014 round 8 M1"
+    "expect": [
+      "a flag added to SHARD_FLAGS is PARSED, not merely accepted — round 8 M1"
+    ]
   },
   {
-    "name": "`shard_dest` drops argparse's prefix-strip step, so a leading-hyphen flag name resolves to `_shard_x` where argparse named it `shard_x` \u2014 round 8 L1",
+    "name": "`shard_dest` drops argparse's prefix-strip step, so a leading-hyphen flag name resolves to `_shard_x` where argparse named it `shard_x` — round 8 L1",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1277,10 +1375,12 @@
         "    return opt.replace(\"-\", \"_\")"
       ]
     ],
-    "expect": "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    "expect": [
+      "a hyphenated flag round-trips through `shard_dest` exactly as argparse names it"
+    ]
   },
   {
-    "name": "the SHARD_FLAGS collision guard stops firing, so a key named after an existing option produces argparse's own error, a nonsense refusal, or a silently reddened unrelated case \u2014 four shapes for one declaration mistake (r8 codex Low)",
+    "name": "the SHARD_FLAGS collision guard stops firing, so a key named after an existing option produces argparse's own error, a nonsense refusal, or a silently reddened unrelated case — four shapes for one declaration mistake (r8 codex Low)",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1288,6 +1388,307 @@
         "        if False:"
       ]
     ],
-    "expect": "a SHARD_FLAGS key colliding with an existing option is refused by name \u2014 r8 codex Low"
+    "expect": [
+      "a SHARD_FLAGS key colliding with an existing option is refused by name — r8 codex Low"
+    ]
+  },
+  {
+    "name": "#252: an absent anchor stops being an error, so a 15-minute shard is the only signal",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if n == 0:\n                errors.append(f\"{name}: its anchor is GONE",
+        "            if False:\n                errors.append(f\"{name}: its anchor is GONE"
+      ]
+    ],
+    "expect": [
+      "⭐ an anchor absent from its target is an ERROR, not a 15-minute shard"
+    ]
+  },
+  {
+    "name": "#252: an ambiguous anchor stops being an error",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            elif n > 1:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "⭐ an AMBIGUOUS anchor — present twice — is an error too, because the mutation is then not the edit its author described"
+    ]
+  },
+  {
+    "name": "#252: an unreadable target is skipped WITHOUT being reported, so a missing file reads as a clean manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            errors.append(f\"{name}: target {tgt} is unreadable — the anchor cannot be checked\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "an unreadable target is an error rather than a silent skip"
+    ]
+  },
+  {
+    "name": "#252: expects_of walks a bare string character by character",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return [v] if isinstance(v, str) else list(v)",
+        "    return list(v)"
+      ]
+    ],
+    "expect": [
+      "⭐ expects_of accepts a bare STRING — 726 of 1,435 live entries are written that way, and iterating one walks it character by character"
+    ]
+  },
+  {
+    "name": "#252: an expect naming no case stops being reported at all ⟳ r1 Claude M1: retargeted — the M1 split rewrote `if ex not in lits[tgt]:` into an `if ex in lits[tgt]: continue` guard plus a two-severity branch, so this entry's anchor went with it. `--binding` caught the orphan in 1.0s. ⟳ r2 Codex M1: retargeted again — the f-string pattern check joined this condition. SIXTH orphan this session, all six found by `--binding`",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if any(pat.match(ex) for pat in pats[tgt]) or expect_explained(ex, lits[tgt]):\n                warnings.append(",
+        "            if True:\n                warnings.append("
+      ]
+    ],
+    "expect": [
+      "⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning"
+    ]
+  },
+  {
+    "name": "#251: case_name_literals swallows a parse error as a crash instead of an empty set",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except SyntaxError:\n        return set()",
+        "    except SyntaxError:\n        return {'x'}"
+      ]
+    ],
+    "expect": [
+      "...and returns an empty set for a file that does not parse, rather than raising"
+    ]
+  },
+  {
+    "name": "#251: coverage_exempt stops exempting the suite, so every case function is a finding",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return (name in SUITE_FUNCS or name == \"main\" or name.startswith(\"__\")",
+        "    return (name == \"main\" or name.startswith(\"__\")"
+      ]
+    ],
+    "expect": [
+      "coverage_exempt: the suite function ITSELF is exempt, by NAME"
+    ]
+  },
+  {
+    "name": "#251: uncovered_functions stops subtracting the anchored set, so a covered function is flagged",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return sorted(touched - exempt - anchored)",
+        "    return sorted(touched - exempt)"
+      ]
+    ],
+    "expect": [
+      "...and is silent once an anchor lands inside it"
+    ]
+  },
+  {
+    "name": "#251: the nested walk stops recursing, so a function inside a class is never seen",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                walk(ch, ch.name if ch.name in SUITE_FUNCS else enclosing)",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a helper nested in an ORDINARY function is reported under its OWN name"
+    ]
+  },
+  {
+    "name": "#251 fold: _own_body_nodes descends into nested functions again, so inner I/O exempts the outer rule",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):\n            continue                      # its body belongs to IT, not to `fn`",
+        "        if False:\n            continue                      # its body belongs to IT, not to `fn`"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and I/O inside a NESTED helper does not exempt the outer rule"
+    ]
+  },
+  {
+    "name": "#251 fold: a hunk's line count is ignored, so only its first line is read as changed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                out.setdefault(cur, set()).update(range(start, start + count))",
+        "                out.setdefault(cur, set()).update(range(start, start + 1))"
+      ]
+    ],
+    "expect": [
+      "changed_lines_by_path reads a hunk header into line numbers"
+    ]
+  },
+  {
+    "name": "#251 fold: owner() stops preferring the SMALLEST enclosing span, so a nested helper is attributed to its parent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if a <= line <= b and (best is None or (b - a) < (spans[best][1] - spans[best][0])):\n                best = nm",
+        "            if a <= line <= b and best is None:\n                best = nm"
+      ]
+    ],
+    "expect": [
+      "⭐ a helper nested in an ORDINARY function is reported under its OWN name"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M1 — expect_explained always says yes, so a renamed-away expect is summarised beside 67 f-string names again: B1's exact concealment ⟳ retargeted: the corpus falsifier added a FRACTION term to this return. FIFTH orphan in this fold, all five found by `--binding` in about a second.",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    need = max(floor, int(len(expect) * fraction))\n    return any(len(lit) >= need and (lit in expect or expect in lit) for lit in literals)",
+        "    need = max(floor, int(len(expect) * fraction))\n    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M1 — the overlap floor drops to 0, so any shared scrap of text 'explains' an expect and the separator stops separating",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECT_OVERLAP_FLOOR = 12",
+        "EXPECT_OVERLAP_FLOOR = 0"
+      ]
+    ],
+    "expect": [
+      "the overlap FLOOR refuses a coincidence — a short shared literal explains nothing"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M1 — containment runs ONE way only, which is the version measured to leave 2 live files falsely MISSING (`] missing file is CANNOT RUN: got `)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "(lit in expect or expect in lit)",
+        "(lit in expect)"
+      ]
+    ],
+    "expect": [
+      "...and so does one CONTAINED IN a literal — the containment runs BOTH ways, which a one-directional test got wrong on 2 live files"
+    ]
+  },
+  {
+    "name": "⟳ r2 self-review — the FRACTION term goes, leaving the floor alone. MEASURED over a corpus-wide rename falsifier: the floor alone wrongly forgives 41 of 1,455 synthesised stale expects (2.9%) against 10 (0.7%) with the fraction",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    need = max(floor, int(len(expect) * fraction))",
+        "    need = floor"
+      ]
+    ],
+    "expect": [
+      "⭐ a 13-char overlap does NOT explain a 55-char expect — the floor alone forgave 41 of 1,455 synthesised renames this way"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — docstrings are candidates again, so a case RENAMED AWAY is forgiven whenever its old title still appears in any docstring in the file. The review's witness is a 48-character title inside an unrelated module docstring",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) \\\n                and isinstance(n.value.value, str):\n            skip.add(id(n.value))",
+        "        if False:\n            skip.add(id(n.value))"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: a stale title surviving inside a DOCSTRING is NOT an explanation"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — f-strings stop being reconstructed as patterns, so a legitimate generated name whose static part is under the floor (`f\"{x} works\"` -> `alpha works`, 6 static characters) is REFUSED and the required step goes red",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if static >= min_static:\n            out.append(",
+        "        if False:\n            out.append("
+      ]
+    ],
+    "expect": [
+      "⭐ r2: an f-string that PRODUCES the name explains it exactly, however short its static part"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — min_static drops to 0, so `f\"{a}{b}\"` becomes `^.*?.*?$` and explains EVERY expect: the pattern half swallows the rule the containment half exists to enforce",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "def case_name_patterns(source: str, min_static: int = 4) -> list:",
+        "def case_name_patterns(source: str, min_static: int = 0) -> list:"
+      ]
+    ],
+    "expect": [
+      "...and an f-string with NO static text explains nothing, or it would explain everything"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex H1/M1 — the case-call NAME test is dropped, so any call with a first-argument f-string becomes a case-name producer again: `.split(sep, 1)`, `re.compile(p, f)`, `.replace(a, b)`. MEASURED: 11 of 62 files carry such a template",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if CASE_CALL_RE.fullmatch(name or \"\"):",
+        "            if True or CASE_CALL_RE.fullmatch(name or \"\"):"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: an f-string that is NOT in a case-name position supplies no pattern — an output template could forgive a stale expect in 62 of 62 files before this"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex H1 — the KEYWORD form stops being accepted, so `case(name=f\"...\", ...)` is falsely reported GONE. A false refusal in the half that REFUSES reddens a required check for a legitimate case",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                cands += [kw.value for kw in n.keywords\n                          if (kw.arg or \"\") in CASE_NAME_KEYWORDS]",
+        "                cands += []"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused"
+    ]
+  },
+  {
+    "name": "⛔ r4 Claude L4 — EXPECT_OVERLAP_FRACTION 0.3 -> 0.4: the step that survived 234/234 until r4 Codex L3 bracketed it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECT_OVERLAP_FRACTION = 0.3",
+        "EXPECT_OVERLAP_FRACTION = 0.4"
+      ]
+    ],
+    "expect": [
+      "⭐ a 36-char literal explains a 97-char expect at need=29, which a fraction of 0.4 refuses at need=38 — the step that was free before this case"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex L2 — EXPECT_OVERLAP_FLOOR 12 -> 11, the direction r4 recorded as impossible. It is NOT: anchoring on the line WITH its newline is a distinct string the loader accepts, so the residual was a choice and is now closed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "EXPECT_OVERLAP_FLOOR = 12\n",
+        "EXPECT_OVERLAP_FLOOR = 11\n"
+      ]
+    ],
+    "expect": [
+      "...and an 11-char literal over the SAME expect does NOT, so the floor is bracketed from both sides and a floor of 11 breaks this one"
+    ]
   }
 ]

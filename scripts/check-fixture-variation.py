@@ -300,6 +300,62 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "check-provenance.py": (
+        # ⟳ r1 fold: re-derived by RUNNING `analyse()` after the Codex findings renamed
+        # `is_history_context`'s second parameter and added the filesystem drives.
+        "added_rows.diff_text",
+        "bolded_figures.row",
+        "findings_for.rows",
+        "has_provenance.row",
+        "is_backlog_row.line",
+        "main.argv",
+        "main.root",
+        "row_id.line",
+        "verdict.n_findings",
+        "verdict.n_rows",
+        "verdict.strict",
+    ),
+    "check-withdrawal.py": (
+        # ⟳ r1 fold: re-derived by RUNNING `analyse()`. `is_history_context`'s second
+        # parameter was renamed `replacements` -> `corrected_forms` when proximity to a
+        # figure stopped counting as a correction (round 1 Codex Medium).
+        "hit_offset.hit",
+        "hit_offset.text",
+        "is_exempt_path.path",
+        "is_history_context.corrected_forms",
+        "is_history_context.window",
+        "main.argv",
+        "main.root",
+        "removed_figures.diff_text",
+        "signature_of.context_words",
+        "signature_of.line",
+        "signature_of.number",
+        "verdict.n_corrections",
+        "verdict.n_survivors",
+        "verdict.strict",
+        "window_around.end",
+        "window_around.span",
+        "window_around.start",
+        "window_around.text",
+    ),
+    "find-claim.py": (
+        # ⚠ DERIVED BY RUNNING `analyse()` on the file, not typed from the failure message —
+        # the neighbouring entry records a first attempt that added two keys this guard does
+        # not examine. `analyse()` returned 0 findings alongside this set.
+        "build_pattern.ignore_case",
+        "build_pattern.phrase",
+        "collect_files.paths",
+        "collect_files.suffixes",
+        "find_in_text.path",
+        "find_in_text.pattern",
+        "find_in_text.text",
+        "search_files.files",
+        "search_files.pattern",
+        "verdict.expect",
+        "verdict.n_control",
+        "verdict.n_hits",
+        "wrap_path_exercised.control_hits",
+    ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
         # `case_locals` are GONE, deliberately: the review measured that the rule

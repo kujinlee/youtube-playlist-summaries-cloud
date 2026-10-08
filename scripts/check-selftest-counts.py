@@ -81,6 +81,17 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    # ⟳ 2026-10-07, backlog #256/#257/#258 — round 1's Claude half, B2. All three guards shipped
+    # on that branch DECLARING a count, and each one's docstring asserts in as many words that the
+    # count is "VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`)". Nothing verified any
+    # of them: they were absent from this set, so the assertion of enforcement was the only
+    # enforcement there was. That is the shape `dev-process.md` already paid for in a table row
+    # ("this row claimed enforcement while `ci.yml` referenced it zero times"), written into a
+    # docstring instead. The counts were CORRECT when pinned (46/46, 54/54, 54/54) — the defect
+    # was that drift or removal would have been invisible, which is what this file refuses.
+    "find-claim.py",
+    "check-withdrawal.py",
+    "check-provenance.py",
     # ⟳ 2026-10-07: gained a `--self-test`, so its declared count needs a reader.
     "codex-frontier-model.py",
     # ⟳ 2026-10-02, ADR-0014's rule D2: pinned in the commit that creates it. Its suite went

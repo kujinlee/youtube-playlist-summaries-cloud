@@ -1,0 +1,730 @@
+[
+  {
+    "name": "a figure unchanged by the hunk is reported as a correction anyway",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "if n not in added_blob:",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "a figure present on BOTH sides is not a correction"
+    ]
+  },
+  {
+    "name": "⭐ the replacement filter goes, so an UNCHANGED figure becomes an exemption token (fail-open)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "n for n in NUMBER_RE.findall(added_blob) if n not in removed_blob",
+        "n for n in NUMBER_RE.findall(added_blob)"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCHANGED figure on the same line is NOT a replacement"
+    ]
+  },
+  {
+    "name": "the corrected-FORM prong stops exempting, so a self-correcting sentence reads as a survivor ⟳ r1 Claude B1: the r1 fold retargeted this entry's ANCHOR to the rewritten line and left its EXPECT naming the case title the same fix had renamed away, so the entry went red with `expect matched 0 red case(s)` and put the mutation shard red. The anchor and the expect are two bindings, and fixing one is not fixing the other.",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return any(cf and cf in window for cf in corrected_forms)",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "the CORRECTED FORM beside the old claim means the text is correcting itself"
+    ]
+  },
+  {
+    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim ⟳ r1 Claude M4: retargeted — the marker prong became a call to `history_marker`, which NAMES the marker instead of answering yes/no, so this anchor went with it. FOURTH orphan this fold; `--binding` found every one. ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    if history_marker(window, figure_at, masked=masked):\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "a ⟳ trail is history"
+    ]
+  },
+  {
+    "name": "review and explainer directories stop being exempt",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return any(path.startswith(d) or f\"/{d}\" in path for d in EXEMPT_DIRS)",
+        "return False"
+      ]
+    ],
+    "expect": [
+      "a review document is exempt"
+    ]
+  },
+  {
+    "name": "--strict stops being strict, so survivors never fail a run that asked them to",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return (1 if strict else 0), (",
+        "return 0, ("
+      ]
+    ],
+    "expect": [
+      "survivors under --strict exit 1"
+    ]
+  },
+  {
+    "name": "the signature loses its left context, so a figure binds on less than it should ⟳ retargeted in the r1 fold: the fix for the Codex finding rewrote the line this bound to",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    lo = max(0, idx - context_words) if context_words else idx",
+        "    lo = idx"
+      ]
+    ],
+    "expect": [
+      "figure with two words either side"
+    ]
+  },
+  {
+    "name": "#251: window_around ignores its span, so the history check reads the whole document",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return text[max(0, start - span):min(len(text), end + span)]",
+        "    return text"
+      ]
+    ],
+    "expect": [
+      "a window clips at the start of the text"
+    ]
+  },
+  {
+    "name": "#251 fold: hit_offset returns the first occurrence again, so repeats inherit its window",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return line_start + hit.col - 1",
+        "    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ hit_offset returns THIS match's offset, not the first occurrence's"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the weak markers go back to being window-wide, so a live claim one sentence away from any past-tense prose is exempted again. Window-wide, `was ` alone covered 7,620 of 47,988 figure occurrences ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    sentence = sentence_around(window, figure_at, masked=masked)\n    for mark in WEAK_MARKERS:\n        if mark in sentence:",
+        "    sentence = sentence_around(window, figure_at, masked=masked)\n    for mark in WEAK_MARKERS:\n        if mark in window:"
+      ]
+    ],
+    "expect": [
+      "⭐ M4: 'was ' in ANOTHER sentence does not exempt a live claim"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the STRONG markers become sentence-bound too, which is the over-correction: an author who wrote ⟳ nearby IS correcting something ⟳ REPLACEMENT FIXED r6: threading `masked=` made this mutant raise TypeError, so the suite CRASHED with no [FAIL] line and the kill was unattributable. CI caught it; --binding cannot, because it validates ANCHORS and not replacements",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    for mark in STRONG_MARKERS:\n        if mark in window:",
+        "    for mark in STRONG_MARKERS:\n        if mark in sentence_around(window, figure_at, masked=masked):"
+      ]
+    ],
+    "expect": [
+      "⭐ a STRONG marker still reaches ACROSS sentences, which is the half M4 did not narrow"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the suppression report goes silent, so a run that exempted five hits reads identically to one that exempted none",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    if not counts:\n        return \"\"",
+        "    if True:\n        return \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken for a clean one (r1 Claude M4)"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — figure_offset_in_window stops clipping, so near the top of a document the sentence lookup lands on the wrong sentence — precisely the documents whose first lines carry the correction notices",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return min(start, span)",
+        "    return span"
+      ]
+    ],
+    "expect": [
+      "figure_offset_in_window clips at the start of a document, where window_around did too"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — sentence_around returns the WHOLE window, so weak markers are window-wide again by the back door: the function M4 added is the one the sweep did not reach (`--diff-coverage` said so before this entry existed) ⟳ RETARGETED r4: the r4 M1 mask moved this line (#252's 8th instance, again inside the commit fixing a finding)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(masked)] + [len(window)]",
+        "    bounds = [0, len(window)]"
+      ]
+    ],
+    "expect": [
+      "...and a DIFFERENT window splits on ITS OWN sentence boundaries"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — figure_offset_in_hit stops searching and answers 0, which is the signature-start behaviour under a different name",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    i = hit_text.find(figure)\n    return i if i >= 0 else 0",
+        "    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ figure_offset_in_hit locates the FIGURE, not the signature's start"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — a bare newline becomes a sentence boundary again, so the verdict depends on where the line WRAPS: same claim, same marker, opposite answers ⟳ r3: retargeted — the block-start alternative gained `1)`",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|\\n(?=\\s*(?:[|#>]|[*+-]\\s|\\d+[.)]\\s))\"      # a markdown block start; `1)` too",
+        "    r\"|\\n\"                                          # a markdown block start; `1)` too"
+      ]
+    ],
+    "expect": [
+      "⭐ ...but a WRAPPED sentence is ONE sentence, so a wrap cannot change the verdict"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — `|` leaves the markdown-block class, so two TABLE ROWS share a sentence and a marker leaks from one row's prose into the next row's figure. ⚠ The first attempt at this entry added a never-matching alternative and SURVIVED: a no-op edit is not a mutation",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "[|#>]",
+        "[#>]"
+      ]
+    ],
+    "expect": [
+      "a markdown TABLE ROW is its own sentence — a marker must not leak between rows"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — the LIVE caller's figure offset collapses to the signature's, caught only by the case that drives main() over a real repository ⟳ r3: retargeted — the caller now builds a LIST of per-occurrence offsets",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                base = figure_offset_in_window(start)\n                ats = [base + off for off in figure_offsets_in_hit(hit.text, figure)]",
+        "                base = figure_offset_in_window(start)\n                ats = [base]"
+      ]
+    ],
+    "expect": [
+      "⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — the caller passes the FIGURE's offset, not the signature's (r2 Codex High)"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the COLON boundary goes, so a `was` in a lead-in exempts the separate claim below it. LIVE at docs/dashboard-entries.md:10440 ⟳ RETARGETED r7: the CRLF fix rewrote this alternative",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?<=:)\\r?\\n\"                                 # a colon lead-in ENDS a statement — `\\r?` because",
+        "    r\"|(?!x)x\"                                   # a colon lead-in — SEVERED"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a COLON lead-in ends a statement — the live instance at docs/dashboard-entries.md:10440 had `was` in the lead-in exempting the claim below"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the markdown HARD-break boundary goes",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?<=\\s\\s)\\n\"                                # a markdown hard break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and a markdown HARD break (two trailing spaces) is a boundary too"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — `1)` stops being a list marker, so only `1.` is modelled",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "\\d+[.)]\\s",
+        "\\d+[.]\\s"
+      ]
+    ],
+    "expect": [
+      "...and `1)` is a list marker, not only `1.`"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — only the FIRST occurrence of a repeated figure is considered, so a marked first occurrence exempts an unmarked second. The witness is two commits in a real repository: `was 1,414. 1,414 anchors today`",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    out, i = [], hit_text.find(figure)\n    while i >= 0:\n        out.append(i)\n        i = hit_text.find(figure, i + 1)\n    return out or [0]",
+        "    i = hit_text.find(figure)\n    return [i] if i >= 0 else [0]"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: figure_offsets_in_hit returns ALL occurrences, so a repeated figure cannot inherit the first one's exemption"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the caller goes back to exempting on ANY occurrence instead of ALL, which is the same defect at the call site ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                if all(is_history_context(win, corrected, figure_at=a, masked=masked_win)\n                       for a in ats):",
+        "                if any(is_history_context(win, corrected, figure_at=a, masked=masked_win)\n                       for a in ats):"
+      ]
+    ],
+    "expect": [
+      "⭐ LIVE r3: a repeated figure whose FIRST occurrence is marked and second is not is a SURVIVOR — the caller requires every occurrence to be exempt"
+    ]
+  },
+  {
+    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance) ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252) ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    runs = [(mt.start(), mt.end(), backtick_escaped(text, mt.start()))\n            for mt in BACKTICK_RUN.finditer(text) if len(mt.group(0)) <= 2]",
+        "    runs = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r4: ...and the SAME sentence wrapped at the span's COLON is exempted too, where it used to be a survivor — a colon inside code is not a sentence boundary"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252) ⟳ RETARGETED r6: BLANK_LINE became PARA_END when r6 Claude M1 added the measured block-start rule ⟳ RETARGETED r7: PARA_END became `paragraph_ends_between` + BLANK_OR_BLOCK when r7 Codex H1 required the previous line; the SUBJECT survived in a new form, so this is a retarget and not a retirement ⟳ RETARGETED r7: the comment on this line moved when the four B1 clauses landed",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"[ \\t\\r]*$\"                                # blank",
+        "    r\"(?!x)x\"                                   # blank — SEVERED"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ...and a BLANK LINE cannot sit inside a code span — a paragraph break ends it, so these two backticks are not a pair and the figure is a SURVIVOR"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex M1 — an unmatched opener STOPS the scan again, so one stray backtick disables masking for every later genuine span and turns a suppressed figure into a false survivor ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if j >= len(runs):\n            i += 1\n            continue",
+        "        if j >= len(runs):\n            break"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ...and ONE unmatched opener no longer disables every later span — it is SKIPPED, where `break` let a stray backtick turn a genuine span into a false survivor"
+    ]
+  },
+  {
+    "name": "⛔ r5 (#251 --diff-coverage) — backtick_escaped inverts its PARITY: an odd run of backslashes stops escaping and an even one starts, so a literal backslash before a real delimiter closes the span and `\\\\`` opens one",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return n % 2 == 1",
+        "    return n % 2 == 0"
+      ]
+    ],
+    "expect": [
+      "...and backtick_escaped counts an EVEN run of backslashes as not escaping, so a literal backslash before a REAL delimiter still opens a span"
+    ]
+  },
+  {
+    "name": "⛔⛔ r5 Claude H2 — the mask is computed from the WINDOW again instead of the document: a window opening inside a code span pairs its orphan closer with a later opener and masks the prose boundary away. 205 of 205 live verdict changes were false suppressions",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                masked_win = window_around(masked_of(text), start, start + len(hit.text))",
+        "                masked_win = mask_inline_code(win)"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r5 LIVE: a window that OPENS INSIDE a code span reports its survivor — the mask is decided on the DOCUMENT, where a fragment mask paired an orphan closer with a later opener and masked the prose boundary away (205/205 false suppressions measured)"
+    ]
+  },
+  {
+    "name": "⛔ r5 Claude H1 — the opener-only escape test is removed, so an escaped backtick can open a span again and the PROSE between two of them is masked (cmark and markdown-it-py both disagree with that) ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        open_start = s + 1 if esc else s",
+        "        open_start = s"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its sentence boundary and the figure is a SURVIVOR — this was suppressed as history"
+    ]
+  },
+  {
+    "name": "⛔ r6 Codex M1 — an escaped run is DROPPED again instead of truncated, so `\\\\``` opens no span and the code-span newline after it goes unmasked, turning a suppressed figure into a false survivor",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if open_len < 1:",
+        "        if open_len < 1 or esc:"
+      ]
+    ],
+    "expect": [
+      "r6: an escaped FIRST backtick truncates the opener, it does not delete the run"
+    ]
+  },
+  {
+    "name": "⛔ r6 Claude H1 — the mask memo keys on `id(text)` again: CPython reuses an address for an object of the SAME SIZE, so the length in the key is implied by the collision rather than guarding it, and 18 of 33 hits served another document's mask over 40 real main() runs",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    key = text",
+        "    key = (id(text), len(text))"
+      ]
+    ],
+    "expect": [
+      "⛔ r6: the mask memo ignores the entry an id-KEYED cache would serve, so a recycled address cannot hand one document another's mask"
+    ]
+  },
+  {
+    "name": "⛔ r6 Claude M1 — PARA_END forgets that a markdown BLOCK START ends a paragraph, so backticks pair across a list item and the mask erases the very boundary SENTENCE_SPLIT adds for it. 37 disagreeing inputs in 29 shapes, every one containing a list marker ⟳ RETARGETED r6: the L1 `\\r` fix moved this definition ⟳ RETARGETED r7: PARA_END became `paragraph_ends_between` + BLANK_OR_BLOCK when r7 Codex H1 required the previous line; the SUBJECT survived in a new form, so this is a retarget and not a retirement",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|[ \\t]{0,3}(?:[-*+][ \\t]+\\S\"              # a NON-EMPTY bullet",
+        "    r\"|[ \\t]{0,3}(?:[-*+][ \\t]+(?!x)x\"           # a NON-EMPTY bullet — SEVERED"
+      ]
+    ],
+    "expect": [
+      "⭐ r6: a bullet line ends it too"
+    ]
+  },
+  {
+    "name": "⛔ r7 Codex H1 — a block-quote line always ends the paragraph again, so a quote CONTINUATION rejects a genuine span and its closer opens another, masking live prose and suppressing the figure",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if d > depth:",
+        "        if d > depth or d > 0:"
+      ]
+    ],
+    "expect": [
+      "⛔ r7: a `>` line CONTINUING a quote does not end the paragraph, so the span is genuine and the figure after it survives — rejecting the span made its closer open another"
+    ]
+  },
+  {
+    "name": "⛔ r7 — the LAZY-CONTINUATION branch is severed, so a non-`>` line inside a quote always continues the paragraph. Measured: this is what drove the LENIENT disagreement count from 28 UP to 32 while the total looked like it improved",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            if ANY_BLOCK_ISH.match(nxt):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r7: LAZY CONTINUATION — inside a quote, a line WITHOUT `>` continues the paragraph only as plain prose; an empty `* ` marker closes the quote, where in prose it cannot interrupt. Both parsers agree, and getting this wrong put the lenient count UP"
+    ]
+  },
+  {
+    "name": "⛔ r7 Claude B1 — the THEMATIC BREAK clause goes, so `***` and `___` stop ending a paragraph and the mask pairs across them. One of the classes my 380-shape grid never contained",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?:[-*_][ \\t]*){3,}\\r?$\"                  # a THEMATIC BREAK — `***`, `___`, `* * *` (r7 H1)",
+        "    r\"|(?!x)x\"                                   # a THEMATIC BREAK — SEVERED"
+      ]
+    ],
+    "expect": [
+      "⛔ r7B1: a THEMATIC BREAK `***` ends the paragraph — the grid had `---` and never `***`"
+    ]
+  },
+  {
+    "name": "⛔ r7 Claude H1 — the ordered-item clause reads the DIGIT instead of the NUMBER again, so `01.` and `001)` stop interrupting a paragraph although both parsers say they do",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|0*1[.)][ \\t]+\\S\"                          # an ordered item: only the NUMBER ONE interrupts,",
+        "    r\"|1[.)][ \\t]+\\S\"                            # an ordered item: only the NUMBER ONE interrupts,"
+      ]
+    ],
+    "expect": [
+      "⛔ r7B1: `01.` IS the number one, so it interrupts — the `1`-only rule read the DIGIT and not the NUMBER, and both parsers end the paragraph here"
+    ]
+  },
+  {
+    "name": "⛔ r7 Claude B1 — the HTML-block clause goes, so `<div>`, `<pre>` and `<!-- -->` stop ending a paragraph and the mask runs across them, suppressing the figure after",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|<[a-zA-Z!/?]\"                             # ⚠ AN HTML BLOCK, CONSERVATIVELY. CommonMark type 6",
+        "    r\"|(?!x)x\"                                   # ⚠ AN HTML BLOCK — SEVERED"
+      ]
+    ],
+    "expect": [
+      "⛔ r7B1: an HTML block start ends it — CONSERVATIVELY, see the clause's own caveat"
+    ]
+  },
+  {
+    "name": "⛔ r7 Claude H2 — the `\\\\r?` comes off the setext alternative, so under CRLF a bare `---` stops ending the paragraph while its LF twin still passes: a character class fixed in ONE alternative",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|[-=]+[ \\t]*\\r?$\"                          # a setext underline (`-` alone, `=` alone)",
+        "    r\"|[-=]+[ \\t]*$\"                             # a setext underline (`-` alone, `=` alone)"
+      ]
+    ],
+    "expect": [
+      "⛔ r7H2: ...and a CRLF `===` setext underline, which ONLY the setext alternative covers — the thematic-break clause is `[-*_]` and does not include `=`, so this is the case that actually pins `\\r?` there (the `---` twin passes either way, which is why its mutation SURVIVED until this case existed)"
+    ]
+  },
+  {
+    "name": "⛔ r7 Claude M1 — the GFM table lookahead goes, so a header plus its delimiter row stops ending the paragraph and the mask pairs across a real table. Lenient in the dialect GitHub renders",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        elif \"|\" in rest and nxt_end != -1:",
+        "        elif False and nxt_end != -1:"
+      ]
+    ],
+    "expect": [
+      "⛔ r7M1: a table HEADER plus its DELIMITER row ends the paragraph — GFM is the dialect GitHub renders, and the lenient reading was wrong in the one that matters"
+    ]
+  },
+  {
+    "name": "⛔ r8 Codex H1 — `quote_depth` stops after the FIRST marker and takes the remainder from before it, which is the pre-r8 pairwise behaviour: a nested quote reads as depth one, so the line that OPENS the inner quote is classified against the outer level and masks straight through ⟳ RETARGETED r8 Claude H1: `list_content_column` repeats `i = m.end()` verbatim, so the one-line anchor stopped resolving uniquely — #252's class again, and again inside the commit fixing a finding",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        depth += 1\n        i = m.end()",
+        "        depth += 1\n        return depth, line[i:]"
+      ]
+    ],
+    "expect": [
+      "⛔ r8H1: a NESTED quote `> > ` is depth TWO and interrupts the quoted paragraph — the pairwise version matched contiguous `(>+)` only, read depth one, and masked through it"
+    ]
+  },
+  {
+    "name": "⛔ r8 Codex H3 — the open paragraph's depth is RE-DERIVED from each line, so one lazy continuation erases the quote the paragraph is still inside and an empty `* ` is then judged by the fresh-paragraph rule, which permits it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        d, rest = quote_depth(nxt)",
+        "        d, rest = quote_depth(nxt)\n        depth = d"
+      ]
+    ],
+    "expect": [
+      "⛔ r8H3: quote state SURVIVES a lazy-continuation line — after `plain` the next line carries no marker, and an empty `* ` was then judged by the FRESH-paragraph rule, which permits it, instead of the quote rule, which closes on it"
+    ]
+  },
+  {
+    "name": "⛔ r8 — the paragraph's depth stops being taken from its FIRST line, so a span opening on a lazy continuation reads depth 0 and everything after it is judged by the fresh-paragraph rule. All 42 shapes still lenient after H1-H3 were this one construction",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        depth = max(depth, pd)",
+        "        depth = depth"
+      ]
+    ],
+    "expect": [
+      "⛔ r8: ...and a span OPENING on a lazy line inherits the quote too — depth comes from the PARAGRAPH's first line, and all 42 shapes still lenient after H1-H3 were this one"
+    ]
+  },
+  {
+    "name": "⛔ r8 own-corpus — the FENCE clause leaves `BLANK_OR_BLOCK`, so a ``` or ~~~ line stops ending a paragraph and the span masks straight through it. This was LIVE on 16 of 1,620 shapes, and the note above had already claimed zero over a grid that contained no fence",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?:`{3,}|~{3,})\"                      # ⛔ A FENCE — three or more backticks OR\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ r8 own-corpus: a TILDE fence ends the paragraph — 16 of 1,620 shapes were lenient on this class and the grid that scored zero had never contained a fence at all"
+    ]
+  },
+  {
+    "name": "⛔ r8 own-corpus — the fence characters leave `ANY_BLOCK_ISH`, so a fence on a LAZY line inside a quote stops ending the paragraph. Fixing only `BLANK_OR_BLOCK` left exactly these four shapes",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "[-*+=_>#<~`]",
+        "[-*+=_>#<]"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 own-corpus: ...and a fence on a LAZY line inside a quote, which `ANY_BLOCK_ISH` governs — four shapes survived fixing only `BLANK_OR_BLOCK`, so the clause went in BOTH"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H1 — `list_content_column` stops accumulating the marker run's width, so a nested opener like `- - - ` reports a content column of 0 and every block start inside the item goes back to being invisible ⟳ RETARGETED r9 Codex H2: the accumulation moved into `_column` when tab expansion replaced character counting, so the old anchor was gone — #252's class, ~42nd instance, and again inside the commit fixing a finding. The mutation now restarts each marker's width at column 0, which breaks the SAME property (the run's cumulative width)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        col = _column(rest[i:m.end()], col)",
+        "        col = _column(rest[i:m.end()], 0)"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H1: ...and an ATX HEADING at content column 6, which `- - - ` produces — the column is the MARKER RUN's width, not a fixed indent"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H1 — the paragraph's first line stops being asked for its list content column, which is the whole fix: `cont` is pinned to 0 and the `[ \\t]{0,3}` cap applies inside a list item, where it is wrong ⟳ RETARGETED r9 Claude H1: the line gained the `cont_seen` max when the walk-back began carrying the column across lazy continuations, so the old anchor was gone. Pinning 0 breaks the SAME property. #252's class, ~43rd instance, THIRD consecutive fold.",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    cont = max(cont_seen, list_content_column(first_rest))",
+        "    cont = 0"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H1: a BULLET at an item's content column 4 ends the paragraph — invisible to both predicates for eight rounds, because the predicate knew about `>` and not about `- `"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H1 — the quote depth is NOT re-read after the container indent is stripped, so a `>` sitting AT the content column stays hidden behind `QUOTE_MARKER`'s 3-space cap. This is the clause the last 10 of the 130 lenient shapes needed ⟳ RETARGETED r9 Claude H2: the comparison this named was CORRECTED to `d + d2 > depth`, and r9 Claude H2 now owns that line. This entry keeps the property it was written for — that the depth is RE-READ past the content column at all — by killing the re-read itself.",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            d2, rest2 = quote_depth(rest)",
+        "            d2, rest2 = 0, rest"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H1: ...and a QUOTE sitting AT the content column, which `QUOTE_MARKER`'s own 3-space cap hides — this was the last 10 of the 130 and needs the depth RE-READ after the strip, not the strip alone"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude H2 — `quote_depth` stops consuming the ONE optional space after each `>`, so a nested quote spelled with wider gaps collapses to depth one. The suite was 150/150 with this deleted, because every other case spells the nesting `> > ` where `QUOTE_MARKER`'s own 3-space tolerance masks the loss",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if i < len(line) and line[i] in \" \\t\":",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude H2: a nested quote whose inner `>` is FOUR spaces in is still depth two — the spelling that separates `quote_depth`'s space consumption from `QUOTE_MARKER`'s own cap, and the one no other case contained"
+    ]
+  },
+  {
+    "name": "⛔ r8 Claude L2 — the fence clause collapses to ONE character class, so a MIXED run like `` `~~ `` counts as a fence. Noisy rather than lenient, but unpinned: every other fence case stayed green under it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "r\"|(?:`{3,}|~{3,})\"",
+        "r\"|(?:[`~]{3,})\""
+      ]
+    ],
+    "expect": [
+      "⛔ r8 Claude L2: a MIXED run `` `~~ `` is NOT a fence, so the fence clause must read ONE character class per alternative — collapsing it to `[`~]{3,}` leaves every other fence case green"
+    ]
+  },
+  {
+    "name": "⛔ r9 Codex H2 — `_column` stops advancing a TAB to the next tab stop and counts it as one character, so a tabbed marker run undercounts its own content column and the block start at the real column goes invisible again",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        col = (col // 4 + 1) * 4 if ch == \"\\t\" else col + 1",
+        "        col = col + 1"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Codex H2: a TAB inside the marker run is FOUR COLUMNS to the next tab stop, not one character — `-\t- ` is six columns wide, and counting characters undercounted it to four, which left the block start invisible again on the very shape the first fix was for"
+    ]
+  },
+  {
+    "name": "⛔ r9 Codex M1 — `LIST_MARKER` reads only a ONE-DIGIT ordered marker, so `999)` stops opening an item. Lenient, and it survived the whole 157-case suite when found",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "(?:[-*+]|\\d{1,9}[.)])",
+        "(?:[-*+]|\\d{1,1}[.)])"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Codex M1: a THREE-DIGIT ordered marker still opens an item — `LIST_MARKER` reads `\\d{1,9}`, and narrowing it to one digit leaves every other case in this file green"
+    ]
+  },
+  {
+    "name": "⛔ r9 Claude H1 — the walk-back stops carrying the list content column across lazy continuations, so a span opening on a line that omits the item's prefix reports 0 and the container is lost. 130 of 196 shapes, unmoved by the two folds before it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            cont_seen = max(cont_seen, list_content_column(prest))\n            break",
+        "            break"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Claude H1: the span opens on a LAZY continuation — a line that omits the item's prefix entirely, so there is neither a marker NOR an indent to read and `cont` came back 0. All three generations of this fix missed it: 130 of 196 shapes, unmoved by r8 and r9"
+    ]
+  },
+  {
+    "name": "⛔ r9 Claude H2 — the nested-quote test forgets the depth already stripped from the line and reads `d2 > d`, which is structurally DEAD at every quote depth >= 1 (`1 > 1` is false) — exactly the context the clause was added for. ⚠ `d2 > 0` was a STRICTLY BETTER predicate that all 163 cases accepted, so this pins the comparison, not the clause",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            if d + d2 > depth:",
+        "            if d2 > d:"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Claude H2/B1: a list inside ONE quote whose block start is a nested quote. `d2 > d` is structurally DEAD at quote depth >= 1 — `1 > 1` is false — which is exactly where the clause was added for. The test that belongs there is `d + d2 > depth`. ⚠ AND THE FOLD MISATTRIBUTED THIS SHAPE to 'interleaved containers nested deeper than one level' and handed it to #267: there is ONE quote and ONE item, and `cont` is already correct"
+    ]
+  },
+  {
+    "name": "⛔ r9 Claude M1 — the content-column strip is skipped entirely, which also shows the clause is load-bearing BELOW column 4 and refutes the fold's bolded claim that the defect is exactly content column >= 4",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if cont:\n            k, c = 0, 0",
+        "        if False:\n            k, c = 0, 0"
+      ]
+    ],
+    "expect": [
+      "⛔ r9 Claude M1: `cont` is LOAD-BEARING below 4, which refutes the fold's bolded claim that the defect is exactly content column >= 4 — the strip runs on a remainder whose quote marker is already gone, so the 2 columns it removes are not the 2 that `BLANK_OR_BLOCK`'s own cap would have covered. `if cont >= 4:` kept all 163 cases green"
+    ]
+  },
+  {
+    "name": "⛔ r10 — `CLOSES_ITEM` narrows to `0*1[.)]`, which is `BLANK_OR_BLOCK`'s TOP-LEVEL rule, so the clause becomes redundant with it and an ordered marker other than `1` stops closing an open item. 672 of 672 shapes LENIENT when found (r9 Claude H4)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "CLOSES_ITEM = re.compile(r\"[ \\t]{0,3}\\d{1,9}[.)][ \\t]+\\S\")",
+        "CLOSES_ITEM = re.compile(r\"[ \\t]{0,3}0*1[.)][ \\t]+\\S\")"
+      ]
+    ],
+    "expect": [
+      "⛔ r10: an ordered marker OTHER than `1` closes an open list item, so it ends the item's paragraph — `0*1[.)]` is a TOP-LEVEL rule and this is not top level"
+    ]
+  },
+  {
+    "name": "⛔ r10 — the clause is guarded by `cont` instead of `below_item`, so it fires on a line AT the content column too. That line CONTINUES the item, it does not close it, and this is the bug the first version of the clause actually had. ⚠ The 672-shape corpus could NOT see it: built from `range(0, col)`, it excluded the one shape that refutes the hypothesis, so the adjacent negative is what caught it",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        elif below_item and CLOSES_ITEM.match(rest):",
+        "        elif cont and CLOSES_ITEM.match(rest):"
+      ]
+    ],
+    "expect": [
+      "...and a line AT the content column is a CONTINUATION of the item, not a close, so it does not end the paragraph either. ⛔ THIS IS THE CASE THAT CAUGHT THE FIRST VERSION OF THE CLAUSE, which tested the stripped remainder and so fired here too"
+    ]
+  }
+]

@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 178 cases
+    python3 scripts/check-plan-code.py --self-test          # 237 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -80,6 +80,7 @@ ordinary way to read a log, and the sentence was stated as an invariant.
 """
 from __future__ import annotations
 import argparse
+import ast
 import dataclasses
 import contextlib
 import io
@@ -695,6 +696,66 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
+    "scripts/check-provenance.py": 21,
+    "scripts/check-withdrawal.py": 56,   # ⟳ r10: +2 — an ordered marker other than `1` closes an
+                                         # open item, and the clause's `below_item` guard.
+                                         # ⛔ r9 Claude: and a SANCTIONED FALL of 2 — the
+                                         # indent fallback is DEAD CODE (0 of 2,466 shapes)
+                                         # because the walk-back's `cont_seen` subsumes it, so
+                                         # it is DELETED and its two entries are RETIRED WITH
+                                         # THEIR SUBJECT rather than left orphaned.
+                                         # ⟳ r9 Claude B1/H1/H2/M2: +4 — the walk-back's content
+                                         # column across lazy lines, the nested-quote
+                                         # comparison AND what it compares, and the indent
+                                         # fallback's marker guard.
+                                         # ⟳ r9 Codex H1/H2/M1: +3 — tab-expanded columns, the
+                                         # indent fallback when no marker remains, and the
+                                         # width of an ordered marker.
+                                         # ⟳ r8 Claude H1/H2/L2: +5 — the list content column
+                                         # (three clauses: the marker-run width, the paragraph's
+                                         # own column, and the quote RE-READ after the strip),
+                                         # `quote_depth`'s space consumption, and the fence
+                                         # clause's one-character-class rule.
+                                         # ⟳ r8 Codex H1-H3 + own-corpus: +5 — spaced nesting, the
+                                         # paragraph-start depth that closed the last 42, and the
+                                         # FENCE pair. ⛔ r8 CLAUDE M1: this line read `+2` while
+                                         # the manifest grew by five; the count passed and the
+                                         # sentence a reader audits it against did not. The rule
+                                         # this file states for itself is IDENTITY, NOT
+                                         # CARDINALITY — so the trail is now diffed by NAME.
+                                         # ⟳ r7 Claude M1: +1 — the GFM table lookahead.
+                                         # ⟳ r7 Claude B1/H1/H2: +4 — thematic breaks, HTML
+                                         # blocks, the NUMBER-one ordered rule, and `\r` on the
+                                         # setext anchor. All four were LENIENT shapes my own
+                                         # 380-case grid could not contain.
+                                         # ⟳ r7: +1 — LAZY CONTINUATION, which is what took the
+                                         # LENIENT count from 32 to 0.
+                                         # ⟳ r7 Codex H1: +1 — the quote-CONTINUATION rule.
+                                         # ⟳ r6 Claude M1: +1 — PARA_END's measured block-start
+                                         # rule. ⟳ r6 Claude H1: +1 — the memo keyed by VALUE.
+                                         # ⟳ r6 Codex M1: +1 — opener TRUNCATION, not deletion.
+                                         # ⟳ r5 Claude H1+H2: +2 — the opener-only escape test
+                                         # and the DOCUMENT-level mask. H2 was the function's
+                                         # entire live effect: 205/205 false suppressions.
+                                         # ⟳ AND -1, THE PERMITTED KIND OF FALL: r5 Codex's
+                                         # escaped-backtick FILTER no longer exists — the rule moved
+                                         # onto the opener, so that entry is RETIRED WITH ITS
+                                         # SUBJECT rather than orphaned, and the new H1 entry above
+                                         # is its successor. Net +2 -1 = 28 -> 29.
+                                         # ⟳ r5 #251: +1 — backtick_escaped's parity, which
+                                         # --diff-coverage flagged as reached by no mutation.
+                                         # ⟳ r5 Codex H1+M1: +3 — escaped backticks, the
+                                         # blank-line bound, and skipping an unmatched
+                                         # opener. THIRD round of corrections to one
+                                         # function; see its docstring and backlog #262.
+                                         # ⟳ r4 Codex M1: +1 — the inline-code mask. Three
+                                         # of r3's new sentence boundaries also split inside
+                                         # a code span, making the wrap decide the verdict.
+    "scripts/find-claim.py": 25,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
+                                   # returned skip set, and the verdict that names it.
+                                   # ⟳ r4 Codex M2: +1 — the guard r3 added to the TOP-LEVEL
+                                   # classification. Deleting it left the suite 79/79 green, so
+                                   # the ratchet could not see the one site that had no case.
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
@@ -841,8 +902,16 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 37,
-    "scripts/codex-frontier-model.py": 7,
+    "scripts/check-ci-watched.py": 40,
+    "scripts/codex-frontier-model.py": 21,   # ⟳ r5 Codex M2/M3/L1: +4; r5 Claude M2: +1;
+                                            # ⟳ r6 Codex M2: +2 — a DUPLICATED managed block
+                                            # and one written after `[profile]`. Both kept
+                                            # every substring the old check looked for.   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
+                                            # ⟳ r4 Claude H1: +1 — the probe's own WORLD.
+                                            # The first version survived under an empty
+                                            # HOME, which is CI and child_env both.
+                                            # goldens pinned the refusal TEXT, which is why
+                                            # a cannot-run exiting 1 survived 39 cases.
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -974,7 +1043,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-09, backlog #98: a NEW guard arrives with its manifest in the SAME commit.
     # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
     # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
-    "scripts/check-backlog-closure.py": 6,
+    "scripts/check-backlog-closure.py": 10,
     # ⟳ 2026-09-10, backlog #106: 33 -> 34. The harness always REFUSED a suite whose red could
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
@@ -1038,7 +1107,20 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 129,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+                                         # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
+                                         # as IMPOSSIBLE — "the harness REFUSES a second entry on
+                                         # one anchor" — and that was wrong: the refusal is on
+                                         # IDENTICAL anchor strings, and the line WITH its newline
+                                         # is a different one. Measured by r5: 1,516 entries loaded
+                                         # with no problem and both directions killed their case.
+                                         # A residual I called forced was a choice I had not tested.
+                                         # ⟳ r3 Claude H1: 128 -> 127, a
+                                   # PERMITTED FALL. The bare-assign branch of
+                                   # `case_name_patterns` was deleted (it had no
+                                   # name test and admitted 80 of 142 candidate
+                                   # rows), so its entry is RETIRED WITH ITS
+                                   # SUBJECT rather than orphaned. Sum 1510 -> 1509.   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1140,7 +1222,7 @@ EXPECTED_MUTATIONS = {
     #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
     #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
     #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
-    "scripts/check-review-recorded.py": 68,
+    "scripts/check-review-recorded.py": 69,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -1469,6 +1551,600 @@ EXPECTED_MUTATIONS = {
 }
 
 MANIFEST_DIR = "scripts/mutations"
+
+
+def expects_of(entry: dict) -> list[str]:
+    """An entry's `expect` as a list, whatever shape it was written in. PURE.
+
+    ⚠ MEASURED 2026-10-07: of 1,435 live entries, **709 carry a list and 726 a bare string**.
+    Iterating the field directly therefore walks a string CHARACTER BY CHARACTER, and a first
+    draft of the measurement below duly reported 43,346 expects — including `'a'`, `' '` and
+    `'F'` — instead of 1,554. A reader of this function is one line away from that bug.
+    """
+    v = entry.get("expect")
+    if v is None:
+        return []
+    return [v] if isinstance(v, str) else list(v)
+
+
+def case_name_literals(source: str) -> set:
+    """Every string literal in `source`, as the candidate set for an `expect`. PURE.
+
+    A case name is written as a literal and printed verbatim, so a name that resolves to no
+    literal is almost always an anchor that stopped binding. ⚠ ALMOST: a name built by an
+    f-string cannot be recovered statically, and MEASURED over the live manifests that is
+    **67 of 1,554 expects (4.3%)**. That is why the `expect` half WARNS and the anchor half
+    REFUSES — a 4.3% false-fire rate on a blocking gate is how #56 measured a gate getting
+    switched off.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    # ⛔ DOCSTRINGS ARE NOT CASE NAMES — r2 Codex MEDIUM, and it cost the rule in both
+    # directions at once. Every `ast.Constant` str included module, function and class
+    # docstrings, which in this repository are hundreds of characters of prose. The review's
+    # witness: a case renamed away, whose OLD title still appears inside an unrelated docstring,
+    # was forgiven — the stale expect "matches no string literal" became a mere warning again.
+    #
+    #     '"""Historical title: the old case is gone forever"""\ncase("replacement title", 1, 1)'
+    #     expect "the old case is gone forever"  ->  explained by the DOCSTRING
+    #
+    # A bare string STATEMENT is excluded for the same reason: it is a comment wearing quotes.
+    skip = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) \
+                and isinstance(n.value.value, str):
+            skip.add(id(n.value))
+    return {n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip}
+
+
+def case_name_patterns(source: str, min_static: int = 4) -> list:
+    """Each f-string in `source`, as a pattern its output must match. PURE.
+
+    ⛔ r2 Codex MEDIUM, THE OTHER DIRECTION. Containment at a 12-character floor REFUSED a
+    perfectly valid generated name: `case(f"{x} works", 1, 1)` produces titles like
+    `alpha works`, whose only static component is `" works"` — six characters, under the floor —
+    so the expect was reported as naming a case that is GONE and the step went red. A guard that
+    refuses a legitimate entry is worse than one that forgives an illegitimate one here, because
+    this half REFUSES rather than warns.
+    #
+    An f-string's STATIC SEGMENTS are statically recoverable even when its output is not, so it
+    reconstructs as a pattern: `f"{x} works"` -> `^.*? works$`, which `alpha works` matches
+    exactly. `min_static` keeps `f"{a}{b}"` — which would become `^.*?.*?$` and match
+    everything — out of the candidate set.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    # ⛔ r2 Claude MEDIUM — ONLY F-STRINGS IN A CASE-NAME POSITION. The first version walked
+    # EVERY `JoinedStr` in the module — print statements, error messages, paths, HTML — so any
+    # output template in the file could forgive a stale expect. Codex's original M1 asked for
+    # exactly this ("restrict candidates to expressions that supply suite case names") and the
+    # fold added a `min_static` floor instead, which does not do that work: `^.*?:.*? — .*?$`
+    # clears a floor of 4 and is nearly as broad as `^.*?.*?$`.
+    #
+    # A case name is a call's FIRST argument (`case(f"...", got, want)`) or the first element of
+    # a table row (`(f"...", got, want)`). MEASURED over all 1,497 entries: patterns
+    # ⟳⟳ THE "62 OF 62 FILES TO 2" FIGURE IN THIS COMMENT WAS WRONG, AND WRONG TWICE OVER
+    # (r3 Codex M1). Arithmetically: my probe `break`ed after the FIRST f-string in each
+    # file, so it measured one pattern per file; re-derived over all of them it is 23, and
+    # the review independently got 25. And conceptually: that count was never a quality
+    # measure — it conflates a NON-CASE template forgiving an expect (a defect) with a
+    # GENUINE case template forgiving something shaped exactly like its own output
+    # (unavoidable, and named as the residual two paragraphs down). Admitting MORE
+    # legitimate producers raises it while making the guard more correct, which is how a
+    # metric announces it is the wrong one. The honest figure is below.
+    #
+    # ⚠ THE RESIDUAL IS NOT A BUG AND IS STATED RATHER THAN HIDDEN: some files genuinely
+    # build case names with an f-string, so a probe shaped exactly like that template is
+    # indistinguishable from a real generated name BY CONSTRUCTION. No positional rule can
+    # separate them; only not generating case names could. Still 0 live entries depend on it.
+    out = []
+    for n in ast.walk(tree):
+        # ⛔⛔ A CASE NAME IS IDENTIFIED BY NAME, NOT BY SHAPE — r3 Codex H1 + M1, and the two
+        # previous attempts at this rule were both wrong in both directions.
+        #
+        #   attempt 1  every `ast.walk` JoinedStr        — any output template forgave an expect
+        #   attempt 2  a call's first arg, >=2 pos args  — admits `.split(sep, 1)`,
+        #                                                  `.replace(a, b)`, `re.compile(p, f)`,
+        #                                                  `max(a, b)`; MEASURED: 11 of 62 files
+        #                                                  carry such a template. AND it REFUSED
+        #                                                  `case(name=f"...")` and
+        #                                                  `name = f"..."; case(name, ...)` —
+        #                                                  false refusals, in the half that
+        #                                                  REFUSES, so a legitimate case would
+        #                                                  redden a required check.
+        #
+        # So: an argument (POSITIONAL **or KEYWORD**) of a call whose function is named like a
+        # case; the first element of a table assigned to a `*CASES*` name; or a value assigned
+        # to a plain name, which is how a case name gets built before it is passed. Those are
+        # the three forms this repository actually writes, and they are named rather than
+        # inferred from arity. MEASURED over all 1,498 entries: 8 of 8 witnesses correct
+        # (H1's three accepted, `.split`/`.replace`/`print` rejected), live MISSING **0**, and
+        # non-case templates entering the candidate set fall from **11 of 62 files to 0 — by
+        # construction, since a non-case producer cannot be named like one**.
+        # ⟳⟳ r3 Claude HIGH: "0 by construction" WAS FALSE WHEN WRITTEN — the
+        # bare-assign branch below had no name test, and 80 of 142 candidate rows
+        # came through it from 34 of 62 files. True only now that the branch is gone.
+        cands = []
+        if isinstance(n, ast.Call):
+            fn = n.func
+            name = fn.id if isinstance(fn, ast.Name) else (
+                fn.attr if isinstance(fn, ast.Attribute) else "")
+            if CASE_CALL_RE.fullmatch(name or ""):
+                # ⚠ THE FIRST POSITIONAL ARG, OR A KEYWORD ACTUALLY NAMED LIKE A NAME. Taking
+                # every argument treats a case's GOT value as a name — `case("real name",
+                # f"{x} works", 1)` — and the case written for that caught it immediately.
+                if n.args:
+                    cands = [n.args[0]]
+                cands += [kw.value for kw in n.keywords
+                          if (kw.arg or "") in CASE_NAME_KEYWORDS]
+        elif isinstance(n, ast.Assign):
+            targets = [t.id for t in n.targets if isinstance(t, ast.Name)]
+            # ⟳ r3 Claude LOW — ENDS IN "CASES", not merely contains "CASE". The looser test
+            # captured `CASE_CALL_RE` and `CASE_NAME_KEYWORDS` (constants this very fold added)
+            # and `check-fixture-variation.CASECALL`; they yielded nothing only because their
+            # values are a `re.compile` call and a `frozenset`, which is luck rather than a
+            # rule. MEASURED: tightening loses **0** live tables and excludes all four.
+            if any(t.upper().endswith("CASES") for t in targets):
+                for el in ast.walk(n.value):
+                    if isinstance(el, (ast.Tuple, ast.List)) and el.elts:
+                        cands.append(el.elts[0])
+            # ⛔ r3 Claude HIGH — THE BARE-ASSIGN BRANCH IS GONE. It was `elif len(targets)
+            # == 1: cands = [n.value]` with NO NAME TEST AT ALL, under a comment of mine
+            # claiming non-case templates enter "0 — by construction". MEASURED: **80 of 142
+            # candidate rows came from it, across 34 of 62 files** — CSS
+            # (`:root[data-theme="light"]{--bg:…`), a path (`rel = f"docs/{sub}/{f.name}"` ->
+            # `^docs/.*?/.*?$`), HTML, a SQL fragment, an error message. The reach probe moved
+            # the WRONG WAY (12 -> 17 files). And it bought nothing: live binding is byte-
+            # identical without it (0 errors, 67 warnings).
+            #
+            # ⚠ Its own case could not see this. `title = f"{x} works"` passes identically as
+            # `sql = f"{x} works"`, because the case asserted that SOME assignment produces a
+            # pattern — never that a NON-case one does not. A case that cannot distinguish the
+            # thing it is named for is the defect this branch's comment claimed to have avoided.
+            #
+            # A case name passed by KEYWORD is still accepted (r3 Codex H1); a case name built
+            # by assignment and then passed is not, and that is the trade: the keyword form is
+            # written here, the assignment form is not, and admitting it cost 80 rows.
+            #
+            # ⚠ r3 Claude LOW — FIVE FORMS THIS RULE REFUSES, STATED AND DELIBERATELY NOT CHASED.
+            # Measured with the shipped function, all yield 0 patterns:
+            #
+            #     direct.append((f"{x} works", 1, 1))      a Tuple argument to a call
+            #     CASES = {f"{x} works": (1, 1)}           a dict key
+            #     rows += [(f"{x} works", 1, 1)]           AugAssign is not ast.Assign
+            #     nm, got = f"{x} works", 1                a Tuple target yields targets == []
+            #     for t in ts: case(t, 1, 1)               the name is a loop variable
+            #
+            # ZERO live instances — `--binding` reports 0 expect errors. ⛔ AND THE DIRECTION IS
+            # THE DANGEROUS ONE: this half REFUSES, so each of these would redden a required
+            # check for a legitimate case, and `direct.append((…))` is a form
+            # `check-withdrawal.py` writes TODAY with static names — one edit away.
+            #
+            # ⤳ NOT WIDENED, ON PURPOSE. This rule has already been rewritten three times in one
+            # session (ast.walk -> arity -> name), and each widening was itself the next round's
+            # finding: the arity version admitted `.split(sep, 1)` in 11 of 62 files, and the
+            # bare-assign branch admitted 80 of 142 rows from 34 of 62. A fourth widening with no
+            # live instance to justify it is how this guard reached its third consecutive round.
+            # The forms are named here so the fix is one edit when one of them is actually
+            # written, and so the next reader is not re-deriving this list.
+        for cand in cands:
+            if not isinstance(cand, ast.JoinedStr):
+                continue
+            out.append(cand)
+    joined, out = out, []
+    for n in joined:
+        parts, static = [], 0
+        for v in n.values:
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                parts.append(re.escape(v.value))
+                static += len(v.value)
+            else:
+                parts.append(r".*?")
+        if static >= min_static:
+            out.append(re.compile("^" + "".join(parts) + "$", re.S))
+    return out
+
+
+# ⟳ r1 Claude M1. An `expect` naming no literal has TWO causes and they are not the same
+# defect: a name BUILT BY AN F-STRING cannot be recovered statically (benign, 67 of them, and
+# why this half warns rather than refuses), versus a name that was RENAMED AWAY — B1's shape,
+# where the expect can never match any case again and the mutation silently stops showing which
+# case is the guard. Summarising both together is what let B1 through: the count moved 67 -> 68
+# and a count whose only reader is a human remembering last run is not a signal.
+#
+# THE SEPARATOR, and it is not similarity. MEASURED 2026-10-07 over all 1,461 entries:
+#   difflib ratio — B1's stale expect scores 0.75 and THIRTY-ONE legitimate f-string expects
+#                   score >= 0.75. Useless: a static segment is a substring of the expect, so
+#                   high similarity is the f-string SIGNATURE, not evidence of a rename.
+#   bidirectional containment — an expect is EXPLAINED when the target holds a literal that
+#                   either contains it or is contained in it. Direction matters both ways:
+#                   `gen-dashboard` has 'open_prs' + ': a missing binary …' (literal INSIDE
+#                   expect), `check-handoff-path` has '] missing file is CANNOT RUN: got '
+#                   (expect INSIDE literal). A one-directional test leaves 2-4 false MISSINGs.
+# At a 12-character floor: 67 unmatched, **0 MISSING**, and B1's own stale expect IS flagged.
+# So this starts GREEN and can REFUSE rather than warn — the first failure appears at a floor of
+# 16, so 12 carries four characters of margin. A floor exists at all because a 3-character
+# overlap explains nothing.
+#
+# ⛔ AND THE FLOOR ALONE IS NOT ENOUGH. ONE WITNESS IS NOT A BOUND, so the rule was measured
+# against a CORPUS-WIDE FALSIFIER: for all 1,455 expects that currently DO name a literal,
+# synthesise the rename the r1 fold actually performed on B1 (swap the opening words, keep the
+# tail), remove the original literal, and ask whether the rule still forgives the now-stale
+# expect. It forgave **41 of 1,455 (2.8%)** — the floor is satisfied by any 12 characters shared
+# with ANY literal in the file, and these files are full of long ones.
+#
+#   rule                   live MISSING   B1 flagged   wrongly forgiven
+#   floor 12 only                     0         yes    41/1455  = 2.9%
+#   floor 12 + 30% of expect          0         yes    10/1455  = 0.7%     <- adopted
+#   floor 12 + 40% of expect          7         yes     3/1455  = 0.2%
+#   floor 12 + 50% of expect         18         yes     0/1455  = 0.0%
+#
+# ⚠ THE DENOMINATOR IS THIS COMMIT'S. It moves whenever a manifest entry is added, so the
+# table was re-derived with the SHIPPED function after the fraction landed rather than carried
+# over from the prototype that chose it: 0 missing, 10 of 1,455.
+#
+# The overlapping literal must therefore cover at least 30% of the expect as well as clearing
+# the floor. 40% and beyond refuse live entries, and this half REFUSES rather than warns, so a
+# rule that is not green on arrival is a rule that gets switched off (#56).
+#
+# ⚠ THE RESIDUAL IS A RATE PER GENERATOR, NOT A BOUND — r3 Claude MEDIUM, which caught this note
+# calling itself "the honest bound" while measuring ONE rename shape:
+#
+#     rename generator                      checked   forgiven     rate
+#     prefix swap (what I measured)           1,455         10    0.69%
+#     tail swap, head kept                    1,455         12    0.82%
+#     TRUNCATION, head kept                   1,455         90    6.19%
+#
+# The review's own truncation generator reported 8.64%; the shapes differ, the conclusion does
+# not. **The honest statement is the WORST observed rate WITH its generator named: about 6% under
+# truncation, an order of magnitude above the 0.7% this note used to present as the bound.** A
+# bound that does not say how it was generated is a sample pretending to be a limit — the same
+# defect as the figures backlog #261 is about, and I wrote it in the act of fixing those.
+#
+# ⤳ HOW TO RE-DERIVE, so the next reader checks rather than believes: for every expect
+# that names a literal, synthesise `" ".join(["the","REVISED","wording"] + title.split()[4:])`,
+# drop the original literal from the set, and count how many `expect_explained` forgives.
+# r3 Codex H1/M1: the function names this repository gives a case-registering call. Named, so a
+# two-argument `.split` or `re.compile` cannot be mistaken for one by arity alone.
+CASE_CALL_RE = re.compile(r"case|_case|\w*_case")
+
+# The keyword a case name arrives under, when it is passed by keyword (r3 Codex H1).
+CASE_NAME_KEYWORDS = frozenset({"name", "title", "label", "desc", "description"})
+
+EXPECT_OVERLAP_FLOOR = 12
+EXPECT_OVERLAP_FRACTION = 0.3
+
+
+def expect_explained(expect: str, literals: set, floor: int = EXPECT_OVERLAP_FLOOR,
+                     fraction: float = EXPECT_OVERLAP_FRACTION) -> bool:
+    """Could some literal in the target have PRODUCED this expect? PURE.
+
+    True means an f-string plausibly built the case name, so the expect naming no whole literal
+    is noise. False means nothing in the file can produce it — the case was renamed away, and
+    the mutation that names it can no longer show which case is the guard.
+
+    Measured false-forgive rate 0.7% under a prefix-swap generator and about 6% under
+    truncation (10 and 90 of 1,455); see the table above, and note that the rate depends on
+    the generator — it is not a single bound
+    and what the alternatives cost.
+    """
+    need = max(floor, int(len(expect) * fraction))
+    return any(len(lit) >= need and (lit in expect or expect in lit) for lit in literals)
+
+
+def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
+    """(errors, warnings) for anchors that do not bind and expects that name no case. PURE.
+
+    ⛔ BACKLOG #252 — FIVE instances in one session, and a SIXTH while this very row was being
+    closed. An anchor binds by TEXT, so an edit *elsewhere in the file* silently unbinds it, and
+    the only signal was a whole file reporting `NOT MEASURED — 175 of 176` after a **14m58s**
+    shard: 176 entries bought no verdict because one could not bind.
+
+    This pass is eager and cheap — MEASURED at **66 ms over 1,443 anchors across 62 manifests**
+    at this commit — so it runs before any tree is staged. A 15-minute shard must never be the
+    thing that tells you a find-string moved.
+
+    ⭐ It found its sixth instance on its first live run: the #254 fix rewrote the refusal line
+    that `codex-frontier-model.json` was anchored to, inside the commit that fixed #254 — and
+    that entry's own name already recorded an identical retarget earlier the same day.
+
+    ERRORS (anchor half): a find-string that occurs zero times, or more than once. Both are
+    defects — zero measures nothing, and more than one means the mutation is not the edit its
+    author described.
+    WARNINGS (expect half): a name resolving to no string literal in the target.
+    """
+    errors: list = []
+    warnings: list = []
+    lits: dict = {}
+    pats: dict = {}
+    for e in entries:
+        tgt = e.get("file", "")
+        src = source_of.get(tgt)
+        name = str(e.get("name", "<unnamed>"))[:70]
+        if src is None:
+            errors.append(f"{name}: target {tgt} is unreadable — the anchor cannot be checked")
+            continue
+        # ⛔ SEQUENTIALLY. The runner applies a multi-edit entry one edit after another, so edit
+        # 2 must bind in the text edit 1 PRODUCED. Validating every anchor against the original
+        # passed `[["return True","return False"],["True","False"]]` while the real run reported
+        # `anchor NOT FOUND` for the second — round 1 Codex Medium: the eager pass green-lit a
+        # mutation that cannot bind during execution, which is the exact thing it exists to stop.
+        staged = src
+        for find, _repl in e.get("edits", []):
+            n = staged.count(find)
+            shown = find.strip().splitlines()[0][:90]
+            # Two branches, not one, so each defect has its OWN anchor and can be mutated
+            # separately — a single `n != 1` is one mutation pretending to cover two rules.
+            if n == 0:
+                errors.append(f"{name}: its anchor is GONE from {tgt} — an edit elsewhere "
+                              f"unbound it, and this mutation now measures nothing"
+                              f"\n      {shown!r}")
+            elif n > 1:
+                errors.append(f"{name}: its anchor occurs {n}x in {tgt} — ambiguous, so the "
+                              f"mutation is not the edit its author described"
+                              f"\n      {shown!r}")
+            if n == 1:
+                staged = staged.replace(find, _repl, 1)
+        if tgt not in lits:
+            lits[tgt] = case_name_literals(src)
+            pats[tgt] = case_name_patterns(src)
+        for ex in expects_of(e):
+            if ex in lits[tgt]:
+                continue
+            # ⟳ r1 Claude M1 — two populations, two severities. See EXPECT_OVERLAP_FLOOR.
+            # ⟳ r2 Codex Medium — an f-string that PRODUCES this name explains it exactly, and
+            # is checked before the inexact containment rule.
+            if any(pat.match(ex) for pat in pats[tgt]) or expect_explained(ex, lits[tgt]):
+                warnings.append(f"{name}: expect {ex[:60]!r} matches no string literal in {tgt}")
+            else:
+                errors.append(f"{name}: its expect names a case that is GONE from {tgt} — no "
+                              f"literal there can produce it, so this mutation can no longer "
+                              f"show WHICH case is the guard"
+                              f"\n      {ex[:90]!r}")
+    return errors, warnings
+
+
+# ── backlog #251: what this branch WROTE, not what someone enumerated ────────────────────────
+# ⛔ The sweep is excellent at defending what a manifest names and BLIND to what was just
+# written — and a fix is by definition newly written. Measured on PR #364: the round-3 coverage
+# fold was two `print` statements no entry named (#241), and round 5 then found that severing
+# `if problems:` left the suite 104/104 GREEN while contrast regressions reported SUCCESS
+# (#248). One line removing the gate's verdict, nothing red.
+#
+# ⭐ GRANULARITY WAS CHOSEN BY MEASUREMENT, over this branch's own diff:
+#     per LINE      1,289 of 1,331 behavioural lines uncovered   (97%)  — unusable
+#     per FUNCTION     33 of    57 functions uncovered           (58%)  — still mostly noise
+#     per FUNCTION, with the exemptions below
+#                       9 of    28 uncovered                     (32%)  — and all nine were real
+# A line-level rule is hopeless because one anchor covers one line while a mutation exercises a
+# whole function. #56 is the reason the first two are not shipped.
+IO_CALLS = frozenset({
+    "run", "check_output", "Popen", "open", "read_text", "write_text", "iterdir", "rglob",
+    "glob", "mkdir", "unlink", "exists", "is_file", "is_dir", "stat", "getenv", "system",
+    # loading a module off disk is a fetch too — `_find_claim` in check-withdrawal.py was
+    # flagged until this line, and importing a sibling is exactly the fetch half the rule
+    # deliberately leaves uncovered.
+    "exec_module", "spec_from_file_location", "module_from_spec",
+})
+SUITE_FUNCS = frozenset({"_self_test", "self_test"})
+# ⚠ Bare NAMES that really are I/O. `stat`, `run`, `glob` and friends are NOT here: as bare
+# names they are far more often a local helper than the stdlib, and treating them as I/O
+# exempted a pure rule from coverage — round 1 Codex Medium.
+IO_BUILTINS = frozenset({"open", "input"})
+
+
+def _own_body_nodes(fn):
+    """Every node in `fn` EXCLUDING the bodies of functions nested inside it.
+
+    `ast.walk` descends into nested definitions, so an inner helper's `open()` was read as the
+    OUTER function doing I/O — exempting a pure rule from the coverage requirement.
+    """
+    out = []
+    stack = list(ast.iter_child_nodes(fn))
+    while stack:
+        n = stack.pop()
+        out.append(n)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue                      # its body belongs to IT, not to `fn`
+        stack.extend(ast.iter_child_nodes(n))
+    return out
+
+
+def coverage_exempt(name: str, enclosing, does_io: bool) -> bool:
+    """Is this function outside what a mutation manifest is expected to reach? PURE.
+
+    Four exemptions, each measured rather than assumed — they take the firing rate from 58% to
+    32%, and every finding that survives them was a genuine gap on the branch that wrote this:
+
+      * the SUITE itself, and anything nested inside it — mutating a case is not the point;
+      * `main`, the CLI dispatch, which `check-main-drivable.py` already owns;
+      * dunders — `__init__`, `__repr__` and friends carry no rule;
+      * anything doing I/O. `separate-the-rule-from-the-fetch` is this repository's own lesson:
+        the fetch half is deliberately not unit-tested, so demanding a mutation inside it is
+        demanding coverage the design says not to write.
+    """
+    return (name in SUITE_FUNCS or name == "main" or name.startswith("__")
+            or does_io or enclosing in SUITE_FUNCS)
+
+
+def uncovered_functions(src: str, changed_lines: set, anchored: set) -> list:
+    """Non-exempt functions this diff touched that no mutation anchor reaches. PURE."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    spans: dict = {}
+    exempt: set = set()
+
+    def walk(node, enclosing):
+        for ch in ast.iter_child_nodes(node):
+            if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                spans[ch.name] = (ch.lineno, ch.end_lineno or ch.lineno)
+                # ⛔ TWO DEFECTS ROUND 1 FOUND HERE, both making the exemption too generous:
+                #   * a BARE NAME was enough, so `def rule(x): return stat(x) > 10` — a pure
+                #     rule calling a local helper named `stat` — was exempted. Only ATTRIBUTE
+                #     calls (`p.read_text()`) and a tiny set of real builtins count now.
+                #   * `ast.walk` descends into NESTED functions, so an unused inner helper
+                #     containing `open("x")` exempted its pure outer rule. The body is now
+                #     scanned with nested function bodies pruned.
+                does_io = any(
+                    isinstance(n, ast.Call) and (
+                        (isinstance(n.func, ast.Attribute) and n.func.attr in IO_CALLS)
+                        or (isinstance(n.func, ast.Name) and n.func.id in IO_BUILTINS))
+                    for n in _own_body_nodes(ch))
+                if coverage_exempt(ch.name, enclosing, does_io):
+                    exempt.add(ch.name)
+                walk(ch, ch.name if ch.name in SUITE_FUNCS else enclosing)
+            else:
+                walk(ch, enclosing)
+
+    walk(tree, None)
+
+    def owner(line: int):
+        best = None
+        for nm, (a, b) in spans.items():
+            if a <= line <= b and (best is None or (b - a) < (spans[best][1] - spans[best][0])):
+                best = nm
+        return best
+
+    touched = {o for ln in changed_lines if (o := owner(ln))}
+    return sorted(touched - exempt - anchored)
+
+
+def changed_lines_by_path(diff_text: str) -> dict:
+    """path -> set of line numbers this diff touches in the NEW file. PURE."""
+    out: dict = {}
+    cur = ""
+    for line in diff_text.split("\n"):
+        if line.startswith("+++ b/"):
+            cur = line[6:].strip()
+        elif line.startswith("@@") and cur:
+            m = re.search(r"\+(\d+)(?:,(\d+))?", line)
+            if m:
+                start = int(m.group(1))
+                count = int(m.group(2) or 1)
+                out.setdefault(cur, set()).update(range(start, start + count))
+    return out
+
+
+def run_diff_coverage(root: pathlib.Path, base: str) -> int:
+    """backlog #251, WARN-ONLY. 0 always unless the instrument could not run (2)."""
+    try:
+        r = subprocess.run(["git", "diff", "--unified=0", f"{base}...HEAD", "--", "scripts/"],
+                           capture_output=True, text=True, cwd=root)
+    except OSError as exc:
+        print(f"CANNOT RUN — git could not be invoked: {exc}", file=sys.stderr)
+        return 2
+    if r.returncode != 0:
+        print(f"CANNOT RUN — git diff against {base} failed. NOT CHECKED.", file=sys.stderr)
+        return 2
+    by_path = changed_lines_by_path(r.stdout)
+    if not by_path:
+        print("diff coverage — this branch changes nothing under scripts/.")
+        return 0
+    entries, _problems = load_manifests(root)
+    total = flagged = 0
+    for path in sorted(by_path):
+        if not path.endswith(".py"):
+            continue
+        f = root / path
+        if not f.is_file():
+            continue
+        src = f.read_text(encoding="utf-8")
+        anchored: set = set()
+        for e in entries:
+            if e.get("file") != path:
+                continue
+            for find, _r in e.get("edits", []):
+                i = src.find(find)
+                if i < 0:
+                    continue
+                ln = src.count("\n", 0, i) + 1
+                try:
+                    tree = ast.parse(src)
+                except SyntaxError:
+                    continue
+                for n in ast.walk(tree):
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                            and n.lineno <= ln <= (n.end_lineno or n.lineno):
+                        anchored.add(n.name)
+        gaps = uncovered_functions(src, by_path[path], anchored)
+        total += 1
+        if gaps:
+            flagged += len(gaps)
+            print(f"  {path}")
+            for g in gaps:
+                print(f"      {g}() changed, and no mutation anchor lands inside it")
+    if flagged:
+        print(f"WARN — {flagged} function(s) this branch changed carry no mutation that reaches "
+              f"them. The sweep defends what a manifest names and is blind to what was just "
+              f"written, and a fix is by definition newly written (backlog #251). Warn-only: "
+              f"comments and pure refactors do produce false positives, and a gate that is red "
+              f"without cause gets switched off (#56).")
+    else:
+        print(f"diff coverage ok — every non-exempt function changed across {total} file(s) has "
+              f"a mutation anchored inside it.")
+    return 0
+
+
+def run_binding(root: pathlib.Path, verbose: bool = False) -> int:
+    """The eager pass as a command. 0 = bound, 1 = an anchor does not bind, 2 = CANNOT RUN.
+
+    ⟳ r1 Claude L1 — `quiet` IS GONE. It had one caller, which never passed it, and no case
+    passed it either; its only behaviour was turning two CANNOT RUNs — a manifest that does
+    not load, and no entries at all — into rc=0. So the fail-open arms were unreachable and
+    unmeasured, in a file whose own rule is that a check unable to reach its subject FAILS.
+    Deleted rather than given a contrived caller: a loaded gun with no shooter is still one."""
+    entries, problems = load_manifests(root)
+    if problems:
+        # ⛔ DEFER, do not pre-empt. A manifest that does not LOAD is already owned by
+        # `mutate_delivered`'s report — the comment at the `--mutate` dispatch says so, and my
+        # first version returned 2 here instead, which broke two existing cases about the
+        # shortfall tally. This pass answers one question: do the anchors BIND. It must not
+        # answer a question that already has an owner (one mechanism per concern).
+        for pr in problems:
+            print(pr, file=sys.stderr)
+        return 2
+    if not entries:
+        print("CANNOT RUN — no manifest entries. A zero over nothing is not a pass.",
+              file=sys.stderr)
+        return 2
+    src_of: dict = {}
+    for e in entries:
+        tgt = e.get("file", "")
+        if tgt not in src_of:
+            f = root / tgt
+            try:
+                src_of[tgt] = f.read_text(encoding="utf-8")
+            except OSError:
+                src_of[tgt] = None
+    errors, warnings = binding_problems(entries, src_of)
+    anchors = sum(len(e.get("edits", [])) for e in entries)
+    # ⚠ THE WARNINGS ARE SUMMARISED, NOT LISTED. 67 of them print on every clean run, and a
+    # guard that prints 67 lines when nothing is wrong is one nobody reads — the attention half
+    # of #56. The COUNT is the signal: if it moves, something changed. `-v` for the detail.
+    if verbose:
+        for w in warnings:
+            print(f"  warn  {w}")
+    for er in errors:
+        print(f"  ERROR {er}", file=sys.stderr)
+    if errors:
+        print(f"UNBOUND — {len(errors)} anchor problem(s) over {anchors} anchors in "
+              f"{len(entries)} entries. A mutation whose anchor does not bind measures NOTHING, "
+              f"and the only other signal is a whole file reporting NOT MEASURED after a "
+              f"15-minute shard (backlog #252).", file=sys.stderr)
+        return 1
+    print(f"binding OK — {anchors} anchor(s) across {len(entries)} entries each resolve to "
+          f"exactly one site; {len(warnings)} expect(s) name no whole literal but ARE "
+          f"explained by one (f-string case names; a renamed-away expect is an ERROR above, "
+          f"not part of this count — r1 Claude M1).")
+    return 0
+
 
 
 def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
@@ -2261,8 +2937,12 @@ def parse_fail_names(out: str) -> list[str]:
     implementation of one rule, drifted on the day it was written. Both sides call this now.
 
     Two clauses, and the second is easy to miss:
-      * only a line STARTING with `[FAIL] ` is a case name. A mid-line marker is not — measured
-        round 5, where slicing `[7:]` blind produced a confident, wrong name;
+      * only a line whose STRIPPED form starts with `[FAIL] ` is a case name. A mid-line marker is
+        not — measured round 5, where slicing `[7:]` blind produced a confident, wrong name.
+        ⟳ r7 Claude L2 — THIS CLAUSE USED TO SAY "a line STARTING with", omitting the `.strip()`
+        the code applies, and the gap cost a measurement cycle: a reviewer and I both wrote
+        `startswith("[FAIL] ")` against this suite's INDENTED output, read zero kills, and believed
+        it. The docstring was stricter than the code and the code is right — a suite may indent;
       * the name is truncated at the LAST `": got "`, because the canonical line is
         `[FAIL] {name}: got {got!r} want {want!r}` and a case name may itself contain a colon.
 
@@ -3396,6 +4076,7 @@ def _self_test() -> int:
                                       "scripts/check-producer-enumeration.py",
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
+                                      "scripts/check-provenance.py",
                                       "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
                                       "scripts/check-rc-contract.py",
@@ -3416,10 +4097,12 @@ def _self_test() -> int:
                                       # manifest — and it is NOT a `check-*` guard, so this list is
                                       # the only place that names it. Its R4 debt is dropped from
                                       # WIDENED_MANIFEST_DEBT in the same commit.
+                                      "scripts/check-withdrawal.py",
                                       "scripts/codex-frontier-model.py",
                                       "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
+                                      "scripts/find-claim.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
@@ -4949,7 +5632,244 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1408)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1555)
+
+    # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
+    _SRC251 = (
+        "def pure_rule(x):\n"
+        "    return x + 1\n"
+        "\n"
+        "def fetches():\n"
+        "    return open('f').read()\n"
+        "\n"
+        "def main():\n"
+        "    return 0\n"
+        "\n"
+        "def _self_test():\n"
+        "    def helper():\n"
+        "        return 1\n"
+        "    return helper()\n"
+    )
+    case("⭐ a changed PURE function with no anchor is reported",
+         uncovered_functions(_SRC251, {2}, set()), ["pure_rule"])
+    case("...and is silent once an anchor lands inside it",
+         uncovered_functions(_SRC251, {2}, {"pure_rule"}), [])
+    case("a function that does I/O is exempt — the fetch half is deliberately uncovered",
+         uncovered_functions(_SRC251, {5}, set()), [])
+    case("`main` is exempt; check-main-drivable.py owns it",
+         uncovered_functions(_SRC251, {8}, set()), [])
+    case("the suite itself is exempt — mutating a case is not the point",
+         uncovered_functions(_SRC251, {11}, set()), [])
+    case("⭐ ...and so is a helper NESTED inside the suite, which is scaffolding",
+         uncovered_functions(_SRC251, {12}, set()), [])
+    case("a file that does not parse yields nothing rather than raising",
+         uncovered_functions("def (", {1}, set()), [])
+    # ⛔ ROUND 1 CODEX MEDIUM — the I/O exemption was too generous in two ways.
+    case("⭐ a BARE NAME that merely looks like I/O does not exempt a pure rule",
+         uncovered_functions("def rule(x):\n    return stat(x) > 10\n", {2}, set()), ["rule"])
+    case("⭐ ...and I/O inside a NESTED helper does not exempt the outer rule",
+         uncovered_functions(
+             "def rule(x):\n    def helper():\n        return open('x').read()\n    return x + 1\n",
+             {4}, set()), ["rule"])
+    case("a genuine attribute-call read still exempts",
+         uncovered_functions("def fetch(p):\n    return p.read_text()\n", {2}, set()), [])
+    case("`open` as a bare builtin still counts as I/O",
+         uncovered_functions("def fetch(p):\n    return open(p).read()\n", {2}, set()), [])
+    # ⛔ ROUND 1 CODEX MEDIUM — multi-edit anchors must bind SEQUENTIALLY.
+    case("⭐ a second edit whose anchor only exists BEFORE the first edit is UNBOUND",
+         len(binding_problems([{"name": "m", "file": "scripts/s.py",
+                                "edits": [["return True", "return False"], ["True", "False"]]}],
+                              {"scripts/s.py": "def f():\n    return True\n"})[0]), 1)
+    case("...and a genuinely sequential pair is clean",
+         binding_problems([{"name": "m", "file": "scripts/s.py",
+                            "edits": [["return True", "return MAYBE"], ["MAYBE", "False"]]}],
+                          {"scripts/s.py": "def f():\n    return True\n"})[0], [])
+    case("coverage_exempt: a dunder carries no rule",
+         coverage_exempt("__repr__", None, False), True)
+    case("coverage_exempt: an ordinary pure function is NOT exempt",
+         coverage_exempt("decide", None, False), False)
+    case("coverage_exempt: doing I/O exempts it",
+         coverage_exempt("decide", None, True), True)
+    case("coverage_exempt: being nested in the suite exempts it",
+         coverage_exempt("helper", "_self_test", False), True)
+    # ⚠ THE CASE ABOVE EXERCISES `enclosing`, NOT `name` — measured: the mutation deleting
+    # `name in SUITE_FUNCS` SURVIVED it. The suite function itself needs its own case.
+    case("coverage_exempt: the suite function ITSELF is exempt, by NAME",
+         coverage_exempt("_self_test", None, False), True)
+    # ⚠ AND THE NESTED-WALK CASE BELOW NEEDS A NON-SUITE PARENT. With recursion removed, a
+    # helper nested in an ordinary function is still reported — under its PARENT's name — so a
+    # case that only counts findings cannot see the difference. This one names it.
+    case("⭐ a helper nested in an ORDINARY function is reported under its OWN name",
+         uncovered_functions(
+             "def outer(x):\n    def inner(y):\n        return y + 1\n    return inner(x)\n",
+             {3}, set()), ["inner"])
+    case("changed_lines_by_path reads a hunk header into line numbers",
+         changed_lines_by_path("+++ b/scripts/a.py\n@@ -1 +4,2 @@"), {"scripts/a.py": {4, 5}})
+    case("...and a single-line hunk has no count, defaulting to one line",
+         changed_lines_by_path("+++ b/scripts/a.py\n@@ -1 +9 @@"), {"scripts/a.py": {9}})
+    case("...and a diff naming no file yields nothing",
+         changed_lines_by_path("@@ -1 +1 @@"), {})
+
+    # ── backlog #252: the eager binding pass ────────────────────────────────────────────────
+    _SRC = {"scripts/a.py": "def f():\n    return 1\n\ncase('the name', 1, 1)\n"}
+    case("⭐ an anchor absent from its target is an ERROR, not a 15-minute shard",
+         len(binding_problems([{"name": "m", "file": "scripts/a.py",
+                                "edits": [["return 2", "return 3"]]}], _SRC)[0]), 1)
+    case("an anchor present exactly once is clean",
+         binding_problems([{"name": "m", "file": "scripts/a.py",
+                            "edits": [["return 1", "return 2"]]}], _SRC)[0], [])
+    case("⭐ an AMBIGUOUS anchor — present twice — is an error too, because the mutation is "
+         "then not the edit its author described",
+         len(binding_problems([{"name": "m", "file": "scripts/dup.py",
+                                "edits": [["x", "y"]]}], {"scripts/dup.py": "x x"})[0]), 1)
+    case("an unreadable target is an error rather than a silent skip",
+         len(binding_problems([{"name": "m", "file": "scripts/gone.py",
+                                "edits": [["a", "b"]]}], {"scripts/gone.py": None})[0]), 1)
+    case("an expect naming a real case literal produces no warning",
+         binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                            "expect": ["the name"]}], _SRC)[1], [])
+    # ── r1 Claude M1: the expect half has TWO populations and two severities ──────────────
+    # ⟳ THIS CASE USED TO ASSERT (1, 0) — "WARNS rather than errs (4.3% are f-strings)" — and
+    # that lenience is what let B1 through: a renamed-away expect was summarised beside 67
+    # f-string names. The 4.3% figure was right about f-strings and wrong as a reason to
+    # forgive every unmatched expect. Now an UNEXPLAINED one errs; an EXPLAINED one still warns.
+    case("⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning",
+         (len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                                 "expect": ["no such case"]}], _SRC)[1]),
+          len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                                 "expect": ["no such case"]}], _SRC)[0])), (0, 1))
+    _FSTR = {"scripts/b.py": "case(f'{x} produced by an f-string', 1, 1)\n"}
+    case("...but one a literal INSIDE it could have produced still only WARNS",
+         (len(binding_problems([{"name": "m", "file": "scripts/b.py",
+                                 "edits": [["f-string", "g-string"]],
+                                 "expect": ["a name produced by an f-string"]}], _FSTR)[1]),
+          len(binding_problems([{"name": "m", "file": "scripts/b.py",
+                                 "edits": [["f-string", "g-string"]],
+                                 "expect": ["a name produced by an f-string"]}], _FSTR)[0])),
+         (1, 0))
+    _PREF = {"scripts/c.py": "print(f'[ok] missing file is CANNOT RUN: got {c}')\n"}
+    case("...and so does one CONTAINED IN a literal — the containment runs BOTH ways, which a "
+         "one-directional test got wrong on 2 live files",
+         len(binding_problems([{"name": "m", "file": "scripts/c.py",
+                                "edits": [["CANNOT RUN", "CANNOT WALK"]],
+                                "expect": ["missing file is CANNOT RUN"]}], _PREF)[1]), 1)
+    # ⚠ THE FIXTURE MUST HOLD A SHORT LITERAL THAT **WOULD** MATCH BELOW THE FLOOR, or the case
+    # passes for an ambient reason. The first version used literals none of which appeared in the
+    # expect at any length, so dropping the floor to 0 changed nothing and the mutation SURVIVED
+    # a green suite — `a-case-can-pass-for-an-ambient-reason`, caught by the sweep, not by me.
+    # "case" (4 chars) IS inside the expect, so this case is the floor and nothing else.
+    # ⚠ THE LITERALS HERE ARE 8 AND 10 CHARACTERS, chosen so the FLOOR is the binding
+    # constraint and the fraction is not: a 20-char expect needs int(20*0.3)=6, which both
+    # clear, and 12, which neither does. The earlier fixture used 4-5 char literals, and once
+    # the fraction term arrived it covered for the floor — the floor mutation SURVIVED a green
+    # 220/220. A class fix that makes an existing mutation unkillable is backlog #154's shape,
+    # and only the sweep sees it.
+    case("the overlap FLOOR refuses a coincidence — a short shared literal explains nothing",
+         expect_explained("a renamed case title", {"renamed ", "case title"}), False)
+    case("...and the same fixture at a floor of 0 IS explained, which is what makes the line "
+         "above a test of the floor rather than of the fixture or of the fraction",
+         expect_explained("a renamed case title", {"renamed ", "case title"}, floor=0), True)
+    # ── r2 Codex MEDIUM: the candidate SET was wrong in both directions ─────────────────────
+    _DOC = ('"""Historical title: the old case is gone forever"""\n'
+            'case("replacement title", 1, 1)')
+    case("⭐ r2: a stale title surviving inside a DOCSTRING is NOT an explanation",
+         expect_explained("the old case is gone forever", case_name_literals(_DOC)), False)
+    case("...and the replacement title, being a real case name, still IS a literal",
+         "replacement title" in case_name_literals(_DOC), True)
+    _FS = 'case(f"{x} works", 1, 1)'
+    case("⭐ r2: an f-string that PRODUCES the name explains it exactly, however short its "
+         "static part",
+         any(p.match("alpha works") for p in case_name_patterns(_FS)), True)
+    case("...and it does not explain a name it could never produce",
+         any(p.match("alpha fails") for p in case_name_patterns(_FS)), False)
+    case("...and an f-string with NO static text explains nothing, or it would explain everything",
+         case_name_patterns('case(f"{a}{b}", 1, 1)'), [])
+    # ── r2 Claude MEDIUM: only a CASE-NAME POSITION supplies a candidate ────────────────────
+    case("⭐ r2: an f-string that is NOT in a case-name position supplies no pattern — an output "
+         "template could forgive a stale expect in 62 of 62 files before this",
+         case_name_patterns('print(f"progress: {n} — {m} done")'), [])
+    case("...and the same f-string IN a case-name position does supply one",
+         len(case_name_patterns('case(f"progress: {n} — {m} done", 1, 1)')), 1)
+    case("...and a TABLE ROW's first element counts too, which is how most tables here are built",
+         len(case_name_patterns('CASES = [(f"{x} works", 1, 1)]')), 1)
+    case("...while a LATER POSITIONAL argument does not, because a case name is the first one "
+         "and the rest are the expectation",
+         case_name_patterns('case("real name", f"{x} works", 1)'), [])
+    # ── r3 Codex H1: the two forms the positional rule FALSELY REFUSED ──────────────────────
+    case("⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused",
+         len(case_name_patterns('case(name=f"{x} works", got=g(), want=1)')), 1)
+    # ⟳ r3 Claude HIGH — THIS CASE IS REPLACED, not deleted, and the replacement is the one it
+    # should always have been: it asserted that SOME assignment yields a pattern, which is true
+    # of `sql = f"..."` too, so it could not see that the branch admitted 80 non-case rows.
+    case("⭐ r3: an assignment is NOT a case-name producer — `sql = f\"...\"` and "
+         "`title = f\"...\"` are indistinguishable, and the branch that accepted both admitted "
+         "80 of 142 candidate rows from 34 of 62 files",
+         (case_name_patterns('title = f"{x} works"'),
+          case_name_patterns('sql = f"SELECT {col} FROM t"')), ([], []))
+    case("...and a NON-case call is refused however many arguments it has — `.split(sep, 1)` "
+         "was a pattern under the positional rule, in 11 of 62 files",
+         case_name_patterns('parts = html.split(f"<h2>{heading}</h2>", 1)'), [])
+    case("...as is `re.compile`, which is the same shape", case_name_patterns(
+         'RX = re.compile(f"\\b{word}\\b", re.I)'), [])
+    case("...while the same f-string at min_static=0 WOULD match anything, which is why the "
+         "floor on static text exists",
+         bool(case_name_patterns('case(f"{a}{b}", 1, 1)', min_static=0)[0].match("literally any")),
+         True)
+
+    # ── the FRACTION, which the floor alone cannot express (measured 2.9% -> 0.7%) ───────────
+    # A long expect sharing only a short run with some unrelated literal is the shape that
+    # slipped through: 12 characters out of 80 explains nothing about the other 68.
+    _LONGEX = "the REVISED wording counts as unresolved, never as done"
+    case("⭐ a 13-char overlap does NOT explain a 55-char expect — the floor alone forgave 41 "
+         "of 1,455 synthesised renames this way",
+         expect_explained(_LONGEX, {"never as done"}), False)
+    case("...and the SAME pair is forgiven when the fraction is dropped, so the case tests the "
+         "fraction and not the fixture",
+         expect_explained(_LONGEX, {"never as done"}, fraction=0.0), True)
+    case("...while a literal covering most of the expect still explains it, which is what keeps "
+         "the 67 live f-string names out of the error list",
+         expect_explained(_LONGEX, {"wording counts as unresolved, never as done"}), True)
+
+    # ⛔ r4 Codex LOW — BOTH CONSTANTS WERE UNPINNED, AND A SURVIVING MUTATION IS NOT A TEST.
+    # Measured over this file's own suite, in memory, with the control green at 234/234: FLOOR
+    # 12->11 passed 234/234, FLOOR 12->13 passed 234/234, FRACTION 0.3->0.4 passed 234/234. Only
+    # 0.3->0.2 was killed. Three of four adjacent steps bought nothing, so either constant could
+    # be retuned by a future reader with the suite still green — which is the state the ratchet
+    # exists to forbid. These three cases bracket each constant from the side the old ones did
+    # not: the floor from ABOVE and BELOW, and the fraction at the step that was free.
+    _SHORTEX = "the fold is clean and converged"                     # 31 chars; int(31*0.3) = 9,
+    _LONG97 = ("the replacement figure beside the old one means this text is correcting itself "
+               "today and tomorrow")                                 # 97 chars; int(97*0.3) = 29
+    case("⭐ a 12-char literal explains a 31-char expect, because the FLOOR and not the fraction "
+         "is what governs a short expect — this is the case a floor of 13 breaks",
+         expect_explained(_SHORTEX, {"is clean and"}), True)
+    case("...and an 11-char literal over the SAME expect does NOT, so the floor is bracketed from "
+         "both sides and a floor of 11 breaks this one",
+         expect_explained(_SHORTEX, {"is clean an"}), False)
+    case("⭐ a 36-char literal explains a 97-char expect at need=29, which a fraction of 0.4 "
+         "refuses at need=38 — the step that was free before this case",
+         expect_explained(_LONG97, {"figure beside the old one means this"}), True)
+    case("⭐ THE WITNESS: B1's own stale expect is refused by this rule",
+         expect_explained(
+             "the replacement figure beside the old one means the text is correcting itself",
+             {"the CORRECTED FORM beside the old claim means the text is correcting itself",
+              "one of several corrected forms is enough"}), False)
+    case("...while the case it was RETARGETED to is accepted, so the fix is what makes it pass",
+         expect_explained(
+             "the CORRECTED FORM beside the old claim means the text is correcting itself",
+             {"the CORRECTED FORM beside the old claim means the text is correcting itself"}),
+         True)
+    case("⭐ expects_of accepts a bare STRING — 726 of 1,435 live entries are written that way, "
+         "and iterating one walks it character by character",
+         expects_of({"expect": "one name"}), ["one name"])
+    case("...and a list passes through unchanged",
+         expects_of({"expect": ["a", "b"]}), ["a", "b"])
+    case("...and a missing expect is no expects, not a crash",
+         expects_of({}), [])
+    case("case_name_literals finds a literal the suite would print",
+         "the name" in case_name_literals("case('the name', 1, 1)"), True)
+    case("...and returns an empty set for a file that does not parse, rather than raising",
+         case_name_literals("def ("), set())
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -5073,6 +5993,12 @@ def main(argv: list[str]) -> int:
                     help="FAIL if the evidence block pasted in the plan is not exactly "
                          "what this run produces. Generating the block bought "
                          "provenance; only this buys freshness.")
+    ap.add_argument("--binding", action="store_true",
+                    help="backlog #252: the eager anchor/expect pass, no tree staged (~66 ms)")
+    ap.add_argument("--diff-coverage", metavar="BASE", nargs="?", const="origin/master",
+                    help="backlog #251: functions this branch changed with no mutation reaching them")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="with --binding: list every expect warning instead of counting them")
     ap.add_argument("--mutate", metavar="ROOT",
                     help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
                          "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
@@ -5186,6 +6112,10 @@ def main(argv: list[str]) -> int:
         if why:
             print(why, file=sys.stderr)
             return 2
+    if a.binding:
+        return run_binding(pathlib.Path("."), verbose=a.verbose)
+    if a.diff_coverage:
+        return run_diff_coverage(pathlib.Path("."), a.diff_coverage)
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
@@ -5201,6 +6131,14 @@ def main(argv: list[str]) -> int:
         # ⚠ ONLY WHEN THE MANIFEST ITSELF LOADS. Over a broken manifest `len(muts)` is a
         # shortfall, and "shard 4 of 4 is empty" would then be a confident answer to the wrong
         # question — the manifest's own problems belong to `mutate_delivered`'s report.
+        # ⛔ BACKLOG #252 IS A SEPARATE COMMAND (`--binding`), NOT A HOOK HERE, and the reason
+        # is worth keeping. Wiring the eager pass into this path DID work and broke two existing
+        # cases: the r5 H1 fixtures build deliberately-absent anchors to exercise the TOTAL
+        # SHORTFALL tally, and an eager refusal means that path can no longer be reached through
+        # the CLI. Coverage of `mutate_delivered`'s reporting is worth more than saving a
+        # redundant 66 ms inside a run that is already fifteen minutes long. CI runs `--binding`
+        # as its own step BEFORE the sweep, which is where "before any tree is staged" is
+        # actually satisfied.
         if shard is not None:
             _muts, _problems = load_manifests(mroot)
             why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))
