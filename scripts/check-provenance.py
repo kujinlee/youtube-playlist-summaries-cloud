@@ -280,7 +280,7 @@ PROVENANCE_RE = re.compile(
     # or an explicit measurement verb within two words. ⚠ `the tree at HEAD held 1,416` NO
     # LONGER counts, and that is deliberate — it is indistinguishable, by any rule short of
     # reading English, from `we cannot look at HEAD`. MEASURED over the live file: 11 of 11
-    # witnesses correct, **ZERO rows lose provenance**, firing rate unchanged at 46% (90/195).
+    # witnesses correct, **ZERO rows lose provenance**, firing rate unchanged at 46% (91/197, re-derived — ⟳ r3 Claude LOW: this said 90/195 at two sites and was stale; round 3's Codex half said so and the fold did not act).
     # ⟳⟳⟳ r2 Claude HIGH — THE VERB LIST IS GONE, NOT EXTENDED, and that is the point.
     #
     # Round 2's Codex half replaced a bare `\bHEAD\b` with `at|as of|measured …`; its Claude

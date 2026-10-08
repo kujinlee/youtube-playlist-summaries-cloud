@@ -1043,7 +1043,12 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 128,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 127,   # ⟳ r3 Claude H1: 128 -> 127, a
+                                   # PERMITTED FALL. The bare-assign branch of
+                                   # `case_name_patterns` was deleted (it had no
+                                   # name test and admitted 80 of 142 candidate
+                                   # rows), so its entry is RETIRED WITH ITS
+                                   # SUBJECT rather than orphaned. Sum 1510 -> 1509.   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1589,6 +1594,9 @@ def case_name_patterns(source: str, min_static: int = 4) -> list:
         # (H1's three accepted, `.split`/`.replace`/`print` rejected), live MISSING **0**, and
         # non-case templates entering the candidate set fall from **11 of 62 files to 0 — by
         # construction, since a non-case producer cannot be named like one**.
+        # ⟳⟳ r3 Claude HIGH: "0 by construction" WAS FALSE WHEN WRITTEN — the
+        # bare-assign branch below had no name test, and 80 of 142 candidate rows
+        # came through it from 34 of 62 files. True only now that the branch is gone.
         cands = []
         if isinstance(n, ast.Call):
             fn = n.func
@@ -1604,12 +1612,54 @@ def case_name_patterns(source: str, min_static: int = 4) -> list:
                           if (kw.arg or "") in CASE_NAME_KEYWORDS]
         elif isinstance(n, ast.Assign):
             targets = [t.id for t in n.targets if isinstance(t, ast.Name)]
-            if any("CASE" in t.upper() for t in targets):
+            # ⟳ r3 Claude LOW — ENDS IN "CASES", not merely contains "CASE". The looser test
+            # captured `CASE_CALL_RE` and `CASE_NAME_KEYWORDS` (constants this very fold added)
+            # and `check-fixture-variation.CASECALL`; they yielded nothing only because their
+            # values are a `re.compile` call and a `frozenset`, which is luck rather than a
+            # rule. MEASURED: tightening loses **0** live tables and excludes all four.
+            if any(t.upper().endswith("CASES") for t in targets):
                 for el in ast.walk(n.value):
                     if isinstance(el, (ast.Tuple, ast.List)) and el.elts:
                         cands.append(el.elts[0])
-            elif len(targets) == 1:
-                cands = [n.value]
+            # ⛔ r3 Claude HIGH — THE BARE-ASSIGN BRANCH IS GONE. It was `elif len(targets)
+            # == 1: cands = [n.value]` with NO NAME TEST AT ALL, under a comment of mine
+            # claiming non-case templates enter "0 — by construction". MEASURED: **80 of 142
+            # candidate rows came from it, across 34 of 62 files** — CSS
+            # (`:root[data-theme="light"]{--bg:…`), a path (`rel = f"docs/{sub}/{f.name}"` ->
+            # `^docs/.*?/.*?$`), HTML, a SQL fragment, an error message. The reach probe moved
+            # the WRONG WAY (12 -> 17 files). And it bought nothing: live binding is byte-
+            # identical without it (0 errors, 67 warnings).
+            #
+            # ⚠ Its own case could not see this. `title = f"{x} works"` passes identically as
+            # `sql = f"{x} works"`, because the case asserted that SOME assignment produces a
+            # pattern — never that a NON-case one does not. A case that cannot distinguish the
+            # thing it is named for is the defect this branch's comment claimed to have avoided.
+            #
+            # A case name passed by KEYWORD is still accepted (r3 Codex H1); a case name built
+            # by assignment and then passed is not, and that is the trade: the keyword form is
+            # written here, the assignment form is not, and admitting it cost 80 rows.
+            #
+            # ⚠ r3 Claude LOW — FIVE FORMS THIS RULE REFUSES, STATED AND DELIBERATELY NOT CHASED.
+            # Measured with the shipped function, all yield 0 patterns:
+            #
+            #     direct.append((f"{x} works", 1, 1))      a Tuple argument to a call
+            #     CASES = {f"{x} works": (1, 1)}           a dict key
+            #     rows += [(f"{x} works", 1, 1)]           AugAssign is not ast.Assign
+            #     nm, got = f"{x} works", 1                a Tuple target yields targets == []
+            #     for t in ts: case(t, 1, 1)               the name is a loop variable
+            #
+            # ZERO live instances — `--binding` reports 0 expect errors. ⛔ AND THE DIRECTION IS
+            # THE DANGEROUS ONE: this half REFUSES, so each of these would redden a required
+            # check for a legitimate case, and `direct.append((…))` is a form
+            # `check-withdrawal.py` writes TODAY with static names — one edit away.
+            #
+            # ⤳ NOT WIDENED, ON PURPOSE. This rule has already been rewritten three times in one
+            # session (ast.walk -> arity -> name), and each widening was itself the next round's
+            # finding: the arity version admitted `.split(sep, 1)` in 11 of 62 files, and the
+            # bare-assign branch admitted 80 of 142 rows from 34 of 62. A fourth widening with no
+            # live instance to justify it is how this guard reached its third consecutive round.
+            # The forms are named here so the fix is one edit when one of them is actually
+            # written, and so the next reader is not re-deriving this list.
         for cand in cands:
             if not isinstance(cand, ast.JoinedStr):
                 continue
@@ -1650,29 +1700,39 @@ def case_name_patterns(source: str, min_static: int = 4) -> list:
 # overlap explains nothing.
 #
 # ⛔ AND THE FLOOR ALONE IS NOT ENOUGH. ONE WITNESS IS NOT A BOUND, so the rule was measured
-# against a CORPUS-WIDE FALSIFIER: for all 1,422 expects that currently DO name a literal,
+# against a CORPUS-WIDE FALSIFIER: for all 1,455 expects that currently DO name a literal,
 # synthesise the rename the r1 fold actually performed on B1 (swap the opening words, keep the
 # tail), remove the original literal, and ask whether the rule still forgives the now-stale
-# expect. It forgave **41 of 1,422 (2.9%)** — the floor is satisfied by any 12 characters shared
+# expect. It forgave **41 of 1,455 (2.8%)** — the floor is satisfied by any 12 characters shared
 # with ANY literal in the file, and these files are full of long ones.
 #
 #   rule                   live MISSING   B1 flagged   wrongly forgiven
-#   floor 12 only                     0         yes    41/1422  = 2.9%
-#   floor 12 + 30% of expect          0         yes    10/1422  = 0.7%     <- adopted
-#   floor 12 + 40% of expect          7         yes     3/1422  = 0.2%
-#   floor 12 + 50% of expect         18         yes     0/1422  = 0.0%
+#   floor 12 only                     0         yes    41/1455  = 2.9%
+#   floor 12 + 30% of expect          0         yes    10/1455  = 0.7%     <- adopted
+#   floor 12 + 40% of expect          7         yes     3/1455  = 0.2%
+#   floor 12 + 50% of expect         18         yes     0/1455  = 0.0%
 #
 # ⚠ THE DENOMINATOR IS THIS COMMIT'S. It moves whenever a manifest entry is added, so the
 # table was re-derived with the SHIPPED function after the fraction landed rather than carried
-# over from the prototype that chose it: 0 missing, 10 of 1,422.
+# over from the prototype that chose it: 0 missing, 10 of 1,455.
 #
 # The overlapping literal must therefore cover at least 30% of the expect as well as clearing
 # the floor. 40% and beyond refuse live entries, and this half REFUSES rather than warns, so a
 # rule that is not green on arrival is a rule that gets switched off (#56).
 #
-# ⚠ THE RESIDUAL IS STATED RATHER THAN HIDDEN: **0.7%, 10 of 1,421 synthesised renames, still
-# slip through.** That is the honest bound. It is not "no false negatives", and a note claiming
-# that would be worse than no note, because the next reader would stop looking.
+# ⚠ THE RESIDUAL IS A RATE PER GENERATOR, NOT A BOUND — r3 Claude MEDIUM, which caught this note
+# calling itself "the honest bound" while measuring ONE rename shape:
+#
+#     rename generator                      checked   forgiven     rate
+#     prefix swap (what I measured)           1,455         10    0.69%
+#     tail swap, head kept                    1,455         12    0.82%
+#     TRUNCATION, head kept                   1,455         90    6.19%
+#
+# The review's own truncation generator reported 8.64%; the shapes differ, the conclusion does
+# not. **The honest statement is the WORST observed rate WITH its generator named: about 6% under
+# truncation, an order of magnitude above the 0.7% this note used to present as the bound.** A
+# bound that does not say how it was generated is a sample pretending to be a limit — the same
+# defect as the figures backlog #261 is about, and I wrote it in the act of fixing those.
 #
 # ⤳ HOW TO RE-DERIVE, so the next reader checks rather than believes: for every expect
 # that names a literal, synthesise `" ".join(["the","REVISED","wording"] + title.split()[4:])`,
@@ -1696,7 +1756,9 @@ def expect_explained(expect: str, literals: set, floor: int = EXPECT_OVERLAP_FLO
     is noise. False means nothing in the file can produce it — the case was renamed away, and
     the mutation that names it can no longer show which case is the guard.
 
-    Measured false-forgive rate 0.7% (10 of 1,422); see the table above for how that was taken
+    Measured false-forgive rate 0.7% under a prefix-swap generator and about 6% under
+    truncation (10 and 90 of 1,455); see the table above, and note that the rate depends on
+    the generator — it is not a single bound
     and what the alternatives cost.
     """
     need = max(floor, int(len(expect) * fraction))
@@ -5494,7 +5556,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1510)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1509)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5660,8 +5722,14 @@ def _self_test() -> int:
     # ── r3 Codex H1: the two forms the positional rule FALSELY REFUSED ──────────────────────
     case("⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused",
          len(case_name_patterns('case(name=f"{x} works", got=g(), want=1)')), 1)
-    case("⭐ r3: a case name ASSIGNED to a variable first is accepted too",
-         len(case_name_patterns('title = f"{x} works"')), 1)
+    # ⟳ r3 Claude HIGH — THIS CASE IS REPLACED, not deleted, and the replacement is the one it
+    # should always have been: it asserted that SOME assignment yields a pattern, which is true
+    # of `sql = f"..."` too, so it could not see that the branch admitted 80 non-case rows.
+    case("⭐ r3: an assignment is NOT a case-name producer — `sql = f\"...\"` and "
+         "`title = f\"...\"` are indistinguishable, and the branch that accepted both admitted "
+         "80 of 142 candidate rows from 34 of 62 files",
+         (case_name_patterns('title = f"{x} works"'),
+          case_name_patterns('sql = f"SELECT {col} FROM t"')), ([], []))
     case("...and a NON-case call is refused however many arguments it has — `.split(sep, 1)` "
          "was a pattern under the positional rule, in 11 of 62 files",
          case_name_patterns('parts = html.split(f"<h2>{heading}</h2>", 1)'), [])
@@ -5677,7 +5745,7 @@ def _self_test() -> int:
     # slipped through: 12 characters out of 80 explains nothing about the other 68.
     _LONGEX = "the REVISED wording counts as unresolved, never as done"
     case("⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 "
-         "of 1,422 synthesised renames this way",
+         "of 1,455 synthesised renames this way",
          expect_explained(_LONGEX, {"never as done"}), False)
     case("...and the SAME pair is forgiven when the fraction is dropped, so the case tests the "
          "fraction and not the fixture",

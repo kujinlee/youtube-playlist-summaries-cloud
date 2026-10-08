@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 36 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 39 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
@@ -216,6 +216,18 @@ def resolve_candidates() -> "list[str]":
         sys.exit(f"error: {CACHE} not found — run `codex` once to populate the model cache")
     except (OSError, json.JSONDecodeError) as e:
         sys.exit(f"error: cannot read {CACHE}: {e}")
+
+    # ⛔ r3 Claude LOW — A WELL-FORMED DOCUMENT OF THE WRONG SHAPE WAS A CRASH. The handlers
+    # above catch a missing file, an unreadable one and invalid JSON; they do not catch VALID
+    # JSON whose `models` is not a list. Measured with `{"client_version":"1.2.3",
+    # "models":"oops"}`: `AttributeError: 'str' object has no attribute 'get'`, rc=1 — which
+    # this repository's rc convention reads as a VIOLATION rather than a cannot-run, and which
+    # `codex-review.py` would see as a failed gate rather than an unusable cache.
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        sys.exit(f"error: {CACHE} parsed but its `models` is "
+                 f"{type(data.get('models') if isinstance(data, dict) else data).__name__}, not a "
+                 f"list — the cache is malformed. Run `codex` once to repopulate it. "
+                 f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
 
     slugs = usable_models(data)
     if not slugs:
@@ -494,6 +506,14 @@ def _self_test() -> int:
          "<no slug>" in refusal_message({"client_version": "1.0", "models": [
              {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True},
              {"priority": 2, "visibility": "list", "supported_in_api": False}]}), True)
+
+    # ── r3 Claude LOW: a malformed cache is a refusal, not a traceback ──────────────────────
+    case("⭐ r3: `models` that is not a list is caught before anything calls `.get` on it",
+         isinstance({"client_version": "1", "models": "oops"}.get("models"), list), False)
+    case("...while a real list passes the same test",
+         isinstance({"client_version": "1", "models": []}.get("models"), list), True)
+    case("...and a document that is not even a dict is refused too",
+         isinstance(["not", "a", "dict"], dict), False)
 
     case("failed_requirements names each unmet predicate for one entry",
          failed_requirements({"slug": "x", "priority": 1, "visibility": "hide",

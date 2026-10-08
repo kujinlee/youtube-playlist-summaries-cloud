@@ -278,8 +278,15 @@ def is_exempt_path(path: str) -> bool:
 #
 # Three boundaries added, closing three of the five shapes round 2's Claude half listed: the
 # colon lead-in, a markdown HARD break (two trailing spaces), and `1)` as well as `1.`.
-# MEASURED over 48,046 figure occurrences: weak suppressions 3,688 -> 3,630 (58 fewer false
-# negatives), median sentence 180 -> 177, and a genuine wrap is still ONE sentence.
+# MEASURED over **49,240** figure occurrences across the **393** files `docs_files()` returns:
+# weak suppressions 3,688 -> 3,630 (58 fewer false negatives), median sentence **184 -> 181**,
+# and a genuine wrap is still ONE sentence.
+#
+# ⟳ r3 Claude MEDIUM — THE FIRST VERSION OF THIS LINE SAID 48,046 AND 180 -> 177, measured with
+# `docs/**/*.md` instead of calling `docs_files()`. That probe saw **390 of 393 files**. The
+# -58 delta reproduces exactly and the conclusion is unchanged, but the population was mine and
+# not the guard's — `measure-the-population-the-code-actually-sees`, and the fix is to call the
+# function rather than to re-describe what it does.
 #
 # ⚠ TWO SHAPES REMAIN OPEN AND ARE NOT CLAIMED FIXED: two unterminated prose lines (genuinely
 # ambiguous — that IS what a wrap looks like), and a fenced code block, which needs fence state

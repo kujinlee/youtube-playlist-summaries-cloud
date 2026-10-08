@@ -1588,7 +1588,7 @@
     ]
   },
   {
-    "name": "⟳ r2 self-review — the FRACTION term goes, leaving the floor alone. MEASURED over a corpus-wide rename falsifier: the floor alone wrongly forgives 41 of 1,422 synthesised stale expects (2.9%) against 10 (0.7%) with the fraction",
+    "name": "⟳ r2 self-review — the FRACTION term goes, leaving the floor alone. MEASURED over a corpus-wide rename falsifier: the floor alone wrongly forgives 41 of 1,455 synthesised stale expects (2.9%) against 10 (0.7%) with the fraction",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1597,7 +1597,7 @@
       ]
     ],
     "expect": [
-      "⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 of 1,422 synthesised renames this way"
+      "⭐ a 12-char overlap does NOT explain a 54-char expect — the floor alone forgave 41 of 1,455 synthesised renames this way"
     ]
   },
   {
@@ -1663,19 +1663,6 @@
     ],
     "expect": [
       "⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused"
-    ]
-  },
-  {
-    "name": "⟳ r3 Codex H1 — a case name ASSIGNED to a plain name first stops being a producer, which is the third form the positional rule falsely refused",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            elif len(targets) == 1:\n                cands = [n.value]",
-        "            elif False:\n                cands = [n.value]"
-      ]
-    ],
-    "expect": [
-      "⭐ r3: a case name ASSIGNED to a variable first is accepted too"
     ]
   }
 ]

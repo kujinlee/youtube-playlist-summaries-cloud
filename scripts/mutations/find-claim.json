@@ -169,12 +169,12 @@
     ]
   },
   {
-    "name": "⟳ r2 Codex HIGH — a directory the CALLER NAMED is pruned too, so naming `root/node_modules` returns nothing at all",
+    "name": "⟳ r2 Codex HIGH — a directory the CALLER NAMED is pruned too, so naming `root/node_modules` returns nothing at all ⟳ r3: retargeted — the top-level classification was wrapped in a try/except and `p.is_dir()` became the local `is_dir`",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "        if p.is_dir():\n            # ⛔ os.walk WITH IN-PLACE PRUNING",
-        "        if p.is_dir() and p.name not in PRUNED_DIRS:\n            # ⛔ os.walk WITH IN-PLACE PRUNING"
+        "        if is_dir:\n            # ⛔ os.walk WITH IN-PLACE PRUNING",
+        "        if is_dir and p.name not in PRUNED_DIRS:\n            # ⛔ os.walk WITH IN-PLACE PRUNING"
       ]
     ],
     "expect": [
@@ -286,16 +286,16 @@
     ]
   },
   {
-    "name": "⟳ r3 Codex LOW — directory identity goes back to a RESOLVED STRING, so on a case-insensitive filesystem two spellings of one directory are two directories and its files are counted twice",
+    "name": "⟳ r3 Claude BLOCKING — directory identity goes back to a RESOLVED STRING. ⚠ RETARGETED TO A SHAPE ASSERTION: the behavioural probe returns the same answer with and without the fix on a case-SENSITIVE filesystem, which is what CI runs, so this entry SURVIVED there while being killed locally — a red shard from a locally-green fold. The shape of the identity differs on every platform",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "                    st = os.stat(dirpath)\n                    real = (st.st_dev, st.st_ino)",
-        "                    st = os.stat(dirpath)\n                    real = str(Path(dirpath).resolve())"
+        "    st = os.stat(path)\n    return (st.st_dev, st.st_ino)",
+        "    os.stat(path)\n    return str(Path(path).resolve())"
       ]
     ],
     "expect": [
-      "⭐ r3: two symlinks to ONE case-variant directory are walked once, not twice"
+      "⭐ r3: directory identity is an INODE PAIR, not a path string — a resolved string is not identity on a case-insensitive filesystem, and CI's being case-sensitive is why the behavioural probe alone let the mutation survive there"
     ]
   },
   {

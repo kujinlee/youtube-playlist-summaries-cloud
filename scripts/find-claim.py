@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 76 cases
+    python3 scripts/find-claim.py --self-test        # 79 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -232,6 +232,28 @@ def wrap_path_exercised(control_hits: list[Hit]) -> bool:
 
 # ── the filesystem half, deliberately separate ───────────────────────────────
 
+def dir_identity(path) -> tuple:
+    """A directory's identity as `(st_dev, st_ino)`. PURE except for the stat.
+
+    ⛔ r3 Claude BLOCKING, and the finding is about the CASE rather than the fix. The fix —
+    identity by inode instead of by `resolve()` string — is correct, and its only OBSERVABLE
+    difference is on a case-INSENSITIVE filesystem, where `CaseDir` and `casedir` are one
+    directory with two resolved spellings. **CI runs `ubuntu-latest`, which is case-SENSITIVE**,
+    so there the two implementations behave identically and the behavioural probe returns the
+    same answer with and without the fix. Measured: the mutation reverting this SURVIVES on a
+    case-sensitive volume while being killed on this machine — and `--mutate .` ends
+    `return 0 if ok else 1`, so that is a red shard on CI from a locally-green fold.
+    ⤳ A test whose world only exists on the author's filesystem is a test the author can pass
+    and CI cannot.
+
+    So the discriminating case asserts the SHAPE of the identity, which differs on every
+    platform: a 2-tuple of ints here, a `str` under the mutation. The behavioural alias case is
+    kept as a regression guard and is explicitly NOT the discriminator.
+    """
+    st = os.stat(path)
+    return (st.st_dev, st.st_ino)
+
+
 def collect_files(paths: list[str], suffixes: set[str] | None = None
                   ) -> tuple[list[Path], list[Path], list[Path], list[str], str]:
     """(files, skipped, pruned, unreadable_dirs, error). A directory contributes every
@@ -272,7 +294,17 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
 
     for raw in paths:
         p = Path(raw)
-        if p.is_dir():
+        # ⛔ r3 Claude MEDIUM — THE SAME GUARD, AT THE OTHER STAT SITE. The round-3 fold wrapped
+        # the WALK's `is_file()` and left this one bare, so an explicitly NAMED unreadable path
+        # still exited 1 with an unhandled PermissionError. Instance, not class: I fixed the site
+        # the review showed me. Measured before this: `find-claim … <chmod-000>/claim.md ok.md`
+        # -> rc=1, traceback, no CANNOT RUN.
+        try:
+            is_dir, is_file = p.is_dir(), p.is_file()
+        except OSError as exc:
+            unreadable_dirs.append(f"{raw}: {type(exc).__name__}")
+            continue
+        if is_dir:
             # ⛔ os.walk WITH IN-PLACE PRUNING, not rglob-then-filter — r2 Codex HIGH, and the
             # defect was that the RUN SAID SO. The filter version printed
             # "node_modules not walked" while `os.scandir` was called 4 times inside it
@@ -298,8 +330,7 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
                 # and the walk visited the same files twice through two symlinks. Overcounting
                 # only, never an absence — but the guard claimed identity it did not have.
                 try:
-                    st = os.stat(dirpath)
-                    real = (st.st_dev, st.st_ino)
+                    real = dir_identity(dirpath)
                 except OSError as exc:
                     unreadable_dirs.append(f"{dirpath}: {type(exc).__name__}")
                     dirnames[:] = []
@@ -342,7 +373,7 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
                         skipped.append(q)
                     else:
                         out.append(q)
-        elif p.is_file():
+        elif is_file:
             out.append(p)
         else:
             return [], [], [], unreadable_dirs, \
@@ -627,8 +658,13 @@ def _metadata_failure_probe() -> tuple:
         (root / "claim.md").symlink_to(lock / "claim.md")
         _os.chmod(lock, 0o000)
         try:
-            if _os.access(lock, _os.R_OK):          # the chmod did not take; do not pretend
-                return (2, True, True)
+            # ⛔ r3 Claude MEDIUM — NO SELF-GRANTED PASS. This used to `return (2, True, True)`
+            # when the chmod did not take (running as root, or a filesystem ignoring modes),
+            # which is a case awarding itself the answer it exists to check — and it let its own
+            # mutation survive under root. `CANNOT RUN is a FAILURE, never a pass`: the sentinel
+            # below fails the comparison, and a dedicated case names why.
+            if _os.access(lock, _os.R_OK):
+                return (-1, False, False)
             # ⛔ THE PROBE CATCHES THE CRASH SO THE CASE CAN REPORT A WRONG ANSWER. Without
             # this, the mutation that removes the classification guard makes `main` raise, the
             # SUITE dies before printing any `[FAIL]` line, and the harness reports
@@ -796,6 +832,9 @@ def self_test() -> int:
         # not a file, and the cycle guard stops the walk from re-entering it and finding the
         # same two again. I asserted 3 and the suite corrected me.
         # ── r3 Codex MEDIUM: a metadata failure is CANNOT RUN, not a crash and not a pass ──
+        ("⛔ the chmod-000 world IS buildable here — if THIS fails, the three cases below were "
+         "NOT RUN and must not be read as passes (r3 Claude M: no self-granted pass)",
+         _metadata_failure_probe()[0] != -1, True),
         ("⭐ r3: a classification failure is rc=2, where it used to be an unhandled traceback "
          "exiting 1 — which this repo reads as 'violation found'",
          _metadata_failure_probe()[0], 2),
@@ -803,7 +842,21 @@ def self_test() -> int:
         ("...and does so WITHOUT a traceback, because a crash is not a contract",
          _metadata_failure_probe()[2], True),
         # ── r3 Codex LOW: directory identity is (st_dev, st_ino), not a resolved string ─────
-        ("⭐ r3: two symlinks to ONE case-variant directory are walked once, not twice",
+        # ⭐ r3 Claude BLOCKING: the SHAPE of the identity, which differs on every platform.
+        # The behavioural case below cannot discriminate on a case-SENSITIVE filesystem — which
+        # is what CI runs — so it is a regression guard and this is the discriminator.
+        ("⭐ r3: directory identity is an INODE PAIR, not a path string — a resolved string is "
+         "not identity on a case-insensitive filesystem, and CI's being case-sensitive is why "
+         "the behavioural probe alone let the mutation survive there",
+         (lambda i: (isinstance(i, tuple), len(i), all(isinstance(x, int) for x in i))
+          )(dir_identity(Path("."))), (True, 2, True)),
+        ("...and two paths to ONE directory share it, which a string spelling need not",
+         (lambda d: dir_identity(d) == dir_identity(d / "." ))(Path(".")), True),
+        # ⚠ REGRESSION GUARD, NOT A DISCRIMINATOR: on a case-sensitive filesystem `casedir` does
+        # not exist, the second symlink is broken, and this returns 1 whether or not the fix is
+        # present. Stated so the next reader does not mistake it for coverage.
+        ("r3: two symlinks to ONE case-variant directory are walked once (a regression guard; "
+         "it cannot discriminate on a case-SENSITIVE filesystem)",
          _case_alias_probe()[0], 1),
         ("...and the claim is found once through them", _case_alias_probe()[1], 1),
         ("⭐ a symlink CYCLE terminates and does not double-count — `root/self -> root` "
