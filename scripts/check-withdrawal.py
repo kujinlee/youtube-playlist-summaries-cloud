@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 112 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 114 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -387,42 +387,43 @@ def mask_inline_code(text: str) -> str:
     # runs 0 and 2 (run 1 is span CONTENT), leaving run 3 unclosed and `wrong:` as prose, so the
     # boundary fires and the figure is a SURVIVOR, which is the right answer. The old direction was
     # LENIENT, and leniency here is what hides a stale figure.
-    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]
+    # Each run is (start, end, escaped). Escaping is resolved PER ROLE below, not by dropping the
+    # run — see the two rules in the docstring.
+    runs = [(mt.start(), mt.end(), backtick_escaped(text, mt.start()))
+            for mt in BACKTICK_RUN.finditer(text) if len(mt.group(0)) <= 2]
     out = list(text)
     i = 0
     while i < len(runs):
-        open_run = runs[i]
-        # ⛔ AN ESCAPED BACKTICK CANNOT *OPEN* A SPAN — AND IT CAN STILL CLOSE ONE. r5 Codex H1
-        # found the first half; r5 Claude H1 found that applying it to BOTH halves is wrong, with
-        # cmark AND markdown-it-py agreeing against the code. CommonMark backslash escapes do not
-        # apply INSIDE a code span: once a span is open the scan for its closing run is purely
-        # lexical, so `\\`` there is a literal backslash followed by a REAL closer. Filtering
-        # escaped runs out of the whole list discarded those closers and ran the span past its end:
+        s, e, esc = runs[i]
+        # ⛔ AN ESCAPED FIRST BACKTICK TRUNCATES THE OPENER, IT DOES NOT DELETE THE RUN — r6 Codex
+        # M1. `\\``` is a LITERAL backtick followed by a REAL one-backtick opener, and both cmark
+        # and markdown-it-py open a span there. r5 discarded the whole run, so the span's newline
+        # went unmasked and the figure after it became a false SURVIVOR. Measured:
         #
-        #   `a \` b` c      cmark/mdit span = ['a \']      shipped (r5 Codex) = ['a \` b']
+        #   the count was \\``v1:\n2` and 1,414 today     parsers: span = `v1: 2`     r5: no span
         #
-        # — and the masked space before `b` is PROSE, which suppressed a live figure. So the test
-        # belongs HERE, on the opener, and nowhere else.
-        if backtick_escaped(text, open_run.start()):
-            i += 1
+        # ⚠ I REASONED ABOUT THIS CASE WHILE WRITING r5 AND DID NOT WRITE IT DOWN — and I called it
+        # "conservative", which it is not: it produces a spurious warning, not a missed one. A bound
+        # thought about and left unstated is indistinguishable from one never seen.
+        open_start = s + 1 if esc else s
+        open_len = e - open_start
+        if open_len < 1:
+            i += 1                      # a lone escaped backtick is a literal and delimits nothing
             continue
+        # ⛔ AND ESCAPING IS IRRELEVANT TO A CLOSER (r5 Claude H1): inside an open span the scan is
+        # purely lexical, so the FULL run closes it however many backslashes precede it.
         j = i + 1
-        while j < len(runs) and len(runs[j].group(0)) != len(open_run.group(0)):
-            j += 1                      # a run of a DIFFERENT length is span content, not a closer
+        while j < len(runs) and (runs[j][1] - runs[j][0]) != open_len:
+            j += 1
         if j >= len(runs):
-            # ⛔ SKIP THE UNMATCHED OPENER, DO NOT STOP — r5 Codex M1. `break` here let one stray
-            # backtick prevent every LATER genuine span from being masked, which produced a false
-            # SURVIVOR: the noisy direction, but still a wrong answer from a stray character.
             i += 1
             continue
-        # ⛔ A CODE SPAN CANNOT CONTAIN A BLANK LINE — r5 Codex H1, second witness. A blank line
-        # ends the paragraph, so two backticks either side of one are not a span, and pairing them
-        # masked every boundary in between. Any equal-length run BEFORE the blank line would have
-        # been found first, so rejecting this candidate means the opener closes nothing.
-        if BLANK_LINE.search(text[open_run.end():runs[j].start()]):
+        cs = runs[j][0]
+        # A code span cannot contain a blank line — a paragraph break ends it.
+        if BLANK_LINE.search(text[e:cs]):
             i += 1
             continue
-        for k in range(open_run.end(), runs[j].start()):
+        for k in range(e, cs):
             if out[k].isspace():
                 out[k] = "x"
         i = j + 1
@@ -974,6 +975,11 @@ def self_test() -> int:
         # ── r5 Claude HIGH: the escape rule is OPENER-ONLY. cmark and markdown-it-py both end
         # the span AT an escaped backtick inside it, because backslash escapes do not apply within
         # a code span. Applying the test to closers too ran the span past its end and masked prose.
+        # ── r6 Codex MEDIUM: an escaped FIRST backtick truncates the run, it does not delete it.
+        ("r6: an escaped FIRST backtick truncates the opener, it does not delete the run",
+         _marker_at("the count was \\``v1:\n2` and 1,414 today"), "was "),
+        ("...and a LONE escaped backtick still delimits nothing, which is the same rule at length 1",
+         mask_inline_code("a \\` b c"), "a \\` b c"),
         ("⛔ r5: an escaped backtick INSIDE a span still CLOSES it — the span is `a \\` and the "
          "space before `b` is PROSE, where the opener-and-closer rule masked it",
          mask_inline_code("`a \\` b` c"), "`ax\\` b` c"),

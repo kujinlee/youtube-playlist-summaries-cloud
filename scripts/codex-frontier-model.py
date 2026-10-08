@@ -470,16 +470,27 @@ def _write_config_arm(readonly: bool, pre: str) -> tuple:
                     write_config("gpt-slug-two")
                     with open(CONFIG, encoding="utf-8") as f:
                         second = f.read()
-                    propagated = ('model = "gpt-slug-one"' in first
-                                  and 'model = "gpt-slug-two"' in second
-                                  # ⭐ THE CLAUSE A PRODUCTION CONSTANT CANNOT SATISFY:
-                                  and 'model = "gpt-slug-one"' not in second)
-                    if not propagated:
+                    # ⛔⛔ r6 Codex M2 — PARSE IT, DO NOT GREP IT. The first version of this check
+                    # asserted substrings, and TWO mutations kept every substring while writing a
+                    # file that is wrong: `block + block + existing` DUPLICATES `model` (invalid
+                    # TOML — tomllib: "Cannot overwrite a value"), and `existing + block` puts the
+                    # managed block AFTER `[profile]`, so the key becomes `profile.model` and the
+                    # top-level `model` the Codex CLI reads is absent. Both survived 51/51 with
+                    # zero [FAIL]. `tomllib` decides all three questions at once: does it parse, is
+                    # `model` TOP-LEVEL and equal to the slug just requested, and is the setting
+                    # this script does not own still where its owner put it.
+                    # ⤳ Same lesson as the CommonMark one this branch learned twice: when a rule
+                    # has been corrected twice by hand, stop hand-checking and get a parser.
+                    import tomllib
+                    try:
+                        doc1 = tomllib.loads(first)
+                        doc2 = tomllib.loads(second)
+                    except tomllib.TOMLDecodeError:
+                        return (0, "wrote-invalid-toml")
+                    if doc1.get("model") != "gpt-slug-one" or doc2.get("model") != "gpt-slug-two":
+                        # covers both "ignored the argument" and "wrote it at the wrong depth"
                         return (0, "wrote-ignoring-argument")
-                    # ⛔ r5 Claude M2 — AND IT MUST NOT EAT WHAT IT DOES NOT OWN. The managed block
-                    # is stripped and rewritten; everything else is the user's and must survive
-                    # BOTH writes, which is also the idempotence this function claims.
-                    if pre == "keep" and 'keep_me = "yes"' not in second:
+                    if pre == "keep" and doc2.get("profile", {}).get("keep_me") != "yes":
                         return (0, "wrote-discarding-the-rest")
                     return (0, "wrote")
             return (0, "wrote")

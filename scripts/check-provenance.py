@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 152 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 155 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -361,10 +361,20 @@ PROVENANCE_RE = re.compile(
     # Measured over all 20 malformed tokens: the blacklist refused 6, the whitelist refuses **19**,
     # and every valid form still matches (`HEAD~`, `HEAD~1`, `HEAD^`, `HEAD^2`, `HEAD~1^2`,
     # `HEAD^^`, and `HEAD~1.` at a sentence end).
-    # ⚠ THE ONE RESIDUAL, STATED RATHER THAN CHASED: `HEAD~!` is still accepted, because `!` has to
-    # remain a legitimate terminator for `at HEAD~1!`. Refusing it needs a bare `~`/`^` to be
-    # treated differently from a digit-suffixed one, which is one more special case for one
-    # implausible token — and the point of this change was to stop buying tokens that way.
+    # ⟳⟳ r6 — AND THE "RESIDUAL" I STATED HERE DOES NOT EXIST. r5 recorded that `HEAD~!` is
+    # "still accepted" and r6's Codex half filed `HEAD~?` as another one. BOTH measurements compared
+    # `git rev-parse --verify` against a token INCLUDING the trailing punctuation, which the regex
+    # never matched. Measured on the MATCHED SPAN:
+    #
+    #   prose `at HEAD~?`   -> span `HEAD~`   git rc=0        prose `at HEAD~1!`  -> span `HEAD~1`  rc=0
+    #   prose `at HEAD~!`   -> span `HEAD~`   git rc=0        prose `at HEAD~1.`  -> span `HEAD~1`  rc=0
+    #
+    # The `?`/`!`/`.` are prose punctuation OUTSIDE the match, and every span the rule accepts is a
+    # real ref. There is nothing to chase and nothing to tighten.
+    # ⛔ THIS IS THE THIRD TIME THIS ONE LINE HAS BEEN MEASURED AGAINST THE WRONG ORACLE — `HEAD^2`
+    # (rc=128 because HEAD has no second parent, not because the syntax is bad), then `HEAD~!`, then
+    # `HEAD~?`. The rule for this symbol, written down so the fourth time does not happen: ⤳ RUN GIT
+    # ON `m.group(0)`, NEVER ON THE TOKEN YOU TYPED. Cases below pin both halves.
     r"|`HEAD(?:[~^][0-9]*)?`|\bHEAD(?:[~^][0-9]*)+(?=\s|$|`|[.,;:!?)\]](?![\d.]))"
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
@@ -706,9 +716,14 @@ PROV_CASES: list[tuple[str, str, bool]] = [
      "this pattern refuses it, because both arms require `[~^]` straight after HEAD. Pre-existing, "
      "not fold-induced; pinned so a future tightening cannot record it as already handled",
      "measured at HEAD@{1}", False),
-    ("⚠ r5 STATED RESIDUAL: `HEAD~!` IS still accepted, because `!` must stay a terminator for "
-     "`HEAD~1!` — one implausible token, not chased",
+    # ⟳ r6: this case USED TO be headed "STATED RESIDUAL". It is not a residual — the match is
+    # `HEAD~`, which git accepts (rc=0). The punctuation is prose and lies outside the span.
+    ("⭐ r6: `at HEAD~!` counts, and correctly so — the MATCHED SPAN is `HEAD~`, a real ref, and "
+     "the `!` is prose punctuation outside it",
      "measured at HEAD~! and more", True),
+    ("...and `at HEAD~?` likewise, which r6's Codex half filed as a malformed acceptance by "
+     "running git on the token instead of on the match",
+     "measured at HEAD~? and more", True),
     ("...and a ref ending a sentence with `!` still counts, which is what that residual buys",
      "measured at HEAD~1!", True),
     ("...and one followed by a COMMA in prose counts, so the whitelist did not refuse punctuation "
@@ -778,6 +793,13 @@ def self_test() -> int:
     ]
 
     direct: list[tuple[str, object, object]] = [
+        # ⛔ r6 THE RULE FOR THIS SYMBOL, as an assertion rather than a sentence: a ref check must
+        # run on the MATCHED SPAN. Three measurements on this line used the typed token instead —
+        # `HEAD^2`, `HEAD~!`, `HEAD~?` — and two of them became findings that were not defects.
+        ("the matched SPAN of `at HEAD~1!` is the REF, not the ref plus the punctuation",
+         PROVENANCE_RE.search("measured at HEAD~1! and more").group(0), "HEAD~1"),
+        ("...and of `at HEAD~?` it is `HEAD~`, which git accepts — so there was nothing to tighten",
+         PROVENANCE_RE.search("measured at HEAD~? and more").group(0), "HEAD~"),
         ("⭐ ...and the span it returns is the REAL figure, not the text between two bold runs",
          bolded_figures("**DONE** after 99 checks **42 failures**"), ["**42 failures**"]),
         ("bolded_figures on a literal row with a figure",

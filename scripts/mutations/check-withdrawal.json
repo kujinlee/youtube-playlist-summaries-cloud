@@ -130,12 +130,12 @@
     ]
   },
   {
-    "name": "⟳ r1 Claude M4 — the STRONG markers become sentence-bound too, which is the over-correction: an author who wrote ⟳ nearby IS correcting something",
+    "name": "⟳ r1 Claude M4 — the STRONG markers become sentence-bound too, which is the over-correction: an author who wrote ⟳ nearby IS correcting something ⟳ REPLACEMENT FIXED r6: threading `masked=` made this mutant raise TypeError, so the suite CRASHED with no [FAIL] line and the kill was unattributable. CI caught it; --binding cannot, because it validates ANCHORS and not replacements",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
         "    for mark in STRONG_MARKERS:\n        if mark in window:",
-        "    for mark in STRONG_MARKERS:\n        if mark in sentence_around(window, figure_at):"
+        "    for mark in STRONG_MARKERS:\n        if mark in sentence_around(window, figure_at, masked=masked):"
       ]
     ],
     "expect": [
@@ -299,11 +299,11 @@
     ]
   },
   {
-    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance) ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance) ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252) ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "    runs = [m for m in BACKTICK_RUN.finditer(text) if len(m.group(0)) <= 2]",
+        "    runs = [(mt.start(), mt.end(), backtick_escaped(text, mt.start()))\n            for mt in BACKTICK_RUN.finditer(text) if len(mt.group(0)) <= 2]",
         "    runs = []"
       ]
     ],
@@ -312,11 +312,11 @@
     ]
   },
   {
-    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them",
+    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        if BLANK_LINE.search(text[open_run.end():runs[j].start()]):\n            i += 1\n            continue\n",
+        "        if BLANK_LINE.search(text[e:cs]):\n            i += 1\n            continue\n",
         ""
       ]
     ],
@@ -325,12 +325,12 @@
     ]
   },
   {
-    "name": "⛔ r5 Codex M1 — an unmatched opener STOPS the scan again, so one stray backtick disables masking for every later genuine span and turns a suppressed figure into a false survivor",
+    "name": "⛔ r5 Codex M1 — an unmatched opener STOPS the scan again, so one stray backtick disables masking for every later genuine span and turns a suppressed figure into a false survivor ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "            i += 1\n            continue\n        # ⛔ A CODE SPAN CANNOT CONTAIN A BLANK LINE",
-        "            break\n        # ⛔ A CODE SPAN CANNOT CONTAIN A BLANK LINE"
+        "        if j >= len(runs):\n            i += 1\n            continue",
+        "        if j >= len(runs):\n            break"
       ]
     ],
     "expect": [
@@ -364,16 +364,29 @@
     ]
   },
   {
-    "name": "⛔ r5 Claude H1 — the opener-only escape test is removed, so an escaped backtick can open a span again and the PROSE between two of them is masked (cmark and markdown-it-py both disagree with that)",
+    "name": "⛔ r5 Claude H1 — the opener-only escape test is removed, so an escaped backtick can open a span again and the PROSE between two of them is masked (cmark and markdown-it-py both disagree with that) ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        if backtick_escaped(text, open_run.start()):\n            i += 1\n            continue",
-        "        if False:\n            i += 1\n            continue"
+        "        open_start = s + 1 if esc else s",
+        "        open_start = s"
       ]
     ],
     "expect": [
       "⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its sentence boundary and the figure is a SURVIVOR — this was suppressed as history"
+    ]
+  },
+  {
+    "name": "⛔ r6 Codex M1 — an escaped run is DROPPED again instead of truncated, so `\\\\``` opens no span and the code-span newline after it goes unmasked, turning a suppressed figure into a false survivor",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if open_len < 1:",
+        "        if open_len < 1 or esc:"
+      ]
+    ],
+    "expect": [
+      "r6: an escaped FIRST backtick truncates the opener, it does not delete the run"
     ]
   }
 ]

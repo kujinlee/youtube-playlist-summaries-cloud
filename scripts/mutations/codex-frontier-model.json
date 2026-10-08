@@ -231,5 +231,31 @@
     "expect": [
       "⭐ r5: an EXISTING setting this script does not own SURVIVES both writes — the only `pre` state with a readable config, and without it truncation looked identical to preservation"
     ]
+  },
+  {
+    "name": "⛔ r6 Codex M2 — the managed block is written TWICE, duplicating `model` and producing invalid TOML. Survived 51/51 while the check was a substring; tomllib refuses it with \"Cannot overwrite a value\"",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "        with open(CONFIG, \"w\", encoding=\"utf-8\") as f:\n            f.write(block + existing.lstrip(\"\\n\"))",
+        "        with open(CONFIG, \"w\", encoding=\"utf-8\") as f:\n            f.write(block + block + existing.lstrip(\"\\n\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ the buildability control AND the propagation test in one: two writes with DIFFERENT slugs, and the first must be GONE after the second — a write_config that ignored its argument passed the old single-literal readback 46/46 (r5 Codex M2)"
+    ]
+  },
+  {
+    "name": "⛔ r6 Codex M2 (second shape) — the managed block is written AFTER the existing content, so the key becomes `profile.model` and the TOP-LEVEL `model` the Codex CLI reads is absent. A substring check could not see the difference",
+    "file": "scripts/codex-frontier-model.py",
+    "edits": [
+      [
+        "        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)\n        with open(CONFIG, \"w\", encoding=\"utf-8\") as f:\n            f.write(block + existing.lstrip(\"\\n\"))",
+        "        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)\n        with open(CONFIG, \"w\", encoding=\"utf-8\") as f:\n            f.write(existing.lstrip(\"\\n\") + block)"
+      ]
+    ],
+    "expect": [
+      "⭐ r5: an EXISTING setting this script does not own SURVIVES both writes — the only `pre` state with a readable config, and without it truncation looked identical to preservation"
+    ]
   }
 ]
