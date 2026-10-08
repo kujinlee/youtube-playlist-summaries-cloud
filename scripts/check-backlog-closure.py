@@ -194,15 +194,27 @@ def new_row_ids(diff_text: str) -> set:
 
 
 def filing_findings(claiming_subjects: list, new_ids: set) -> list:
-    """Subjects that claimed FILED over a range that filed nothing. PURE.
+    """Subjects that claimed FILED and filed nothing. PURE.
 
-    ⛔ THE SCOPE IS THE BRANCH, NOT THE COMMIT, and that was chosen by measurement rather than
-    by taste. Per-commit — which is what #250's suggested falsifier pair describes — fires on
-    **31 of 31** real commits in the last 400: the convention here is to claim FILED in a fold
-    commit and add the rows in a SIBLING commit of the same branch. A gate that fires on every
-    instance of the working convention is #56's measured death. Asking the question of the
-    branch keeps the defect in view — a branch that claims FILED and files nothing — while the
-    normal two-commit rhythm passes.
+    ⟳ **PER COMMIT, which is what #250's falsifier pair describes — and the branch-scoped
+    version that shipped first rested on a MEASUREMENT THAT WAS AN ARTEFACT OF MY OWN SCRIPT.**
+    That version claimed per-commit fires on *31 of 31* commits in the last 400. It does not.
+    The measuring script split `git log` output on a delimiter and left a NEWLINE on the front
+    of every SHA, so every `git show` failed silently, every diff came back empty, and every
+    commit was scored as having filed nothing. 100% was the shape of a broken loop.
+
+    Re-derived with these functions, SHAs stripped and `git show`'s exit code asserted:
+
+        at 74a44551   400 commits   31 claim FILED    9 add no row   29%
+        at HEAD       400 commits   32 claim FILED   10 add no row   31%
+
+    29% is comparable to `--diff-coverage`'s 32%, which ships. So per-commit is viable, and it
+    is strictly stronger: branch scope passes a branch that claims SEVEN deferrals and files
+    one, which is within a hair of the defect this row was filed for — PR #364's fold commit
+    claimed seven and filed zero.
+
+    ⚠ Found by round 1's Codex half. I had written the 100% into a docstring, a backlog closing
+    cell and a commit message before anything re-derived it.
     """
     if not claiming_subjects:
         return []
@@ -281,22 +293,36 @@ def main() -> int:
     if not shas:
         print("  filing: this branch adds no commit over the base — nothing to check.")
         return 0
-    claiming = []
+    # ⟳ PER COMMIT. Each claiming commit is asked about its OWN diff — see `filing_findings`
+    # for why the branch-scoped first version rested on a broken measurement.
+    claiming = 0
+    gaps: list = []
+    filed_ids: set = set()
     for sha in shas:
         rc_m, body = _git("show", "--format=%B", "--no-patch", sha)
-        if rc_m == 0 and claims_filing(body):
-            claiming.append(body.strip().split("\n")[0][:90])
-    rc_d, diff = _git("diff", "--unified=0", f"{base}...HEAD", "--", "docs/backlog.md")
-    ids = new_row_ids(diff) if rc_d == 0 else set()
-    for subj in filing_findings(claiming, ids):
-        print(f"  ⚠ claims FILED and this branch adds NO backlog row: {subj}")
-    if filing_findings(claiming, ids):
-        print("WARN — a commit says it filed something and the branch files nothing. "
+        if rc_m != 0 or not claims_filing(body):
+            continue
+        claiming += 1
+        subject = body.strip().split("\n")[0][:90]
+        rc_d, diff = _git("show", "--format=", "--unified=0", sha, "--", "docs/backlog.md")
+        if rc_d != 0:
+            # ⛔ NOT silently empty. The first measurement of this rule scored every commit as
+            # having filed nothing because `git show` was failing on a malformed SHA and the
+            # empty diff was believed.
+            print(f"  ? could not read the diff of {sha[:8]} — NOT CHECKED, not a pass")
+            continue
+        ids = new_row_ids(diff)
+        filed_ids |= ids
+        gaps.extend(filing_findings([subject], ids))
+    for subj in gaps:
+        print(f"  ⚠ claims FILED and files no backlog row: {subj}")
+    if gaps:
+        print(f"WARN — {len(gaps)} of {claiming} commit(s) claiming FILED add no backlog row. "
               "Measured on PR #364: seven deferrals claimed FILED, zero rows added, caught by a "
               "reviewer in round 4 (backlog #250). Warn-only, per #56.")
     elif claiming:
-        print(f"  filing: {len(claiming)} commit(s) claim FILED and the branch adds "
-              f"{len(ids)} new row(s) — {', '.join('#' + i for i in sorted(ids, key=int))}")
+        print(f"  filing: {claiming} commit(s) claim FILED and each files at least one row — "
+              f"{', '.join('#' + i for i in sorted(filed_ids, key=int)) or 'none recorded'}")
     else:
         # ⚠ SAY SO. A check that prints nothing is indistinguishable from one that did not run,
         # and this repository has paid for that confusion more than once.

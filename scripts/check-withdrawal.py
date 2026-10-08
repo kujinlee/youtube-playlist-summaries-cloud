@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 48 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 52 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -80,6 +80,9 @@ EXEMPT_DIRS = ("docs/reviews/", "docs/explainers/")
 HISTORY_MARKERS = (
     "⟳", "CORRECTED", "corrected", "superseded", "was ", "(was", "earlier",
     "previously", "no longer", "historical", "stale", "used to",
+    # ⟳ r1 fold: text saying a figure was QUOTED is narrating it, not asserting it. Added after
+    # the replacement prong was tightened (below) re-exposed two narrative passages.
+    "quoted",
 )
 
 # A figure worth tracking: at least two digits, optional thousands separators and decimals.
@@ -111,12 +114,18 @@ def signature_of(line: str, number: str, context_words: int = CONTEXT_WORDS) -> 
     signature is what makes a survivor identifiable, and it is also this guard's main limit:
     a survivor whose surrounding words were reworded will not match.
     """
-    i = line.find(number)
-    if i < 0:
+    # ⛔ WHOLE TOKENS. Round 1 Codex Medium: slicing at the number's offset split the TOKEN that
+    # contains it, so `the sweep holds **1,414 anchors** today` yielded the signature
+    # `holds ** 1,414 anchors** today` — tokens joined by `\s+`, demanding whitespace between
+    # `**` and `1,414` that the source does not have. The signature found ZERO matches in its
+    # own source line, and `--strict` returned rc=0 over a live survivor.
+    tokens = line.split()
+    idx = next((k for k, tok in enumerate(tokens) if number in tok), -1)
+    if idx < 0:
         return number
-    before = line[:i].split()[-context_words:] if context_words else []
-    after = line[i + len(number):].split()[:context_words] if context_words else []
-    return " ".join([*before, number, *after])
+    lo = max(0, idx - context_words) if context_words else idx
+    hi = idx + context_words + 1 if context_words else idx + 1
+    return " ".join(tokens[lo:hi])
 
 
 def removed_figures(diff_text: str) -> list[tuple[str, str, str, tuple[str, ...]]]:
@@ -174,22 +183,46 @@ def is_exempt_path(path: str) -> bool:
     return any(path.startswith(d) or f"/{d}" in path for d in EXEMPT_DIRS)
 
 
-def is_history_context(window: str, replacements: tuple[str, ...] = ()) -> bool:
+def is_history_context(window: str, corrected_forms: tuple[str, ...] = ()) -> bool:
     """True when the text around a hit is a past-tense trail rather than a live claim. PURE.
 
-    Two prongs, and the second is the stronger one:
-      * a history MARKER sits nearby (`⟳`, `CORRECTED`, `superseded`, …);
-      * or the REPLACEMENT figure sits nearby — text naming the new value beside the old one is
-        performing the correction, not repeating the error.
+    Two prongs:
+      * a history MARKER sits nearby (`⟳`, `CORRECTED`, `superseded`, `quoted`, …);
+      * or the CORRECTED FORM of this very claim sits nearby — the signature with the new figure
+        substituted in. Text that states the corrected sentence beside the old one is performing
+        the correction.
+
+    ⟳ **THE SECOND PRONG USED TO BE A BARE NUMBER, AND ROUND 1'S CODEX HALF BROKE IT.** Mere
+    proximity to the replacement figure is not a correction:
+
+        the sweep holds 1,414 anchors today. Another suite holds 1,416 tests.
+
+    The old claim is still asserted and the second number measures something else — yet the bare
+    prong exempted it, so a real survivor was suppressed. In a warn-only tool a FALSE NEGATIVE is
+    the expensive direction, because a suppressed survivor is invisible while a spurious warning
+    is merely dismissed. Measured over the seven live `1,414` survivors: the bare prong exempted
+    **6 of 7** including the counterexample; the corrected-form prong exempts **0 of 7** and
+    correctly refuses the counterexample, with the markers doing the real work.
     """
     if any(mark in window for mark in HISTORY_MARKERS):
         return True
-    return any(r in window for r in replacements)
+    return any(cf and cf in window for cf in corrected_forms)
 
 
 def window_around(text: str, start: int, end: int, span: int = CONTEXT_CHARS) -> str:
     """The text surrounding a hit, for marker inspection. PURE."""
     return text[max(0, start - span):min(len(text), end + span)]
+
+
+def hit_offset(text: str, hit) -> int:
+    """The character offset of THIS hit, from its own line/col. PURE.
+
+    `text.find(hit.text)` is the first occurrence, not this one — the defect round 1 found.
+    """
+    line_start = 0
+    for _ in range(hit.line - 1):
+        line_start = text.index("\n", line_start) + 1
+    return line_start + hit.col - 1
 
 
 def verdict(n_survivors: int, n_corrections: int, strict: bool) -> tuple[int, str]:
@@ -294,16 +327,27 @@ HISTORY_CASES: list[tuple[str, str, bool]] = [
 # ⭐ The replacement prong, measured against the seven live survivors of `1,414` in this repo:
 # markers alone gave 4 correct and 2 FALSE POSITIVES, both within 180 chars of `1,416`.
 REPLACEMENT_CASES: list[tuple[str, str, tuple[str, ...], bool]] = [
-    ("the replacement figure beside the old one means the text is correcting itself",
-     "I had quoted 1,414 without naming a tree; the real number is 1,416", ("1,416",), True),
-    ("...and with no replacement nearby the same sentence shape stays a live claim",
-     "sub-second over 1,414 anchors across 59 manifests", ("1,416",), False),
-    ("an empty replacement tuple falls back to markers alone",
+    # ⚠ NO HISTORY MARKER IN THESE STRINGS, deliberately. The first version of this table used
+    # "I had quoted 1,414 …", and once `quoted` joined HISTORY_MARKERS that case passed through
+    # the MARKER prong while claiming to exercise the replacement prong — an ambient pass inside
+    # the table written to test the thing it stopped testing.
+    ("the CORRECTED FORM beside the old claim means the text is correcting itself",
+     "holds 1,414 anchors today; it holds 1,416 anchors now",
+     ("holds 1,416 anchors",), True),
+    ("⭐ mere PROXIMITY to the replacement number is NOT a correction (r1 Codex Medium)",
+     "the sweep holds 1,414 anchors today. Another suite holds 1,416 tests.",
+     ("sweep holds 1,416 anchors",), False),
+    ("...and with no corrected form nearby the same sentence stays a live claim",
+     "sub-second over 1,414 anchors across 59 manifests", ("over 1,416 anchors",), False),
+    ("an empty tuple falls back to markers alone",
      "sub-second over 1,414 anchors", (), False),
-    ("a marker still wins even with no replacement present",
+    ("a marker still wins with no corrected form present",
      "⟳ it was 1,414 back then", (), True),
-    ("one of several replacements is enough",
-     "we said 1,414, then 1,416", ("999", "1,416"), True),
+    ("one of several corrected forms is enough",
+     "we said holds 1,414 anchors, then holds 1,416 anchors",
+     ("nope 999 nope", "holds 1,416 anchors"), True),
+    ("an empty corrected form never exempts, however many are passed",
+     "holds 1,414 anchors", ("", ""), False),
 ]
 
 VERDICT_CASES: list[tuple[str, int, int, bool, int]] = [
@@ -352,11 +396,28 @@ def self_test() -> int:
          verdict(4, 6, False)[0], 0),
         ("verdict with different literals and strict=True fails",
          verdict(3, 5, True)[0], 1),
+        ("⭐ hit_offset returns THIS match's offset, not the first occurrence's",
+         (lambda tx: [hit_offset(tx, h) for h in
+                      _find_claim().find_in_text(tx, _find_claim().build_pattern("ab"), "t")]
+          )("ab\nxx ab"), [0, 6]),
         ("is_history_context's replacement prong fires on a bare figure match",
          is_history_context("the tree held 1,416 not 1,414", ("1,416",)), True),
         ("⭐ the matcher is IMPORTED, and it still finds a wrapped claim here",
          len(fc.find_in_text("holds 1,414\nanchors", fc.build_pattern("holds 1,414 anchors"), "t.md")), 1),
     ]
+
+    # ── ADR-0014 D2: a case must reach main() with a world it BUILT ────────────────────────
+    import tempfile as _tf, contextlib as _ctx, io as _io, os as _os
+    def _drive_main():
+        with _tf.TemporaryDirectory() as td:
+            r = Path(td); (r / "docs").mkdir()
+            (r / "docs" / "a.md").write_text("nothing to see\n")
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                # not a git repo -> the instrument cannot reach its subject -> CANNOT RUN
+                return main(["--base", "origin/master"], root=r)
+    direct.append(("⭐ main() is driven from a case against a BUILT world, and a world with no "
+                   "git history is CANNOT RUN rather than a pass (ADR-0014 D2)",
+                   _drive_main(), 2))
 
     total = (len(SIG_CASES) + len(REMOVED_CASES) + len(EXEMPT_PATH_CASES)
              + len(HISTORY_CASES) + len(REPLACEMENT_CASES) + len(REPL_SET_CASES) + len(VERDICT_CASES)
@@ -425,12 +486,12 @@ def self_test() -> int:
 
 # ── the git/filesystem half ──────────────────────────────────────────────────
 
-def git_diff(base: str) -> tuple[str, str]:
+def git_diff(base: str, root: Path = REPO) -> tuple[str, str]:
     """(diff_text, error). Unified=0 keeps hunks tight so pairing stays local."""
     try:
         r = subprocess.run(
             ["git", "diff", "--unified=0", f"{base}...HEAD", "--", "docs/"],
-            capture_output=True, text=True, cwd=REPO,
+            capture_output=True, text=True, cwd=root,
         )
     except OSError as exc:
         return "", f"CANNOT RUN — cannot invoke git: {exc}"
@@ -439,28 +500,29 @@ def git_diff(base: str) -> tuple[str, str]:
     return r.stdout, ""
 
 
-def docs_files() -> list[Path]:
-    d = REPO / "docs"
+def docs_files(root: Path = REPO) -> list[Path]:
+    d = root / "docs"
     if not d.is_dir():
         return []
     return sorted(p for p in d.rglob("*")
                   if p.is_file() and p.suffix in {".md", ".html", ".txt"}
-                  and not is_exempt_path(str(p.relative_to(REPO))))
+                  and not is_exempt_path(str(p.relative_to(root))))
 
 
-def main() -> int:
+def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
+    """ADR-0014 D2: the world arrives as a defaulted PARAMETER so a case can drive it."""
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--base", default="origin/master")
     ap.add_argument("--strict", action="store_true",
                     help="exit 1 on survivors instead of warning (default is warn, per #56)")
     ap.add_argument("--self-test", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
 
     fc = _find_claim()
-    diff, err = git_diff(args.base)
+    diff, err = git_diff(args.base, root)
     if err:
         print(err, file=sys.stderr)
         return 2
@@ -472,7 +534,7 @@ def main() -> int:
         print(msg)
         return code
 
-    files = docs_files()
+    files = docs_files(root)
     if not files:
         print("CANNOT RUN — no documents found under docs/. A zero over nothing is not a pass.",
               file=sys.stderr)
@@ -492,9 +554,16 @@ def main() -> int:
             continue
         pat = fc.build_pattern(sig, ignore_case=True)
         for f, text in blobs:
-            for hit in fc.find_in_text(text, pat, str(f.relative_to(REPO))):
-                win = window_around(text, text.find(hit.text), text.find(hit.text) + len(hit.text))
-                if is_history_context(win, repls):
+            for hit in fc.find_in_text(text, pat, str(f.relative_to(root))):
+                # ⛔ THIS MATCH'S OWN OFFSET. Round 1 Codex Medium: `text.find(hit.text)` returns
+                # the FIRST occurrence every time, so a second, unmarked survivor inherited the
+                # first one's history exemption — measured with 500 chars of padding between
+                # them, `--strict` returned rc=0 over a live claim.
+                start = hit_offset(text, hit)
+                win = window_around(text, start, start + len(hit.text))
+                # the corrected FORM of this claim: the signature with each replacement swapped in
+                corrected = tuple(sig.replace(figure, r) for r in repls)
+                if is_history_context(win, corrected):
                     continue
                 survivors += 1
                 print(f"  SURVIVOR {hit.path}:{hit.line}: {' '.join(hit.text.split())}")

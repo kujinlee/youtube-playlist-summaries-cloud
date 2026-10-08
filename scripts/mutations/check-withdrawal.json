@@ -26,12 +26,12 @@
     ]
   },
   {
-    "name": "the replacement prong stops exempting, so a self-correcting sentence reads as a survivor",
+    "name": "the replacement prong stops exempting, so a self-correcting sentence reads as a survivor ⟳ retargeted in the r1 fold: the fix for the Codex finding rewrote the line this bound to",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "return any(r in window for r in replacements)",
-        "return False"
+        "    return any(cf and cf in window for cf in corrected_forms)",
+        "    return False"
       ]
     ],
     "expect": [
@@ -78,12 +78,12 @@
     ]
   },
   {
-    "name": "the signature loses its left context, so a figure binds on less than it should",
+    "name": "the signature loses its left context, so a figure binds on less than it should ⟳ retargeted in the r1 fold: the fix for the Codex finding rewrote the line this bound to",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "before = line[:i].split()[-context_words:] if context_words else []",
-        "before = []"
+        "    lo = max(0, idx - context_words) if context_words else idx",
+        "    lo = idx"
       ]
     ],
     "expect": [
@@ -101,6 +101,19 @@
     ],
     "expect": [
       "a window clips at the start of the text"
+    ]
+  },
+  {
+    "name": "#251 fold: hit_offset returns the first occurrence again, so repeats inherit its window",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return line_start + hit.col - 1",
+        "    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ hit_offset returns THIS match's offset, not the first occurrence's"
     ]
   }
 ]

@@ -50,7 +50,7 @@ EXIT CODES: 0 = ok, or findings in warn mode · 1 = findings under `--strict` ·
 USAGE
     python3 scripts/check-provenance.py --base origin/master
     python3 scripts/check-provenance.py --all          # audit, context only, never fails
-    python3 scripts/check-provenance.py --self-test    # 48 cases, pure, no git
+    python3 scripts/check-provenance.py --self-test    # 52 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -67,7 +67,11 @@ REPO = Path(__file__).resolve().parent.parent
 BACKLOG = "docs/backlog.md"
 
 ROW_RE = re.compile(r"^\| *(\d+) \|")
-BOLD_RE = re.compile(r"\*\*[^*]*?\d[\d,]*\.?\d*[^*]*?\*\*")
+# ⛔ BALANCED, NON-OVERLAPPING SPANS — round 1 Codex Medium. The old pattern scanned for any
+# `**…**` containing a digit, so `**DONE** after 99 checks **42 failures**` matched
+# `** after 99 checks **` and LOST the actual bolded measurement. `(?:(?!\*\*).)+?` cannot
+# cross a delimiter, so the spans pair the way a reader pairs them.
+BOLD_RE = re.compile(r"\*\*(?:(?!\*\*).)+?\*\*", re.S)
 NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}")
 
 # ⛔ Each alternative names WHERE a measurement happened. A bare date and a bare filename are
@@ -75,7 +79,7 @@ NUM_RE = re.compile(r"\d[\d,]*\.?\d+|\d{2,}")
 # that cannot fail.
 PROVENANCE_RE = re.compile(
     r"`[0-9a-f]{7,40}`"                                   # a commit-ish in backticks
-    r"|origin/\w+|\bHEAD\b"                               # a ref
+    r"|\borigin/\w+|\bHEAD\b"                              # a ref (\b: `notorigin/x` is not one)
     r"|`[^`]+\.(?:py|sh|md|yml|yaml|ts|tsx|sql|json):\d+`"  # a path WITH a line
     r"|\brun\s+`?\d{6,}"                                  # a CI run id
 )
@@ -83,7 +87,12 @@ PROVENANCE_RE = re.compile(
 
 # ── the rule, pure ───────────────────────────────────────────────────────────
 
-MAX_BOLD = 80                            # a bold span longer than this is a sentence, not a figure
+# ⟳ THE 80-CHARACTER CAP IS GONE — round 1 Codex Medium, confirmed by measurement. It was meant
+# to exclude bolded SENTENCES, and it excluded real claims: row #17's
+# *"Five dual adversarial rounds produced 26 Blocking findings and NONE was in the predicate"*
+# is a measurement, and it is 88 characters. Re-measured across the live file, the cap moves the
+# firing rate by a single point — 45% at 80 chars, 46% with no cap at all — so it dropped
+# genuine claims and bought nothing. Length was never evidence that a count is incidental.
 DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
 
 
@@ -96,17 +105,14 @@ def bolded_figures(row: str) -> list[str]:
 
       * a bolded DATE is not a measurement — `**ADOPTED 2026-07-30**` was the first thing this
         rule flagged, and it is a decision marker, not a count;
-      * a bold span over MAX_BOLD characters is a bolded SENTENCE that happens to contain a
-        digit, not a figure.
+      * (a length cap once lived here and is GONE — see the note above `DATE_RE`.)
 
-    ⚠ Both narrow the population and NEITHER moves the firing rate: 46.8% -> 45.4% across the
-    247 live rows. The rate is real, which is why this guard is a ratchet over new rows rather
-    than an audit that would be red on half the file.
+    ⚠ The date exclusion narrows the population and does NOT move the firing rate, which is how
+    we know the rate is real: it is a ratchet over new rows rather than an audit that would be
+    red on half the file.
     """
     out = []
     for b in BOLD_RE.findall(row):
-        if len(b) > MAX_BOLD:
-            continue
         if NUM_RE.search(DATE_RE.sub("", b)):
             out.append(b)
     return out
@@ -190,8 +196,11 @@ BOLD_CASES: list[tuple[str, str, int]] = [
     ("a bolded date WITH a real figure still counts", "**12 rounds on 2026-07-30**", 1),
     ("...and a SINGLE digit beside a date does not, per the single-digit rule above",
      "**3 rounds on 2026-07-30**", 0),
-    ("a bold span longer than MAX_BOLD is a sentence, not a figure",
-     "**" + "x" * 90 + " 1,416**", 0),
+    ("⭐ a long bolded measurement is NOT dropped — the 80-char cap is gone (r1 Codex Medium)",
+     "**Five dual adversarial rounds produced 26 Blocking findings and NONE was in the "
+     "predicate**", 1),
+    ("⭐ bold spans pair the way a reader pairs them, so the real figure is not lost",
+     "**DONE** after 99 checks **42 failures**", 1),
 ]
 
 PROV_CASES: list[tuple[str, str, bool]] = [
@@ -202,6 +211,9 @@ PROV_CASES: list[tuple[str, str, bool]] = [
     ("a run id is provenance", "run `37661154718` was green", True),
     ("⛔ a bare date is NOT provenance — it is the filing date", "found 2026-10-07", False),
     ("⛔ a bare filename is NOT provenance", "see `scripts/check-docs.py`", False),
+    ("⭐ `notorigin/fiction` is NOT a ref — the word boundary (r1 Codex Medium)",
+     "source notorigin/fiction", False),
+    ("...and a real `origin/<branch>` still is", "measured against origin/main", True),
     ("plain prose is not provenance", "it broke a lot", False),
     ("a short hex string is not a commit-ish", "the value `abc`", False),
 ]
@@ -269,6 +281,18 @@ def self_test() -> int:
         ("findings_for over a literal bare row", findings_for([ROW_BARE]), [("301", 1)]),
     ]
 
+    # ── ADR-0014 D2: a case must reach main() with a world it BUILT ────────────────────────
+    import tempfile as _tf, contextlib as _ctx, io as _io
+    def _drive_main():
+        with _tf.TemporaryDirectory() as td:
+            r = Path(td)
+            with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_io.StringIO()):
+                # no docs/backlog.md in this world -> CANNOT RUN, never a quiet pass
+                return main(["--base", "origin/master"], root=r)
+    direct.append(("⭐ main() is driven from a case against a BUILT world, and a world with no "
+                   "backlog is CANNOT RUN rather than a pass (ADR-0014 D2)",
+                   _drive_main(), 2))
+
     total = (len(BOLD_CASES) + len(PROV_CASES) + len(ROWSET_CASES)
              + len(VERDICT_CASES) + len(MESSAGE_CASES) + len(direct))
     print(f"check-provenance --self-test  ({total} cases)")
@@ -313,19 +337,24 @@ def self_test() -> int:
 
 # ── the git/filesystem half ──────────────────────────────────────────────────
 
-def main() -> int:
+def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
+    """ADR-0014 D2: the world arrives as a defaulted PARAMETER so a case can drive it.
+
+    Shipped first with `main()` reading `REPO` directly, and `check-main-drivable.py` refused the
+    whole branch for it — every mutation shard's control went red behind one guard's suite.
+    """
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("--base", default="origin/master")
     ap.add_argument("--all", action="store_true",
                     help="audit every row in the file; context only, never fails")
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--self-test", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
 
-    path = REPO / BACKLOG
+    path = root / BACKLOG
     if not path.is_file():
         print(f"CANNOT RUN — {BACKLOG} is missing. A zero over nothing is not a pass.", file=sys.stderr)
         return 2
@@ -343,7 +372,7 @@ def main() -> int:
 
     try:
         r = subprocess.run(["git", "diff", "--unified=0", f"{args.base}...HEAD", "--", BACKLOG],
-                           capture_output=True, text=True, cwd=REPO)
+                           capture_output=True, text=True, cwd=root)
     except OSError as exc:
         print(f"CANNOT RUN — cannot invoke git: {exc}", file=sys.stderr)
         return 2

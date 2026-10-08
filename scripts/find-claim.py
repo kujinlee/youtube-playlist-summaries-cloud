@@ -68,7 +68,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 42 cases, pure, no filesystem
+    python3 scripts/find-claim.py --self-test        # 44 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -206,16 +206,27 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None) -> tuple[l
     return out, ""
 
 
-def search_files(files: list[Path], pattern: re.Pattern) -> list[Hit]:
-    """Hits across every file. Unreadable files are skipped, and the caller sees the count fall."""
+def search_files(files: list[Path], pattern: re.Pattern) -> tuple[list[Hit], list[str]]:
+    """(hits, unreadable) across every file.
+
+    ⛔ THE SKIPPED FILES ARE RETURNED, NOT SWALLOWED — round 1 Codex HIGH, and it defeated this
+    tool's entire premise. The first version did `except (OSError, UnicodeDecodeError): continue`,
+    so a directory holding `control.md` ("known control") and `claim.md` (undecodable bytes
+    containing the claim) reported **rc=0, "absent … so the search worked", 2 file(s) searched**.
+    The control lived in a file that READ FINE, so it proved nothing about the file that did not.
+    A control establishes that the search works; it cannot establish that the search reached
+    every subject. Those are two different guarantees and the first version conflated them.
+    """
     hits: list[Hit] = []
+    unreadable: list[str] = []
     for f in files:
         try:
             text = f.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as exc:
+            unreadable.append(f"{f}: {type(exc).__name__}")
             continue
         hits.extend(find_in_text(text, pattern, str(f)))
-    return hits
+    return hits, unreadable
 
 
 # ── self-test ────────────────────────────────────────────────────────────────
@@ -290,6 +301,21 @@ WRAP_CASES: list[tuple[str, str, str, bool]] = [
     ("a control matching on one line does NOT prove it", "alpha beta", "alpha beta", False),
 ]
 
+def _unreadable_probe() -> tuple:
+    """(hits, unreadable) over a directory holding one readable and one undecodable file.
+
+    The witness from round 1's Codex High, kept as a case: a control in `ok.md` cannot speak
+    for `bad.md`, so a run that cannot read `bad.md` must not report a confident absence.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "ok.md").write_text("live claim here\n")
+        (d / "bad.md").write_bytes(b"live claim\xff\n")
+        files, _err = collect_files([str(d)])
+        return search_files(files, build_pattern("live claim"))
+
+
 def self_test() -> int:
     failures = 0
 
@@ -308,6 +334,10 @@ def self_test() -> int:
          bool(build_pattern("Alpha Beta", ignore_case=True).search("alpha beta")), True),
         ("ignore_case=False keeps the same claim case-sensitive",
          bool(build_pattern("Alpha Beta", ignore_case=False).search("alpha beta")), False),
+        ("⭐ an UNDECODABLE file is REPORTED, not silently skipped (r1 Codex High)",
+         _unreadable_probe()[1] != [], True),
+        ("...and a readable file alongside it still yields its hits",
+         len(_unreadable_probe()[0]), 1),
         ("⭐ the real witness: a SHOUTED phrase is found by default",
          bool(build_pattern("push something").search("you must then PUSH something —")), True),
         ("...and --case-sensitive still refuses it",
@@ -410,8 +440,18 @@ def main() -> int:
 
     pat = build_pattern(args.pattern, not args.case_sensitive)
     ctl = build_pattern(args.control, not args.case_sensitive)
-    hits = search_files(files, pat)
-    control_hits = search_files(files, ctl)
+    hits, unreadable = search_files(files, pat)
+    control_hits, _ = search_files(files, ctl)
+
+    # ⛔ A FILE THE SEARCH COULD NOT READ MAKES EVERY ANSWER UNSAFE — not just "absent". The
+    # claim could be in it, so presence is understated too. CANNOT RUN, before the verdict.
+    if unreadable:
+        print(f"CANNOT RUN — {len(unreadable)} file(s) could not be read or decoded, so this "
+              f"search did not reach its whole subject. A control in a readable file cannot "
+              f"speak for one that is unreadable. Treat this as NOT RUN:", file=sys.stderr)
+        for u in unreadable[:10]:
+            print(f"    {u}", file=sys.stderr)
+        return 2
 
     code, message = verdict(len(hits), len(control_hits), expect)
 

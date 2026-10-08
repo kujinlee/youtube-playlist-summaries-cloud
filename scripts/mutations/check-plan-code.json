@@ -1406,5 +1406,44 @@
     "expect": [
       "⭐ a helper nested in an ORDINARY function is reported under its OWN name"
     ]
+  },
+  {
+    "name": "#251 fold: _own_body_nodes descends into nested functions again, so inner I/O exempts the outer rule",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):\n            continue                      # its body belongs to IT, not to `fn`",
+        "        if False:\n            continue                      # its body belongs to IT, not to `fn`"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and I/O inside a NESTED helper does not exempt the outer rule"
+    ]
+  },
+  {
+    "name": "#251 fold: a hunk's line count is ignored, so only its first line is read as changed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                out.setdefault(cur, set()).update(range(start, start + count))",
+        "                out.setdefault(cur, set()).update(range(start, start + 1))"
+      ]
+    ],
+    "expect": [
+      "changed_lines_by_path reads a hunk header into line numbers"
+    ]
+  },
+  {
+    "name": "#251 fold: owner() stops preferring the SMALLEST enclosing span, so a nested helper is attributed to its parent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if a <= line <= b and (best is None or (b - a) < (spans[best][1] - spans[best][0])):\n                best = nm",
+        "            if a <= line <= b and best is None:\n                best = nm"
+      ]
+    ],
+    "expect": [
+      "⭐ a helper nested in an ORDINARY function is reported under its OWN name"
+    ]
   }
 ]

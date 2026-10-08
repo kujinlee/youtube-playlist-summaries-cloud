@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 205 cases
+    python3 scripts/check-plan-code.py --self-test          # 211 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -697,7 +697,7 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 9,
-    "scripts/check-withdrawal.py": 8,
+    "scripts/check-withdrawal.py": 9,
     "scripts/find-claim.py": 8,
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
@@ -1042,7 +1042,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 115,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 118,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1538,8 +1538,14 @@ def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
         if src is None:
             errors.append(f"{name}: target {tgt} is unreadable — the anchor cannot be checked")
             continue
+        # ⛔ SEQUENTIALLY. The runner applies a multi-edit entry one edit after another, so edit
+        # 2 must bind in the text edit 1 PRODUCED. Validating every anchor against the original
+        # passed `[["return True","return False"],["True","False"]]` while the real run reported
+        # `anchor NOT FOUND` for the second — round 1 Codex Medium: the eager pass green-lit a
+        # mutation that cannot bind during execution, which is the exact thing it exists to stop.
+        staged = src
         for find, _repl in e.get("edits", []):
-            n = src.count(find)
+            n = staged.count(find)
             shown = find.strip().splitlines()[0][:90]
             # Two branches, not one, so each defect has its OWN anchor and can be mutated
             # separately — a single `n != 1` is one mutation pretending to cover two rules.
@@ -1551,6 +1557,8 @@ def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
                 errors.append(f"{name}: its anchor occurs {n}x in {tgt} — ambiguous, so the "
                               f"mutation is not the edit its author described"
                               f"\n      {shown!r}")
+            if n == 1:
+                staged = staged.replace(find, _repl, 1)
         if tgt not in lits:
             lits[tgt] = case_name_literals(src)
         for ex in expects_of(e):
@@ -1582,6 +1590,27 @@ IO_CALLS = frozenset({
     "exec_module", "spec_from_file_location", "module_from_spec",
 })
 SUITE_FUNCS = frozenset({"_self_test", "self_test"})
+# ⚠ Bare NAMES that really are I/O. `stat`, `run`, `glob` and friends are NOT here: as bare
+# names they are far more often a local helper than the stdlib, and treating them as I/O
+# exempted a pure rule from coverage — round 1 Codex Medium.
+IO_BUILTINS = frozenset({"open", "input"})
+
+
+def _own_body_nodes(fn):
+    """Every node in `fn` EXCLUDING the bodies of functions nested inside it.
+
+    `ast.walk` descends into nested definitions, so an inner helper's `open()` was read as the
+    OUTER function doing I/O — exempting a pure rule from the coverage requirement.
+    """
+    out = []
+    stack = list(ast.iter_child_nodes(fn))
+    while stack:
+        n = stack.pop()
+        out.append(n)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue                      # its body belongs to IT, not to `fn`
+        stack.extend(ast.iter_child_nodes(n))
+    return out
 
 
 def coverage_exempt(name: str, enclosing, does_io: bool) -> bool:
@@ -1614,11 +1643,18 @@ def uncovered_functions(src: str, changed_lines: set, anchored: set) -> list:
         for ch in ast.iter_child_nodes(node):
             if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 spans[ch.name] = (ch.lineno, ch.end_lineno or ch.lineno)
+                # ⛔ TWO DEFECTS ROUND 1 FOUND HERE, both making the exemption too generous:
+                #   * a BARE NAME was enough, so `def rule(x): return stat(x) > 10` — a pure
+                #     rule calling a local helper named `stat` — was exempted. Only ATTRIBUTE
+                #     calls (`p.read_text()`) and a tiny set of real builtins count now.
+                #   * `ast.walk` descends into NESTED functions, so an unused inner helper
+                #     containing `open("x")` exempted its pure outer rule. The body is now
+                #     scanned with nested function bodies pruned.
                 does_io = any(
                     isinstance(n, ast.Call) and (
                         (isinstance(n.func, ast.Attribute) and n.func.attr in IO_CALLS)
-                        or (isinstance(n.func, ast.Name) and n.func.id in IO_CALLS))
-                    for n in ast.walk(ch))
+                        or (isinstance(n.func, ast.Name) and n.func.id in IO_BUILTINS))
+                    for n in _own_body_nodes(ch))
                 if coverage_exempt(ch.name, enclosing, does_io):
                     exempt.add(ch.name)
                 walk(ch, ch.name if ch.name in SUITE_FUNCS else enclosing)
@@ -5248,7 +5284,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1453)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1457)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
@@ -5280,6 +5316,26 @@ def _self_test() -> int:
          uncovered_functions(_SRC251, {12}, set()), [])
     case("a file that does not parse yields nothing rather than raising",
          uncovered_functions("def (", {1}, set()), [])
+    # ⛔ ROUND 1 CODEX MEDIUM — the I/O exemption was too generous in two ways.
+    case("⭐ a BARE NAME that merely looks like I/O does not exempt a pure rule",
+         uncovered_functions("def rule(x):\n    return stat(x) > 10\n", {2}, set()), ["rule"])
+    case("⭐ ...and I/O inside a NESTED helper does not exempt the outer rule",
+         uncovered_functions(
+             "def rule(x):\n    def helper():\n        return open('x').read()\n    return x + 1\n",
+             {4}, set()), ["rule"])
+    case("a genuine attribute-call read still exempts",
+         uncovered_functions("def fetch(p):\n    return p.read_text()\n", {2}, set()), [])
+    case("`open` as a bare builtin still counts as I/O",
+         uncovered_functions("def fetch(p):\n    return open(p).read()\n", {2}, set()), [])
+    # ⛔ ROUND 1 CODEX MEDIUM — multi-edit anchors must bind SEQUENTIALLY.
+    case("⭐ a second edit whose anchor only exists BEFORE the first edit is UNBOUND",
+         len(binding_problems([{"name": "m", "file": "scripts/s.py",
+                                "edits": [["return True", "return False"], ["True", "False"]]}],
+                              {"scripts/s.py": "def f():\n    return True\n"})[0]), 1)
+    case("...and a genuinely sequential pair is clean",
+         binding_problems([{"name": "m", "file": "scripts/s.py",
+                            "edits": [["return True", "return MAYBE"], ["MAYBE", "False"]]}],
+                          {"scripts/s.py": "def f():\n    return True\n"})[0], [])
     case("coverage_exempt: a dunder carries no rule",
          coverage_exempt("__repr__", None, False), True)
     case("coverage_exempt: an ordinary pure function is NOT exempt",
