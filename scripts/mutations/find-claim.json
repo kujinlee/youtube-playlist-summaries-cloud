@@ -1,0 +1,93 @@
+[
+  {
+    "name": "the \\s+ join becomes a literal space, so a wrapped claim is invisible again — backlog #258 itself",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "body = r\"\\s+\".join(re.escape(t) for t in tokens)",
+        "body = \" \".join(re.escape(t) for t in tokens)"
+      ]
+    ],
+    "expect": [
+      "the #258 defect itself: a wrapped claim is FOUND"
+    ]
+  },
+  {
+    "name": "tokens stop being escaped, so a version number's dots match any character",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "re.escape(t) for t in tokens",
+        "t for t in tokens"
+      ]
+    ],
+    "expect": [
+      "a version number's dots are LITERAL, so 0x142x5 does not match 0.142.5"
+    ]
+  },
+  {
+    "name": "the line number stops being derived from the offset and is pinned to 1",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "line = text.count(\"\\n\", 0, start) + 1",
+        "line = 1"
+      ]
+    ],
+    "expect": [
+      "a match on the third line reports line 3"
+    ]
+  },
+  {
+    "name": "⭐ the control arm is removed, so a search that never ran reports 'no matches'",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "if n_control == 0:",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ control missed, claim absent -> CANNOT RUN, never a clean pass"
+    ]
+  },
+  {
+    "name": "a dead control returns 0 instead of 2, which reads as a clean pass",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "return 2, (",
+        "return 0, ("
+      ]
+    ],
+    "expect": [
+      "⭐ control missed, claim found -> still CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a found claim under --expect absent stops being a violation",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "return 1, f\"FOUND",
+        "return 0, f\"FOUND"
+      ]
+    ],
+    "expect": [
+      "present when it should be absent -> violation"
+    ]
+  },
+  {
+    "name": "the wrapped flag is hardcoded False, so the wrap path can never be shown to have run",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "hits.append(Hit(path, line, col, m.group(0), \"\\n\" in m.group(0)))",
+        "hits.append(Hit(path, line, col, m.group(0), False))"
+      ]
+    ],
+    "expect": [
+      "a control that wraps proves the wrap path ran"
+    ]
+  }
+]

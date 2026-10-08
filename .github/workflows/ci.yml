@@ -171,6 +171,12 @@ jobs:
       - name: check-review-recorded self-test
         run: python3 scripts/check-review-recorded.py --self-test
 
+      # backlog #258: the claim-finder. This step is also its R3 caller — without an executor
+      # `check-ratchet-contract.py` counts it as a guard nothing runs, which is the class that
+      # froze the backlog page for five days.
+      - name: find-claim self-test
+        run: python3 scripts/find-claim.py --self-test
+
       - name: brief-compose self-test
         run: python3 scripts/brief-compose.py --self-test
 

@@ -300,6 +300,20 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "find-claim.py": (
+        # ⚠ DERIVED BY RUNNING `analyse()` on the file, not typed from the failure message —
+        # the neighbouring entry records a first attempt that added two keys this guard does
+        # not examine. `analyse()` returned 0 findings alongside this set.
+        "build_pattern.ignore_case",
+        "build_pattern.phrase",
+        "find_in_text.path",
+        "find_in_text.pattern",
+        "find_in_text.text",
+        "verdict.expect",
+        "verdict.n_control",
+        "verdict.n_hits",
+        "wrap_path_exercised.control_hits",
+    ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
         # `case_locals` are GONE, deliberately: the review measured that the rule

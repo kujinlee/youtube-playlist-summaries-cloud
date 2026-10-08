@@ -566,6 +566,26 @@ the decision above was found; that history is why the figures are gone rather th
 **Prefer running `scripts/check-merge-ready.py` over assembling a list at all** — it derives its
 own, and it reaches the pull-request-only gates a local run cannot.
 
+### 5 · Hunt a CLAIM with `find-claim.py`, never a line-based grep (added 2026-10-07)
+
+Rules 1b and 3 both end in a search — *say what you counted*, *enumerate the class*. ⛔ **A
+line-oriented search cannot find a sentence that wraps**, so those rules were being satisfied by an
+instrument that silently under-reports. Measured on PR #367: a false assertion wrapped across two
+lines, `grep` found only its retraction, and the file was reported clean. Round 2 graded the miss
+**High** (backlog #258).
+
+    python3 scripts/find-claim.py --pattern "<the claim>" --control "<a phrase you know is there>" \
+        --expect absent <paths>
+
+⚠ **`grep -z` is the textbook fix and it returned ZERO** on the same file — worse than the original
+miss, because zero reads as *clean*. `grep` here is ugrep wearing the name, so GNU's documentation
+for `-z` does not describe what runs.
+
+**What the `--control` is for, and it is the whole point:** it is a phrase you assert IS present. If
+it does not hit, the run is **CANNOT RUN**, never *no matches* — this repository's *a check that
+cannot reach its subject is a failure, never a pass*, applied to search. The tool's own docstring
+carries the rest; it is not restated here.
+
 ### ⛔ The shape THIS SECTION keeps, and why it is a SHAPE and not a pattern
 
 > **Scope: this section — its preamble and the bodies of rules 1, 1b, 2, 3 and 4.** Within it, three
