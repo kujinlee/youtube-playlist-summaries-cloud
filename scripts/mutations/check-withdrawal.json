@@ -312,12 +312,12 @@
     ]
   },
   {
-    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252) ⟳ RETARGETED r6: BLANK_LINE became PARA_END when r6 Claude M1 added the measured block-start rule",
+    "name": "⛔ r5 Codex H1 (second witness) — the blank-line rejection is severed: two backticks either side of a PARAGRAPH BREAK pair as a span and mask every boundary between them ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252) ⟳ RETARGETED r6: BLANK_LINE became PARA_END when r6 Claude M1 added the measured block-start rule ⟳ RETARGETED r7: PARA_END became `paragraph_ends_between` + BLANK_OR_BLOCK when r7 Codex H1 required the previous line; the SUBJECT survived in a new form, so this is a retarget and not a retirement",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "        if PARA_END.search(text[e:cs]):\n            i += 1\n            continue\n",
-        ""
+        "    r\"[ \\t\\r]*$\"                                # blank — `\\r` so a CRLF break still counts (r6 L1)",
+        "    r\"(?!x)x\"                                   # blank — SEVERED"
       ]
     ],
     "expect": [
@@ -403,16 +403,42 @@
     ]
   },
   {
-    "name": "⛔ r6 Claude M1 — PARA_END forgets that a markdown BLOCK START ends a paragraph, so backticks pair across a list item and the mask erases the very boundary SENTENCE_SPLIT adds for it. 37 disagreeing inputs in 29 shapes, every one containing a list marker ⟳ RETARGETED r6: the L1 `\\r` fix moved this definition",
+    "name": "⛔ r6 Claude M1 — PARA_END forgets that a markdown BLOCK START ends a paragraph, so backticks pair across a list item and the mask erases the very boundary SENTENCE_SPLIT adds for it. 37 disagreeing inputs in 29 shapes, every one containing a list marker ⟳ RETARGETED r6: the L1 `\\r` fix moved this definition ⟳ RETARGETED r7: PARA_END became `paragraph_ends_between` + BLANK_OR_BLOCK when r7 Codex H1 required the previous line; the SUBJECT survived in a new form, so this is a retarget and not a retirement",
     "file": "scripts/check-withdrawal.py",
     "edits": [
       [
-        "PARA_END = re.compile(r\"\\n[ \\t\\r]*\\n\"\n                      r\"|\\n {0,3}(?:[-*+][ \\t]|1[.)][ \\t]|#{1,6}[ \\t]|>)\")",
-        "PARA_END = re.compile(r\"\\n[ \\t\\r]*\\n\")"
+        "    r\"|[ \\t]{0,3}(?:[-*+][ \\t]+\\S\"              # a NON-EMPTY bullet",
+        "    r\"|[ \\t]{0,3}(?:[-*+][ \\t]+(?!x)x\"           # a NON-EMPTY bullet — SEVERED"
       ]
     ],
     "expect": [
       "⭐ r6: a bullet line ends it too"
+    ]
+  },
+  {
+    "name": "⛔ r7 Codex H1 — a block-quote line always ends the paragraph again, so a quote CONTINUATION rejects a genuine span and its closer opens another, masking live prose and suppressing the figure",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "            if not pq or len(nq.group(1)) > len(pq.group(1)):",
+        "            if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ r7: a `>` line CONTINUING a quote does not end the paragraph, so the span is genuine and the figure after it survives — rejecting the span made its closer open another"
+    ]
+  },
+  {
+    "name": "⛔ r7 — the LAZY-CONTINUATION branch is severed, so a non-`>` line inside a quote always continues the paragraph. Measured: this is what drove the LENIENT disagreement count from 28 UP to 32 while the total looked like it improved",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        elif pq:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ r7: LAZY CONTINUATION — inside a quote, a line WITHOUT `>` continues the paragraph only as plain prose; an empty `* ` marker closes the quote, where in prose it cannot interrupt. Both parsers agree, and getting this wrong put the lenient count UP"
     ]
   }
 ]

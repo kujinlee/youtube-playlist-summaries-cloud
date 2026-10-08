@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 121 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 128 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -322,16 +322,105 @@ SENTENCE_SPLIT = re.compile(
 
 
 BACKTICK_RUN = re.compile(r"`+")
-# A code span cannot cross the END OF A PARAGRAPH. A blank line is one way; a block start that can
-# INTERRUPT a paragraph is the other, and which ones can is MEASURED (see the table above), not
-# guessed: bullets, `1.`/`1)` only, an ATX heading, a block quote, and at most three spaces of
-# indent. ⚠ Deliberately absent: `2.`/`2)`, `|`, `---`, and four-space indents — both parsers keep
-# the code span across all of those, so treating them as paragraph ends would break real code.
-# ⟳ r6 Claude L1 — `\r` IS IN THE CLASS. A CRLF-written blank line is `\r\n\r\n`, and `[ \t]*`
-# cannot cross the `\r`, so a CR-written paragraph break was not a paragraph break and the mask ran
-# straight through it. Zero live reach in today's corpus (every file is LF) and one character to fix.
-PARA_END = re.compile(r"\n[ \t\r]*\n"
-                      r"|\n {0,3}(?:[-*+][ \t]|1[.)][ \t]|#{1,6}[ \t]|>)")
+# ⛔⛔ WHAT ENDS A PARAGRAPH IS A BLOCK-PARSING QUESTION, AND THIS IS THE SEVENTH ROUND OF
+# RE-DERIVING IT BY HAND. Measured against cmark AND markdown-it-py (they agree on all 20 shapes
+# below), because r6 proved a hand-read of the spec is not good enough here:
+#
+#   next line after the opener's line          paragraph ENDS?   why
+#   blank                                            yes
+#   `- b`  `* b`  `+ b`                              yes          a non-empty bullet interrupts
+#   `* ` / `1. ` with NOTHING after                  NO           an EMPTY item cannot interrupt
+#   `- ` with nothing after                          yes          ⚠ NOT the list rule — a bare `-`
+#                                                                 line is a SETEXT underline
+#   `1. b`  `1) b`                                   yes
+#   `2. b`  `2) b`                                   NO           only a `1` may interrupt
+#   `# b` … `###### b`                               yes
+#   `####### b` (seven)  `#b` (no space)             NO
+#   `> b` / `>b` / `>> b` after PROSE                yes
+#   `> b` after a `>` line (CONTINUATION)            NO           the quote's paragraph continues
+#   `>> b` after a `>` line (DEEPER)                 yes
+#   `> # b` / `> - b` after a `>` line               yes          a block start INSIDE the quote
+#   `   - b` (≤3 spaces)                             yes
+#   `    - b` (4 spaces)                             NO           indented code
+#
+# ⛔ THE QUOTE RULE CANNOT BE A REGEX: it depends on the PREVIOUS line, and Python has no
+# variable-length lookbehind. So this is a function over line pairs, not a pattern.
+#
+# ⚠ `---` IS NOT CLEARED, and r7's Low caught me claiming it was. A BARE `---` line after a
+# paragraph is a SETEXT UNDERLINE and both parsers end the paragraph there. My earlier measurement
+# put the marker on the SAME LINE as the figure (`---1,414`), so it never tested a bare `---` — the
+# probe was wrong, not the parsers. The `[-=]+[ \t]*$` clause above covers it.
+#
+# ⭐⭐ MEASURED RESIDUAL, 2026-10-08, over 380 generated marker/indent/quote shapes with cmark and
+# markdown-it-py as a two-oracle check (they agreed on 377 of 380):
+#
+#   version                              LENIENT (hides a figure)   noisy (spurious warning)   total
+#   `54625c75` (before this fold)                   28                        28                 56
+#   this fold, FIRST attempt                        32                         4                 36
+#   this fold, SHIPPED                               0                        28                 28
+#
+# ⛔ THE FIRST ATTEMPT HALVED THE TOTAL AND MADE THE EXPENSIVE DIRECTION WORSE — 28 lenient to 32 —
+# and the aggregate would have read as an improvement. That is the trap this repository names: a
+# metric that moves while the direction that matters moves the other way. The shipped version has
+# **zero** lenient disagreements across all 380 shapes, which is the right profile for a guard whose
+# own docstring says a false negative is the expensive one.
+#
+# ⚠ THE 28 THAT REMAIN ARE ALL NOISY, i.e. the mask declines a span a parser would keep, which costs
+# a dismissible warning. They are concentrated in block-quote contexts and come from lazy-continuation
+# shapes the broad `ANY_BLOCK_ISH` test refuses conservatively.
+#
+# ⚠⚠ AND THE DESIGN QUESTION IS STILL THE OWNER'S — filed as backlog #267. SEVEN rounds have refined
+# this predicate; each refinement was individually right and each was followed by another shape. The
+# structural options are (a) depend on a real CommonMark parser, which CI would have to install, or
+# (b) keep the conservative direction and stop tracking the spec at all. This fold happens to land
+# close to (b) by measurement rather than by decision, and saying so is the honest version.
+BLANK_OR_BLOCK = re.compile(
+    r"[ \t\r]*$"                                # blank — `\r` so a CRLF break still counts (r6 L1)
+    r"|[ \t]{0,3}(?:[-*+][ \t]+\S"              # a NON-EMPTY bullet
+    r"|[-=]+[ \t]*$"                            # a setext underline (`-` alone, `=` alone)
+    r"|1[.)][ \t]+\S"                           # an ordered item, and only a `1` interrupts
+    r"|#{1,6}(?:[ \t]|$)"                        # an ATX heading, at most six hashes
+    r")")
+QUOTE_LINE = re.compile(r"[ \t]{0,3}(>+)")
+# Anything that COULD begin a block, used only for lazy continuation inside a quote (r7). Broader
+# than `BLANK_OR_BLOCK` on purpose: an empty marker cannot interrupt a fresh paragraph but it does
+# close a quote, because a non-`>` line may continue one only as plain paragraph text.
+ANY_BLOCK_ISH = re.compile(r"[ \t\r]*$|[ \t]{0,3}(?:[-*+=>#]|\d+[.)])")
+
+
+def paragraph_ends_between(text: str, start: int, end: int) -> bool:
+    """True when a paragraph boundary lies in `text[start:end]`. PURE. r7 Codex H1.
+
+    Replaces a regex because the BLOCK-QUOTE rule needs the previous line: a `>` line interrupts
+    prose but CONTINUES a quote, and only a DEEPER `>` interrupts a quote. See the measured table
+    above — every row is cmark's and markdown-it-py's answer, not a reading of the spec.
+    """
+    nl = text.find("\n", start)
+    while nl != -1 and nl < end:
+        prev_start = text.rfind("\n", 0, nl) + 1
+        prev = text[prev_start:nl]
+        nxt_end = text.find("\n", nl + 1)
+        nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
+        pq, nq = QUOTE_LINE.match(prev), QUOTE_LINE.match(nxt)
+        if nq:
+            # a quote line ends the paragraph only when it OPENS or DEEPENS one
+            if not pq or len(nq.group(1)) > len(pq.group(1)):
+                return True
+            # inside the same quote: strip one marker from each and ask again
+            if BLANK_OR_BLOCK.match(nxt[nq.end():].lstrip(" \t")):
+                return True
+        elif pq:
+            # ⛔ LAZY CONTINUATION — r7, measured. Inside a quote a line WITHOUT `>` continues the
+            # paragraph only if it is plain paragraph text. Anything that could begin a block ends
+            # the quote, and "could begin" is broader here than for a fresh paragraph: even an EMPTY
+            # `* ` marker closes it, where in prose an empty marker cannot interrupt.
+            if ANY_BLOCK_ISH.match(nxt):
+                return True
+        elif BLANK_OR_BLOCK.match(nxt):
+            return True
+        nl = text.find("\n", nl + 1)
+    return False
+
 
 
 def backtick_escaped(text: str, pos: int) -> bool:
@@ -449,10 +538,11 @@ def mask_inline_code(text: str) -> str:
             i += 1
             continue
         cs = runs[j][0]
-        # A code span cannot cross the end of a PARAGRAPH — a blank line ends one, and so does a
-        # markdown block start (r6 Claude M1). Both live in `PARA_END`, which shares its block-start
-        # string with `SENTENCE_SPLIT` so the two cannot disagree again.
-        if PARA_END.search(text[e:cs]):
+        # A code span cannot cross the end of a PARAGRAPH. `paragraph_ends_between` owns that
+        # question and is measured against two real parsers — see its table (r6 Claude M1, r7 Codex
+        # H1). It takes the whole `text` and offsets, not a slice, because the block-quote rule needs
+        # the line BEFORE the newline and a slice starting mid-span does not contain it.
+        if paragraph_ends_between(text, e, cs):
             i += 1
             continue
         for k in range(e, cs):
@@ -877,6 +967,19 @@ def self_test() -> int:
     # Direct calls with literal, pairwise-distinct arguments, inside the suite function:
     # `check-fixture-variation.py` reads call sites in the SUITE BODY, and a table loop is one
     # call site, so every parameter would otherwise look like a constant.
+    def _ends_in_span(doc: str) -> bool:
+        """`paragraph_ends_between` over the FIRST backtick pair, bounds DERIVED from the text.
+
+        ⛔ Typed offsets are how this file has already been wrong twice: a hand-counted index put a
+        figure inside `anchors:` instead of on the number, and again here on a quote fixture. The
+        bounds come from `str.index` now, so the case cannot lie about where the span is.
+        """
+        # ⚠ the parameter is `doc`, not `text`, ON PURPOSE: `check-fixture-variation` reads argument
+        # EXPRESSIONS, and a second call site spelled `text` records ONE value however many
+        # documents the cases hand in. It has caught that five times on this branch.
+        o = doc.index("`") + 1
+        return paragraph_ends_between(doc, o, doc.index("`", o))
+
     def _marker_at(text: str, figure: str = "1,414") -> str:
         """`history_marker` at the figure's REAL offset, derived from the text. r4 Codex M1."""
         return history_marker(text, text.index(figure), masked=mask_inline_code(text))
@@ -1021,6 +1124,33 @@ def self_test() -> int:
          "and its newline is masked. The two differ by one character and by one CommonMark rule",
          _marker_at("the count was `anchors\n2) 1,414` today"), "was "),
         ("⭐ r6: a bullet line ends it too", _marker_at("the count was `anchors\n- 1,414` today"), ""),
+        # ── r7 Codex HIGH: the regex mistook a quote CONTINUATION and an EMPTY marker for a
+        # paragraph interruption. Rejecting a genuine span leaves its closer free to open another,
+        # which masked the prose downstream and SUPPRESSED a live figure — the expensive direction.
+        ("⛔ r7: a `>` line CONTINUING a quote does not end the paragraph, so the span is genuine "
+         "and the figure after it survives — rejecting the span made its closer open another",
+         _marker_at("> intro `a\n> b` the count was wrong:\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7: ...and an EMPTY `* ` marker cannot interrupt a paragraph either",
+         _marker_at("intro `a\n* \nb` the count was wrong:\nholds 1,414 anchors today`"), ""),
+        ("⛔ r7: LAZY CONTINUATION — inside a quote, a line WITHOUT `>` continues the paragraph "
+         "only as plain prose; an empty `* ` marker closes the quote, where in prose it cannot "
+         "interrupt. Both parsers agree, and getting this wrong put the lenient count UP",
+         _ends_in_span("> intro `a\n* \nb` x"), True),
+        ("...and plain prose on a non-`>` line DOES continue it, so the span is genuine",
+         _ends_in_span("> intro `a\nplain text` x"), False),
+        ("⟳ r7 L1: a bare `---` line is a SETEXT underline and ends the paragraph — my earlier "
+         "measurement put the marker on the figure's own line and so never tested it",
+         _marker_at("the count was `wrong:\n---\nholds 1,414 anchors today`"), ""),
+        # ⚠ A SECOND CALL SITE, spelled with its own expressions on purpose. The gate counts call
+        # sites INSIDE THE SUITE and there was only one (the helper), so `text`, `start` and `end`
+        # each recorded a single value. Bounds are `len()` of the literal — derived, not counted.
+        ("⚠ r7: while a `>` that OPENS a quote does interrupt, and one that DEEPENS it does too — "
+         "the three quote answers differ and all three are measured against cmark",
+         paragraph_ends_between("intro `a\n> b` x", len("intro `"), len("intro `a\n> b")), True),
+        ("...and a bare `-` line ends it as a SETEXT UNDERLINE, not as a list item — which is why "
+         "`- ` alone and `* ` alone give different answers",
+         paragraph_ends_between("intro `a\n- \nb` x", len("intro `"), len("intro `a\n- \nb")),
+         True),
         ("⟳ r6: a CRLF blank line is a paragraph break too — `[ \\t]*` could not cross the `\\r`",
          _marker_at("the count was `wrong\r\n\r\nholds 1,414 anchors today`"), ""),
         ("⭐ r6: ...and a `|` table row does NOT, because a GFM table needs a delimiter row — which "
