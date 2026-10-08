@@ -76,5 +76,44 @@
       "⭐ no rows touched says so, rather than claiming everything passed"
     ],
     "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "#251: added_rows stops filtering to added lines, so removed rows count as authored",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "            if l.startswith(\"+\") and is_backlog_row(l[1:])]",
+        "            if is_backlog_row(l[1:])]"
+      ]
+    ],
+    "expect": [
+      "added_rows keeps an added backlog row"
+    ]
+  },
+  {
+    "name": "#251: is_backlog_row accepts any line, so prose is read as a row",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    return bool(ROW_RE.match(line))",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "is_backlog_row on a table separator"
+    ]
+  },
+  {
+    "name": "#251: row_id returns a constant, so every finding names the same row",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    return m.group(1) if m else \"\"",
+        "    return \"0\""
+      ]
+    ],
+    "expect": [
+      "row_id on a non-row is empty"
+    ]
   }
 ]

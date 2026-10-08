@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 189 cases
+    python3 scripts/check-plan-code.py --self-test          # 205 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -696,9 +696,9 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
-    "scripts/check-provenance.py": 6,
-    "scripts/check-withdrawal.py": 7,
-    "scripts/find-claim.py": 7,
+    "scripts/check-provenance.py": 9,
+    "scripts/check-withdrawal.py": 8,
+    "scripts/find-claim.py": 8,
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
@@ -978,7 +978,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-09, backlog #98: a NEW guard arrives with its manifest in the SAME commit.
     # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
     # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
-    "scripts/check-backlog-closure.py": 9,
+    "scripts/check-backlog-closure.py": 10,
     # ⟳ 2026-09-10, backlog #106: 33 -> 34. The harness always REFUSED a suite whose red could
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
@@ -1042,7 +1042,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 111,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 115,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1557,6 +1557,161 @@ def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
             if ex not in lits[tgt]:
                 warnings.append(f"{name}: expect {ex[:60]!r} matches no string literal in {tgt}")
     return errors, warnings
+
+
+# ── backlog #251: what this branch WROTE, not what someone enumerated ────────────────────────
+# ⛔ The sweep is excellent at defending what a manifest names and BLIND to what was just
+# written — and a fix is by definition newly written. Measured on PR #364: the round-3 coverage
+# fold was two `print` statements no entry named (#241), and round 5 then found that severing
+# `if problems:` left the suite 104/104 GREEN while contrast regressions reported SUCCESS
+# (#248). One line removing the gate's verdict, nothing red.
+#
+# ⭐ GRANULARITY WAS CHOSEN BY MEASUREMENT, over this branch's own diff:
+#     per LINE      1,289 of 1,331 behavioural lines uncovered   (97%)  — unusable
+#     per FUNCTION     33 of    57 functions uncovered           (58%)  — still mostly noise
+#     per FUNCTION, with the exemptions below
+#                       9 of    28 uncovered                     (32%)  — and all nine were real
+# A line-level rule is hopeless because one anchor covers one line while a mutation exercises a
+# whole function. #56 is the reason the first two are not shipped.
+IO_CALLS = frozenset({
+    "run", "check_output", "Popen", "open", "read_text", "write_text", "iterdir", "rglob",
+    "glob", "mkdir", "unlink", "exists", "is_file", "is_dir", "stat", "getenv", "system",
+    # loading a module off disk is a fetch too — `_find_claim` in check-withdrawal.py was
+    # flagged until this line, and importing a sibling is exactly the fetch half the rule
+    # deliberately leaves uncovered.
+    "exec_module", "spec_from_file_location", "module_from_spec",
+})
+SUITE_FUNCS = frozenset({"_self_test", "self_test"})
+
+
+def coverage_exempt(name: str, enclosing, does_io: bool) -> bool:
+    """Is this function outside what a mutation manifest is expected to reach? PURE.
+
+    Four exemptions, each measured rather than assumed — they take the firing rate from 58% to
+    32%, and every finding that survives them was a genuine gap on the branch that wrote this:
+
+      * the SUITE itself, and anything nested inside it — mutating a case is not the point;
+      * `main`, the CLI dispatch, which `check-main-drivable.py` already owns;
+      * dunders — `__init__`, `__repr__` and friends carry no rule;
+      * anything doing I/O. `separate-the-rule-from-the-fetch` is this repository's own lesson:
+        the fetch half is deliberately not unit-tested, so demanding a mutation inside it is
+        demanding coverage the design says not to write.
+    """
+    return (name in SUITE_FUNCS or name == "main" or name.startswith("__")
+            or does_io or enclosing in SUITE_FUNCS)
+
+
+def uncovered_functions(src: str, changed_lines: set, anchored: set) -> list:
+    """Non-exempt functions this diff touched that no mutation anchor reaches. PURE."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    spans: dict = {}
+    exempt: set = set()
+
+    def walk(node, enclosing):
+        for ch in ast.iter_child_nodes(node):
+            if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                spans[ch.name] = (ch.lineno, ch.end_lineno or ch.lineno)
+                does_io = any(
+                    isinstance(n, ast.Call) and (
+                        (isinstance(n.func, ast.Attribute) and n.func.attr in IO_CALLS)
+                        or (isinstance(n.func, ast.Name) and n.func.id in IO_CALLS))
+                    for n in ast.walk(ch))
+                if coverage_exempt(ch.name, enclosing, does_io):
+                    exempt.add(ch.name)
+                walk(ch, ch.name if ch.name in SUITE_FUNCS else enclosing)
+            else:
+                walk(ch, enclosing)
+
+    walk(tree, None)
+
+    def owner(line: int):
+        best = None
+        for nm, (a, b) in spans.items():
+            if a <= line <= b and (best is None or (b - a) < (spans[best][1] - spans[best][0])):
+                best = nm
+        return best
+
+    touched = {o for ln in changed_lines if (o := owner(ln))}
+    return sorted(touched - exempt - anchored)
+
+
+def changed_lines_by_path(diff_text: str) -> dict:
+    """path -> set of line numbers this diff touches in the NEW file. PURE."""
+    out: dict = {}
+    cur = ""
+    for line in diff_text.split("\n"):
+        if line.startswith("+++ b/"):
+            cur = line[6:].strip()
+        elif line.startswith("@@") and cur:
+            m = re.search(r"\+(\d+)(?:,(\d+))?", line)
+            if m:
+                start = int(m.group(1))
+                count = int(m.group(2) or 1)
+                out.setdefault(cur, set()).update(range(start, start + count))
+    return out
+
+
+def run_diff_coverage(root: pathlib.Path, base: str) -> int:
+    """backlog #251, WARN-ONLY. 0 always unless the instrument could not run (2)."""
+    try:
+        r = subprocess.run(["git", "diff", "--unified=0", f"{base}...HEAD", "--", "scripts/"],
+                           capture_output=True, text=True, cwd=root)
+    except OSError as exc:
+        print(f"CANNOT RUN — git could not be invoked: {exc}", file=sys.stderr)
+        return 2
+    if r.returncode != 0:
+        print(f"CANNOT RUN — git diff against {base} failed. NOT CHECKED.", file=sys.stderr)
+        return 2
+    by_path = changed_lines_by_path(r.stdout)
+    if not by_path:
+        print("diff coverage — this branch changes nothing under scripts/.")
+        return 0
+    entries, _problems = load_manifests(root)
+    total = flagged = 0
+    for path in sorted(by_path):
+        if not path.endswith(".py"):
+            continue
+        f = root / path
+        if not f.is_file():
+            continue
+        src = f.read_text(encoding="utf-8")
+        anchored: set = set()
+        for e in entries:
+            if e.get("file") != path:
+                continue
+            for find, _r in e.get("edits", []):
+                i = src.find(find)
+                if i < 0:
+                    continue
+                ln = src.count("\n", 0, i) + 1
+                try:
+                    tree = ast.parse(src)
+                except SyntaxError:
+                    continue
+                for n in ast.walk(tree):
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                            and n.lineno <= ln <= (n.end_lineno or n.lineno):
+                        anchored.add(n.name)
+        gaps = uncovered_functions(src, by_path[path], anchored)
+        total += 1
+        if gaps:
+            flagged += len(gaps)
+            print(f"  {path}")
+            for g in gaps:
+                print(f"      {g}() changed, and no mutation anchor lands inside it")
+    if flagged:
+        print(f"WARN — {flagged} function(s) this branch changed carry no mutation that reaches "
+              f"them. The sweep defends what a manifest names and is blind to what was just "
+              f"written, and a fix is by definition newly written (backlog #251). Warn-only: "
+              f"comments and pure refactors do produce false positives, and a gate that is red "
+              f"without cause gets switched off (#56).")
+    else:
+        print(f"diff coverage ok — every non-exempt function changed across {total} file(s) has "
+              f"a mutation anchored inside it.")
+    return 0
 
 
 def run_binding(root: pathlib.Path, quiet: bool = False, verbose: bool = False) -> int:
@@ -5093,7 +5248,63 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1443)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1453)
+
+    # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
+    _SRC251 = (
+        "def pure_rule(x):\n"
+        "    return x + 1\n"
+        "\n"
+        "def fetches():\n"
+        "    return open('f').read()\n"
+        "\n"
+        "def main():\n"
+        "    return 0\n"
+        "\n"
+        "def _self_test():\n"
+        "    def helper():\n"
+        "        return 1\n"
+        "    return helper()\n"
+    )
+    case("⭐ a changed PURE function with no anchor is reported",
+         uncovered_functions(_SRC251, {2}, set()), ["pure_rule"])
+    case("...and is silent once an anchor lands inside it",
+         uncovered_functions(_SRC251, {2}, {"pure_rule"}), [])
+    case("a function that does I/O is exempt — the fetch half is deliberately uncovered",
+         uncovered_functions(_SRC251, {5}, set()), [])
+    case("`main` is exempt; check-main-drivable.py owns it",
+         uncovered_functions(_SRC251, {8}, set()), [])
+    case("the suite itself is exempt — mutating a case is not the point",
+         uncovered_functions(_SRC251, {11}, set()), [])
+    case("⭐ ...and so is a helper NESTED inside the suite, which is scaffolding",
+         uncovered_functions(_SRC251, {12}, set()), [])
+    case("a file that does not parse yields nothing rather than raising",
+         uncovered_functions("def (", {1}, set()), [])
+    case("coverage_exempt: a dunder carries no rule",
+         coverage_exempt("__repr__", None, False), True)
+    case("coverage_exempt: an ordinary pure function is NOT exempt",
+         coverage_exempt("decide", None, False), False)
+    case("coverage_exempt: doing I/O exempts it",
+         coverage_exempt("decide", None, True), True)
+    case("coverage_exempt: being nested in the suite exempts it",
+         coverage_exempt("helper", "_self_test", False), True)
+    # ⚠ THE CASE ABOVE EXERCISES `enclosing`, NOT `name` — measured: the mutation deleting
+    # `name in SUITE_FUNCS` SURVIVED it. The suite function itself needs its own case.
+    case("coverage_exempt: the suite function ITSELF is exempt, by NAME",
+         coverage_exempt("_self_test", None, False), True)
+    # ⚠ AND THE NESTED-WALK CASE BELOW NEEDS A NON-SUITE PARENT. With recursion removed, a
+    # helper nested in an ordinary function is still reported — under its PARENT's name — so a
+    # case that only counts findings cannot see the difference. This one names it.
+    case("⭐ a helper nested in an ORDINARY function is reported under its OWN name",
+         uncovered_functions(
+             "def outer(x):\n    def inner(y):\n        return y + 1\n    return inner(x)\n",
+             {3}, set()), ["inner"])
+    case("changed_lines_by_path reads a hunk header into line numbers",
+         changed_lines_by_path("+++ b/scripts/a.py\n@@ -1 +4,2 @@"), {"scripts/a.py": {4, 5}})
+    case("...and a single-line hunk has no count, defaulting to one line",
+         changed_lines_by_path("+++ b/scripts/a.py\n@@ -1 +9 @@"), {"scripts/a.py": {9}})
+    case("...and a diff naming no file yields nothing",
+         changed_lines_by_path("@@ -1 +1 @@"), {})
 
     # ── backlog #252: the eager binding pass ────────────────────────────────────────────────
     _SRC = {"scripts/a.py": "def f():\n    return 1\n\ncase('the name', 1, 1)\n"}
@@ -5254,6 +5465,8 @@ def main(argv: list[str]) -> int:
                          "provenance; only this buys freshness.")
     ap.add_argument("--binding", action="store_true",
                     help="backlog #252: the eager anchor/expect pass, no tree staged (~66 ms)")
+    ap.add_argument("--diff-coverage", metavar="BASE", nargs="?", const="origin/master",
+                    help="backlog #251: functions this branch changed with no mutation reaching them")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="with --binding: list every expect warning instead of counting them")
     ap.add_argument("--mutate", metavar="ROOT",
@@ -5371,6 +5584,8 @@ def main(argv: list[str]) -> int:
             return 2
     if a.binding:
         return run_binding(pathlib.Path("."), verbose=a.verbose)
+    if a.diff_coverage:
+        return run_diff_coverage(pathlib.Path("."), a.diff_coverage)
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():

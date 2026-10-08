@@ -1354,5 +1354,57 @@
     "expect": [
       "an expect naming nothing warns, and WARNS rather than errs (4.3% are f-strings)"
     ]
+  },
+  {
+    "name": "#251: case_name_literals swallows a parse error as a crash instead of an empty set",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    except SyntaxError:\n        return set()",
+        "    except SyntaxError:\n        return {'x'}"
+      ]
+    ],
+    "expect": [
+      "...and returns an empty set for a file that does not parse, rather than raising"
+    ]
+  },
+  {
+    "name": "#251: coverage_exempt stops exempting the suite, so every case function is a finding",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return (name in SUITE_FUNCS or name == \"main\" or name.startswith(\"__\")",
+        "    return (name == \"main\" or name.startswith(\"__\")"
+      ]
+    ],
+    "expect": [
+      "coverage_exempt: the suite function ITSELF is exempt, by NAME"
+    ]
+  },
+  {
+    "name": "#251: uncovered_functions stops subtracting the anchored set, so a covered function is flagged",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return sorted(touched - exempt - anchored)",
+        "    return sorted(touched - exempt)"
+      ]
+    ],
+    "expect": [
+      "...and is silent once an anchor lands inside it"
+    ]
+  },
+  {
+    "name": "#251: the nested walk stops recursing, so a function inside a class is never seen",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                walk(ch, ch.name if ch.name in SUITE_FUNCS else enclosing)",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a helper nested in an ORDINARY function is reported under its OWN name"
+    ]
   }
 ]

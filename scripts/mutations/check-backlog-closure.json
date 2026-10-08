@@ -103,5 +103,18 @@
       "⭐ ...and NOT a row it merely rewrites — a closing edit emits a + line too"
     ],
     "file": "scripts/check-backlog-closure.py"
+  },
+  {
+    "name": "#251: claims_filing stops matching, so a fold commit's claim is never read",
+    "file": "scripts/check-backlog-closure.py",
+    "edits": [
+      [
+        "    return bool(FILING.search(message))",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "claims_filing reads the CAPS form a fold commit uses"
+    ]
   }
 ]

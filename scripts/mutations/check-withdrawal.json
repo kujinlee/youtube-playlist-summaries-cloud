@@ -89,5 +89,18 @@
     "expect": [
       "figure with two words either side"
     ]
+  },
+  {
+    "name": "#251: window_around ignores its span, so the history check reads the whole document",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return text[max(0, start - span):min(len(text), end + span)]",
+        "    return text"
+      ]
+    ],
+    "expect": [
+      "a window clips at the start of the text"
+    ]
   }
 ]
