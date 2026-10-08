@@ -55,12 +55,12 @@
     "expect": "the refusal NAMES the hidden near-misses, which are the whole clue"
   },
   {
-    "name": "the refusal stops naming `codex update`, leaving the reader with a predicate and no action ⟳ retargeted 2026-10-07: the SAME COMMIT's own correction (making the diagnosis conditional) rewrote this line and orphaned the anchor — round 1 Claude BLOCKING",
+    "name": "the refusal stops naming `codex update`, leaving the reader with a predicate and no action ⟳ retargeted TWICE on 2026-10-07: r1's own correction rewrote this line, and so did the #254 fix. Found in 66 ms by the binding pass #252 asked for, not by a 15-minute shard.",
     "file": "scripts/codex-frontier-model.py",
     "edits": [
       [
-        "        bits.append(\"  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but none \"\n                    \"is listed. Run `codex update`, then re-run this.\")",
-        "        bits.append(\"  cause unknown.\")"
+        "            bits.append(\"  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but \"\n                        \"none is listed. Run `codex update`, then re-run this.\")",
+        "            bits.append(\"  cause unknown.\")"
       ]
     ],
     "expect": "...and the one command that changes any of it"

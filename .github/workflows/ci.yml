@@ -742,6 +742,15 @@ jobs:
           #                                                        (round 6 L1)
           # The 0->1 conversion now lives in `parse_shard`, which has a suite, mutation entries
           # and ratchet coverage. The workflow interpolates two strings and asserts nothing.
+          # ⛔ BACKLOG #252 — THE EAGER BINDING PASS, BEFORE ANY TREE IS STAGED. ~0.9 s against
+          # a 15-minute shard. An anchor binds by TEXT, so an edit elsewhere in the file unbinds
+          # it silently, and the only other signal is a whole file reporting
+          # `NOT MEASURED — 175 of 176` after 14m58s. FIVE instances in one session; a sixth was
+          # found by this pass on its first live run, inside the commit that caused it.
+          # ⚠ Every shard runs it: it is cheap, and an unbound anchor is a GLOBAL fact about the
+          # manifest, not a property of one slice.
+          python3 scripts/check-plan-code.py --binding
+
           python3 scripts/check-plan-code.py --mutate . \
             --shard0 "$SHARD_INDEX/$SHARD_TOTAL"
 

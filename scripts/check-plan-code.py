@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 178 cases
+    python3 scripts/check-plan-code.py --self-test          # 189 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -80,6 +80,7 @@ ordinary way to read a log, and the sentence was stated as an invariant.
 """
 from __future__ import annotations
 import argparse
+import ast
 import dataclasses
 import contextlib
 import io
@@ -1041,7 +1042,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 111,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1472,6 +1473,143 @@ EXPECTED_MUTATIONS = {
 }
 
 MANIFEST_DIR = "scripts/mutations"
+
+
+def expects_of(entry: dict) -> list[str]:
+    """An entry's `expect` as a list, whatever shape it was written in. PURE.
+
+    ⚠ MEASURED 2026-10-07: of 1,435 live entries, **709 carry a list and 726 a bare string**.
+    Iterating the field directly therefore walks a string CHARACTER BY CHARACTER, and a first
+    draft of the measurement below duly reported 43,346 expects — including `'a'`, `' '` and
+    `'F'` — instead of 1,554. A reader of this function is one line away from that bug.
+    """
+    v = entry.get("expect")
+    if v is None:
+        return []
+    return [v] if isinstance(v, str) else list(v)
+
+
+def case_name_literals(source: str) -> set:
+    """Every string literal in `source`, as the candidate set for an `expect`. PURE.
+
+    A case name is written as a literal and printed verbatim, so a name that resolves to no
+    literal is almost always an anchor that stopped binding. ⚠ ALMOST: a name built by an
+    f-string cannot be recovered statically, and MEASURED over the live manifests that is
+    **67 of 1,554 expects (4.3%)**. That is why the `expect` half WARNS and the anchor half
+    REFUSES — a 4.3% false-fire rate on a blocking gate is how #56 measured a gate getting
+    switched off.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    return {n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+
+
+def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
+    """(errors, warnings) for anchors that do not bind and expects that name no case. PURE.
+
+    ⛔ BACKLOG #252 — FIVE instances in one session, and a SIXTH while this very row was being
+    closed. An anchor binds by TEXT, so an edit *elsewhere in the file* silently unbinds it, and
+    the only signal was a whole file reporting `NOT MEASURED — 175 of 176` after a **14m58s**
+    shard: 176 entries bought no verdict because one could not bind.
+
+    This pass is eager and cheap — MEASURED at **66 ms over 1,443 anchors across 62 manifests**
+    at this commit — so it runs before any tree is staged. A 15-minute shard must never be the
+    thing that tells you a find-string moved.
+
+    ⭐ It found its sixth instance on its first live run: the #254 fix rewrote the refusal line
+    that `codex-frontier-model.json` was anchored to, inside the commit that fixed #254 — and
+    that entry's own name already recorded an identical retarget earlier the same day.
+
+    ERRORS (anchor half): a find-string that occurs zero times, or more than once. Both are
+    defects — zero measures nothing, and more than one means the mutation is not the edit its
+    author described.
+    WARNINGS (expect half): a name resolving to no string literal in the target.
+    """
+    errors: list = []
+    warnings: list = []
+    lits: dict = {}
+    for e in entries:
+        tgt = e.get("file", "")
+        src = source_of.get(tgt)
+        name = str(e.get("name", "<unnamed>"))[:70]
+        if src is None:
+            errors.append(f"{name}: target {tgt} is unreadable — the anchor cannot be checked")
+            continue
+        for find, _repl in e.get("edits", []):
+            n = src.count(find)
+            shown = find.strip().splitlines()[0][:90]
+            # Two branches, not one, so each defect has its OWN anchor and can be mutated
+            # separately — a single `n != 1` is one mutation pretending to cover two rules.
+            if n == 0:
+                errors.append(f"{name}: its anchor is GONE from {tgt} — an edit elsewhere "
+                              f"unbound it, and this mutation now measures nothing"
+                              f"\n      {shown!r}")
+            elif n > 1:
+                errors.append(f"{name}: its anchor occurs {n}x in {tgt} — ambiguous, so the "
+                              f"mutation is not the edit its author described"
+                              f"\n      {shown!r}")
+        if tgt not in lits:
+            lits[tgt] = case_name_literals(src)
+        for ex in expects_of(e):
+            if ex not in lits[tgt]:
+                warnings.append(f"{name}: expect {ex[:60]!r} matches no string literal in {tgt}")
+    return errors, warnings
+
+
+def run_binding(root: pathlib.Path, quiet: bool = False, verbose: bool = False) -> int:
+    """The eager pass as a command. 0 = bound, 1 = an anchor does not bind, 2 = CANNOT RUN."""
+    entries, problems = load_manifests(root)
+    if problems:
+        # ⛔ DEFER, do not pre-empt. A manifest that does not LOAD is already owned by
+        # `mutate_delivered`'s report — the comment at the `--mutate` dispatch says so, and my
+        # first version returned 2 here instead, which broke two existing cases about the
+        # shortfall tally. This pass answers one question: do the anchors BIND. It must not
+        # answer a question that already has an owner (one mechanism per concern).
+        if quiet:
+            return 0
+        for pr in problems:
+            print(pr, file=sys.stderr)
+        return 2
+    if not entries:
+        if quiet:
+            return 0
+        print("CANNOT RUN — no manifest entries. A zero over nothing is not a pass.",
+              file=sys.stderr)
+        return 2
+    src_of: dict = {}
+    for e in entries:
+        tgt = e.get("file", "")
+        if tgt not in src_of:
+            f = root / tgt
+            try:
+                src_of[tgt] = f.read_text(encoding="utf-8")
+            except OSError:
+                src_of[tgt] = None
+    errors, warnings = binding_problems(entries, src_of)
+    anchors = sum(len(e.get("edits", [])) for e in entries)
+    # ⚠ THE WARNINGS ARE SUMMARISED, NOT LISTED. 67 of them print on every clean run, and a
+    # guard that prints 67 lines when nothing is wrong is one nobody reads — the attention half
+    # of #56. The COUNT is the signal: if it moves, something changed. `-v` for the detail.
+    if verbose:
+        for w in warnings:
+            print(f"  warn  {w}")
+    for er in errors:
+        print(f"  ERROR {er}", file=sys.stderr)
+    if errors:
+        print(f"UNBOUND — {len(errors)} anchor problem(s) over {anchors} anchors in "
+              f"{len(entries)} entries. A mutation whose anchor does not bind measures NOTHING, "
+              f"and the only other signal is a whole file reporting NOT MEASURED after a "
+              f"15-minute shard (backlog #252).", file=sys.stderr)
+        return 1
+    if not quiet:
+        print(f"binding OK — {anchors} anchor(s) across {len(entries)} entries each resolve to "
+              f"exactly one site; {len(warnings)} expect(s) could not be matched to a literal "
+              f"(f-string names are not statically recoverable).")
+    return 0
+
 
 
 def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
@@ -4955,7 +5093,42 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1435)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1440)
+
+    # ── backlog #252: the eager binding pass ────────────────────────────────────────────────
+    _SRC = {"scripts/a.py": "def f():\n    return 1\n\ncase('the name', 1, 1)\n"}
+    case("⭐ an anchor absent from its target is an ERROR, not a 15-minute shard",
+         len(binding_problems([{"name": "m", "file": "scripts/a.py",
+                                "edits": [["return 2", "return 3"]]}], _SRC)[0]), 1)
+    case("an anchor present exactly once is clean",
+         binding_problems([{"name": "m", "file": "scripts/a.py",
+                            "edits": [["return 1", "return 2"]]}], _SRC)[0], [])
+    case("⭐ an AMBIGUOUS anchor — present twice — is an error too, because the mutation is "
+         "then not the edit its author described",
+         len(binding_problems([{"name": "m", "file": "scripts/dup.py",
+                                "edits": [["x", "y"]]}], {"scripts/dup.py": "x x"})[0]), 1)
+    case("an unreadable target is an error rather than a silent skip",
+         len(binding_problems([{"name": "m", "file": "scripts/gone.py",
+                                "edits": [["a", "b"]]}], {"scripts/gone.py": None})[0]), 1)
+    case("an expect naming a real case literal produces no warning",
+         binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                            "expect": ["the name"]}], _SRC)[1], [])
+    case("an expect naming nothing warns, and WARNS rather than errs (4.3% are f-strings)",
+         (len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                                 "expect": ["no such case"]}], _SRC)[1]),
+          len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                                 "expect": ["no such case"]}], _SRC)[0])), (1, 0))
+    case("⭐ expects_of accepts a bare STRING — 726 of 1,435 live entries are written that way, "
+         "and iterating one walks it character by character",
+         expects_of({"expect": "one name"}), ["one name"])
+    case("...and a list passes through unchanged",
+         expects_of({"expect": ["a", "b"]}), ["a", "b"])
+    case("...and a missing expect is no expects, not a crash",
+         expects_of({}), [])
+    case("case_name_literals finds a literal the suite would print",
+         "the name" in case_name_literals("case('the name', 1, 1)"), True)
+    case("...and returns an empty set for a file that does not parse, rather than raising",
+         case_name_literals("def ("), set())
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -5079,6 +5252,10 @@ def main(argv: list[str]) -> int:
                     help="FAIL if the evidence block pasted in the plan is not exactly "
                          "what this run produces. Generating the block bought "
                          "provenance; only this buys freshness.")
+    ap.add_argument("--binding", action="store_true",
+                    help="backlog #252: the eager anchor/expect pass, no tree staged (~66 ms)")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="with --binding: list every expect warning instead of counting them")
     ap.add_argument("--mutate", metavar="ROOT",
                     help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
                          "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
@@ -5192,6 +5369,8 @@ def main(argv: list[str]) -> int:
         if why:
             print(why, file=sys.stderr)
             return 2
+    if a.binding:
+        return run_binding(pathlib.Path("."), verbose=a.verbose)
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
@@ -5207,6 +5386,14 @@ def main(argv: list[str]) -> int:
         # ⚠ ONLY WHEN THE MANIFEST ITSELF LOADS. Over a broken manifest `len(muts)` is a
         # shortfall, and "shard 4 of 4 is empty" would then be a confident answer to the wrong
         # question — the manifest's own problems belong to `mutate_delivered`'s report.
+        # ⛔ BACKLOG #252 IS A SEPARATE COMMAND (`--binding`), NOT A HOOK HERE, and the reason
+        # is worth keeping. Wiring the eager pass into this path DID work and broke two existing
+        # cases: the r5 H1 fixtures build deliberately-absent anchors to exercise the TOTAL
+        # SHORTFALL tally, and an eager refusal means that path can no longer be reached through
+        # the CLI. Coverage of `mutate_delivered`'s reporting is worth more than saving a
+        # redundant 66 ms inside a run that is already fifteen minutes long. CI runs `--binding`
+        # as its own step BEFORE the sweep, which is where "before any tree is staged" is
+        # actually satisfied.
         if shard is not None:
             _muts, _problems = load_manifests(mroot)
             why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))
