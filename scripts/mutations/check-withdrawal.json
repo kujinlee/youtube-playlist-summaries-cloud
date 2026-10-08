@@ -1,0 +1,93 @@
+[
+  {
+    "name": "a figure unchanged by the hunk is reported as a correction anyway",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "if n not in added_blob:",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "a figure present on BOTH sides is not a correction"
+    ]
+  },
+  {
+    "name": "⭐ the replacement filter goes, so an UNCHANGED figure becomes an exemption token (fail-open)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "n for n in NUMBER_RE.findall(added_blob) if n not in removed_blob",
+        "n for n in NUMBER_RE.findall(added_blob)"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCHANGED figure on the same line is NOT a replacement"
+    ]
+  },
+  {
+    "name": "the replacement prong stops exempting, so a self-correcting sentence reads as a survivor",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return any(r in window for r in replacements)",
+        "return False"
+      ]
+    ],
+    "expect": [
+      "the replacement figure beside the old one means the text is correcting itself"
+    ]
+  },
+  {
+    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "if any(mark in window for mark in HISTORY_MARKERS):",
+        "if False:"
+      ]
+    ],
+    "expect": [
+      "a ⟳ trail is history"
+    ]
+  },
+  {
+    "name": "review and explainer directories stop being exempt",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return any(path.startswith(d) or f\"/{d}\" in path for d in EXEMPT_DIRS)",
+        "return False"
+      ]
+    ],
+    "expect": [
+      "a review document is exempt"
+    ]
+  },
+  {
+    "name": "--strict stops being strict, so survivors never fail a run that asked them to",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return (1 if strict else 0), (",
+        "return 0, ("
+      ]
+    ],
+    "expect": [
+      "survivors under --strict exit 1"
+    ]
+  },
+  {
+    "name": "the signature loses its left context, so a figure binds on less than it should",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "before = line[:i].split()[-context_words:] if context_words else []",
+        "before = []"
+      ]
+    ],
+    "expect": [
+      "figure with two words either side"
+    ]
+  }
+]

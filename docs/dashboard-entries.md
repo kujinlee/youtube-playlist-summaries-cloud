@@ -14448,7 +14448,7 @@ checks C1, C2, C4"*), alongside **#249** which is the same class:
 |---|---|---|---|
 | **#250** | C1 · the filing claim | 🟠 | PR #364's round-3 fold claimed `FILED, NOT FOLDED` for **seven** deferrals and filed **zero**. An EXTENSION of `check-backlog-closure.py` (which reads the closing direction and has no filing checker), WARN-only per #56 |
 | **#251** | C2 · the unmutated change | 🔴 | the only one measured letting a live gate-removing defect through — twice: #241, then #248 (severing `if problems:` leaves 104/104 GREEN while regressions report SUCCESS) |
-| **#252** | C4 · the unbound anchor | 🟠 | FIVE instances in one session; one cost 14m58s of CI to report `NOT MEASURED — 175 of 176`. Sub-second over 1,414 anchors across 59 manifests |
+| **#252** | C4 · the unbound anchor | 🟠 | FIVE instances in one session; one cost 14m58s of CI to report `NOT MEASURED — 175 of 176`. Sub-second over 1,414 anchors across 59 manifests ⟳ *2026-10-07: **1,414** is the count at `2780b05a`; the delivered tree held **1,416**. Found by `check-withdrawal.py`, the guard backlog #257 asked for — this was its first live survivor.* |
 
 ⛔ **C3 deliberately NOT filed.** The page recommends against it (expected to false-fire more than it
 catches; #56's verdict is that a gate red without cause gets switched off). A row would outlive the

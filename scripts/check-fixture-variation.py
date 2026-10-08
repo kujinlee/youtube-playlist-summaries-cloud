@@ -300,6 +300,23 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    "check-withdrawal.py": (
+        # DERIVED by running `analyse()`; 0 findings alongside this set.
+        "is_exempt_path.path",
+        "is_history_context.replacements",
+        "is_history_context.window",
+        "removed_figures.diff_text",
+        "signature_of.context_words",
+        "signature_of.line",
+        "signature_of.number",
+        "verdict.n_corrections",
+        "verdict.n_survivors",
+        "verdict.strict",
+        "window_around.end",
+        "window_around.span",
+        "window_around.start",
+        "window_around.text",
+    ),
     "find-claim.py": (
         # ⚠ DERIVED BY RUNNING `analyse()` on the file, not typed from the failure message —
         # the neighbouring entry records a first attempt that added two keys this guard does

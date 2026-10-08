@@ -177,6 +177,14 @@ jobs:
       - name: find-claim self-test
         run: python3 scripts/find-claim.py --self-test
 
+      # backlog #257: a figure corrected in one document must not still stand in another.
+      # WARN-only by #56 — the run reports, it does not block.
+      - name: check-withdrawal self-test
+        run: python3 scripts/check-withdrawal.py --self-test
+
+      - name: Superseded figures surviving elsewhere (warn-only, backlog #257)
+        run: python3 scripts/check-withdrawal.py --base origin/master
+
       - name: brief-compose self-test
         run: python3 scripts/brief-compose.py --self-test
 
