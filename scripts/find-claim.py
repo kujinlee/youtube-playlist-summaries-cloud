@@ -66,8 +66,9 @@ In every mode a missing control is rc=2 and prints CANNOT RUN.
 USAGE
     python3 scripts/find-claim.py --pattern "no longer exists to compare against" \\
         --control "frontier" --expect absent scripts/codex-frontier-model.py
+    python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 40 cases, pure, no filesystem
+    python3 scripts/find-claim.py --self-test        # 42 cases, pure, no filesystem
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -102,7 +103,7 @@ class Hit:
 
 # ── the rule, pure ───────────────────────────────────────────────────────────
 
-def build_pattern(phrase: str, ignore_case: bool = False) -> re.Pattern:
+def build_pattern(phrase: str, ignore_case: bool = True) -> re.Pattern:
     """A wrap-tolerant regex for `phrase`. PURE.
 
     Every token is `re.escape`d — a claim routinely contains `.`, `(`, `*` and version numbers
@@ -111,6 +112,13 @@ def build_pattern(phrase: str, ignore_case: bool = False) -> re.Pattern:
 
     Tokens are joined with `\\s+`, which is what makes a wrapped sentence findable. ⛔ Joining
     with a literal space is the mutation this file exists to resist.
+
+    ⟳ **CASE-INSENSITIVE BY DEFAULT, and that default was EARNED the hard way on 2026-10-07.**
+    It was case-sensitive first. Hunting backlog #260's claim hours later, `--pattern "push
+    something"` returned **0** against a file that contains it as **`PUSH something`** — a false
+    negative, from this tool, on exactly the hunt it exists for. A claim is prose: it gets
+    capitalised at a sentence start and SHOUTED for emphasis, and this repository does both
+    constantly. Pass `--case-sensitive` when the subject is an identifier rather than a claim.
     """
     tokens = phrase.split()
     if not tokens:
@@ -238,8 +246,8 @@ PATTERN_CASES: list[tuple[str, str, str, int]] = [
      "a (b) c", "a (b) c", 1),
     ("...so the same phrase does not match the string the regex WOULD have matched",
      "a (b) c", "a b c", 0),
-    ("case matters by default",
-     "No Longer Exists", "no longer exists", 0),
+    ("⟳ case does NOT matter by default — a claim is prose (2026-10-07, backlog #260)",
+     "No Longer Exists", "no longer exists", 1),
     ("a phrase spanning a blank line still matches (\\s+ covers \\n\\n)",
      "alpha beta", "alpha\n\nbeta", 1),
     ("leading and trailing whitespace in the phrase is ignored",
@@ -300,6 +308,10 @@ def self_test() -> int:
          bool(build_pattern("Alpha Beta", ignore_case=True).search("alpha beta")), True),
         ("ignore_case=False keeps the same claim case-sensitive",
          bool(build_pattern("Alpha Beta", ignore_case=False).search("alpha beta")), False),
+        ("⭐ the real witness: a SHOUTED phrase is found by default",
+         bool(build_pattern("push something").search("you must then PUSH something —")), True),
+        ("...and --case-sensitive still refuses it",
+         bool(build_pattern("push something", ignore_case=False).search("then PUSH something")), False),
         ("find_in_text carries the path it was handed into the Hit",
          find_in_text("alpha beta", build_pattern("alpha"), "docs/one.md")[0].path, "docs/one.md"),
         ("...and a different path comes back different, so it is not a constant",
@@ -366,7 +378,8 @@ def main() -> int:
     ap.add_argument("--expect", choices=("absent", "present", "report"), default="absent",
                     help="absent (default): rc=1 if found. present: rc=1 if missing. report: rc=0 either way")
     ap.add_argument("--report", action="store_true", help="shorthand for --expect report")
-    ap.add_argument("-i", "--ignore-case", action="store_true")
+    ap.add_argument("--case-sensitive", action="store_true",
+                    help="match case exactly; the default is insensitive, because a claim is prose")
     ap.add_argument("--self-test", action="store_true", help="run the case suite and exit")
     args = ap.parse_args()
 
@@ -395,8 +408,8 @@ def main() -> int:
         print(err, file=sys.stderr)
         return 2
 
-    pat = build_pattern(args.pattern, args.ignore_case)
-    ctl = build_pattern(args.control, args.ignore_case)
+    pat = build_pattern(args.pattern, not args.case_sensitive)
+    ctl = build_pattern(args.control, not args.case_sensitive)
     hits = search_files(files, pat)
     control_hits = search_files(files, ctl)
 

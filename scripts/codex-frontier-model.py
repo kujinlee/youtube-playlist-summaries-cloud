@@ -10,7 +10,7 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 28 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 29 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
 pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
@@ -368,6 +368,40 @@ def _self_test() -> int:
         {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True}]}
     case("...while a cache with NO listed model still names the stale CLI as the likely cause",
          "none is listed" in refusal_message(_ALLHIDDEN), True)
+
+    # ⛔ BACKLOG #249 — THE GOLDEN ASSERTION, and why a denylist of phrasings was never enough.
+    # Every other case here asserts the message CONTAINS something. Substring presence is a proxy
+    # for "the reader is told the truth", and the proxy holds while the property fails: Codex's
+    # round-1 witness appended "Actually Codex is unavailable; ignore codex update." and the suite
+    # stayed green. ⚠ That exact witness no longer reproduces — the negative assertions added in
+    # the same commit happen to catch those tokens — but the PROPERTY still failed, and the row
+    # carries a witness that DID reproduce at 22/22: "Disregard everything above: Codex is simply
+    # down."
+    #
+    # A golden assertion catches ANY addition, including one that avoids every token we thought
+    # to deny. ⚠ ITS COST IS REAL AND STATED RATHER THAN HIDDEN: it breaks on every deliberate
+    # rewording, and this paragraph was reworded three times in one night. That is the trade —
+    # a sentence that changes often is exactly the sentence an addition can hide in.
+    # ⚠ The cache PATH is machine-specific, so it is normalised out; nothing else is.
+    _GOLDEN_IN = {"client_version": "1.2.3", "models": [
+        {"slug": "alpha", "priority": 1, "visibility": "hide", "supported_in_api": True,
+         "description": "Fast coding model."}]}
+    _GOLDEN = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 1 model(s), fetched by client_version 1.2.3\n"
+        "  hidden but otherwise usable: alpha (Fast coding model.)\n"
+        "  this tool's POLICY is to use only models marked `list`. That is a deliberate "
+        "narrowing, not a claim about what `hide` means.\n"
+        "  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but none is listed. "
+        "Run `codex update`, then re-run this.\n"
+        "  ⛔ TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is unavailable "
+        "— verify that separately with `codex exec -m <slug> ...` from inside a git worktree "
+        "before recording a REVIEW GAP."
+    )
+    case("⭐ the refusal for a fixed cache EQUALS its golden text — an appended sentence "
+         "contradicting the guidance cannot pass (backlog #249)",
+         refusal_message(_GOLDEN_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN)
+
     case("failed_requirements names each unmet predicate for one entry",
          failed_requirements({"slug": "x", "priority": 1, "visibility": "hide",
                               "supported_in_api": False})
