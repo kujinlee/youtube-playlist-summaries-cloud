@@ -14822,3 +14822,72 @@ model while `.gitignore` is a file read by `git`.
 contract) and `check-vocabulary-collisions.py`. The edit was first applied in a throwaway worktree,
 tested, and reverted to a byte-identical 20,204 before being made here.
 ⛔ `NO-REVIEW:` declared — see the PR body for the reason and its bound.
+
+## 2026-10-07
+Twelve things that had been written down as problems are now things a program refuses, and the
+programs found nine more while being written.
+
+The twelve were filed over the last two days, mostly as "we noticed this and a reviewer caught
+it, nothing mechanical could have". They are all closed. Three are new checkers; the rest are
+fixes to existing ones.
+
+The one that mattered most was a search problem. A sentence that wraps across two lines could
+not be found by any search this project had — and the standard fix for that, a flag meant for
+exactly this case, silently returns nothing at all, which reads as "clean". A false claim hid
+behind that for a whole review round. There is now a tool that finds wrapped claims and, more
+importantly, refuses to answer at all unless you give it a phrase you know is present. If that
+phrase does not turn up, the run reports that it could not run, rather than reporting nothing
+found. Those two answers used to look identical.
+
+Two more checkers came out of the same idea: a figure corrected in one document must not still
+stand in another, and a number in a new backlog row must say where it was measured. Both found
+real instances immediately. The first found a count stated as fact that had been superseded; the
+second showed that nearly half the existing rows never said where their numbers came from, so it
+only holds new rows to the standard and leaves the old ones alone.
+
+The most useful thing was not any single checker. Three of them were refused by checkers that
+already existed, for reasons I would not have found by reading — a test that could not fail, a
+piece of dead code pretending to be a safety check, and two error messages that differed only in
+their wording where the test only compared numbers. And the last checker written found nine
+functions on this very branch that no test could tell apart from a constant, including three of
+its own. All nine are now covered, which took it to zero findings.
+
+<!--tech-->
+**#258 `find-claim.py`** — wrap-tolerant (`re.escape` + `\s+`), `file:line` from the match OFFSET,
+and a **mandatory `--control`**: a run whose control misses is rc=2 CANNOT RUN, never *no
+matches*. Verified against the real known positive `93e3133a` (two occurrences): line-`grep` **1**,
+`grep -z` **0**, find-claim **2**. ⟳ Default flipped to case-insensitive hours later when it
+returned 0 against `PUSH something` — a false negative from the tool built to prevent them.
+It also corrected its own row: `tr '\n' ' ' | grep -o` returns **1**, not 2 (four-space indent).
+
+**#257 `check-withdrawal.py`** — imports find-claim's matcher. Exemption chosen by measurement:
+over the seven live survivors of `1,414`, markers alone scored 4 correct and **2 false
+positives**, both within 180 chars of the replacement `1,416`; adding *the replacement is nearby*
+gave **1 true positive, 0 false**. ⛔ A FAIL-OPEN was caught by its own known-positive run —
+`replacements` meant every figure ADDED, so an UNCHANGED figure became an exemption token.
+
+**#256 `check-provenance.py`** — a RATCHET over added rows. Whole-file is unusable at both ends:
+provenance-including-a-date fires on **0 of 231** (vacuous — every row carries its filing date),
+±150 chars fires on **479 of 1,368** (35%). 74 rows grandfathered under `--all`.
+
+**#252 `--binding`** — 1,461 anchors / 62 manifests in **66 ms**. Found its sixth instance on its
+first run: the #254 fix orphaned an anchor *inside the commit that fixed #254*, whose entry name
+already recorded an identical retarget that morning. Expect-half WARNS (67 of 1,554 = 4.3% are
+f-string names) and is summarised to a count.
+
+**#251 `--diff-coverage`** — granularity measured: per LINE **97%** uncovered, per FUNCTION 58%,
+per function with suite/`main`/dunder/IO exemptions **32%** — and all nine survivors were real.
+Acting on them → **0 findings across 9 files**.
+
+**#250** filing direction, branch-scoped: per-commit fires on **31 of 31** real commits, because
+the convention is to claim FILED in a fold commit and file in a sibling. **#249** golden
+assertion — catches a token-avoiding negation no denylist could. **#253** `arm_names_newest_first`
+extracted and race-tolerant. **#254** branches on `list`-visibility, names the failing predicate.
+**#255** `--clear` is CANNOT_RUN on unreadable HEAD. **#260** the push instruction on the refusal
+whose job it is. **#259** closed by PR #370.
+
+⚠ Four of my own defects were caught by the machinery, not by reading: an unfalsifiable race
+fixture (deleted the file before `is_file()`, so `stat()` was never reached), a mutation that
+CRASHED instead of answering, dead code exposed by a surviving mutation, and twice adding
+mutations without updating `EXPECTED_MUTATIONS` — the second time my repair skipped the one
+entry with a trailing comment, which was the entry I had just changed.
