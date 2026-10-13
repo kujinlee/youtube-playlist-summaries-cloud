@@ -79,12 +79,12 @@ When multiple installed skills can handle the same task, use this table.
 >
 > **NOT `.remember/handoff.md`.** That name looks right and nothing reads it — choosing it would
 > rebuild the same bug somewhere prettier. The path is `REMEMBER_HANDOFF` in the `remember` plugin's
-> `session-start-hook.sh:795`, emitted as `=== LAST HANDOFF ===` and injected **before** identity and
-> memory so it survives context-preview truncation (`:809-812`). Delivery is fingerprinted and
-> non-destructive (`:814-825`), so a read-only session does not consume the next one's note.
+> `session-start-hook.sh`, emitted as `=== LAST HANDOFF ===`, injected **before** identity and memory
+> so it survives truncation, and fingerprinted on CONTENT so a read-only session does not consume the
+> next one's note. ⟳ **2026-10-13: four stale LINE NUMBERS removed — a vendored line has no owner.**
 >
-> **If a session-start block prints `=== HANDOFF === / Write next handoff to: <path>`**, you are in
-> external mode — obey that path instead. It is absent in legacy mode by design (`:800-802`).
+> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⟳ **TWO triggers,
+> external AND `per_session`**, where this path is NOT read → [`process-rationale.md`](process-rationale.md).
 
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
 `$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the

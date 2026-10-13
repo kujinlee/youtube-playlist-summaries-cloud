@@ -39,9 +39,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_REL = ".agents/skills/handoff/SKILL.md"
 
 # The path the remember plugin's SessionStart hook actually reads:
-#   session-start-hook.sh:795  REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
+#   session-start-hook.sh  REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
 # Verified by EXECUTING that hook, not by reading it — the `=== LAST HANDOFF ===` block came out
 # first, ahead of `=== REMEMBER ===` and `=== MEMORY ===`.
+# ⟳ 2026-10-13: the LINE NUMBER that stood here (`:795`) is gone — measured stale by 376 lines
+# against the 0.33.0 hook, where that assignment is at `:1171`. A line number in a VENDORED file
+# has no owner in this repo and no guard can check it; `grep -n 'REMEMBER_HANDOFF=' <hook>` can.
+# ⚠ This comment is in CODE, so `check-withdrawal` (which globs `docs/`) cannot see a stale figure
+# here — it was found by grepping every mention of the hook, which is the only thing that would.
 CONSUMED_PATH = ".remember/remember.md"
 
 

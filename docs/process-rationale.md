@@ -350,10 +350,43 @@ added-column blindness; the 16 MB `.superpowers/` residue) went unsurfaced while
 wrong invisibly: **nothing reads that name either**, so the fix would have looked complete while
 rebuilding the identical defect at a prettier path. The path that works is `.remember/remember.md`
 because the `remember` plugin's SessionStart hook already reads it —
-`REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"` (`session-start-hook.sh:795`), emitted as
+`REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"` in `session-start-hook.sh`, emitted as
 `=== LAST HANDOFF ===` and injected **before** identity and memory so it survives context-preview
-truncation (`:809-812`), with fingerprinted non-destructive delivery (`:814-825`) so a read-only session
-does not consume the next one's note.
+truncation, with fingerprinted non-destructive delivery (a `cksum` of the handoff CONTENT) so a
+read-only session does not consume the next one's note.
+
+### The handoff rule that was true of one mode
+
+⟳ **2026-10-13 — THE FOUR LINE NUMBERS THAT USED TO SIT IN THE PARAGRAPH ABOVE WERE STALE BY
+370–870 LINES, AND SO WERE THE COPIES IN THREE OTHER FILES.** Measured against the **0.33.0** hook,
+which is **2,027 lines**: `REMEMBER_HANDOFF` is at `:1171`, the `=== LAST HANDOFF ===` emit at
+`:1666`, the delivery record at `:1571-1640`, the external-mode hint at `:1546`. The citations
+(`:795`, `:809-812`, `:814-825`, `:800-802`) pointed into the wrong third of the file.
+
+**The lesson is not "re-derive them" — it is that they should never have been written.** A line
+number in a VENDORED file has **no owner in this repo**: nothing here can hold it, no guard can
+check it, and `npx skills@latest add` or a plugin bump invalidates it silently. This repo already
+records *cite the SYMBOL, not the line* for retrospective figures; a vendored dependency is the
+strongest case of it. ⚠ **And a review half had already flagged exactly this**:
+`docs/reviews/claude/velocity-177-r5-claude.md:161` counted the locators in `docs/plugins.md` and
+named `session-start-hook.sh:795` as one of them. The observation was filed and nothing consumed
+it — the *finding with no row* shape, one layer out.
+
+⛔ **THE SUBSTANTIVE HALF: the ⛔ RULE in [`plugins.md`](plugins.md) states its path
+unconditionally, and the hook has TWO MODES.** `config_into HANDOFF_MODE ".handoff_mode" "single"`,
+then `per_session` + a resolvable session id gives `remember.<session-id>.md`, otherwise
+`remember.md`. ⭐ **The rule is correct for this install and has never been wrong in practice** —
+the default is `single`, neither settings file configures otherwise, `.remember/` holds only
+`remember.md`, and handoffs are in fact delivered. But *correct here* is not *unconditional*, and
+the condition was unstated. What makes the unconditional sentence safe is the clause that was
+already there for a different reason: **obey the printed `Write next handoff to:` hint whenever one
+appears** — the hook emits it in external mode **or** whenever a per-session path was resolved.
+
+⭐ **The hook refuses to degrade quietly, and that is worth copying.** A `per_session` request with
+no resolvable session id falls back to the shared file and **withholds the hint**, so the transcript
+shows *no hint was given* rather than a namespaced path that never applied. That is
+*cannot-run-is-not-a-pass* implemented in a vendored dependency — the same rule this repo enforces
+in `check-schema-gates.sh` and `check-plan-file-tags.py`.
 
 **Two general lessons.**
 

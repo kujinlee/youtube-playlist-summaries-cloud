@@ -61,15 +61,17 @@ The documents were fine. They had no consumer.
 
 Write the handoff to:  .remember/remember.md
 
-That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh:795 —
+That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh —
 emitted as '=== LAST HANDOFF ===' and injected BEFORE identity and memory so it
-survives context-preview truncation (:809-812). Delivery is fingerprinted and
-non-destructive (:814-825).
+survives context-preview truncation. Delivery is fingerprinted on the handoff's
+CONTENT, so reading one does not consume it.
+  To locate it yourself:  grep -n 'REMEMBER_HANDOFF=' <the hook>
 
 NOT .remember/handoff.md — nothing reads that name either.
 
-If a session-start block printed '=== HANDOFF === / Write next handoff to: <path>'
-you are in external mode: obey THAT path instead.
+If a session-start block printed 'Write next handoff to: <path>', obey THAT path.
+Two things print it: external mode, and per_session mode (.handoff_mode), where
+the hook reads remember.<session-id>.md and NOT the shared name above.
 
 Then repair the vendored skill so this stops recurring:
   \$EDITOR .agents/skills/handoff/SKILL.md      # see docs/plugins.md -> Session Handoff
