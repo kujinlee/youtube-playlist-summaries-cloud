@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 237 cases
+    python3 scripts/check-plan-code.py --self-test          # 239 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1117,7 +1117,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 129,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+    "scripts/check-plan-code.py": 130,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
                                          # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
                                          # as IMPOSSIBLE — "the harness REFUSES a second entry on
                                          # one anchor" — and that was wrong: the refusal is on
@@ -2671,7 +2671,19 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             continue
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
-        rc, out = run_suite(d, fname)
+        # ⛔ THE HALVES, NOT THE MERGE — and the merge is still what attribution reads.
+        # The `if not fails` branch below reports a suite that went red and named no case,
+        # and for two branches it reported that with NO EVIDENCE AT ALL: `run_suite` folds
+        # the child's traceback into one string, and nothing printed it.
+        # ⟳ MEASURED 2026-10-13, PR #371 shards 4 and 7 at `f599182d` — two entries "killed,
+        # unattributable", ~23 minutes of CI per guess, and the message below ASSERTED a cause
+        # (`a report-format defect in <file>`) that a local run refuted in 58 seconds: the same
+        # two entries attribute cleanly through this very code path, printing 18 `[FAIL]` lines.
+        # ⚠ THE ASYMMETRY IS THE DEFECT. Both CONTROL loops have carried `diagnostic_tail(so,
+        # se)` since r3 (`:2558`, `:2592`); only the MUTATION loop threw the halves away. One
+        # half of this harness could say why a child went red and the other half could not.
+        rc, so, se = run_suite_parts(d, fname)
+        out = merged_output(so, se)
         (d / fname).write_text(orig)
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
@@ -2762,10 +2774,14 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             if not fails:
                 report.append(
                     f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
-                    f"line, so NOTHING COULD SEE THE KILL. This is a report-format defect in "
-                    f"{fname}, not a coverage gap — `parse_fail_names` reads a red case with "
-                    f"startswith('[FAIL] ') and slices [7:]. Fix that suite's failure printer "
-                    f"and re-run; every entry for this file is unattributable until you do")
+                    f"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE THIS AND THIS "
+                    f"HARNESS CANNOT TELL THEM APART: either a report-format defect in "
+                    f"{fname} — `parse_fail_names` reads a red case with startswith('[FAIL] ') "
+                    f"and slices [7:] — or a suite that NEVER REACHED ITS CASES, because a "
+                    f"Python traceback ALSO exits 1. Not a coverage gap in either world, and "
+                    f"every entry for this file is unattributable until it is fixed. "
+                    f"\u26a0 THE CHILD'S OWN OUTPUT DECIDES WHICH, AND IS NO LONGER WITHHELD:\n"
+                    f"    {diagnostic_tail(so, se)}")
             else:
                 for w, m in unnamed:
                     report.append(
@@ -3414,6 +3430,42 @@ def _self_test() -> int:
         # the state that already failed twice.
         case("...and does NOT also claim it was caught by something else",
              any("caught by something else" in r for r in _repfmt), False)
+
+    # ⛔ THE OTHER WORLD: RED WITH NOTHING PRINTED AT ALL. The fixture above goes red and
+    # reports it in the WRONG FORMAT; this one never gets as far as reporting. Both arrive at
+    # the same branch with `fails == []`, and until 2026-10-13 that branch named the first as
+    # the cause and showed the reader nothing — so a CRASH was diagnosed as a `report-format
+    # defect` in a suite whose printer is fine. That misdiagnosis is what PR #371's shards 4
+    # and 7 cost: the message accused `check-withdrawal.py`, which prints `[FAIL]` correctly
+    # 18 times for the very same entries when run locally.
+    # ⚠ A MODULE-LEVEL `raise` is the fixture ON PURPOSE: it exits 1 exactly as a failing case
+    # does, with an EMPTY stdout, which is the pair that makes the two worlds indistinguishable
+    # from the exit code alone. `expect` still names a real case, so this is not an entry that
+    # fails for being malformed — it is a well-formed entry whose suite died.
+    with tempfile.TemporaryDirectory() as _dcr:
+        _dcrp = pathlib.Path(_dcr)
+        (_dcrp / "c.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _crash = [{"name": "the suite dies before any case runs", "file": "c.py",
+                   "edits": [["def f():\n    return 1",
+                              "raise RuntimeError('DIED BEFORE CASE ONE')\n\n\n"
+                              "def f():\n    return 1"]],
+                   "expect": "the value is one"}]
+        _okcr, _repcr, _, _ = run_mutations(_dcrp, _crash, {"c.py"})
+        case("a suite that CRASHES instead of failing a case is still refused", _okcr, False)
+        # ⛔ THE FALSIFIER FOR THE WHOLE CHANGE. Withhold `diagnostic_tail(so, se)` and this is
+        # the case that goes red — nothing else does, which is precisely how the gap survived.
+        case("...and the report carries the child's TRACEBACK, so the cause is not a guess",
+             any("DIED BEFORE CASE ONE" in r for r in _repcr), True)
 
     # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
     # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
@@ -5642,7 +5694,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1531)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1532)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

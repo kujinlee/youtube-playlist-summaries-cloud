@@ -1690,5 +1690,18 @@
     "expect": [
       "...and an 11-char literal over the SAME expect does NOT, so the floor is bracketed from both sides and a floor of 11 breaks this one"
     ]
+  },
+  {
+    "name": "⛔ #371 shards 4/7 — the mutation loop WITHHOLDS the child's output again, so a red-with-nothing-readable report names a cause it cannot know. The two CONTROL loops have carried this diagnostic since r3; only this branch of the same function threw the halves away, and ~23 minutes of CI bought one guess",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    f\"\\u26a0 THE CHILD'S OWN OUTPUT DECIDES WHICH, AND IS NO LONGER WITHHELD:\\n\"\n                    f\"    {diagnostic_tail(so, se)}\")\n",
+        "                    f\"\\u26a0 THE CHILD'S OWN OUTPUT DECIDES WHICH, AND IS NO LONGER WITHHELD:\\n\"\n                    f\"    \")\n"
+      ]
+    ],
+    "expect": [
+      "...and the report carries the child's TRACEBACK, so the cause is not a guess"
+    ]
   }
 ]
