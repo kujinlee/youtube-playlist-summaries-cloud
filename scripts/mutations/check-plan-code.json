@@ -434,8 +434,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            if not fails:",
-        "            if False:"
+        "        elif not fails:\n            ok = False\n",
+        "        elif False:\n            ok = False\n"
       ]
     ],
     "expect": [
@@ -460,7 +460,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "\"attributed\": caught and not unnamed, \"measured\": True})",
+        "\"attributed\": caught and bool(fails) and not unnamed, \"measured\": True})",
         "\"attributed\": caught, \"measured\": True})"
       ]
     ],
@@ -1696,8 +1696,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    f\"\\u26a0 WHAT THE CHILD ITSELF SAID \\u2014 {said}:\\n\"\n                    f\"    {diagnostic_tail(so, se)}\")\n",
-        "                    f\"\\u26a0 WHAT THE CHILD ITSELF SAID \\u2014 {said}:\\n\"\n                    f\"    \")\n"
+        "                f\"\\u26a0 WHAT THE CHILD ITSELF SAID \\u2014 {said}:\\n\"\n                f\"    {diagnostic_tail(so, se)}\")\n",
+        "                f\"\\u26a0 WHAT THE CHILD ITSELF SAID \\u2014 {said}:\\n\"\n                f\"    \")\n"
       ]
     ],
     "expect": [
@@ -1735,8 +1735,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                            + \" \\u00b7 \".join(h + (\" [ignored at shutdown]\" if ig else \"\")\n                                              for h, ig in heads)\n",
-        "                            + \" \\u00b7 \".join(\"\" for h, ig in heads)\n"
+        "                        + \" \\u00b7 \".join(h + (\" [ignored at shutdown]\" if ig else \"\")\n                                          for h, ig in heads)\n",
+        "                        + \" \\u00b7 \".join(\"\" for h, ig in heads)\n"
       ]
     ],
     "expect": [
@@ -1774,8 +1774,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    said = \"stderr is EMPTY, so the suite RAN and its PRINTER is the subject\"\n",
-        "                    said = \"the suite went red\"\n"
+        "                said = \"stderr is EMPTY, so the suite RAN and its PRINTER is the subject\"\n",
+        "                said = \"the suite went red\"\n"
       ]
     ],
     "expect": [
@@ -1787,12 +1787,38 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    said = \"stderr names no exception line, so read the window\"\n",
-        "                    said = \"the suite went red\"\n"
+        "                said = \"stderr names no exception line, so read the window\"\n",
+        "                said = \"the suite went red\"\n"
       ]
     ],
     "expect": [
       "the THIRD world is named as well: stderr that names no exception says so"
+    ]
+  },
+  {
+    "name": "⛔⛔ #271 — `bool(fails)` is dropped from `attributed`, so an entry that omits `expect` records attribution over an EMPTY fails list: the field contradicts its own definition and a crashed suite reads as killed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        \"attributed\": caught and bool(fails) and not unnamed, \"measured\": True})\n",
+        "                        \"attributed\": caught and not unnamed, \"measured\": True})\n"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ #271: ...and a crash whose entry OMITS `expect` is refused IDENTICALLY"
+    ]
+  },
+  {
+    "name": "⛔⛔ #271 — the red-with-nothing-readable arm goes back to firing only when `unnamed` is non-empty, which is the exact nesting that made `expect` able to DISABLE the refusal",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        elif not fails:\n",
+        "        elif not fails and unnamed:\n"
+      ]
+    ],
+    "expect": [
+      "⛔⛔ #271: ...and a crash whose entry OMITS `expect` is refused IDENTICALLY"
     ]
   }
 ]

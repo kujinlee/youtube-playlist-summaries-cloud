@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 260 cases
+    python3 scripts/check-plan-code.py --self-test          # 264 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -606,7 +606,15 @@ def merged_output(stdout: str, stderr: str) -> str:
 def run_suite_parts(d: pathlib.Path, name: str) -> tuple[int, str, str]:
     """`(rc, stdout, stderr)` — the RAW halves, for the one caller that must budget them.
 
-    The only producer. `run_suite` is the merged view every other consumer wants.
+    The only producer.
+    ⛔ `run_suite` BELOW IS NO LONGER WHAT ANY PRODUCTION CONSUMER WANTS, and this sentence said it
+    was. All four production sites call THIS function — the two control loops (`:2624`, `:2658`) and
+    the mutation loop (`:2757`, changed by `6b217be9`) — so `run_suite`'s only callers are three
+    self-test cases. Found by the Phase 6 review of 2026-10-13 (backlog #275) as a STALE
+    CROSS-REFERENCE in `review-method.md:217`'s sense: a decision changed and a sentence still
+    stated the old one, written by the very commit that changed it.
+    ⚠ Retiring `run_suite` is NOT free and is deliberately not done here: those three cases are
+    `merged_output`'s only coverage, and `merged_output` is live at `:2758`.
     """
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
@@ -1183,7 +1191,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 137,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+    "scripts/check-plan-code.py": 139,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
                                          # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
                                          # as IMPOSSIBLE — "the harness REFUSES a second entry on
                                          # one anchor" — and that was wrong: the refusal is on
@@ -2822,15 +2830,36 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # ENTRY NAMES. They are different claims and the gap between them is where this
         # branch lost a whole run: eight entries, every one killed, not one attributable,
         # and a summary line byte-identical to success.
+        # ⛔ `bool(fails)` IS THE MANDATORY CLAUSE, AND BACKLOG #271 IS WHAT ITS ABSENCE COST.
+        # Without it, an entry that omits `expect` gives `wants == []` -> `unnamed == []` ->
+        # `attributed = caught and not unnamed` = True, over `fails == []`. Measured as a 2x2 by
+        # the Phase 6 review of 2026-10-13: a suite that CRASHED before any case ran was recorded
+        # `caught: True, attributed: True`, 0 reports, `ok` True — BYTE-IDENTICAL on the verdict
+        # fields to a real kill. `attributed` is defined four lines up as "red VIA THE CASE THIS
+        # ENTRY NAMES", so True over an empty `fails` contradicts the field's own definition.
+        # ⭐ AND THIS IS THE PROPAGATION OF A DECISION ALREADY MADE, not a new one. The rc == 0
+        # side has had the same second clause since 2026-09-03: `control_is_green` is
+        # `rc == 0 and "passed" in out`, two clauses, NO WAY TO OPT OUT, because (its docstring)
+        # "the exit code alone cannot tell "green" from "never ran"". Change one word and that is
+        # this side: `rc == 1` cannot tell "a case failed" from "the interpreter died". The clause
+        # existed here as `expect` and was OPT-IN, because the field is optional.
         ev_muts.append({"name": name, "caught": caught, "fails": fails,
-                        "attributed": caught and not unnamed, "measured": True})
+                        "attributed": caught and bool(fails) and not unnamed, "measured": True})
         if not caught:
             ok = False
             ev_survivors.append(name)
             report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
                           f"can fail for what it names")
-        elif unnamed:
+        elif not fails:
             ok = False
+            # ⛔⛔ THIS ARM USED TO LIVE INSIDE `elif unnamed:`, AND THAT NESTING WAS THE FALSE
+            # GREEN (backlog #271). With `expect` omitted, `unnamed` is empty, so the whole arm
+            # was skipped: no report, `ok` untouched, and a crashed suite certified as killed.
+            # ⚠ BEHAVIOUR IS UNCHANGED FOR EVERY LIVE ENTRY, and that is measurable rather than
+            # asserted: all 1,539 entries across 62 manifests carry an `expect`, so `fails == []`
+            # always implied `unnamed != []` and the old nesting always reached this block. What
+            # moves is only the case the harness's own refusal message invites — *"Name the
+            # case(s) that must go red, or omit `expect` entirely"*.
             # ⛔ RED WITH NOTHING READABLE IS **ONE OF TWO WORLDS**, AND IT NOW SAYS WHICH.
             # ⟳ r11 Codex L2: this line read *"IS A REPORT-FORMAT DEFECT"* — the categorical
             # claim the message itself withdrew in the same commit. `caught = rc == 1`, and a
@@ -2846,38 +2875,38 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # it was diagnosed by hand, at the bottom of a 420-mutation log, from an empty
             # list a reader had to know the meaning of. Said once here, per file, instead of
             # once per entry: eight identical lines is how the signal got lost the first time.
-            if not fails:
-                # ⟳ r11 Codex H1: the WINDOW ALONE CANNOT CARRY THE CAUSE (see
-                # `exception_heading`), so row #270's "the next occurrence will name it" was
-                # unsupported until this line existed. Three worlds, each said in its own words.
-                heads = exception_headings(se)
-                if not se.strip():
-                    said = "stderr is EMPTY, so the suite RAN and its PRINTER is the subject"
-                elif heads:
-                    said = ("stderr NAMES "
-                            + " \u00b7 ".join(h + (" [ignored at shutdown]" if ig else "")
-                                              for h, ig in heads)
-                            + " \u2014 in the order the child printed them, and this harness does "
-                              "NOT claim which of them killed it")
-                else:
-                    said = "stderr names no exception line, so read the window"
-                report.append(
-                    f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
-                    f"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE THIS AND THIS "
-                    f"HARNESS CANNOT TELL THEM APART: either a report-format defect in "
-                    f"{fname} — `parse_fail_names` reads a red case with startswith('[FAIL] ') "
-                    f"and slices [7:] — or a suite that NEVER REACHED ITS CASES, because a "
-                    f"Python traceback ALSO exits 1. Not a coverage gap in either world, and "
-                    f"every entry for this file is unattributable until it is fixed. "
-                    f"\u26a0 WHAT THE CHILD ITSELF SAID \u2014 {said}:\n"
-                    f"    {diagnostic_tail(so, se)}")
+            # ⟳ r11 Codex H1: the WINDOW ALONE CANNOT CARRY THE CAUSE (see
+            # `exception_headings`), so row #270's "the next occurrence will name it" was
+            # unsupported until this line existed. Three worlds, each said in its own words.
+            heads = exception_headings(se)
+            if not se.strip():
+                said = "stderr is EMPTY, so the suite RAN and its PRINTER is the subject"
+            elif heads:
+                said = ("stderr NAMES "
+                        + " \u00b7 ".join(h + (" [ignored at shutdown]" if ig else "")
+                                          for h, ig in heads)
+                        + " \u2014 in the order the child printed them, and this harness does "
+                          "NOT claim which of them killed it")
             else:
-                for w, m in unnamed:
-                    report.append(
-                        f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
-                        f"{m or '— it was caught by something else: ' + str(fails)}. An "
-                        f"expect must name EXACTLY ONE, or it cannot show which case is "
-                        f"the guard")
+                said = "stderr names no exception line, so read the window"
+            report.append(
+                f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
+                f"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE THIS AND THIS "
+                f"HARNESS CANNOT TELL THEM APART: either a report-format defect in "
+                f"{fname} — `parse_fail_names` reads a red case with startswith('[FAIL] ') "
+                f"and slices [7:] — or a suite that NEVER REACHED ITS CASES, because a "
+                f"Python traceback ALSO exits 1. Not a coverage gap in either world, and "
+                f"every entry for this file is unattributable until it is fixed. "
+                f"\u26a0 WHAT THE CHILD ITSELF SAID \u2014 {said}:\n"
+                f"    {diagnostic_tail(so, se)}")
+        elif unnamed:
+            ok = False
+            for w, m in unnamed:
+                report.append(
+                    f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
+                    f"{m or '— it was caught by something else: ' + str(fails)}. An "
+                    f"expect must name EXACTLY ONE, or it cannot show which case is "
+                    f"the guard")
     return ok, report, ev_muts, ev_survivors
 
 
@@ -3636,6 +3665,49 @@ def _self_test() -> int:
         # load-bearing rather than merely present — the window must be measured FAILING here.
         case("...over a fixture where the 400-char window itself loses the heading",
              any("FLOOD_MARKER" in diagnostic_tail("", r) for r in _repml), False)
+
+    # ⛔⛔ BACKLOG #271 — THE FALSE GREEN, PINNED AS THE 2×2 THAT FOUND IT. One variable alone
+    # shows NOTHING here, which is why eleven rounds walked past it: a crash WITH an `expect` was
+    # already refused (cell A), and a missing `expect` over a real kill is legitimate (cell C).
+    # Only the INTERACTION was wrong. Measured 2026-10-13 before the fix: cell B returned
+    # `(True, True, 0)` — byte-identical to cell D, a real kill — for a suite that died before any
+    # case ran. All four cells are asserted, because three of them are the controls that keep the
+    # fourth from being satisfiable by a blanket refusal.
+    with tempfile.TemporaryDirectory() as _d271:
+        _d271p = pathlib.Path(_d271)
+        (_d271p / "k.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+
+        def _cell(edits: list, expect: "str | None") -> tuple:
+            """`(ok, attributed, len(report))` for ONE cell of #271's 2×2."""
+            _m = {"name": "cell", "file": "k.py", "edits": [edits]}
+            if expect is not None:
+                _m["expect"] = expect
+            _cok, _crep, _cevm, _ = run_mutations(_d271p, [_m], {"k.py"})
+            return (_cok, _cevm[0]["attributed"], len(_crep))
+
+        case("⛔ #271: a crash WITH an expect is refused and not attributed",
+             _cell(["def f():\n    return 1",
+                    "raise RuntimeError('NOTHING RAN')\n\n\ndef f():\n    return 1"],
+                   "the value is one"), (False, False, 1))
+        case("⛔⛔ #271: ...and a crash whose entry OMITS `expect` is refused IDENTICALLY",
+             _cell(["def f():\n    return 1",
+                    "raise RuntimeError('NOTHING RAN TWICE')\n\n\ndef f():\n    return 1"],
+                   None), (False, False, 1))
+        case("...while a real kill with NO expect still passes, so the clause is no blanket refusal",
+             _cell(["def f():\n    return 1", "def f():\n    return 2"], None), (True, True, 0))
+        case("...and a real kill WITH an expect is untouched, the control for the other three",
+             _cell(["def f():\n    return 1", "def f():\n    return 3"],
+                   "the value is one"), (True, True, 0))
 
     # ── r11 Codex H1 + r11 Claude H1: the heading rule, in units a window cannot express ────
     _tb_one = ('Traceback (most recent call last):\n'
@@ -5978,7 +6050,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1539)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1541)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

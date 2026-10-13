@@ -191,3 +191,82 @@ requirement and the unignored `.venv` (F4), and the sequencing rule that `review
 * F6's handled-message shape: 2 of 33 sites inspected. **Not a corpus measurement.**
 * The width of F1/F2's class across the other guards was asked of an agent and had not returned
   when this was written. **Treat the class as UNBOUNDED until measured.**
+
+---
+
+## ⟳ Added after the first draft — two answers that arrived late, and one changes the taxonomy
+
+### A THIRD defect category exists and I had been sorting into a two-way split
+
+`review-method.md:217-222` — *"A third outcome the two-way split does not cover: **STALE CROSS-REFERENCE**. A decision changed and some sentences still state the old one."* Its remedy is neither a
+redesign nor an exhaustiveness pass:
+
+> **"When a decision is reversed, grep for every place that stated the old one. A rewritten section
+> does not rewrite its own cross-references."**
+
+**Applied to this session's own reversals, it found three immediately**, none of them in a review
+document (where the old wording is legitimate testimony):
+
+| site | stated the superseded decision |
+|---|---|
+| `check-plan-code.py:2871` | `exception_heading` — the singular name, renamed hours earlier |
+| `check-plan-code.py:609` | *"`run_suite` is the merged view every other consumer wants"* — false since `6b217be9` |
+| `docs/adr/0014…:8` | *"The remaining 29 are pinned debt"* — the tool reports 27 |
+
+All three corrected. ⚠ The ADR correction is dated and explicitly **not** a re-litigation: the rule
+stands exactly as accepted, and only its population figures moved. ⭐ And the ADR carries a THIRD
+disagreeing statement of one fact — its frontmatter says 36/29, the guard's own docstring says
+37/10, the tool says 39/12/27. Three statements, all different, which is this category's own shape
+applied to the document that defines the rule.
+
+⚠ **So the per-finding table above is a two-way sort where the method has three categories.** Its
+MECHANISM and BRANCH-COVERAGE rows were re-checked against `:195`/`:196`/`:217` and stand; what
+belongs in the third category are the figure and prose rows (r11 Codex L2, Claude M1, L1–L3), which
+the table lumped as "FIX". They are stale cross-references, and their remedy is the grep above —
+not a fix at the one site someone noticed.
+
+⚠ **One correction to a datum I nearly used to demote a finding.** I observed that `ok = False` is
+set before the `if not fails` branch, so the message's world-selection can never flip a verdict, and
+I took that as evidence H1 might be branch-coverage. It is not: `:202-205` asks only whether a
+reshaping dissolves the finding and says nothing about harm magnitude, and backlog #136 holds that
+*"any stopping rule reading counts or severities is reading noise"*. Harm is severity; severity is
+not taxonomy. H1 stays MECHANISM.
+
+### The width question: the class is REPO-WIDE — nine sites, eight guards (backlog #276)
+
+Asked because it gated the owner's A-versus-B choice. ⚠ **It answers H2's class, not F1's** — a
+distinction worth keeping, because conflating them would have flipped a decision on the wrong
+evidence. F1's class (a clause mandatory in one predicate and OPT-IN in its sibling) remains
+**UNMEASURED** across the other guards; H2's class (a world-selection no case asserts) is
+repo-wide.
+
+Measured by severing each arm against the guard's own `--self-test`, control green either side. The
+three with non-cosmetic harm: `check-live-schema.py:891` relabels a LOCAL container read as `--prod`
+at 119/119; `check-anon-exposure.py:631` swaps `LOCAL container` for `PRODUCTION (read-only
+claude_ro)`; `check-ratchet-contract.py:1152` has `GREW`/`SHRANK` collapsed **and inverted** at
+56/56 — and that guard is ADR-0014 COMPLIANT, so compliance with the drivable-main rule does not
+reach this class.
+
+⭐ **Coordinator-verified on TWO instances; the other seven are LEADS.**
+
+1. `check-test-counts.py:132` — control 27/27, the two direction literals INVERTED 27/27 **still
+   green**, control restored 27/27.
+2. `check-live-schema.py:891` — control 119/119, both arms collapsed so a LOCAL CONTAINER READ
+   LABELS ITSELF `--prod`, 119/119 **still green**, control restored 119/119.
+
+⚠ The first attempt at (2) returned **CANNOT RUN** (`ModuleNotFoundError: m4_catalog`) because the
+guard had been copied out of `scripts/` away from a sibling it imports. Recorded, because a
+cannot-run is a failure and not a pass, and because it is the method error this review exists to
+catch in others: the re-measurement above staged the whole directory.
+
+**Treat the remaining seven as not independently verified.**
+
+### What the owner chose, and what it did NOT include
+
+Option **A** — make the attribution clause mandatory (#271) — chosen 2026-10-13 after asking why A
+over B. ⚠ **A was offered as "~one line" and is four**: fixing `attributed` alone corrects the
+recorded field and leaves `ok` wrong, because the `if not fails` block sat INSIDE `elif unnamed:`.
+The arm had to be lifted so `expect` cannot disable the refusal. Behaviour is unchanged for all
+1,539 live entries, measured rather than argued.
+
+**B remains available** and is now gated on F1's width, which is the measurement nobody has taken.
