@@ -3074,6 +3074,40 @@ because removing a mechanism is what fixed four of the five:
 ⛔ **Sequencing is the owner's call.** PR #371 is NOT CONVERGED and needs round 3; whether Phase 6
 runs before or after it merges changes the shape of the work and is not a mechanical choice.
 
+## ⟳ 2026-10-13 — THE OWNER CHOSE REDESIGN, AND #279/#280 ARE CLOSED BY REMOVING CLAIMS
+
+⭐ **Decided by the owner 2026-10-13 (option A of two).** Five consecutive rounds (11–13) refuted a
+completeness claim in one harness message-and-parser, each fix adding a list member the next round
+refuted. The redesign removes the claims rather than extending the lists:
+
+* `_is_type_name` and `is_exception_heading` — the two functions that decided what *is* an
+  exception from text the child controls — are **DELETED**. Nothing classifies any more.
+* `exception_headings` is renamed **`column_zero_after_frames`**, because the old name was itself
+  the claim.
+* the message no longer counts worlds: it says it **cannot tell which** and **does not claim its
+  list is complete**, naming the four known producers including r13's fourth.
+
+⭐ **#280's real defect is closed by the removal**, not by a wider predicate:
+`type("bad-name", (Exception,), {})("ROOT_MARKER")` is now REPORTED rather than dropped, with a
+case, and the mutation that puts a predicate BACK kills through it.
+
+**Counts:** 291 → **298** cases, 147 → **146** entries, declared sum 1549 → **1548**, binding 1556
+anchors / 1548 entries. ⚠ The entry fall is the ONE sanctioned kind — two mutations retired WITH
+their subject, four retargeted, one added as the falsifier for the removal itself.
+⚠ One retarget SURVIVED its first scoped run (its `expect` named a case that calls the function
+directly and could never see a message mutation) and was repointed at a case that reads the REPORT;
+all five now kill, 1 attributed each.
+
+⛔ **#281 is the process finding this raised**, and it is the owner's own question made durable:
+*could the redesign have been reached earlier?* **Yes — round 11.** The thrashing arming fired then
+and convened Phase 6, which named the root cause correctly in prose and then put an INSTANCE-level
+card to the owner (#271's A/B on the attribution clause), leaving the mechanism unasked for two more
+rounds. The mis-grading has a name: MECHANISM graded as BRANCH-COVERAGE five times, because the
+single test was applied per finding rather than to the pattern. ⭐ **The tell to add to
+`review-method.md`: if an exhaustiveness pass returns a NEW member, the finding was MECHANISM.**
+
+⛔ Round 14 is owed: this changed guarded code, so the r13 verdict no longer covers the tree.
+
 ## ⟳ 2026-10-13 — ROUND 12 RAN AFTER THE PHASE 6 REVIEW, AND FOUND THE SAME ROOT CAUSE AGAIN
 
 ⛔ **THE THRASHING DID NOT STOP WHEN ITS ARCHITECTURE REVIEW RAN.** Round 12 carried **4 High, 3

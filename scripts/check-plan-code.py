@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 291 cases
+    python3 scripts/check-plan-code.py --self-test          # 298 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -518,7 +518,7 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
 
 
 # ⛔ r12 Codex H1 — THE FRAME MARKER, AND IT IS WHAT MAKES A RUN OF INDENTED LINES A TRACEBACK.
-# Its absence was H1's root: `exception_headings` treated ANY indented run as a frame block, so
+# Its absence was H1's root: `column_zero_after_frames` treated ANY indented run as a frame block, so
 # an indented MESSAGE CONTINUATION and ordinary indented progress output both qualified. Measured
 # against real CPython stderr: `raise RuntimeError("real\n  continuation\nValueError: X")` raises
 # ONE exception and the predecessor reported TWO, the second fabricated from the message's own
@@ -527,59 +527,35 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
 # top-level `SyntaxError`, which omits the header. ⟳ r12 Claude M2(b): this used to end "so keying
 # on it loses no real heading", which is TRUE of every printed frame and FALSE as a conclusion — a
 # heading can be printed with NO frames (`sys.tracebacklimit = 0`), and that one is lost. The bound
-# is stated in `exception_headings`' docstring rather than hidden behind this clause.
+# is stated in `column_zero_after_frames`' docstring rather than hidden behind this clause.
 FRAME_LINE = re.compile(r'^[ \t]+File "')
 
 
-def _is_type_name(part: str) -> bool:
-    """One dotted part of an exception's class name — Python's OWN identifier rule. PURE.
-
-    ⛔ SEPARATE FROM ITS CALLER ON PURPOSE, r12 Codex H1. Two distinct rules met on one line and
-    the harness refused a second mutation for them ("repeats the edit anchors of an earlier
-    entry — it measures nothing new"), which is correct: *the heading must be a dotted identifier*
-    and *identifiers are not ASCII-only* are different claims and each needs its own falsifier.
-    The predecessor was `re.compile(r"[A-Za-z_][A-Za-z0-9_.]*(:|$)")`, and a class named `Échec`
-    raised with a marker in its message was named NOWHERE in the report.
-    """
-    return part.isidentifier()
-
-
-def is_exception_heading(line: str) -> bool:
-    """Whether `line` can be the exception line that ENDED a traceback. PURE.
-
-    ⛔ r12 Codex H1 — THE PREDECESSOR WAS `re.compile(r"[A-Za-z_][A-Za-z0-9_.]*(:|$)")`, ASCII
-    ONLY, and Python identifiers are not. Measured: a class named `Échec` raised with a marker in
-    its message produced NO heading at all, and the marker appeared NOWHERE in the report — the
-    exact harm the diagnostic exists to prevent, inside the rule added to prevent it.
-
-    So the class name is validated by Python's OWN rule, per dotted part. A tally line
-    (`0/0 passed`), a `[FAIL]` line and a prose note are all rejected because their first token is
-    not an identifier; `KeyboardInterrupt` with no message is accepted because the colon is
-    optional.
-
-    ⛔ r12 Claude M2 — THE DEFENCE WRITTEN HERE FOR ACCEPTING A BARE IDENTIFIER WAS FALSE, and a
-    code comment asserting a hole is closed is worse than the hole. It said `READY` is rejected
-    because *"nothing unindented after a non-frame run is ever considered"*. The structure rule
-    rejects it only after a NON-frame run. Give the caller a genuine frame run with no heading and
-    the next column-zero line is handed straight to the report — measured, real child:
-
-        traceback.print_stack(); sys.stderr.write("READY\n")   ->  [("READY", False)]
-
-    So the honest statement is the narrower one: **a bare identifier at column zero directly after
-    a real frame block is reported as an exception, and this rule cannot tell it from one.** That
-    is H1's harm surviving in a narrower world, and it is a BOUND, not a live defect — measured,
-    `grep -rn 'print_tb|print_stack|print_exc|format_tb|format_stack' scripts/*.py` is **0**.
-    """
-    head = (line.split(":", 1)[0] if ":" in line else line).strip()
-    return bool(head) and all(_is_type_name(part) for part in head.split("."))
-
+# ⛔⛔⛔ #280 — THE VALIDATOR THAT DECIDED WHAT *IS* AN EXCEPTION IS GONE, and that is the fix the
+# owner chose (2026-10-13, option A: REDESIGN). Two functions stood here — `_is_type_name` and
+# `is_exception_heading` — and between them they tried to answer "is this line an exception?" from
+# text the child controls. Five consecutive review rounds (9-13) refuted whatever answer they gave:
+#
+#   r11  keyed on the `Traceback` header         -> a top-level SyntaxError omits it, returned None
+#   r11  took the FIRST block                    -> a raise-from chain named the cause, not the killer
+#   r12  took ANY indented run as a frame block  -> a message continuation fabricated an exception
+#   r12  validated the name with an ASCII regex  -> `Échec` was named NOWHERE in the report
+#   r13  validated with `str.isidentifier()`     -> `type("bad-name", (Exception,), {})` dropped,
+#                                                   and a frame-shaped line INSIDE a message still
+#                                                   fabricated a second one
+#
+# ⭐ Each repair was correct about the instance it was given and the next round found another
+# member. The defect was never the predicate — it is that A HARNESS CANNOT DECIDE WHAT A LINE
+# MEANS WHEN THE SUBJECT UNDER TEST WRITES THE LINE. So nothing decides any more:
+# `column_zero_after_frames` reports what the child printed, verbatim, and the caller says it
+# cannot tell. #279 removes the matching completeness claim from the message.
 # CPython's own label for a block it did NOT die of. The discriminator for r11 Claude H1 was
 # already in the stream the rule was reading.
 IGNORED_AT_SHUTDOWN = "Exception ignored in"
 _TB_HEADER = "Traceback (most recent call last):"
 
 
-def exception_headings(stderr: str) -> list[tuple[str, bool]]:
+def column_zero_after_frames(stderr: str) -> list[tuple[str, bool]]:
     """Every exception line `stderr` names, in order: `(heading, ignored_at_shutdown)`. PURE.
 
     ⛔ THIS MAKES NO CAUSAL CLAIM, AND THAT IS THE FIX — r11 Claude H1. Its predecessor returned
@@ -650,7 +626,13 @@ def exception_headings(stderr: str) -> list[tuple[str, bool]]:
         # frames are prefixed `  | `, so they do not match `FRAME_LINE` and yield nothing.
         if not any(FRAME_LINE.match(line) for line in lines[start:i]):
             continue
-        if i < n and is_exception_heading(lines[i].strip()):
+        # ⛔ #280 — NO PREDICATE HERE ANY MORE. Every line at column zero after a
+        # frame block is reported, because deciding which of them is 'the exception'
+        # is the claim five rounds refuted. A non-identifier class name
+        # (`bad-name: ROOT_MARKER`) is now REPORTED rather than dropped, and a
+        # frame-shaped line inside a message is reported as what it is — a line the
+        # child printed at column zero — with no claim that it is an exception.
+        if i < n and lines[i].strip():
             out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))
     return out
 
@@ -1263,7 +1245,20 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 147,   # ⟳ r12 Claude H1/L1: +4 — the THREE-world
+    "scripts/check-plan-code.py": 146,   # ⟳⟳ #280 (2026-10-13, the owner chose REDESIGN):
+                                         # 147 -> 146 (two retired, ONE ADDED: the
+                                         # falsifier for the REMOVAL itself, a
+                                         # mutation that puts a predicate BACK), and
+                                         # the fall is of the ONE
+                                         # sanctioned kind — two entries RETIRED WITH THEIR
+                                         # SUBJECT, not orphaned. They mutated
+                                         # `_is_type_name` and `is_exception_heading`, the
+                                         # two functions that decided what IS an exception;
+                                         # both are DELETED, so there is nothing for those
+                                         # mutations to measure. Four more were RETARGETED
+                                         # (the subject survives in a new form) and four
+                                         # self-test cases retired with the same subject.
+                                         # ⟳ r12 Claude H1/L1: +4 — the THREE-world
                                          # enumeration, the third world's own clause,
                                          # and one per arm of the observation ternary
                                          # (#276's shape inside #276's own fix).
@@ -2986,9 +2981,9 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # list a reader had to know the meaning of. Said once here, per file, instead of
             # once per entry: eight identical lines is how the signal got lost the first time.
             # ⟳ r11 Codex H1: the WINDOW ALONE CANNOT CARRY THE CAUSE (see
-            # `exception_headings`), so row #270's "the next occurrence will name it" was
+            # `column_zero_after_frames`), so row #270's "the next occurrence will name it" was
             # unsupported until this line existed. Three worlds, each said in its own words.
-            heads = exception_headings(se)
+            heads = column_zero_after_frames(se)
             if not se.strip():
                 # ⛔ r12 Codex H2 — THIS SAID "so the suite RAN and its PRINTER is the subject",
                 # which is an inference FROM ABSENCE and it is false. Measured: a child whose
@@ -3010,22 +3005,29 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                         "rules OUT a traceback this harness can read, and is NOT evidence that "
                         "the suite ran or that its printer is at fault")
             elif heads:
-                said = ("stderr NAMES "
-                        + " \u00b7 ".join(h + (" [ignored at shutdown]" if ig else "")
+                said = ("stderr printed these lines at column zero after a traceback frame "
+                        "block, VERBATIM and in the order the child printed them \u2014 "
+                        + " \u00b7 ".join(h + (" [after a block CPython labelled 'Exception "
+                                               "ignored in']" if ig else "")
                                           for h, ig in heads)
-                        + " \u2014 in the order the child printed them, and this harness does "
-                          "NOT claim which of them killed it")
+                        + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, "
+                          "NOR THAT IT KILLED THE CHILD: the subject under test writes this "
+                          "stream, so every reading of it is a QUOTATION and not a measurement")
             else:
-                said = "stderr names no exception line, so read the window"
+                said = ("stderr printed no line at column zero after a frame block, so read the "
+                        "window \u2014 \u26a0 and note a traceback with NO frames (for example "
+                        "under `sys.tracebacklimit = 0`) also lands here")
             report.append(
                 f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
-                f"line ON STDOUT, so NOTHING COULD SEE THE KILL. THREE WORLDS PRODUCE "
-                f"THIS AND THIS HARNESS CANNOT TELL THEM APART: a report-format defect in "
-                f"{fname} — `parse_fail_names` reads a red case with startswith('[FAIL] ') "
-                f"and slices [7:]; or a suite that NEVER REACHED ITS CASES, because a "
-                f"Python traceback ALSO exits 1; or a suite that named its case ON STDERR, "
-                f"which attribution does NOT read (see `parse_fail_names(so)` above). Not a "
-                f"coverage gap in any of the three, and "
+                f"line ON STDOUT, so NOTHING COULD SEE THE KILL. ⛔ THIS HARNESS CANNOT TELL "
+                f"WHICH WORLD THIS IS, AND DOES NOT CLAIM THE LIST BELOW IS COMPLETE — four "
+                f"producers are KNOWN and a fifth was found in each of the last three review "
+                f"rounds: a report-format defect in {fname} (`parse_fail_names` reads a red case "
+                f"with startswith('[FAIL] ') and slices [7:]); a suite that NEVER REACHED ITS "
+                f"CASES, because a Python traceback ALSO exits 1; a suite that named its case ON "
+                f"STDERR, which attribution does not read; and a suite that RAN its cases, "
+                f"reported them, and then failed AFTER them (measured: `print('1/1 passed'); "
+                f"os._exit(1)`). ⚠ None of the four is a coverage gap, and "
                 f"every entry for this file is unattributable until it is fixed. "
                 f"\u26a0 WHAT THE CHILD ITSELF SAID \u2014 {said}:\n"
                 f"    {diagnostic_tail(so, se)}")
@@ -3695,8 +3697,16 @@ def _self_test() -> int:
         case("...and says so explicitly, so the missing inference is asserted and not assumed",
              any("is NOT evidence that the suite ran" in r for r in _repfmt), True)
         # ⛔ r12 Claude H1 — the enumeration said TWO and the H3 narrowing made a THIRD.
-        case("⭐⭐ r12 H1: the branch enumerates THREE worlds, not two",
-             any("THREE WORLDS PRODUCE" in r for r in _repfmt), True)
+        # ⟳ #280's REDESIGN REPLACED THE ASSERTION HERE, and the replacement is the point. It
+        # asserted the message enumerates "THREE WORLDS" — a completeness claim that round 13
+        # refuted by finding a fourth. The message no longer counts; it says it CANNOT TELL and
+        # that the list is NOT complete, so that is what a case must pin.
+        case("⭐⭐ #279: the message DISCLAIMS completeness instead of counting worlds",
+             any("DOES NOT CLAIM THE LIST BELOW IS COMPLETE" in r for r in _repfmt), True)
+        case("...and it no longer asserts a closed set of worlds",
+             any("WORLDS PRODUCE" in r for r in _repfmt), False)
+        case("⭐ ...and it names the FOURTH producer round 13 measured",
+             any("failed AFTER them" in r for r in _repfmt), True)
         case("...and names the STREAM it searched, which is what made the third world invisible",
              any("line ON STDOUT" in r for r in _repfmt), True)
         case("...and names the third world itself: a case reported on stderr",
@@ -3806,12 +3816,52 @@ def _self_test() -> int:
                 "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
                 "expect": "the value is one"}]
         _okw3, _repw3, _, _ = run_mutations(_dw3p, _w3, {"w.py"})
-        case("the THIRD world is named as well: stderr that names no exception says so",
-             any("names no exception line" in r for r in _repw3), True)
+        case("the no-lines world is named as well, in the redesigned wording",
+             any("printed no line at column zero after a frame block" in r for r in _repw3), True)
+        case("⭐ #280: ...and it states the no-frame traceback BOUND rather than hiding it",
+             any("sys.tracebacklimit = 0" in r for r in _repw3), True)
         # ⚠ The pair: this fixture must NOT be read as world one, or the case above passes for
         # the same ambient reason the H1 case did.
         case("...and it is NOT reported as an empty stderr, which is a different world",
              any("wrote NOTHING to stderr" in r for r in _repw3), False)
+
+    # ⛔⛔ #280 — THE REPORT MUST QUOTE THE LINES, AND THIS IS THE ONLY CASE THAT READS THE REPORT
+    # FOR THEM. ⚠ It asserts the JOIN SEPARATOR, not a marker: `diagnostic_tail` also carries the
+    # raw stderr into the same message, so asserting a marker would pass whether the join ran or
+    # not — the unfalsifiable shape this session has now shipped three times. A ` · ` between two
+    # quoted lines can ONLY come from the join; raw stderr has newlines there.
+    with tempfile.TemporaryDirectory() as _dq:
+        _dqp = pathlib.Path(_dq)
+        (_dqp / "q.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        # the mutation makes the child die TWICE: a real exception, then a __del__ raise at
+        # interpreter shutdown — so two lines sit at column zero after frame blocks.
+        _q = [{"name": "two quoted lines, joined", "file": "q.py",
+               "edits": [['def f():\n    return 1',
+                          'class _Leaky:\n'
+                          '    def __del__(self):\n'
+                          '        raise ValueError("SHUTDOWN_SECOND")\n'
+                          '_leak = _Leaky()\n'
+                          'raise RuntimeError("FIRST_KILLER")\n\n\n'
+                          'def f():\n    return 1']],
+               "expect": "the value is one"}]
+        _okq, _repq, _, _ = run_mutations(_dqp, _q, {"q.py"})
+        case("⭐⭐ #280: the report QUOTES the child's column-zero lines, joined",
+             any(" · " in r for r in _repq), True)
+        case("...and both lines are there, in the order the child printed them",
+             any(r.index("FIRST_KILLER") < r.index("SHUTDOWN_SECOND")
+                 for r in _repq if "FIRST_KILLER" in r and "SHUTDOWN_SECOND" in r), True)
+        case("...and the second is flagged as following a block CPython itself labelled ignored",
+             any("Exception ignored in" in r for r in _repq), True)
 
     # ⛔⛔ r12 Codex H3 — THE FIFTH WORLD: A CRASH THAT FORGES ITS OWN `[FAIL]` LINE. The 2x2
     # that closed #271 covers a crash parsing to NO failures; this is the world where the crash
@@ -3950,8 +4000,8 @@ def _self_test() -> int:
                '  File "/x/probe.py", line 9, in _self_test\n'
                '    boom()\n'
                'ValueError: a single-line cause\n')
-    case("exception_headings takes the heading of a one-block traceback",
-         exception_headings(_tb_one), [("ValueError: a single-line cause", False)])
+    case("column_zero_after_frames reports the line after a one-block traceback",
+         column_zero_after_frames(_tb_one), [("ValueError: a single-line cause", False)])
     # ⭐ THE REGRESSION CASE FOR r11 CODEX H1, AND IT ASSERTS THE WINDOW'S FAILURE TOO — without
     # the second half this case cannot show the naming is load-bearing rather than merely correct.
     _tb_multi = ('Traceback (most recent call last):\n'
@@ -3960,7 +4010,7 @@ def _self_test() -> int:
                  'RuntimeError: ROOT_CAUSE_MARKER\n'
                  + 'uninformative continuation\n' * 40)
     case("⭐ r11 H1: a MULTI-LINE message does not hide the heading",
-         exception_headings(_tb_multi), [("RuntimeError: ROOT_CAUSE_MARKER", False)])
+         column_zero_after_frames(_tb_multi), [("RuntimeError: ROOT_CAUSE_MARKER", False)])
     case("...and the 400-char tail DOES lose it, which is why the heading is read separately",
          "ROOT_CAUSE_MARKER" in diagnostic_tail("", _tb_multi), False)
     # ⛔ BOTH BLOCKS, IN ORDER — r11 Claude H1. The predecessor returned the LAST block and the
@@ -3975,31 +4025,38 @@ def _self_test() -> int:
                  '  File "/x/b.py", line 7, in g\n'
                  'RuntimeError: the exception that KILLED it\n')
     case("a raise-from chain names BOTH blocks, in the order the child printed them",
-         exception_headings(_tb_chain),
+         column_zero_after_frames(_tb_chain),
          [("ValueError: the ORIGINAL cause", False),
           ("RuntimeError: the exception that KILLED it", False)])
     case("...so no block is discarded as 'merely the cause', which is the premise r11 H1 refuted",
-         len(exception_headings(_tb_chain)), 2)
+         len(column_zero_after_frames(_tb_chain)), 2)
     case("...and a FRAME line is never named, however many frames precede the heading",
-         exception_headings('Traceback (most recent call last):\n'
+         column_zero_after_frames('Traceback (most recent call last):\n'
                             '  File "/x/c.py", line 1, in <module>\n'
                             '  File "/x/d.py", line 2, in h\n'
                             'KeyError: \'k\'\n'), [("KeyError: 'k'", False)])
-    case("exception_headings is empty when stderr names no exception",
-         exception_headings("CANNOT RUN - the tree went bad underneath\n"), [])
+    case("column_zero_after_frames is empty when stderr names no exception",
+         column_zero_after_frames("CANNOT RUN - the tree went bad underneath\n"), [])
     case("...and empty on an empty stderr, which the caller reads as a PRINTER defect instead",
-         exception_headings(""), [])
+         column_zero_after_frames(""), [])
     # ⭐ r11 Claude H1's INDENTED-BLOCK defect: the opener matched while the frame skip discarded
     # the heading, so the rule returned whatever the child printed next — measured, `0/0 passed`,
     # reported as *"the child DIED with 0/0 passed"*. ⟳ r12 Codex H1: `EXCEPTION_LINE` named
-    # here until 2026-10-13 and is GONE — `is_exception_heading` refuses the tally line now, and
+    # here until 2026-10-13 and is GONE. ⟳ So did `is_exception_heading`, which replaced it and was
+    # itself retired by #280's redesign —
     # the FRAME_LINE clause refuses the block that reaches it. ⚠ A stale symbol in a CODE COMMENT
     # is invisible to `check-withdrawal`, which globs `docs/` only; this one was found by grep.
-    case("⭐ r11 H1: an INDENTED traceback cannot make a tally line into an exception",
-         exception_headings('  Traceback (most recent call last):\n'
+    # ⟳ #280's REDESIGN INVERTED THIS CASE, and the inversion is the point. It used to assert
+    # `[]` under the name "an INDENTED traceback cannot make a tally line into an exception" —
+    # i.e. that the rule CLASSIFIED `0/0 passed` as not-an-exception. Classification is what was
+    # removed. The tally line IS a line the child printed at column zero after a real frame block
+    # (`    File "/x/a.py"` matches `FRAME_LINE`), so it is now REPORTED — and the caller claims
+    # nothing about it being an exception, which is the whole repair.
+    case("⭐ #280: a tally line after a frame block is REPORTED, not classified",
+         column_zero_after_frames('  Traceback (most recent call last):\n'
                             '    File "/x/a.py", line 2, in f\n'
                             '  ValueError: indented\n'
-                            '0/0 passed\n'), [])
+                            '0/0 passed\n'), [("0/0 passed", False)])
 
     # ⛔ REAL CHILDREN FROM HERE, NOT TYPED FIXTURES — and that distinction is the whole reason
     # r11 Claude H1 exists. A typed traceback asserts MY idea of CPython's format, and the
@@ -4017,16 +4074,16 @@ def _self_test() -> int:
                           'leak = Leaky()\n'
                           'raise RuntimeError("THE_REAL_KILLER")\n')
     case("⭐⭐ r11 H1: a __del__ raise at SHUTDOWN does not displace the real exception",
-         exception_headings(_shut),
+         column_zero_after_frames(_shut),
          [("RuntimeError: THE_REAL_KILLER", False), ("ValueError: SHUTDOWN_NOISE", True)])
     case("...and CPython's own `Exception ignored in` label is what FLAGS the non-fatal one",
-         [_ig for _h, _ig in exception_headings(_shut)], [False, True])
+         [_ig for _h, _ig in column_zero_after_frames(_shut)], [False, True])
     _atex = _child_stderr('import atexit\n'
                           'def boom(): raise ValueError("ATEXIT_NOISE")\n'
                           'atexit.register(boom)\n'
                           'raise RuntimeError("THE_REAL_KILLER")\n')
     case("...and an atexit callback is the same shape, by the same label",
-         exception_headings(_atex),
+         column_zero_after_frames(_atex),
          [("RuntimeError: THE_REAL_KILLER", False), ("ValueError: ATEXIT_NOISE", True)])
     # ⛔⛔ THE COMPOSITE r11 H1 CALLED THE ONE THAT MATTERS: shutdown noise whose message floods
     # the window. The old rule named the noise AND the window held nothing else, so the real
@@ -4037,7 +4094,7 @@ def _self_test() -> int:
                            'leak = Leaky()\n'
                            'raise RuntimeError("THE_REAL_KILLER_nobody_will_see")\n')
     case("⭐⭐ r11 H1's COMPOSITE: the real exception is named even when noise floods the window",
-         any("THE_REAL_KILLER_nobody_will_see" in _h for _h, _ig in exception_headings(_flood)),
+         any("THE_REAL_KILLER_nobody_will_see" in _h for _h, _ig in column_zero_after_frames(_flood)),
          True)
     case("...which the 400-char window alone does NOT carry, so the naming is load-bearing",
          "THE_REAL_KILLER_nobody_will_see" in diagnostic_tail("", _flood), False)
@@ -4045,25 +4102,25 @@ def _self_test() -> int:
     # way to produce one. The predecessor returned None here — on the most likely crash of all.
     _syn = _child_stderr('def f(:\n    pass\n')
     case("⭐ a top-level SyntaxError has NO traceback header and is still named",
-         exception_headings(_syn), [("SyntaxError: invalid syntax", False)])
+         column_zero_after_frames(_syn), [("SyntaxError: invalid syntax", False)])
     case("...and THAT is why no header literal is used to find a heading",
          _TB_HEADER in _syn, False)
     _grp = _child_stderr('raise ExceptionGroup("g", [ValueError("a")])\n')
     case("an ExceptionGroup names nothing here, which is the STATED BOUND, not a silent miss",
-         exception_headings(_grp), [])
+         column_zero_after_frames(_grp), [])
 
     # ⛔⛔ r12 Claude M2 — THE TWO BOUNDS, PINNED. Both were asserted by NOTHING when the frame
     # marker landed, and one of them had a code comment claiming it was closed.
     _frames_only = _child_stderr(
         'import traceback, sys\ntraceback.print_stack()\nsys.stderr.write("READY\\n")\n')
     case("⭐⭐ r12 M2: a real FRAME RUN WITH NO HEADING hands the next column-zero line over",
-         exception_headings(_frames_only), [("READY", False)])
+         column_zero_after_frames(_frames_only), [("READY", False)])
     case("...so the bound is stated, not defended — the structure rule alone does not reject it",
          any(FRAME_LINE.match(_l) for _l in _frames_only.split("\n")), True)
     _nf = _child_stderr(
         'import sys\nsys.tracebacklimit = 0\nraise RuntimeError("REAL_KILLER")\n')
     case("⭐⭐ r12 M2: a heading with ZERO frames is NOT seen — the second stated bound",
-         exception_headings(_nf), [])
+         column_zero_after_frames(_nf), [])
     case("...and that stderr really is a bare exception line, so the bound is about frames",
          _nf.strip(), "RuntimeError: REAL_KILLER")
 
@@ -4073,34 +4130,54 @@ def _self_test() -> int:
     _msgcont = _child_stderr(
         'raise RuntimeError("real\\n  continuation\\nValueError: FABRICATED")\n')
     case("⭐⭐ r12 H1: an indented MESSAGE continuation cannot fabricate a second heading",
-         exception_headings(_msgcont), [("RuntimeError: real", False)])
+         column_zero_after_frames(_msgcont), [("RuntimeError: real", False)])
     case("...and the fabricated type appears NOWHERE in the headings",
-         any("FABRICATED" in _h for _h, _ig in exception_headings(_msgcont)), False)
+         any("FABRICATED" in _h for _h, _ig in column_zero_after_frames(_msgcont)), False)
     # ⚠ The adjacent negative, not an absurd one: ordinary indented progress output. The
     # predecessor returned `[("READY", False)]` here — an exception heading for a child that
     # raised nothing at all.
     _prog = _child_stderr(
         'import sys\nsys.stderr.write("  connecting\\nREADY\\n")\n')
     case("⭐ r12 H1: indented output with NO `File \"` line names nothing",
-         exception_headings(_prog), [])
+         column_zero_after_frames(_prog), [])
     case("...and THAT is the clause: the run carries no frame marker",
          any(FRAME_LINE.match(_l) for _l in _prog.split("\n")), False)
     # ⛔ Python identifiers are NOT ASCII, and the predecessor's regex was. Measured: the type
     # and its marker both vanished from the report — the harm the diagnostic exists to prevent.
     _uni = _child_stderr('class \u00c9chec(Exception):\n    pass\n'
                          'raise \u00c9chec("ROOT_MARKER")\n')
+    # ⛔⛔ #280 CLOSED — the two directions round 13 measured, now asserted. Both were LOST or
+    # FABRICATED by every predicate this rule ever had; removing the predicate closes both, and
+    # these are the cases that would go red if one came back.
+    _badname = _child_stderr('raise type("bad-name", (Exception,), {})("ROOT_MARKER")\n')
+    case("⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped",
+         any("bad-name" in _h for _h, _ig in column_zero_after_frames(_badname)), True)
+    case("...so its marker reaches a reader, which is the harm #280 was filed for",
+         any("ROOT_MARKER" in _h for _h, _ig in column_zero_after_frames(_badname)), True)
+    _badmod = _child_stderr('E = type("Err", (Exception,), {"__module__": "bad-module"})\n'
+                            'raise E("ROOT_MARKER")\n')
+    case("⭐ #280: a non-identifier __module__ is reported too",
+         any("bad-module" in _h for _h, _ig in column_zero_after_frames(_badmod)), True)
+    # ⚠ The OTHER direction: a frame-shaped line inside an exception MESSAGE still produces a
+    # second entry — and that is now HONEST rather than a defect, because the caller claims only
+    # that the child printed these lines at column zero after a frame block, which it did.
+    _fakeframe = _child_stderr(
+        'raise RuntimeError(\'real\\n  File "fake", line 1\\nValueError: MESSAGE_ONLY\')\n')
+    case("⭐ #280: a frame-shaped line INSIDE a message still yields two reported lines",
+         len(column_zero_after_frames(_fakeframe)), 2)
+    case("...which is honest now: the report claims a LINE was printed, not that it is an exception",
+         any("MESSAGE_ONLY" in _h for _h, _ig in column_zero_after_frames(_fakeframe)), True)
+
     case("⭐⭐ r12 H1: a NON-ASCII exception class is named, because identifiers are not ASCII",
-         exception_headings(_uni), [("\u00c9chec: ROOT_MARKER", False)])
+         column_zero_after_frames(_uni), [("\u00c9chec: ROOT_MARKER", False)])
     case("...so its marker survives into something a reader can see",
-         any("ROOT_MARKER" in _h for _h, _ig in exception_headings(_uni)), True)
-    case("is_exception_heading refuses a tally line",
-         is_exception_heading("0/0 passed"), False)
-    case("...refuses a [FAIL] line, which is the other thing a suite prints at column zero",
-         is_exception_heading("[FAIL] a case: got 1 want 2"), False)
-    case("...accepts a bare type with no message, which is how KeyboardInterrupt prints",
-         is_exception_heading("KeyboardInterrupt"), True)
-    case("...and accepts a DOTTED type, which is how a type outside builtins prints",
-         is_exception_heading("pkg.mod.CustomError: x"), True)
+         any("ROOT_MARKER" in _h for _h, _ig in column_zero_after_frames(_uni)), True)
+    # ⛔ #280 — FOUR CASES FOR `is_exception_heading` WERE RETIRED WITH THEIR SUBJECT here
+    # (2026-10-13, the owner's REDESIGN choice). They asserted that a tally line, a
+    # `[FAIL]` line, a bare type and a dotted type were correctly classified — and
+    # classification is exactly what was removed. This is the one sanctioned kind of
+    # coverage fall: the cases are retired WITH the code they name, recorded here and
+    # at `EXPECTED_MUTATIONS` with the count and the reason.
 
     # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
     # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
@@ -6339,7 +6416,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1549)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1548)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

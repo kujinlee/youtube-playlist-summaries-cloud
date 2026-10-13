@@ -1718,29 +1718,16 @@
     ]
   },
   {
-    "name": "⛔ r11 H1 (retargeted + name corrected r12 Codex L1) — the heading VALIDATION is dropped, so whatever the child printed at column zero after a frame block becomes 'the exception' — measured once as `0/0 passed`",
+    "name": "⛔ r11 H1 (retargeted #280, EXPECT corrected after it SURVIVED) — the report stops QUOTING the child's column-zero lines and gives the reader only the diagnostic window",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return bool(head) and all(_is_type_name(part) for part in head.split(\".\"))\n",
-        "    return bool(head)\n"
+        "                        + \" \\u00b7 \".join(h + (\" [after a block CPython labelled 'Exception \"\n",
+        "                        + \"\" .join(h + (\" [after a block CPython labelled 'Exception \"\n"
       ]
     ],
     "expect": [
-      "is_exception_heading refuses a tally line"
-    ]
-  },
-  {
-    "name": "⛔ r11 H1 — the report stops NAMING the exception and only says the child died, which is the state the 400-char window already fails to repair",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "                        + \" \\u00b7 \".join(h + (\" [ignored at shutdown]\" if ig else \"\")\n                                          for h, ig in heads)\n",
-        "                        + \" \\u00b7 \".join(\"\" for h, ig in heads)\n"
-      ]
-    ],
-    "expect": [
-      "...and it NAMES THE EXCEPTION, so the type survives however the window is spent"
+      "⭐⭐ #280: the report QUOTES the child's column-zero lines, joined"
     ]
   },
   {
@@ -1783,16 +1770,16 @@
     ]
   },
   {
-    "name": "⛔ r11 Claude H2 — world THREE stops naming itself, the arm a 248/248 mirror measured as asserted by nothing at all",
+    "name": "⛔ r11 Claude H2 (retargeted #280) — the NO-LINES world stops naming itself, so a stderr with nothing at column zero is described in words that fit any red suite",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                said = \"stderr names no exception line, so read the window\"\n",
-        "                said = \"the suite went red\"\n"
+        "                said = (\"stderr printed no line at column zero after a frame block, so read the \"\n",
+        "                said = (\"the suite went red, so read the \"\n"
       ]
     ],
     "expect": [
-      "the THIRD world is named as well: stderr that names no exception says so"
+      "the no-lines world is named as well, in the redesigned wording"
     ]
   },
   {
@@ -1835,19 +1822,6 @@
     ]
   },
   {
-    "name": "⛔⛔ r12 Codex H1 — the heading validator goes back to ASCII ONLY, so an exception class whose name is a non-ASCII Python identifier is named NOWHERE in the report, which is the harm the diagnostic exists to prevent",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "    return part.isidentifier()\n",
-        "    return part.isascii() and part.isidentifier()\n"
-      ]
-    ],
-    "expect": [
-      "⭐⭐ r12 H1: a NON-ASCII exception class is named, because identifiers are not ASCII"
-    ]
-  },
-  {
     "name": "⛔⛔ r12 Codex H3 — attribution goes back to the MERGED view, so a crash whose exception MESSAGE contains a well-formed `[FAIL] <case>` line is certified as a kill attributed to that case, over zero executed cases",
     "file": "scripts/check-plan-code.py",
     "edits": [
@@ -1874,29 +1848,29 @@
     ]
   },
   {
-    "name": "⛔⛔ r12 Claude H1 — the branch goes back to enumerating TWO worlds, so the world the H3 narrowing CREATED (a suite that names its case on stderr) is produced and named by nothing, and the reader is sent to fix a report format that is correct",
+    "name": "⛔⛔ r12 Claude H1 (retargeted #280) — the message goes back to CLAIMING its list of producers is complete, the claim five consecutive rounds refuted",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "f\"line ON STDOUT, so NOTHING COULD SEE THE KILL. THREE WORLDS PRODUCE \"\n",
-        "f\"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE \"\n"
+        "                f\"WHICH WORLD THIS IS, AND DOES NOT CLAIM THE LIST BELOW IS COMPLETE — four \"\n",
+        "                f\"WHICH WORLD THIS IS. THE LIST BELOW IS COMPLETE — four \"\n"
       ]
     ],
     "expect": [
-      "⭐⭐ r12 H1: the branch enumerates THREE worlds, not two"
+      "⭐⭐ #279: the message DISCLAIMS completeness instead of counting worlds"
     ]
   },
   {
-    "name": "⛔ r12 Claude H1 — the THIRD world stops being named, so the enumeration counts three and lists two",
+    "name": "⛔ r12 Claude H1 (retargeted #280) — the FOURTH producer stops being named, the one round 13 measured: a suite that ran its cases, reported them, and then failed after",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "f\"Python traceback ALSO exits 1; or a suite that named its case ON STDERR, \"\n                f\"which attribution does NOT read (see `parse_fail_names(so)` above). Not a \"\n",
-        "f\"Python traceback ALSO exits 1. Not a \"\n"
+        "                f\"reported them, and then failed AFTER them (measured: `print('1/1 passed'); \"\n",
+        "                f\"reported them. \"\n"
       ]
     ],
     "expect": [
-      "...and names the third world itself: a case reported on stderr"
+      "⭐ ...and it names the FOURTH producer round 13 measured"
     ]
   },
   {
@@ -1923,6 +1897,19 @@
     ],
     "expect": [
       "...it is reported as whitespace, with a count the reader can check"
+    ]
+  },
+  {
+    "name": "⛔⛔⛔ #280 — A PREDICATE COMES BACK: the reporter starts deciding again that a line must look like a dotted identifier to be reported, which is exactly the rule five consecutive rounds refuted, and it drops `bad-name: ROOT_MARKER` on the floor",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if i < n and lines[i].strip():\n",
+        "        if i < n and lines[i].strip() and all(\n                _p.isidentifier() for _p in\n                lines[i].strip().split(':', 1)[0].strip().split('.')):\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped"
     ]
   }
 ]
