@@ -269,4 +269,29 @@ recorded field and leaves `ok` wrong, because the `if not fails` block sat INSID
 The arm had to be lifted so `expect` cannot disable the refusal. Behaviour is unchanged for all
 1,539 live entries, measured rather than argued.
 
-**B remains available** and is now gated on F1's width, which is the measurement nobody has taken.
+### F1's width — the number that settled A versus B: **3 sites, 2 files**
+
+Asked after A was chosen, because I had said B was gated on it and would reopen the choice if it
+came back large. Method: every `obj.get("literal")` under `scripts/` — 358 sites in 33 files, 21 of
+them guard-shaped — swept by severing each to `obj["literal"]` with a control green either side,
+then filtered by the condition that matters: **does absence answer in the PERMISSIVE direction?**
+
+Three survive that filter, in two files: `check-plan-code.py:2804` `mut.get("expect")` (fixed by
+#271 in this session) and two in `check-review-recorded.py`.
+
+⚠ **AND ONE OF THE TWO IS MIS-GRADED BY THE AGENT THAT FOUND IT — coordinator-measured.**
+`rec.get("gate_ran")` was reported as failing OPEN. Through `classify_verdict`: `True` →
+`(head, 'usable')`, `False` → `(None, 'skip')`, **ABSENT → `(None, 'skip')`, byte-identical to
+False** — i.e. *the gate did not run*, which makes the final-tree gate MORE demanding. That is the
+conservative direction, so it is a validation gap, not a false green. The third agent grading
+corrected by measurement in this review.
+
+⛔ **So B is not merely unmeasured — it is NOT EARNED.** A shared "child verdict" module over this
+class would have **2 callers**, which is hypothetical depth by the skill's own rule ("one adapter =
+hypothetical seam, two = real"), and the remaining two sites are already owned by backlog **#178**,
+whose own remedy is to IMPORT the existing validator in `check-review-decision.py:265-283`
+(`REQUIRED` + a `_validate` that raises) rather than to grow a new abstraction. #178 is amended with
+today's measurement rather than duplicated.
+
+⭐ And that validator has propagated to zero of the three — ADR-0014's recorded sentence, for the
+third distinct class in one day.
