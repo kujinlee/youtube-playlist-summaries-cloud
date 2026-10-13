@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 6882 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "d8c02e2248efb0988280545d3b40d8f778a8ac58",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "../r10/codex-brief.md",
+  "reason": "6882 chars",
+  "refused": false,
+  "review": "backlog-249-260-r10-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

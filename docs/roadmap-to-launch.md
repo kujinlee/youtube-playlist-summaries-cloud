@@ -1955,7 +1955,7 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
       workflow readers still do not parse, and nothing here argues they should. What changed is
       the cost side, by an order of magnitude: #153's hand-rolled reader was a few lines of
       structure, where #267's was **217 lines** carrying a review finding in **nine consecutive
-      rounds**, and the swap was measured at **0 verdict differences over 95,786 figures** before
+      rounds**, and the swap was measured at **0 verdict differences over 95,778 figures** (corpus pinned at `0792dcab`) before
       it was taken. ⛔ **AND THE REASON THIS VERDICT GAVE IS REAL AND WAS NOT WISHED AWAY:** the
       dependency does now sit inside the interpreter `check-python-pin.py` pins, so a Python bump
       is also a dependency bump. It is pinned exactly, and that coupling is written at the top of

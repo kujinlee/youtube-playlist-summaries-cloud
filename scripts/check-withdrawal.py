@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 172 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 175 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -603,11 +603,16 @@ def inline_block_spans(text: str) -> list[tuple[int, int]]:
     hit = _BLOCK_SPANS.get(text)
     if hit is not None:
         return hit
+    # ⛔ r10 Codex M1 — `splitlines()` IS THE WRONG RULER HERE. It breaks on VT, FF, NEL, U+2028
+    # and U+2029 as well as `\n`; markdown-it counts only `\n`, so any of those five shifted every
+    # later line number and the span came back pointing at the wrong text. Measured: a VT in the
+    # lead-in made the guard MISS a genuine code span and turn a suppressed figure into a false
+    # survivor. The ruler must be the parser's, not Python's.
     offs, pos = [], 0
-    for line in text.splitlines(keepends=True):
+    for line in text.split("\n"):
         offs.append(pos)
-        pos += len(line)
-    offs.append(pos)
+        pos += len(line) + 1
+    offs.append(len(text))
     spans: list[tuple[int, int]] = []
     for tok in _MD.parse(text):
         if tok.type == "inline" and tok.map:
@@ -627,12 +632,37 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
     followed by another shape. A code span may not cross a block boundary; the parser already knows
     where blocks are; deriving that again by hand was the mistake.
 
-    ⚠ MEASURED BEFORE THE SWAP WAS TAKEN, at `0792dcab`: 1,806 documents, 95,786 figures, ZERO
-    verdict differences — with a KNOWN-POSITIVE CONTROL first, because this file has shipped six
+    ⚠ MEASURED BEFORE THE SWAP WAS TAKEN, at `0792dcab`: 1,806 documents, 95,778 figures, ZERO
+    verdict differences (the population is pinned to that commit's
+    documents — an earlier run said 95,786 over a corpus that had moved under it, r10 Codex M3) — with a KNOWN-POSITIVE CONTROL first, because this file has shipped six
     false zeros and each one stopped the next round looking. The control flips the open lenient
     class (a block start between an outer and inner list column) from suppressed to live, and
     agrees on the handled column and on an ordinary wrapped span. So the zero is a property of the
     corpus, not of the instrument.
+
+    ⛔⛔ THE BOUND THIS SWAP BUYS, STATED RATHER THAN DISCOVERED LATER — r10 Codex H3 and H4.
+    The parser is `markdown-it-py`, and GitHub renders these documents with `cmark-gfm`. They are
+    not the same program and they disagree. MEASURED, both against cmark directly:
+
+      · an HTML block on a lazy line closing a quote — `> the count was `wrong:\n<span>\n…`
+      · a GFM table followed by indented code       — `the count was `wrong:\n    | h |\n| --- |\n…`
+
+    cmark SPLITS both; markdown-it reports ONE inline block spanning the whole document, so the
+    backticks pair and the boundary is masked. Both are LENIENT — the expensive direction — and on
+    both the DELETED hand-rolled code was RIGHT. ⚠ And `inline_block_spans` converts a line map to
+    a character range, so two cells of ONE table row receive IDENTICAL ranges and backticks pair
+    ACROSS cells (r10 Codex H4; this defect pre-dates the swap and survives it).
+
+    ⤳ WHY IT IS NOT FIXED HERE, which is a fact about the toolchain and not a preference:
+    `cmarkgfm`'s Python binding exposes SIXTEEN `cmark_*` symbols and none of the node-walking or
+    line-position ones — no `cmark_node_get_start_line`, no `cmark_node_next` — so cmark's own
+    block offsets are unreachable from Python without writing a C binding. The choice was
+    markdown-it's block map or nothing.
+
+    ⚠ ZERO INSTANCES IN THE 1,806 TRACKED DOCUMENTS, and that is exactly how much comfort it is
+    worth: the corpus measurement that justified this swap reported 0 verdict differences and did
+    not contain these shapes either. The cases below pin all three so a future fix moves them
+    DELIBERATELY, and so this bound cannot quietly become folklore.
 
     ⚠ AN OFFSET IN NO INLINE BLOCK ENDS THE SPAN. A backtick inside a fenced or indented code
     block delimits nothing, which is the r5 L1 deviation this swap closes — 597 span-level
@@ -667,8 +697,11 @@ def mask_inline_code(text: str) -> str:
 
     ⚠ THREE BOUNDS, STATED RATHER THAN HIDDEN — and the third was MISSING from this list until
     r4 Claude L1, which is the failure mode a caveat headed *stated rather than hidden* has:
-      · Runs of THREE OR MORE backticks are left alone — those are fences, and the fenced-code
-        case is deferred. ⟳ r5 Claude L1 — AND THE OLD JUSTIFICATION HERE WAS WRONG ABOUT WHICH
+      · Runs of THREE OR MORE backticks are left alone — those are fences. ⟳ 2026-10-12, #267:
+        THE DEFERRAL BELOW IS CLOSED and the paragraphs recording it are kept as history, not as
+        current behaviour. A fenced block is not inline content, the parser reports no inline
+        span inside one, and single backticks in fenced code no longer pair — the 597 span-level
+        disagreements with cmark are gone. What follows is why that mattered for five rounds. ⟳ r5 Claude L1 — AND THE OLD JUSTIFICATION HERE WAS WRONG ABOUT WHICH
         WAY THAT DEFERRAL FAILS. It said widening the mask to fences "risks pairing an unbalanced
         fence and masking prose". The risk is real but it is not the live one: dropping 3+ runs
         from the list leaves the SINGLE backticks INSIDE a fenced block free to pair with each
@@ -815,6 +848,7 @@ def _memo_key_probe() -> tuple:
     other = "xa bx and the count was 1,414 today"      # SAME LENGTH, different content
     assert len(text) == len(other)
     _MASKED_DOCS.clear()
+    _BLOCK_SPANS.clear()
     masked_of(text)                                   # populate under the real key
     _MASKED_DOCS[(id(text), len(text))] = "X" * len(text)   # what an id-keyed memo would serve
     served = masked_of(text)
@@ -1424,6 +1458,24 @@ def self_test() -> int:
          "does not end the paragraph either. ⛔ THIS IS THE CASE THAT CAUGHT THE FIRST VERSION OF "
          "THE CLAUSE, which tested the stripped remainder and so fired here too",
          _marker_at("- the count was `wrong:\n  2) x\n  holds 1,414 anchors today`"), "was "),
+        # ── r10 Codex H3/H4: THE DIVERGENCE FROM cmark THAT THE PARSER SWAP BUYS. Each of these
+        # asserts an answer that is LENIENT and that cmark-gfm contradicts. ⛔ THEY PIN CURRENT
+        # BEHAVIOUR AND ARE NOT CLAIMS THAT THE ANSWER IS RIGHT — the same device the tab-at-
+        # column-0 case used before #267 moved it. The day cmark's block offsets become reachable
+        # from Python, these three go red and name themselves.
+        ("⛔ r10 Codex H3: an HTML block on a lazy line — cmark CLOSES the quote here and finds no "
+         "code span, markdown-it keeps one block and the span swallows the boundary. LENIENT, and "
+         "the deleted hand-rolled code was RIGHT on this shape",
+         _marker_at("> the count was `wrong:\n<span>\nholds 1,414 anchors today`"), "was "),
+        ("⛔ r10 Codex H3: ...and a GFM table followed by INDENTED CODE, same disagreement, same "
+         "direction",
+         _marker_at("the count was `wrong:\n    | h |\n| --- |\n"
+                    "    holds 1,414 anchors today`"), "was "),
+        ("⛔ r10 Codex H4: two cells of ONE table row get IDENTICAL character ranges, because a "
+         "line map cannot express a column, so backticks pair ACROSS the cell boundary. Both "
+         "parsers report two cells and no code span. ⚠ PRE-DATES the swap and survives it",
+         _marker_at("| the count was `wrong. | holds 1,414 anchors today` |\n| --- | --- |"),
+         "was "),
         # ── r9 CLAUDE B1/H1/H2/M1/M2. Four of these pin properties the fold ASSERTED and did
         # not test, and the last one is the case that would have caught 132 noisy shapes.
         ("⛔ r9 Claude H1: the span opens on a LAZY continuation — a line that omits the item's "
@@ -1931,11 +1983,25 @@ def main(argv: "list[str] | None" = None, root: Path = REPO) -> int:
     if args.self_test:
         return self_test()
 
+    # ⛔ r10 Codex H2 — CHECK THE PARSER BEFORE ANY SUCCESS PATH. The exception in
+    # `inline_block_spans` only fires if a candidate backtick pair is actually reached, so a run
+    # over documents with no pairs completed and printed "ok — none survives elsewhere" at rc=0
+    # with NO PARSER AT ALL. MEASURED over a constructed world: rc=0, a confident pass. That is
+    # the false-absence failure this guard's whole design is against, reintroduced by the fix for
+    # it. ⚠ The self-test is exempt above on purpose: its cases drive the pure functions and must
+    # still be runnable for someone diagnosing a broken install.
+    if _MD is None:
+        print(f"CANNOT RUN — markdown-it-py is not importable ({PARSER_IMPORT_ERROR}), so block "
+              "boundaries cannot be found. ⛔ Treat this as NOT RUN, not as a pass. "
+              "Install it: python3 -m pip install -r requirements.txt", file=sys.stderr)
+        return 2
+
     # ⛔ r6 Claude H1 — ONE RUN, ONE MEMO. The cache is module-global and `main` is called many
     # times per process (the suite alone drives it through four probes), so entries outlived the
     # `blobs` list that justified them. Keying by value already makes a stale entry harmless; this
     # keeps the memo's SIZE matched to its stated scope instead of to the process lifetime.
     _MASKED_DOCS.clear()
+    _BLOCK_SPANS.clear()
     fc = _find_claim()
     diff, err = git_diff(args.base, root)
     if err:
