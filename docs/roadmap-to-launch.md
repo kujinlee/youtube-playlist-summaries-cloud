@@ -3098,7 +3098,7 @@ producer for a message that enumerated two. Filed as **#277**; its premise-witho
 as **#278**.
 
 **What is still OPEN after round 12:** #270 (the intermittent shard red, NOT DIAGNOSED), #272,
-#275, #276 (now fully measured — 11 unasserted of 26, a DECISION the owner owns), #277, #278, and
+#275, #276 (⟳⛔ **this line published the WITHDRAWN figure "11 unasserted of 26" as fact until round 13's Claude half caught it — the FIFTH incomplete withdrawal of the day, and the rule that catches it is written in this very branch at `docs/reviews/architecture-review-2026-10-13.md:284`: *a withdrawal needs its dependents re-derived, not just its own string removed*. `check-withdrawal.py` is GREEN over it, because it tracks a withdrawn figure's own string and not the places that restate it — and this one sat in the ROADMAP, the compaction-proof layer a resuming session reads first.** The measured categories are in the row; the remedy is a DECISION the owner owns), **#279**, **#280** (⟳ added here by r13 M1 — they were filed in `backlog.md` and absent from the roadmap, while #277/#278 from the round before had both halves; `dev-process.md` says a discovered item goes to BOTH in the same turn), #277, #278, and
 ⚠ **the 2026-10-07 arming below (#262/#261), which today's review did not touch.**
 
 ## ⟳ 2026-10-13 — PHASE 6 RAN, ON A **SECOND** COMPONENT OF THE SAME BRANCH (the mutation harness's child-verdict path)
