@@ -9,6 +9,7 @@
 
 ## How things go wrong here (⭐ = costly, recurring)
 
+- [⭐⭐ Verify the OTHER copy exists before deleting](verify-the-other-copy-exists-before-deleting.md) — ⛔ I `rm`'d the ONLY copy of a 40KB page: `~/explainers` is a **symlink INTO** `docs/explainers`, two paths, one file (`links=1`) — `readlink` PARENTS. ⭐ RECOVER from `subagents/*.jsonl`: scan Bash `command`, not just Write `file_path`
 - [⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — green says nothing about the BASE (use `origin/master`); a red is a STOP, it hid a second failure. ⭐ **Never read `$?` after a PIPE**, and `grep | head || echo MISSING` can NEVER fire. ⭐⭐ **A restore verified against WHAT I DID lost a 32KB review** — diff the old tip BEFORE `reset --hard`
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
@@ -30,6 +31,7 @@
 - [Parallel branches, ONE log](parallel-branches-append-to-one-log.md) — ⭐ 3 same-day PRs: #1 clean, rest CONFLICT
 - [A report format is a CONTRACT](a-report-format-is-a-contract.md) — ⭐ "0 red cases" over a shape the harness can't parse
 - [⭐⭐ Negatives by INTERCEPTION can't terminate](proving-a-negative-by-interception-cannot-terminate.md) — FIVE unearned passes. PRE-COMMIT the retreat
+- [⭐⭐ Printing MORE evidence weakens substring cases](printing-more-evidence-weakens-substring-cases.md) — the traceback supplies the token the case credited to the rule. **2× in one ADDITIVE diff**
 - [Passing for an AMBIENT reason](a-case-can-pass-for-an-ambient-reason.md) — ⭐⭐ 4× on one file. BUILD the world; run 3 ways
 - [⭐⭐ Two DISTINCT inputs, in ONE case](exercise-the-producer-at-two-distinct-inputs.md) — a case is satisfied by the CONSTANT its own fixture supplies. 3 rounds, 9 survivors; pairwise-distinct FIXTURES are the weaker rule that already failed
 - […and a CORPUS](a-measurement-is-only-as-good-as-its-corpus.md) — ⭐ 4×. Code did what I measured; I measured the wrong SET
