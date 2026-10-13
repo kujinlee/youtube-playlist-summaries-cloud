@@ -3074,6 +3074,33 @@ because removing a mechanism is what fixed four of the five:
 ⛔ **Sequencing is the owner's call.** PR #371 is NOT CONVERGED and needs round 3; whether Phase 6
 runs before or after it merges changes the shape of the work and is not a mechanical choice.
 
+## ⟳ 2026-10-13 — ROUND 12 RAN AFTER THE PHASE 6 REVIEW, AND FOUND THE SAME ROOT CAUSE AGAIN
+
+⛔ **THE THRASHING DID NOT STOP WHEN ITS ARCHITECTURE REVIEW RAN.** Round 12 carried **4 High, 3
+Medium, 3 Low** across both halves, and every High is the root cause the review below already
+named: *the harness reads meaning out of a child's text it does not control*. So *the Phase 6
+review ran* is not evidence *the component converged* — the arming condition is still satisfied.
+
+**Convergence: 0 of 2**, unchanged in twelve rounds. ⛔ **DO NOT MERGE** — the human gate has not
+been given.
+
+**Codex half** (`docs/reviews/codex/backlog-249-260-r12-codex.md`), all five verified by hand:
+one raised exception reported as TWO and a non-ASCII class reported as NONE; an empty stderr read
+as proof the suite RAN (`os._exit(1)`); and a crash that FORGES a `[FAIL]` line in its own exception
+message certified as an attributed kill over zero executed cases. Plus the architecture review's
+A-versus-B justification contradicting itself three ways.
+
+**Claude half** (`docs/reviews/claude/backlog-249-260-r12-claude.md`), run AFTER the Codex fold so
+its subject was the FIX — which is what rounds 2+ alternate for, and it paid: **its High is a
+world the Codex fold CREATED.** Narrowing attribution to stdout left `control_is_green` reading the
+merged view, so a suite reporting on stderr passes the control and then reports nothing — a third
+producer for a message that enumerated two. Filed as **#277**; its premise-without-a-falsifier half
+as **#278**.
+
+**What is still OPEN after round 12:** #270 (the intermittent shard red, NOT DIAGNOSED), #272,
+#275, #276 (now fully measured — 11 unasserted of 26, a DECISION the owner owns), #277, #278, and
+⚠ **the 2026-10-07 arming below (#262/#261), which today's review did not touch.**
+
 ## ⟳ 2026-10-13 — PHASE 6 RAN, ON A **SECOND** COMPONENT OF THE SAME BRANCH (the mutation harness's child-verdict path)
 
 ⚠ **THIS IS NOT THE ARMING ABOVE, AND THE ONE ABOVE IS STILL OPEN.** The 2026-10-07 arming is the

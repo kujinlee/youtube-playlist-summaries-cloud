@@ -1770,12 +1770,12 @@
     ]
   },
   {
-    "name": "⛔ r11 Claude H2 (retargeted r12 Codex H2) — world ONE stops naming the OBSERVATION, so an empty stderr is reported in words that fit any red suite",
+    "name": "⛔ r11 Claude H2 (retargeted r12 Codex H2, re-retargeted r12 Claude L1 — the L1 fix rewrote the line this anchored on) — world ONE stops naming the OBSERVATION, so an empty stderr is reported in words that fit any red suite",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                said = (f\"the child wrote NOTHING to stderr ({len(se)} byte(s))",
-        "                said = (f\"the suite went red ({len(se)} byte(s))"
+        "                said = (f\"the child wrote {observed} \\u2014 which \"\n",
+        "                said = (\"the suite went red \\u2014 which \"\n"
       ]
     ],
     "expect": [
@@ -1871,6 +1871,58 @@
     ],
     "expect": [
       "...and says so explicitly, so the missing inference is asserted and not assumed"
+    ]
+  },
+  {
+    "name": "⛔⛔ r12 Claude H1 — the branch goes back to enumerating TWO worlds, so the world the H3 narrowing CREATED (a suite that names its case on stderr) is produced and named by nothing, and the reader is sent to fix a report format that is correct",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"line ON STDOUT, so NOTHING COULD SEE THE KILL. THREE WORLDS PRODUCE \"\n",
+        "f\"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE \"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r12 H1: the branch enumerates THREE worlds, not two"
+    ]
+  },
+  {
+    "name": "⛔ r12 Claude H1 — the THIRD world stops being named, so the enumeration counts three and lists two",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"Python traceback ALSO exits 1; or a suite that named its case ON STDERR, \"\n                f\"which attribution does NOT read (see `parse_fail_names(so)` above). Not a \"\n",
+        "f\"Python traceback ALSO exits 1. Not a \"\n"
+      ]
+    ],
+    "expect": [
+      "...and names the third world itself: a case reported on stderr"
+    ]
+  },
+  {
+    "name": "⛔⛔ r12 Claude L1 — the observation ternary's ARMS ARE EXCHANGED, so a genuinely empty stderr is reported as whitespace and a whitespace-only stderr as 0 bytes — backlog #276's shape inside the sentence that fixed it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                observed = (\"NOTHING to stderr (0 bytes)\" if not se else\n                            f\"nothing but WHITESPACE to stderr ({len(se)} character(s))\")\n",
+        "                observed = (f\"nothing but WHITESPACE to stderr ({len(se)} character(s))\"\n                            if not se else \"NOTHING to stderr (0 bytes)\")\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r12 L1: a genuinely empty stderr is reported as 0 bytes"
+    ]
+  },
+  {
+    "name": "⛔ r12 Claude L1 — the WHITESPACE arm goes back to claiming the child wrote NOTHING, the self-refuting sentence measured at 601 characters",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "f\"nothing but WHITESPACE to stderr ({len(se)} character(s))\")\n",
+        "\"NOTHING to stderr (0 bytes)\")\n"
+      ]
+    ],
+    "expect": [
+      "...it is reported as whitespace, with a count the reader can check"
     ]
   }
 ]

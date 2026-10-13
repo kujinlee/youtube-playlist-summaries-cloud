@@ -242,7 +242,7 @@ evidence. H2's class (a world-selection no case asserts) is repo-wide.
 
 Measured by severing each arm against the guard's own `--self-test`, control green either side. The
 three with non-cosmetic harm: `check-live-schema.py:891` relabels a LOCAL container read as `--prod`
-at 119/119; `check-anon-exposure.py:631` swaps `LOCAL container` for `PRODUCTION (read-only
+at 119/119; `check-anon-exposure.py:635` (⟳ cited `:631` until round 12 — that is the `if local:` header, not the assignment) swaps `LOCAL container` for `PRODUCTION (read-only
 claude_ro)`; `check-ratchet-contract.py:1152` has `GREW`/`SHRANK` collapsed **and inverted** at
 56/56 — and that guard is ADR-0014 COMPLIANT, so compliance with the drivable-main rule does not
 reach this class.
@@ -279,7 +279,9 @@ them guard-shaped — swept by severing each to `obj["literal"]` with a control 
 then filtered by the condition that matters: **does absence answer in the PERMISSIVE direction?**
 
 **Two** survive that filter, in two files (⟳ *read three until round 12*): `check-plan-code.py:2804` `mut.get("expect")` (fixed by
-#271 in this session) and two in `check-review-recorded.py`.
+#271 in this session) and **ONE** in `check-review-recorded.py` — `:827` `rec.get("dirty")`.
+
+⟳⛔ **AND THAT SENTENCE READ "and two in" UNTIL ROUND 12's CLAUDE HALF — M1'S OWN FIX CARRIED M1'S DEFECT.** The heading was corrected from three to two and the enumeration below it still added to three (1 + 2), with the `(⟳ read three until round 12)` note inserted immediately beside the stale number. The site the filter removes is `rec.get("gate_ran")` — established four paragraphs down — so the survivors are `check-plan-code.py:2804` and `check-review-recorded.py:827`. ⚠ **No machine sees this, and one gate's green is specifically not evidence about it:** `check-withdrawal.py` passes with *"5 figure(s) corrected, and none of them survives elsewhere in docs/"*, which is true of the WITHDRAWN figure and structurally blind to the figures that DEPEND on it — which is where both stale numbers were. `check-docs.py` and `check-arch-findings.py` are rc=0 too. A withdrawal needs its dependents re-derived, not just its own string removed.
 
 ⚠ **AND ONE OF THE TWO IS MIS-GRADED BY THE AGENT THAT FOUND IT — coordinator-measured.**
 `rec.get("gate_ran")` was reported as failing OPEN. Through `classify_verdict`: `True` →
@@ -289,7 +291,7 @@ conservative direction, so it is a validation gap, not a false green. The third 
 corrected by measurement in this review.
 
 ⛔ **So B is not merely unmeasured — it is NOT EARNED.** A shared "child verdict" module over this
-class would have **2 callers**, and the remaining two sites are already owned by backlog **#178**.
+class would have **2 callers**, and the remaining site is already owned by backlog **#178** (⟳ *read "the remaining two sites" until round 12 — the same stale denominator*).
 #178 is amended with today's measurement rather than duplicated.
 
 ⟳ **TWO CLAIMS IN THAT PARAGRAPH WERE WRONG, corrected 2026-10-13 by round 12 (Codex M1).**

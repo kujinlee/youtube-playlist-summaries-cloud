@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 279 cases
+    python3 scripts/check-plan-code.py --self-test          # 291 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -524,7 +524,10 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
 # ONE exception and the predecessor reported TWO, the second fabricated from the message's own
 # text; `stderr.write("  connecting\nREADY\n")` raises NONE and it reported `READY`. CPython
 # emits this line for every frame it prints, with or without the `Traceback` header — including a
-# top-level `SyntaxError`, which omits the header — so keying on it loses no real heading.
+# top-level `SyntaxError`, which omits the header. ⟳ r12 Claude M2(b): this used to end "so keying
+# on it loses no real heading", which is TRUE of every printed frame and FALSE as a conclusion — a
+# heading can be printed with NO frames (`sys.tracebacklimit = 0`), and that one is lost. The bound
+# is stated in `exception_headings`' docstring rather than hidden behind this clause.
 FRAME_LINE = re.compile(r'^[ \t]+File "')
 
 
@@ -552,9 +555,20 @@ def is_exception_heading(line: str) -> bool:
     So the class name is validated by Python's OWN rule, per dotted part. A tally line
     (`0/0 passed`), a `[FAIL]` line and a prose note are all rejected because their first token is
     not an identifier; `KeyboardInterrupt` with no message is accepted because the colon is
-    optional. ⚠ A bare identifier IS accepted (`READY` would pass), and that is deliberate: the
-    *structure* rule above is what rejects it, because nothing unindented after a non-frame run is
-    ever considered. Two clauses, and neither is sufficient alone.
+    optional.
+
+    ⛔ r12 Claude M2 — THE DEFENCE WRITTEN HERE FOR ACCEPTING A BARE IDENTIFIER WAS FALSE, and a
+    code comment asserting a hole is closed is worse than the hole. It said `READY` is rejected
+    because *"nothing unindented after a non-frame run is ever considered"*. The structure rule
+    rejects it only after a NON-frame run. Give the caller a genuine frame run with no heading and
+    the next column-zero line is handed straight to the report — measured, real child:
+
+        traceback.print_stack(); sys.stderr.write("READY\n")   ->  [("READY", False)]
+
+    So the honest statement is the narrower one: **a bare identifier at column zero directly after
+    a real frame block is reported as an exception, and this rule cannot tell it from one.** That
+    is H1's harm surviving in a narrower world, and it is a BOUND, not a live defect — measured,
+    `grep -rn 'print_tb|print_stack|print_exc|format_tb|format_stack' scripts/*.py` is **0**.
     """
     head = (line.split(":", 1)[0] if ":" in line else line).strip()
     return bool(head) and all(_is_type_name(part) for part in head.split("."))
@@ -588,6 +602,21 @@ def exception_headings(stderr: str) -> list[tuple[str, bool]]:
     column zero after a run of indented frame lines*, which holds with or without a header.
     `_TB_HEADER` is consulted ONLY to look past it when deciding the `ignored` flag, so a change
     to that literal downgrades a flag and never loses a heading.
+
+    ⚠ STATED BOUND, AND IT IS **TWO** BOUNDS, NOT ONE — ⟳ r12 Claude M2(b) found the second and
+    it is the more interesting: **a heading printed with NO frame block of its own is not seen at
+    all.** The rule needs an indented frame run to reach a heading, so a traceback with zero frames
+    loses a genuinely named exception, and the caller then says *"stderr names no exception line"*
+    about a stream whose ONLY content is an exception line — measured, real child:
+
+        sys.tracebacklimit = 0; raise RuntimeError("REAL_KILLER")
+            stderr = 'RuntimeError: REAL_KILLER\n'   ->   []      (same for tracebacklimit = -5)
+
+    ⚠ This is NOT fold-induced: the predecessor also required an indented run. What r12 corrected is
+    the sentence written to DEFEND the frame marker — *"CPython emits this line for every frame it
+    prints, so keying on it loses no real heading"* — which is true of every printed frame and false
+    of the conclusion, because a heading can be printed with no frames at all. Reachability stated
+    with the same evidence shape as the group bound: `grep -rn 'tracebacklimit' scripts/` -> **0**.
 
     ⚠ STATED BOUND — `ExceptionGroup` yields NOTHING here. Its report is indented behind
     `  + Exception Group Traceback` and `  | `, so it has no unindented heading. The caller's third
@@ -1234,7 +1263,11 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 143,   # ⟳ r12 Codex H1/H2/H3: +4 — the FRAME-MARKER clause,
+    "scripts/check-plan-code.py": 147,   # ⟳ r12 Claude H1/L1: +4 — the THREE-world
+                                         # enumeration, the third world's own clause,
+                                         # and one per arm of the observation ternary
+                                         # (#276's shape inside #276's own fix).
+                                         # ⟳ r12 Codex H1/H2/H3: +4 — the FRAME-MARKER clause,
                                          # the ASCII-only heading validator, attribution reading
                                          # the MERGED view, and the withdrawn inference restored.
                                          # Three retargeted in the same commit (two anchors the
@@ -2833,6 +2866,22 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # 2026-10-13, zero write it to stderr — so no legitimate failure is lost by narrowing
         # the source, and a traceback can no longer supply one. `out` keeps BOTH halves and is
         # still what the report and `control_is_green` read; only attribution narrows.
+        # ⛔⛔ r12 CLAUDE H1 — AND THAT ASYMMETRY MADE A THIRD PRODUCER FOR A MESSAGE THAT SAID
+        # TWO. Measured: a child that writes its tally AND its `[FAIL]` line to stderr with an
+        # empty stdout gives `control_is_green(rc, out) == True` over the MERGED view, so the
+        # control PASSES — then `parse_fail_names(so)` returns `[]` and every mutation in that
+        # file lands in the branch below, which until r12 enumerated exactly two worlds and
+        # named neither. The reader was sent to fix a report format that is CORRECT. The
+        # enumeration now names three and says which stream was searched.
+        # ⚠ ONE FUNCTION STILL DECIDES THE STREAM QUESTION TWO WAYS, and that is NOT fixed
+        # here: greenness asks *did this suite report?* of `out`, attribution asks *what did it
+        # report?* of `so`. Making them agree changes the verdict for all 1,545 entries and is a
+        # DESIGN question in a component armed for thrashing — filed, not folded.
+        # ⭐ THE PREMISE HOLDS, AND IT WAS RE-DERIVED ADVERSARIALLY RATHER THAN RE-ASSERTED:
+        # `ast`-walked every `print()` under `scripts/` whose text contains `[FAIL]` — 89 call
+        # sites, 89 with NO `file=` keyword, zero `.write` emitters, zero `sys.stdout` rebinding,
+        # every `redirect_stdout` target a `StringIO` inside a self-test. Nothing ASSERTS it, so
+        # the first guard that reports on stderr loses every kill in its file — filed.
         fails = parse_fail_names(so)
         # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
         # two minutes of NOT CHECKED as proof that a guard works, and prints
@@ -2946,7 +2995,18 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 # body is `import os; os._exit(1)` exits 1 with stderr EMPTY, having run no case
                 # and malfunctioning in no printer; a child that writes only whitespace before
                 # exiting 1 lands here too. An empty stream is evidence of nothing but itself.
-                said = (f"the child wrote NOTHING to stderr ({len(se)} byte(s)) \u2014 which "
+                # ⛔ r12 Claude L1 — THIS SAID "wrote NOTHING to stderr (601 byte(s))" FOR A
+                # STDERR OF 601 CHARACTERS, which is self-refuting, and the comment above had
+                # already NAMED that sub-world. Two defects in one sentence: the arm is
+                # `not se.strip()`, so whitespace-only lands here and is not nothing; and `se`
+                # is a `str` (`text=True`), so `len(se)` counts CHARACTERS — measured, three
+                # U+3000 ideographic spaces report "3 byte(s)" for 9 bytes.
+                # ⚠ This ternary is itself backlog #276's shape — one name bound to a different
+                # string per arm, consumed by a message — so BOTH arms are asserted by a case
+                # below and a mutation per arm, which is what #276 says the shape requires.
+                observed = ("NOTHING to stderr (0 bytes)" if not se else
+                            f"nothing but WHITESPACE to stderr ({len(se)} character(s))")
+                said = (f"the child wrote {observed} \u2014 which "
                         "rules OUT a traceback this harness can read, and is NOT evidence that "
                         "the suite ran or that its printer is at fault")
             elif heads:
@@ -2959,11 +3019,13 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 said = "stderr names no exception line, so read the window"
             report.append(
                 f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
-                f"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE THIS AND THIS "
-                f"HARNESS CANNOT TELL THEM APART: either a report-format defect in "
+                f"line ON STDOUT, so NOTHING COULD SEE THE KILL. THREE WORLDS PRODUCE "
+                f"THIS AND THIS HARNESS CANNOT TELL THEM APART: a report-format defect in "
                 f"{fname} — `parse_fail_names` reads a red case with startswith('[FAIL] ') "
-                f"and slices [7:] — or a suite that NEVER REACHED ITS CASES, because a "
-                f"Python traceback ALSO exits 1. Not a coverage gap in either world, and "
+                f"and slices [7:]; or a suite that NEVER REACHED ITS CASES, because a "
+                f"Python traceback ALSO exits 1; or a suite that named its case ON STDERR, "
+                f"which attribution does NOT read (see `parse_fail_names(so)` above). Not a "
+                f"coverage gap in any of the three, and "
                 f"every entry for this file is unattributable until it is fixed. "
                 f"\u26a0 WHAT THE CHILD ITSELF SAID \u2014 {said}:\n"
                 f"    {diagnostic_tail(so, se)}")
@@ -3632,6 +3694,49 @@ def _self_test() -> int:
              any("so the suite ran" in r.lower() for r in _repfmt), False)
         case("...and says so explicitly, so the missing inference is asserted and not assumed",
              any("is NOT evidence that the suite ran" in r for r in _repfmt), True)
+        # ⛔ r12 Claude H1 — the enumeration said TWO and the H3 narrowing made a THIRD.
+        case("⭐⭐ r12 H1: the branch enumerates THREE worlds, not two",
+             any("THREE WORLDS PRODUCE" in r for r in _repfmt), True)
+        case("...and names the STREAM it searched, which is what made the third world invisible",
+             any("line ON STDOUT" in r for r in _repfmt), True)
+        case("...and names the third world itself: a case reported on stderr",
+             any("named its case ON STDERR" in r for r in _repfmt), True)
+        # ⛔ r12 Claude L1 — the EMPTY arm of the observation ternary.
+        case("⭐ r12 L1: a genuinely empty stderr is reported as 0 bytes",
+             any("NOTHING to stderr (0 bytes)" in r for r in _repfmt), True)
+        case("...and is NOT reported as whitespace, which is the other arm",
+             any("WHITESPACE" in r for r in _repfmt), False)
+
+    # ⛔⛔ r12 Claude L1's OTHER ARM. The message said "wrote NOTHING to stderr (601 byte(s))" over
+    # a stderr of 601 characters — self-refuting, and the branch comment had already NAMED this
+    # sub-world while both committed cases used the genuinely EMPTY fixture. So the acknowledged
+    # world was asserted by nothing. This fixture writes whitespace ONLY, and the pair below is
+    # what stops either arm from being the dead one.
+    with tempfile.TemporaryDirectory() as _dws:
+        _dwsp = pathlib.Path(_dws)
+        (_dwsp / "w2.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        import sys\n'
+            '        sys.stderr.write("   " * 200 + "\\n")\n'
+            '        print("  \u274c  the value is one")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _ws = [{"name": "a suite whose stderr is whitespace only", "file": "w2.py",
+                "edits": [['def f():\n    return 1', 'def f():\n    return 2']],
+                "expect": "the value is one"}]
+        _okws, _repws, _, _ = run_mutations(_dwsp, _ws, {"w2.py"})
+        case("⭐⭐ r12 L1: a WHITESPACE-ONLY stderr is not reported as 'NOTHING'",
+             any("NOTHING to stderr" in r for r in _repws), False)
+        case("...it is reported as whitespace, with a count the reader can check",
+             any("nothing but WHITESPACE to stderr" in r for r in _repws), True)
+        case("...counted in CHARACTERS, because `se` is a str and `len` is not a byte count",
+             any("character(s)" in r for r in _repws), True)
         case("...names the file, so a reader knows which suite to open",
              any("n.py" in r for r in _repfmt), True)
         # ⚠ Not the generic message. Emitting both would leave the reader to pick, which is
@@ -3946,6 +4051,21 @@ def _self_test() -> int:
     _grp = _child_stderr('raise ExceptionGroup("g", [ValueError("a")])\n')
     case("an ExceptionGroup names nothing here, which is the STATED BOUND, not a silent miss",
          exception_headings(_grp), [])
+
+    # ⛔⛔ r12 Claude M2 — THE TWO BOUNDS, PINNED. Both were asserted by NOTHING when the frame
+    # marker landed, and one of them had a code comment claiming it was closed.
+    _frames_only = _child_stderr(
+        'import traceback, sys\ntraceback.print_stack()\nsys.stderr.write("READY\\n")\n')
+    case("⭐⭐ r12 M2: a real FRAME RUN WITH NO HEADING hands the next column-zero line over",
+         exception_headings(_frames_only), [("READY", False)])
+    case("...so the bound is stated, not defended — the structure rule alone does not reject it",
+         any(FRAME_LINE.match(_l) for _l in _frames_only.split("\n")), True)
+    _nf = _child_stderr(
+        'import sys\nsys.tracebacklimit = 0\nraise RuntimeError("REAL_KILLER")\n')
+    case("⭐⭐ r12 M2: a heading with ZERO frames is NOT seen — the second stated bound",
+         exception_headings(_nf), [])
+    case("...and that stderr really is a bare exception line, so the bound is about frames",
+         _nf.strip(), "RuntimeError: REAL_KILLER")
 
     # ⛔⛔ r12 Codex H1 — A RUN OF INDENTED LINES IS NOT A FRAME BLOCK, and until 2026-10-13 this
     # rule believed it was. All three fixtures below are REAL CHILDREN, because the predecessor's
@@ -6219,7 +6339,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1545)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1549)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
