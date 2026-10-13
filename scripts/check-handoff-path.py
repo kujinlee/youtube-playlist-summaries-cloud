@@ -39,25 +39,36 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_REL = ".agents/skills/handoff/SKILL.md"
 
 # The path the remember plugin's SessionStart hook actually reads:
-#   session-start-hook.sh  REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
+#   session-start-hook.sh   REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
 # Verified by EXECUTING that hook, not by reading it — the `=== LAST HANDOFF ===` block came out
 # first, ahead of `=== REMEMBER ===` and `=== MEMORY ===`.
-# ⟳ 2026-10-13: the LINE NUMBER that stood here (`:795`) is gone — that assignment is at `:1171`
-# in the 0.33.0 hook. ⚠ HOW FAR it drifted is NOT measured and the "stale by 376 lines" that stood
-# here is withdrawn: the pre-0.33.0 hook was never fetched (round 2 M3 caught this sentence
-# surviving the withdrawal elsewhere). A line number in a VENDORED file
-# has no owner in this repo and no guard can check it; `grep -RSn 'REMEMBER_HANDOFF=' <root>` can.
-# ⛔ `-RS`, NOT `-R`: BSD grep (macOS's) treats `-R` like `-r` and skips symlinks. Measured — the
-# interactive shell here wraps `ugrep`, where `-R` DOES follow, so the first prescription was
-# right about the author's grep and wrong for every reader's (round 2 M2).
-# ⚠ No gate in this repo can see a stale figure HERE: this is a code comment, and the document
-# guards read `docs/`. It was found by grepping every mention of the hook — ⛔ with `grep -R`, not
-# `-r`: `-r` does not follow `.claude/skills/handoff` -> `../../.agents/skills/handoff`, and that
-# symlink hid a FIFTH copy of these locators for half a day (round 1 H1).
-# ⟳ An earlier version of this comment named `check-withdrawal` as the guard that cannot see it.
-# That guard does not exist in this repo at this commit — it lives only on an unmerged branch — so
-# the sentence explaining why nothing caught this named something with no owner here, which is the
-# defect it was describing (round 1 M4).
+#
+# ⟳ 2026-10-13 — the LINE NUMBER that stood here (`:795`) is GONE. A line number in a VENDORED file
+# has no owner in this repo: no guard can check it and a plugin bump invalidates it silently. What
+# is stable is the SYMBOL and the PATH — `REMEMBER_HANDOFF` in
+# `~/.claude/plugins/cache/claude-plugins-official/remember/<version>/scripts/session-start-hook.sh`,
+# where there are TWO assignments: the per-session path, then the shared one.
+# ⚠ HOW FAR it drifted is NOT measured, and the "stale by 376 lines" that stood here is withdrawn —
+# the pre-0.33.0 hook was never fetched (round 2 M3 caught that figure surviving here after being
+# withdrawn in the docs: a withdrawal has a blast radius and mine kept stopping short of it).
+#
+# ⛔⛔ NO SEARCH COMMAND IS PRESCRIBED, AND THAT IS THE THIRD VERSION OF THIS COMMENT.
+#   v1: `grep -R`  — round 2 measured BSD grep (what macOS ships) treating `-R` exactly like `-r`,
+#                    so it finds NOTHING, while this shell's `ugrep` wrapper does follow symlinks.
+#   v2: `grep -RS` — round 3 measured GNU grep having NO `-S` option at all, and ripgrep rejecting
+#                    `-R`.
+# Each version was verified against the binaries the author happened to have and published for
+# every reader's. ⭐ The repair is to prescribe no flag: name the symbol and the path.
+#
+# ⚠ No gate in this repo can see a stale figure HERE — this is a code comment and the document
+# guards read `docs/`. It was found by searching every mention of the hook ACROSS SYMLINKS:
+# `.claude/skills/handoff` is a symlink to `../../.agents/skills/handoff`, one file under two paths,
+# and a recursive search that does not follow it misses a FIFTH copy of these locators — which it
+# did for half a day (round 1 H1). Whether your tool follows symlinks is tool-specific: check.
+# ⟳ An earlier version named `check-withdrawal` as the guard that cannot see this. That guard does
+# not exist in this repo at this commit — it lives only on an unmerged branch — so the sentence
+# explaining why nothing caught this named something with no owner here, which is the defect it was
+# describing (round 1 M4).
 CONSUMED_PATH = ".remember/remember.md"
 
 

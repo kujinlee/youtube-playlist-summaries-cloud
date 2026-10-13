@@ -18,15 +18,13 @@ measurable fact is that every citation names a line whose content is now somethi
 * `.agents/skills/handoff/SKILL.md` — ⛔⛔ **the fifth, and it was MISSED by the correction that
   fixed the other four.** Git-tracked, authored in the SAME commit as them (`24ff8694`), listed as
   Layer 3 of this very mechanism in `plugins.md`, and it is the file the refusal text tells a
-  blocked reader to open. ⭐ **Why it was missed, exactly: `grep -r` does not follow the symlink
-  `.claude/skills/handoff` → `../../.agents/skills/handoff`. **`grep -RS` does** — ⛔ `-RS`, not `-R`: BSD grep treats `-R` like `-r`, and the shell here wraps `ugrep` where `-R` works, so the first fix was right about MY grep and wrong for every reader's.** One file, two paths —
-  see [[verify-the-other-copy-exists-before-deleting]], which is the same symlink shape.
+  blocked reader to open. ⭐ **Why it was missed: a recursive search that does not FOLLOW SYMLINKS skips it** — `.claude/skills/handoff` is a symlink to `../../.agents/skills/handoff`, one file under two paths. ⛔⛔ **And whether your tool follows it is TOOL-SPECIFIC, which took three attempts to say right:** `grep -r` skips it; BSD grep's `-R` also skips it (an alias for `-r`) while this shell's `ugrep` wrapper follows; GNU grep has **no `-S`**; ripgrep rejects `-R`. Each prescription was verified against the binaries I had and published for every reader's. ⭐ **The repair is to prescribe no flag at all** — name the symbol and the path, which are true of every tool. See [[verify-the-other-copy-exists-before-deleting]], the same symlink shape.
 
 ⭐ **The fix is to REMOVE the number, not to update it.** Nothing here can hold a vendored line: no
 guard can watch it, and `npx skills@latest add` or a plugin bump invalidates it with no commit. Name
 the SYMBOL and give a command that works on the reader's tools, not yours
-(`grep -RSn 'REMEMBER_HANDOFF=' <plugin root>` — it returns TWO hits, the per-session and
-the shared assignment, which is itself the thing worth seeing). This is
+(`REMEMBER_HANDOFF` in `…/remember/<version>/scripts/session-start-hook.sh` — there are TWO
+assignments, per-session and shared, which is itself the thing worth seeing). This is
 [[a-retrospective-number-needs-provenance]] applied to a dependency.
 
 ## ⛔⛔ AND THE CORRECTION REPEATED THE DEFECT ONE LAYER IN — the part worth remembering

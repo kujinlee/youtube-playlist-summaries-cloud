@@ -65,7 +65,9 @@ That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh —
 emitted as '=== LAST HANDOFF ===' and injected BEFORE identity and memory so it
 survives context-preview truncation. Delivery is fingerprinted on the handoff's
 CONTENT, so reading one does not consume it.
-  To locate it yourself:  grep -n 'REMEMBER_HANDOFF=' <the hook>
+  To check it yourself, the assignment is named REMEMBER_HANDOFF, in
+  ~/.claude/plugins/cache/claude-plugins-official/remember/<version>/scripts/
+  session-start-hook.sh  (two assignments: per-session, then the shared one).
 
 NOT .remember/handoff.md — nothing reads that name either.
 
@@ -73,8 +75,8 @@ If a session-start block printed 'Write next handoff to: <path>', obey THAT path
 -- it is always the right one. THREE things print it: an external store; per_session
 mode (.handoff_mode), where the path is remember.<session-id>.md; and a per_session
 request with no usable session id, where it prints the SHARED file in whatever
-store is resolved -- the path above when the store is in-project, an external one
-otherwise -- plus a line saying the mode you asked for did not apply.
+store is resolved -- which is NOT always the path above: a data_dir setting moves
+it -- plus a line saying the mode you asked for did not apply.
 
 Then repair the vendored skill so this stops recurring:
   \$EDITOR .agents/skills/handoff/SKILL.md      # see docs/plugins.md -> Session Handoff

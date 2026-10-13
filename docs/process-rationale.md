@@ -369,7 +369,7 @@ shipped a new version.** Measured against the **0.33.0** hook, which is **2,027 
 blocked reader to open (`enforce-handoff-path.sh`: `$EDITOR .agents/skills/handoff/SKILL.md`). So the
 branch's own strongest argument applied a second time, to the file the refusal hands you next.
 ⭐ **Why it was missed, exactly:** the inventory grep used `grep -r`, which does **not** follow the
-symlink at `.claude/skills/handoff` → `../../.agents/skills/handoff`. ⛔ ⟳ **`grep -RS` finds it — `-RS`, NOT `-R`, and round 2 caught that prescription being wrong.** BSD grep (what macOS ships) treats `-R` exactly like `-r` and skips symlinks; the interactive shell here wraps `ugrep`, where `-R` DOES follow — so the first fix was measured against the author's grep and published for every reader's. Measured on both binaries. One file,
+symlink at `.claude/skills/handoff` → `../../.agents/skills/handoff`, and a recursive search that does not follow symlinks misses it. ⛔⟳ **NO FLAG IS NAMED HERE ANY MORE, AND THAT IS THE THIRD ATTEMPT.** v1 prescribed `grep -R`; round 2 measured BSD grep (macOS's) treating `-R` exactly like `-r` — finding NOTHING — while this shell's `ugrep` wrapper follows. v2 prescribed `-RS`; round 3 measured GNU grep having **no `-S` at all** and ripgrep rejecting `-R`. ⭐ Each was verified against the binaries the author had and published for every reader's — *measure the population the code actually sees*, applied to a command line. **The repair is to prescribe none:** say what to search for, and that symlink-following is tool-specific. One file,
 two paths — the shape this repo has already paid for once by deleting the only copy of a page.
 
 **The lesson is not "re-derive them" — it is that they should never have been written.** A line
