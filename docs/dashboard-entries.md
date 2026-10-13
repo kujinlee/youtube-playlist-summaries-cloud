@@ -14865,7 +14865,7 @@ a second line saying the mode you asked for did not apply. Three situations prin
 two.
 
 Where the wrong claim came from is worth more than the claim. The plugin has a note inside it
-describing the silent behaviour — and that note is out of date. Twenty-six lines further down the same
+describing the silent behaviour — and that note is out of date. Twenty-odd lines further down — the exact distance depends on which end of the out-of-date note you measure from, which is why the note's own position is given in the technical block rather than a single number — the same
 file says so: silence was tried, someone reviewed it, and it was reversed, because going quiet
 reintroduced the very problem the message existed to prevent. The correction was written from the
 out-of-date note instead of from what the program does. A change made to stop quoting a file from
@@ -14884,7 +14884,7 @@ this block named `check-withdrawal`, which does not exist in this repo at this c
 confirm `rc=2` and that nothing in the new lines expands inside its unquoted heredoc).
 
 Measured against `remember` **0.33.0**, a **2,027-line** hook: `REMEMBER_HANDOFF` `:1171`
-(per-session `:1168`, mode selected `:1164`), emit `:1666`, delivery record `:1571-1640`, hint
+(per-session `:1168`, mode selected `:1164`), emit `:1666`, delivery record `REMEMBER_HANDOFF_STATE` (⟳ a line RANGE stood here and under-bounded it), hint
 `:1546`. The removed citations were `:795`, `:809-812`, `:814-825`, `:800-802`. Mode gate:
 `config_into HANDOFF_MODE ".handoff_mode" "single"` — default `single`, nothing configures
 `per_session` in any of the THREE `remember` config layers (plugin-bundled, `~/.remember/`,

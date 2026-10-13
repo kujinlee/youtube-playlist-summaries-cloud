@@ -65,9 +65,11 @@ That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh —
 emitted as '=== LAST HANDOFF ===' and injected BEFORE identity and memory so it
 survives context-preview truncation. Delivery is fingerprinted on the handoff's
 CONTENT, so reading one does not consume it.
-  To check it yourself, the assignment is named REMEMBER_HANDOFF, in
-  ~/.claude/plugins/cache/claude-plugins-official/remember/<version>/scripts/
-  session-start-hook.sh  (two assignments: per-session, then the shared one).
+  To find every site in this repo:  git grep -l session-start-hook
+  (no flag needed -- it reads the index, so the symlinked skill file is found too)
+  The assignment itself is REMEMBER_HANDOFF= -- keep the '=', it matches the two
+  assignments where the bare name matches 23 lines -- in the remember plugin under
+  ~/.claude/plugins/cache/claude-plugins-official/ (one unbroken path, so it pastes).
 
 NOT .remember/handoff.md — nothing reads that name either.
 

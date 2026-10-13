@@ -360,7 +360,7 @@ read-only session does not consume the next one's note.
 ⟳ **2026-10-13 — FIVE sibling documents cited LINE NUMBERS inside a vendored file, and the vendor
 shipped a new version.** Measured against the **0.33.0** hook, which is **2,027 lines**:
 `REMEMBER_HANDOFF` is at `:1171`, the `=== LAST HANDOFF ===` emit at `:1666`, the delivery record at
-`:1571-1640`, the hint at `:1546`. The citations were `:795`, `:809-812`, `:814-825`, `:800-802`.
+the delivery record at **`REMEMBER_HANDOFF_STATE`** (⟳ cited as `:1571-1640` until round 3 M4, which measured that range UNDER-BOUNDING the mechanism it names — the reads and writes continue past `:1660`; the symbol is cited instead, which is this rule applied to its own text), the hint at `:1546`. The citations were `:795`, `:809-812`, `:814-825`, `:800-802`.
 
 ⚠ **THE COUNT WAS PUBLISHED AS FOUR AND IS FIVE — corrected by round 1's Claude half.** The fifth is
 `.agents/skills/handoff/SKILL.md:13`: git-tracked, authored in the **same commit** as the other four
@@ -411,7 +411,7 @@ per-session — and in the third the path printed IS the shared one.
 
 ⭐ **Where the false claim came from is the whole point.** The hook carries a comment at
 `:1153-1163` describing exactly the withholding behaviour that was published — and that comment is
-**stale**. ⟳ **26 lines later** (`:1159` -> `:1185`; this said *fifty*, and round 2's reviewer said 22 — both wrong, so the figure is now derived rather than either party's) the hook corrects itself: *"NOT withheld on degrade. An earlier version
+**stale**. ⟳ **22 to 26 lines later** the hook corrects itself — ⚠ *ambiguous by construction: the stale sentence is at `:1159`, its block ends at `:1163`, the correction is at `:1185`. Three parties gave three numbers (fifty, 26, 22); the anchors are the honest form*: *"NOT withheld on degrade. An earlier version
 … suppressed the hint outright … That reasoning was wrong … **The honest fix is not silence, it is a
 visible line.** A reviewer of #363 caught this before it shipped."* The code at `:1544` matches the
 second comment. ⛔ **So a correction written to stop citing a vendored file from memory cited that
