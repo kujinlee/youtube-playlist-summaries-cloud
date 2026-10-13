@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 239 cases
+    python3 scripts/check-plan-code.py --self-test          # 248 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -515,6 +515,40 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
     # harness is the only thing that answers it — reading the code says the opposite.
     return "\n".join(p for p in (err[-err_keep:] if err_keep else "",
                                  out[-out_keep:] if out_keep else "") if p)
+
+
+def exception_heading(stderr: str) -> str | None:
+    """The exception line of the LAST traceback in `stderr`, or None. PURE.
+
+    ⛔ WHY A TAIL CANNOT DO THIS, AND IT IS MEASURED RATHER THAN ARGUED — r11 Codex H1.
+    `diagnostic_tail` keeps the END of each stream, and a multi-line exception message pushes the
+    heading straight out of the window: `raise RuntimeError("MARKER\n" + "continuation\n" * 40)`
+    loses BOTH `RuntimeError` and `MARKER` even with an EMPTY stdout, because the 400 characters
+    fill with continuation lines. The heading sits at the START of the final block, so NO
+    fixed-size tail can guarantee it — which is why this is a separate rule and not a bigger
+    window. ⚠ It also killed the obvious cheap fix: "print the last line of stderr" returns
+    `continuation`, the least informative line in the whole stream.
+
+    ⚠ THE **LAST** BLOCK, NOT THE FIRST. `raise ... from ...` emits several, oldest first; the
+    last one is the exception that actually killed the child, and the earlier blocks are its
+    causes. A reader needs the killer first.
+
+    None is a real answer and the caller DISTINGUISHES it from empty: no traceback at all means
+    the suite ran and printed in the wrong format, which is the other world entirely.
+    """
+    lines = stderr.split("\n")
+    starts = [i for i, l in enumerate(lines)
+              if l.strip() == "Traceback (most recent call last):"]
+    if not starts:
+        return None
+    for l in lines[starts[-1] + 1:]:
+        # Frames and carets are INDENTED and blanks carry nothing; the heading is the first
+        # line at column zero. Dropping this skip returns `File "...", line N`, which names
+        # the instrument's own fixture instead of the failure.
+        if not l.strip() or l.startswith((" ", "\t")):
+            continue
+        return l.strip()
+    return None
 
 
 def merged_output(stdout: str, stderr: str) -> str:
@@ -1117,7 +1151,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 130,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+    "scripts/check-plan-code.py": 133,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
                                          # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
                                          # as IMPOSSIBLE — "the harness REFUSES a second entry on
                                          # one anchor" — and that was wrong: the refusal is on
@@ -2678,7 +2712,10 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # ⟳ MEASURED 2026-10-13, PR #371 shards 4 and 7 at `f599182d` — two entries "killed,
         # unattributable", ~23 minutes of CI per guess, and the message below ASSERTED a cause
         # (`a report-format defect in <file>`) that a local run refuted in 58 seconds: the same
-        # two entries attribute cleanly through this very code path, printing 18 `[FAIL]` lines.
+        # two entries attribute cleanly through this very code path, printing 5 and 2 `[FAIL]`
+        # lines. ⚠ The round-10 handoff said 18 and that figure is WITHDRAWN: measured
+        # 2026-10-13 through this path, 5 and 2 (r11 Codex L2 found 18 still asserted here,
+        # in a comment written by the same commit that withdrew it elsewhere).
         # ⚠ THE ASYMMETRY IS THE DEFECT. Both CONTROL loops have carried `diagnostic_tail(so,
         # se)` since r3 (`:2558`, `:2592`); only the MUTATION loop threw the halves away. One
         # half of this harness could say why a child went red and the other half could not.
@@ -2759,7 +2796,10 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                           f"can fail for what it names")
         elif unnamed:
             ok = False
-            # ⛔ RED WITH NOTHING READABLE IS A REPORT-FORMAT DEFECT, AND IT NOW SAYS SO.
+            # ⛔ RED WITH NOTHING READABLE IS **ONE OF TWO WORLDS**, AND IT NOW SAYS WHICH.
+            # ⟳ r11 Codex L2: this line read *"IS A REPORT-FORMAT DEFECT"* — the categorical
+            # claim the message itself withdrew in the same commit. `caught = rc == 1`, and a
+            # traceback exits 1 too, so the harness cannot know which world it is in.
             # `caught` is True, so the suite DID go red — yet not one case name could be
             # parsed out of it. That is never "caught by something else"; the something-else
             # list is empty. It means this suite does not print `[FAIL] <case>`, so no kill
@@ -2772,6 +2812,14 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # list a reader had to know the meaning of. Said once here, per file, instead of
             # once per entry: eight identical lines is how the signal got lost the first time.
             if not fails:
+                # ⟳ r11 Codex H1: the WINDOW ALONE CANNOT CARRY THE CAUSE (see
+                # `exception_heading`), so row #270's "the next occurrence will name it" was
+                # unsupported until this line existed. Three worlds, each said in its own words.
+                head = exception_heading(se)
+                said = ("stderr is EMPTY, so the suite RAN and its PRINTER is the subject"
+                        if not se.strip()
+                        else f"the child DIED with {head}" if head
+                        else "stderr carries no traceback heading, so read the window")
                 report.append(
                     f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
                     f"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE THIS AND THIS "
@@ -2780,7 +2828,7 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                     f"and slices [7:] — or a suite that NEVER REACHED ITS CASES, because a "
                     f"Python traceback ALSO exits 1. Not a coverage gap in either world, and "
                     f"every entry for this file is unattributable until it is fixed. "
-                    f"\u26a0 THE CHILD'S OWN OUTPUT DECIDES WHICH, AND IS NO LONGER WITHHELD:\n"
+                    f"\u26a0 WHAT THE CHILD ITSELF SAID \u2014 {said}:\n"
                     f"    {diagnostic_tail(so, se)}")
             else:
                 for w, m in unnamed:
@@ -3437,7 +3485,8 @@ def _self_test() -> int:
     # the cause and showed the reader nothing — so a CRASH was diagnosed as a `report-format
     # defect` in a suite whose printer is fine. That misdiagnosis is what PR #371's shards 4
     # and 7 cost: the message accused `check-withdrawal.py`, which prints `[FAIL]` correctly
-    # 18 times for the very same entries when run locally.
+    # 5 and 2 times for those two entries when run locally (r11 Codex L2: this said 18, a
+    # figure withdrawn the same day it was written).
     # ⚠ A MODULE-LEVEL `raise` is the fixture ON PURPOSE: it exits 1 exactly as a failing case
     # does, with an EMPTY stdout, which is the pair that makes the two worlds indistinguishable
     # from the exit code alone. `expect` still names a real case, so this is not an entry that
@@ -3464,8 +3513,86 @@ def _self_test() -> int:
         case("a suite that CRASHES instead of failing a case is still refused", _okcr, False)
         # ⛔ THE FALSIFIER FOR THE WHOLE CHANGE. Withhold `diagnostic_tail(so, se)` and this is
         # the case that goes red — nothing else does, which is precisely how the gap survived.
+        # ⚠ FRAME TEXT, NOT THE MARKER — r11 H1's fix would otherwise have made this case
+        # UNFALSIFIABLE: the marker now appears in the HEADING too, so withholding the window
+        # left it green. A frame line exists only in the window.
         case("...and the report carries the child's TRACEBACK, so the cause is not a guess",
-             any("DIED BEFORE CASE ONE" in r for r in _repcr), True)
+             any('c.py", line' in r for r in _repcr), True)
+
+    # ⛔ r11 H1's REAL FALSIFIER, AND THE FIRST ATTEMPT AT IT COULD NOT FAIL — the harness
+    # caught that, not a reading. Over the single-line fixture above, `diagnostic_tail` ALSO
+    # carries `RuntimeError: ...` (stdout is empty there, so stderr is given the whole 400), so
+    # dropping the heading from the MESSAGE left the case green and its mutation SURVIVED at
+    # 1 mutation / 0 killed / 1 survivor. The message's heading is the ONLY source of the type
+    # when the window is FLOODED — which is precisely the harm r11 H1 reported — so the case
+    # has to live over a flooding fixture or it asserts nothing.
+    # ⚠ 60 continuation lines is ~840 characters against a 400-character window: the flood has
+    # to be DERIVED from the budget, not guessed, or a later change to DIAGNOSTIC_WINDOW makes
+    # this case quietly ambient again.
+    with tempfile.TemporaryDirectory() as _dml:
+        _dmlp = pathlib.Path(_dml)
+        (_dmlp / "m.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _ml = [{"name": "the suite dies with a message that FLOODS the window", "file": "m.py",
+                "edits": [["def f():\n    return 1",
+                           'raise RuntimeError("FLOOD_MARKER\\n" + "uninformative\\n" * 60)'
+                           "\n\n\ndef f():\n    return 1"]],
+                "expect": "the value is one"}]
+        _okml, _repml, _, _ = run_mutations(_dmlp, _ml, {"m.py"})
+        case("...and it NAMES THE EXCEPTION, so the type survives however the window is spent",
+             any("RuntimeError: FLOOD_MARKER" in r for r in _repml), True)
+        # ⭐ THE OTHER HALF OF THE PAIR: without this the case above cannot show the heading is
+        # load-bearing rather than merely present — the window must be measured FAILING here.
+        case("...over a fixture where the 400-char window itself loses the heading",
+             any("FLOOD_MARKER" in diagnostic_tail("", r) for r in _repml), False)
+
+    # ── r11 Codex H1: the heading rule, in units a window cannot express ────────────────────
+    _tb_one = ('Traceback (most recent call last):\n'
+               '  File "/x/probe.py", line 9, in _self_test\n'
+               '    boom()\n'
+               'ValueError: a single-line cause\n')
+    case("exception_heading takes the heading of a one-block traceback",
+         exception_heading(_tb_one), "ValueError: a single-line cause")
+    # ⭐ THE REGRESSION CASE FOR r11 H1, AND IT ASSERTS THE WINDOW'S FAILURE TOO — without the
+    # second half this case cannot show the helper is load-bearing rather than merely correct.
+    _tb_multi = ('Traceback (most recent call last):\n'
+                 '  File "/x/probe.py", line 9, in _self_test\n'
+                 '    boom()\n'
+                 'RuntimeError: ROOT_CAUSE_MARKER\n'
+                 + 'uninformative continuation\n' * 40)
+    case("\u2b50 r11 H1: a MULTI-LINE message does not hide the heading",
+         exception_heading(_tb_multi), "RuntimeError: ROOT_CAUSE_MARKER")
+    case("...and the 400-char tail DOES lose it, which is why the heading is read separately",
+         "ROOT_CAUSE_MARKER" in diagnostic_tail("", _tb_multi), False)
+    _tb_chain = ('Traceback (most recent call last):\n'
+                 '  File "/x/a.py", line 2, in f\n'
+                 'ValueError: the ORIGINAL cause\n'
+                 '\n'
+                 'The above exception was the direct cause of the following exception:\n'
+                 '\n'
+                 'Traceback (most recent call last):\n'
+                 '  File "/x/b.py", line 7, in g\n'
+                 'RuntimeError: the exception that KILLED it\n')
+    case("exception_heading on a raise-from chain names the LAST block, not the first",
+         exception_heading(_tb_chain), "RuntimeError: the exception that KILLED it")
+    case("...so it never returns a FRAME line, however many frames precede the heading",
+         exception_heading('Traceback (most recent call last):\n'
+                           '  File "/x/c.py", line 1, in <module>\n'
+                           '  File "/x/d.py", line 2, in h\n'
+                           'KeyError: \'k\'\n'), "KeyError: 'k'")
+    case("exception_heading is None when stderr carries no traceback at all",
+         exception_heading("CANNOT RUN - the tree went bad underneath\n"), None)
+    case("...and None on an empty stderr, which the caller reads as a PRINTER defect instead",
+         exception_heading(""), None)
 
     # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
     # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
@@ -3838,8 +3965,18 @@ def _self_test() -> int:
                              "VALUE != int(pwd.getpwuid(os.getuid()).pw_uid)"]],  # not-a-home-escape: fixture: the MUTATION carries the route
                   "expect": "value is one"}]))
             _ok5, _rep5, _ = mutate_delivered(_r)
+            # ⛔ THE REFUSAL'S OWN SENTENCE, NOT THE ROUTE'S NAME — and this case went
+            # UNFALSIFIABLE the day the mutation-loop diagnostic started printing the child's
+            # traceback (2026-10-13, found by CI shard 5 as a SURVIVOR, reproduced at
+            # `--shard0 604/1535`). This fixture's replacement text makes the fixture's own
+            # suite CRASH, so the run lands in the `not fails` branch, and the traceback
+            # carries the offending SOURCE LINE — `getpwuid` and all. The case then passed
+            # whether or not `home_escapes(repl)` was ever consulted, which is precisely the
+            # ambient-reason shape this file has now paid for twice in one day.
+            # ⚠ `REPLACEMENT text is scanned` is emitted ONLY by the `repl` call site, so it
+            # cannot be supplied by the target scan, by a traceback, or by any other refusal.
             case("...and a CLEAN target whose MUTATION introduces the route is refused",
-                 (_ok5, any("getpwuid" in r for r in _rep5)), (False, True))  # not-a-home-escape: asserts the report mentions it
+                 (_ok5, any("REPLACEMENT text is scanned" in r for r in _rep5)), (False, True))
         # ⟲ Backlog #74. THE CONTROL AFTER THE SEQUENCE. It exists because a tree that goes bad at
         # mutation 17 makes every later suite exit 1, which `run_mutations` records as `caught`
         # indistinguishably from a real catch. Deleting the check left the suite GREEN — a guard
@@ -5694,7 +5831,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1532)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1535)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

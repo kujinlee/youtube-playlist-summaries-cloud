@@ -1696,12 +1696,51 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                    f\"\\u26a0 THE CHILD'S OWN OUTPUT DECIDES WHICH, AND IS NO LONGER WITHHELD:\\n\"\n                    f\"    {diagnostic_tail(so, se)}\")\n",
-        "                    f\"\\u26a0 THE CHILD'S OWN OUTPUT DECIDES WHICH, AND IS NO LONGER WITHHELD:\\n\"\n                    f\"    \")\n"
+        "                    f\"\\u26a0 WHAT THE CHILD ITSELF SAID \\u2014 {said}:\\n\"\n                    f\"    {diagnostic_tail(so, se)}\")\n",
+        "                    f\"\\u26a0 WHAT THE CHILD ITSELF SAID \\u2014 {said}:\\n\"\n                    f\"    \")\n"
       ]
     ],
     "expect": [
       "...and the report carries the child's TRACEBACK, so the cause is not a guess"
+    ]
+  },
+  {
+    "name": "⛔ r11 H1 — the heading is taken from the FIRST traceback block, so a `raise ... from ...` chain reports the CAUSE instead of the exception that actually killed the child",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    for l in lines[starts[-1] + 1:]:\n",
+        "    for l in lines[starts[0] + 1:]:\n"
+      ]
+    ],
+    "expect": [
+      "exception_heading on a raise-from chain names the LAST block, not the first"
+    ]
+  },
+  {
+    "name": "⛔ r11 H1 — the frame/blank skip is dropped, so the heading becomes the instrument's own fixture path (`File \"...\", line N`) instead of the failure",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not l.strip() or l.startswith((\" \", \"\\t\")):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "...so it never returns a FRAME line, however many frames precede the heading"
+    ]
+  },
+  {
+    "name": "⛔ r11 H1 — the report stops NAMING the exception and only says the child died, which is the state the 400-char window already fails to repair",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        else f\"the child DIED with {head}\" if head\n",
+        "                        else f\"the child DIED\" if head\n"
+      ]
+    ],
+    "expect": [
+      "...and it NAMES THE EXCEPTION, so the type survives however the window is spent"
     ]
   }
 ]
