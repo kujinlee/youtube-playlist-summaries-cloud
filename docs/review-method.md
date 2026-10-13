@@ -195,6 +195,27 @@ being argued with.
 | **Mechanism** defects — the rule cannot be satisfied, the credential is stale, two requirements contradict | the shape is wrong | **REDESIGN.** This is what the rule is for |
 | **Branch-coverage** defects — *"the rule doesn't say what happens in case X"*, where X is a branch of code the rule GOVERNS but does not OWN | the shape is fine and under-specified | **FIX**, plus an exhaustiveness pass |
 
+⛔⛔ **AND THE EXHAUSTIVENESS PASS IS ITSELF A TEST — MEASURED 2026-10-13 OVER FIVE ROUNDS, backlog
+#281.** The row above sends a branch-coverage defect to *FIX, plus an exhaustiveness pass*. **If that
+pass comes back with a NEW MEMBER, the finding was MECHANISM and was graded wrong.** That is not a
+heuristic; it is what the two rows mean. A shape that is merely under-specified has a FINITE set of
+unsaid cases, so the pass terminates. A shape that is wrong generates them, so the pass does not.
+
+**What it cost, measured:** PR #371 rounds 11, 12 and 13. One harness message-and-parser produced a
+refuted completeness claim in each — a heading rule keyed on a header CPython omits, then one that
+read any indented run as a traceback, then an ASCII-only name validator, then an identifier
+validator that dropped `type("bad-name", …)`, then a three-world enumeration that was four. Every
+round graded it branch-coverage, fixed the instance, and ran the pass; every pass returned another
+member. The redesign — delete the validator, stop claiming the list is complete — was available at
+round 11 and taken at round 13. ⭐ **Two rounds were spent re-deriving a conclusion the Phase 6
+review of the same date had already written down in prose.**
+
+⛔ **SO A THRASHING-ARMED PHASE 6 OWES THE OWNER A MECHANISM CARD, NOT AN INSTANCE CARD.** That
+review named the root cause correctly — *the harness asserting a cause it cannot read from a child's
+text* — and then put an A/B choice about one clause to the owner, leaving the mechanism as prose.
+**Name the cause AND put the fork: redesign, or keep narrowing?** Naming a root cause and carding an
+instance is how a correct diagnosis costs two more rounds.
+
 **⚠ THE SYMPTOM LIST IS A PROMPT, NOT THE TEST. There is one test, and it is this:**
 
 > ### Can a redesign remove it?

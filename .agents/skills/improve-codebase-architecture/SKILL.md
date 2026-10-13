@@ -59,6 +59,33 @@ Present a numbered list of deepening opportunities. For each candidate:
 
 Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
 
+### ⛔ 2a. If this review was ARMED BY THRASHING, the first card you put is the MECHANISM question
+
+**Measured 2026-10-13 — backlog #281, and it cost two review rounds.** A thrashing-armed Phase 6
+review correctly named its root cause in prose — *"the harness asserting a cause it cannot read from
+a child's text"* — and then put an **instance-level** A/B choice to the owner about one clause of one
+predicate. The mechanism was never put as a decision. The next two rounds each produced fresh High
+findings of that same named cause, and the redesign the review had already diagnosed was chosen two
+rounds later.
+
+**So when the arming condition was THRASHING, the first thing you card is not a candidate list:**
+
+> The root cause is **&lt;the cause, in one sentence&gt;**. Do we
+> **A — redesign** (name what the redesign removes), **B — keep narrowing** (name what the next
+> narrowing costs, and that the previous N each produced the following round's finding), or
+> **C — accept and record** (name what ships)?
+
+⚠ **Naming a root cause and then carding an instance is the failure.** The owner cannot choose a
+redesign they were not offered, and every round that passes re-derives the diagnosis you already
+wrote down. A candidate list is the right output for a per-milestone review; a thrashing arming is
+a question about shape, and shape is the owner's call.
+
+⭐ **And the tell that you are in this situation at all** is in
+[`review-method.md`](../../../docs/review-method.md) beside the Mechanism/Branch-coverage table: **if
+an exhaustiveness pass returns a NEW member, the finding was MECHANISM.** A shape that is merely
+under-specified has a finite set of unsaid cases, so the pass terminates; a shape that is wrong
+generates them.
+
 ### 3. Grilling loop
 
 Once the user picks a candidate, drop into a grilling conversation. Walk the design tree with them — constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
