@@ -72,7 +72,8 @@ CONTENT, so reading one does not consume it.
 NOT .remember/handoff.md — nothing reads that name either.
 
 If a session-start block printed 'Write next handoff to: <path>', obey THAT path
--- it is always the right one. THREE things print it: an external store; per_session
+-- it is always the right one. THREE things print it: a store outside the project
+directory, WHICH INCLUDES A LINKED GIT WORKTREE; per_session
 mode (.handoff_mode), where the path is remember.<session-id>.md; and a per_session
 request with no usable session id, where it prints the SHARED file in whatever
 store is resolved -- which is NOT always the path above: a data_dir setting moves

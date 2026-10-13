@@ -391,7 +391,7 @@ Claude Code settings file at all; it comes from `$REMEMBER_CONFIG`, a tmpfile de
 **three** layers in precedence order — the bundled `<plugin root>/0.33.0/config.json` (only
 `config.example.json` ships), `~/.remember/config.json`, and `<repo>/.remember/config.json`. **All
 three are absent**, so the merge falls to `{}` and the default stands. ⚠ And *".remember/ holds only
-`remember.md`"* described a store that does not exist: it holds ~102 entries, of which exactly one
+`remember.md`"* described a store that does not exist: it holds **104** entries (⟳ *this read "~102" while the dashboard entry said 104 — round 2 L1; re-counted*), of which exactly one
 matches `remember*` — which was the intended claim and not what the sentence said.
 
 ⛔⛔ **AND THE "⭐ LESSON" THIS SECTION ORIGINALLY DREW FROM THE HOOK WAS MEASURED FALSE — a Blocking
@@ -411,7 +411,7 @@ per-session — and in the third the path printed IS the shared one.
 
 ⭐ **Where the false claim came from is the whole point.** The hook carries a comment at
 `:1153-1163` describing exactly the withholding behaviour that was published — and that comment is
-**stale**. Fifty lines later the hook corrects itself: *"NOT withheld on degrade. An earlier version
+**stale**. ⟳ **26 lines later** (`:1159` -> `:1185`; this said *fifty*, and round 2's reviewer said 22 — both wrong, so the figure is now derived rather than either party's) the hook corrects itself: *"NOT withheld on degrade. An earlier version
 … suppressed the hint outright … That reasoning was wrong … **The honest fix is not silence, it is a
 visible line.** A reviewer of #363 caught this before it shipped."* The code at `:1544` matches the
 second comment. ⛔ **So a correction written to stop citing a vendored file from memory cited that

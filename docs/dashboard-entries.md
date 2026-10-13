@@ -14865,7 +14865,7 @@ a second line saying the mode you asked for did not apply. Three situations prin
 two.
 
 Where the wrong claim came from is worth more than the claim. The plugin has a note inside it
-describing the silent behaviour — and that note is out of date. Fifty lines further down the same
+describing the silent behaviour — and that note is out of date. Twenty-six lines further down the same
 file says so: silence was tried, someone reviewed it, and it was reversed, because going quiet
 reintroduced the very problem the message existed to prevent. The correction was written from the
 out-of-date note instead of from what the program does. A change made to stop quoting a file from
@@ -14888,8 +14888,9 @@ Measured against `remember` **0.33.0**, a **2,027-line** hook: `REMEMBER_HANDOFF
 `:1546`. The removed citations were `:795`, `:809-812`, `:814-825`, `:800-802`. Mode gate:
 `config_into HANDOFF_MODE ".handoff_mode" "single"` — default `single`, nothing configures
 `per_session` in any of the THREE `remember` config layers (plugin-bundled, `~/.remember/`,
-`<repo>/.remember/` — all absent; the plugin's own read-only `doctor.sh` reports `Storage mode:
-legacy (in-project)`), the store's **104** entries include exactly ONE matching `remember*`, and
+`<repo>/.remember/` — all absent; the plugin's own read-only `doctor.sh` reports `Storage mode: legacy (in-project)` ⚠ **WHEN RUN FROM THE MAIN
+CHECKOUT — from a linked worktree the same store reports as EXTERNAL (round 2 M4, which round 3
+saw and filed under SOUND, so nothing folded it). Where you run it changes what it says**), the store's **104** entries include exactly ONE matching `remember*`, and
 delivery is
 observed, so the rule is correct for this install. `docs/reviews/claude/velocity-177-r5-claude.md:161`
 is the prior observation. The historical review doc is left as written — merged review docs are
