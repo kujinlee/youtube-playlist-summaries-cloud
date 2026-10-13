@@ -439,7 +439,7 @@
       ]
     ],
     "expect": [
-      "...and the report names it a REPORT-FORMAT defect, not a coverage gap"
+      "...and it says WHICH world: an EMPTY stderr means the PRINTER is the subject"
     ]
   },
   {
@@ -1709,12 +1709,12 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    for l in lines[starts[-1] + 1:]:\n",
-        "    for l in lines[starts[0] + 1:]:\n"
+        "            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))\n    return out\n",
+        "            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))\n    return out[-1:]\n"
       ]
     ],
     "expect": [
-      "exception_heading on a raise-from chain names the LAST block, not the first"
+      "a raise-from chain names BOTH blocks, in the order the child printed them"
     ]
   },
   {
@@ -1722,12 +1722,12 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if not l.strip() or l.startswith((\" \", \"\\t\")):\n",
-        "        if False:\n"
+        "        if i < n and EXCEPTION_LINE.match(lines[i].strip()):\n",
+        "        if i < n and lines[i].strip():\n"
       ]
     ],
     "expect": [
-      "...so it never returns a FRAME line, however many frames precede the heading"
+      "⭐ r11 H1: an INDENTED traceback cannot make a tally line into an exception"
     ]
   },
   {
@@ -1735,12 +1735,64 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                        else f\"the child DIED with {head}\" if head\n",
-        "                        else f\"the child DIED\" if head\n"
+        "                            + \" \\u00b7 \".join(h + (\" [ignored at shutdown]\" if ig else \"\")\n                                              for h, ig in heads)\n",
+        "                            + \" \\u00b7 \".join(\"\" for h, ig in heads)\n"
       ]
     ],
     "expect": [
       "...and it NAMES THE EXCEPTION, so the type survives however the window is spent"
+    ]
+  },
+  {
+    "name": "⛔ r11 Claude H1 — the shutdown flag is forced off, so a `__del__` raise reads as an ordinary exception the child died of",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))\n",
+        "            out.append((lines[i].strip(), False))\n"
+      ]
+    ],
+    "expect": [
+      "...and CPython's own `Exception ignored in` label is what FLAGS the non-fatal one"
+    ]
+  },
+  {
+    "name": "⛔ r11 Claude H1 — the look-PAST a bare traceback header is removed, so the intro of a shutdown block is the header rather than `Exception ignored in`",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if lines[k].strip() and lines[k].strip() != _TB_HEADER:\n",
+        "            if lines[k].strip():\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r11 H1: a __del__ raise at SHUTDOWN does not displace the real exception"
+    ]
+  },
+  {
+    "name": "⛔ r11 Claude H2 — world ONE stops naming itself, so an EMPTY stderr (a real printer defect) is reported in words that fit any of the three worlds",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    said = \"stderr is EMPTY, so the suite RAN and its PRINTER is the subject\"\n",
+        "                    said = \"the suite went red\"\n"
+      ]
+    ],
+    "expect": [
+      "...and it says WHICH world: an EMPTY stderr means the PRINTER is the subject"
+    ]
+  },
+  {
+    "name": "⛔ r11 Claude H2 — world THREE stops naming itself, the arm a 248/248 mirror measured as asserted by nothing at all",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                    said = \"stderr names no exception line, so read the window\"\n",
+        "                    said = \"the suite went red\"\n"
+      ]
+    ],
+    "expect": [
+      "the THIRD world is named as well: stderr that names no exception says so"
     ]
   }
 ]

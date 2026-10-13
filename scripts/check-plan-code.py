@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 248 cases
+    python3 scripts/check-plan-code.py --self-test          # 260 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -517,38 +517,70 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
                                  out[-out_keep:] if out_keep else "") if p)
 
 
-def exception_heading(stderr: str) -> str | None:
-    """The exception line of the LAST traceback in `stderr`, or None. PURE.
+# The shape of a Python exception line: a dotted identifier, then a colon or end of line.
+# ⛔ A VALIDATOR, NOT A CONVENIENCE — r11 Claude H1 measured the predecessor returning
+# `0/0 passed` as "the exception", because an INDENTED traceback block left the next unindented
+# line to be whatever the child printed next. Every heading has this shape; a tally line, a prose
+# note and a message continuation do not. `KeyboardInterrupt` with no message needs the `$` arm.
+EXCEPTION_LINE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*(:|$)")
 
-    ⛔ WHY A TAIL CANNOT DO THIS, AND IT IS MEASURED RATHER THAN ARGUED — r11 Codex H1.
-    `diagnostic_tail` keeps the END of each stream, and a multi-line exception message pushes the
-    heading straight out of the window: `raise RuntimeError("MARKER\n" + "continuation\n" * 40)`
-    loses BOTH `RuntimeError` and `MARKER` even with an EMPTY stdout, because the 400 characters
-    fill with continuation lines. The heading sits at the START of the final block, so NO
-    fixed-size tail can guarantee it — which is why this is a separate rule and not a bigger
-    window. ⚠ It also killed the obvious cheap fix: "print the last line of stderr" returns
-    `continuation`, the least informative line in the whole stream.
+# CPython's own label for a block it did NOT die of. The discriminator for r11 Claude H1 was
+# already in the stream the rule was reading.
+IGNORED_AT_SHUTDOWN = "Exception ignored in"
+_TB_HEADER = "Traceback (most recent call last):"
 
-    ⚠ THE **LAST** BLOCK, NOT THE FIRST. `raise ... from ...` emits several, oldest first; the
-    last one is the exception that actually killed the child, and the earlier blocks are its
-    causes. A reader needs the killer first.
 
-    None is a real answer and the caller DISTINGUISHES it from empty: no traceback at all means
-    the suite ran and printed in the wrong format, which is the other world entirely.
+def exception_headings(stderr: str) -> list[tuple[str, bool]]:
+    """Every exception line `stderr` names, in order: `(heading, ignored_at_shutdown)`. PURE.
+
+    ⛔ THIS MAKES NO CAUSAL CLAIM, AND THAT IS THE FIX — r11 Claude H1. Its predecessor returned
+    ONE heading and the caller announced *"the child DIED with"* it, picking the LAST traceback
+    block because earlier blocks are its causes. That holds for `raise ... from ...` and for
+    `During handling of the above exception` — both verified — and is FALSE at interpreter
+    shutdown, where a `__del__` or `atexit` raise appends a block AFTER the fatal one. Measured
+    over four real children: the report named `ValueError: SHUTDOWN_NOISE` for a child that died
+    of `RuntimeError: THE_REAL_KILLER`, and the flooding composite left the real killer NOWHERE
+    in the report — Codex H1's harm restored with a confident false attribution bolted on.
+
+    So the caller NAMES what the stream says and attributes nothing. That is the same humility
+    the three-world message already applies to `rc == 1`, and it is why this returns a LIST: the
+    shutdown case has two headings and a reader needs both, in the order the child printed them.
+
+    ⚠ NO HEADER LITERAL IS USED TO FIND A HEADING. The predecessor keyed on a line equal to
+    `Traceback (most recent call last):`, and Python OMITS that header when the MAIN SCRIPT fails
+    to compile — so a top-level `SyntaxError`, the likeliest way a blind text substitution kills a
+    suite, returned None exactly where it was needed. A heading is instead *the first line back at
+    column zero after a run of indented frame lines*, which holds with or without a header.
+    `_TB_HEADER` is consulted ONLY to look past it when deciding the `ignored` flag, so a change
+    to that literal downgrades a flag and never loses a heading.
+
+    ⚠ STATED BOUND — `ExceptionGroup` yields NOTHING here. Its report is indented behind
+    `  + Exception Group Traceback` and `  | `, so it has no unindented heading. The caller's third
+    world then says *"stderr names no exception line"*, which is literally true, and a case pins
+    it. Measured 2026-10-13: 0 of 58 scripts under `scripts/` reference `ExceptionGroup`,
+    `TaskGroup` or `asyncio`, so nothing in the delivered corpus raises one TODAY — a bound, not a
+    promise about tomorrow.
     """
     lines = stderr.split("\n")
-    starts = [i for i, l in enumerate(lines)
-              if l.strip() == "Traceback (most recent call last):"]
-    if not starts:
-        return None
-    for l in lines[starts[-1] + 1:]:
-        # Frames and carets are INDENTED and blanks carry nothing; the heading is the first
-        # line at column zero. Dropping this skip returns `File "...", line N`, which names
-        # the instrument's own fixture instead of the failure.
-        if not l.strip() or l.startswith((" ", "\t")):
+    out: list[tuple[str, bool]] = []
+    i, n = 0, len(lines)
+    while i < n:
+        if not (lines[i].strip() and lines[i].startswith((" ", "\t"))):
+            i += 1
             continue
-        return l.strip()
-    return None
+        # A run of indented lines is a frame block. Decide what INTRODUCED it before consuming
+        # it: the nearest preceding non-blank line, looking PAST a bare traceback header, which
+        # is what sits between `Exception ignored in:` and its frames.
+        intro = ""
+        for k in range(i - 1, -1, -1):
+            if lines[k].strip() and lines[k].strip() != _TB_HEADER:
+                intro = lines[k].strip()
+                break
+        while i < n and (not lines[i].strip() or lines[i].startswith((" ", "\t"))):
+            i += 1
+        if i < n and EXCEPTION_LINE.match(lines[i].strip()):
+            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))
+    return out
 
 
 def merged_output(stdout: str, stderr: str) -> str:
@@ -1151,7 +1183,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 133,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+    "scripts/check-plan-code.py": 137,   # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
                                          # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
                                          # as IMPOSSIBLE — "the harness REFUSES a second entry on
                                          # one anchor" — and that was wrong: the refusal is on
@@ -2709,13 +2741,16 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # The `if not fails` branch below reports a suite that went red and named no case,
         # and for two branches it reported that with NO EVIDENCE AT ALL: `run_suite` folds
         # the child's traceback into one string, and nothing printed it.
-        # ⟳ MEASURED 2026-10-13, PR #371 shards 4 and 7 at `f599182d` — two entries "killed,
-        # unattributable", ~23 minutes of CI per guess, and the message below ASSERTED a cause
+        # ⟳ MEASURED 2026-10-13, PR #371 shards 4 and 7 at `f599182d` — THREE entries
+        # "killed, unattributable" (shard 4 at 189/191, shard 7 at 190/191), ~23 minutes of CI
+        # per guess, and the message below ASSERTED a cause
         # (`a report-format defect in <file>`) that a local run refuted in 58 seconds: the same
-        # two entries attribute cleanly through this very code path, printing 5 and 2 `[FAIL]`
-        # lines. ⚠ The round-10 handoff said 18 and that figure is WITHDRAWN: measured
-        # 2026-10-13 through this path, 5 and 2 (r11 Codex L2 found 18 still asserted here,
-        # in a comment written by the same commit that withdrew it elsewhere).
+        # all THREE attribute cleanly through this very code path, printing 5, 2 and 1 `[FAIL]`
+        # lines. ⚠ TWO WITHDRAWN FIGURES ON ONE SUBJECT, both recorded rather than quietly
+        # replaced: the round-10 handoff said 18 `[FAIL]` lines (measured: 5, 2 and 1), and the
+        # fold that corrected it said TWO entries (measured: three — r11 Claude M1 re-derived
+        # shard 7's 190/191 from the raw job log, which this fold never opened). Codex's M1 table
+        # had all three positions in hand at 1091, 1099 and 1102; the fold used two of them.
         # ⚠ THE ASYMMETRY IS THE DEFECT. Both CONTROL loops have carried `diagnostic_tail(so,
         # se)` since r3 (`:2558`, `:2592`); only the MUTATION loop threw the halves away. One
         # half of this harness could say why a child went red and the other half could not.
@@ -2815,11 +2850,17 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 # ⟳ r11 Codex H1: the WINDOW ALONE CANNOT CARRY THE CAUSE (see
                 # `exception_heading`), so row #270's "the next occurrence will name it" was
                 # unsupported until this line existed. Three worlds, each said in its own words.
-                head = exception_heading(se)
-                said = ("stderr is EMPTY, so the suite RAN and its PRINTER is the subject"
-                        if not se.strip()
-                        else f"the child DIED with {head}" if head
-                        else "stderr carries no traceback heading, so read the window")
+                heads = exception_headings(se)
+                if not se.strip():
+                    said = "stderr is EMPTY, so the suite RAN and its PRINTER is the subject"
+                elif heads:
+                    said = ("stderr NAMES "
+                            + " \u00b7 ".join(h + (" [ignored at shutdown]" if ig else "")
+                                              for h, ig in heads)
+                            + " \u2014 in the order the child printed them, and this harness does "
+                              "NOT claim which of them killed it")
+                else:
+                    said = "stderr names no exception line, so read the window"
                 report.append(
                     f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
                     f"line, so NOTHING COULD SEE THE KILL. TWO WORLDS PRODUCE THIS AND THIS "
@@ -3470,9 +3511,17 @@ def _self_test() -> int:
                  "expect": "the value is one"}]
         _okfmt, _repfmt, _, _ = run_mutations(_dfmtp, _fmt, {"n.py"})
         case("a suite that goes red with no [FAIL] line is still refused", _okfmt, False)
-        case("...and the report names it a REPORT-FORMAT defect, not a coverage gap",
-             any("report-format defect" in r.lower() for r in _repfmt), True)
-        case("...names the file whose failure printer must change",
+        # ⛔ r11 Claude H2. THIS CASE USED TO ASSERT `"report-format defect" in r.lower()` AND
+        # COULD NOT FAIL: measured over the unambiguous CRASH fixture below, that phrase is
+        # present too — it is in the sentence offering BOTH worlds. So it held identically in
+        # the world the message exists to separate, and the harness could have gone back to
+        # calling a crash a printer defect with this case still green. ⚠ Its NAME made the same
+        # categorical claim that `:2796`'s comment was corrected for in the very same commit.
+        # What discriminates is the `said` clause, and this fixture is squarely world ONE: the
+        # suite RAN (it printed a tally), its stderr is EMPTY, and its printer is the subject.
+        case("...and it says WHICH world: an EMPTY stderr means the PRINTER is the subject",
+             any("stderr is EMPTY" in r for r in _repfmt), True)
+        case("...names the file, so a reader knows which suite to open",
              any("n.py" in r for r in _repfmt), True)
         # ⚠ Not the generic message. Emitting both would leave the reader to pick, which is
         # the state that already failed twice.
@@ -3485,8 +3534,8 @@ def _self_test() -> int:
     # the cause and showed the reader nothing — so a CRASH was diagnosed as a `report-format
     # defect` in a suite whose printer is fine. That misdiagnosis is what PR #371's shards 4
     # and 7 cost: the message accused `check-withdrawal.py`, which prints `[FAIL]` correctly
-    # 5 and 2 times for those two entries when run locally (r11 Codex L2: this said 18, a
-    # figure withdrawn the same day it was written).
+    # 5, 2 and 1 times for the THREE affected entries when run locally (two withdrawn figures
+    # here: `18` per r11 Codex L2, and `two entries` per r11 Claude M1).
     # ⚠ A MODULE-LEVEL `raise` is the fixture ON PURPOSE: it exits 1 exactly as a failing case
     # does, with an EMPTY stdout, which is the pair that makes the two worlds indistinguishable
     # from the exit code alone. `expect` still names a real case, so this is not an entry that
@@ -3519,6 +3568,35 @@ def _self_test() -> int:
         case("...and the report carries the child's TRACEBACK, so the cause is not a guess",
              any('c.py", line' in r for r in _repcr), True)
 
+    # ⛔ r11 Claude H2: THE THIRD WORLD HAD NO CASE. Measured in a 248/248 mirror, replacing its
+    # sentence with `"YYYYYYYY"` left the suite green — executed by nothing, asserted by nothing.
+    # Reaching it needs BOTH halves at once: red in the wrong format (so `fails` is empty) AND a
+    # stderr that carries prose rather than an exception line (so nothing is named).
+    with tempfile.TemporaryDirectory() as _dw3:
+        _dw3p = pathlib.Path(_dw3)
+        (_dw3p / "w.py").write_text(
+            'import sys\n'
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    sys.stderr.write("a plain note, carrying no exception line\\n")\n'
+            '    if f() != 1:\n'
+            '        print("  !! the value is one")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _w3 = [{"name": "stderr prose with no exception line", "file": "w.py",
+                "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                "expect": "the value is one"}]
+        _okw3, _repw3, _, _ = run_mutations(_dw3p, _w3, {"w.py"})
+        case("the THIRD world is named as well: stderr that names no exception says so",
+             any("names no exception line" in r for r in _repw3), True)
+        # ⚠ The pair: this fixture must NOT be read as world one, or the case above passes for
+        # the same ambient reason the H1 case did.
+        case("...and it is NOT reported as an empty stderr, which is a different world",
+             any("stderr is EMPTY" in r for r in _repw3), False)
+
     # ⛔ r11 H1's REAL FALSIFIER, AND THE FIRST ATTEMPT AT IT COULD NOT FAIL — the harness
     # caught that, not a reading. Over the single-line fixture above, `diagnostic_tail` ALSO
     # carries `RuntimeError: ...` (stdout is empty there, so stderr is given the whole 400), so
@@ -3526,9 +3604,13 @@ def _self_test() -> int:
     # 1 mutation / 0 killed / 1 survivor. The message's heading is the ONLY source of the type
     # when the window is FLOODED — which is precisely the harm r11 H1 reported — so the case
     # has to live over a flooding fixture or it asserts nothing.
-    # ⚠ 60 continuation lines is ~840 characters against a 400-character window: the flood has
-    # to be DERIVED from the budget, not guessed, or a later change to DIAGNOSTIC_WINDOW makes
-    # this case quietly ambient again.
+    # ⚠ WHAT KEEPS THIS HONEST IS THE PAIRING, NOT A DERIVATION — r11 Claude L2 corrected the
+    # comment that stood here. `* 60` is a literal and nothing derives it from
+    # `DIAGNOSTIC_WINDOW`, so the old note claimed a safety the code does not implement. But the
+    # harm it feared does not occur, because the PARTNER case fires at the same threshold:
+    # measured with the window raised, control green either side — 600 -> 244/260 (four unrelated
+    # budget cases red, this pair still green and still correct), 1000 -> the partner case goes
+    # RED, 2000 -> both go red. A window change is therefore LOUD, not silent.
     with tempfile.TemporaryDirectory() as _dml:
         _dmlp = pathlib.Path(_dml)
         (_dmlp / "m.py").write_text(
@@ -3555,24 +3637,26 @@ def _self_test() -> int:
         case("...over a fixture where the 400-char window itself loses the heading",
              any("FLOOD_MARKER" in diagnostic_tail("", r) for r in _repml), False)
 
-    # ── r11 Codex H1: the heading rule, in units a window cannot express ────────────────────
+    # ── r11 Codex H1 + r11 Claude H1: the heading rule, in units a window cannot express ────
     _tb_one = ('Traceback (most recent call last):\n'
                '  File "/x/probe.py", line 9, in _self_test\n'
                '    boom()\n'
                'ValueError: a single-line cause\n')
-    case("exception_heading takes the heading of a one-block traceback",
-         exception_heading(_tb_one), "ValueError: a single-line cause")
-    # ⭐ THE REGRESSION CASE FOR r11 H1, AND IT ASSERTS THE WINDOW'S FAILURE TOO — without the
-    # second half this case cannot show the helper is load-bearing rather than merely correct.
+    case("exception_headings takes the heading of a one-block traceback",
+         exception_headings(_tb_one), [("ValueError: a single-line cause", False)])
+    # ⭐ THE REGRESSION CASE FOR r11 CODEX H1, AND IT ASSERTS THE WINDOW'S FAILURE TOO — without
+    # the second half this case cannot show the naming is load-bearing rather than merely correct.
     _tb_multi = ('Traceback (most recent call last):\n'
                  '  File "/x/probe.py", line 9, in _self_test\n'
                  '    boom()\n'
                  'RuntimeError: ROOT_CAUSE_MARKER\n'
                  + 'uninformative continuation\n' * 40)
-    case("\u2b50 r11 H1: a MULTI-LINE message does not hide the heading",
-         exception_heading(_tb_multi), "RuntimeError: ROOT_CAUSE_MARKER")
+    case("⭐ r11 H1: a MULTI-LINE message does not hide the heading",
+         exception_headings(_tb_multi), [("RuntimeError: ROOT_CAUSE_MARKER", False)])
     case("...and the 400-char tail DOES lose it, which is why the heading is read separately",
          "ROOT_CAUSE_MARKER" in diagnostic_tail("", _tb_multi), False)
+    # ⛔ BOTH BLOCKS, IN ORDER — r11 Claude H1. The predecessor returned the LAST block and the
+    # caller called it the killer; that premise is false at shutdown, so nothing is discarded now.
     _tb_chain = ('Traceback (most recent call last):\n'
                  '  File "/x/a.py", line 2, in f\n'
                  'ValueError: the ORIGINAL cause\n'
@@ -3582,17 +3666,80 @@ def _self_test() -> int:
                  'Traceback (most recent call last):\n'
                  '  File "/x/b.py", line 7, in g\n'
                  'RuntimeError: the exception that KILLED it\n')
-    case("exception_heading on a raise-from chain names the LAST block, not the first",
-         exception_heading(_tb_chain), "RuntimeError: the exception that KILLED it")
-    case("...so it never returns a FRAME line, however many frames precede the heading",
-         exception_heading('Traceback (most recent call last):\n'
-                           '  File "/x/c.py", line 1, in <module>\n'
-                           '  File "/x/d.py", line 2, in h\n'
-                           'KeyError: \'k\'\n'), "KeyError: 'k'")
-    case("exception_heading is None when stderr carries no traceback at all",
-         exception_heading("CANNOT RUN - the tree went bad underneath\n"), None)
-    case("...and None on an empty stderr, which the caller reads as a PRINTER defect instead",
-         exception_heading(""), None)
+    case("a raise-from chain names BOTH blocks, in the order the child printed them",
+         exception_headings(_tb_chain),
+         [("ValueError: the ORIGINAL cause", False),
+          ("RuntimeError: the exception that KILLED it", False)])
+    case("...so no block is discarded as 'merely the cause', which is the premise r11 H1 refuted",
+         len(exception_headings(_tb_chain)), 2)
+    case("...and a FRAME line is never named, however many frames precede the heading",
+         exception_headings('Traceback (most recent call last):\n'
+                            '  File "/x/c.py", line 1, in <module>\n'
+                            '  File "/x/d.py", line 2, in h\n'
+                            'KeyError: \'k\'\n'), [("KeyError: 'k'", False)])
+    case("exception_headings is empty when stderr names no exception",
+         exception_headings("CANNOT RUN - the tree went bad underneath\n"), [])
+    case("...and empty on an empty stderr, which the caller reads as a PRINTER defect instead",
+         exception_headings(""), [])
+    # ⭐ r11 Claude H1's INDENTED-BLOCK defect: the opener matched while the frame skip discarded
+    # the heading, so the rule returned whatever the child printed next — measured, `0/0 passed`,
+    # reported as *"the child DIED with 0/0 passed"*. `EXCEPTION_LINE` is what refuses that.
+    case("⭐ r11 H1: an INDENTED traceback cannot make a tally line into an exception",
+         exception_headings('  Traceback (most recent call last):\n'
+                            '    File "/x/a.py", line 2, in f\n'
+                            '  ValueError: indented\n'
+                            '0/0 passed\n'), [])
+
+    # ⛔ REAL CHILDREN FROM HERE, NOT TYPED FIXTURES — and that distinction is the whole reason
+    # r11 Claude H1 exists. A typed traceback asserts MY idea of CPython's format, and the
+    # assumption it killed (that a header always introduces a traceback, and that the last block
+    # is the killer) had already survived eight typed fixtures.
+    def _child_stderr(src: str) -> str:
+        with tempfile.TemporaryDirectory() as _ctd:
+            _cp = pathlib.Path(_ctd) / "probe.py"
+            _cp.write_text(src)
+            return subprocess.run([sys.executable, str(_cp)],
+                                  capture_output=True, text=True).stderr
+
+    _shut = _child_stderr('class Leaky:\n'
+                          '    def __del__(self): raise ValueError("SHUTDOWN_NOISE")\n'
+                          'leak = Leaky()\n'
+                          'raise RuntimeError("THE_REAL_KILLER")\n')
+    case("⭐⭐ r11 H1: a __del__ raise at SHUTDOWN does not displace the real exception",
+         exception_headings(_shut),
+         [("RuntimeError: THE_REAL_KILLER", False), ("ValueError: SHUTDOWN_NOISE", True)])
+    case("...and CPython's own `Exception ignored in` label is what FLAGS the non-fatal one",
+         [_ig for _h, _ig in exception_headings(_shut)], [False, True])
+    _atex = _child_stderr('import atexit\n'
+                          'def boom(): raise ValueError("ATEXIT_NOISE")\n'
+                          'atexit.register(boom)\n'
+                          'raise RuntimeError("THE_REAL_KILLER")\n')
+    case("...and an atexit callback is the same shape, by the same label",
+         exception_headings(_atex),
+         [("RuntimeError: THE_REAL_KILLER", False), ("ValueError: ATEXIT_NOISE", True)])
+    # ⛔⛔ THE COMPOSITE r11 H1 CALLED THE ONE THAT MATTERS: shutdown noise whose message floods
+    # the window. The old rule named the noise AND the window held nothing else, so the real
+    # killer appeared NOWHERE. Both halves are asserted, because naming it only matters if the
+    # window genuinely cannot.
+    _flood = _child_stderr('class Leaky:\n'
+                           '    def __del__(self): raise ValueError("NOISE\\n" + "chatter\\n" * 40)\n'
+                           'leak = Leaky()\n'
+                           'raise RuntimeError("THE_REAL_KILLER_nobody_will_see")\n')
+    case("⭐⭐ r11 H1's COMPOSITE: the real exception is named even when noise floods the window",
+         any("THE_REAL_KILLER_nobody_will_see" in _h for _h, _ig in exception_headings(_flood)),
+         True)
+    case("...which the 400-char window alone does NOT carry, so the naming is load-bearing",
+         "THE_REAL_KILLER_nobody_will_see" in diagnostic_tail("", _flood), False)
+    # ⭐ A top-level SyntaxError prints NO header, and a blind text substitution is the likeliest
+    # way to produce one. The predecessor returned None here — on the most likely crash of all.
+    _syn = _child_stderr('def f(:\n    pass\n')
+    case("⭐ a top-level SyntaxError has NO traceback header and is still named",
+         exception_headings(_syn), [("SyntaxError: invalid syntax", False)])
+    case("...and THAT is why no header literal is used to find a heading",
+         _TB_HEADER in _syn, False)
+    _grp = _child_stderr('raise ExceptionGroup("g", [ValueError("a")])\n')
+    case("an ExceptionGroup names nothing here, which is the STATED BOUND, not a silent miss",
+         exception_headings(_grp), [])
 
     # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
     # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
@@ -5831,7 +5978,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1535)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1539)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
