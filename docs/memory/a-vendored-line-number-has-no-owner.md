@@ -19,12 +19,14 @@ measurable fact is that every citation names a line whose content is now somethi
   fixed the other four.** Git-tracked, authored in the SAME commit as them (`24ff8694`), listed as
   Layer 3 of this very mechanism in `plugins.md`, and it is the file the refusal text tells a
   blocked reader to open. ⭐ **Why it was missed, exactly: `grep -r` does not follow the symlink
-  `.claude/skills/handoff` → `../../.agents/skills/handoff`. `grep -R` does.** One file, two paths —
+  `.claude/skills/handoff` → `../../.agents/skills/handoff`. **`grep -RS` does** — ⛔ `-RS`, not `-R`: BSD grep treats `-R` like `-r`, and the shell here wraps `ugrep` where `-R` works, so the first fix was right about MY grep and wrong for every reader's.** One file, two paths —
   see [[verify-the-other-copy-exists-before-deleting]], which is the same symlink shape.
 
 ⭐ **The fix is to REMOVE the number, not to update it.** Nothing here can hold a vendored line: no
 guard can watch it, and `npx skills@latest add` or a plugin bump invalidates it with no commit. Name
-the SYMBOL and give the command (`grep -n 'REMEMBER_HANDOFF=' <hook>`). This is
+the SYMBOL and give a command that works on the reader's tools, not yours
+(`grep -RSn 'REMEMBER_HANDOFF=' <plugin root>` — it returns TWO hits, the per-session and
+the shared assignment, which is itself the thing worth seeing). This is
 [[a-retrospective-number-needs-provenance]] applied to a dependency.
 
 ## ⛔⛔ AND THE CORRECTION REPEATED THE DEFECT ONE LAYER IN — the part worth remembering

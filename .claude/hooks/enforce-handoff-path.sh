@@ -72,8 +72,9 @@ NOT .remember/handoff.md — nothing reads that name either.
 If a session-start block printed 'Write next handoff to: <path>', obey THAT path
 -- it is always the right one. THREE things print it: an external store; per_session
 mode (.handoff_mode), where the path is remember.<session-id>.md; and a per_session
-request with no usable session id, where the hook prints the SHARED path above plus
-a line saying the mode you asked for did not apply.
+request with no usable session id, where it prints the SHARED file in whatever
+store is resolved -- the path above when the store is in-project, an external one
+otherwise -- plus a line saying the mode you asked for did not apply.
 
 Then repair the vendored skill so this stops recurring:
   \$EDITOR .agents/skills/handoff/SKILL.md      # see docs/plugins.md -> Session Handoff

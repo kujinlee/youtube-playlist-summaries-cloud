@@ -42,9 +42,14 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 #   session-start-hook.sh  REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
 # Verified by EXECUTING that hook, not by reading it — the `=== LAST HANDOFF ===` block came out
 # first, ahead of `=== REMEMBER ===` and `=== MEMORY ===`.
-# ⟳ 2026-10-13: the LINE NUMBER that stood here (`:795`) is gone — measured stale by 376 lines
-# against the 0.33.0 hook, where that assignment is at `:1171`. A line number in a VENDORED file
-# has no owner in this repo and no guard can check it; `grep -n 'REMEMBER_HANDOFF=' <hook>` can.
+# ⟳ 2026-10-13: the LINE NUMBER that stood here (`:795`) is gone — that assignment is at `:1171`
+# in the 0.33.0 hook. ⚠ HOW FAR it drifted is NOT measured and the "stale by 376 lines" that stood
+# here is withdrawn: the pre-0.33.0 hook was never fetched (round 2 M3 caught this sentence
+# surviving the withdrawal elsewhere). A line number in a VENDORED file
+# has no owner in this repo and no guard can check it; `grep -RSn 'REMEMBER_HANDOFF=' <root>` can.
+# ⛔ `-RS`, NOT `-R`: BSD grep (macOS's) treats `-R` like `-r` and skips symlinks. Measured — the
+# interactive shell here wraps `ugrep`, where `-R` DOES follow, so the first prescription was
+# right about the author's grep and wrong for every reader's (round 2 M2).
 # ⚠ No gate in this repo can see a stale figure HERE: this is a code comment, and the document
 # guards read `docs/`. It was found by grepping every mention of the hook — ⛔ with `grep -R`, not
 # `-r`: `-r` does not follow `.claude/skills/handoff` -> `../../.agents/skills/handoff`, and that

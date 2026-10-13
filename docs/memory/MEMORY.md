@@ -21,7 +21,7 @@
 - [⭐⭐ Unit coverage does NOT compose](unit-coverage-does-not-compose.md) — 3 rounds, 3× the gap was BETWEEN two tested pieces. **Mutate the CALL SITE** — the whole change reverted there, suite green
 - [⭐⭐ A forced-choice test cannot fail](a-forced-choice-test-cannot-fail.md) — must-fire-only is UNFALSIFIABLE; negatives must be ADJACENT, not absurd. State the BOUND (0 in 60 → 5%), never "no false positives"
 - [⭐ Instruction is not isolation](instruction-is-not-isolation.md) — "read only these two files" is not a blind; the answer key was in the same directory. Rebuild the world, don't ask
-- [⭐⭐ A harness cannot read a CAUSE from a child's text](a-harness-cannot-read-a-cause-from-a-childs-text.md) — 5 rounds, ONE cause; an arch review did NOT stop it. A crash FORGED a `[FAIL]`
+- [⭐⭐ A harness cannot read a CAUSE from a child's text](a-harness-cannot-read-a-cause-from-a-childs-text.md) — 3 rounds, ONE cause; an arch review did NOT stop it. A crash FORGED a `[FAIL]`
 - [⭐ A vendored LINE NUMBER has no owner](a-vendored-line-number-has-no-owner.md) — 5 sites, one the REFUSAL TEXT; `grep -r` skips symlinks. ⛔ The FIX cited a stale COMMENT
 - [⭐ A BOUND enumerates what is WITNESSED](a-bound-enumerates-what-is-witnessed.md) — I listed what the seam TOUCHES; the cases covered 3 of 4. The missing one reinstated the defect the harness exists for. ⚠ A caveat headed "stated rather than hidden" that is wrong is worse than none
 - [⭐ A test that cannot fail](a-test-that-cannot-fail.md) — what observation makes this FAIL? Removing a signal hollows out its falsifier

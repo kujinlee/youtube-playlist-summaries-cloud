@@ -14830,7 +14830,7 @@ has been replaced by a newer version since. Every one of those pointers now land
 The rule they support is important: when a session ends, it writes a note for the next session, and
 that note has to go exactly where the next session will look for it. Once, three such notes were
 written to a temporary folder and not one was ever read — the notes were good and nothing collected
-them. So the rule names the correct destination, and four documents backed it up by citing the line
+them. So the rule names the correct destination, and five documents backed it up by citing the line
 of the plugin file that does the reading.
 
 That plugin has been updated since, and the citations now name lines whose contents are something
@@ -14855,7 +14855,7 @@ gives each session its own separate note file. In that second mode the destinati
 not the one that gets read. This installation uses the ordinary mode and always has, so the rule has
 never actually been wrong in practice — but it was stated more confidently than it was true. What
 already protected it is a sentence that was there for a different reason: if the session start
-prints a destination, use that one. That sentence now says both of the situations that print it.
+prints a destination, use that one. That sentence now names all three situations that print it.
 
 One more thing, and it is the part that went wrong. This entry first said the plugin, when asked
 for per-session notes but unable to work out which session it is in, deliberately says nothing
@@ -14877,7 +14877,8 @@ the true destination and tells you your setting did not take effect.
 <!--tech-->
 `docs/plugins.md` (net zero lines — it sits exactly on its 260-line budget, so the correction had to
 replace five lines with five), `docs/process-rationale.md` (the account, under a new heading),
-`scripts/check-handoff-path.py` (a code comment — invisible to `check-withdrawal`, which globs
+`scripts/check-handoff-path.py` (a code comment — no document guard reads it; an earlier version of
+this block named `check-withdrawal`, which does not exist in this repo at this commit, which globs
 `docs/` only, so it was found by grepping every mention of the hook), and
 `.claude/hooks/enforce-handoff-path.sh` (the refusal text; re-rendered through a stub guard to
 confirm `rc=2` and that nothing in the new lines expands inside its unquoted heredoc).
@@ -14886,7 +14887,10 @@ Measured against `remember` **0.33.0**, a **2,027-line** hook: `REMEMBER_HANDOFF
 (per-session `:1168`, mode selected `:1164`), emit `:1666`, delivery record `:1571-1640`, hint
 `:1546`. The removed citations were `:795`, `:809-812`, `:814-825`, `:800-802`. Mode gate:
 `config_into HANDOFF_MODE ".handoff_mode" "single"` — default `single`, nothing configures
-`per_session` in either settings file, `.remember/` holds only `remember.md`, and delivery is
+`per_session` in any of the THREE `remember` config layers (plugin-bundled, `~/.remember/`,
+`<repo>/.remember/` — all absent; the plugin's own read-only `doctor.sh` reports `Storage mode:
+legacy (in-project)`), the store's **104** entries include exactly ONE matching `remember*`, and
+delivery is
 observed, so the rule is correct for this install. `docs/reviews/claude/velocity-177-r5-claude.md:161`
 is the prior observation. The historical review doc is left as written — merged review docs are
 records, not things to rewrite.
