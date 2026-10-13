@@ -1,0 +1,19 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5859 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "100d1f1a402dea49f22edf89312ce5e23fc26097",
+  "intrusions": [
+    "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/cc324e78-0299-4f25-b046-f9a0999d28c0/scratchpad/r12/claude-brief.md: CREATED during the run (writer unattributed)"
+  ],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/cc324e78-0299-4f25-b046-f9a0999d28c0/scratchpad/r12/codex-brief.md",
+  "reason": "5859 chars",
+  "refused": false,
+  "review": "backlog-249-260-r12-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

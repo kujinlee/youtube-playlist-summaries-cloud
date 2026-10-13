@@ -439,7 +439,7 @@
       ]
     ],
     "expect": [
-      "...and it says WHICH world: an EMPTY stderr means the PRINTER is the subject"
+      "...and it says WHICH world: an empty stderr is reported as the bytes OBSERVED"
     ]
   },
   {
@@ -1705,7 +1705,7 @@
     ]
   },
   {
-    "name": "⛔ r11 H1 — the heading is taken from the FIRST traceback block, so a `raise ... from ...` chain reports the CAUSE instead of the exception that actually killed the child",
+    "name": "⛔ r11 H1 (name corrected r12 Codex L1) — only the LAST heading is kept, so a `raise ... from ...` chain loses the blocks that preceded the one that ended it",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1718,16 +1718,16 @@
     ]
   },
   {
-    "name": "⛔ r11 H1 — the frame/blank skip is dropped, so the heading becomes the instrument's own fixture path (`File \"...\", line N`) instead of the failure",
+    "name": "⛔ r11 H1 (retargeted + name corrected r12 Codex L1) — the heading VALIDATION is dropped, so whatever the child printed at column zero after a frame block becomes 'the exception' — measured once as `0/0 passed`",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "        if i < n and EXCEPTION_LINE.match(lines[i].strip()):\n",
-        "        if i < n and lines[i].strip():\n"
+        "    return bool(head) and all(_is_type_name(part) for part in head.split(\".\"))\n",
+        "    return bool(head)\n"
       ]
     ],
     "expect": [
-      "⭐ r11 H1: an INDENTED traceback cannot make a tally line into an exception"
+      "is_exception_heading refuses a tally line"
     ]
   },
   {
@@ -1770,16 +1770,16 @@
     ]
   },
   {
-    "name": "⛔ r11 Claude H2 — world ONE stops naming itself, so an EMPTY stderr (a real printer defect) is reported in words that fit any of the three worlds",
+    "name": "⛔ r11 Claude H2 (retargeted r12 Codex H2) — world ONE stops naming the OBSERVATION, so an empty stderr is reported in words that fit any red suite",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                said = \"stderr is EMPTY, so the suite RAN and its PRINTER is the subject\"\n",
-        "                said = \"the suite went red\"\n"
+        "                said = (f\"the child wrote NOTHING to stderr ({len(se)} byte(s))",
+        "                said = (f\"the suite went red ({len(se)} byte(s))"
       ]
     ],
     "expect": [
-      "...and it says WHICH world: an EMPTY stderr means the PRINTER is the subject"
+      "...and it says WHICH world: an empty stderr is reported as the bytes OBSERVED"
     ]
   },
   {
@@ -1819,6 +1819,58 @@
     ],
     "expect": [
       "⛔⛔ #271: ...and a crash whose entry OMITS `expect` is refused IDENTICALLY"
+    ]
+  },
+  {
+    "name": "⛔⛔ r12 Codex H1 — the FRAME-MARKER clause is dropped, so any run of indented lines is read as a traceback and an indented MESSAGE CONTINUATION fabricates a second exception heading out of the message's own text",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if not any(FRAME_LINE.match(line) for line in lines[start:i]):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r12 H1: an indented MESSAGE continuation cannot fabricate a second heading"
+    ]
+  },
+  {
+    "name": "⛔⛔ r12 Codex H1 — the heading validator goes back to ASCII ONLY, so an exception class whose name is a non-ASCII Python identifier is named NOWHERE in the report, which is the harm the diagnostic exists to prevent",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    return part.isidentifier()\n",
+        "    return part.isascii() and part.isidentifier()\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r12 H1: a NON-ASCII exception class is named, because identifiers are not ASCII"
+    ]
+  },
+  {
+    "name": "⛔⛔ r12 Codex H3 — attribution goes back to the MERGED view, so a crash whose exception MESSAGE contains a well-formed `[FAIL] <case>` line is certified as a kill attributed to that case, over zero executed cases",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        fails = parse_fail_names(so)\n",
+        "        fails = parse_fail_names(out)\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r12 H3: a CRASH that forges a [FAIL] line is caught but NOT attributed"
+    ]
+  },
+  {
+    "name": "⛔ r12 Codex H2 — the explicit disclaimer is replaced by the INFERENCE it withdrew, so an empty stderr is again reported as proof the suite ran and its printer is at fault — false for a child that calls `os._exit(1)`",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        \"rules OUT a traceback this harness can read, and is NOT evidence that \"\n                        \"the suite ran or that its printer is at fault\")\n",
+        "                        \"so the suite ran and its printer is the subject\")\n"
+      ]
+    ],
+    "expect": [
+      "...and says so explicitly, so the missing inference is asserted and not assumed"
     ]
   }
 ]

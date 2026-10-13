@@ -236,9 +236,9 @@ not taxonomy. H1 stays MECHANISM.
 
 Asked because it gated the owner's A-versus-B choice. ⚠ **It answers H2's class, not F1's** — a
 distinction worth keeping, because conflating them would have flipped a decision on the wrong
-evidence. F1's class (a clause mandatory in one predicate and OPT-IN in its sibling) remains
-**UNMEASURED** across the other guards; H2's class (a world-selection no case asserts) is
-repo-wide.
+evidence. H2's class (a world-selection no case asserts) is repo-wide.
+
+⟳ **CORRECTED 2026-10-13 (round 12, Codex M1).** This paragraph said F1's class *"remains UNMEASURED across the other guards"* while the section below reports sweeping **every** `obj.get("literal")` under `scripts/` — 358 sites in 33 files. A repo-wide sweep IS that measurement, so the two statements could not both stand. What was true when this sentence was written is that F1's class was unmeasured *at the time the A-versus-B choice was put*; it was measured later the same day, and the sentence was not revisited. The width section below is the measurement.
 
 Measured by severing each arm against the guard's own `--self-test`, control green either side. The
 three with non-cosmetic harm: `check-live-schema.py:891` relabels a LOCAL container read as `--prod`
@@ -269,14 +269,16 @@ recorded field and leaves `ok` wrong, because the `if not fails` block sat INSID
 The arm had to be lifted so `expect` cannot disable the refusal. Behaviour is unchanged for all
 1,539 live entries, measured rather than argued.
 
-### F1's width — the number that settled A versus B: **3 sites, 2 files**
+### F1's width — the number that settled A versus B: **2 sites, 2 files**
+
+⟳ **CORRECTED 2026-10-13 by round 12 (Codex M1), and the correction came from THIS DOCUMENT'S OWN NEXT PARAGRAPH.** The figure read **3 sites**. The filter is *does absence answer in the PERMISSIVE direction?* — and six lines below, this document establishes that `gate_ran` answers **conservatively**. A site cannot both fail that filter and be counted among those that survive it. Two survive, not three. ⚠ Nothing about the A-versus-B verdict turns on it: 2 callers is still not a real seam. What is wrong is the arithmetic published to support it, and a figure in a review document is a claim like any other.
 
 Asked after A was chosen, because I had said B was gated on it and would reopen the choice if it
 came back large. Method: every `obj.get("literal")` under `scripts/` — 358 sites in 33 files, 21 of
 them guard-shaped — swept by severing each to `obj["literal"]` with a control green either side,
 then filtered by the condition that matters: **does absence answer in the PERMISSIVE direction?**
 
-Three survive that filter, in two files: `check-plan-code.py:2804` `mut.get("expect")` (fixed by
+**Two** survive that filter, in two files (⟳ *read three until round 12*): `check-plan-code.py:2804` `mut.get("expect")` (fixed by
 #271 in this session) and two in `check-review-recorded.py`.
 
 ⚠ **AND ONE OF THE TWO IS MIS-GRADED BY THE AGENT THAT FOUND IT — coordinator-measured.**
@@ -287,11 +289,24 @@ conservative direction, so it is a validation gap, not a false green. The third 
 corrected by measurement in this review.
 
 ⛔ **So B is not merely unmeasured — it is NOT EARNED.** A shared "child verdict" module over this
-class would have **2 callers**, which is hypothetical depth by the skill's own rule ("one adapter =
-hypothetical seam, two = real"), and the remaining two sites are already owned by backlog **#178**,
-whose own remedy is to IMPORT the existing validator in `check-review-decision.py:265-283`
-(`REQUIRED` + a `_validate` that raises) rather than to grow a new abstraction. #178 is amended with
-today's measurement rather than duplicated.
+class would have **2 callers**, and the remaining two sites are already owned by backlog **#178**.
+#178 is amended with today's measurement rather than duplicated.
+
+⟳ **TWO CLAIMS IN THAT PARAGRAPH WERE WRONG, corrected 2026-10-13 by round 12 (Codex M1).**
+
+1. **It read callers as adapters.** The skill's rule is *one ADAPTER = hypothetical seam, two =
+   real*; an adapter is a concrete thing satisfying an interface, not a call site. Counting two
+   callers and concluding "hypothetical depth by the skill's own rule" cites a rule it does not
+   apply. ⚠ B is still not earned — a two-call-site module over a four-line clause carries no
+   leverage — but that is an argument, not the skill's rule invoked as authority.
+2. **#178's remedy cannot import that validator, because it validates a DIFFERENT RECORD.**
+   `check-review-decision.py:265-283` holds `REQUIRED = {"severity", "aim", "fix_induced",
+   "disposition"}` plus a `component` check — **finding** fields. A verdict record carries
+   `gate_ran`, `dirty`, `schema`, `review`. Measured: calling `_validate` on a well-formed
+   verdict raises `has no `severity``. So it is a SHAPE to follow (a required-field table and a
+   reader that RAISES), never a function the verdict path can call — and the "2 callers" count,
+   which assumed both sides consume one clause, had no basis. Backlog #178's own amendment
+   carries the same error and is corrected with it.
 
 ⭐ And that validator has propagated to zero of the three — ADR-0014's recorded sentence, for the
 third distinct class in one day.
