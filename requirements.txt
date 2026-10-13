@@ -1,0 +1,18 @@
+# Python dependencies for this repository's GUARDS (scripts/*.py).
+#
+# ⛔ THIS FILE IS NEW AS OF 2026-10-12 AND IT CHANGES A STANDING PROPERTY: until backlog #267 was
+# decided, all 72 scripts were stdlib-only and no third-party Python dependency existed here.
+# Architecture review #153 (2026-09-21) explicitly DECLINED to add one for a structurally similar
+# problem — guards hand-rolling a YAML reader — with the reason *"no third-party dependency exists
+# here, and adding one puts it inside the interpreter this guard pins"*. That verdict is SUPERSEDED
+# for this one case, in writing, on backlog #267; it is not silently broken. The distinction drawn:
+# #153's hand-rolled reader was a few lines of structure, where #267's was 217 lines that produced
+# a review finding in NINE consecutive rounds.
+#
+# ⚠ THE COUPLING #153 NAMED IS REAL AND IS NOT WISHED AWAY: this dependency now sits inside the
+# interpreter `scripts/check-python-pin.py` pins, so a Python bump is also a dependency bump.
+# Pinned exactly for that reason.
+#
+# ⚠ LOCAL RUNS NEED A VENV on a PEP 668 machine (macOS system python refuses to install into
+# itself):  python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+markdown-it-py==4.2.0

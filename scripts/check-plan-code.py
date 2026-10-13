@@ -697,7 +697,17 @@ EXPECTED_MUTATIONS = {
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
     "scripts/check-provenance.py": 21,
-    "scripts/check-withdrawal.py": 56,   # ⟳ r10: +2 — an ordered marker other than `1` closes an
+    "scripts/check-withdrawal.py": 30,   # ⛔⛔ #267: A SANCTIONED FALL OF 26, THE SECOND IN
+                                         # THIS FILE'S HISTORY. The hand-rolled block
+                                         # machinery is DELETED — six regexes, four
+                                         # functions — and every mutation that defended one
+                                         # of its rules is RETIRED WITH ITS SUBJECT rather
+                                         # than orphaned. The retired set is the whole
+                                         # nine-round trail: r5 H1, r6 M1, r7 x5, r8 x7,
+                                         # r9 x5, r10 x2. ⚠ WHICH ENTRIES DIED WAS DECIDED
+                                         # BY `--binding`, NOT BY HAND: a hand count said 9
+                                         # and the tool said 26.
+                                         # ⟳ r10: +2 — an ordered marker other than `1` closes an
                                          # open item, and the clause's `below_item` guard.
                                          # ⛔ r9 Claude: and a SANCTIONED FALL of 2 — the
                                          # indent fallback is DEAD CODE (0 of 2,466 shapes)
@@ -5632,7 +5642,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1555)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1529)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

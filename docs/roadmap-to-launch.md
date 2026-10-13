@@ -1948,6 +1948,20 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
 - [x] **#153 — the architecture review itself.** Verdict: extract `_structural()` into a shared
       library. Not *parse* (no third-party dependency exists here, and adding one puts it inside the
       interpreter this guard pins) and not *refuse* (that is #157, worth doing but not instead).
+      ⟳⟳ **2026-10-12 — THE PARENTHESIS IS SUPERSEDED FOR ONE CASE, DELIBERATELY AND IN WRITING.**
+      Backlog #267 took the third-party dependency this verdict declined (`markdown-it-py`, now in
+      `requirements.txt`), so the repository is no longer stdlib-only and this sentence is no
+      longer a description of it. ⚠ **THE VERDICT ITSELF STANDS FOR ITS OWN SUBJECT** — the
+      workflow readers still do not parse, and nothing here argues they should. What changed is
+      the cost side, by an order of magnitude: #153's hand-rolled reader was a few lines of
+      structure, where #267's was **217 lines** carrying a review finding in **nine consecutive
+      rounds**, and the swap was measured at **0 verdict differences over 95,786 figures** before
+      it was taken. ⛔ **AND THE REASON THIS VERDICT GAVE IS REAL AND WAS NOT WISHED AWAY:** the
+      dependency does now sit inside the interpreter `check-python-pin.py` pins, so a Python bump
+      is also a dependency bump. It is pinned exactly, and that coupling is written at the top of
+      `requirements.txt` rather than discovered later. ⤳ The precedent is therefore CHANGED, not
+      broken: a future guard proposing a dependency must make the same argument on its own
+      evidence, and "but #267 did it" is not that argument.
       ⚠ The row's own scope was wrong in both directions — `check-ci-watched.py` is not a member,
       `check-ratchet-contract.py:835` is — which is why the population was swept rather than recalled.
 - [x] **backlog #154 — the false green the review FOUND.** ✅ **PR #331** (open, not merged).

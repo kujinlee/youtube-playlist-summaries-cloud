@@ -67,6 +67,25 @@ import argparse
 import collections
 import importlib.util
 import re
+
+# ⛔ THE PARSER IS A HARD DEPENDENCY AND ITS ABSENCE IS A CANNOT-RUN, NEVER A FALLBACK — #267,
+# decided 2026-10-12. This guard used to DERIVE Markdown block boundaries by hand and it now ASKS.
+# ⚠ If the import fails the answer is NOT "assume no boundary": that is the LENIENT direction,
+# which silently hides a stale figure, and is the exact failure this file paid for six times.
+try:
+    from markdown_it import MarkdownIt
+except ImportError as _exc:                    # pragma: no cover - driven by the CANNOT-RUN case
+    MarkdownIt = None
+    PARSER_IMPORT_ERROR: Exception | None = _exc
+else:
+    PARSER_IMPORT_ERROR = None
+
+# GFM is the operative dialect: GitHub renders these documents. `linkify` is off because it
+# rewrites inline content, and this guard only ever asks WHERE THE BLOCKS ARE.
+_MD = None
+if MarkdownIt is not None:
+    _MD = MarkdownIt("gfm-like", {"linkify": False})
+    _MD.disable("linkify")
 import subprocess
 import sys
 from pathlib import Path
@@ -522,118 +541,8 @@ BACKTICK_RUN = re.compile(r"`+")
 # `0*1[.)]` is correct where it was measured (r7 H1): at top level only `1` may INTERRUPT a
 # paragraph. A line indented BELOW an open item's content column is not interrupting that
 # paragraph — it is CLOSING the item, and every ordered number does that.
-CLOSES_ITEM = re.compile(r"[ \t]{0,3}\d{1,9}[.)][ \t]+\S")
 
 
-BLANK_OR_BLOCK = re.compile(
-    r"[ \t\r]*$"                                # blank
-    r"|[ \t]{0,3}(?:[-*+][ \t]+\S"              # a NON-EMPTY bullet
-    r"|(?:[-*_][ \t]*){3,}\r?$"                  # a THEMATIC BREAK — `***`, `___`, `* * *` (r7 H1)
-    r"|[-=]+[ \t]*\r?$"                          # a setext underline (`-` alone, `=` alone)
-    r"|0*1[.)][ \t]+\S"                          # an ordered item: only the NUMBER ONE interrupts,
-                                                 # and `01.`/`001)` ARE one — measured (r7 H1)
-    r"|#{1,6}(?:[ \t]|\r?$)"                     # an ATX heading, at most six hashes
-    r"|(?:`{3,}|~{3,})"                      # ⛔ A FENCE — three or more backticks OR
-                                             # tildes, measured: two do not interrupt, and
-                                             # the `[ \t]{0,3}` above is what excludes the
-                                             # four-space-indented one. ⚠ A fence WITH an
-                                             # INFO STRING was measured as splitting the two
-                                             # parsers, and ⛔ r8 Claude M3: THAT WAS MY ORACLE,
-                                             # NOT THE PARSERS. The oracle stripped `<pre>` with a
-                                             # literal tag, so cmark's `<pre lang="ruby">` escaped
-                                             # the strip; with `<pre\b[^>]*>` the split goes 84 → 0
-                                             # and all three parsers AGREE the fence ends the
-                                             # paragraph. The clause takes the CORRECT side here,
-                                             # not a defensible guess — the question has an answer
-    r"|<[a-zA-Z!/?]"                             # ⚠ AN HTML BLOCK, CONSERVATIVELY. CommonMark type 6
-                                                 # is a ~60-tag list and `<span>` is NOT in it, so
-                                                 # this over-fires on inline tags. That lands in the
-                                                 # NOISY direction (a dismissible warning) and
-                                                 # removes five LENIENT shapes; embedding the tag
-                                                 # list here is the #267 design question, not a fold.
-    r")")
-def _column(chunk: str, start: int) -> int:
-    """Width of `chunk` in TAB-EXPANDED columns, starting from column `start`.
-
-    ⛔ r9 Codex H2 — `m.end() - i` counted CHARACTERS. A tab advances to the next multiple-of-four
-    tab stop, so `-\t- ` is six columns wide and not four, and the undercount left a block start at
-    the real content column invisible again — LENIENT, on the shape the first fix was for.
-    """
-    col = start
-    for ch in chunk:
-        col = (col // 4 + 1) * 4 if ch == "\t" else col + 1
-    return col
-
-
-LIST_MARKER = re.compile(r"[ \t]{0,3}(?:[-*+]|\d{1,9}[.)])[ \t]+")
-
-
-def list_content_column(rest: str) -> int:
-    """How far a block start may be indented and still interrupt, from a paragraph's FIRST line.
-
-    ⛔ r8 Claude H1 — `[ \t]{0,3}` is the right cap at TOP LEVEL, where four spaces is indented
-    code. Inside a LIST ITEM it is not: the block-start column is the item's CONTENT column, which
-    is 4 for `- - `, 5 for `- 1. ` and 6 for `- - - `. Every block start at that column was
-    invisible to BOTH predicates, so the mask whitened the newline and the span absorbed the
-    figure — LENIENT, the expensive direction.
-
-    ⤳ THIS IS THE SAME MOVE THE QUOTE FIX MADE, ONE CONTAINER OVER. r8's Codex half taught
-    `paragraph_ends_between` to carry the open paragraph's QUOTE DEPTH as state instead of
-    comparing adjacent lines; a list item's content column needs carrying for exactly the same
-    reason, and the predicate knowing about `>` but not about `- ` is why this survived eight
-    rounds. Measured on a 196-shape list corpus (7 containers × 14 middles × {LF, CRLF}), both
-    parsers in both dialects agreeing:
-
-        container (opener, content column)      LENIENT before   after
-        `- `      (2)                                  0           0
-        `1. `     (3)                                  0           0
-        `  - `    (4)                                 26           0
-        `- - `    (4)                                 26           0
-        `- 1. `   (5)                                 26           0
-        `- - - `  (6)                                 26           0
-        `1. 1. `  (6)                                 26           0
-
-    ⚠ COLUMNS 2 AND 3 CONTRIBUTE ZERO *ON THAT CORPUS*, and the earlier version of this note drew
-    a bolded rule from it — "the defect is exactly CONTENT COLUMN >= 4". ⛔ r9 Claude M1: FALSE, and
-    a mutation proved it while all 163 cases stayed green. `if cont >= 4:` adds 24 LENIENT shapes,
-    because the strip runs on a remainder whose QUOTE MARKER HAS ALREADY BEEN REMOVED, so the two
-    columns it takes off are not the two `BLANK_OR_BLOCK`'s own cap would have covered. Witness,
-    `cont` = 2 and load-bearing: `'- > - first\n  >   the count was `wrong:\n  >     # h\n…'`.
-    ⤳ The honest statement is narrower: on a corpus of SIMPLE containers at top level, columns 2
-    and 3 contribute nothing. Inside a quote they do.
-
-    ⚠ DIRECTION, STATED RATHER THAN HIDDEN: stripping the container indent can only make MORE
-    lines match a block start, so this fails NOISY (a dismissible warning) and never lenient.
-    Measured: noise on the list corpus is 0 before and 0 after, and the 1,620-shape grid in the
-    measurement note is UNMOVED at 0 lenient / 34 noisy — at top level `cont` is 0 and every
-    clause here is a no-op.
-
-    ⚠ IT IS STILL AN APPROXIMATION, and backlog #267 is the place that says so: interleaved
-    containers (`> - > `) are read only as far as the leading run of list markers goes. The
-    structural answer remains a real CommonMark parser.
-    """
-    col, i = 0, 0
-    while True:
-        m = LIST_MARKER.match(rest, i)
-        if not m:
-            # ⛔ r9 CLAUDE: THIS USED TO FALL BACK TO THE BARE INDENT, and the fallback is now DEAD
-            # CODE — measured 0 of 2,466 shapes distinguish it from `return col`. r9 Codex H1 added
-            # it because the span may open on a line BELOW the marker, where no marker is left to
-            # read; the walk-back in `paragraph_ends_between` now carries `cont_seen` across the
-            # continuation lines INCLUDING the one that breaks it, which is where the marker lives,
-            # so it answers that case more generally and this answered it twice. ⤳ Two mechanisms
-            # for one property, and the spare one was UNKILLABLE: its mutation survived the whole
-            # suite because the other mechanism supplied the same answer. Deleted rather than
-            # shipped, and its manifest entry is RETIRED WITH ITS SUBJECT.
-            # ⚠ AND IT WAS NOT MERELY REDUNDANT: returning the bare indent made `cont` 3 for a
-            # legal 1-3 space paragraph indent at TOP LEVEL, where this function's docstring
-            # promises 0 — 132 noisy shapes (r9 Claude M2). The promise is structural again now.
-            return col
-        col = _column(rest[i:m.end()], col)
-        i = m.end()
-
-
-QUOTE_MARKER = re.compile(r"[ \t]{0,3}>")
 # ⛔ A GFM TABLE INTERRUPTS A PARAGRAPH, BUT ONLY WITH ITS DELIMITER ROW — r7 Claude M1, and it is
 # the one rule here that needs TWO lines of lookahead rather than a line pair. The comment above
 # excludes a bare `| ` correctly ("a GFM table needs a delimiter row") and then stops one line early:
@@ -642,116 +551,9 @@ QUOTE_MARKER = re.compile(r"[ \t]{0,3}>")
 # keeps the span, while cmark-gfm AND markdown-it in gfm mode both end the paragraph. This repo's
 # markdown is rendered by GitHub, so GFM is the operative dialect and the lenient reading was wrong
 # in the one that matters.
-TABLE_DELIM = re.compile(r"[ \t]{0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*\r?$")
 # Anything that COULD begin a block, used only for lazy continuation inside a quote (r7). Broader
 # than `BLANK_OR_BLOCK` on purpose: an empty marker cannot interrupt a fresh paragraph but it does
 # close a quote, because a non-`>` line may continue one only as plain paragraph text.
-ANY_BLOCK_ISH = re.compile(r"[ \t\r]*$|[ \t]{0,3}(?:[-*+=_>#<~`]|\d+[.)])")
-
-
-
-
-def quote_depth(line: str) -> tuple:
-    """`(blockquote depth, the line with its markers stripped)`. PURE. r8 Codex H1.
-
-    ⛔ `> > ` IS DEPTH TWO. The previous version matched `(>+)` — CONTIGUOUS markers only — so a
-    SPACED nested quote read as depth ONE and everything inside it was classified against the wrong
-    level. Measured: `> > the count was …` masked straight through a setext boundary and exempted a
-    live figure, while the contiguous `>>` twin was handled correctly. One space, opposite answers.
-    """
-    depth, i = 0, 0
-    while True:
-        m = QUOTE_MARKER.match(line, i)
-        if not m:
-            return depth, line[i:]
-        depth += 1
-        i = m.end()
-        if i < len(line) and line[i] in " \t":
-            i += 1
-
-
-def paragraph_ends_between(text: str, start: int, end: int) -> bool:
-    """True when a paragraph boundary lies in `text[start:end]`. PURE. r7 Codex H1, r8 Codex H1-H3.
-
-    ⛔⛔ IT TRACKS THE OPEN PARAGRAPH'S QUOTE DEPTH AS STATE rather than comparing adjacent lines.
-    The pairwise version had three LENIENT defects that are all the same mistake, and each was
-    invisible to the other two (r8 Codex H1, H2, H3):
-
-      · H1 — a SPACED nested quote (`> > `) read as depth one, so the inner block structure was
-        tested against the outer level;
-      · H2 — the table lookahead sat in a branch the quote cases returned before, so a table INSIDE
-        a quote was never reached;
-      · H3 — after ONE lazy-continuation line the previous line carries no marker, so the quote
-        state was gone and an empty `* ` was judged by the FRESH-paragraph rule (which permits it)
-        instead of the quote rule (which closes on it).
-
-    ⤳ So: strip the markers, carry `depth` ACROSS lines, and test the REMAINDER. Which markers end
-    a paragraph is the measured table above; what the earlier versions scored is the corpus note
-    above that. Both come from cmark-gfm and markdown-it(gfm), never from a reading of the spec.
-    """
-    nl = text.find("\n", start)
-    if nl == -1 or nl >= end:
-        return False
-    # ⛔ THE PARAGRAPH'S DEPTH IS SET BY ITS FIRST LINE, NOT BY THE LINE THE SPAN OPENS ON — r8, and
-    # it is H3 one level deeper. A span may open on a LAZY continuation line, which carries no `>`
-    # while the paragraph is still inside the quote; starting from that line read depth 0 and judged
-    # everything after it by the fresh-paragraph rule. Measured: all 42 remaining lenient shapes on a
-    # 1,980-shape corpus were exactly this one construction. So walk BACK to the paragraph's first
-    # line — lazy lines inherit the container — and take the greatest depth seen on the way.
-    line_start = text.rfind("\n", 0, nl) + 1
-    depth, _ = quote_depth(text[line_start:nl])
-    scan, cont_seen = line_start, 0
-    while scan > 0:
-        prev_start = text.rfind("\n", 0, scan - 1) + 1
-        pd, prest = quote_depth(text[prev_start:scan - 1])
-        if BLANK_OR_BLOCK.match(prest):
-            cont_seen = max(cont_seen, list_content_column(prest))
-            break                              # that line starts a block, so the paragraph begins here
-        depth = max(depth, pd)
-        cont_seen = max(cont_seen, list_content_column(prest))
-        scan = prev_start
-    _, first_rest = quote_depth(text[scan:text.find("\n", scan)])
-    cont = max(cont_seen, list_content_column(first_rest))     # ⛔ r8 Claude H1 / r9 Claude H1:
-                                               # `cont_seen` is what makes a LAZY continuation work
-    while nl != -1 and nl < end:
-        nxt_end = text.find("\n", nl + 1)
-        nxt = text[nl + 1:nxt_end if nxt_end != -1 else len(text)]
-        d, rest = quote_depth(nxt)
-        below_item = False
-        if cont:
-            k, c = 0, 0
-            while k < len(rest) and rest[k] in " \t" and c < cont:
-                c = (c // 4 + 1) * 4 if rest[k] == "\t" else c + 1
-                k += 1
-            if c >= cont:
-                rest = rest[k:]                # ⛔ r8 Claude H1 / r9 H2 — tab-expanded columns
-            else:
-                below_item = True              # ⛔ r10 — it did NOT reach the content column
-            d2, rest2 = quote_depth(rest)      # a `>` can sit AT that column, past QUOTE_MARKER's
-            if d + d2 > depth:                         # 3-space cap — that was the last 10 of the 130
-                return True
-            rest = rest2
-        if d > depth:
-            return True                        # the quote OPENS or DEEPENS
-        if d < depth:
-            # Fewer markers continues the paragraph ONLY as plain prose (lazy continuation);
-            # anything that could begin a block closes the quote instead. ⛔ `depth` is NOT
-            # re-derived here — that is H3: one lazy line must not erase the quote the paragraph
-            # is still inside.
-            if ANY_BLOCK_ISH.match(nxt):
-                return True
-        elif BLANK_OR_BLOCK.match(rest):
-            return True
-        elif below_item and CLOSES_ITEM.match(rest):
-            return True                        # ⛔ r10 — BELOW an item's column, any number closes it
-        elif "|" in rest and nxt_end != -1:
-            after_end = text.find("\n", nxt_end + 1)
-            after = text[nxt_end + 1:after_end if after_end != -1 else len(text)]
-            _, after_rest = quote_depth(after)
-            if "-" in after_rest and TABLE_DELIM.match(after_rest):
-                return True                    # a header is a table only WITH its delimiter row
-        nl = text.find("\n", nl + 1)
-    return False
 
 
 def backtick_escaped(text: str, pos: int) -> bool:
@@ -767,6 +569,79 @@ def backtick_escaped(text: str, pos: int) -> bool:
         n += 1
         i -= 1
     return n % 2 == 1
+
+
+class ParserUnavailable(RuntimeError):
+    """The Markdown parser could not be imported, so no block question can be answered.
+
+    ⛔ A SEPARATE EXCEPTION TYPE ON PURPOSE. `main()` turns this into rc=2 and the words
+    "treat this as NOT RUN"; a bare `AttributeError` from `_MD.parse` would surface as a crash
+    the reader has to diagnose, and a silent fallback would surface as a PASS. This repo's
+    doctrine is that cannot-run is a FAILURE, never a pass.
+    """
+
+
+_BLOCK_SPANS: dict[str, list[tuple[int, int]]] = {}
+
+
+def inline_block_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of the blocks in which INLINE parsing happens, FROM THE PARSER.
+
+    ⛔ MEMOISED BY VALUE, AND THAT IS NOT AN OPTIMISATION DETAIL. `mask_inline_code` asks this
+    question once per CANDIDATE BACKTICK PAIR, so an unmemoised version re-parses the whole
+    document per pair: the first build of this swap took the corpus run from under a minute to
+    over ten and had to be killed. ⚠ KEYED BY VALUE, NEVER `id(text)` — r6 Claude H1 measured
+    CPython reusing the id of a freed string, which served one document's answer for another.
+    """
+    if _MD is None:                            # ⛔ CANNOT RUN — never a silent fallback
+        raise ParserUnavailable(
+            "markdown-it-py is not importable, so this guard cannot find block boundaries and "
+            "CANNOT RUN. ⛔ Treat this as NOT RUN, not as a pass: guessing 'no boundary' is the "
+            "LENIENT direction, which silently reports a live stale figure as history — the exact "
+            "failure this file has paid for six times. Install it: pip install markdown-it-py. "
+            f"The import said: {PARSER_IMPORT_ERROR}")
+    hit = _BLOCK_SPANS.get(text)
+    if hit is not None:
+        return hit
+    offs, pos = [], 0
+    for line in text.splitlines(keepends=True):
+        offs.append(pos)
+        pos += len(line)
+    offs.append(pos)
+    spans: list[tuple[int, int]] = []
+    for tok in _MD.parse(text):
+        if tok.type == "inline" and tok.map:
+            a, b = tok.map
+            if a < len(offs) and b < len(offs):
+                spans.append((offs[a], offs[b]))
+    _BLOCK_SPANS[text] = spans
+    return spans
+
+
+def paragraph_ends_between(text: str, start: int, end: int) -> bool:
+    """Does a BLOCK boundary fall between these offsets? ⛔ THE PARSER ANSWERS, not this file.
+
+    ⤳ backlog #267, decided 2026-10-12. The name and signature are unchanged on purpose: this is a
+    DROP-IN for ~224 lines of hand-derived block rules — six regexes and four functions — that
+    produced a finding in NINE consecutive review rounds, each fix individually correct and each
+    followed by another shape. A code span may not cross a block boundary; the parser already knows
+    where blocks are; deriving that again by hand was the mistake.
+
+    ⚠ MEASURED BEFORE THE SWAP WAS TAKEN, at `0792dcab`: 1,806 documents, 95,786 figures, ZERO
+    verdict differences — with a KNOWN-POSITIVE CONTROL first, because this file has shipped six
+    false zeros and each one stopped the next round looking. The control flips the open lenient
+    class (a block start between an outer and inner list column) from suppressed to live, and
+    agrees on the handled column and on an ordinary wrapped span. So the zero is a property of the
+    corpus, not of the instrument.
+
+    ⚠ AN OFFSET IN NO INLINE BLOCK ENDS THE SPAN. A backtick inside a fenced or indented code
+    block delimits nothing, which is the r5 L1 deviation this swap closes — 597 span-level
+    disagreements with cmark over 121 files, documented and carried for five rounds.
+    """
+    for s0, e0 in inline_block_spans(text):
+        if s0 <= start < e0:
+            return end >= e0
+    return True
 
 
 def mask_inline_code(text: str) -> str:
@@ -1608,14 +1483,15 @@ def self_test() -> int:
          "`\\d{1,9}`, and narrowing it to one digit leaves every other case in this file green",
          _marker_at("999) the count was `wrong:\n     # h\n"
                     "     holds 1,414 anchors today`"), ""),
-        ("...while a TAB AT COLUMN 0 is FOUR columns of indent, so the whole document is an "
-         "INDENTED CODE BLOCK and there is no paragraph for the span rule to be about. ⚠ THIS "
-         "CASE PINS CURRENT BEHAVIOUR AND IS NOT A CLAIM THAT THE ANSWER IS RIGHT: the two "
-         "parsers report `no inline code`, which the oracle construction reads as a boundary, but "
-         "here it means `no paragraph at all`. It is cased so a future fence/code-aware rewrite "
-         "moves it DELIBERATELY rather than silently (r8 Claude CANNOT RUN 5)",
+        ("⭐ ...and a TAB AT COLUMN 0 is FOUR columns of indent, so the whole document is an "
+         "INDENTED CODE BLOCK with no paragraph in it at all — the parser reports ZERO inline "
+         "blocks, no span forms, and the figure is reported LIVE. ⟳ MOVED DELIBERATELY by the "
+         "#267 parser swap, which is the whole reason this case existed: its previous expectation "
+         "was `'was '`, and its own name said *THIS CASE PINS CURRENT BEHAVIOUR AND IS NOT A CLAIM "
+         "THAT THE ANSWER IS RIGHT*. The hand-rolled version suppressed a figure inside a code "
+         "block; the parser does not, because there is nothing there to suppress it with",
          _marker_at("\tthe count was `wrong:\n\t    # h\n\t    holds 1,414 anchors today`"),
-         "was "),
+         ""),
         ("...and a 3-space-indented paragraph at TOP LEVEL gains no container, so a block start "
          "needs the usual cap and this stays a genuine span — the clause must not turn a legal "
          "paragraph indent into a list content column",
@@ -1772,10 +1648,12 @@ def self_test() -> int:
          mask_inline_code("`a \\` b` c"), "`ax\\` b` c"),
         ("⛔ r5: ...so the figure after it is a SURVIVOR, where extending the span suppressed it",
          _marker_at("`a \\` the count was wrong:\n1,414 anchors`"), ""),
-        ("⚠ r5 L1 STATED BEHAVIOUR: single backticks INSIDE a fenced block DO pair, so the mask "
-         "reaches into fenced code — 597 span-level disagreements with cmark over 121 files, no "
-         "verdict change measured. Pinned so a fence-aware rewrite moves it on purpose",
-         mask_inline_code("```md\nsee `a b` here\n```"), "```md\nsee `axb` here\n```"),
+        ("⭐ single backticks inside a FENCED block do NOT pair, because a fenced block is not "
+         "inline content and the parser reports no inline span there. ⟳ MOVED DELIBERATELY by the "
+         "#267 parser swap, and this is the deviation it was written to outlive: r5 L1 recorded "
+         "that the hand-rolled mask reached INTO fenced code — **597** span-level disagreements "
+         "with cmark across 121 files — pinned, carried for five rounds, and closed here",
+         mask_inline_code("```md\nsee `a b` here\n```"), "```md\nsee `a b` here\n```"),
         ("...while an escaped backtick in PROSE still cannot OPEN one, which is the r5 Codex half "
          "of the same rule and must not be lost to this fix",
          _marker_at("the count was \\`wrong:\n holds 1,414 anchors today \\`"), ""),
