@@ -56,7 +56,7 @@ EXIT CODES: 0 = ok, or survivors in warn mode · 1 = survivors under `--strict` 
 USAGE
     python3 scripts/check-withdrawal.py --base origin/master
     python3 scripts/check-withdrawal.py --base origin/master --strict
-    python3 scripts/check-withdrawal.py --self-test        # 175 cases, pure, no git
+    python3 scripts/check-withdrawal.py --self-test        # 179 cases, pure, no git
 
 ⚠ THE COUNT ABOVE IS VERIFIED BY RUNNING IT (`scripts/check-selftest-counts.py`).
 """
@@ -581,6 +581,12 @@ class ParserUnavailable(RuntimeError):
     """
 
 
+# ⛔ markdown-it's OWN line-break rule, copied from `rules_core/normalize.py`. Not
+# `str.split("\n")` and not `str.splitlines()` — both were tried and both were wrong, in
+# opposite directions (r10 Codex M1, r10 Claude H2).
+PARSER_NEWLINE = re.compile(r"\r\n?|\n")
+
+
 _BLOCK_SPANS: dict[str, list[tuple[int, int]]] = {}
 
 
@@ -603,16 +609,19 @@ def inline_block_spans(text: str) -> list[tuple[int, int]]:
     hit = _BLOCK_SPANS.get(text)
     if hit is not None:
         return hit
-    # ⛔ r10 Codex M1 — `splitlines()` IS THE WRONG RULER HERE. It breaks on VT, FF, NEL, U+2028
-    # and U+2029 as well as `\n`; markdown-it counts only `\n`, so any of those five shifted every
-    # later line number and the span came back pointing at the wrong text. Measured: a VT in the
-    # lead-in made the guard MISS a genuine code span and turn a suppressed figure into a false
-    # survivor. The ruler must be the parser's, not Python's.
-    offs, pos = [], 0
-    for line in text.split("\n"):
-        offs.append(pos)
-        pos += len(line) + 1
-    offs.append(len(text))
+    # ⛔ THE RULER MUST BE THE PARSER'S OWN, AND IT TOOK TWO WRONG ONES TO GET HERE.
+    # r10 Codex M1: `splitlines()` breaks on VT, FF, NEL, U+2028 and U+2029 as well, which the
+    # parser does not, so any of those five shifted every later line number — measured, a VT made
+    # the guard miss a real code span. ⛔⛔ r10 Claude H2: the fix for that said "markdown-it counts
+    # only \n" and used `split("\n")`. ALSO WRONG, and wrong in the EXPENSIVE direction. The
+    # parser normalises with `NEWLINES_RE = \r\n?|\n` BEFORE parsing, so a lone `\r` IS a line
+    # break to it and is not to `split`. Its line map then counts normalised lines while the
+    # offsets indexed raw text, every offset after the first `\r` was wrong, and the block list
+    # collapsed. MEASURED against cmark with an LF control: on lone-CR documents `splitlines` was
+    # 0 lenient / 0 noisy and `split("\n")` was 7 LENIENT / 3 noisy of 10.
+    # ⤳ So neither of Python's rulers is the parser's. Use the parser's regex itself.
+    starts = [0] + [m.end() for m in PARSER_NEWLINE.finditer(text)]
+    offs = starts + [len(text)]
     spans: list[tuple[int, int]] = []
     for tok in _MD.parse(text):
         if tok.type == "inline" and tok.map:
@@ -646,6 +655,11 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
 
       · an HTML block on a lazy line closing a quote — `> the count was `wrong:\n<span>\n…`
       · a GFM table followed by indented code       — `the count was `wrong:\n    | h |\n| --- |\n…`
+      · a ONE-COLUMN table whose header has NO PIPE — `the count was `wrong:\n| --- |\n…`
+        (r10 Claude H1: `markdown_it/rules_block/table.py` requires a `|` in the header row;
+        cmark does not, because a one-column header is one cell and a pipe-free prose line
+        supplies it. ⚠ UNLIKE THE OTHER TWO THIS NEEDS NO UNUSUAL CONTAINER — it fires at top
+        level with ordinary indentation, which makes it the likeliest of the three to be met.)
 
     cmark SPLITS both; markdown-it reports ONE inline block spanning the whole document, so the
     backticks pair and the boundary is masked. Both are LENIENT — the expensive direction — and on
@@ -663,6 +677,13 @@ def paragraph_ends_between(text: str, start: int, end: int) -> bool:
     worth: the corpus measurement that justified this swap reported 0 verdict differences and did
     not contain these shapes either. The cases below pin all three so a future fix moves them
     DELIBERATELY, and so this bound cannot quietly become folklore.
+
+    ⛔ ONE KNOWN SURVIVOR, UNCOVERED AND SAID SO — r10 Claude H3. Changing this function's start
+    bound from `s0 <= start < e0` to `<=` is behaviour-changing (the reviewer witnessed it) and NO
+    case in this suite distinguishes it; I could not construct a witness either. The entry was
+    written, measured to kill nothing, and REMOVED rather than shipped — an unkillable mutation
+    measures nothing and reads as coverage, which is the defect `--binding` cannot see (#266).
+    A case for an opener sitting exactly at a block's end offset would close it.
 
     ⚠ AN OFFSET IN NO INLINE BLOCK ENDS THE SPAN. A backtick inside a fenced or indented code
     block delimits nothing, which is the r5 L1 deviation this swap closes — 597 span-level
@@ -1458,6 +1479,23 @@ def self_test() -> int:
          "does not end the paragraph either. ⛔ THIS IS THE CASE THAT CAUGHT THE FIRST VERSION OF "
          "THE CLAUSE, which tested the stripped remainder and so fired here too",
          _marker_at("- the count was `wrong:\n  2) x\n  holds 1,414 anchors today`"), "was "),
+        # ── r10 Claude H1/H2: the THIRD divergence, and the RULER that took three attempts.
+        ("⛔ r10 Claude H1: a ONE-COLUMN table whose header carries no pipe is a table to cmark "
+         "and a paragraph to markdown-it, so the span reaches across a real boundary. LENIENT, "
+         "and it needs NO unusual container — top level, ordinary indentation. ⚠ PINS CURRENT "
+         "BEHAVIOUR, NOT A CLAIM THAT IT IS RIGHT",
+         _marker_at("the count was `wrong:\n| --- |\nholds 1,414 anchors today`"), "was "),
+        ("...while a header WITH a pipe is a table to BOTH, so the boundary is seen and the "
+         "figure is live — the negative that bounds the one above to the pipe-free header",
+         _marker_at("the count was `wrong: |\n| --- |\nholds 1,414 anchors today`"), ""),
+        ("⛔ r10 Claude H2: a LONE CR is a line break to the parser (`NEWLINES_RE = \\r\\n?|\\n` "
+         "normalises before parsing), so the block boundary after it must be seen. Reverting the "
+         "ruler to `split(\"\\n\")` makes this False and went 7 LENIENT of 10 on a CR corpus",
+         _ends_in_span("intro `a\r# h\rb` x"), True),
+        ("...while a VERTICAL TAB is NOT a line break to the parser, so there is no boundary here "
+         "and the span is genuine. `splitlines()` breaks on VT and made this True — the two "
+         "negatives together pin the ruler to the parser's own regex and to neither of Python's",
+         _ends_in_span("intro `a\x0b# h\x0bb` x"), False),
         # ── r10 Codex H3/H4: THE DIVERGENCE FROM cmark THAT THE PARSER SWAP BUYS. Each of these
         # asserts an answer that is LENIENT and that cmark-gfm contradicts. ⛔ THEY PIN CURRENT
         # BEHAVIOUR AND ARE NOT CLAIMS THAT THE ANSWER IS RIGHT — the same device the tab-at-

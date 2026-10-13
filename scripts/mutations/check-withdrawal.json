@@ -388,5 +388,31 @@
     "expect": [
       "⛔ r6: the mask memo ignores the entry an id-KEYED cache would serve, so a recycled address cannot hand one document another's mask"
     ]
+  },
+  {
+    "name": "⛔ r10 Claude H2 — the line ruler goes back to `split(\"\\n\")`, so a LONE CR stops being a line break. The parser normalises `\\r\\n?|\\n` BEFORE parsing, so its line map counts normalised lines while the offsets index raw text: measured 7 LENIENT of 10 on a CR corpus where `splitlines` was exactly correct",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "PARSER_NEWLINE = re.compile(r\"\\r\\n?|\\n\")",
+        "PARSER_NEWLINE = re.compile(r\"\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ r10 Claude H2: a LONE CR is a line break to the parser (`NEWLINES_RE = \\r\\n?|\\n` normalises before parsing), so the block boundary after it must be seen. Reverting the ruler to `split(\"\\n\")` makes this False and went 7 LENIENT of 10 on a CR corpus"
+    ]
+  },
+  {
+    "name": "⛔ r10 Codex M1 — the line ruler goes back to `splitlines()`, which breaks on VT, FF, NEL, U+2028 and U+2029 as the parser does not, shifting every later line number. The two ruler entries pin it from BOTH sides: neither of Python's rulers is the parser's",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    starts = [0] + [m.end() for m in PARSER_NEWLINE.finditer(text)]\n    offs = starts + [len(text)]",
+        "    offs, pos = [], 0\n    for line in text.splitlines(keepends=True):\n        offs.append(pos)\n        pos += len(line)\n    offs.append(pos)"
+      ]
+    ],
+    "expect": [
+      "...while a VERTICAL TAB is NOT a line break to the parser, so there is no boundary here and the span is genuine. `splitlines()` breaks on VT and made this True — the two negatives together pin the ruler to the parser's own regex and to neither of Python's"
+    ]
   }
 ]
