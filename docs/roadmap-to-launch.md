@@ -3073,3 +3073,48 @@ because removing a mechanism is what fixed four of the five:
 
 ⛔ **Sequencing is the owner's call.** PR #371 is NOT CONVERGED and needs round 3; whether Phase 6
 runs before or after it merges changes the shape of the work and is not a mechanical choice.
+
+## ⟳ 2026-10-13 — PHASE 6 RAN, ON A **SECOND** COMPONENT OF THE SAME BRANCH (the mutation harness's child-verdict path)
+
+⚠ **THIS IS NOT THE ARMING ABOVE, AND THE ONE ABOVE IS STILL OPEN.** The 2026-10-07 arming is the
+TEXT-HEURISTIC GUARD FAMILY (#262, #261) and asks *"should this guard family exist in this shape at
+all?"*. Today's is `scripts/check-plan-code.py`'s child-verdict path. Two Phase 6 armings now exist
+on one branch; **one has run and one has not**, and conflating them would retire an unaddressed
+question. #262 and #261 remain unaddressed by today's review.
+
+**Armed by:** rounds 1–11 on PR #371, and answered by the documented test rather than the symptom
+list — `docs/reviews/coordinator/backlog-249-260-r11-thrashing.md` (rewritten during the review it
+armed, because its first version led with the symptom that `review-method.md:137` says never to
+lead with). Two findings are MECHANISM defects by `:195`'s discriminator; the rest are
+branch-coverage and were fixed as such.
+
+**Sequenced by the owner, 2026-10-13**, choosing the review over a twelfth fold.
+
+**The review:** `docs/reviews/architecture-review-2026-10-13.md`.
+
+**The root cause, one sentence:** the harness asserts a cause it cannot read from a child's text, and
+each of eleven fixes moved the claim instead of removing it.
+
+- [ ] **#271 — the FALSE GREEN, and it is the one to do first.** `attributed: True` is recorded over
+      `fails: []` when a suite CRASHES and its entry omits `expect`. Reproduced as a 2×2; cell B is
+      byte-identical to a real kill. Latent at 0 of 1539 entries, and the route in is printed by the
+      harness's own refusal message. ⭐ The remedy is the propagation of an existing decision, not a
+      new one: `control_is_green` is already the mandatory two-clause form for `rc == 0`, with its
+      rationale recorded on 2026-09-03.
+- [ ] **#272 — one combiner guards the separator, its sibling does not, and the unguarded one feeds
+      ATTRIBUTION.** `merged_output` fuses the streams with no separator; the hazard is named in the
+      manifest for `diagnostic_tail`. The only producer of a newline-less stderr today is the
+      harness itself, safe by two accidents.
+- [ ] **#273 — the venv decision is undocumented and `.venv` is NOT git-ignored**, in a repo whose
+      `.gitignore` records two `git add -A` accidents.
+- [ ] **#274 — four places argued a sequencing rule from first principles while
+      `review-method.md` §Iterative Re-Review already owned it.** The remedy is a citation, not a
+      new rule. ⚠ This review's own author was one of the four.
+- [ ] **#275 — the diagnostic's test surface**: 3 property assertions (all the same one) against 9
+      substring assertions, plus `run_suite` now dead in production and a manifest entry naming the
+      wrong function.
+
+⛔ **NOT CLOSED BY THIS REVIEW:** the intermittent `mutation-sweep` failure's root cause (backlog
+#270) — it did not recur at `ff5b10f7` or `7b88ced8`, so it is NOT DIAGNOSED, not fixed. And
+**convergence**: PR #371 is 0 of 2, zero in eleven rounds, and `verify` is red only on the
+final-tree gate, which nothing but a round over the final tree can clear.
