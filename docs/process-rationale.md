@@ -357,36 +357,70 @@ read-only session does not consume the next one's note.
 
 ### The handoff rule that was true of one mode
 
-⟳ **2026-10-13 — THE FOUR LINE NUMBERS THAT USED TO SIT IN THE PARAGRAPH ABOVE WERE STALE BY
-370–870 LINES, AND SO WERE THE COPIES IN THREE OTHER FILES.** Measured against the **0.33.0** hook,
-which is **2,027 lines**: `REMEMBER_HANDOFF` is at `:1171`, the `=== LAST HANDOFF ===` emit at
-`:1666`, the delivery record at `:1571-1640`, the external-mode hint at `:1546`. The citations
-(`:795`, `:809-812`, `:814-825`, `:800-802`) pointed into the wrong third of the file.
+⟳ **2026-10-13 — FIVE sibling documents cited LINE NUMBERS inside a vendored file, and the vendor
+shipped a new version.** Measured against the **0.33.0** hook, which is **2,027 lines**:
+`REMEMBER_HANDOFF` is at `:1171`, the `=== LAST HANDOFF ===` emit at `:1666`, the delivery record at
+`:1571-1640`, the hint at `:1546`. The citations were `:795`, `:809-812`, `:814-825`, `:800-802`.
+
+⚠ **THE COUNT WAS PUBLISHED AS FOUR AND IS FIVE — corrected by round 1's Claude half.** The fifth is
+`.agents/skills/handoff/SKILL.md:13`: git-tracked, authored in the **same commit** as the other four
+(`24ff8694`, 2026-08-27), listed as **Layer 3** of this very mechanism in
+[`plugins.md`](plugins.md), and — the part that stings — it is the file the refusal text tells a
+blocked reader to open (`enforce-handoff-path.sh`: `$EDITOR .agents/skills/handoff/SKILL.md`). So the
+branch's own strongest argument applied a second time, to the file the refusal hands you next.
+⭐ **Why it was missed, exactly:** the inventory grep used `grep -r`, which does **not** follow the
+symlink at `.claude/skills/handoff` → `../../.agents/skills/handoff`. `grep -R` finds it. One file,
+two paths — the shape this repo has already paid for once by deleting the only copy of a page.
 
 **The lesson is not "re-derive them" — it is that they should never have been written.** A line
-number in a VENDORED file has **no owner in this repo**: nothing here can hold it, no guard can
-check it, and `npx skills@latest add` or a plugin bump invalidates it silently. This repo already
-records *cite the SYMBOL, not the line* for retrospective figures; a vendored dependency is the
-strongest case of it. ⚠ **And a review half had already flagged exactly this**:
-`docs/reviews/claude/velocity-177-r5-claude.md:161` counted the locators in `docs/plugins.md` and
-named `session-start-hook.sh:795` as one of them. The observation was filed and nothing consumed
-it — the *finding with no row* shape, one layer out.
+number in a VENDORED file has **no owner in this repo**: nothing here can hold it, no guard can check
+it, and `npx skills@latest add` or a plugin bump invalidates it silently. This repo already records
+*cite the SYMBOL, not the line* for retrospective figures; a vendored dependency is the strongest
+case of it. ⚠ ⟳ **An earlier version of this paragraph said a review half "had already flagged
+exactly this" and that is overstated** — `docs/reviews/claude/velocity-177-r5-claude.md:161`
+inventories the locator while discussing the scope of a documentation invariant; it neither
+establishes the citation was stale nor names the vendored-drift class. An earlier *inventory*, not
+an ignored finding.
 
 ⛔ **THE SUBSTANTIVE HALF: the ⛔ RULE in [`plugins.md`](plugins.md) states its path
-unconditionally, and the hook has TWO MODES.** `config_into HANDOFF_MODE ".handoff_mode" "single"`,
-then `per_session` + a resolvable session id gives `remember.<session-id>.md`, otherwise
-`remember.md`. ⭐ **The rule is correct for this install and has never been wrong in practice** —
-the default is `single`, neither settings file configures otherwise, `.remember/` holds only
-`remember.md`, and handoffs are in fact delivered. But *correct here* is not *unconditional*, and
-the condition was unstated. What makes the unconditional sentence safe is the clause that was
-already there for a different reason: **obey the printed `Write next handoff to:` hint whenever one
-appears** — the hook emits it in external mode **or** whenever a per-session path was resolved.
+unconditionally, and the hook has TWO MODES.** `config_into HANDOFF_MODE ".handoff_mode" "single"`
+(`:1164`), then `per_session` + a resolvable session id gives `remember.<session-id>.md`, otherwise
+`remember.md`. ⭐ **The rule is correct for this install** — but ⟳ **the evidence first published for
+that was the WRONG SET**, and the real evidence is stronger. `.handoff_mode` is not read from any
+Claude Code settings file at all; it comes from `$REMEMBER_CONFIG`, a tmpfile deep-merged from
+**three** layers in precedence order — the bundled `<plugin root>/0.33.0/config.json` (only
+`config.example.json` ships), `~/.remember/config.json`, and `<repo>/.remember/config.json`. **All
+three are absent**, so the merge falls to `{}` and the default stands. ⚠ And *".remember/ holds only
+`remember.md`"* described a store that does not exist: it holds ~102 entries, of which exactly one
+matches `remember*` — which was the intended claim and not what the sentence said.
 
-⭐ **The hook refuses to degrade quietly, and that is worth copying.** A `per_session` request with
-no resolvable session id falls back to the shared file and **withholds the hint**, so the transcript
-shows *no hint was given* rather than a namespaced path that never applied. That is
-*cannot-run-is-not-a-pass* implemented in a vendored dependency — the same rule this repo enforces
-in `check-schema-gates.sh` and `check-plan-file-tags.py`.
+⛔⛔ **AND THE "⭐ LESSON" THIS SECTION ORIGINALLY DREW FROM THE HOOK WAS MEASURED FALSE — a Blocking
+in round 1, and the most instructive thing here.** It claimed *"the hook refuses to degrade quietly …
+withholds the hint … cannot-run-is-not-a-pass implemented in a vendored dependency"*. **The hook does
+the opposite.** Driven in an isolated tree varying only `.handoff_mode` and the presence of
+`session_id`, a degraded `per_session` request prints:
+
+```
+=== HANDOFF ===
+Write next handoff to: <…>/.remember/remember.md
+(handoff_mode is "per_session", but no session_id reached this hook -- writing to the shared file above, not a per-session one.)
+```
+
+So there are **three** hint triggers, not two: external mode, per-session, and **degraded**
+per-session — and in the third the path printed IS the shared one.
+
+⭐ **Where the false claim came from is the whole point.** The hook carries a comment at
+`:1153-1163` describing exactly the withholding behaviour that was published — and that comment is
+**stale**. Fifty lines later the hook corrects itself: *"NOT withheld on degrade. An earlier version
+… suppressed the hint outright … That reasoning was wrong … **The honest fix is not silence, it is a
+visible line.** A reviewer of #363 caught this before it shipped."* The code at `:1544` matches the
+second comment. ⛔ **So a correction written to stop citing a vendored file from memory cited that
+file's COMMENT from memory — the same defect with the line number taken out.** Quote the code; a
+comment is a characterisation, and in a dependency it is one nobody here owns either.
+
+⭐ And the true behaviour is the better lesson: **the hook neither goes silent nor lies — it prints
+the real path and a second line saying the mode you asked for did not apply.** Its own history
+records that silence was tried, reviewed and rejected.
 
 **Two general lessons.**
 

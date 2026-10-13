@@ -14824,8 +14824,8 @@ tested, and reverted to a byte-identical 20,204 before being made here.
 ⛔ `NO-REVIEW:` declared — see the PR body for the reason and its bound.
 
 ## 2026-10-13
-Four places in the documentation pointed at a specific line of somebody else's file, and that file
-has since grown by a thousand lines. Every one of those pointers now lands in the wrong place.
+Five places in the documentation pointed at a specific line of somebody else's file, and that file
+has been replaced by a newer version since. Every one of those pointers now lands somewhere else.
 
 The rule they support is important: when a session ends, it writes a note for the next session, and
 that note has to go exactly where the next session will look for it. Once, three such notes were
@@ -14833,18 +14833,21 @@ written to a temporary folder and not one was ever read — the notes were good 
 them. So the rule names the correct destination, and four documents backed it up by citing the line
 of the plugin file that does the reading.
 
-That plugin has been updated since. It is now more than twice as long, and the four citations are
-off by between three hundred and nine hundred lines — they point into a different part of the file
-entirely. Nothing broke, because the destination itself is still right; what rotted was the
-evidence. One of the four is worse than merely stale: it is the message shown to you when the check
-refuses, so the one moment someone most needs to look it up is the moment they were sent to the
-wrong line.
+That plugin has been updated since, and the citations now name lines whose contents are something
+else. How far they moved is not something this work measured — the old copy of the plugin was never
+fetched, so saying it "grew by a thousand lines" would be a guess dressed as a measurement, and an
+earlier version of this entry said exactly that. Nothing broke, because the destination itself is
+still right; what rotted was the evidence. One of the five is worse than merely stale: it is the
+message shown to you when the check refuses, so the one moment someone most needs to look it up is
+the moment they were sent to the wrong line. And a fifth place was missed by the first attempt at
+this fix — the file that same refusal message tells you to go and edit.
 
 The fix removes the line numbers rather than updating them. A line number in a file that belongs to
 somebody else cannot be kept honest here — no check in this project can watch it, and the next
 plugin update silently invalidates it again. The documents now name the thing to search for and
-leave the finding to the reader. A review half had already noticed this exact risk weeks ago and
-nothing was done with the observation.
+leave the finding to the reader. An earlier review had listed one of these pointers while discussing
+something else; this entry first described that as the same problem being spotted and ignored, which
+overstates what that review said.
 
 One real gap turned up alongside the stale numbers. The rule states its destination as if there
 were only one possibility, and the plugin actually has two modes: the ordinary one, and a mode that
@@ -14854,24 +14857,49 @@ never actually been wrong in practice — but it was stated more confidently tha
 already protected it is a sentence that was there for a different reason: if the session start
 prints a destination, use that one. That sentence now says both of the situations that print it.
 
-Worth keeping: the plugin, when asked for per-session notes but unable to work out which session it
-is in, deliberately says nothing rather than naming a destination that was never really in use. That
-is the same discipline this project applies to its own checks — if something could not be measured,
-say so instead of implying it passed.
+One more thing, and it is the part that went wrong. This entry first said the plugin, when asked
+for per-session notes but unable to work out which session it is in, deliberately says nothing
+rather than naming a destination that was never really in use. That is not what it does. Asked to
+check, a reviewer ran the plugin in that exact state: it prints the destination, correctly, and then
+a second line saying the mode you asked for did not apply. Three situations print a destination, not
+two.
+
+Where the wrong claim came from is worth more than the claim. The plugin has a note inside it
+describing the silent behaviour — and that note is out of date. Fifty lines further down the same
+file says so: silence was tried, someone reviewed it, and it was reversed, because going quiet
+reintroduced the very problem the message existed to prevent. The correction was written from the
+out-of-date note instead of from what the program does. A change made to stop quoting a file from
+memory quoted the same file's own commentary from memory.
+
+The real behaviour is the better lesson anyway: it neither goes quiet nor misleads — it tells you
+the true destination and tells you your setting did not take effect.
 
 <!--tech-->
 `docs/plugins.md` (net zero lines — it sits exactly on its 260-line budget, so the correction had to
-replace eight lines with eight), `docs/process-rationale.md` (the account, under a new heading),
+replace five lines with five), `docs/process-rationale.md` (the account, under a new heading),
 `scripts/check-handoff-path.py` (a code comment — invisible to `check-withdrawal`, which globs
 `docs/` only, so it was found by grepping every mention of the hook), and
 `.claude/hooks/enforce-handoff-path.sh` (the refusal text; re-rendered through a stub guard to
 confirm `rc=2` and that nothing in the new lines expands inside its unquoted heredoc).
 
 Measured against `remember` **0.33.0**, a **2,027-line** hook: `REMEMBER_HANDOFF` `:1171`
-(per-session `:1168`, mode selected `:1165`), emit `:1666`, delivery record `:1571-1640`, hint
+(per-session `:1168`, mode selected `:1164`), emit `:1666`, delivery record `:1571-1640`, hint
 `:1546`. The removed citations were `:795`, `:809-812`, `:814-825`, `:800-802`. Mode gate:
 `config_into HANDOFF_MODE ".handoff_mode" "single"` — default `single`, nothing configures
 `per_session` in either settings file, `.remember/` holds only `remember.md`, and delivery is
 observed, so the rule is correct for this install. `docs/reviews/claude/velocity-177-r5-claude.md:161`
 is the prior observation. The historical review doc is left as written — merged review docs are
 records, not things to rewrite.
+
+⟳ **Second commit on this branch**, which the first version of this entry did not mention (round 1
+L4): two memory files — `a-harness-cannot-read-a-cause-from-a-childs-text.md` and
+`a-vendored-line-number-has-no-owner.md` — plus two `MEMORY.md` index rows, batched here per
+`dev-process.md` Phase 5 rather than left in the main checkout's uncommitted pile.
+
+⟳ **Third commit: round 1's fold.** Reviewed by both halves — **1 Blocking, 1 High, 8 Medium, 6
+Low** on a five-file docs change, which is the argument for reviewing docs branches at all. The
+Blocking and the High are both above. ⚠ **CANNOT RUN, and these are not passes** (round 1 L6
+corrected the first disclosure, which named one guard): `check-selftest-counts.py` is red here
+because **two** guards need `node_modules` this worktree lacks — `check-plan-code.py`
+(`HARNESS_TREE` wants `node_modules/typescript`) and `check-paid-caller-arrival.py`
+(`ERR_MODULE_NOT_FOUND`, 12/32). Both are unchanged by this diff and green in CI.

@@ -45,8 +45,14 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # ⟳ 2026-10-13: the LINE NUMBER that stood here (`:795`) is gone — measured stale by 376 lines
 # against the 0.33.0 hook, where that assignment is at `:1171`. A line number in a VENDORED file
 # has no owner in this repo and no guard can check it; `grep -n 'REMEMBER_HANDOFF=' <hook>` can.
-# ⚠ This comment is in CODE, so `check-withdrawal` (which globs `docs/`) cannot see a stale figure
-# here — it was found by grepping every mention of the hook, which is the only thing that would.
+# ⚠ No gate in this repo can see a stale figure HERE: this is a code comment, and the document
+# guards read `docs/`. It was found by grepping every mention of the hook — ⛔ with `grep -R`, not
+# `-r`: `-r` does not follow `.claude/skills/handoff` -> `../../.agents/skills/handoff`, and that
+# symlink hid a FIFTH copy of these locators for half a day (round 1 H1).
+# ⟳ An earlier version of this comment named `check-withdrawal` as the guard that cannot see it.
+# That guard does not exist in this repo at this commit — it lives only on an unmerged branch — so
+# the sentence explaining why nothing caught this named something with no owner here, which is the
+# defect it was describing (round 1 M4).
 CONSUMED_PATH = ".remember/remember.md"
 
 

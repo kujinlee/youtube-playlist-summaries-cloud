@@ -83,8 +83,8 @@ When multiple installed skills can handle the same task, use this table.
 > so it survives truncation, and fingerprinted on CONTENT so a read-only session does not consume the
 > next one's note. ⟳ **2026-10-13: four stale LINE NUMBERS removed — a vendored line has no owner.**
 >
-> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⟳ **TWO triggers,
-> external AND `per_session`**, where this path is NOT read → [`process-rationale.md`](process-rationale.md).
+> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⟳ **THREE triggers**
+> (external, `per_session`, degraded); **NO hint means this rule's path** → [`process-rationale.md`](process-rationale.md).
 
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
 `$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the

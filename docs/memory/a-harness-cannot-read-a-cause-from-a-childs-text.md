@@ -1,6 +1,8 @@
 # A harness cannot read a CAUSE out of a child's text — it can only quote it
 
-**Four consecutive rounds on `check-plan-code.py` (r9–r12, 2026-10-13) had ONE root cause, and an
+⤳ **Provenance:** PR **#371**, branch `backlog-249-260-fixes`, rounds **9–13** of its review (`docs/reviews/{codex,claude}/backlog-249-260-r{9..13}-*.md`); the architecture review is `docs/reviews/architecture-review-2026-10-13.md`. ⚠ Round numbers alone are ambiguous — this repo ran several review subjects on 2026-10-13 — so the branch and the paths are named.
+
+**FIVE consecutive rounds on `scripts/check-plan-code.py` (2026-10-13) had ONE root cause, and an
 architecture review in the middle of them did not stop it:** the harness inferred *why* a child went
 red from text the child controls. Each repair fixed one inference and left the mechanism.
 
