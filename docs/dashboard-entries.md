@@ -14920,6 +14920,15 @@ ticked there.
 ⚠ `docs/dev-process.md` is at 219/220 lines, so its Phase 6 row was deliberately NOT touched —
 taking the last line would force an eviction decision that is the owner's.
 
+⛔⛔ **AND THE HEADLINE CHANGE THIS ENTRY OMITTED (r4 M5): THE DELETION PROCEDURE IS NO LONGER AN
+AUTHORITY.** Round 4 measured it printing **SAFE while deleting destroys the only copy** — it
+hashes the survivor TWICE and never the doomed file — so after five refuted rules in five rounds
+the arming condition was called as THRASHING and the rule was replaced rather than patched a
+sixth time. ⛔ The first replacement was ALSO wrong in the fatal direction (`git diff --quiet
+HEAD` exits 0 on a path matching nothing, so an untracked file read as safe); what ships now
+compares BYTES — `git show HEAD:<path> | shasum` against `shasum <path>` — and FAILS CLOSED,
+measured over 8 of 8 cases including `assume-unchanged`, `skip-worktree` and a tracked symlink.
+
 Batched per `dev-process.md` Phase 5: `docs/memory/verify-the-other-copy-exists-before-deleting.md`
 and `printing-more-evidence-weakens-substring-cases.md`, taken verbatim from branch
 `rescue-two-uncommitted-memories` (which is now superseded and should not be opened as its own PR),

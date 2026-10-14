@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⭐⭐ ASK GIT FIRST: tracked and unmodified ⇒ HEAD holds this content and `rm` CANNOT destroy it, whatever the aliasing; untracked ⇒ git holds nothing and you have no copy. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⭐⭐ ASK GIT, BUT COMPARE BYTES: `git show \"HEAD:$A\" | shasum` against `shasum \"$A\"` — equal ⇒ HEAD holds this exact content and `rm` cannot destroy it, whatever the aliasing; anything else ⇒ CANNOT SAY, treat deletion as destructive. ⛔ NEVER classify the path's state: \"tracked and unmodified\" was my SIXTH rule here and it was fatal — `git diff --quiet HEAD` exits 0 on a path that matches NOTHING, so an untracked file read as safe. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
 metadata:
   node_type: memory
   type: feedback
@@ -23,7 +23,11 @@ The fork never re-emitted — asked directly, it answered *"I never held that pa
 that was false too. **The page was recovered in full from the fork's own transcript**, restored,
 committed and shipped as PR #369. Nothing was lost but the ~1.3 KB of edits made after the write.
 
-## The check — ⛔ VERIFY, NEVER DERIVE
+## The check — ⛔ VERIFY BY COMPARING BYTES; A DERIVATION IS AT MOST A HINT
+
+⚠ r4 L3: this heading said *"VERIFY, NEVER DERIVE"*, which the file then contradicted by
+keeping a `realpath` DERIVATION as a subordinate diagnostic. Narrowed rather than deleted,
+because the ordering it asserts is the part that held.
 
 ⛔⛔ **FOUR `stat`-BASED RULES WERE WRITTEN HERE AND ALL FOUR WERE WRONG, IN BOTH DIRECTIONS.** Each
 was refuted by the next review round: `links=1` alone (said SAFE where deletion destroyed content);
@@ -54,27 +58,57 @@ an attack list that did not include firmlinks, and the hard-link caveat does not
 ⭐ The reversible proof correctly REFUSED that same fixture, which is why the diagnostic stays
 subordinate. ⚠ **Its hard-link verdict is also right for the WRONG reason** — it reports "different real files" for two
 names of ONE inode, because `realpath` returns each name. Correct answer, unsound explanation, so it
-is a DIAGNOSTIC and not the authority. The authority is still the reversible proof, which is the only
-thing that observes CONTENT and survives a race.
+is a DIAGNOSTIC and not the authority. ⛔⛔ **r4 CLAUDE B2 — AND WHAT STOOD HERE —
+*"the authority is still the reversible proof, which is the only thing that observes CONTENT and
+survives a race"* — IS THREE CLAIMS THIS SAME FILE REFUTES TWENTY LINES BELOW, so the demotion
+was written and then not carried through the text a reader actually meets.** The proof is NOT an
+authority (it never hashes A at all), it does NOT survive a race (deterministic interleavings
+produce a destructive SAFE), and it is not the only thing that observes content — the byte
+comparison above does, and fails closed. **Nothing in this note is an authority. The byte
+comparison is the only step whose failure mode is a REFUSAL.**
 ⚠ r3 L2 — and whichever diagnostic you run, QUOTE every path (an unquoted `stat` split a path
 containing spaces and returned rc=1) and print each observation LABELLED: a bare
 `readlink "$A" "$B"` prints ONE unlabelled target and exits 1 without saying which argument
 produced it.
-## ⭐⭐ r4 — ASK GIT FIRST. For TRACKED content this question does not arise at all.
+## ⭐⭐ ASK GIT — BUT COMPARE BYTES, AND NEVER CLASSIFY THE PATH'S STATE
+
+⛔⛔ **r4 CLAUDE B1 — MY FIRST VERSION OF THIS WAS THE SIXTH RULE HERE AND IT WAS WRONG IN THE
+FATAL DIRECTION.** It ran two INDEPENDENT lines, and `git diff --quiet HEAD -- <path>` exits **0
+on a pathspec that matches nothing** — so an **UNTRACKED** file printed *"TRACKED and UNMODIFIED
+— HEAD holds this content"*, which is the state the lost 40KB page was in. Measured, running the
+fence AS SHIPPED: untracked → both lines; a NONEXISTENT path → both lines; `assume-unchanged`
+and `skip-worktree` with the worktree EDITED → *HEAD holds it*, and `rm` then destroyed the
+on-disk text; a tracked SYMLINK → *HEAD holds it*; and tracked-but-MODIFIED printed nothing at
+all, so "three states distinguished" never reproduced either.
+⚠ **And the reason I shipped it: I verified a shell FUNCTION I wrote by hand, with an early
+`return`, instead of the two lines in the fence.** The artifact I tested was not the artifact I
+delivered — so run the fence, from the fence.
+
+⭐ **The replacement observes CONTENT, which is the only thing this note has ever been right
+about, and it FAILS CLOSED:**
 
 ```bash
-git ls-files --error-unmatch -- "$A" >/dev/null 2>&1 || echo 'NOT TRACKED - git holds nothing'
-git diff --quiet HEAD -- "$A" && echo 'TRACKED and UNMODIFIED - HEAD holds this content'
+# Does HEAD hold THIS EXACT CONTENT? Compare BYTES. Never classify the path.
+H=$(git show "HEAD:$A" 2>/dev/null | shasum -a256 | cut -d' ' -f1)
+W=$(shasum -a256 "$A" 2>/dev/null | cut -d' ' -f1)
+if [ -n "$W" ] && [ -n "$H" ] && [ "$H" = "$W" ]
+  then echo "HEAD holds this exact content - deleting the working file cannot destroy it"
+  else echo "CANNOT SAY HEAD HOLDS IT - treat deletion as DESTRUCTIVE"; fi
 ```
 
-Measured, three states distinguished: tracked-and-unmodified, untracked, tracked-but-modified.
-And the decisive one — after `rm` of a tracked, unmodified file, `git show HEAD:<path>` returns
-**byte-identical** content (SHA-256 compared, equal).
+Measured over **8 of 8** cases, fence extracted and run, green control first: tracked+unmodified
+→ holds; untracked → CANNOT SAY; nonexistent → CANNOT SAY; tracked+modified → CANNOT SAY;
+`assume-unchanged`+edited → CANNOT SAY; `skip-worktree`+edited → CANNOT SAY; tracked symlink →
+CANNOT SAY; content in HEAD but dropped from the index → holds.
+⚠ **Its bound, stated:** it errs CONSERVATIVE — a tracked symlink whose target is committed is
+safe to delete and this says CANNOT SAY, because `git show` yields the link TARGET while `shasum`
+follows the link. And it only ever asks about **HEAD**: content living only in another ref, a
+stash or the reflog reads as CANNOT SAY. Both directions are *refuse*, never *permit*.
 
-⭐ **So for committed content the ALIASING QUESTION IS MOOT.** One file under two paths is still
-ONE BLOB in git, and deleting either path cannot destroy it. ⛔ The incident this note exists
-for was an **UNCOMMITTED** file — which is the whole reason it was unrecoverable, and the reason
-the cheapest correct habit is *commit first, then delete*.
+⭐ **When it says HEAD holds the content, the ALIASING QUESTION IS MOOT** — one file under two
+paths is still ONE BLOB, and deleting either path cannot destroy what HEAD already has. ⛔ The
+incident this note exists for was an **UNCOMMITTED** file, which is why it was unrecoverable, and
+the cheapest correct habit remains *commit first, then delete*.
 
 ## ⛔⛔ r4 — AND THE PROOF BELOW IS NOT AN AUTHORITY. FOUR DEFECTS, MEASURED.
 
@@ -135,9 +169,20 @@ version of this block:**
 * it establishes readability **BEFORE** moving anything, so an unreadable-but-present B is a
   **CANNOT RUN** and not the false verdict *"B IS GONE"* (measured: a mode-`000` file produced
   exactly that lie, then exited 0);
-* `$$` in the park name, because the first version **silently clobbered** an existing `.parked`;
-* `mv` success, restore success and readability are each checked **separately**, so an instrument
-  failure can never be rendered as a verdict — the anti-pattern this repository writes down;
+* `$$` in the park name, because the first version **silently clobbered** an existing `.parked`
+  — ⚠ **r3 L4 / r4 L3, RECORDED HERE at last (r4 M1: I called this "recorded" and it was in no
+  delivered text): `$$` is the SHELL's pid, so pasting or sourcing this block reuses one park
+  name within a shell.** The collision guard refuses safely, but an interrupted run then BLOCKS
+  the next attempt in that shell until you move `A.parked.<pid>` yourself;
+* ⚠ **r3 M6 / r4 M5, also RECORDED HERE at last: `exit 1` means BOTH "B vanished" and "B changed
+  for an unrelated reason".** A deterministic unrelated append to B, over a green no-append
+  control, returns *"DO NOT DELETE: B vanished or changed without A"* — attributing to the park
+  a change that had nothing to do with it. A hash difference establishes drift, never its cause;
+* `mv` success, restore success and readability are each checked **separately** — ⛔ **r4 CLAUDE
+  B2: and the clause that stood here, *"so an instrument failure can never be rendered as a
+  verdict"*, is FALSE and is refuted by H1 forty lines above: `shasum`'s exit status is never
+  checked, so a failing hash yields DO NOT DELETE over a readable unchanged B, and a partial
+  result on both calls yields SAFE.** The separation is real; the guarantee was not;
 * directories are **refused**, because a recursive delete has a different blast radius and three of
   the false SAFE verdicts were directory cases;
 * `-L` as well as `-e` on the park name — measured: `[ -e ]` is FALSE for a DANGLING symlink, so an
