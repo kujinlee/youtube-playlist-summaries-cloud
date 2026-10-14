@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 296 cases
+    python3 scripts/check-plan-code.py --self-test          # 297 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -551,10 +551,15 @@ FRAME_LINE = re.compile(r'^[ \t]+File "')
 # ⭐ Each repair was correct about the instance it was given and the next round found another
 # member. The defect was never the predicate — it is that A HARNESS CANNOT DECIDE WHAT A LINE
 # MEANS WHEN THE SUBJECT UNDER TEST WRITES THE LINE. So nothing decides any more:
-# `column_zero_after_frames` reports what the child printed, verbatim, and the caller says it
-# cannot tell. #279 removes the matching completeness claim from the message.
-# CPython's own label for a block it did NOT die of. The discriminator for r11 Claude H1 was
-# already in the stream the rule was reading.
+# `column_zero_after_frames` reports what the child printed — ⛔ r14 M1 withdrew "verbatim" and this
+# site kept it: the lines are `.strip()`ped, so they are a QUOTATION with the surrounding
+# whitespace removed — and the caller says it cannot tell. #279 removes the matching completeness claim from the message.
+# ⛔ r15 Claude M: TWO LINES WERE DELETED HERE. They described `IGNORED_AT_SHUTDOWN` — "CPython's
+# own label for a block it did NOT die of" — and that constant is GONE, so the comment had come to
+# sit above `_TB_HEADER` and read as ITS description, which was false. Provenance: `git log -L`
+# shows the comment and the constant landed in ONE hunk at `7b88ced8`, so deleting one owed the
+# other. `_TB_HEADER` survives only because a case asserts a top-level `SyntaxError` stream does
+# NOT contain it — the CPython behaviour the no-header bound rests on.
 _TB_HEADER = "Traceback (most recent call last):"
 
 
@@ -1270,7 +1275,12 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 144,   # ⛔ r15 (2026-10-13): 147 -> 144, THREE RETIRED WITH
+    "scripts/check-plan-code.py": 145,   # ⭐ r15 CLAUDE (2026-10-13): 144 -> 145, ONE ADDED — the
+                                         # falsifier the SURVIVING sentence did not have. Severing
+                                         # it into the exact claims #279/#280 were filed to delete
+                                         # left 296/296 GREEN over a green control, so the message
+                                         # could be reverted to the refuted claims unnoticed.
+                                         # ⟳ EARLIER THE SAME DAY: 147 -> 144, THREE RETIRED WITH
                                          # THEIR SUBJECT — the shutdown FLAG, the backward scan
                                          # that fed it, and the annotation that printed it are
                                          # all DELETED (r15 H1). A fall of exactly the sanctioned
@@ -3046,9 +3056,11 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                         "rules OUT a traceback this harness can read, and is NOT evidence that "
                         "the suite ran or that its printer is at fault")
             elif heads:
-                said = ("stderr printed these lines at column zero after an indented run that "
-                        "contained at least one line matching `File \"`, in the order the child "
-                        "printed them, each STRIPPED of surrounding whitespace \u2014 "
+                said = ("stderr printed these lines after a run of SPACE-or-TAB-indented lines of "
+                        "which at least one matched `^[ \\t]+File \"`, in the order the child printed "
+                        "them, each STRIPPED of surrounding whitespace \u2014 so a line led by any "
+                        "OTHER whitespace (U+3000, a form feed) ENDS that run and is quoted here "
+                        "with its indent removed, and this does NOT claim column zero \u2014 "
                         + " \u00b7 ".join(heads)
                         + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, "
                           "NOR THAT IT KILLED THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT, NOR "
@@ -3898,6 +3910,18 @@ def _self_test() -> int:
         _okq, _repq, _, _ = run_mutations(_dqp, _q, {"q.py"})
         case("⭐⭐ #280: the report QUOTES the child's column-zero lines, joined",
              any(" · " in r for r in _repq), True)
+        # ⛔⛔ r15 CLAUDE H2 — THE SURVIVING SENTENCE HAD NO FALSIFIER IN EITHER DIRECTION, which the
+        # annotation's deletion caused: the retired case had covered the sentence's PRESENCE, and
+        # once it went, nothing read the text at all. PROVED with a green control (296/296): the
+        # whole sentence was replaced with the exact claims #279/#280 were filed to DELETE —
+        # "CPython SAID THE FOLLOWING KILLED THE CHILD, in reverse order, each one a VALIDATED
+        # exception class" — and the suite stayed 296/296. So the message could be reverted to the
+        # refuted claims and nothing would notice.
+        # ⭐ This case reads the RENDERED report for a phrase only this harness emits. `diagnostic_tail`
+        # dumps raw stderr into the same string, so the phrase must be one a CHILD cannot produce —
+        # which is the trap that made four false wordings pass their own case.
+        case("⭐ r15 H2: the report's own account of WHERE the lines came from is present",
+             any("SPACE-or-TAB-indented" in r for r in _repq), True)
         case("...and both lines are there, in the order the child printed them",
              any(r.index("FIRST_KILLER") < r.index("SHUTDOWN_SECOND")
                  for r in _repq if "FIRST_KILLER" in r and "SHUTDOWN_SECOND" in r), True)
@@ -4161,7 +4185,7 @@ def _self_test() -> int:
                           'def boom(): raise ValueError("ATEXIT_NOISE")\n'
                           'atexit.register(boom)\n'
                           'raise RuntimeError("THE_REAL_KILLER")\n')
-    case("...and an atexit callback is the same shape, by the same label",
+    case("...and an atexit callback is the same shape (the LABEL claim is gone with the flag)",
          column_zero_after_frames(_atex),
          ["RuntimeError: THE_REAL_KILLER", "ValueError: ATEXIT_NOISE"])
     # ⛔⛔ THE COMPOSITE r11 H1 CALLED THE ONE THAT MATTERS: shutdown noise whose message floods
@@ -4213,7 +4237,10 @@ def _self_test() -> int:
     case("...and the fabricated type appears NOWHERE in the headings",
          any("FABRICATED" in _h for _h in column_zero_after_frames(_msgcont)), False)
     # ⚠ The adjacent negative, not an absurd one: ordinary indented progress output. The
-    # predecessor returned `["READY"]` here — an exception heading for a child that
+    # ⛔ r15 Claude M — predecessor returned `[("READY", False)]` here, and my mechanical
+    # tuple-to-string conversion rewrote this HISTORICAL comment into `["READY"]`, which is false:
+    # the predecessor returned TUPLES. A regex applied to a region cannot tell a live expectation
+    # from a sentence ABOUT a dead one. It was an exception heading for a child that
     # raised nothing at all.
     _prog = _child_stderr(
         'import sys\nsys.stderr.write("  connecting\\nREADY\\n")\n')
@@ -6495,7 +6522,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1546)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1547)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

@@ -1885,5 +1885,18 @@
     "expect": [
       "⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped"
     ]
+  },
+  {
+    "name": "⭐⛔ r15 Claude H2 — the report stops saying WHERE the quoted lines came from. Added because the sentence had NO falsifier in either direction after the annotation's deletion: with a green control at 296/296 the whole sentence was replaced with the exact claims #279/#280 were filed to delete and the suite stayed GREEN, so the message could be reverted to the refuted claims unnoticed",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                said = (\"stderr printed these lines after a run of SPACE-or-TAB-indented lines of \"\n",
+        "                said = (\"stderr printed these lines after a run of indented lines of \"\n"
+      ]
+    ],
+    "expect": [
+      "⭐ r15 H2: the report's own account of WHERE the lines came from is present"
+    ]
   }
 ]
