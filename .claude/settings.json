@@ -108,6 +108,26 @@
             "statusMessage": "Checking whether a plan is still mid-execution..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SNAPSHOT_EVENT=stop bash .claude/hooks/snapshot-remember.sh",
+            "statusMessage": "Snapshotting .remember/ into its own local git..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SNAPSHOT_EVENT=session-start bash .claude/hooks/snapshot-remember.sh",
+            "statusMessage": "Snapshotting .remember/ into its own local git..."
+          }
+        ]
       }
     ]
   }
