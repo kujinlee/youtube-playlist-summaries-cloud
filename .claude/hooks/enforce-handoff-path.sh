@@ -82,6 +82,11 @@ CONTENT, so reading one does not consume it.
   (default rg skips ignored files; plain recursive grep does not follow
   symlinks); and outside a repository git grep exits 128 -- an ERROR, not an
   empty result. Compare CONTENT when content matters.
+  r5 CLAUDE H2: and NOT a bare rg -- default rg skips DOT-PREFIXED paths and
+  misses exactly .agents/skills/handoff/SKILL.md and this very file, the two the
+  lesson is about (rg --hidden recovers exactly those two); it also misses a
+  committed BINARY both git legs find. Use rg --hidden or /usr/bin/grep -RSl.
+  And /usr/bin/grep EXPLICITLY: grep is a shell FUNCTION on this machine.
   The assignment itself is REMEMBER_HANDOFF= -- keep the '=', it matches the two
   assignments where the bare name matches 23 lines. This locator is also a
   runnable discovery command (r4 L1: a literal <version> is a shell REDIRECT):
@@ -90,7 +95,7 @@ CONTENT, so reading one does not consume it.
 NOT .remember/handoff.md — nothing reads that name either.
 
 If a session-start block printed 'Write next handoff to: <path>', obey THAT path
--- it is always the right one. THREE things print it. (1) The store directory's
+-- it is always the right one. THREE things print it: (1) a store directory whose
 LEXICAL parent differs, AS TEXT, from the project directory. r5 H2: three LABELS
 for this were each measured false, so this is the MECHANISM and there is no
 fourth label. REMEMBER_ROOT strips trailing slashes, then drops everything after
@@ -100,6 +105,14 @@ symlinks -- and the hint fires iff that string differs from PROJECT_DIR
 Measured on 0.33.0: data_dir=a/b hints; data_dir=notes does NOT; './notes' DOES
 hint although the store is an immediate child; '..' does NOT although the store
 is outside the project; nor does an immediate-child symlink pointing outside.
+r5 CLAUDE H1: AND THE STORE FOLLOWS THE MAIN CHECKOUT IN A LINKED WORKTREE, which
+is why a linked worktree HINTS on default config -- measured 3/3, printing
+<main>/.remember/remember.md, because _resolve_memory_project_dir in
+lib-memory-dir.sh redirects the store (a linked worktree's .git is a FILE). The r5
+fold DELETED this clause from here while withdrawing the false label and never said
+so; it had closed r4 M3, and this repo runs linked worktrees as routine.
+r5 L2: and the test is a DISJUNCTION, so (1) fires when the strings differ -- not
+"iff the hint fires".
 So predict nothing from where the store is -- read the printed path. (2) per_session
 mode (.handoff_mode), where the path is remember.<session-id>.md; and (3) a per_session
 request with no usable session id, where it prints the SHARED file in whatever

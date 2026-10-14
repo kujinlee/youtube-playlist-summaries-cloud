@@ -45,11 +45,12 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 #
 # ⟳ 2026-10-13 — the LINE NUMBER that stood here (`:795`) is GONE. A line number in a VENDORED file
 # has no owner in this repo: no guard can check it and a plugin bump invalidates it silently. What
-# is stable is the SYMBOL and the PATH — `REMEMBER_HANDOFF` in
-# `ls ~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh`
-# — r5 L1: WITH the `ls`. Pasting the bare glob EXECUTES the hook, and with two matches it runs
-# the first script with the second path as its argument; `ls` is the discovery command,
-# where there are TWO assignments: the per-session path, then the shared one.
+# is stable is the SYMBOL and the PATH — `REMEMBER_HANDOFF` in the installed hook, where there
+# are TWO assignments: the per-session path, then the shared one. Discover the path with:
+#     ls ~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh
+# ⚠ r5 L1/L4: WITH the `ls` — pasting the bare glob EXECUTES the hook, and with two matches it
+# runs the first script with the second path as its argument. The `ls` belongs to the COMMAND,
+# not to the sentence: a SYMBOL is not "in" an `ls` invocation, which is what r5 L4 filed.
 # ⚠ HOW FAR it drifted is NOT measured, and the "stale by 376 lines" that stood here is withdrawn —
 # the pre-0.33.0 hook was never fetched (round 2 M3 caught that figure surviving here after being
 # withdrawn in the docs: a withdrawal has a blast radius and mine kept stopping short of it).
@@ -81,7 +82,11 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # CONTENT (an assume-unchanged file lists under all three while git grep returns the stale indexed
 # line), disagreement has innocent causes (ignored, .git, submodules, binary, case-only renames on
 # a case-insensitive filesystem), the filesystem leg's reach is TOOL-SPECIFIC, and outside a repo
-# git grep exits 128 -- an error, not an empty result. Compare CONTENT when content matters;
+# git grep exits 128 -- an error, not an empty result. Compare CONTENT when content matters.
+# r5 CLAUDE H2: and NOT a bare rg -- default rg skips DOT-PREFIXED paths, missing exactly
+# .agents/skills/handoff/SKILL.md and .claude/hooks/enforce-handoff-path.sh (rg --hidden
+# recovers exactly those two), plus a committed binary both git legs find. Use rg --hidden or
+# /usr/bin/grep -RSl, and /usr/bin/grep EXPLICITLY: grep is a shell FUNCTION on this machine;
 # a VENDORED plugin file -> no repo-side search reaches it, so name the SYMBOL and the path.
 #
 # ⚠ No gate in this repo can see a stale figure HERE — this is a code comment and the document
