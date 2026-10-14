@@ -52,19 +52,33 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # the pre-0.33.0 hook was never fetched (round 2 M3 caught that figure surviving here after being
 # withdrawn in the docs: a withdrawal has a blast radius and mine kept stopping short of it).
 #
-# ⛔⛔ NO SEARCH COMMAND IS PRESCRIBED, AND THAT IS THE THIRD VERSION OF THIS COMMENT.
+# ⛔⛔ TWO CORPORA, TWO SEARCHES — AND THIS HEADING IS THE FOURTH VERSION OF IT.
+# ⚠ It read "NO SEARCH COMMAND IS PRESCRIBED" until r4, which was the retired position still
+# standing as the HEADLINE four lines above its own correction — I introduced that in the very
+# commit that fixed the eighth incomplete withdrawal on this branch. The class is the branch's:
+# a correction has a blast radius and mine keep stopping short of it.
 #   v1: `grep -R`  — round 2 measured BSD grep (what macOS ships) treating `-R` exactly like `-r`,
 #                    so it finds NOTHING, while this shell's `ugrep` wrapper does follow symlinks.
-#   v2: `grep -RS` — round 3 measured GNU grep having NO `-S` option at all, and ripgrep rejecting
-#                    `-R`.
-# Each version was verified against the binaries the author happened to have and published for
-# every reader's. ⭐ The repair is to prescribe no flag: name the symbol and the path.
+#   v2: `grep -RS` — round 3 found GNU grep having NO `-S` option at all, and ripgrep rejecting
+#                    `-R`. ⛔ r4 M1: "MEASURED" WAS TOO STRONG. That leg came from GNU's SOURCE
+#                    OPTION TABLE, not a runtime probe — the round could not build the binary and
+#                    said so. The memory file was corrected the same day; THIS COMMENT was not,
+#                    and a code comment is the one surface no document guard reads.
+# Each version was checked against the binaries the author happened to have and published for
+# every reader's. ⛔ r4 M2 — "prescribe no flag" is no longer what this repo does, and leaving it
+# here contradicted the skill, the hook and the memory file. TWO CORPORA, two answers: this repo's
+# TRACKED files -> `git grep -l <string>`, naming the corpus, because it misses untracked, ignored,
+# submodule, nested-checkout and vendored content and reads working-tree not staged content (r4 H1);
+# a VENDORED plugin file -> no repo-side search reaches it, so name the SYMBOL and the path.
 #
 # ⚠ No gate in this repo can see a stale figure HERE — this is a code comment and the document
 # guards read `docs/`. It was found by searching every mention of the hook ACROSS SYMLINKS:
 # `.claude/skills/handoff` is a symlink to `../../.agents/skills/handoff`, one file under two paths,
 # and a recursive search that does not follow it misses a FIFTH copy of these locators — which it
-# did for half a day (round 1 H1). Whether your tool follows symlinks is tool-specific: check.
+# did for half a day (round 1 H1). ⛔ r4: the clause that stood here — "whether your tool follows
+# symlinks is tool-specific: check" — was the RETIRED lesson. For this repo's tracked corpus the
+# symlink question does not arise (`git grep` searches what git tracks); it arises only for
+# content git does not track, which is the case r4 H1 says to name and search separately.
 # ⟳ An earlier version named `check-withdrawal` as the guard that cannot see this. That guard does
 # not exist in this repo at this commit — it lives only on an unmerged branch — so the sentence
 # explaining why nothing caught this named something with no owner here, which is the defect it was

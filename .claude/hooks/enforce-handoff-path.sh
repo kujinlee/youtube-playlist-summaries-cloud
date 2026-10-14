@@ -65,17 +65,22 @@ That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh —
 emitted as '=== LAST HANDOFF ===' and injected BEFORE identity and memory so it
 survives context-preview truncation. Delivery is fingerprinted on the handoff's
 CONTENT, so reading one does not consume it.
-  To find every site in this repo:  git grep -l session-start-hook
-  (no flag needed -- it reads the index, so the symlinked skill file is found too)
+  To inventory this repo's TRACKED files:  git grep -l session-start-hook
+  (no flag needed -- it searches tracked files, so the symlinked skill file is found)
+  r4 H1: that is a CORPUS, not every site. git grep misses untracked and ignored
+  files, submodules, nested checkouts and vendored deps, and it reads tracked
+  WORKING-TREE content (--cached for staged, git grep <commit> for a version).
   The assignment itself is REMEMBER_HANDOFF= -- keep the '=', it matches the two
-  assignments where the bare name matches 23 lines -- in the remember plugin under
-  ~/.claude/plugins/cache/claude-plugins-official/ (one unbroken path, so it pastes).
+  assignments where the bare name matches 23 lines -- here (one unbroken path):
+  ~/.claude/plugins/cache/claude-plugins-official/remember/<version>/scripts/session-start-hook.sh
 
 NOT .remember/handoff.md — nothing reads that name either.
 
 If a session-start block printed 'Write next handoff to: <path>', obey THAT path
--- it is always the right one. THREE things print it: a store outside the project
-directory, WHICH INCLUDES A LINKED GIT WORKTREE; per_session
+-- it is always the right one. THREE things print it: a resolved store root that
+is not the project directory itself -- which INCLUDES a linked git worktree, and
+r4 M3: also a data_dir that moves the root while staying INSIDE the project
+(measured: data_dir=a/b printed <project>/a/b/remember.md); per_session
 mode (.handoff_mode), where the path is remember.<session-id>.md; and a per_session
 request with no usable session id, where it prints the SHARED file in whatever
 store is resolved -- which is NOT always the path above: a data_dir setting moves
