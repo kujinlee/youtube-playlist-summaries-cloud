@@ -234,12 +234,12 @@
     ]
   },
   {
-    "name": "--add appends without rewriting the `of N` totals, so the labels drift",
+    "name": "the of-N total rewrite is skipped on checkbox lines, so the labels drift (r1 H2, retargeted r2 B1)",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    body = _TOTAL_RE.sub(lambda m: f\"{m.group(1)}{m.group(2)}{m.group(3)}{n}{m.group(5)}\", body)\n",
-        "    body = body\n"
+        "            line = _TOTAL_RE.sub(\n                lambda m: f\"{m.group(1)}{m.group(2)}{m.group(3)}{n}{m.group(5)}\", line)\n",
+        "            line = line\n"
       ]
     ],
     "expect": [

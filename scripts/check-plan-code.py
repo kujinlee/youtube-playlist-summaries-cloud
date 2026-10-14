@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 178 cases
+    python3 scripts/check-plan-code.py --self-test          # 179 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -4954,6 +4954,33 @@ def _self_test() -> int:
     # dropped Doing) and `check-plan-progress.py --session-start` (2: the stale branch, and
     # the runner's exit code, which on a SessionStart hook is its delivery).
     case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1417)
+
+    # ⛔⛔ EVERY ANCHOR MUST BIND EXACTLY ONCE ON THE DELIVERED TREE, AND NOTHING CHECKED THAT
+    # CHEAPLY (added 2026-10-14 after r2 B1). An anchor that matches ZERO times is only discovered
+    # by `--mutate`, which reports `anchor NOT FOUND` and `NOT MEASURED` — minutes of work and a
+    # red shard — and a SELF-TEST is where it belongs, because the orphan is a pure property of
+    # (manifest, file) with no mutation run required.
+    # ⚠ THE PREDICATE MATTERS, AND THE ONE I USED FIRST WAS WRONG. Repairing two ambiguous anchors
+    # I had ADDED, I swept for "anchors this branch MULTIPLIED relative to master" — which cannot
+    # see an orphan, because an orphan's count is 0 on BOTH trees. The fix for that Blocking then
+    # orphaned a third anchor, and the next round found it. Count != 1 covers both directions:
+    # 0 is an orphan, 2+ is the ambiguity that makes `--mutate` refuse.
+    # ⚠ Derived here, LOCALLY, because this module has no repo-root constant — and the previous
+    # fix in this very session got burned deriving a root from a file path. This one is the
+    # script's own parent's parent, which is exactly where `scripts/` sits.
+    _repo = pathlib.Path(__file__).resolve().parent.parent
+    _orphans = []
+    for _man in sorted((_repo / MANIFEST_DIR).glob("*.json")):
+        for _e in json.loads(_man.read_text(encoding="utf-8")):
+            _target = _repo / _e["file"]
+            if not _target.is_file():
+                continue
+            _body = _target.read_text(encoding="utf-8")
+            for _find, _ in _e["edits"]:
+                _n = _body.count(_find)
+                if _n != 1:
+                    _orphans.append(f"{_man.name}: {_e['name'][:48]!r} binds {_n} time(s)")
+    case("every manifest anchor binds EXACTLY ONCE on the delivered tree", _orphans, [])
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

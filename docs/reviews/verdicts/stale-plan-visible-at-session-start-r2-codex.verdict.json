@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 9984 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "f0d585365817b4ca9791a9b4500117daf3cd510b",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-session-artifacts/2026-10-13-pr371/briefs/staleplan-r2-codex-brief.md",
+  "reason": "9984 chars",
+  "refused": false,
+  "review": "stale-plan-visible-at-session-start-r2-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
