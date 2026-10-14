@@ -1718,7 +1718,7 @@
     ]
   },
   {
-    "name": "⛔ r11 H1 (retargeted a THIRD time at r15, when the annotation's deletion collapsed the join onto one line) — the report stops QUOTING the child's column-zero lines and gives the reader only the diagnostic window",
+    "name": "⛔ r11 H1 (retargeted a THIRD time at r15, when the annotation's deletion collapsed the join onto one line) — the report stops QUOTING the lines it read from stderr and gives the reader only the diagnostic window",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
@@ -1727,7 +1727,7 @@
       ]
     ],
     "expect": [
-      "⭐⭐ #280: the report QUOTES the child's column-zero lines, joined"
+      "⭐⭐ #280: the report QUOTES the lines it read from stderr, joined"
     ]
   },
   {
@@ -1744,11 +1744,11 @@
     ]
   },
   {
-    "name": "⛔ r11 Claude H2 (retargeted #280) — the NO-LINES world stops naming itself, so a stderr with nothing at column zero is described in words that fit any red suite",
+    "name": "⛔ r11 Claude H2 (retargeted #280) — the NO-LINES world stops naming itself, so a stderr with no quotable line is described in words that fit any red suite",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                said = (\"stderr printed no line at column zero after a frame block, so read the \"\n",
+        "                said = (\"this harness read no line it could quote, so read the \"\n",
         "                said = (\"the suite went red, so read the \"\n"
       ]
     ],
@@ -1884,6 +1884,58 @@
     ],
     "expect": [
       "⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped"
+    ]
+  },
+  {
+    "name": "⛔⛔ r16 CLAUDE H1 (refusal 1 of 4) — the report stops REFUSING to call a quoted line THE EXCEPTION, which is the claim `is_exception_heading` was deleted for",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        + \". \\u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, NOR \"\n",
+        "                        + \". \\u26d4 THIS HARNESS DOES NOT CLAIM NOR \"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+    ]
+  },
+  {
+    "name": "⛔⛔ r16 CLAUDE H1 (refusal 2 of 4) — the report stops REFUSING to claim a quoted line KILLED the child, which is the causal attribution round 14 filed as forged",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                          \"THAT IT KILLED THE CHILD, NOR \"\n",
+        "                          \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+    ]
+  },
+  {
+    "name": "⛔⛔ r16 CLAUDE H1 (refusal 3 of 4) — the report stops REFUSING to attribute the stream to CPYTHON, which is wording #1 — the subject under test writes this stream",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                          \"THAT CPYTHON WROTE ANY OF IT, NOR \"\n",
+        "                          \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+    ]
+  },
+  {
+    "name": "⛔⛔ r16 CLAUDE H1 (refusal 4 of 4) — the report stops REFUSING to say WHERE in the stream the lines sat, which is the whole class of six refuted wordings",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                          \"ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under \"\n",
+        "                          \"the subject under \"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
     ]
   }
 ]

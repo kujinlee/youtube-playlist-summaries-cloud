@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 296 cases
+    python3 scripts/check-plan-code.py --self-test          # 297 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -564,7 +564,7 @@ _TB_HEADER = "Traceback (most recent call last):"
 
 
 def lines_after_frame_runs(stderr: str) -> list[str]:
-    """Every line `stderr` printed immediately AFTER a run of indented lines, in order. PURE.
+    """Lines quoted from `stderr` by the run rule implemented below, in stream order. PURE.
 
     ⛔ r16 M1 — THE NAME AND THIS LINE BOTH SAID "COLUMN ZERO" AND BOTH WERE FALSE. The run test
     reads only `" "` and `"\t"`, so a line led by ANY other whitespace is returned here with that
@@ -617,8 +617,8 @@ def lines_after_frame_runs(stderr: str) -> list[str]:
     ⚠ NO HEADER LITERAL IS USED TO FIND A HEADING. The predecessor keyed on a line equal to
     `Traceback (most recent call last):`, and Python OMITS that header when the MAIN SCRIPT fails
     to compile — so a top-level `SyntaxError`, the likeliest way a blind text substitution kills a
-    suite, returned None exactly where it was needed. A heading is instead *the first line back at
-    the first line BACK OUT of a run of indented frame lines*, which holds with or without a header
+    suite, returned None exactly where it was needed. A heading is instead *the first line that ENDS a
+    run of indented frame lines*, which holds with or without a header
     — ⛔ r16 M1: and NOT "at column zero", which this sentence used to say and which is false for
     any whitespace outside `{" ", "\t"}`.
     ⟳ r15: `_TB_HEADER` is no longer consulted here at all — it was read ONLY by the backward scan
@@ -1285,7 +1285,8 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 144,   # ⛔ r16 (2026-10-13): 145 -> 144, the r15 falsifier RETIRED
+    "scripts/check-plan-code.py": 148,   # ⟳ r16 CLAUDE H1 (2026-10-13): 144 -> 148, one entry per
+                                         # REFUSAL in the disclaimer, which had no falsifier at all
                                          # WITH ITS SUBJECT — it policed a PHRASE, not a claim, and
                                          # the narration it guarded is deleted (six false wordings).
                                          # ⟳ r15 CLAUDE had taken it 144 -> 145, ONE ADDED — the
@@ -3078,16 +3079,21 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 # quoted, because the loop consumes `not lines[i].strip() or ...`. Measured.
                 # \u2b50 Only two clauses ever survived review, so only they remain: the lines keep the
                 # child's ORDER, and each is `.strip()`ped. Everything else is now disclaimed.
-                said = ("stderr printed these lines, in the order the child printed them, each "
+                # \u26d4 r16 M2: and NOT "the order the CHILD printed them" \u2014 `run_suite` reads the
+                # child under universal newlines (`text=True`, no `newline=`), so a lone `\r` is
+                # translated to `\n` and ONE line the child wrote becomes TWO the harness quotes.
+                # The ORDER is the child's; the LINES are this decoder's. Measured.
+                said = ("stderr printed these lines, in stream order, each "
                         "STRIPPED of surrounding whitespace \u2014 "
                         + " \u00b7 ".join(heads)
                         + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, NOR "
-                          "THAT IT KILLED THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT, NOR "
+                          "THAT IT KILLED THE CHILD, NOR "
+                          "THAT CPYTHON WROTE ANY OF IT, NOR "
                           "ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under "
                           "test writes this stream, so every reading of it is a QUOTATION and not "
                           "a measurement")
             else:
-                said = ("stderr printed no line at column zero after a frame block, so read the "
+                said = ("this harness read no line it could quote, so read the "
                         "window \u2014 \u26a0 and note a traceback with NO frames (for example "
                         "under `sys.tracebacklimit = 0`) also lands here")
             report.append(
@@ -3890,7 +3896,7 @@ def _self_test() -> int:
                 "expect": "the value is one"}]
         _okw3, _repw3, _, _ = run_mutations(_dw3p, _w3, {"w.py"})
         case("the no-lines world is named as well, in the redesigned wording",
-             any("printed no line at column zero after a frame block" in r for r in _repw3), True)
+             any("read no line it could quote" in r for r in _repw3), True)
         case("⭐ #280: ...and it states the no-frame traceback BOUND rather than hiding it",
              any("sys.tracebacklimit = 0" in r for r in _repw3), True)
         # ⚠ The pair: this fixture must NOT be read as world one, or the case above passes for
@@ -3917,7 +3923,7 @@ def _self_test() -> int:
             'if __name__ == "__main__":\n'
             '    sys.exit(_self_test())\n')
         # the mutation makes the child die TWICE: a real exception, then a __del__ raise at
-        # interpreter shutdown — so two lines sit at column zero after frame blocks.
+        # interpreter shutdown — so two lines each END a frame run.
         _q = [{"name": "two quoted lines, joined", "file": "q.py",
                "edits": [['def f():\n    return 1',
                           'class _Leaky:\n'
@@ -3928,8 +3934,28 @@ def _self_test() -> int:
                           'def f():\n    return 1']],
                "expect": "the value is one"}]
         _okq, _repq, _, _ = run_mutations(_dqp, _q, {"q.py"})
-        case("⭐⭐ #280: the report QUOTES the child's column-zero lines, joined",
+        case("⭐⭐ #280: the report QUOTES the lines it read from stderr, joined",
              any(" · " in r for r in _repq), True)
+        # ⛔⛔ r16 CLAUDE H1 — THE NARRATION WAS DELETED AND ITS UNCOVERAGE WAS NOT; THE DELETION
+        # ENLARGED THE HOLE. Measured at `e3a61e93` over a green control (296/296): the WHOLE
+        # `said = (...)` block, sentence AND disclaimer, was replaced by the refuted claims
+        # ("CPython SAID THE FOLLOWING KILLED THE CHILD, at column zero after a block it labelled,
+        # in reverse order, each one a VALIDATED exception class") with the join kept, and the
+        # suite stayed 296/296 GREEN. So all six withdrawn wordings could return AND the disclaimer
+        # that is now the reader's only protection could go with them, unnoticed.
+        # ⭐ WHY A PRESENCE TEST IS THE RIGHT SHAPE HERE, three lines from where r16 H2 RETIRED it:
+        # that case policed an ASSERTION, whose truth depends on the world, so its presence proved
+        # nothing about its truth. These four are REFUSALS. A refusal's correctness IS its presence
+        # — "the report refuses to claim causation" is falsified exactly by the refusal's absence.
+        # ⚠ Every token is one THIS fixture's child cannot write (it writes only `FIRST_KILLER`,
+        # `SHUTDOWN_SECOND` and `the value is one`), so `diagnostic_tail`'s raw-stderr dump into the
+        # same report string cannot supply them — the trap that made four false wordings pass.
+        # ⚠ A LIST, not four cases: one mutation per refusal, each killed through this one case.
+        _refusals = ("ANY OF THEM IS THE EXCEPTION", "NOR THAT IT KILLED THE CHILD",
+                     "NOR THAT CPYTHON WROTE ANY OF IT",
+                     "NOR ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED")
+        case("⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately",
+             [any(_t in r for r in _repq) for _t in _refusals], [True, True, True, True])
         # ⛔⛔ r15 CLAUDE H2 — THE SURVIVING SENTENCE HAD NO FALSIFIER IN EITHER DIRECTION, which the
         # annotation's deletion caused: the retired case had covered the sentence's PRESENCE, and
         # once it went, nothing read the text at all. PROVED with a green control (296/296): the
@@ -4173,7 +4199,7 @@ def _self_test() -> int:
     # ⟳ #280's REDESIGN INVERTED THIS CASE, and the inversion is the point. It used to assert
     # `[]` under the name "an INDENTED traceback cannot make a tally line into an exception" —
     # i.e. that the rule CLASSIFIED `0/0 passed` as not-an-exception. Classification is what was
-    # removed. The tally line IS a line the child printed at column zero after a real frame block
+    # removed. The tally line IS a line that ENDS a real frame run
     # (`    File "/x/a.py"` matches `FRAME_LINE`), so it is now REPORTED — and the caller claims
     # nothing about it being an exception, which is the whole repair.
     case("⭐ #280: a tally line after a frame block is REPORTED, not classified",
@@ -4242,7 +4268,7 @@ def _self_test() -> int:
     # marker landed, and one of them had a code comment claiming it was closed.
     _frames_only = _child_stderr(
         'import traceback, sys\ntraceback.print_stack()\nsys.stderr.write("READY\\n")\n')
-    case("⭐⭐ r12 M2: a real FRAME RUN WITH NO HEADING hands the next column-zero line over",
+    case("⭐⭐ r12 M2: a real FRAME RUN WITH NO HEADING hands the line that ENDS it over",
          lines_after_frame_runs(_frames_only), ["READY"])
     case("...so the bound is stated, not defended — the structure rule alone does not reject it",
          any(FRAME_LINE.match(_l) for _l in _frames_only.split("\n")), True)
@@ -4292,7 +4318,7 @@ def _self_test() -> int:
          any("bad-module" in _h for _h in lines_after_frame_runs(_badmod)), True)
     # ⚠ The OTHER direction: a frame-shaped line inside an exception MESSAGE still produces a
     # second entry — and that is now HONEST rather than a defect, because the caller claims only
-    # that the child printed these lines at column zero after a frame block, which it did.
+    # that the child printed these lines, which it did.
     _fakeframe = _child_stderr(
         'raise RuntimeError(\'real\\n  File "fake", line 1\\nValueError: MESSAGE_ONLY\')\n')
     case("⭐ #280: a frame-shaped line INSIDE a message still yields two reported lines",
@@ -6548,7 +6574,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1546)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1550)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

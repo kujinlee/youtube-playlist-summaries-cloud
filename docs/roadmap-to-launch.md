@@ -3082,8 +3082,10 @@ refuted. The redesign removes the claims rather than extending the lists:
 
 * `_is_type_name` and `is_exception_heading` — the two functions that decided what *is* an
   exception from text the child controls — are **DELETED**. Nothing classifies any more.
-* `exception_headings` is renamed **`column_zero_after_frames`**, because the old name was itself
-  the claim.
+* `exception_headings` is renamed — first to `column_zero_after_frames`, and at round 16 to
+  **`lines_after_frame_runs`**, because each old name WAS the claim and ⟳ **the first rename
+  simply restated it** ("column zero" was refuted as wording #5: the run test reads only
+  `" "`/`"\t"`, so any other whitespace is neither at column zero nor treated as indent).
 * the message no longer counts worlds: it says it **cannot tell which** and **does not claim its
   list is complete**, naming the four known producers including r13's fourth.
 
