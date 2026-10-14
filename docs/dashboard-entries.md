@@ -14873,7 +14873,7 @@ claim is, the honest option to offer is a round spent finding out. A list of sma
 the right output for a routine review; for this one, the list has to be audited against the thing
 going wrong before anyone is asked to choose from it.
 
-⚠ And two ways of satisfying that and fixing nothing are written down as refusals: dropping the
+⚠ And THREE ways of satisfying that and fixing nothing are written down as refusals (⟳ r4 M7: this said "two" and described two, while the skill lists three — the third copy of the enumeration round 3 corrected at its two other sites): narrowing the scope, and dropping the
 wording while keeping the behaviour, and the reverse — a rebuild that makes a promise TRUE still
 makes the promise, and is the right answer anyway.
 

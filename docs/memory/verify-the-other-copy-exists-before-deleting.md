@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file. `stat -f %l` was 1 — ⛔ and ⛔ `stat` CANNOT ANSWER THIS — four rules built on it were refuted, in BOTH directions. DERIVE NOTHING: hash the survivor, `mv` the doomed path aside, re-hash, restore. Unchanged ⇒ safe. Any failure is CANNOT RUN, never a verdict. Files only"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⭐⭐ ASK GIT FIRST: tracked and unmodified ⇒ HEAD holds this content and `rm` CANNOT destroy it, whatever the aliasing; untracked ⇒ git holds nothing and you have no copy. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
 metadata:
   node_type: memory
   type: feedback
@@ -46,7 +46,13 @@ RA=$(realpath "$A") && RB=$(realpath "$B") || { echo "CANNOT RUN: does not resol
 echo "A IS the file B resolves to -> DELETING A DESTROYS IT"; exit 1
 ```
 
-⚠ **Its hard-link verdict is right for the WRONG reason** — it reports "different real files" for two
+⛔ **r4 M6 — AND IT IS WRONG ON A NATIVE macOS FIRMLINK PAIR.** For one file reached as
+`/private/tmp/<f>/A` and `/System/Volumes/Data/private/tmp/<f>/A`, both names report the SAME
+inode while `realpath` returns DIFFERENT strings, so the diagnostic prints *"different real
+files -> deleting A leaves B"* and rc=0 — and deleting A made B disappear. So "7 of 7" was over
+an attack list that did not include firmlinks, and the hard-link caveat does not cover them.
+⭐ The reversible proof correctly REFUSED that same fixture, which is why the diagnostic stays
+subordinate. ⚠ **Its hard-link verdict is also right for the WRONG reason** — it reports "different real files" for two
 names of ONE inode, because `realpath` returns each name. Correct answer, unsound explanation, so it
 is a DIAGNOSTIC and not the authority. The authority is still the reversible proof, which is the only
 thing that observes CONTENT and survives a race.
@@ -54,7 +60,47 @@ thing that observes CONTENT and survives a race.
 containing spaces and returned rc=1) and print each observation LABELLED: a bare
 `readlink "$A" "$B"` prints ONE unlabelled target and exits 1 without saying which argument
 produced it.
-The decision comes from doing it reversibly and looking:
+## ⭐⭐ r4 — ASK GIT FIRST. For TRACKED content this question does not arise at all.
+
+```bash
+git ls-files --error-unmatch -- "$A" >/dev/null 2>&1 || echo 'NOT TRACKED - git holds nothing'
+git diff --quiet HEAD -- "$A" && echo 'TRACKED and UNMODIFIED - HEAD holds this content'
+```
+
+Measured, three states distinguished: tracked-and-unmodified, untracked, tracked-but-modified.
+And the decisive one — after `rm` of a tracked, unmodified file, `git show HEAD:<path>` returns
+**byte-identical** content (SHA-256 compared, equal).
+
+⭐ **So for committed content the ALIASING QUESTION IS MOOT.** One file under two paths is still
+ONE BLOB in git, and deleting either path cannot destroy it. ⛔ The incident this note exists
+for was an **UNCOMMITTED** file — which is the whole reason it was unrecoverable, and the reason
+the cheapest correct habit is *commit first, then delete*.
+
+## ⛔⛔ r4 — AND THE PROOF BELOW IS NOT AN AUTHORITY. FOUR DEFECTS, MEASURED.
+
+It is kept for **UNCOMMITTED** content only, as ONE observation among several, and it is
+**deliberately NOT patched a fifth time** — four classification rules and then this verification
+rule have each been refuted by the round after the one that wrote them, which is this
+component's THRASHING signal, and a fifth version is the move that signal exists to stop.
+
+* ⛔⛔ **B1 — it hashes `B` TWICE and never `A`.** So it proves only that B did not change while
+  A was parked; it never establishes that B holds A's content. Measured: with B an UNRELATED
+  file, and with B EMPTY, it prints **SAFE rc=0** and deleting A destroys the only copy. That is
+  the direction that cost the 40KB page.
+* ⛔ **B2 — the restore window admits a destructive SAFE and a silent overwrite**, by
+  deterministic interleaving rather than a timing race: replace B with a symlink to A just
+  before the restore and it still prints SAFE; create new content at A after the destination
+  check and the restore silently overwrites it. So *"survives a race"* and *"never overwrite
+  anything"* both exceed what the code does.
+* ⛔ **H1 — `shasum`'s exit status is never checked**, so a failing instrument becomes a verdict
+  in BOTH directions: a hash exiting non-zero with no output gives **DO NOT DELETE** over a
+  readable unchanged B, and one printing a partial result on both calls gives **SAFE**. The
+  claim *"any failure is CANNOT RUN, never a verdict"* is therefore false.
+* ⛔ **H2 — there is still no `trap`**, so a signal immediately after the park leaves the
+  original renamed to `A.parked.<pid>` with NO output at all. Round 3's L2 filed this and the
+  round-3 fold dropped it silently.
+
+The block below is unchanged from the version those measurements were taken against:
 
 ```bash
 #!/bin/bash
