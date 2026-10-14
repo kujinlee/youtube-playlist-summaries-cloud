@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 5919 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "2c33738c26999f5b46b6c64149a0102c199d6535",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-session-artifacts/2026-10-13-pr371/briefs/r16-codex-brief.md",
+  "reason": "5919 chars",
+  "refused": false,
+  "review": "backlog-249-260-r16-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
