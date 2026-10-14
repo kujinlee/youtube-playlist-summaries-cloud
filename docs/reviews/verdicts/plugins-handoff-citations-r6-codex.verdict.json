@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 11566 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "dd595394acbbcb24a950f745d555e8624781ca22",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-session-artifacts/2026-10-13-pr371/briefs/docs-r6-codex-brief.md",
+  "reason": "11566 chars",
+  "refused": false,
+  "review": "plugins-handoff-citations-r6-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
