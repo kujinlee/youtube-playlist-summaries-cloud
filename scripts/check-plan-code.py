@@ -3028,8 +3028,8 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                         "lines, in the order the child printed them, each STRIPPED of "
                         "surrounding whitespace \u2014 "
                         + " \u00b7 ".join(
-                            h + (" [the line INTRODUCING that run began 'Exception ignored"
-                                 " in', which the CHILD wrote]" if ig else "")
+                            h + (" [a line ABOVE that run began 'Exception ignored in',"
+                                 " which the CHILD wrote]" if ig else "")
                             for h, ig in heads)
                         + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, "
                           "NOR THAT IT KILLED THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT: the "
@@ -3903,9 +3903,18 @@ def _self_test() -> int:
         # the backward scan looks past every blank and header, so 42 lines back is reachable.
         # ⭐ The sting: this very `_q` fixture PRINTS THE REFUTATION three lines under the
         # claim, because `diagnostic_tail` dumps the raw stderr into the same string.
-        # The wording now states what the code computes: the line INTRODUCING the run.
+        # ⛔⛔ AND THE THIRD WORDING WAS WRONG TOO — I CAUGHT THIS ONE MYSELF, BEFORE ROUND 15,
+        # WHICH IS THE FIRST TIME TODAY. It said "the line INTRODUCING that run". In the
+        # canonical shape this annotation exists for, CPython prints the label, THEN a bare
+        # `Traceback (most recent call last):`, THEN the frames — so the line immediately
+        # introducing the run is the HEADER, and `intro` deliberately skips past it (see the
+        # backward scan's `!= _TB_HEADER` test). Measured on that exact stream: the run is at
+        # index 2, its introducing line is index 1, and `intro` is index 0.
+        # ⭐ So the wording claims only what is true BY CONSTRUCTION: `intro` sits at an index
+        # strictly below the run's start, i.e. somewhere ABOVE it. Four wordings, and the only
+        # one that survives is the one that asserts the least.
         case("...and the harness's OWN note is there, in text raw stderr cannot supply",
-             any("the line INTRODUCING that run began" in r for r in _repq), True)
+             any("a line ABOVE that run began" in r for r in _repq), True)
 
     # ⛔⛔ r12 Codex H3 — THE FIFTH WORLD: A CRASH THAT FORGES ITS OWN `[FAIL]` LINE. The 2x2
     # that closed #271 covers a crash parsing to NO failures; this is the world where the crash

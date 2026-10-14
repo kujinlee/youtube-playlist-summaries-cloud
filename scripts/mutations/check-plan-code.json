@@ -1917,7 +1917,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                            h + (\" [the line INTRODUCING that run began 'Exception ignored\"\n                                 \" in', which the CHILD wrote]\" if ig else \"\")\n",
+        "                            h + (\" [a line ABOVE that run began 'Exception ignored in',\"\n                                 \" which the CHILD wrote]\" if ig else \"\")\n",
         "                            h\n"
       ]
     ],
