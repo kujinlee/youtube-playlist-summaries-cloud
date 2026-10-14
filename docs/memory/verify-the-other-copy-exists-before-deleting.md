@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⛔⛔ NOTHING HERE MAKES DELETING SAFE — THREE RULES IN THREE ROUNDS SAID *safe* WHERE DELETING DESTROYED THE ONLY COPY. You can OBSERVE that HEAD held these bytes a moment ago — `git rev-parse --verify --quiet \"HEAD:$A\"` against `git hash-object -- \"$A\"` — and that is an observation, not permission: A can change between the look and the `rm`, measured. ⭐ If you cannot afford to lose it, DO NOT DELETE IT — `mv` it aside and leave it. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⛔⛔ NOTHING HERE MAKES DELETING SAFE — THREE RULES IN THREE ROUNDS SAID *safe* WHERE DELETING DESTROYED THE ONLY COPY. You can OBSERVE that HEAD held these bytes a moment ago — `git rev-parse --verify --quiet \"HEAD:$A\"` against `git hash-object --no-filters -- \"$A\"` — and that is an observation, not permission: A can change between the look and the `rm`, measured. ⭐ If you cannot afford to lose it, DO NOT DELETE IT — `mv` it aside and leave it. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
 metadata:
   node_type: memory
   type: feedback
@@ -64,8 +64,16 @@ survives a race"* — IS THREE CLAIMS THIS SAME FILE REFUTES TWENTY LINES BELOW,
 was written and then not carried through the text a reader actually meets.** The proof is NOT an
 authority (it never hashes A at all), it does NOT survive a race (deterministic interleavings
 produce a destructive SAFE), and it is not the only thing that observes content — the byte
-comparison above does, and fails closed. **Nothing in this note is an authority. The byte
-comparison is the only step whose failure mode is a REFUSAL.**
+observation fence BELOW does. ⛔⛔ **r5 CLAUDE H1 — AND WHAT STOOD HERE: *"and fails closed"*,
+followed by *"the byte comparison is the only step whose failure mode is a REFUSAL"*. BOTH ARE
+WITHDRAWN.** They are the same assertion `:109` quotes and declares false, sitting twenty lines
+above their own refutation — inside the very paragraph that records *"the demotion was written and
+then not carried through"*, which is that defect happening again to its own account of itself.
+⚠ Their subject no longer exists either: *"the byte comparison"* named a fence round 5 replaced,
+and it was never *above* this line. **Nothing in this note is an authority, no step in it fails
+closed, and NOTHING HERE MAKES DELETING SAFE.**
+⭐ The sweep that missed them was `grep 'FAILS CLOSED'` — case-sensitive, over a lower-case
+survivor. Its known-positive control would have been the survivor itself.
 ⚠ r3 L2 — and whichever diagnostic you run, QUOTE every path (an unquoted `stat` split a path
 containing spaces and returned rc=1) and print each observation LABELLED: a bare
 `readlink "$A" "$B"` prints ONE unlabelled target and exits 1 without saying which argument
@@ -91,7 +99,10 @@ here and is WITHDRAWN, measured false twice below; this block reports what it sa
 # An OBSERVATION, never a permission. No pipes, so every exit status is meaningful.
 HB=$(git rev-parse --verify --quiet "HEAD:$A" 2>/dev/null) \
   || { echo "CANNOT SAY: HEAD has no such path"; exit 2; }
-WB=$(git hash-object -- "$A") || { echo "CANNOT RUN: cannot hash $A"; exit 2; }
+# --no-filters IS LOAD-BEARING: without it `hash-object` applies clean/eol filters, so this
+# printed OBSERVED over bytes HEAD never held — and a delete then destroyed the only copy.
+WB=$(git hash-object --no-filters -- "$A") \
+  || { echo "CANNOT RUN: cannot hash $A"; exit 2; }
 if [ "$HB" = "$WB" ]; then echo "OBSERVED: HEAD held these exact bytes just now"
 else echo "DIFFERENT: HEAD does not hold these bytes"; fi
 ```
@@ -112,8 +123,9 @@ IS WITHDRAWN ALTOGETHER.** Two independent refutations, measured against the shi
 
 ⭐ **So this is a REFUSAL remedy, not an eighth rule** — the reviewer's own disposition. The block
 above reports what it SAW and nothing more: it uses git's own content addressing (`rev-parse`
-and `hash-object`, no pipes, every exit status meaningful), which is why the empty-file collision
-cannot arise — `git hash-object` of an empty file is `e69de29b…` while a missing path makes
+and `hash-object --no-filters`, no pipes, every exit status meaningful), which is why the
+empty-file collision cannot arise — `git hash-object` of an empty file is `e69de29b…` while a
+missing path makes
 `rev-parse` FAIL instead of yielding nothing. Measured 8 of 8, fence extracted and run: tracked
 and unmodified → OBSERVED; a tracked EMPTY file → OBSERVED; empty-untracked, untracked,
 nonexistent → CANNOT SAY; `assume-unchanged`+edited, a tracked symlink, tracked+modified →
@@ -232,8 +244,16 @@ the thing it describes. Filed as backlog #259.
 have triggered. **Tidying that uses `rm` is a delete.** The safe form costs nothing:
 
 ```bash
-mv <path> "$SCRATCH/"   # reversible; rm only once the survivor is confirmed by sha
+mv <path> "$SCRATCH/"   # reversible — and LEAVE it there. Nothing licenses a later `rm`.
 ```
+
+⛔ **r5 CLAUDE H2 — THIS COMMENT USED TO READ *"rm only once the survivor is confirmed by sha"*,
+AND THAT IS WITHDRAWN.** It was the deletion permission intact, in the block a reader reaches last,
+under a heading that reads as this note's safety advice. *Confirmed by sha* is the exact rule round
+5 refuted twice: r3's proof sha-confirmed the survivor and reported SAFE while the only copy was
+destroyed, and a successful hash confirms EARLIER bytes while licensing nothing about later ones.
+It also contradicted `MEMORY.md`'s own row — *"can't lose it? `mv` it aside, don't delete"* — so the
+always-delivered index and this note's closing advice disagreed about whether `rm` was licensed.
 
 Related: [[a-check-result-is-not-the-claim]], [[measure-the-population-the-code-actually-sees]],
 [[discover-the-target-and-read-it-back-uncached]], [[a-declaration-is-not-the-act]].
