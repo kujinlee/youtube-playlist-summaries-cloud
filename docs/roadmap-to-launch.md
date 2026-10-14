@@ -2314,6 +2314,16 @@ only home, and `dev-process.md` requires the roadmap layer too.
       `recall-llm.py` and once in the hook; measured today it is 93 loose-unreadable of 96 tracked.
       `CONTEXT.md`'s precedent is to REMOVE such a figure, not correct it — correcting it re-creates
       the defect at the next commit.
+- [ ] **#284 — a concurrent pair of mutation SHARDS narrows one shard's corpus and still reports OK.**
+      Found 2026-10-14 while verifying an anchor-collision fix. Measured: `--shard0 0/2` +
+      `--shard0 1/2` launched together report **707** and **605** mutations where `shard_slice`
+      returns 707 and **706**; shard 2 never touched `check-main-drivable.py` (183 entries) or
+      `codex-frontier-model.py` (7) and printed `OK … 0 survivor(s)` anyway. Alone on a copy it
+      reports `[n/706]`. ⚠ `review-method.md`'s MEASURED-SAFE row covers *two identical FULL runs*,
+      not two different shards — the operation was never run, which is that section's own rule.
+      ⛔ The cheap first step is a REFUSAL when a shard's executed total differs from
+      `len(shard_slice(...))`; that needs no diagnosis of the cause. CI is probably unaffected
+      (separate jobs per shard); a human measuring locally is not.
 - [ ] **The seam measurement needs provenance.** *"15 of 19 at a seam (78%)"* does not reproduce —
       the filed halves carry 16 Blocking+High. ⛔ The arithmetic is the lesser half: the split came
       from a SINGLE classifier and was then quoted as a measurement. A second classifier is what it
