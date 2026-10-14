@@ -2320,6 +2320,24 @@ only home, and `dev-process.md` requires the roadmap layer too.
       needs, not a corrected denominator. ⚠ The conclusion is unaffected — the seam concentration is
       overwhelming either way.
 
+### One canonical source per mechanism — ARMED BY THRASHING, redesign LANDED 2026-10-14
+
+Phase 6 review: `docs/reviews/architecture-review-2026-10-14-canonical-source.md`. The
+`plugins-handoff-citations` branch produced a drifted copy in five consecutive rounds, each caused
+by the previous round's own fix; the decisive instance was a round-5 correction that reached the
+skill and not the hook, so the hook's refusal printed a claim and its withdrawal together.
+
+- [x] **Two mechanisms collapsed to one file each**, with every live site citing rather than
+      restating — `.agents/skills/shared/handoff-path.md` and `.../corpus-search.md`.
+- [x] **`scripts/check-canonical-source.py`**, wired into `ci.yml`, refusing a missing canon, a
+      duplicated marker, a missing citation and a restatement — each failure mode proved detected,
+      and falsified on a copy over a green control.
+- [x] **Mutation coverage added** rather than debt declared: the inverted-restatement entry kills
+      through the case it names.
+- [ ] **The exempt surfaces are still uncompared** — `docs/dashboard-entries.md` and
+      `docs/reviews/**`; and a mechanism missing from `CANONS` is unprotected. Backlog #282.
+- [ ] **Round 7 is owed on that branch** — it is NOT CONVERGED, and no PR exists by design.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
