@@ -100,9 +100,27 @@ checkout** — a `.git` FILE alone is not sufficient. Measured:
 | **linked worktree, ABSOLUTE `data_dir=<worktree>/localnotes`** | **no hint; the store stays in the worktree** |
 | main checkout moved **without** repair | completes, store local, no hint |
 
-⭐ **So: an absolute `data_dir` bypasses main-relative placement entirely, and a bare-repo worktree,
-a submodule, or an unresolvable main checkout fall back to a local store.** The redirect holds for
-ordinary, resolvable linked worktrees on default configuration.
+⛔⛔ **THE RULE IS ONE CLAUSE, AND THE TABLE ABOVE IS EXAMPLES OF IT RATHER THAN ITS BOUNDARY
+(r6 CLAUDE H1).** The vendor derives a candidate main checkout as **`dirname(git-common-dir)`** and
+redirects **if and only if git confirms THAT directory is inside a work tree**
+(`_resolve_memory_project_dir`: `_main=$(dirname "$_gcd")`, then
+`git -C "$_main" rev-parse --is-inside-work-tree`). Everything below follows from that one sentence,
+and two measured configurations are NOT predictable without it:
+
+* ⛔ **A bare-repository worktree whose bare repo sits inside ANOTHER work tree DOES hint — and it
+  hints somewhere WRONG.** With `hostrepo/nested/bare.git` and a worktree at `hostrepo/nested/wt`,
+  `dirname(common-dir)` is `hostrepo/nested`, which git confirms is inside `hostrepo` — an unrelated
+  repository — so the handoff is written under `hostrepo`, not under the worktree. Measured; the
+  resolved toplevel's HEAD differs from the subject repo's. ⚠ The vendor's own comment says it
+  *"guard[s] against bare-repo worktrees (parent is not a work tree)"* — that is its ASSUMPTION, and
+  this configuration is where the assumption is false. **This is the only case in which the redirect
+  points somewhere wrong rather than merely staying local.**
+* ⛔ **A linked worktree of a `--separate-git-dir` repository does NOT hint**, though it is ordinary
+  and fully resolvable: `dirname(common-dir)` is the *gitdirs* directory, which is not a work tree,
+  so the chain falls through.
+
+⭐ **And the part that is unchanged:** an absolute `data_dir` bypasses main-relative placement
+entirely, and a submodule or an unresolvable main checkout falls back to a local store.
 
 ---
 
