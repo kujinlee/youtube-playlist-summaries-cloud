@@ -23,7 +23,7 @@ The fork never re-emitted — asked directly, it answered *"I never held that pa
 that was false too. **The page was recovered in full from the fork's own transcript**, restored,
 committed and shipped as PR #369. Nothing was lost but the ~1.3 KB of edits made after the write.
 
-## The check — ⛔ VERIFY BY COMPARING BYTES; A DERIVATION IS AT MOST A HINT
+## The check — ⛔ ASK GIT WHAT IT HOLDS; A DERIVATION FROM `stat` IS AT MOST A HINT
 
 ⚠ r4 L3: this heading said *"VERIFY, NEVER DERIVE"*, which the file then contradicted by
 keeping a `realpath` DERIVATION as a subordinate diagnostic. Narrowed rather than deleted,
@@ -78,7 +78,7 @@ survivor. Its known-positive control would have been the survivor itself.
 containing spaces and returned rc=1) and print each observation LABELLED: a bare
 `readlink "$A" "$B"` prints ONE unlabelled target and exits 1 without saying which argument
 produced it.
-## ⭐⭐ ASK GIT — BUT COMPARE BYTES, AND NEVER CLASSIFY THE PATH'S STATE
+## ⭐⭐ ASK GIT — COMPARE BLOB IDS, AND NEVER CLASSIFY THE PATH'S STATE
 
 ⛔⛔ **r4 CLAUDE B1 — MY FIRST VERSION OF THIS WAS THE SIXTH RULE HERE AND IT WAS WRONG IN THE
 FATAL DIRECTION.** It ran two INDEPENDENT lines, and `git diff --quiet HEAD -- <path>` exits **0
@@ -139,96 +139,35 @@ destroyed. ⚠ The incident this note exists for was an **UNCOMMITTED** file, so
 remains the cheapest habit — but committing is what makes recovery POSSIBLE, not what makes a
 delete safe.
 
-## ⛔⛔ r4 — AND THE PROOF BELOW IS NOT AN AUTHORITY. FOUR DEFECTS, MEASURED.
+## ⛔⛔ THE HASH-AND-RESTORE PROCEDURE IS DELETED. Four rounds refuted four versions of it.
 
-It is kept for **UNCOMMITTED** content only, as ONE observation among several, and it is
-**deliberately NOT patched a fifth time** — four classification rules and then this verification
-rule have each been refuted by the round after the one that wrote them, which is this
-component's THRASHING signal, and a fifth version is the move that signal exists to stop.
+**It is gone on purpose, at the owner's decision, and this is the record of why — not a demotion
+of it.** The procedure parked `A`, hashed `B` twice and restored on mismatch, and every version of
+it was refuted by the round after the one that wrote it. It is recoverable from git if it is ever
+wanted: the last text of it is in `3cacc805`, file blob `21758c05`.
 
-* ⛔⛔ **B1 — it hashes `B` TWICE and never `A`.** So it proves only that B did not change while
-  A was parked; it never establishes that B holds A's content. Measured: with B an UNRELATED
-  file, and with B EMPTY, it prints **SAFE rc=0** and deleting A destroys the only copy. That is
-  the direction that cost the 40KB page.
-* ⛔ **B2 — the restore window admits a destructive SAFE and a silent overwrite**, by
-  deterministic interleaving rather than a timing race: replace B with a symlink to A just
-  before the restore and it still prints SAFE; create new content at A after the destination
-  check and the restore silently overwrites it. So *"survives a race"* and *"never overwrite
-  anything"* both exceed what the code does.
-* ⛔ **H1 — `shasum`'s exit status is never checked**, so a failing instrument becomes a verdict
-  in BOTH directions: a hash exiting non-zero with no output gives **DO NOT DELETE** over a
-  readable unchanged B, and one printing a partial result on both calls gives **SAFE**. The
-  claim *"any failure is CANNOT RUN, never a verdict"* is therefore false.
-* ⛔ **H2 — there is still no `trap`**, so a signal immediately after the park leaves the
-  original renamed to `A.parked.<pid>` with NO output at all. Round 3's L2 filed this and the
-  round-3 fold dropped it silently.
+**The four defects, which are the evidence for this note's one claim** — *nothing here makes
+deleting safe*:
 
-The block below is unchanged from the version those measurements were taken against:
+* **B1 — it hashed `B` TWICE and never `A`,** so it proved only that B did not change while A was
+  parked, never that B held A's content. With B unrelated, and with B empty, it printed **SAFE**
+  and deleting A destroyed the only copy. That is the direction that cost the 40KB page.
+* **B2 — the restore window admitted a destructive SAFE and a silent overwrite,** by deterministic
+  interleaving and not a timing race: a symlink swapped in just before the restore still printed
+  SAFE, and content created at A after the destination check was silently overwritten.
+* **H1 — `shasum`'s exit status was never checked,** so a failing instrument became a verdict in
+  BOTH directions: a non-zero hash with no output gave DO NOT DELETE over a readable unchanged B,
+  and a partial result on both calls gave SAFE.
+* **H2 — there was no `trap`,** so a signal just after the park left the original renamed to
+  `A.parked.<pid>` with no output at all.
 
-```bash
-#!/bin/bash
-# $1 = the path you want to delete (A).  $2 = the survivor you believe in (B).
-A="$1"; B="$2"                                   # quoted throughout: paths have spaces
-# ⛔ r3 H1: REGULAR FILES ONLY, and this must come FIRST. `shasum` on a FIFO or a character
-#    device BLOCKS FOREVER — measured rc=137 under a timeout harness, with a green control on a
-#    regular file, and in the one-writer FIFO shape the hang lands AFTER the park, leaving the
-#    original renamed and NO output at all. `-f` refuses FIFOs, devices, sockets, directories
-#    and dangling symlinks in one test.
-[ -f "$A" ] && [ -f "$B" ] || { echo "CANNOT RUN: not both REGULAR files (FIFO/device/dir/dangling)"; exit 2; }
-BEFORE=$(shasum "$B" 2>/dev/null | awk '{print $1}')
-[ -z "$BEFORE" ] && { echo "CANNOT RUN: B unreadable BEFORE anything moved — nothing tested"; exit 2; }
-PARKED="$A.parked.$$"
-# ⛔ -L as well as -e: `[ -e ]` is FALSE for a DANGLING symlink, and `mv` would overwrite it
-{ [ -e "$PARKED" ] || [ -L "$PARKED" ]; } && { echo "CANNOT RUN: $PARKED already exists"; exit 2; }
-mv "$A" "$PARKED" 2>/dev/null || { echo "CANNOT RUN: mv failed — nothing tested"; exit 2; }
-AFTER=$(shasum "$B" 2>/dev/null | awk '{print $1}')
-# ⛔ never overwrite anything that appeared at A while we were looking
-if [ -e "$A" ] || [ -L "$A" ]; then
-  echo "⛔ NOT RESTORED: something NEW is at $A. Your original is at $PARKED — merge by hand"; exit 2
-fi
-mv "$PARKED" "$A" 2>/dev/null || { echo "⛔ RESTORE FAILED — your original is at $PARKED"; exit 2; }
-if [ -n "$AFTER" ] && [ "$BEFORE" = "$AFTER" ]; then echo "SAFE: B unchanged without A"; exit 0
-else echo "⛔ DO NOT DELETE: B vanished or changed without A"; exit 1; fi
-```
+⭐ **And the generalisation, which is why no fifth version was written:** every one of these
+observes the file at an instant, and the `rm` destroys it in the interval AFTER that instant. There
+is no stability boundary to observe, so the defect is not in any of the four rules — it is in the
+idea that an observation can license a deletion. The replacement above observes and permits
+nothing, and the advice that has no false-permit mode is the one in `MEMORY.md`: **if you cannot
+afford to lose it, `mv` it aside and leave it.**
 
-⭐ **Why each line is there — every one of them is a defect a review round found in an earlier
-version of this block:**
-
-* it **hashes** B rather than testing existence — ⛔ **r5 M1: and the clause that stood here,
-  "so a replacement race … is caught", is WITHDRAWN.** This same note's B2 describes the
-  replacement interleaving that defeats it: hashing observes earlier bytes and says nothing
-  about later ones. Hashing beats an existence test; it does not catch a race;
-* it establishes readability **BEFORE** moving anything, so an unreadable-but-present B is a
-  **CANNOT RUN** and not the false verdict *"B IS GONE"* (measured: a mode-`000` file produced
-  exactly that lie, then exited 0);
-* `$$` in the park name, because the first version **silently clobbered** an existing `.parked`
-  — ⚠ **r3 L4 / r4 L3, RECORDED HERE at last (r4 M1: I called this "recorded" and it was in no
-  delivered text): `$$` is the SHELL's pid, so pasting or sourcing this block reuses one park
-  name within a shell.** The collision guard refuses safely, but an interrupted run then BLOCKS
-  the next attempt in that shell until you move `A.parked.<pid>` yourself;
-* ⚠ **r3 M6 / r4 M5, also RECORDED HERE at last: `exit 1` means BOTH "B vanished" and "B changed
-  for an unrelated reason".** A deterministic unrelated append to B, over a green no-append
-  control, returns *"DO NOT DELETE: B vanished or changed without A"* — attributing to the park
-  a change that had nothing to do with it. A hash difference establishes drift, never its cause;
-* `mv` success, restore success and readability are each checked **separately** — ⛔ **r4 CLAUDE
-  B2: and the clause that stood here, *"so an instrument failure can never be rendered as a
-  verdict"*, is FALSE and is refuted by H1 forty lines above: `shasum`'s exit status is never
-  checked, so a failing hash yields DO NOT DELETE over a readable unchanged B, and a partial
-  result on both calls yields SAFE.** The separation is real; the guarantee was not;
-* directories are **refused**, because a recursive delete has a different blast radius and three of
-  the false SAFE verdicts were directory cases;
-* `-L` as well as `-e` on the park name — measured: `[ -e ]` is FALSE for a DANGLING symlink, so an
-  earlier version would have silently overwritten one sitting at that exact name;
-* it refuses to restore over **anything new at A** that exists AT THE MOMENT OF THE CHECK, and
-  names where your original is parked — an earlier version silently overwrote a file created
-  during the read and still exited 0. ⛔ **r5 M1: the unqualified promise is WITHDRAWN** — B2
-  measured new content created AFTER the destination check and silently overwritten by the
-  restore, so the check bounds a moment, not the interval;
-
-**Measured 7 of 7 on the cases that defeated the four rules it replaces** — two independent files
-(SAFE), B a symlink to A (REFUSE), A a symlink to B (SAFE — correctly asymmetric), B dangling
-(CANNOT RUN), B mode `000` (CANNOT RUN), A hard-linked elsewhere with B reached through a symlinked
-parent (REFUSE), and a genuine hard-link pair (SAFE).
 ## ⭐ The transferable rule, which is not about symlinks
 
 **A document's claim about the filesystem is a claim, and `rm` is irreversible.** The contract asserted
