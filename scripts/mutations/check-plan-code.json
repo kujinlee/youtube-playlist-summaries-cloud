@@ -1718,12 +1718,12 @@
     ]
   },
   {
-    "name": "⛔ r11 H1 (retargeted #280, EXPECT corrected after it SURVIVED) — the report stops QUOTING the child's column-zero lines and gives the reader only the diagnostic window",
+    "name": "⛔ r11 H1 (retargeted AGAIN at r14 — the #280 redesign moved this line) — the report stops QUOTING the child's column-zero lines and gives the reader only the diagnostic window",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                        + \" \\u00b7 \".join(h + (\" [after a block CPython labelled 'Exception \"\n",
-        "                        + \"\" .join(h + (\" [after a block CPython labelled 'Exception \"\n"
+        "                        + \" \\u00b7 \".join(\n",
+        "                        + \"\".join(\n"
       ]
     ],
     "expect": [
@@ -1910,6 +1910,19 @@
     ],
     "expect": [
       "⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped"
+    ]
+  },
+  {
+    "name": "⭐⛔ r14 H1 — the harness's OWN note about the child's preceding line is removed, so the report quotes the lines and says NOTHING about what introduced them. Added because severing this annotation left 298/298 GREEN: its only cover asserted `Exception ignored in`, a phrase CPython writes and `diagnostic_tail` carries into the same string, so the case credited the harness for the CHILD's text",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                            h + (\" [its own preceding line began 'Exception ignored in',\"\n                                 \" which the CHILD wrote]\" if ig else \"\")\n",
+        "                            h\n"
+      ]
+    ],
+    "expect": [
+      "...and the harness's OWN note is there, in text raw stderr cannot supply"
     ]
   }
 ]

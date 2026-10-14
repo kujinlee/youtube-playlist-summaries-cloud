@@ -534,7 +534,11 @@ FRAME_LINE = re.compile(r'^[ \t]+File "')
 # ⛔⛔⛔ #280 — THE VALIDATOR THAT DECIDED WHAT *IS* AN EXCEPTION IS GONE, and that is the fix the
 # owner chose (2026-10-13, option A: REDESIGN). Two functions stood here — `_is_type_name` and
 # `is_exception_heading` — and between them they tried to answer "is this line an exception?" from
-# text the child controls. Five consecutive review rounds (9-13) refuted whatever answer they gave:
+# text the child controls. ⛔ r14 L2 CORRECTED THIS SENTENCE: it said "five consecutive review
+# rounds (9-13)", and the list below is FIVE REFUTED ANSWERS ACROSS THREE ROUNDS — 11, 12 and
+# 13, two of them in r11 and two in r12. #281's own honest bound is witnessed from 11, because
+# rounds 9-10 concern withdrawal and parser problems in a different component. Five examples is
+# not five rounds, and the rounds do not start at 9:
 #
 #   r11  keyed on the `Traceback` header         -> a top-level SyntaxError omits it, returned None
 #   r11  took the FIRST block                    -> a raise-from chain named the cause, not the killer
@@ -556,7 +560,15 @@ _TB_HEADER = "Traceback (most recent call last):"
 
 
 def column_zero_after_frames(stderr: str) -> list[tuple[str, bool]]:
-    """Every exception line `stderr` names, in order: `(heading, ignored_at_shutdown)`. PURE.
+    """Every line `stderr` printed at COLUMN ZERO after a frame block, in order. PURE.
+
+    Each element is `(line, preceded_by_the_ignored_label)`. ⛔ r14 H1 — NEITHER FIELD IS A
+    CLAIM ABOUT WHAT THE LINE IS. The first is the line STRIPPED of surrounding whitespace, not
+    an "exception line": this returns no verdict on whether any of them is an exception, which
+    is what #280 removed. The second says only that the nearest preceding non-blank line began
+    `Exception ignored in` — and THE CHILD WROTE THAT LINE, so it is not evidence CPython
+    labelled anything. A child raising `RuntimeError("Exception ignored in FORGED\n  File ...")`
+    sets it. The caller renders it as the child's own preceding text for exactly that reason.
 
     ⛔ THIS MAKES NO CAUSAL CLAIM, AND THAT IS THE FIX — r11 Claude H1. Its predecessor returned
     ONE heading and the caller announced *"the child DIED with"* it, picking the LAST traceback
@@ -1245,7 +1257,14 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 146,   # ⟳⟳ #280 (2026-10-13, the owner chose REDESIGN):
+    "scripts/check-plan-code.py": 147,   # ⭐ r14 (2026-10-13): 146 -> 147, ONE ADDED — the
+                                         # falsifier the forged-attribution note NEVER HAD.
+                                         # Severing that note left 298/298 GREEN, because its
+                                         # only cover asserted `Exception ignored in`, which
+                                         # CPython writes and `diagnostic_tail` carries into
+                                         # the same string. A RISE here is coverage added, not
+                                         # a ratchet fall.
+                                         # ⟳⟳ #280 (2026-10-13, the owner chose REDESIGN):
                                          # 147 -> 146 (two retired, ONE ADDED: the
                                          # falsifier for the REMOVAL itself, a
                                          # mutation that puts a predicate BACK), and
@@ -3006,13 +3025,16 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                         "the suite ran or that its printer is at fault")
             elif heads:
                 said = ("stderr printed these lines at column zero after a traceback frame "
-                        "block, VERBATIM and in the order the child printed them \u2014 "
-                        + " \u00b7 ".join(h + (" [after a block CPython labelled 'Exception "
-                                               "ignored in']" if ig else "")
-                                          for h, ig in heads)
+                        "block, in the order the child printed them, each STRIPPED of "
+                        "surrounding whitespace \u2014 "
+                        + " \u00b7 ".join(
+                            h + (" [its own preceding line began 'Exception ignored in',"
+                                 " which the CHILD wrote]" if ig else "")
+                            for h, ig in heads)
                         + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, "
-                          "NOR THAT IT KILLED THE CHILD: the subject under test writes this "
-                          "stream, so every reading of it is a QUOTATION and not a measurement")
+                          "NOR THAT IT KILLED THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT: the "
+                          "subject under test writes this stream, so every reading of it is a "
+                          "QUOTATION and not a measurement")
             else:
                 said = ("stderr printed no line at column zero after a frame block, so read the "
                         "window \u2014 \u26a0 and note a traceback with NO frames (for example "
@@ -3860,8 +3882,17 @@ def _self_test() -> int:
         case("...and both lines are there, in the order the child printed them",
              any(r.index("FIRST_KILLER") < r.index("SHUTDOWN_SECOND")
                  for r in _repq if "FIRST_KILLER" in r and "SHUTDOWN_SECOND" in r), True)
-        case("...and the second is flagged as following a block CPython itself labelled ignored",
-             any("Exception ignored in" in r for r in _repq), True)
+        # ⛔⛔ r14 H1 + MY OWN SEVER, 2026-10-13 — THIS CASE COULD NOT FAIL, AND IT WAS THE
+        # ONLY COVER THE ANNOTATION HAD. It asserted `"Exception ignored in" in r`, but CPython
+        # writes that very phrase at shutdown and `diagnostic_tail` carries the raw stderr into
+        # the SAME report string — so the token the case credited to the annotation was supplied
+        # by the child. Measured by severing the annotation entirely: 298/298 still passed. That
+        # is this repository's "printing MORE evidence weakens a substring case" shape, and it is
+        # why r14's forged-attribution High had no falsifier in either direction.
+        # ⭐ So the assertion now names text ONLY THIS HARNESS can emit, and the case name no
+        # longer claims CPython labelled anything — `intro` is the CHILD's line.
+        case("...and the harness's OWN note is there, in text raw stderr cannot supply",
+             any("its own preceding line began" in r for r in _repq), True)
 
     # ⛔⛔ r12 Codex H3 — THE FIFTH WORLD: A CRASH THAT FORGES ITS OWN `[FAIL]` LINE. The 2x2
     # that closed #271 covers a crash parsing to NO failures; this is the world where the crash
@@ -6416,7 +6447,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1548)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1549)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (
