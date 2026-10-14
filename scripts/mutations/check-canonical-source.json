@@ -1,0 +1,15 @@
+[
+  {
+    "name": "⛔ the restatement test is INVERTED, so a second copy of a mechanism PASSES — the exact defect this guard exists for, and the one that cost five review rounds of drift",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "            if hit and cite_token not in body:\n",
+        "            if hit and cite_token in body:\n"
+      ]
+    ],
+    "expect": [
+      "a RESTATEMENT without a citation is detected"
+    ]
+  }
+]

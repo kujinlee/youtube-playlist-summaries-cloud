@@ -298,6 +298,15 @@ jobs:
       - name: Explainer delivery is described in ONE place
         run: python3 scripts/check-explainer-delivery.py
 
+      # Generalises the step above: any mechanism, any kind of citing file. Added after the
+      # handoff-path and corpus-search instructions drifted across SIX copies for five
+      # consecutive review rounds, including a fix that reached the skill and not the hook.
+      - name: Every mechanism is described in ONE place and cited elsewhere
+        run: python3 scripts/check-canonical-source.py
+
+      - name: Canonical-source guard's own cases
+        run: python3 scripts/check-canonical-source.py --self-test
+
       - name: Plan task order
         run: python3 scripts/check-plan-task-order.py
 

@@ -235,6 +235,15 @@ HARNESS_TREE = (
     # Recorded rather than silently re-justified, because an entry kept for a reason that has
     # expired is indistinguishable from one kept by accident. 44 KB, two files.
     ".github/workflows",
+    # ⟳ 2026-10-14, round 6 of the handoff-citation branch. `check-canonical-source.py` asserts
+    # that each mechanism is described in ONE file and cited elsewhere; its canonical sources
+    # live in `.agents/skills/shared/` and three of its five citing sites are skill files. On a
+    # tree without them, `audit()` reports every canon MISSING, its own "the REAL repository is
+    # clean" case fails, and the CONTROL goes red — so the harness correctly refused the run and
+    # the entry would have shipped UNMEASURED. That is this tuple's own recorded failure
+    # ("a scripts-only tree gave each a red control") happening for a fifth subject.
+    # ⚠ `.agents/skills`, not `.agents`: only the skills are a subject here.
+    ".agents/skills",
 )
 
 
@@ -1349,6 +1358,7 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
+    "scripts/check-canonical-source.py": 1,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -3362,6 +3372,7 @@ def _self_test() -> int:
                                       "scripts/check-arch-findings.py",
                                       "scripts/check-backlog-closure.py",
                                       "scripts/check-banner-armed.py",
+                                      "scripts/check-canonical-source.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
@@ -4949,7 +4960,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1408)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1409)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

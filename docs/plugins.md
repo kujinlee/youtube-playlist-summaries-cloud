@@ -83,8 +83,7 @@ When multiple installed skills can handle the same task, use this table.
 > so it survives truncation, and fingerprinted on CONTENT so a read-only session does not consume the
 > next one's note. ⟳ **2026-10-13: four stale LINE NUMBERS removed — a vendored line has no owner.**
 >
-> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⟳ **THREE triggers**
-> (⛔ **r5 H2: the three LABELS for the first trigger were each false, so the MECHANISM:** the store dir's LEXICAL parent ≠ `PROJECT_DIR` **as text**, no `.`/`..`/symlink resolution, so `./notes` hints though it IS an immediate child and `..` does not though the store is OUTSIDE — `REMEMBER_ROOT` in `lib-memory-context.sh`; ⛔⛔ **r5 CLAUDE H1: and a LINKED WORKTREE hints, because `_resolve_memory_project_dir` (`lib-memory-dir.sh`) points the store at the MAIN checkout — measured 3/3; the r5 fold deleted that clause from here silently and it had closed r4 M3**; `per_session`; degraded); no hint in the ordinary setup is BY DESIGN → [`process-rationale.md`](process-rationale.md).
+> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⛔ **the THREE triggers and the mechanism behind the first are described ONCE, in [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md); this row does not restate them** (three labels for that trigger were each measured false, and the copies drifted for five rounds). No hint in the ordinary setup is BY DESIGN.
 
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
 `$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the

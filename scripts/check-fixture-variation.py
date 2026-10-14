@@ -300,6 +300,21 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-10-14, the round-6 one-canonical-source redesign. Three parameters, all varied
+    # by cases: `audit.root` and `main.root` over synthetic trees and the real repo,
+    # `audit.canons` over the live table and a synthetic one-canon spec.
+    # ⚠ `main.argv` IS here, and the route to it is the point: this check caught both driving
+    # cases passing `[]`, so `argv` was indistinguishable from a constant. Removing the
+    # parameter satisfied THIS guard and then broke `check-main-drivable.py`, whose
+    # `_passes_extra_world` reads `positional[1:] | kwonly` and so needs the world to sit
+    # BEYOND argv (ADR-0014 D1). So argv stays and carries real behaviour — an unknown flag
+    # exits 2 — which is what makes it varied rather than exempted.
+    "check-canonical-source.py": (
+        "audit.canons",
+        "audit.root",
+        "main.argv",
+        "main.root",
+    ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
         # `case_locals` are GONE, deliberately: the review measured that the rule
