@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 297 cases
+    python3 scripts/check-plan-code.py --self-test          # 300 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -576,14 +576,35 @@ _TB_HEADER = "Traceback (most recent call last):"
 # into the SAME report string, so a child run beneath a DIRECTORY NAMED with those tokens prints
 # them in its own traceback and supplies all four to the case — a false report then passed.
 # \u2b50 So the oracle is EXACT EQUALITY against this constant (`_self_test` pins the literal),
-# which no polarity edit and no child can satisfy; a second case asserts it is still EMITTED.
+# which no CHILD can satisfy. \u26d4 r17 CLAUDE L1 \u2014 but "no polarity edit survives it" was
+# OVERSTATED: ONE find/replace of `DOES NOT CLAIM ` hits BOTH this constant and the test
+# literal, so equality still holds and `--self-test` stays GREEN. What catches that coordinated
+# edit is the POLARITY MUTATION's anchor going missing \u2014 `--binding` rc=1, and it runs in
+# CI. \u26a0 So deleting that entry removes the only protection against a sweep; the equality
+# case is not self-sufficient and this comment no longer says it is.
 # \u26a0 Stated rather than hidden: the emission case reads the report, so a child that writes
 # this entire string verbatim to stderr would satisfy it. It cannot arrive via a FILENAME — the
 # constant is longer than the 255-byte limit on one path component, and any multi-component path
 # carries `/` characters the constant does not contain.
-# \u26a0 THE SPLIT AFTER "DOES NOT CLAIM" IS LOAD-BEARING, not formatting: `--binding` REFUSES
-# two entries that share an edit anchor ("it measures nothing new"), and the POLARITY mutation
-# and the exception-hood mutation would otherwise both anchor on one line. Measured r17.
+# \u26a0 THE SPLIT AFTER "DOES NOT CLAIM" IS CONVENIENCE, NOT A REQUIREMENT \u2014 \u26d4 r17
+# CLAUDE M1 CORRECTED ME TWICE HERE. I called it load-bearing because `--binding` refuses two
+# entries sharing an edit anchor; measured, `seen_anchors` keys on the FIND-STRINGS alone, so
+# two DISTINCT unique find-strings on ONE line bind fine and both mutations kill.
+# \u26d4 And my "correction" of the r17 Codex half was itself WRONG: its phrase "complete
+# anchor tuple" accurately names `tuple(f for f, _ in edits)`. The split stays only because it
+# makes the two anchors trivially distinct, and that is all it does.
+# \u26d4\u26d4 r17 CLAUDE H2 — THE PREFIX WAS FREE TEXT AND COULD BE REWRITTEN INTO EVERY
+# REFUTED WORDING WITH THE REFUSAL STILL ATTACHED: measured 297/297 green and `--binding` rc=0
+# over a green control, rendering "CPython SAID THE FOLLOWING KILLED THE CHILD, at column zero
+# after a block it labelled, in reverse order, each one a VALIDATED exception class" ahead of a
+# refusal that then denied all of it. r16 stated the harm as a CONJUNCTION and rounds 16-17
+# closed only the second half.
+# \u2b50 So the prefix is a CONSTANT pinned by exact equality, exactly as `_REFUSAL` is — not a
+# phrase case, which `:4014` already measured cannot police a claim. And the one clause nothing
+# falsified is DELETED rather than kept: "each STRIPPED of surrounding whitespace" was true but
+# unasserted, while ORDER is covered live and the join separator has its own entry.
+_QUOTED_PREFIX = "stderr printed these lines, in stream order \u2014 "
+
 _REFUSAL = (
     "\u26d4 THIS HARNESS DOES NOT CLAIM "
     "ANY OF THEM IS THE EXCEPTION, NOR "
@@ -710,8 +731,12 @@ def lines_after_frame_runs(stderr: str) -> list[str]:
         # REPORTED rather than dropped, and a frame-shaped line inside a message is
         # reported as what it is, with no claim that it is an exception.
         # ⛔ r16 M1: this comment said "at column zero" TWICE and both were false — the
-        # run test reads only space and tab, so any other whitespace lead is stripped out
-        # of the quotation. Measured: `\u3000END` is reported as `END`.
+        # run test reads only space and tab. ⛔ r17 CLAUDE M2: and the GENERALISATION that
+        # stood here ("any other whitespace lead is stripped out of the quotation") was the
+        # SIBLING of the one r17 M1 narrowed in this same function, and my sweep missed it —
+        # the same failure mode one round later. A line that is ONLY such whitespace is
+        # CONSUMED, not stripped and quoted. What is measured is the single witness:
+        # `\u3000END` is reported as `END`. No further description of this stream is written.
         if i < n and lines[i].strip():
             out.append(lines[i].strip())
     return out
@@ -1325,7 +1350,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 148,   # ⟳ r16 CLAUDE H1 (2026-10-13): 144 -> 148, one entry per
+    "scripts/check-plan-code.py": 150,   # ⟳ r16 CLAUDE H1 (2026-10-13): 144 -> 148, one entry per
                                          # REFUSAL in the disclaimer, which had no falsifier at all
                                          # WITH ITS SUBJECT — it policed a PHRASE, not a claim, and
                                          # the narration it guarded is deleted (six false wordings).
@@ -3123,11 +3148,19 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 # child under universal newlines (`text=True`, no `newline=`), so a lone `\r` is
                 # translated to `\n` and ONE line the child wrote becomes TWO the harness quotes.
                 # The ORDER is the child's; the LINES are this decoder's. Measured.
-                said = ("stderr printed these lines, in stream order, each "
-                        "STRIPPED of surrounding whitespace \u2014 "
+                said = (_QUOTED_PREFIX
                         + " \u00b7 ".join(heads)
                         + ". " + _REFUSAL)
             else:
+                # \u26a0 r17 CLAUDE L2, RECORDED AND DELIBERATELY NOT FIXED: this arm's BOUND is
+                # read by ONE fixture (`_w3`), which reaches the arm via prose rather than via a
+                # no-frame traceback \u2014 so a sever that keeps the bound when stderr has no
+                # colon and drops it otherwise stays 297/297 green, removing the sentence from
+                # the only world the bound is ABOUT. The DELETION direction IS covered (severing
+                # the clause reds the `#280` bound case), which is why this is Low.
+                # \u26d4 The remedy is H1's \u2014 a second fixture, a real `sys.tracebacklimit = 0`
+                # child \u2014 and it is NOT taken here: this component is armed for THRASHING and
+                # a Low does not justify a third fixture. Filed as a known gap instead.
                 said = ("read the "
                         "window \u2014 \u26a0 and note a traceback with NO frames (for example "
                         "under `sys.tracebacklimit = 0`) also lands here")
@@ -3949,6 +3982,38 @@ def _self_test() -> int:
     # raw stderr into the same message, so asserting a marker would pass whether the join ran or
     # not — the unfalsifiable shape this session has now shipped three times. A ` · ` between two
     # quoted lines can ONLY come from the join; raw stderr has newlines there.
+    # ⛔⛔ r17 CLAUDE H1 — THE EMISSION WAS EXERCISED AT ONE HEAD COUNT ONLY, so a refusal made
+    # CONDITIONAL on `len(heads) > 1` DISAPPEARED from the single-quoted-line report while the
+    # suite stayed 297/297 GREEN. A lone quoted line with no refusal attached reads as THE
+    # exception, which is the exact shape `is_exception_heading` was deleted for.
+    # ⭐ The remedy is a SECOND INPUT, not a sentence: this repository's own rule — a case is
+    # otherwise satisfied by the constant its own fixture supplies — applied to a PRODUCER rather
+    # than a value. It writes no structural claim, so the thrashing arming does not reach it.
+    with tempfile.TemporaryDirectory() as _d1:
+        _d1p = pathlib.Path(_d1)
+        (_d1p / "o.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _m1 = [{"name": "one quoted line", "file": "o.py",
+                "edits": [['def f():\n    return 1',
+                           'raise RuntimeError("ONLY_KILLER")\n\n\ndef f():\n    return 1']],
+                "expect": "the value is one"}]
+        _ok1, _rep1, _, _ = run_mutations(_d1p, _m1, {"o.py"})
+        case("\u2b50\u2b50 r17 CLAUDE H1: the refusal is emitted for a ONE-head report too",
+             any(_REFUSAL in r for r in _rep1), True)
+        # \u26a0 The pair is the point: this fixture quotes ONE line and `_dq` below quotes TWO, so
+        # the producer is exercised at two DISTINCT head counts and a count-conditional emission
+        # cannot hide in either.
+        case("...and that report really does quote exactly ONE line",
+             any("ONLY_KILLER" in r and "\u00b7" not in r for r in _rep1), True)
     with tempfile.TemporaryDirectory() as _dq:
         _dqp = pathlib.Path(_dq)
         (_dqp / "q.py").write_text(
@@ -4000,6 +4065,9 @@ def _self_test() -> int:
              "THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT, NOR ANYTHING ABOUT WHERE IN THE STREAM "
              "THEY APPEARED: the subject under test writes this stream, so every reading of it is a "
              "QUOTATION and not a measurement")
+        case("\u2b50\u2b50 r17 CLAUDE H2: the quoted-lines PREFIX is EXACTLY this, so the six "
+             "refuted wordings cannot return ahead of the refusal",
+             _QUOTED_PREFIX, "stderr printed these lines, in stream order \u2014 ")
         case("...and the report still EMITS the refusal", any(_REFUSAL in r for r in _repq), True)
         # ⛔⛔ r15 CLAUDE H2 — THE SURVIVING SENTENCE HAD NO FALSIFIER IN EITHER DIRECTION, which the
         # annotation's deletion caused: the retired case had covered the sentence's PRESENCE, and
@@ -6619,7 +6687,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1550)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1552)
 
     # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
     _SRC251 = (

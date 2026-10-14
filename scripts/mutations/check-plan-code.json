@@ -1937,5 +1937,31 @@
     "expect": [
       "⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included"
     ]
+  },
+  {
+    "name": "⛔⛔ r17 CLAUDE H1 — the refusal is made CONDITIONAL on `len(heads) > 1`, so it disappears from the SINGLE-quoted-line report while a two-head report keeps it: measured, that left the suite 297/297 green because the emission had only one fixture",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                        + \". \" + _REFUSAL)\n",
+        "                        + \". \" + (_REFUSAL if len(heads) > 1 else \"\"))\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r17 CLAUDE H1: the refusal is emitted for a ONE-head report too"
+    ]
+  },
+  {
+    "name": "⛔⛔ r17 CLAUDE H2 — the quoted-lines PREFIX is rewritten into the six refuted wordings (causal attribution, column zero, reverse order, \"VALIDATED exception class\") with the refusal still attached: measured, that left the suite 297/297 green and --binding rc=0",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "_QUOTED_PREFIX = \"stderr printed these lines, in stream order \\u2014 \"\n",
+        "_QUOTED_PREFIX = \"CPython SAID THE FOLLOWING KILLED THE CHILD, at column zero, in reverse order \\u2014 \"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r17 CLAUDE H2: the quoted-lines PREFIX is EXACTLY this, so the six refuted wordings cannot return ahead of the refusal"
+    ]
   }
 ]
