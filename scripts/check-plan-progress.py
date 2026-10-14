@@ -38,7 +38,8 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 43 cases
+    python3 scripts/check-plan-progress.py --session-start  # SessionStart hook
+    python3 scripts/check-plan-progress.py --self-test  # 66 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -334,6 +335,104 @@ def decide(
     ), unticked
 
 
+# ── Session start: the same verdict, on a channel its reader actually sees ─────────────────────
+
+# ⭐ WHY THIS MODE EXISTS (measured 2026-10-14, SIXTH instance of the promise failure).
+# `--decide` was armed, correct, and audible. The sentinel named a plan from the previous evening
+# with every box ticked and a `paused:` reason describing rounds that were long since done, so the
+# paused-and-ticked branch returned WARN on every stop — truthfully, including the line *"work
+# resumed and continuing? -> --resume"*. It reached the HUMAN, who asked about the parked work
+# ~4.5 hours later. It never reached the assistant, because `block-idle-stop.sh` maps WARN to
+# Claude Code's non-blocking error and the harness renders that as `Stop hook error`.
+#
+# ⛔ SO THIS IS A CHANNEL FIX AND NOT A SEVENTH RULE, and the distinction is the whole design.
+# No new discriminator: the states below are the ones `decide` already separates. What changes is
+# WHEN and WHERE the verdict is delivered — at session start, into the assistant's context, at the
+# one boundary where re-arming the sentinel costs nothing. Every autonomous alternative had already
+# been tried and rejected for a measured reason (a sentence-inspecting hook is satisfiable by
+# rewording, backlog #48; blocking on paused-and-ticked destroys the pause reason, found
+# independently by both review halves; warning on every stop got narrowed because the user reported
+# *"error should not happen all the time"*).
+#
+# ⛔⛔ THE EXIT CODE IS DELIVERY, NOT VERDICT — AND INVERTING IT REBUILDS THE BUG. A Stop hook
+# reaches its reader through STDERR and a non-zero code; a SessionStart hook reaches its reader by
+# putting STDOUT into the session's context and exiting 0. Copying this file's own stderr/non-zero
+# convention here would produce a message that is correct, delivered to a channel the intended
+# reader does not read — which is precisely the defect being repaired. So `run_session_start`
+# always prints to stdout and always exits 0, and the loudness lives in the TEXT.
+# ⚠ That is a DOCUMENTED deviation from "cannot run is a failure, never a pass" at the exit-code
+# level only: the CANNOT-RUN text still says TREAT THIS AS NOT RUN, which is the part a reader acts
+# on. A non-zero here would suppress the very sentence that reports the failure.
+
+STALE, LIVE, PARKED, UNARMED, NOT_RUN = "stale", "live", "parked", "unarmed", "cannot-run"
+
+
+def session_start_verdict(
+    sentinel_text: str | None,
+    plan_text: str | None,
+) -> tuple[str, str]:
+    """-> (label, message) for session start. Pure, read-only: it NEVER clears the sentinel.
+
+    ⛔ The read-only property is load-bearing, not incidental. `run_decide` unlinks the sentinel
+    when the last step is ticked, and a session-start reader that did the same would destroy the
+    evidence of the stale arming it exists to report — and take the human's `paused:` reason with
+    it, which is the destructive shape code review r1 already caught on the `--decide` path.
+    """
+    if sentinel_text is None:
+        return UNARMED, (
+            "no plan is armed. The Stop guard is therefore INERT this session: it refuses an idle "
+            "stop only while `.claude/executing-plan` names a plan with unticked steps.\n"
+            "   Starting a job with more than one turn boundary — a review loop counts — arm it "
+            "first: `scripts/begin-plan.py <slug> \"title|doing|why\" …`"
+        )
+
+    fields = parse_sentinel(sentinel_text)
+    plan = fields.get("plan", "(no `plan:` line in the sentinel)")
+    paused = fields.get("paused")
+
+    if plan_text is None:
+        return NOT_RUN, (
+            f"CANNOT RUN: the sentinel names `{plan}`, which does not exist. TREAT THIS AS NOT RUN "
+            "— nothing here tells you whether work is outstanding.\n"
+            f"   Fix the path or delete {SENTINEL.relative_to(ROOT)}."
+        )
+
+    done, total = count_steps(plan_text)
+    if total == 0:
+        return NOT_RUN, (
+            f"CANNOT RUN: parsed ZERO step checkboxes from `{plan}`. TREAT THIS AS NOT RUN — do "
+            "not read the absence of a warning as 'no work left'."
+        )
+
+    unticked = total - done
+
+    # ⛔ FULLY TICKED IS STALE WHETHER OR NOT IT IS PAUSED, and the paused arm is the one that
+    # actually fired. `decide` splits these two — a ticked-and-paused sentinel is KEPT and warned
+    # about, a ticked-and-unpaused one is cleared — but at session start the distinction is not
+    # useful: both describe a job that is over, and neither can see the job about to start.
+    if unticked == 0:
+        reason = f"\n   Its pause reason, which is now historical: {paused}" if paused else ""
+        return STALE, (
+            f"⚠ STALE PLAN ARMED — every step in `{plan}` is ticked ({done}/{total}), so this "
+            "sentinel describes FINISHED work and cannot see what this session is about to do. "
+            "The Stop guard will not refuse an idle stop while it stands."
+            f"{reason}\n"
+            "   → `scripts/begin-plan.py --finish`, then arm the current job before starting it."
+        )
+
+    if paused is not None:
+        return PARKED, (
+            f"⏸ a plan is armed and PAUSED with {unticked} of {total} outstanding — {paused}\n"
+            "   A pause stands the Stop guard down, so an idle stop will be allowed. "
+            "→ `scripts/begin-plan.py --resume` when the work restarts."
+        )
+
+    return LIVE, (
+        f"plan armed: `{plan}`, {unticked} of {total} outstanding.\n"
+        f"   next: {next_pending_task(plan_text)}"
+    )
+
+
 # ── I/O shell around the pure decision ────────────────────────────────────────────────────────
 
 def _read(p: Path) -> str | None:
@@ -392,6 +491,20 @@ def run_status() -> int:
         print(f"next: {next_pending_task(plan_text)}")
     if "paused" in fields:
         print(f"PAUSED: {fields['paused']}")
+    return 0
+
+
+def run_session_start() -> int:
+    """Print the session-start verdict to STDOUT and exit 0 — see the channel note above."""
+    sentinel_text = _read(SENTINEL)
+    plan_text = None
+    if sentinel_text is not None:
+        plan_rel = parse_sentinel(sentinel_text).get("plan", "")
+        if plan_rel:
+            plan_text = _read(ROOT / plan_rel)
+
+    label, message = session_start_verdict(sentinel_text, plan_text)
+    print(f"[plan-progress/{label}] {message}")
     return 0
 
 
@@ -585,6 +698,83 @@ def _self_test() -> int:
     case("parse_sentinel keeps unknown keys",
          parse_sentinel("plan: x\nfoo: bar\n") == {"plan": "x", "foo": "bar"})
 
+    # ── SESSION START: the same states, on the channel their reader sees ──────────────────
+    # ⛔ THE REGRESSION CASE IS `stale while PAUSED` — that is the exact live state of 2026-10-14
+    # (a plan from the previous evening, 4/4 ticked, `paused:` naming rounds already finished),
+    # and `--decide` is RIGHT to merely warn about it. These cases exist so the session-start
+    # reader cannot quietly go back to agreeing with `--decide` there.
+    FULL = ("### Task 1: a\n- [x] one\n- [x] two\n")
+    PART = ("### Task 1: a\n- [x] one\n- [ ] two\n")
+    SENT_SS = "plan: .claude/plans/p.md\n"
+    SENT_SS_PAUSED = SENT_SS + "paused: waiting on a dispatched review\n"
+
+    label, msg = session_start_verdict(SENT_SS_PAUSED, FULL)
+    case("ticked AND paused -> STALE (the 2026-10-14 state, which --decide only WARNs about)",
+         label == STALE)
+    case("the stale verdict says the Stop guard will not refuse a stop",
+         "will not refuse" in msg)
+    case("the stale verdict repeats the now-historical pause reason",
+         "waiting on a dispatched review" in msg)
+    case("the stale verdict names the command that clears it", "--finish" in msg)
+
+    # ⚠ THE UNPAUSED TWIN. `--decide` treats these two differently on purpose (one is cleared, one
+    # is kept); at session start both describe a finished job, so both must be STALE. A case on
+    # only one of them passes while the other silently keeps `--decide`'s split.
+    case("ticked and NOT paused -> STALE too", session_start_verdict(SENT_SS, FULL)[0] == STALE)
+    case("the unpaused stale verdict invents no pause reason",
+         "pause reason" not in session_start_verdict(SENT_SS, FULL)[1])
+
+    # ── ADJACENT NEGATIVES. Not absurd inputs: the two states closest to stale. ─────────────
+    label_live, msg_live = session_start_verdict(SENT_SS, PART)
+    case("outstanding steps, unpaused -> LIVE, not stale", label_live == LIVE)
+    case("the live verdict names the next task", "Task 1: a" in msg_live)
+    case("the live verdict does NOT carry the stale warning", "STALE" not in msg_live)
+
+    label_parked, msg_parked = session_start_verdict(SENT_SS_PAUSED, PART)
+    case("outstanding steps, paused -> PARKED, not stale and not live",
+         label_parked == PARKED and label_parked not in (STALE, LIVE))
+    case("the parked verdict says a pause stands the guard down",
+         "stands the Stop guard down" in msg_parked)
+    case("the parked verdict counts what is outstanding (1 of 2)", "1 of 2" in msg_parked)
+
+    # ── CANNOT RUN reaches the reader as TEXT, because the exit code cannot carry it ────────
+    # ⚠ THIS CASE WAS WRITTEN AS A TAUTOLOGY FIRST — `v == (UNARMED, v[1])`, which pins the label
+    # and then compares the message to ITSELF, so no change to the message could ever turn it red.
+    # Caught before commit by asking what observation would make it fail. Two plain assertions.
+    label_un, msg_un = session_start_verdict(None, None)
+    case("no sentinel -> UNARMED", label_un == UNARMED)
+    case("the unarmed verdict says the Stop guard is INERT", "INERT" in msg_un)
+    case("the unarmed verdict names how to arm one", "begin-plan.py" in msg_un)
+    case("UNARMED is not STALE — an unarmed session is not a stale one",
+         session_start_verdict(None, None)[0] != STALE)
+    label_nr, msg_nr = session_start_verdict(SENT_SS, None)
+    case("sentinel naming a missing plan -> CANNOT RUN", label_nr == NOT_RUN)
+    case("the cannot-run TEXT says TREAT THIS AS NOT RUN (the code is 0 by design)",
+         "TREAT THIS AS NOT RUN" in msg_nr)
+    case("a plan parsing to ZERO checkboxes is CANNOT RUN, not 'nothing left'",
+         session_start_verdict(SENT_SS, "no checkboxes here\n")[0] == NOT_RUN)
+
+    # ⛔ THE CHANNEL CASE. A Stop hook reaches its reader via stderr and a non-zero code; a
+    # SessionStart hook reaches its reader by putting stdout into the session's context and
+    # exiting 0. Inverting that is the defect this mode repairs, so it is asserted, not assumed.
+    case("every session-start label is distinct — no two states collapse",
+         len({STALE, LIVE, PARKED, UNARMED, NOT_RUN}) == 5)
+
+    # ⛔ THE DELIVERY CONTRACT, ASSERTED. The runner must exit 0 (a non-zero suppresses the text
+    # on this hook type) and must put the verdict on STDOUT (a SessionStart hook's stdout is what
+    # reaches the session's context; its stderr does not). Both halves failing is how a correct
+    # verdict reaches nobody — the measured defect this whole mode exists to repair.
+    import contextlib as _ctx
+    import io as _io
+    _buf = _io.StringIO()
+    with _ctx.redirect_stdout(_buf):
+        _rc = run_session_start()
+    _out = _buf.getvalue()
+    case("run_session_start exits 0 — a non-zero would suppress its own text", _rc == 0)
+    case("run_session_start writes the verdict to STDOUT, not stderr", _out.strip() != "")
+    case("the line is tagged so a reader can find it in a long session-start block",
+         _out.startswith("[plan-progress/"))
+
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
     return 0 if passed == len(cases) else 1
@@ -594,11 +784,14 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--decide", action="store_true")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--session-start", action="store_true")
     ap.add_argument("--stop-hook-active", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args()
     if a.self_test:
         sys.exit(_self_test())
+    if a.session_start:
+        sys.exit(run_session_start())
     if a.status:
         sys.exit(run_status())
     if a.decide:

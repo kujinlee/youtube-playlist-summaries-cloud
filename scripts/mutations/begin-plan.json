@@ -232,5 +232,44 @@
     "expect": [
       "a restatement over a STAMP-LESS pause does not invent a baseline — the honest `cannot tell` survives `--pause` instead of becoming a definite silence"
     ]
+  },
+  {
+    "name": "--add appends without rewriting the `of N` totals, so the labels drift",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    body = _TOTAL_RE.sub(lambda m: f\"{m.group(1)}{m.group(2)}{m.group(3)}{n}{m.group(5)}\", body)\n",
+        "    body = body\n"
+      ]
+    ],
+    "expect": [
+      "every `of N` total is rewritten — no stale `of 2` survives"
+    ]
+  },
+  {
+    "name": "--add appends a TICKED box, so the guard sees no outstanding work",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "           f\"- [ ] **Step {n} of {n}** — {title}\"]\n",
+        "           f\"- [x] **Step {n} of {n}** — {title}\"]\n"
+      ]
+    ],
+    "expect": [
+      "the appended step is UNTICKED"
+    ]
+  },
+  {
+    "name": "--add drops the Doing sub-bullet it was given",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if doing:\n        out.append(f\"  - **Doing:** {doing}\")\n",
+        "    if False:\n        out.append(f\"  - **Doing:** {doing}\")\n"
+      ]
+    ],
+    "expect": [
+      "…its Doing"
+    ]
   }
 ]

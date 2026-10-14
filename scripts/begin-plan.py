@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 63 cases
+    scripts/begin-plan.py --self-test  # 78 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -178,6 +178,53 @@ def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str) -> str
         if why:
             out.append(f"  - **Why:** {why}")
         out.append("")
+    return "\n".join(out)
+
+
+_TOTAL_RE = re.compile(r"(\*\*Step )(\d+)( of )(\d+)(\*\* — )")
+
+
+def append_step(plan_text: str, title: str, doing: str, why: str) -> str:
+    """Return `plan_text` with one new unticked step appended, and every `of N` label corrected.
+
+    ⭐ WHY THIS EXISTS, and it is the whole diagnosis of a failure this project measured SIX times
+    (`docs/memory/never-close-with-a-promise.md`). The Stop guard refuses to stop while a checkbox
+    is unticked, and that works. What did not exist was any way to ADD a checkbox after creation:
+    steps were supplied once, as `begin-plan.py <slug> "a" "b" "c"`, and the only other verbs were
+    `--tick`, `--pause`, `--resume` and `--finish`. So a promise made mid-session about work that
+    was not already a step had NOWHERE TO GO but prose, and prose is inert.
+    ⛔ Every one of the six remedies improved the DETECTOR over a list that structurally could not
+    hold the item being detected. The memory file itself names the right fix five instances before
+    this one — *"if work is named and not yet done, record it BEFORE the message goes out; this is
+    the detection half, and it is the part that was missing"* — and prescribes `TaskCreate`, which
+    is not available in every session. This is that fix, in a mechanism the repo owns.
+    ⚠ It does NOT remove the act of adding. It removes the IMPOSSIBILITY of adding, which is a
+    different thing: the gap was never only that I failed to record a promise, it was that no
+    command recorded one.
+
+    ⛔ THE `of N` LABELS ARE REWRITTEN, AND NOT REWRITING THEM WAS THE FIRST DESIGN. Appending a
+    sixth step to a five-step plan leaves five labels reading `Step i of 5` — a stale claim in a
+    file, which is this repository's single most-measured defect class. `render_banner` happens to
+    DERIVE `n of N` from the parsed checkboxes, so the drift would be cosmetic rather than
+    functional, and that is precisely the kind of "harmless" disagreement that is cited as truth
+    later. The substitution is deliberately narrow: it rewrites the TOTAL only, inside the exact
+    `**Step <i> of <n>** — ` prefix `_STEP_PREFIX_RE` already owns, and touches nothing else on
+    the line. A mechanical edit damaging what it preserves is its own measured failure, so the
+    cases assert the `Doing:`/`Why:` sub-bullets and the prose survive byte-for-byte.
+    """
+    existing = parse_steps(plan_text)
+    n = len(existing) + 1
+
+    body = plan_text if plan_text.endswith("\n") else plan_text + "\n"
+    body = _TOTAL_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}{n}{m.group(5)}", body)
+
+    out = [body.rstrip("\n"), "", f"### Task {n}: {title}", "",
+           f"- [ ] **Step {n} of {n}** — {title}"]
+    if doing:
+        out.append(f"  - **Doing:** {doing}")
+    if why:
+        out.append(f"  - **Why:** {why}")
+    out.append("")
     return "\n".join(out)
 
 
@@ -380,6 +427,47 @@ def cmd_tick() -> int:
         return OK
     plan_abs.write_text(tick(text, idx))
     print(f"ticked step {idx + 1} of {len(steps)} in {plan_rel}\n")
+    return _print_state(plan_abs, plan_rel)
+
+
+def cmd_add(step_arg: str) -> int:
+    """Record one named piece of future work as a checkbox, creating a plan if none is armed.
+
+    ⛔ IT CREATES A PLAN WHEN NOTHING IS ARMED, RATHER THAN REFUSING — and that is the point.
+    The state in which this is most needed is the one `--tick` produces: the last box is ticked,
+    `check-plan-progress.py` clears the sentinel, and from that instant every stop is permitted
+    silently. A `--add` that refused there would send the promise back to prose at exactly the
+    moment the guard went inert, which is the gap this verb exists to close.
+
+    ⚠ ON A PAUSED PLAN IT ADDS AND KEEPS THE PAUSE. `--tick` refuses on a paused plan, because
+    advancing one is a claim about work the sentinel says is not running. Recording a new item is
+    not that claim, and refusing here would again leave a promise homeless — so it appends, says
+    the guard is still stood down, and names `--resume`. It never clears the human's reason.
+    """
+    title, doing, why = split_step(step_arg)
+
+    armed = _armed_plan()
+    if armed is None:
+        slug = normalise_slug(title)
+        print(f"nothing was armed, so this item becomes a new plan: {slug}")
+        return cmd_begin(slug, [step_arg])
+
+    plan_abs, plan_rel, fields = armed
+    if not plan_abs.is_file():
+        print(f"CANNOT RUN: the sentinel names {plan_rel}, which does not exist. "
+              f"Fix the path or delete {SENTINEL.relative_to(ROOT)}.", file=sys.stderr)
+        return REFUSED
+
+    text = plan_abs.read_text()
+    before = len(parse_steps(text))
+    plan_abs.write_text(append_step(text, title, doing, why))
+    print(f"added step {before + 1} to {plan_rel}: {title}")
+
+    if "paused" in fields:
+        print(f"\n⏸ the plan is still PAUSED — {fields['paused']}\n"
+              f"   The item is recorded, but the Stop guard stays stood down while that line is "
+              f"there. `scripts/begin-plan.py --resume` re-arms it.", file=sys.stderr)
+        return OK
     return _print_state(plan_abs, plan_rel)
 
 
@@ -957,6 +1045,52 @@ def _self_test() -> int:
         finally:
             ROOT, PLAN_DIR, SENTINEL, STATE = real
 
+    # ── --add: the APPEND that did not exist, and why each case can come back red ──────────
+    # ⭐ The verb exists because a promise about work that was not already a step had nowhere to
+    # go but prose (see `append_step`'s docstring). These cases are what a mutation can bind to;
+    # the first version of this branch proved the behaviour in a THROWAWAY SCRIPT, which leaves
+    # the shipped function with no falsifier at all — the same "tested the artifact I did not
+    # deliver" defect `process-281` measured in its own note.
+    _two = render_plan("demo", [("First", "doing one", "why one"),
+                                ("Second", "doing two", "why two")], "2026-10-14")
+    _three = append_step(_two, "Dispatch the owed half", "spawn the agent", "a promise is inert")
+    _s3 = parse_steps(_three)
+
+    case("--add appends one step (2 -> 3)", len(_s3) == 3)
+    case("the appended step is UNTICKED", _s3[-1].done is False)
+    case("no earlier box is ticked as a side effect",
+         [st.done for st in _s3] == [False, False, False])
+    case("the appended step carries its title", _s3[-1].title == "Dispatch the owed half")
+    case("…its Doing", _s3[-1].doing == "spawn the agent")
+    case("…and its Why", _s3[-1].why == "a promise is inert")
+
+    # ⛔ THE DRIFT CASE. Appending without rewriting the totals leaves `Step 1 of 2` beside
+    # `Step 3 of 3` — a stale claim in a file, this repository's most-measured defect. The
+    # banner DERIVES n of N, so the drift is cosmetic, which is exactly how it would survive.
+    case("every `of N` total is rewritten — no stale `of 2` survives", "of 2**" not in _three)
+    case("…and they all read `of 3`", _three.count("of 3**") == 3)
+
+    # ⚠ THE PRESERVATION CASE, which is the control for the rewrite above. A mechanical edit
+    # damaging what it preserves is its own measured failure, so the earlier steps' sub-bullets
+    # and titles are asserted, not assumed.
+    case("step 1's Doing/Why survive the total rewrite",
+         _s3[0].doing == "doing one" and _s3[0].why == "why one")
+    case("step 2's Doing/Why survive it too",
+         _s3[1].doing == "doing two" and _s3[1].why == "why two")
+    case("earlier titles are untouched", [st.title for st in _s3[:2]] == ["First", "Second"])
+    case("the plan's own header survives", _three.startswith("# demo"))
+
+    # a plan with no `of N` labels at all (a real implementation plan) must still accept one
+    _bare = "### Task 1: x\n\n- [ ] **Step 1: hand-written**\n"
+    case("--add works on a plan carrying no `of N` labels",
+         len(parse_steps(append_step(_bare, "added", "", ""))) == 2)
+    case("…and does not invent sub-bullets when none were given",
+         parse_steps(append_step(_bare, "added", "", ""))[-1].doing == "")
+
+    # the banner recomputes from the checkboxes, so it must agree with the appended list
+    case("the banner derives `3 of 3` after an append",
+         "STEP 3 of 3" in render_banner(_s3, 2))
+
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
     drift = pp_count_drift(__doc__, len(cases))
@@ -994,6 +1128,8 @@ if __name__ == "__main__":
     ap.add_argument("steps", nargs="*", help='each is "title|doing|why"')
     ap.add_argument("--plan", metavar="PATH", help="arm on an existing plan instead")
     ap.add_argument("--tick", action="store_true")
+    ap.add_argument("--add", metavar='"title|doing|why"',
+                    help="record one more step on the armed plan (creates one if none)")
     ap.add_argument("--banner", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--pause", metavar="WHY")
@@ -1006,6 +1142,8 @@ if __name__ == "__main__":
         sys.exit(_self_test())
     if a.tick:
         sys.exit(cmd_tick())
+    if a.add is not None:
+        sys.exit(cmd_add(a.add))
     if a.banner:
         sys.exit(cmd_banner())
     if a.status:

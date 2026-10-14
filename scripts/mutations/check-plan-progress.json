@@ -219,5 +219,31 @@
     "expect": [
       "paused and the plan GREW -> ALLOW and silent: more outstanding than at pause time is work ADDED, never work resumed, and the third side of the comparison had no case"
     ]
+  },
+  {
+    "name": "session start stops calling a finished-and-paused plan STALE (the 2026-10-14 state)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if unticked == 0:\n        reason = ",
+        "    if False:\n        reason = "
+      ]
+    ],
+    "expect": [
+      "ticked AND paused -> STALE (the 2026-10-14 state, which --decide only WARNs about)"
+    ]
+  },
+  {
+    "name": "the session-start runner exits non-zero, which suppresses its own text on this hook type",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    print(f\"[plan-progress/{label}] {message}\")\n    return 0\n",
+        "    print(f\"[plan-progress/{label}] {message}\")\n    return 1\n"
+      ]
+    ],
+    "expect": [
+      "run_session_start exits 0 — a non-zero would suppress its own text"
+    ]
   }
 ]
