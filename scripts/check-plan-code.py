@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 179 cases
+    python3 scripts/check-plan-code.py --self-test          # 184 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1338,7 +1338,7 @@ EXPECTED_MUTATIONS = {
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 24,
+    "scripts/begin-plan.py": 25,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -1931,6 +1931,46 @@ def mutate_delivered(root: pathlib.Path,
         return ok, m_report, verdict
 
 
+def apply_edits(src: str, edits, name: str, fname: str) -> "tuple[str | None, list[str]]":
+    """Apply an entry's edits CUMULATIVELY, refusing an anchor that is ambiguous or absent.
+
+    ⛔⛔ THIS IS THE ONE PREDICATE, AND IT EXISTS BECAUSE I SHIPPED A SECOND ONE (r2 CLAUDE H1).
+    Folding r2's B1 I added a self-test case asserting *"every manifest anchor binds exactly once"*
+    — counting each edit against the PRISTINE file. This loop counts each edit against the file AS
+    MUTATED SO FAR, because `src` is rebound between the checks. For a multi-edit entry the two
+    DISAGREE, and the disagreement is the defect's own shape:
+
+        pristine `AAA\nBBB\n`, edits [("AAA\nBBB\n","XXX\n"), ("BBB\n","YYY\n")]
+        pristine predicate  -> [1, 1]  "every anchor binds exactly once"
+        cumulative predicate-> [1, 0]  `anchor NOT FOUND`, zero verdicts
+
+    So the case CERTIFIED a manifest the harness REFUSES — one round after the same class
+    (a predicate that cannot see what the real one sees) produced r2's Blocking. ⭐ The repair is not
+    a third predicate: it is that there is now only ONE, and both callers import it. This repo has
+    measured *a second implementation of one rule DRIFTS* seventeen times; the correct response to
+    finding the eighteenth is to delete the copy, not to align it.
+    ⚠ 8 multi-edit entries exist today and none diverges, so this was a HOLE and not a live defect —
+    which is exactly what "multiplied relative to master" was one round ago.
+    """
+    problems: list[str] = []
+    for find, repl in edits:
+        # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor matches more than
+        # once, the mutation may land on a test oracle while the production line it names is
+        # untouched — and the named case still goes red, so it reports `caught`.
+        if src.count(find) > 1:
+            problems.append(
+                f"mutation {name!r}: anchor matches {src.count(find)} times "
+                f"in {fname} — only the FIRST is replaced, so a 'caught' "
+                f"verdict would not be about the line you named. Tighten it")
+            return None, problems
+        if find not in src:
+            problems.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
+                            f"so its 'caught' verdict would be meaningless")
+            return None, problems
+        src = src.replace(find, repl, 1)
+    return src, problems
+
+
 def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                   progress=None) -> tuple[bool, list[str], list[dict], list[str]]:
     """Apply each mutation to a file in `d`, run its suite, require red via the named case.
@@ -1957,31 +1997,12 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             ok = False
             report.append(f"mutation {name!r} targets unknown file {fname!r}")
             continue
-        src = (d / fname).read_text()
-        for find, repl in mut.get("edits", []):
-            # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor
-            # matches more than once, the mutation may land on a test oracle
-            # while the production line it names is untouched — and the named
-            # case still goes red, so it reports `caught`. Measured round 5;
-            # round 4's M1 filed the same hazard when a duplicated function
-            # made it concrete. Deleting that duplicate removed the instance,
-            # not the class.
-            if src.count(find) > 1:
-                ok = False
-                report.append(
-                    f"mutation {name!r}: anchor matches {src.count(find)} times "
-                    f"in {fname} — only the FIRST is replaced, so a 'caught' "
-                    f"verdict would not be about the line you named. Tighten it")
-                src = None
-                break
-            if find not in src:
-                ok = False
-                report.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
-                              f"so its 'caught' verdict would be meaningless")
-                src = None
-                break
-            src = src.replace(find, repl, 1)
+        # ⛔ ONE PREDICATE, IMPORTED (r2 CLAUDE H1). This loop used to be written out here and a
+        # SECOND copy of its rule lived in the self-test; they disagreed on multi-edit entries.
+        src, _probs = apply_edits((d / fname).read_text(), mut.get("edits", []), name, fname)
         if src is None:
+            ok = False
+            report.extend(_probs)
             continue
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
@@ -4953,7 +4974,7 @@ def _self_test() -> int:
     # representational gap — `begin-plan.py --add` (3: total-rewrite, ticked-on-append,
     # dropped Doing) and `check-plan-progress.py --session-start` (2: the stale branch, and
     # the runner's exit code, which on a SessionStart hook is its delivery).
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1417)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1418)
 
     # ⛔⛔ EVERY ANCHOR MUST BIND EXACTLY ONCE ON THE DELIVERED TREE, AND NOTHING CHECKED THAT
     # CHEAPLY (added 2026-10-14 after r2 B1). An anchor that matches ZERO times is only discovered
@@ -4969,18 +4990,60 @@ def _self_test() -> int:
     # fix in this very session got burned deriving a root from a file path. This one is the
     # script's own parent's parent, which is exactly where `scripts/` sits.
     _repo = pathlib.Path(__file__).resolve().parent.parent
-    _orphans = []
+    # ⚠ Derived here, LOCALLY, because this module has no repo-root constant — and an earlier fix
+    # in this same session was burned deriving a root from a file path.
+    _repo = pathlib.Path(__file__).resolve().parent.parent
+    _orphans: list[str] = []
+    _seen = 0
     for _man in sorted((_repo / MANIFEST_DIR).glob("*.json")):
         for _e in json.loads(_man.read_text(encoding="utf-8")):
             _target = _repo / _e["file"]
             if not _target.is_file():
+                _orphans.append(f"{_man.name}: {_e['name'][:48]!r} targets a file that is GONE")
                 continue
-            _body = _target.read_text(encoding="utf-8")
-            for _find, _ in _e["edits"]:
-                _n = _body.count(_find)
-                if _n != 1:
-                    _orphans.append(f"{_man.name}: {_e['name'][:48]!r} binds {_n} time(s)")
-    case("every manifest anchor binds EXACTLY ONCE on the delivered tree", _orphans, [])
+            _seen += 1
+            # ⛔ THE HARNESS'S OWN PREDICATE, CALLED — NOT A SECOND COPY OF IT (r2 CLAUDE H1). The
+            # first version of this case counted each edit against the PRISTINE file while
+            # `run_mutations` counts cumulatively, so it CERTIFIED a two-edit manifest the harness
+            # REFUSES. `apply_edits` is now the single implementation and both callers use it.
+            _src, _probs = apply_edits(_target.read_text(encoding="utf-8"),
+                                       _e["edits"], _e["name"], _e["file"])
+            if _src is None:
+                _orphans.extend(f"{_man.name}: {t}" for t in _probs)
+    case("every manifest anchor binds under the harness's OWN predicate", _orphans, [])
+
+    # ⛔ `apply_edits` IS ALSO DRIVEN AT A SECOND, CONSTRUCTED `src` — and `check-fixture-variation`
+    # refused the first version of this fold for exactly that: one call site passing one kind of
+    # value makes the `src` parameter indistinguishable from a constant. ⭐ The constructed input is
+    # the DIVERGENCE that r2's H1 was about, so the case documents the defect it exists for:
+    # counted against the pristine text both anchors bind once; applied cumulatively the second
+    # does not exist, because the first edit consumed it.
+    _piv_src = "AAA\nBBB\n"
+    _piv_edits = [("AAA\nBBB\n", "XXX\n"), ("BBB\n", "YYY\n")]
+    case("counted against the PRISTINE text, both anchors look fine",
+         [_piv_src.count(f) for f, _ in _piv_edits], [1, 1])
+    _out, _probs = apply_edits(_piv_src, _piv_edits, "pivot", "x.py")
+    case("applied CUMULATIVELY, the second anchor is NOT FOUND — the divergence r2 H1 found",
+         _out is None and any("NOT FOUND" in t for t in _probs), True)
+    # CONTROL — a sound two-edit entry must still pass, or the rule above would refuse every
+    # multi-edit entry rather than the divergent ones.
+    _ok_out, _ok_probs = apply_edits("AAA\nBBB\n", [("AAA\n", "XXX\n"), ("BBB\n", "YYY\n")],
+                                     "sound", "x.py")
+    case("CONTROL — a sound two-edit entry applies both and reports nothing",
+         (_ok_out, _ok_probs), ("XXX\nYYY\n", []))
+    # CONTROL — the ambiguous direction, at a third distinct src
+    _amb_out, _amb_probs = apply_edits("DUP\nDUP\n", [("DUP\n", "Z\n")], "ambig", "x.py")
+    case("CONTROL — an anchor matching twice is refused, not silently first-matched",
+         _amb_out is None and any("matches 2 times" in t for t in _amb_probs), True)
+
+    # ⛔ AND THE FALSIFIER FOR "I MEASURED NOTHING" (r2 CLAUDE H2). Severing the glob above left the
+    # case 179/179 GREEN, because an empty population produces an empty problem list — the exact
+    # shape of a check that cannot reach its subject reporting a pass. The denominator is compared
+    # against `EXPECTED_MUTATIONS`, which is a hardcoded dict in this source and therefore CANNOT
+    # be narrowed by the same glob. ⚠ That independence is the whole point: #284's own proposed
+    # remedy fails precisely because its two sides come from one population.
+    case("…over the WHOLE declared population, not whatever the glob happened to find",
+         _seen, sum(EXPECTED_MUTATIONS.values()))
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

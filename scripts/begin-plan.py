@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 93 cases
+    scripts/begin-plan.py --self-test  # 102 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -171,8 +171,28 @@ def _auto_slug(title: str) -> str:
         base = normalise_slug(title)
     except ValueError:
         base = f"added-{_dt.date.today().isoformat()}"
+
+    # ⛔ TRUNCATED, AND THE BOUND IS A FILESYSTEM LIMIT, NOT A STYLE CHOICE (r2 CLAUDE, escalated).
+    # A promise title is prose and can be a whole sentence; a path component cannot exceed 255
+    # bytes. ⚠ AND THE SYMPTOM IS INTERPRETER-DEPENDENT, which is why "never raises" read as true:
+    # on 3.14.4 `Path.exists()` returns False for an over-long name, while on **3.12.9 — CI's pin —
+    # it raises `OSError: [Errno 63] File name too long`**. Measured at 255/260/400 characters on
+    # both. ⭐ That is the SAME difference `scripts/check-python-pin.py` exists for and that
+    # `dev-process.md` already records (`Path.is_file()` raises ENAMETOOLONG below 3.13, returns
+    # False above) — the repo had the lesson written down and this code walked into it anyway.
+    base = base[:80].rstrip("-") or f"added-{_dt.date.today().isoformat()}"
+
     candidate, n = base, 1
-    while (PLAN_DIR / f"{candidate}.md").exists():
+    # ⚠ The probe is guarded too: truncation makes ENAMETOOLONG unreachable through `base`, but a
+    # `PLAN_DIR` that is itself unreadable would still raise here, and this function's contract is
+    # that it never does.
+    def _taken(name: str) -> bool:
+        try:
+            return (PLAN_DIR / f"{name}.md").exists()
+        except OSError:
+            return False
+
+    while _taken(candidate):
         n += 1
         candidate = f"{base}-{n}"
     if candidate != base:
@@ -1164,7 +1184,10 @@ def _self_test() -> int:
         except Exception:
             return None
 
-    for _bad in ("Review src/api", "../escape", ".dotfile", "Fold r5 + the approved deletion"):
+    # ⛔ 400 CHARACTERS IS THE ONE THAT ACTUALLY CRASHED, and only on CI's interpreter. Keep it in
+    # the list: a case that only exercises short titles cannot fail for the defect that shipped.
+    for _bad in ("Review src/api", "../escape", ".dotfile", "Fold r5 + the approved deletion",
+                 "Fold the review " * 25):
         _got = _safe_slug(_bad)
         case(f"_auto_slug never raises on a realistic title ({_bad!r})",
              isinstance(_got, str) and _got != "")
@@ -1172,6 +1195,8 @@ def _self_test() -> int:
          (_safe_slug("Review src/api") or "/").find("/") == -1)
     case("…and falls back to a dated name when the title cannot be a filename",
          (_safe_slug("../escape") or "").startswith("added-"))
+    case("…and never produces a path component over the filesystem limit",
+         all(len(_safe_slug("x" * n) or "") <= 80 for n in (100, 255, 400)))
 
     # H2/M2 — the auto-created name must never land on an existing plan file.
     import tempfile as _tf
@@ -1212,6 +1237,45 @@ def _self_test() -> int:
          len(parse_steps(_after)) == 3)
     case("…while its own label keeps the stale total, by design",
          "**Step 1 of 9** — fenced example" in _after)
+
+    # ── cmd_add's CREATE PATH, which had neither a case nor a mutation entry (r2 CLAUDE) ────
+    # ⛔ Its helper `_auto_slug` had fourteen cases and the VERB's create branch had none, so the
+    # self-test AND the mutation sweep were both blind to it — "the sweep is blind, not just the
+    # suite". This drives the real `cmd_add` with nothing armed, over a world it constructs.
+    # ⚠ ROOT is overridden TOO, and omitting it killed the suite rather than failing a case:
+    # `cmd_begin` computes `plan_abs.relative_to(ROOT)`, which raises ValueError for a temp
+    # PLAN_DIR outside the repo. A constructed world has to be complete — "none over a world the
+    # case built" is what `check-main-drivable.py` refuses, for exactly this reason.
+    _saved = (globals()["PLAN_DIR"], globals()["SENTINEL"], globals()["ROOT"])
+    try:
+        with _tf.TemporaryDirectory() as _td:
+            _b = pathlib.Path(_td)
+            globals()["ROOT"] = _b
+            globals()["PLAN_DIR"] = _b / "plans"
+            globals()["SENTINEL"] = _b / "executing-plan"
+            _rc = cmd_add("Dispatch the owed half|spawn it|a promise is inert")
+            case("cmd_add with NOTHING armed creates a plan and returns OK", _rc == OK)
+            _made = sorted(globals()["PLAN_DIR"].glob("*.md"))
+            case("…exactly one plan file is written", len(_made) == 1)
+            case("…it is armed, so the Stop guard can see it",
+                 globals()["SENTINEL"].is_file())
+            case("…and the plan holds the promise as an UNTICKED step",
+                 "- [ ] " in _made[0].read_text() and "Dispatch the owed half" in _made[0].read_text())
+            # ⛔ THE DESTRUCTIVE CASE: a second --add with the same title must NOT overwrite the
+            # first plan. This is r1 H2's shape, now driven through the verb rather than the helper.
+            _first = _made[0].read_text()
+            globals()["SENTINEL"].unlink()
+            cmd_add("Dispatch the owed half|again|again")
+            case("a SECOND create with the same title does not overwrite the first",
+                 _made[0].read_text() == _first)
+            case("…it writes a second plan instead",
+                 len(sorted(globals()["PLAN_DIR"].glob("*.md"))) == 2)
+            # a title that cannot be a filename must still land
+            globals()["SENTINEL"].unlink()
+            case("a title containing a slash still creates a plan",
+                 cmd_add("Review src/api|inspect|needed") == OK)
+    finally:
+        globals()["PLAN_DIR"], globals()["SENTINEL"], globals()["ROOT"] = _saved
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

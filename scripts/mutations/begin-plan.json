@@ -277,7 +277,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    while (PLAN_DIR / f\"{candidate}.md\").exists():\n",
+        "    while _taken(candidate):\n",
         "    while False:\n"
       ]
     ],
@@ -309,6 +309,19 @@
     ],
     "expect": [
       "a fenced example is NOT rewritten"
+    ]
+  },
+  {
+    "name": "--add's create path passes the raw TITLE as the filename again (r2 CLAUDE)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        return cmd_begin(_auto_slug(title), [step_arg])\n",
+        "        return cmd_begin(title, [step_arg])\n"
+      ]
+    ],
+    "expect": [
+      "a title containing a slash still creates a plan"
     ]
   }
 ]

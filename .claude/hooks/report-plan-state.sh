@@ -29,7 +29,12 @@
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 out=$(python3 "$REPO_ROOT/scripts/check-plan-progress.py" --session-start </dev/null 2>&1)
 rc=$?
-if [ "$rc" -ne 0 ] || [ -z "${out//[[:space:]]/}" ]; then
+# ⚠ `[[ =~ ]]`, NOT `${out//[[:space:]]/}` (r2 CLAUDE, measured). The parameter expansion builds
+# a whole second copy of the output with every space removed, which is O(n) in allocations:
+# on 4 MB it took **9s** against **1s** for the regex test. A SessionStart hook runs on every
+# startup, resume, clear and compaction, so a seconds-long stall here is paid constantly.
+# ⛔ The Codex half attributed the same stall to output buffering; it is this line.
+if [ "$rc" -ne 0 ] || [[ ! "$out" =~ [^[:space:]] ]]; then
     printf '[plan-progress/cannot-run] CANNOT RUN: the plan-state reader exited %s and produced %s bytes. TREAT THIS AS NOT RUN — this says NOTHING about whether work is outstanding, so check `.claude/executing-plan` by hand.\n' \
         "$rc" "${#out}"
     [ -n "$out" ] && printf '   its output was: %s\n' "$(printf '%s' "$out" | head -c 400 | tr '\n' ' ')"
