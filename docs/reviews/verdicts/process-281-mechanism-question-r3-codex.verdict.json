@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 14077 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "b310c470cfdd69c006045666fb48eabdfaa2faa8",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-session-artifacts/2026-10-13-pr371/briefs/process-r3-codex-brief.md",
+  "reason": "14077 chars",
+  "refused": false,
+  "review": "process-281-mechanism-question-r3-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}
