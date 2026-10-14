@@ -14908,8 +14908,10 @@ symlink itself** — the entry `.claude/skills/improve-codebase-architecture` is
 frontmatter key that does not exist** — 0 occurrences among the tracked skill files, against 21 for
 the control `description:`. ⚠ **Corrected again: that is a SCOPED result, not "repo-wide", which this
 paragraph first claimed.** Repo-wide the token appears in **5** tracked files and the control in **195**, measured at commit `b310c470` — ⟳ r3 M4: this read *3* and *193*, which were true when written and went stale within the hour because the reviews that discuss the token are themselves tracked files. A repo-wide count of a token this branch WRITES ABOUT cannot be stated without pinning the revision —
-and all 3 are this paragraph and the two reviews discussing its absence, so the measurement's own
-write-up is what the search now finds. The key is still absent from every skill's frontmatter;
+and all 5 are this paragraph and the FOUR reviews discussing its absence, so the measurement's own
+write-up is what the search now finds — ⟳ r3: the count was corrected 3→5 and this clause was left
+saying "all 3 … the two reviews", which is the same stop-short class. ⚠ And the figures have since
+drifted again (6 / 196), which is why the PIN is the fix and the number never will be. The key is still absent from every skill's frontmatter;
 the frontmatter carries only `name` and `description`. It IS project-local, because it is a tracked
 file in this repo rather than a vendored plugin copy — which is the evidence that actually supports
 the claim. Backlog #281 carries the measurement; its row lives on `backlog-249-260-fixes` and must be

@@ -113,7 +113,7 @@ until after selection. **When you cannot name the shared assertion, the honest c
 INVESTIGATION, not a redesign:** offer "spend a round establishing what these findings share" as the
 recommended option, and say what would make it conclusive.
 
-⚠ **Two ways to satisfy this rule and fix nothing, both to be refused:**
+⚠ **THREE ways to satisfy this rule and fix nothing, all to be refused** — ⟳ r3 said "Two … both" after a third was added, which is this branch's own recurring class in the sentence that enumerates cheats:
 > * **withdrawing the ASSERTION while keeping the defective BEHAVIOUR** — the words change, the
 >   defect ships. That is why the audit asks for a behavioural change, not a wording change.
 > * the inverse: **a redesign that makes a required guarantee TRUE** keeps making the claim, and so

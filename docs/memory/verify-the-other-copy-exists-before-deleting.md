@@ -32,19 +32,40 @@ DANGLING symlink, a directory tree, and a replacement race); and all of them ass
 EITHER destroys it"* when the relation is **ASYMMETRIC** — with `alias → real`, deleting `alias` is
 harmless and deleting `real` is fatal, and both report the same pair and `links=1`.
 
-⭐ **The lesson is not a better rule. It is that `stat` CANNOT answer this question**, because the
-link count counts *entries* and never identifies *which entry the survivor uses*. So: **`stat -L`,
-`readlink` and `ls -ld` are DIAGNOSTICS that tell you what you are looking at — ⚠ r3 L2: QUOTE
-every path in them (an unquoted `stat` split a path containing spaces and returned rc=1) and print
-each observation LABELLED, because a bare `readlink "$A" "$B"` prints ONE unlabelled target and
-exits 1 without saying which argument produced it. They never decide.**
+⭐ **The lesson is that the LINK COUNT cannot answer this question**, because it counts *entries* and
+never identifies *which entry the survivor uses*. ⛔⟳ **AND "`stat` CANNOT ANSWER THIS / THEY NEVER
+DECIDE" WAS MY FIFTH OVERSHOOT IN THIS PARAGRAPH, measured and refuted:** `realpath` on both paths
+plus `[ -L "$A" ]` DOES decide aliasing, 7 of 7 on the same attack list, and it answers the mode-`000`
+case correctly as SAFE where the proof below returns CANNOT RUN:
+
+```bash
+[ -f "$A" ] && [ -f "$B" ] || { echo "CANNOT RUN: not both regular files"; exit 2; }
+RA=$(realpath "$A") && RB=$(realpath "$B") || { echo "CANNOT RUN: does not resolve"; exit 2; }
+[ "$RA" != "$RB" ] && echo "different real files -> deleting A leaves B" && exit 0
+[ -L "$A" ] && echo "A is a symlink to it -> deleting A leaves the content" && exit 0
+echo "A IS the file B resolves to -> DELETING A DESTROYS IT"; exit 1
+```
+
+⚠ **Its hard-link verdict is right for the WRONG reason** — it reports "different real files" for two
+names of ONE inode, because `realpath` returns each name. Correct answer, unsound explanation, so it
+is a DIAGNOSTIC and not the authority. The authority is still the reversible proof, which is the only
+thing that observes CONTENT and survives a race.
+⚠ r3 L2 — and whichever diagnostic you run, QUOTE every path (an unquoted `stat` split a path
+containing spaces and returned rc=1) and print each observation LABELLED: a bare
+`readlink "$A" "$B"` prints ONE unlabelled target and exits 1 without saying which argument
+produced it.
 The decision comes from doing it reversibly and looking:
 
 ```bash
 #!/bin/bash
 # $1 = the path you want to delete (A).  $2 = the survivor you believe in (B).
 A="$1"; B="$2"                                   # quoted throughout: paths have spaces
-[ -d "$A" ] || [ -d "$B" ] && { echo "CANNOT RUN: directory — a tree is a different blast radius"; exit 2; }
+# ⛔ r3 H1: REGULAR FILES ONLY, and this must come FIRST. `shasum` on a FIFO or a character
+#    device BLOCKS FOREVER — measured rc=137 under a timeout harness, with a green control on a
+#    regular file, and in the one-writer FIFO shape the hang lands AFTER the park, leaving the
+#    original renamed and NO output at all. `-f` refuses FIFOs, devices, sockets, directories
+#    and dangling symlinks in one test.
+[ -f "$A" ] && [ -f "$B" ] || { echo "CANNOT RUN: not both REGULAR files (FIFO/device/dir/dangling)"; exit 2; }
 BEFORE=$(shasum "$B" 2>/dev/null | awk '{print $1}')
 [ -z "$BEFORE" ] && { echo "CANNOT RUN: B unreadable BEFORE anything moved — nothing tested"; exit 2; }
 PARKED="$A.parked.$$"
