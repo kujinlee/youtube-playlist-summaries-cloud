@@ -3024,12 +3024,12 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                         "rules OUT a traceback this harness can read, and is NOT evidence that "
                         "the suite ran or that its printer is at fault")
             elif heads:
-                said = ("stderr printed these lines at column zero after a traceback frame "
-                        "block, in the order the child printed them, each STRIPPED of "
+                said = ("stderr printed these lines at column zero after a run of FRAME-SHAPED "
+                        "lines, in the order the child printed them, each STRIPPED of "
                         "surrounding whitespace \u2014 "
                         + " \u00b7 ".join(
-                            h + (" [its own preceding line began 'Exception ignored in',"
-                                 " which the CHILD wrote]" if ig else "")
+                            h + (" [the line INTRODUCING that run began 'Exception ignored"
+                                 " in', which the CHILD wrote]" if ig else "")
                             for h, ig in heads)
                         + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, "
                           "NOR THAT IT KILLED THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT: the "
@@ -3889,10 +3889,23 @@ def _self_test() -> int:
         # by the child. Measured by severing the annotation entirely: 298/298 still passed. That
         # is this repository's "printing MORE evidence weakens a substring case" shape, and it is
         # why r14's forged-attribution High had no falsifier in either direction.
-        # ⭐ So the assertion now names text ONLY THIS HARNESS can emit, and the case name no
-        # longer claims CPython labelled anything — `intro` is the CHILD's line.
+        # ⭐ So the assertion names text ONLY THIS HARNESS can emit, and the case name no longer
+        # claims CPython labelled anything — `intro` is the CHILD's line.
+        # ⛔⛔ r14 CLAUDE H1 — AND THE REPLACEMENT WORDING WAS FALSE IN 100% OF THE CASES IT
+        # PRINTED, which is worse than the attribution it replaced because it was false about
+        # POSITION, the one category #280's redesign reserved for itself. `intro` is computed
+        # BEFORE the run loop consumes the block (see the loop: the backward scan starts at
+        # `i - 1` where `i` is the block's FIRST indented line), while the annotated line is
+        # `lines[i]` AFTER the loop — so the block always sits BETWEEN them and they are
+        # structurally NEVER adjacent. Measured by the reviewer over all 59,049 five-line
+        # streams of a 9-shape alphabet: 3,720 annotations emitted, the adjacency claim held
+        # 0 times; distances 2 (1,944), 3 (1,296), 4 (480), and 1 line NEVER. Unbounded too —
+        # the backward scan looks past every blank and header, so 42 lines back is reachable.
+        # ⭐ The sting: this very `_q` fixture PRINTS THE REFUTATION three lines under the
+        # claim, because `diagnostic_tail` dumps the raw stderr into the same string.
+        # The wording now states what the code computes: the line INTRODUCING the run.
         case("...and the harness's OWN note is there, in text raw stderr cannot supply",
-             any("its own preceding line began" in r for r in _repq), True)
+             any("the line INTRODUCING that run began" in r for r in _repq), True)
 
     # ⛔⛔ r12 Codex H3 — THE FIFTH WORLD: A CRASH THAT FORGES ITS OWN `[FAIL]` LINE. The 2x2
     # that closed #271 covers a crash parsing to NO failures; this is the world where the crash

@@ -1913,11 +1913,11 @@
     ]
   },
   {
-    "name": "⭐⛔ r14 H1 — the harness's OWN note about the child's preceding line is removed, so the report quotes the lines and says NOTHING about what introduced them. Added because severing this annotation left 298/298 GREEN: its only cover asserted `Exception ignored in`, a phrase CPython writes and `diagnostic_tail` carries into the same string, so the case credited the harness for the CHILD's text",
+    "name": "⭐⛔ r14 H1 (RETARGETED at the r14 Claude fold — the wording it anchors was false about POSITION and was rewritten) — the harness's OWN note about the line introducing the frame-shaped run is removed, so the report quotes the lines and says NOTHING about what introduced them. Added because severing this annotation left 298/298 GREEN: its only cover asserted `Exception ignored in`, a phrase CPython writes and `diagnostic_tail` carries into the same string",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                            h + (\" [its own preceding line began 'Exception ignored in',\"\n                                 \" which the CHILD wrote]\" if ig else \"\")\n",
+        "                            h + (\" [the line INTRODUCING that run began 'Exception ignored\"\n                                 \" in', which the CHILD wrote]\" if ig else \"\")\n",
         "                            h\n"
       ]
     ],
