@@ -119,6 +119,12 @@ recommended option, and say what would make it conclusive.
 > * the inverse: **a redesign that makes a required guarantee TRUE** keeps making the claim, and so
 >   FAILS a literal reading of "stops making that claim" while being exactly the right answer.
 >   The test is whether the recurring REFUTATION becomes impossible, not whether a sentence vanishes.
+> * ⛔ r3 M2 — **and a THIRD cheat: NARROWING THE SCOPE.** Changing *"complete for all supported
+>   inputs"* to *"complete for this smaller subset"* makes every witnessed counterexample
+>   out-of-scope, so the refutation does become impossible — while the previously supported
+>   behaviour stays broken. If an option narrows scope, it must DISCLOSE the coverage removed and
+>   what now serves it; and an "out of scope" dismissal is only legitimate against a scope that
+>   existed BEFORE the finding, or with the lost coverage explicitly accepted on the record.
 
 ⛔ **AND THE CARD ITSELF MUST SATISFY `portable-practices.md` §19, OR A HOOK REFUSES IT** — r1 H1
 measured the template that stood here: piped through `scripts/check-selection-card.py` it exited
@@ -154,8 +160,13 @@ it removes.
 refuse it anyway; finding out from the hook wastes the owner's turn.
 
 ⚠ **AND SAY WHERE EACH ANSWER GOES** — r1 M5: step 3 below only describes what happens when a
-candidate is chosen for design, so two of these answers used to lead nowhere. **A (redesign)** →
-step 3's grilling loop, on the redesign. **B (keep narrowing)** → no grilling: file the next
+candidate is chosen for design, so some of these answers used to lead nowhere. **A (redesign)** →
+step 3's grilling loop, on the redesign. ⛔ **A (INVESTIGATE)** — r3 M1: this one must NOT fall into
+step 3, which starts interface design immediately. It goes to a round of evidence-gathering whose
+STOPPING CONDITION you state up front (*"an assertion that at least two of these findings both
+refute"*), and which ENDS BY RETURNING HERE to re-run the audit — with a redesign now cardable
+because you can finally say what it removes. If the round ends without that assertion, say so and
+card B or C; do not invent one. **B (keep narrowing)** → no grilling: file the next
 narrowing as ordinary work and record that the arming condition is still live, so the NEXT round's
 findings are read against it. **C (accept and record)** → no grilling: write the backlog row naming
 the claim being kept and what it costs, and say what would reopen it. In both B and C the review

@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file. `stat -f %l` was 1 — ⛔ and LINK COUNT ALONE IS THE WRONG CHECK and so is the (dev,inode) pair alone. `stat -L` BOTH paths: same pair AND `links==1` ⇒ deleting either DESTROYS it; `links>=2` is a hard link and survives. Then prove it with a reversible `mv`, never `rm`"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file. `stat -f %l` was 1 — ⛔ and ⛔ `stat` CANNOT ANSWER THIS — four rules built on it were refuted, in BOTH directions. DERIVE NOTHING: hash the survivor, `mv` the doomed path aside, re-hash, restore. Unchanged ⇒ safe. Any failure is CANNOT RUN, never a verdict. Files only"
 metadata:
   node_type: memory
   type: feedback
@@ -23,91 +23,65 @@ The fork never re-emitted — asked directly, it answered *"I never held that pa
 that was false too. **The page was recovered in full from the fork's own transcript**, restored,
 committed and shipped as PR #369. Nothing was lost but the ~1.3 KB of edits made after the write.
 
-## The check that costs one command
+## The check — ⛔ VERIFY, NEVER DERIVE
+
+⛔⛔ **FOUR `stat`-BASED RULES WERE WRITTEN HERE AND ALL FOUR WERE WRONG, IN BOTH DIRECTIONS.** Each
+was refuted by the next review round: `links=1` alone (said SAFE where deletion destroyed content);
+the `(dev,inode)` pair alone (refused SAFE deletes); the pair plus `links` (still said SAFE for a
+DANGLING symlink, a directory tree, and a replacement race); and all of them asserted *"deleting
+EITHER destroys it"* when the relation is **ASYMMETRIC** — with `alias → real`, deleting `alias` is
+harmless and deleting `real` is fatal, and both report the same pair and `links=1`.
+
+⭐ **The lesson is not a better rule. It is that `stat` CANNOT answer this question**, because the
+link count counts *entries* and never identifies *which entry the survivor uses*. So: **`stat -L`,
+`readlink` and `ls -ld` are DIAGNOSTICS that tell you what you are looking at — ⚠ r3 L2: QUOTE
+every path in them (an unquoted `stat` split a path containing spaces and returned rc=1) and print
+each observation LABELLED, because a bare `readlink "$A" "$B"` prints ONE unlabelled target and
+exits 1 without saying which argument produced it. They never decide.**
+The decision comes from doing it reversibly and looking:
 
 ```bash
-# ⛔ TWO THINGS ARE LOAD-BEARING AND I GOT EACH WRONG IN TURN: `-L`, which RESOLVES symlinks
-#    (without it a file symlink reports two inodes and this says "two files" about ONE file),
-#    and the LINK COUNT, which I then wrongly declared meaningless. Both are needed:
-stat -L -f 'dev=%d inode=%i links=%l %N' <pathA> <pathB>
-#   different (dev,inode)            -> two independent files        -> deleting one is SAFE
-#   same (dev,inode) AND links >= 2  -> several REAL entries (hard link) -> deleting one is SAFE
-#   same (dev,inode) AND links == 1  -> ONE real entry, the rest are symlinks -> DELETING DESTROYS
-stat    -f 'dev=%d inode=%i %N' <pathA> <pathB>    # differs from the above => one of them IS a link
-readlink <pathA> <pathB>; ls -ld "$(dirname <pathA>)" "$(dirname <pathB>)"   # which link, and where
+#!/bin/bash
+# $1 = the path you want to delete (A).  $2 = the survivor you believe in (B).
+A="$1"; B="$2"                                   # quoted throughout: paths have spaces
+[ -d "$A" ] || [ -d "$B" ] && { echo "CANNOT RUN: directory — a tree is a different blast radius"; exit 2; }
+BEFORE=$(shasum "$B" 2>/dev/null | awk '{print $1}')
+[ -z "$BEFORE" ] && { echo "CANNOT RUN: B unreadable BEFORE anything moved — nothing tested"; exit 2; }
+PARKED="$A.parked.$$"
+# ⛔ -L as well as -e: `[ -e ]` is FALSE for a DANGLING symlink, and `mv` would overwrite it
+{ [ -e "$PARKED" ] || [ -L "$PARKED" ]; } && { echo "CANNOT RUN: $PARKED already exists"; exit 2; }
+mv "$A" "$PARKED" 2>/dev/null || { echo "CANNOT RUN: mv failed — nothing tested"; exit 2; }
+AFTER=$(shasum "$B" 2>/dev/null | awk '{print $1}')
+# ⛔ never overwrite anything that appeared at A while we were looking
+if [ -e "$A" ] || [ -L "$A" ]; then
+  echo "⛔ NOT RESTORED: something NEW is at $A. Your original is at $PARKED — merge by hand"; exit 2
+fi
+mv "$PARKED" "$A" 2>/dev/null || { echo "⛔ RESTORE FAILED — your original is at $PARKED"; exit 2; }
+if [ -n "$AFTER" ] && [ "$BEFORE" = "$AFTER" ]; then echo "SAFE: B unchanged without A"; exit 0
+else echo "⛔ DO NOT DELETE: B vanished or changed without A"; exit 1; fi
 ```
 
-⭐ **THEN PROVE IT, because every line above is an inference about a moment** — and the proof has to
-be written so it cannot lie, which the first version was not:
+⭐ **Why each line is there — every one of them is a defect a review round found in an earlier
+version of this block:**
 
-```bash
-# ⛔ FILES ONLY, and only after the stat check above says same-inode-and-links==1.
-PARKED="<pathA>.parked.$$"                       # $$ so it cannot clobber an existing .parked
-[ -e "$PARKED" ] && { echo "CANNOT RUN: $PARKED exists"; exit 2; }
-[ -d "<pathA>" ] || [ -d "<pathB>" ] && { echo "CANNOT RUN: directories, this proof is for files"; exit 2; }
-mv "<pathA>" "$PARKED" || { echo "CANNOT RUN: mv failed, NOTHING was tested"; exit 2; }
-if cat "<pathB>" >/dev/null 2>&1; then echo "B SURVIVES"; else echo "B IS GONE — RESTORE NOW"; fi
-mv "$PARKED" "<pathA>"                            # reversible. `rm` is not: that is how the page died
-```
+* it **hashes** B rather than testing existence, so a replacement race or a changed file is caught;
+* it establishes readability **BEFORE** moving anything, so an unreadable-but-present B is a
+  **CANNOT RUN** and not the false verdict *"B IS GONE"* (measured: a mode-`000` file produced
+  exactly that lie, then exited 0);
+* `$$` in the park name, because the first version **silently clobbered** an existing `.parked`;
+* `mv` success, restore success and readability are each checked **separately**, so an instrument
+  failure can never be rendered as a verdict — the anti-pattern this repository writes down;
+* directories are **refused**, because a recursive delete has a different blast radius and three of
+  the false SAFE verdicts were directory cases;
+* `-L` as well as `-e` on the park name — measured: `[ -e ]` is FALSE for a DANGLING symlink, so an
+  earlier version would have silently overwritten one sitting at that exact name;
+* it refuses to restore over **anything new at A**, and names where your original is parked — an
+  earlier version silently overwrote a file created during the read and still exited 0.
 
-⛔⛔ **CORRECTED 2026-10-13 — THIS NOTE'S OWN TEST WAS FALSE, AND IT FAILED TOWARD "TWO FILES".**
-It read *"same inode **or** `links=1` means deleting either name deletes the content"*. The
-`links=1` disjunct is not weak, it is **empty** — measured, three cases:
-
-| case | `links` | `inode` | actually one file? |
-|---|---|---|---|
-| two INDEPENDENT byte-identical files | **1, 1** | differ | **NO** — deleting one leaves the other |
-| a real hard link | 2, 2 | same | yes |
-| **the symlinked-PARENT case this note is about** | **1, 1** | **same** | **YES** |
-
-`links=1` ALONE is true in the one-file case AND in the two-file case, so by itself it decides
-nothing — which is what the original rule got wrong by using it alone.
-⛔⛔ **BUT "IT DISCRIMINATES NOTHING" WAS MY OWN OVERCORRECTION, REFUTED 2026-10-13 IN ROUND 2 OF
-THE SAME BRANCH, AND IN THE DANGEROUS DIRECTION: it made the rule REFUSE A SAFE DELETE.** Measured —
-a **hard link** has the SAME `(dev,inode)` under `-L` and `links=2`, and `rm` on one name leaves the
-content intact through the other. A rule of "same pair ⇒ DO NOT DELETE" is simply wrong there.
-
-⭐ **SO BOTH FIELDS ARE LOAD-BEARING, AND THE COMPLETE RULE IS THREE-WAY** (measured, all three):
-
-| `stat -L` on both paths | what it means | deleting ONE name |
-|---|---|---|
-| different `(dev,inode)` | two independent files | **safe** |
-| same `(dev,inode)`, `links >= 2` | several REAL directory entries | **safe** — content survives |
-| same `(dev,inode)`, `links == 1` | ONE real entry; anything else reaching it is a symlink | **DESTROYS IT** |
-
-⚠ And the old command omitted the DEVICE, which is not pedantry: inode numbers are only unique
-per filesystem, so two unrelated files can share one.
-⭐ Three versions of this one test, and each correction broke it the other way: `links=1` alone
-(unsafe), then the pair alone (refuses safe deletes), then both. **The pattern worth keeping is not
-the rule — it is that a safety check gets PROVED with the reversible `mv` below, never reasoned
-about.**
-
-⛔⛔ **AND THE (device, inode) RULE WAS ITSELF INSUFFICIENT — CORRECTED AGAIN 2026-10-13, round 2,
-AND IT FAILED IN THE SAME DIRECTION AS THE RULE IT REPLACED.** A **direct FILE symlink** defeats it:
-
-| probe | `real.txt` | `alias.txt` -> real.txt | verdict it gives |
-|---|---|---|---|
-| `stat` (no `-L`) | inode …978 | inode …**979** | "TWO files" — **wrong, and unsafe** |
-| `stat -L` | inode …978 | inode …978 | "ONE file" — correct |
-
-Measured: with the first probe the rule says safe-to-delete; `rm real.txt` then leaves `alias.txt`
-**dangling and the content gone**. ⚠ And checking the PARENTS does not reveal it — both names sit in
-the same directory, so the previous version of this note sent you to the one place that cannot see
-the case. ⭐ **So: `-L`, and distinguish the link ENTRY from its TARGET.**
-
-⚠ **A second gap, and it is why the last two lines of the command block exist: every `stat` is an
-observation of a MOMENT, with no stability condition.** Measured — one path read, its target
-replaced, then its alias read: the two pairs differed although both names then referred to the same
-new file. Sequential probes cannot establish aliasing on a tree somebody else is writing. **Prove
-the content survives with a reversible `mv`; never trust the inference alone, and never use `rm` to
-find out.**
-⚠ Not exercised, so NOT RUN rather than safe: bind mounts and firmlinks. An APFS clone WAS measured
-— different inode, and it survives deletion of its source, so it is genuinely two files.
-
-I had also compared the *directory* inodes and found them different, which felt like proof of two
-directories — it was not, because I had read `%i` on one real directory and one symlink target.
-⛔ **`readlink` both the names AND the parents. Do not reason about it.**
-
+**Measured 7 of 7 on the cases that defeated the four rules it replaces** — two independent files
+(SAFE), B a symlink to A (REFUSE), A a symlink to B (SAFE — correctly asymmetric), B dangling
+(CANNOT RUN), B mode `000` (CANNOT RUN), A hard-linked elsewhere with B reached through a symlinked
+parent (REFUSE), and a genuine hard-link pair (SAFE).
 ## ⭐ The transferable rule, which is not about symlinks
 
 **A document's claim about the filesystem is a claim, and `rm` is irreversible.** The contract asserted

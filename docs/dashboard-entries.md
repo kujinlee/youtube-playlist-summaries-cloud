@@ -14840,12 +14840,16 @@ more useful than the claim. Rebuilding WAS on the menu: the deeper review listed
 the owner to pick from, the second of them a rebuild, and the record shows the owner asked why the
 chosen option was better than that rebuild before declining it on a measurement.
 
-What actually went wrong is narrower. The rebuild that eventually worked — stop claiming a list of
-causes is complete — was not one of the four options. The menu looked complete while omitting the
-only item that removed the thing going wrong, so two more rounds went by rediscovering a conclusion
-already written down, and that rebuild was chosen at the end of them. Each of those rounds took a
-couple of hours. A complete-looking choice that leaves out the relevant option costs exactly what
-offering no choice costs.
+What actually went wrong is narrower, and ⛔ **narrower again than this paragraph first claimed** — a
+later review found it had kept the strong version after the strong version was withdrawn. What the
+record supports: **none of the four options explicitly proposed abandoning the claim that a list of
+causes was complete.** What it does NOT support, and what this paragraph wrongly asserted: that the
+eventual rebuild was therefore unavailable through those options, that it was the only thing that
+would have worked, or that two specific rounds were the price. The options were never designed, so
+nobody can say what they would have done.
+
+The useful part survives all of that: **a list of options should be checked against the thing that
+keeps going wrong before anyone is asked to choose from it.**
 
 The first change adds a test with a sharp edge. When a finding is judged to be merely an unfinished
 rule rather than a wrong shape, the prescribed follow-up is to go looking for other cases the rule
@@ -14853,8 +14857,11 @@ forgot. The new sentence says: if that search turns up a new case, the original 
 and the thing is probably the wrong shape after all. ⛔ **It IS a rule of thumb, and the first
 version of this change overstated it as a certainty.** A rule covering a short, fixed list of cases
 can genuinely have forgotten one, and finding it finishes the rule without anything being the wrong
-shape. What separates the two is whether the cases KEEP coming: a limited list runs out, a wrong
-shape keeps producing them. Three rounds of searching turned up five such cases between them — not
+shape. ⛔ **And the sentence that stood here — *“what separates the two is whether the cases keep
+coming: a limited list runs out, a wrong shape keeps producing them”* — is WITHDRAWN too.** It is
+the same quick test the technical document already dropped, and it is false: two fully listed
+states that contradict each other ARE the wrong shape, and looking for more cases finds none. So
+there is no quick test here at all. A new case means LOOK AGAIN, and nothing more. Three rounds of searching turned up five such cases between them — not
 five rounds, which this entry also said — and nobody read that as the answer it was.
 
 The second change is about the list of options a deeper review hands over. ⛔ **This paragraph first
@@ -14900,7 +14907,7 @@ symlink itself** — the entry `.claude/skills/improve-codebase-architecture` is
 ⚠ **Also corrected: the skill's project-local ownership was credited to a `projectSettings:`
 frontmatter key that does not exist** — 0 occurrences among the tracked skill files, against 21 for
 the control `description:`. ⚠ **Corrected again: that is a SCOPED result, not "repo-wide", which this
-paragraph first claimed.** Repo-wide the token appears in 3 tracked files and the control in 193 —
+paragraph first claimed.** Repo-wide the token appears in **5** tracked files and the control in **195**, measured at commit `b310c470` — ⟳ r3 M4: this read *3* and *193*, which were true when written and went stale within the hour because the reviews that discuss the token are themselves tracked files. A repo-wide count of a token this branch WRITES ABOUT cannot be stated without pinning the revision —
 and all 3 are this paragraph and the two reviews discussing its absence, so the measurement's own
 write-up is what the search now finds. The key is still absent from every skill's frontmatter;
 the frontmatter carries only `name` and `description`. It IS project-local, because it is a tracked

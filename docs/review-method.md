@@ -226,7 +226,7 @@ does not settle the grade. ⛔⛔ **AND THE LIST BELOW IS NOT CLAIMED COMPLETE �
 PREVIOUS VERSION REPRODUCING THIS BLOCK'S OWN DEFECT ONE LEVEL UP.** It said *“Three cases … all
 stated rather than discovered later”*, where its predecessor had said *“Two cases … both now stated”*
 and grew to three in a single round. A fourth is already witnessed on this branch: a review landing
-moved a population from 3 to 4. **So: KNOWN cases where it decides nothing, and expect more:** a member **out of scope** of the rule; a pass that **CANNOT RUN** (a NOT RUN, never a clean
+moved a population from 3 to 4. **So: KNOWN cases where it decides nothing, and expect more:** a member **out of scope** of the rule — ⛔ r3 M2: legitimate ONLY against a scope that existed BEFORE the finding, because narrowing the scope so the witnesses fall outside it makes the refutation impossible while leaving the behaviour broken, which is a cheat and not a grade; a pass that **CANNOT RUN** (a NOT RUN, never a clean
 pass, and never evidence of a finite set); and — r2's case — a **completed, finite enumeration that
 still contains a mechanism defect**, where the pass returns nothing and the shape is wrong anyway.
 
@@ -252,7 +252,9 @@ introducing the rule.**
 
 ⛔⛔ **SO WHAT A THRASHING-ARMED PHASE 6 OWES IS *NOT* "A MECHANISM CARD INSTEAD OF AN INSTANCE
 CARD". r1 REFUTED THAT FROM THE VERY DOCUMENT THIS BLOCK CITES.**
-`docs/reviews/architecture-review-2026-10-13.md:158-172` is headed *"Deepening candidates — NOT
+`docs/reviews/architecture-review-2026-10-13.md:158-172` — ⚠ r3 L1: that file lives on branch
+`backlog-249-260-fixes` (PR #371), NOT in this tree, and the content cited here reproduces at
+pinned commit `9dd9c985` — is headed *"Deepening candidates — NOT
 designed here, per the skill; the owner picks"* and lists **FOUR**, the second being a
 mechanism-level redesign (*"a deep module over 'the child's verdict' … one module with named
 states"*). `:264-266` records *"Option **A** … chosen 2026-10-13 **after asking why A over B**"*, and
@@ -275,8 +277,14 @@ all", least of all for an undesigned module.** They nominally addressed other se
 clause, a verdict module, one combiner, retiring `run_suite`. So
 the rule is: **when the arming condition is THRASHING, the candidate list must contain the option
 that REMOVES THE RECURRING CLAIM ITSELF.** Name the cause, then check that one option actually
-dissolves it — a complete-looking fork that omits the relevant option costs exactly what no fork
-costs, which is what happened here.
+dissolves it.
+
+⛔⟳ **r3 H4: the sentence that stood here — *"a complete-looking fork that omits the relevant option
+costs exactly what no fork costs, which is what happened here"* — PUT BACK the conclusion the
+paragraph above it had just withdrawn.** It asserted omission, sole-remedy status AND a
+counterfactual cost, from a record that supports none of the three. What the record supports is only
+that none of the four candidates EXPLICITLY proposed abandoning the claim. The rule above is worth
+following on its own terms; it does not need the incident to have been what I first said it was.
 
 **⚠ THE SYMPTOM LIST IS A PROMPT, NOT THE TEST. There is one test, and it is this:**
 
