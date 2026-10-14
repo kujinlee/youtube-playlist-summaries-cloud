@@ -46,7 +46,7 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # ⟳ 2026-10-13 — the LINE NUMBER that stood here (`:795`) is GONE. A line number in a VENDORED file
 # has no owner in this repo: no guard can check it and a plugin bump invalidates it silently. What
 # is stable is the SYMBOL and the PATH — `REMEMBER_HANDOFF` in
-# `~/.claude/plugins/cache/claude-plugins-official/remember/<version>/scripts/session-start-hook.sh`,
+# `~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh`,
 # where there are TWO assignments: the per-session path, then the shared one.
 # ⚠ HOW FAR it drifted is NOT measured, and the "stale by 376 lines" that stood here is withdrawn —
 # the pre-0.33.0 hook was never fetched (round 2 M3 caught that figure surviving here after being
@@ -55,20 +55,27 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # ⛔⛔ TWO CORPORA, TWO SEARCHES — AND THIS HEADING IS THE FOURTH VERSION OF IT.
 # ⚠ It read "NO SEARCH COMMAND IS PRESCRIBED" until r4, which was the retired position still
 # standing as the HEADLINE four lines above its own correction — I introduced that in the very
-# commit that fixed the eighth incomplete withdrawal on this branch. The class is the branch's:
+# commit that fixed ANOTHER instance of this branch's recurring class. ⚠ r4 M2: the ordinals this
+# branch published ("eighth", "ninth and tenth") name no enumerated population and a reviewer could
+# not reproduce any of them, so they are dropped rather than defended. The class IS established:
 # a correction has a blast radius and mine keep stopping short of it.
 #   v1: `grep -R`  — round 2 measured BSD grep (what macOS ships) treating `-R` exactly like `-r`,
 #                    so it finds NOTHING, while this shell's `ugrep` wrapper does follow symlinks.
 #   v2: `grep -RS` — round 3 found GNU grep having NO `-S` option at all, and ripgrep rejecting
-#                    `-R`. ⛔ r4 M1: "MEASURED" WAS TOO STRONG. That leg came from GNU's SOURCE
-#                    OPTION TABLE, not a runtime probe — the round could not build the binary and
+#                    `-R`. ⛔ r4 M1: "MEASURED" WAS TOO STRONG. That leg came from GNU grep
+#                    3.12's SOURCE OPTION TABLE (r4 L4: name the version, or the
+#                    claim goes stale silently), not a runtime probe — the round could not build the binary and
 #                    said so. The memory file was corrected the same day; THIS COMMENT was not,
 #                    and a code comment is the one surface no document guard reads.
 # Each version was checked against the binaries the author happened to have and published for
 # every reader's. ⛔ r4 M2 — "prescribe no flag" is no longer what this repo does, and leaving it
 # here contradicted the skill, the hook and the memory file. TWO CORPORA, two answers: this repo's
-# TRACKED files -> `git grep -l <string>`, naming the corpus, because it misses untracked, ignored,
-# submodule, nested-checkout and vendored content and reads working-tree not staged content (r4 H1);
+# TRACKED files -> `git grep -l <string>`, but r4 H1 refuted the mechanism a FOURTH time: it searches
+# the paths in the INDEX, reading each from the working tree UNLESS marked skip-worktree /
+# assume-unchanged or absent -- then the cached blob, or nothing. Measured, all on TRACKED files:
+# assume-unchanged returns the STALE indexed string; skip-worktree -> 0; deleted-from-worktree -> 0.
+# So naming the corpus does not save a reader. CROSS-CHECK instead: git grep -l vs git grep --cached
+# -l vs grep -rl, and treat disagreement as the signal;
 # a VENDORED plugin file -> no repo-side search reaches it, so name the SYMBOL and the path.
 #
 # ⚠ No gate in this repo can see a stale figure HERE — this is a code comment and the document

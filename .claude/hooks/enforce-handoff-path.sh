@@ -67,20 +67,27 @@ survives context-preview truncation. Delivery is fingerprinted on the handoff's
 CONTENT, so reading one does not consume it.
   To inventory this repo's TRACKED files:  git grep -l session-start-hook
   (no flag needed -- it searches tracked files, so the symlinked skill file is found)
-  r4 H1: that is a CORPUS, not every site. git grep misses untracked and ignored
-  files, submodules, nested checkouts and vendored deps, and it reads tracked
-  WORKING-TREE content (--cached for staged, git grep <commit> for a version).
+  r4 H1: ONE COMMAND IS NOT ENOUGH. git grep searches the paths in the INDEX,
+  reading each from the working tree UNLESS it is marked skip-worktree or
+  assume-unchanged or is gone from disk -- then it reads the cached blob, or
+  nothing. Measured: a TRACKED file marked assume-unchanged returns the stale
+  indexed string and misses the one on disk. It also misses untracked, ignored,
+  submodule, nested-checkout and vendored content.
+  So CROSS-CHECK: git grep -l  vs  git grep --cached -l  vs  grep -rl .
+  Any disagreement IS the signal.
   The assignment itself is REMEMBER_HANDOFF= -- keep the '=', it matches the two
-  assignments where the bare name matches 23 lines -- here (one unbroken path):
-  ~/.claude/plugins/cache/claude-plugins-official/remember/<version>/scripts/session-start-hook.sh
+  assignments where the bare name matches 23 lines. This locator is also a
+  runnable discovery command (r4 L1: a literal <version> is a shell REDIRECT):
+  ls ~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh
 
 NOT .remember/handoff.md — nothing reads that name either.
 
 If a session-start block printed 'Write next handoff to: <path>', obey THAT path
--- it is always the right one. THREE things print it: a resolved store root that
-is not the project directory itself -- which INCLUDES a linked git worktree, and
-r4 M3: also a data_dir that moves the root while staying INSIDE the project
-(measured: data_dir=a/b printed <project>/a/b/remember.md); per_session
+-- it is always the right one. THREE things print it: the store directory is not
+an immediate CHILD of the project directory -- which INCLUDES a linked git
+worktree, and a data_dir nested two deep (measured: data_dir=a/b prints a hint,
+data_dir=notes does NOT, because the hook compares the store's PARENT with the
+project dir -- r4 H2 corrected this label twice); per_session
 mode (.handoff_mode), where the path is remember.<session-id>.md; and a per_session
 request with no usable session id, where it prints the SHARED file in whatever
 store is resolved -- which is NOT always the path above: a data_dir setting moves

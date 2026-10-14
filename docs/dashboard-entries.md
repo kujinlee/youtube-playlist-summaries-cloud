@@ -14844,10 +14844,24 @@ this fix — the file that same refusal message tells you to go and edit.
 
 The fix removes the line numbers rather than updating them. A line number in a file that belongs to
 somebody else cannot be kept honest here — no check in this project can watch it, and the next
-plugin update silently invalidates it again. The documents now name the thing to search for and
-leave the finding to the reader. An earlier review had listed one of these pointers while discussing
-something else; this entry first described that as the same problem being spotted and ignored, which
-overstates what that review said.
+plugin update silently invalidates it again. ⛔ **This entry originally ended "the documents now name
+the thing to search for and leave the finding to the reader", which is the retired position in other
+words — and it stopped three rounds short.** What the documents say now, after four rounds: there are
+TWO things being searched, and they need different answers. For files this project tracks, a repo
+search finds them; for a file belonging to somebody else's plugin, no repo search reaches it at all,
+so the documents name the SYMBOL and give a locator that is also a runnable command.
+
+⛔ **And the repo search turned out not to be trustworthy on its own either, which took two more
+goes to state correctly.** The command reads the list of files the project tracks, but takes their
+contents from disk ONLY when the file has not been flagged to be ignored or removed — and a flagged
+file is still a tracked file, so it can return the old text and miss what is actually there. Measured
+three ways, each against a working control. So the instruction is no longer a command but a CHECK:
+run it, run its cached variant, walk the filesystem, and treat any disagreement between the three as
+the answer. One search cannot be trusted here; two that agree can.
+
+An earlier review had listed one of these pointers while discussing something else; this entry first
+described that as the same problem being spotted and ignored, which overstates what that review
+said.
 
 One real gap turned up alongside the stale numbers. The rule states its destination as if there
 were only one possibility, and the plugin actually has two modes: the ordinary one, and a mode that
