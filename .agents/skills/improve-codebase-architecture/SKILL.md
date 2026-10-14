@@ -59,32 +59,62 @@ Present a numbered list of deepening opportunities. For each candidate:
 
 Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
 
-### ⛔ 2a. If this review was ARMED BY THRASHING, the first card you put is the MECHANISM question
+### ⛔ 2a. If this review was ARMED BY THRASHING, your candidate list MUST contain the option that removes the recurring claim
 
-**Measured 2026-10-13 — backlog #281, and it cost two review rounds.** A thrashing-armed Phase 6
-review correctly named its root cause in prose — *"the harness asserting a cause it cannot read from
-a child's text"* — and then put an **instance-level** A/B choice to the owner about one clause of one
-predicate. The mechanism was never put as a decision. The next two rounds each produced fresh High
-findings of that same named cause, and the redesign the review had already diagnosed was chosen two
-rounds later.
+**HOW YOU KNOW YOU ARE HERE** — r1 M5: this step used to assume you knew, and never said.
+The arming condition is in [`dev-process.md`](../../../docs/dev-process.md), Phase 6: a review is
+armed by **THRASHING** when *two consecutive rounds carry findings caused by the previous round's own
+fix, in one component*. It is **not** a round count: reaching four rounds obliges ASKING, and does
+not fire. So before this step, answer in the round document: *thrashing, or prose floor?*, with
+per-finding evidence. If it was a per-milestone review rather than a thrashing arming, step 2 above
+is the whole of your job and this step does not apply.
 
-**So when the arming condition was THRASHING, the first thing you card is not a candidate list:**
+**Measured 2026-10-13 — backlog #281, and ⟳ r1 REFUTED THE FIRST VERSION OF THIS STEP FROM THE
+DOCUMENT IT CITED.** That version said the thrashing-armed review *"put an instance-level A/B choice
+to the owner"* and *"the mechanism was never put as a decision"*. Both are false:
+`docs/reviews/architecture-review-2026-10-13.md:158-172` lists **FOUR** candidates under *"NOT
+designed here, per the skill; the owner picks"*, the second being a mechanism-level redesign (*"a
+deep module over 'the child's verdict' … one module with named states"*); and `:264-266` records
+*"Option **A** … chosen after asking why A over B"*, with B declined on a measured width. **A
+mechanism redesign was carded, interrogated and declined** — so "the owner cannot choose a redesign
+they were not offered" was the wrong diagnosis, and a step built on it would have prevented nothing.
 
-> The root cause is **&lt;the cause, in one sentence&gt;**. Do we
-> **A — redesign** (name what the redesign removes), **B — keep narrowing** (name what the next
-> narrowing costs, and that the previous N each produced the following round's finding), or
-> **C — accept and record** (name what ships)?
+⭐ **WHAT ACTUALLY WENT WRONG, and it is the rule this step now states:** the redesign that
+eventually dissolved the thrashing — **stop claiming the enumeration is complete** — was **not among
+the four candidates**. They addressed other seams (a mandatory clause, a verdict module, one
+combiner, retiring a function). The list LOOKED complete and omitted the only option that removed
+the recurring claim, which cost the same two rounds that offering no fork would have.
 
-⚠ **Naming a root cause and then carding an instance is the failure.** The owner cannot choose a
-redesign they were not offered, and every round that passes re-derives the diagnosis you already
-wrote down. A candidate list is the right output for a per-milestone review; a thrashing arming is
-a question about shape, and shape is the owner's call.
+**So: name the cause, then audit your own list against it.**
 
-⭐ **And the tell that you are in this situation at all** is in
-[`review-method.md`](../../../docs/review-method.md) beside the Mechanism/Branch-coverage table: **if
-an exhaustiveness pass returns a NEW member, the finding was MECHANISM.** A shape that is merely
-under-specified has a finite set of unsaid cases, so the pass terminates; a shape that is wrong
-generates them.
+> For each recurring finding, name the CLAIM the component keeps making and keeps having refuted.
+> Then point at the option in your list that STOPS MAKING THAT CLAIM. If no option does, the list is
+> incomplete — add it before you card anything.
+
+⛔ **AND THE CARD ITSELF MUST SATISFY `portable-practices.md` §19, OR A HOOK REFUSES IT** — r1 H1
+measured the template that stood here: piped through `scripts/check-selection-card.py` it exited
+**rc=2** on two violations (nothing marked `(Recommended)`; last option not question-shaped), and
+`.claude/hooks/enforce-selection-card.sh` BLOCKED it. A compliant control exited 0. So this step was
+telling you to emit a card this repository physically refuses. Every option needs a letter, a label,
+a rationale and a trade-off; **exactly one carries `(Recommended)` and is placed FIRST**; and the
+**last option is always a question exit**. Shape:
+
+> **A — redesign: <what it removes> (Recommended)** — <why, and what it costs>
+> **B — keep narrowing: <the next narrowing>** — <its cost, and that the previous N each produced
+> the following round's finding>
+> **C — accept and record: <what ships>** — <what the backlog row will say>
+> **D — I have a question about these** — ask before choosing
+
+⚠ Run `python3 scripts/check-selection-card.py < card.json` before you put it. The hook will
+refuse it anyway; finding out from the hook wastes the owner's turn.
+
+⚠ **AND SAY WHERE EACH ANSWER GOES** — r1 M5: step 3 below only describes what happens when a
+candidate is chosen for design, so two of these answers used to lead nowhere. **A (redesign)** →
+step 3's grilling loop, on the redesign. **B (keep narrowing)** → no grilling: file the next
+narrowing as ordinary work and record that the arming condition is still live, so the NEXT round's
+findings are read against it. **C (accept and record)** → no grilling: write the backlog row naming
+the claim being kept and what it costs, and say what would reopen it. In both B and C the review
+ENDS here; do not fall through into step 3.
 
 ### 3. Grilling loop
 

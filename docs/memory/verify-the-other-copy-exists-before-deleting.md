@@ -26,13 +26,28 @@ committed and shipped as PR #369. Nothing was lost but the ~1.3 KB of edits made
 ## The check that costs one command
 
 ```bash
-stat -f '%i links=%l %N' <pathA> <pathB>   # same inode, or links=1 => ONE file
+stat -f 'dev=%d inode=%i links=%l %N' <pathA> <pathB>   # SAME (dev,inode) => ONE file
 ls -ld "$(dirname <pathA>)" "$(dirname <pathB>)"   # ⭐ a symlinked PARENT is the case I missed
 ```
 
-Same inode **or** `links=1` means deleting either name deletes the content. I compared the *directory*
-inodes and they differed, which felt like proof of two directories — it was not, because I had read
-`%i` on one real directory and one symlink target. ⛔ **`readlink` the parents. Do not reason about it.**
+⛔⛔ **CORRECTED 2026-10-13 — THIS NOTE'S OWN TEST WAS FALSE, AND IT FAILED TOWARD "TWO FILES".**
+It read *"same inode **or** `links=1` means deleting either name deletes the content"*. The
+`links=1` disjunct is not weak, it is **empty** — measured, three cases:
+
+| case | `links` | `inode` | actually one file? |
+|---|---|---|---|
+| two INDEPENDENT byte-identical files | **1, 1** | differ | **NO** — deleting one leaves the other |
+| a real hard link | 2, 2 | same | yes |
+| **the symlinked-PARENT case this note is about** | **1, 1** | **same** | **YES** |
+
+`links=1` is true in the one-file case AND in the two-file case, so it discriminates **nothing**.
+⭐ **The test is the `(device, inode)` PAIR** — same pair, one file, whatever the link count says.
+⚠ And the old command omitted the DEVICE, which is not pedantry: inode numbers are only unique
+per filesystem, so two unrelated files can share one.
+
+I had also compared the *directory* inodes and found them different, which felt like proof of two
+directories — it was not, because I had read `%i` on one real directory and one symlink target.
+⛔ **`readlink` the parents. Do not reason about it.**
 
 ## ⭐ The transferable rule, which is not about symlinks
 

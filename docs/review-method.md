@@ -195,26 +195,55 @@ being argued with.
 | **Mechanism** defects — the rule cannot be satisfied, the credential is stale, two requirements contradict | the shape is wrong | **REDESIGN.** This is what the rule is for |
 | **Branch-coverage** defects — *"the rule doesn't say what happens in case X"*, where X is a branch of code the rule GOVERNS but does not OWN | the shape is fine and under-specified | **FIX**, plus an exhaustiveness pass |
 
-⛔⛔ **AND THE EXHAUSTIVENESS PASS IS ITSELF A TEST — MEASURED 2026-10-13 OVER FIVE ROUNDS, backlog
-#281.** The row above sends a branch-coverage defect to *FIX, plus an exhaustiveness pass*. **If that
-pass comes back with a NEW MEMBER, the finding was MECHANISM and was graded wrong.** That is not a
-heuristic; it is what the two rows mean. A shape that is merely under-specified has a FINITE set of
-unsaid cases, so the pass terminates. A shape that is wrong generates them, so the pass does not.
+⛔⛔ **AND THE EXHAUSTIVENESS PASS IS ITSELF A TELL — MEASURED 2026-10-13 ACROSS THREE ROUNDS,
+backlog #281.** The row above sends a branch-coverage defect to *FIX, plus an exhaustiveness pass*.
+**If that pass comes back with a NEW MEMBER, SUSPECT the finding was MECHANISM and was graded
+wrong** — then re-apply the one test above to the **PATTERN** rather than to the finding.
 
-**What it cost, measured:** PR #371 rounds 11, 12 and 13. One harness message-and-parser produced a
-refuted completeness claim in each — a heading rule keyed on a header CPython omits, then one that
-read any indented run as a traceback, then an ASCII-only name validator, then an identifier
-validator that dropped `type("bad-name", …)`, then a three-world enumeration that was four. Every
-round graded it branch-coverage, fixed the instance, and ran the pass; every pass returned another
-member. The redesign — delete the validator, stop claiming the list is complete — was available at
-round 11 and taken at round 13. ⭐ **Two rounds were spent re-deriving a conclusion the Phase 6
-review of the same date had already written down in prose.**
+⛔ **IT IS A TELL, NOT A DEDUCTION — r1 REFUTED THE STRONGER WORDING THAT STOOD HERE.** This block
+read *"that is not a heuristic; it is what the two rows mean"*. One counter-example is enough: a rule
+governing a FINITE enum — say `{ready, failed, cancelled}` — whose first enumeration documented only
+`ready` and `failed` is genuinely **branch-coverage**, and a pass that discovers `cancelled`
+completes it without any shape being wrong. **Finiteness means the pass TERMINATES, not that it
+discovers nothing.** What separates the two is whether members KEEP coming: a wrong shape generates
+them, so the pass never terminates. ⚠ Two cases the strong form had no answer for, both now stated:
+a pass returning a member **out of scope** of the rule re-grades nothing, and a pass that **cannot
+run** is a NOT RUN — never a clean pass, and never evidence of a finite set.
 
-⛔ **SO A THRASHING-ARMED PHASE 6 OWES THE OWNER A MECHANISM CARD, NOT AN INSTANCE CARD.** That
-review named the root cause correctly — *the harness asserting a cause it cannot read from a child's
-text* — and then put an A/B choice about one clause to the owner, leaving the mechanism as prose.
-**Name the cause AND put the fork: redesign, or keep narrowing?** Naming a root cause and carding an
-instance is how a correct diagnosis costs two more rounds.
+**What it cost, measured — and the unit is CLAIMS, not rounds.** PR #371 rounds 11, 12 and 13:
+**THREE rounds carrying FIVE refuted completeness claims** (two in r11, two in r12, one in r13) — a
+heading rule keyed on a header CPython omits; one that read any indented run as a traceback; an
+ASCII-only name validator; an identifier validator that dropped `type("bad-name", …)`; and a
+three-world enumeration that was four. ⟳ **r1 CORRECTED "OVER FIVE ROUNDS" HERE — five examples is
+not five rounds**, and #281's own honest bound is witnessed from **11**, not 9, because rounds 9-10
+concern withdrawal and parser problems in a different component. ⟳⟳ **AND r14 FOUND A SIXTH CLAIM**:
+the redesign that closed #279/#280 left a semantic attribution one line further in, forged from the
+child's own text — so the pattern outlived the fix that was supposed to end it.
+
+⟳ **AND "EVERY ROUND GRADED IT BRANCH-COVERAGE" WAS FALSE OF THE FIRST ONE.**
+`docs/reviews/coordinator/backlog-249-260-r11-thrashing.md:24` grades r11 Claude H1 **MECHANISM**,
+answers *can a redesign remove it?* **YES**, and prescribes *"Stop attributing: name every heading,
+claim none"* with verdict REDESIGN. ⭐ **That is this block's own rule applied to this block's own
+claim — one witnessed member refuting a completeness claim — and the claim was in the paragraph
+introducing the rule.**
+
+⛔⛔ **SO WHAT A THRASHING-ARMED PHASE 6 OWES IS *NOT* "A MECHANISM CARD INSTEAD OF AN INSTANCE
+CARD". r1 REFUTED THAT FROM THE VERY DOCUMENT THIS BLOCK CITES.**
+`docs/reviews/architecture-review-2026-10-13.md:158-172` is headed *"Deepening candidates — NOT
+designed here, per the skill; the owner picks"* and lists **FOUR**, the second being a
+mechanism-level redesign (*"a deep module over 'the child's verdict' … one module with named
+states"*). `:264-266` records *"Option **A** … chosen 2026-10-13 **after asking why A over B**"*, and
+B was declined on a **measured** width (2 callers — *not a real seam*). **A mechanism redesign WAS
+carded, interrogated and declined.** The owner was never deprived of a fork, and a rule built on
+"they were not offered one" would not have prevented anything that happened.
+
+⭐ **THE TRUE DEFECT IS NARROWER AND MORE USEFUL: the redesign that actually dissolved the thrashing
+— STOP CLAIMING THE ENUMERATION IS COMPLETE — WAS NOT AMONG THE FOUR CANDIDATES AT ALL.** They
+addressed other seams: a mandatory clause, a verdict module, one combiner, retiring `run_suite`. So
+the rule is: **when the arming condition is THRASHING, the candidate list must contain the option
+that REMOVES THE RECURRING CLAIM ITSELF.** Name the cause, then check that one option actually
+dissolves it — a complete-looking fork that omits the relevant option costs exactly what no fork
+costs, which is what happened here.
 
 **⚠ THE SYMPTOM LIST IS A PROMPT, NOT THE TEST. There is one test, and it is this:**
 
