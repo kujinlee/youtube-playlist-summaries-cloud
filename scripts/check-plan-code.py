@@ -1333,12 +1333,12 @@ EXPECTED_MUTATIONS = {
     # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
     # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
     # the `plan:` pointer with it.
-    "scripts/check-plan-progress.py": 19,
+    "scripts/check-plan-progress.py": 20,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 21,
+    "scripts/begin-plan.py": 24,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -4953,7 +4953,7 @@ def _self_test() -> int:
     # representational gap — `begin-plan.py --add` (3: total-rewrite, ticked-on-append,
     # dropped Doing) and `check-plan-progress.py --session-start` (2: the stale branch, and
     # the runner's exit code, which on a SessionStart hook is its delivery).
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1413)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1417)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

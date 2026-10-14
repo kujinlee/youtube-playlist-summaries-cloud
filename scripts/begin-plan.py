@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 78 cases
+    scripts/begin-plan.py --self-test  # 93 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -68,6 +68,7 @@ import contextlib
 import datetime as _dt
 import importlib.util
 import io
+import pathlib
 import re
 import subprocess
 import sys
@@ -146,6 +147,40 @@ def normalise_slug(raw: str) -> str:
     return s
 
 
+def _auto_slug(title: str) -> str:
+    """A free plan name for `--add` when nothing is armed. Never raises; never collides.
+
+    ⛔ TWO DEFECTS, EACH FOUND INDEPENDENTLY BY BOTH REVIEW HALVES (r1: Claude H1/H2, Codex M2/M3),
+    and both came from passing a TASK TITLE through a FILENAME validator:
+
+    * `normalise_slug` REFUSES a path separator, `..` or a leading dot — correctly, since it is
+      naming a file. `cmd_begin` catches that ValueError; `cmd_add` called it directly and did not,
+      so `--add "Review src/api|…|…"` ended in a traceback with nothing armed. Measured: 4 of 5
+      realistic promise titles crashed. A promise is prose and may contain a slash; the filename is
+      an implementation detail of where the plan lives.
+    * `cmd_begin` writes the plan unconditionally, so an auto-created name that happened to match an
+      existing `.claude/plans/<slug>.md` DESTROYED it — reproduced on both interpreters, losing an
+      unticked step from a gitignored file nothing backs up. ⚠ That overwrite is `cmd_begin`'s own
+      long-standing behaviour and is left alone there, because re-arming a slug deliberately
+      rewrites it; what was new is reaching it WITHOUT anyone naming the slug.
+
+    So: try the title, fall back to a date when the title cannot be a filename, then walk a numeric
+    suffix until the path is free. The name is cosmetic — the plan's content carries the meaning.
+    """
+    try:
+        base = normalise_slug(title)
+    except ValueError:
+        base = f"added-{_dt.date.today().isoformat()}"
+    candidate, n = base, 1
+    while (PLAN_DIR / f"{candidate}.md").exists():
+        n += 1
+        candidate = f"{base}-{n}"
+    if candidate != base:
+        print(f"note: .claude/plans/{base}.md exists, so this becomes {candidate} "
+              f"— an existing plan is never overwritten here")
+    return candidate
+
+
 def split_step(arg: str) -> tuple[str, str, str]:
     """`title|doing|why` -> the three fields. Missing trailing fields are empty.
 
@@ -216,7 +251,23 @@ def append_step(plan_text: str, title: str, doing: str, why: str) -> str:
     n = len(existing) + 1
 
     body = plan_text if plan_text.endswith("\n") else plan_text + "\n"
-    body = _TOTAL_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}{n}{m.group(5)}", body)
+
+    # ⛔ ONLY ON REAL CHECKBOX LINES, AND ONLY OUTSIDE FENCES (r1 Codex M1). `_TOTAL_RE` is
+    # unanchored, so a document-wide `.sub` also rewrote `**Step 1 of 9** — example` in PROSE and
+    # the identical text inside a ```fenced``` block: with one real checkbox, an appended step
+    # silently retyped someone's example to `of 2`. `_STEP_PREFIX_RE` owns a prefix of a PARSED
+    # checkbox description; `_TOTAL_RE` on its own owns substantially more than that.
+    out_lines, in_fence = [], False
+    for line in body.splitlines(keepends=True):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out_lines.append(line)
+            continue
+        if not in_fence and _BOX_RE.match(line.rstrip("\n")):
+            line = _TOTAL_RE.sub(
+                lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}{n}{m.group(5)}", line)
+        out_lines.append(line)
+    body = "".join(out_lines)
 
     out = [body.rstrip("\n"), "", f"### Task {n}: {title}", "",
            f"- [ ] **Step {n} of {n}** — {title}"]
@@ -448,9 +499,7 @@ def cmd_add(step_arg: str) -> int:
 
     armed = _armed_plan()
     if armed is None:
-        slug = normalise_slug(title)
-        print(f"nothing was armed, so this item becomes a new plan: {slug}")
-        return cmd_begin(slug, [step_arg])
+        return cmd_begin(_auto_slug(title), [step_arg])
 
     plan_abs, plan_rel, fields = armed
     if not plan_abs.is_file():
@@ -463,7 +512,14 @@ def cmd_add(step_arg: str) -> int:
     plan_abs.write_text(append_step(text, title, doing, why))
     print(f"added step {before + 1} to {plan_rel}: {title}")
 
-    if "paused" in fields:
+    # ⛔ SPELLED `fields.get(...) is not None`, NOT `"paused" in fields`, AND THE REASON IS A GATE,
+    # NOT A STYLE CHOICE (r1 CLAUDE Blocking). `    if "paused" in fields:` is the find-string of a
+    # mutation entry that `cmd_tick` already owns. Mutation anchors bind by TEXT and only the FIRST
+    # occurrence is replaced, so adding a SECOND line with those exact bytes makes that entry
+    # ambiguous and `check-plan-code.py --mutate .` refuses the whole run — measured rc=1 NOT
+    # MEASURED on both shards, against rc=0 35/35 on master. The collision is between a NEW line and
+    # an OLD entry, which is why this branch's own five-entry measurement could not see it.
+    if fields.get("paused") is not None:
         print(f"\n⏸ the plan is still PAUSED — {fields['paused']}\n"
               f"   The item is recorded, but the Stop guard stays stood down while that line is "
               f"there. `scripts/begin-plan.py --resume` re-arms it.", file=sys.stderr)
@@ -1090,6 +1146,72 @@ def _self_test() -> int:
     # the banner recomputes from the checkboxes, so it must agree with the appended list
     case("the banner derives `3 of 3` after an append",
          "STEP 3 of 3" in render_banner(_s3, 2))
+
+    # ── r1 FOLD: the defects BOTH halves found, each with a case that would have gone red ──
+    # ⛔ `cmd_add` shipped with ZERO cases while its pure helper `append_step` had fourteen, and
+    # all three of its defects were in the branch no case drove. These are those cases.
+
+    # H1/M3 — a promise title is PROSE and may contain a slash. It must never reach a filename
+    # validator unguarded. 4 of 5 realistic titles crashed before this.
+    # ⛔ THE CASE MUST CATCH THE RAISE IT ASSERTS THE ABSENCE OF, and my first version did not —
+    # measured: the mutation that removes the fallback then CRASHED the suite before it could print
+    # a `[FAIL]` line, so the harness recorded a SURVIVOR rather than a kill. A case that dies
+    # instead of failing protects nothing: it cannot be attributed, and the tally line it was
+    # supposed to move is never printed at all.
+    def _safe_slug(t: str) -> "str | None":
+        try:
+            return _auto_slug(t)
+        except Exception:
+            return None
+
+    for _bad in ("Review src/api", "../escape", ".dotfile", "Fold r5 + the approved deletion"):
+        _got = _safe_slug(_bad)
+        case(f"_auto_slug never raises on a realistic title ({_bad!r})",
+             isinstance(_got, str) and _got != "")
+    case("_auto_slug strips a path separator rather than keeping it",
+         (_safe_slug("Review src/api") or "/").find("/") == -1)
+    case("…and falls back to a dated name when the title cannot be a filename",
+         (_safe_slug("../escape") or "").startswith("added-"))
+
+    # H2/M2 — the auto-created name must never land on an existing plan file.
+    import tempfile as _tf
+    _saved_plan_dir = globals()["PLAN_DIR"]
+    try:
+        with _tf.TemporaryDirectory() as _td:
+            globals()["PLAN_DIR"] = pathlib.Path(_td)
+            (globals()["PLAN_DIR"] / "repeat.md").write_text("### Task 1: x\n\n- [ ] keep me\n")
+            _got = _auto_slug("repeat")
+            case("_auto_slug REFUSES to reuse an existing plan name", _got != "repeat")
+            case("…and the existing plan is still on disk, unread and unwritten",
+                 (globals()["PLAN_DIR"] / "repeat.md").read_text().endswith("- [ ] keep me\n"))
+            (globals()["PLAN_DIR"] / f"{_got}.md").write_text("x")
+            case("…and it keeps walking when the second name is taken too",
+                 _auto_slug("repeat") not in ("repeat", _got))
+    finally:
+        globals()["PLAN_DIR"] = _saved_plan_dir
+
+    # Codex M1 — the total rewrite is scoped to real checkbox lines OUTSIDE fences. Before this,
+    # a document-wide sub retyped an EXAMPLE to match the new count.
+    _withex = ("# demo\n\n### Task 1: real\n\n- [ ] **Step 1 of 1** — real\n\n"
+               "Prose mentioning `**Step 1 of 9** — example` inline.\n\n"
+               "```\n- [ ] **Step 1 of 9** — fenced example\n```\n")
+    _after = append_step(_withex, "added", "", "")
+    # ⚠ `of 3`, NOT `of 2`, AND MY FIRST VERSION OF THIS CASE SAID 2. `parse_steps` counts a
+    # fenced `- [ ]` as a step ON PURPOSE (see the "inside prose still counts" case above: the
+    # guard must never ALLOW a stop because a checkbox hid in a fence), so the fixture holds TWO
+    # steps before the append and three after. The code was right and the expectation was wrong.
+    case("the real checkbox total IS rewritten", "**Step 1 of 3** — real" in _after)
+    case("prose containing `of 9` is NOT rewritten", "**Step 1 of 9** — example" in _after)
+    case("a fenced example is NOT rewritten", "**Step 1 of 9** — fenced example" in _after)
+    case("…and no `of 9` was turned into `of 2` anywhere", _after.count("of 9**") == 2)
+    # ⛔ AND THE CONSEQUENCE, ASSERTED RATHER THAN LEFT IMPLICIT: a fenced checkbox COUNTS toward
+    # `n` but its own `of N` label is NOT rewritten, because rewriting inside a fence would edit
+    # someone's example — which is the defect this scoping fixes. So a fenced checkbox can carry a
+    # stale total by design. Stating it here is cheaper than rediscovering it as a bug report.
+    case("a fenced checkbox still COUNTS as a step (no false ALLOW)",
+         len(parse_steps(_after)) == 3)
+    case("…while its own label keeps the stale total, by design",
+         "**Step 1 of 9** — fenced example" in _after)
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

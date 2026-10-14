@@ -18,6 +18,25 @@
 # by having its STDOUT added to the session's context. A non-zero here would suppress the very
 # sentence that reports the problem. `--session-start` is read-only and never clears the sentinel;
 # the owning docstring is in scripts/check-plan-progress.py — do not restate its table here.
+# ⛔⛔ THE RUNNER'S OWN FAILURE MUST NOT BE SILENT, AND THE FIRST VERSION OF THIS HOOK WAS
+# (r1: Codex H2, Claude H3 — found INDEPENDENTLY by both halves). It ran the script, discarded
+# stderr and exited 0 unconditionally, so a crash produced rc=0 with ZERO BYTES on both streams.
+# Measured: a plan file containing invalid UTF-8 makes Python raise before printing a verdict; four
+# separate breakage arms all returned rc=0 and printed nothing, against a 242-byte green control.
+# ⚠ That is the EXACT defect class this hook exists to remove — a mechanism that reports nothing and
+# is indistinguishable from one reporting that all is well. No legitimate state prints nothing, so
+# empty output is itself a failure signal and is treated as one.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-python3 "$REPO_ROOT/scripts/check-plan-progress.py" --session-start </dev/null 2>/dev/null
+out=$(python3 "$REPO_ROOT/scripts/check-plan-progress.py" --session-start </dev/null 2>&1)
+rc=$?
+if [ "$rc" -ne 0 ] || [ -z "${out//[[:space:]]/}" ]; then
+    printf '[plan-progress/cannot-run] CANNOT RUN: the plan-state reader exited %s and produced %s bytes. TREAT THIS AS NOT RUN — this says NOTHING about whether work is outstanding, so check `.claude/executing-plan` by hand.\n' \
+        "$rc" "${#out}"
+    [ -n "$out" ] && printf '   its output was: %s\n' "$(printf '%s' "$out" | head -c 400 | tr '\n' ' ')"
+else
+    printf '%s\n' "$out"
+fi
+# ⛔ STILL exit 0, and that is deliberate: a SessionStart hook's stdout reaches the session's
+# context only on exit 0. A non-zero here would suppress the CANNOT RUN above — the failure would
+# be reported to nobody, which is what the code path replaced did.
 exit 0

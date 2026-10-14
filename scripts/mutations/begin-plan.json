@@ -271,5 +271,44 @@
     "expect": [
       "…its Doing"
     ]
+  },
+  {
+    "name": "--add's auto-created name stops walking past a collision, so it overwrites a plan again (r1 H2)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    while (PLAN_DIR / f\"{candidate}.md\").exists():\n",
+        "    while False:\n"
+      ]
+    ],
+    "expect": [
+      "_auto_slug REFUSES to reuse an existing plan name"
+    ]
+  },
+  {
+    "name": "--add's slug fallback is removed, so a title with a slash raises again (r1 H1)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    except ValueError:\n        base = f\"added-{_dt.date.today().isoformat()}\"\n",
+        "    except ValueError:\n        raise\n"
+      ]
+    ],
+    "expect": [
+      "_auto_slug never raises on a realistic title ('Review src/api')"
+    ]
+  },
+  {
+    "name": "the of-N rewrite stops skipping fenced blocks, so it edits someone's example (r1 Codex M1)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        if line.lstrip().startswith(\"```\"):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "a fenced example is NOT rewritten"
+    ]
   }
 ]

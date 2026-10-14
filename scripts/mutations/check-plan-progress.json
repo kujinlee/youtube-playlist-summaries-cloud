@@ -221,16 +221,16 @@
     ]
   },
   {
-    "name": "session start stops calling a finished-and-paused plan STALE (the 2026-10-14 state)",
+    "name": "session start treats a finished-and-PAUSED plan as finished again (r1 Codex H1)",
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "    if unticked == 0:\n        reason = ",
-        "    if False:\n        reason = "
+        "    if unticked == 0 and paused_reason is not None:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
-      "ticked AND paused -> STALE (the 2026-10-14 state, which --decide only WARNs about)"
+      "ticked AND paused -> PARKED_DONE, not STALE (r1 Codex H1)"
     ]
   },
   {
@@ -244,6 +244,19 @@
     ],
     "expect": [
       "run_session_start exits 0 — a non-zero would suppress its own text"
+    ]
+  },
+  {
+    "name": "the CANNOT-RUN text drops the refusal it causes, in the one state that blocks (r1 Claude M3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            \"   ⛔ And the Stop guard REFUSES EVERY STOP in this state, because a check that cannot \"\n            \"run must not pass: the session cannot end until this is fixed.\\n\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "the missing-plan CANNOT RUN names the refusal it causes"
     ]
   }
 ]

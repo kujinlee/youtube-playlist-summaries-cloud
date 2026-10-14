@@ -39,7 +39,7 @@ Usage (the hook calls form 1; a human can call form 2 to see where things stand)
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
     python3 scripts/check-plan-progress.py --session-start  # SessionStart hook
-    python3 scripts/check-plan-progress.py --self-test  # 66 cases
+    python3 scripts/check-plan-progress.py --self-test  # 82 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -81,6 +81,7 @@ scalar is `docs/backlog.md` #100's subject and is deliberately NOT done here.
 from __future__ import annotations
 
 import argparse
+import pathlib
 import re
 import sys
 from pathlib import Path
@@ -345,6 +346,12 @@ def decide(
 # ~4.5 hours later. It never reached the assistant, because `block-idle-stop.sh` maps WARN to
 # Claude Code's non-blocking error and the harness renders that as `Stop hook error`.
 #
+# ⚠ WHEN IT ACTUALLY FIRES, CORRECTED (r1 Codex L1). I wrote that session start "fires ONCE, so it
+# cannot see a sentinel that goes stale DURING a session". That OVERSTATES the limitation: the hook
+# carries no matcher, and SessionStart runs on startup, resume, clear AND compaction — so it does
+# get further chances mid-session, at a compaction boundary for instance. Coverage is INTERMITTENT,
+# which is a weaker claim than "never during it", and the honest one.
+#
 # ⛔ SO THIS IS A CHANNEL FIX AND NOT A SEVENTH RULE, and the distinction is the whole design.
 # No new discriminator: the states below are the ones `decide` already separates. What changes is
 # WHEN and WHERE the verdict is delivered — at session start, into the assistant's context, at the
@@ -364,7 +371,13 @@ def decide(
 # level only: the CANNOT-RUN text still says TREAT THIS AS NOT RUN, which is the part a reader acts
 # on. A non-zero here would suppress the very sentence that reports the failure.
 
-STALE, LIVE, PARKED, UNARMED, NOT_RUN = "stale", "live", "parked", "unarmed", "cannot-run"
+# ⛔ `PARKED_DONE` EXISTS BECAUSE COLLAPSING IT INTO `STALE` WAS WRONG (r1 Codex H1). A plan whose
+# boxes are all ticked AND which carries `paused: waiting on CI` is NOT finished — it is waiting on
+# work the checkboxes cannot see, which is exactly what `paused:` means since backlog #94. Calling
+# its reason "historical" and telling the reader to `--finish` would DELETE a live waiting reason
+# and the continuation pointer with it. `decide` keeps that distinction; this now keeps it too.
+STALE, PARKED_DONE, LIVE, PARKED, UNARMED, NOT_RUN = (
+    "stale", "parked-done", "live", "parked", "unarmed", "cannot-run")
 
 
 def session_start_verdict(
@@ -388,12 +401,23 @@ def session_start_verdict(
 
     fields = parse_sentinel(sentinel_text)
     plan = fields.get("plan", "(no `plan:` line in the sentinel)")
-    paused = fields.get("paused")
+    # ⛔ NAMED `paused_reason`, NOT `paused` (r1 CLAUDE Blocking). `    paused = fields.get("paused")`
+    # is the find-string of a mutation entry `decide` already owns, and a second line with those
+    # exact bytes makes the anchor ambiguous — `--mutate .` then refuses the entire run rather than
+    # mis-binding. Anchors bind by TEXT, so a new line can orphan an old entry from 200 lines away.
+    paused_reason = fields.get("paused")
 
     if plan_text is None:
         return NOT_RUN, (
             f"CANNOT RUN: the sentinel names `{plan}`, which does not exist. TREAT THIS AS NOT RUN "
             "— nothing here tells you whether work is outstanding.\n"
+            # ⛔ THE CONSEQUENCE, WHICH ONLY THIS STATE WAS MISSING (r1 Claude M3). STALE and PARKED
+            # both say the guard will ALLOW a stop; this is the one state in which `--decide`
+            # BLOCKS — it returns 2, and the Stop wrapper maps anything outside {0,3} to exit 2 —
+            # so the session cannot end at all until the sentinel is fixed. Omitting it here left
+            # the clause out of the only state where not knowing costs a session that cannot stop.
+            "   ⛔ And the Stop guard REFUSES EVERY STOP in this state, because a check that cannot "
+            "run must not pass: the session cannot end until this is fixed.\n"
             f"   Fix the path or delete {SENTINEL.relative_to(ROOT)}."
         )
 
@@ -401,28 +425,41 @@ def session_start_verdict(
     if total == 0:
         return NOT_RUN, (
             f"CANNOT RUN: parsed ZERO step checkboxes from `{plan}`. TREAT THIS AS NOT RUN — do "
-            "not read the absence of a warning as 'no work left'."
+            "not read the absence of a warning as 'no work left'.\n"
+            "   ⛔ And the Stop guard REFUSES EVERY STOP in this state, for the same reason: the "
+            "session cannot end until the plan parses or the sentinel goes."
         )
 
     unticked = total - done
 
-    # ⛔ FULLY TICKED IS STALE WHETHER OR NOT IT IS PAUSED, and the paused arm is the one that
-    # actually fired. `decide` splits these two — a ticked-and-paused sentinel is KEPT and warned
-    # about, a ticked-and-unpaused one is cleared — but at session start the distinction is not
-    # useful: both describe a job that is over, and neither can see the job about to start.
+    # ⛔ THE TWO TICKED STATES ARE SPLIT, AND THIS COMMENT USED TO SAY THEY WERE NOT (r1 Codex H1).
+    # It read "fully ticked is STALE whether or not it is paused … at session start the distinction
+    # is not useful: both describe a job that is over". FALSE for the paused arm: `paused:` means
+    # waiting on work the checkboxes cannot see, so a ticked-and-paused plan is not over — and the
+    # STALE text told the reader to `--finish` it, destroying a live waiting reason. `--decide`
+    # always kept these apart; now so does this.
+    if unticked == 0 and paused_reason is not None:
+        return PARKED_DONE, (
+            f"⚠ every step in `{plan}` is ticked ({done}/{total}) AND the plan is PAUSED, so the "
+            "Stop guard will not refuse an idle stop. Whether the job is DONE cannot be read from "
+            "the checkboxes: a pause means it is waiting on something they cannot see.\n"
+            f"   Waiting on: {paused_reason}\n"
+            "   → if that has finished: `scripts/begin-plan.py --finish`, then arm the current job.\n"
+            "   → if it has not: leave the sentinel alone; `--resume` when the work restarts."
+        )
+
     if unticked == 0:
-        reason = f"\n   Its pause reason, which is now historical: {paused}" if paused else ""
         return STALE, (
-            f"⚠ STALE PLAN ARMED — every step in `{plan}` is ticked ({done}/{total}), so this "
-            "sentinel describes FINISHED work and cannot see what this session is about to do. "
-            "The Stop guard will not refuse an idle stop while it stands."
-            f"{reason}\n"
+            f"⚠ STALE PLAN ARMED — every step in `{plan}` is ticked ({done}/{total}) and it is not "
+            "paused, so this sentinel describes FINISHED work and cannot see what this session is "
+            "about to do. The Stop guard will not refuse an idle stop while it stands.\n"
             "   → `scripts/begin-plan.py --finish`, then arm the current job before starting it."
         )
 
-    if paused is not None:
+    if paused_reason is not None:
         return PARKED, (
-            f"⏸ a plan is armed and PAUSED with {unticked} of {total} outstanding — {paused}\n"
+            f"⏸ a plan is armed and PAUSED with {unticked} of {total} outstanding — "
+            f"{paused_reason}\n"
             "   A pause stands the Stop guard down, so an idle stop will be allowed. "
             "→ `scripts/begin-plan.py --resume` when the work restarts."
         )
@@ -709,20 +746,31 @@ def _self_test() -> int:
     SENT_SS_PAUSED = SENT_SS + "paused: waiting on a dispatched review\n"
 
     label, msg = session_start_verdict(SENT_SS_PAUSED, FULL)
-    case("ticked AND paused -> STALE (the 2026-10-14 state, which --decide only WARNs about)",
-         label == STALE)
-    case("the stale verdict says the Stop guard will not refuse a stop",
+    case("ticked AND paused -> PARKED_DONE, not STALE (r1 Codex H1)", label == PARKED_DONE)
+    case("the parked-done verdict says the Stop guard will not refuse a stop",
          "will not refuse" in msg)
-    case("the stale verdict repeats the now-historical pause reason",
-         "waiting on a dispatched review" in msg)
-    case("the stale verdict names the command that clears it", "--finish" in msg)
+    case("it repeats what the plan is waiting on", "waiting on a dispatched review" in msg)
+    # ⛔ THE REGRESSION CASES FOR H1. The first version asserted the reason was "historical" and
+    # told the reader to `--finish`; following that on a `paused: waiting on CI` plan deletes a
+    # LIVE waiting reason. Both halves of the conditional must be present, and the false claim
+    # must be absent — asserted separately so neither can pass by the other's presence.
+    case("it does NOT call a live pause reason historical", "historical" not in msg)
+    case("…and makes finishing CONDITIONAL on that work having ended",
+         "if that has finished" in msg and "--finish" in msg)
+    case("…and names the alternative, which is to leave the sentinel alone",
+         "leave the sentinel alone" in msg and "--resume" in msg)
 
-    # ⚠ THE UNPAUSED TWIN. `--decide` treats these two differently on purpose (one is cleared, one
-    # is kept); at session start both describe a finished job, so both must be STALE. A case on
-    # only one of them passes while the other silently keeps `--decide`'s split.
-    case("ticked and NOT paused -> STALE too", session_start_verdict(SENT_SS, FULL)[0] == STALE)
+    # ⚠ THE UNPAUSED TWIN, AND THE PAIR IS THE POINT. `--decide` treats these two differently on
+    # purpose (one is cleared, one is kept) and so does this now — PARKED_DONE vs STALE. A case on
+    # only one of them would pass while the other silently collapsed into its twin, which is
+    # exactly the regression r1 Codex H1 found.
+    case("ticked and NOT paused -> STALE", session_start_verdict(SENT_SS, FULL)[0] == STALE)
     case("the unpaused stale verdict invents no pause reason",
-         "pause reason" not in session_start_verdict(SENT_SS, FULL)[1])
+         "Waiting on" not in session_start_verdict(SENT_SS, FULL)[1])
+    case("…and says so explicitly, so the two are told apart in the TEXT as well as the label",
+         "not paused" in session_start_verdict(SENT_SS, FULL)[1])
+    case("STALE and PARKED_DONE are different labels for the two ticked states",
+         session_start_verdict(SENT_SS, FULL)[0] != session_start_verdict(SENT_SS_PAUSED, FULL)[0])
 
     # ── ADJACENT NEGATIVES. Not absurd inputs: the two states closest to stale. ─────────────
     label_live, msg_live = session_start_verdict(SENT_SS, PART)
@@ -754,11 +802,26 @@ def _self_test() -> int:
     case("a plan parsing to ZERO checkboxes is CANNOT RUN, not 'nothing left'",
          session_start_verdict(SENT_SS, "no checkboxes here\n")[0] == NOT_RUN)
 
-    # ⛔ THE CHANNEL CASE. A Stop hook reaches its reader via stderr and a non-zero code; a
-    # SessionStart hook reaches its reader by putting stdout into the session's context and
-    # exiting 0. Inverting that is the defect this mode repairs, so it is asserted, not assumed.
+    # ⛔ r1 Claude M3 — the CANNOT-RUN states are the only ones where `--decide` BLOCKS, and they
+    # were the only ones whose text did not say so. Both arms asserted, plus a control: a state
+    # where the guard ALLOWS must NOT claim a refusal, or the clause could be added unconditionally
+    # and both cases above would still pass.
+    case("the missing-plan CANNOT RUN names the refusal it causes",
+         "REFUSES EVERY STOP" in msg_nr)
+    case("…and so does the zero-checkbox CANNOT RUN",
+         "REFUSES EVERY STOP" in session_start_verdict(SENT_SS, "no checkboxes here\n")[1])
+    case("CONTROL — a LIVE plan does not claim the guard refuses every stop",
+         "REFUSES EVERY STOP" not in msg_live)
+    case("CONTROL — nor does PARKED, where the guard stands down",
+         "REFUSES EVERY STOP" not in msg_parked)
+
+    # ⚠ THE PARTITION CASE — and the channel comment that USED to sit here was misfiled above it
+    # (r1 Claude L1). This asserts only that the six labels are distinct constants, which touches
+    # neither stream nor exit code; the channel is asserted by the block below, which carries the
+    # comment now. A misfiled comment invites the next mutation author to credit the channel to a
+    # case that cannot fail for it.
     case("every session-start label is distinct — no two states collapse",
-         len({STALE, LIVE, PARKED, UNARMED, NOT_RUN}) == 5)
+         len({STALE, PARKED_DONE, LIVE, PARKED, UNARMED, NOT_RUN}) == 6)
 
     # ⛔ THE DELIVERY CONTRACT, ASSERTED. The runner must exit 0 (a non-zero suppresses the text
     # on this hook type) and must put the verdict on STDOUT (a SessionStart hook's stdout is what
@@ -774,6 +837,62 @@ def _self_test() -> int:
     case("run_session_start writes the verdict to STDOUT, not stderr", _out.strip() != "")
     case("the line is tagged so a reader can find it in a long session-start block",
          _out.startswith("[plan-progress/"))
+
+    # ── THE SHELL WRAPPER, WHICH NO CASE EXERCISED AND WHICH SHIPPED FAILING SILENT ─────────
+    # ⛔ r1 Codex H2 / Claude H3, found independently by both halves: the hook discarded stderr and
+    # exited 0 unconditionally, so a crashing reader gave rc=0 and ZERO bytes — the one output that
+    # is indistinguishable from "all is well". Both reviewers also noted that NO case ran the
+    # wrapper at all, which is why the defect could ship. This builds a world with a CRASHING
+    # reader and asserts the wrapper still delivers a CANNOT RUN on STDOUT.
+    import shutil as _sh
+    import subprocess as _sp
+    import tempfile as _tf
+
+    _hook_src = ROOT / ".claude/hooks/report-plan-state.sh"
+    # ⚠ Asserted, not assumed: if the hook is renamed or deleted this case goes RED rather than
+    # vacuously green, which is the failure mode of every "if it exists, test it" guard.
+    case("the session-start hook exists where this suite expects it", _hook_src.is_file())
+    if _hook_src.is_file():
+        with _tf.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td)
+            (_r / ".claude/hooks").mkdir(parents=True)
+            (_r / "scripts").mkdir()
+            _sh.copy2(_hook_src, _r / ".claude/hooks/report-plan-state.sh")
+
+            # a reader that crashes before printing anything — the measured breakage arm
+            (_r / "scripts/check-plan-progress.py").write_text(
+                "import sys\nsys.stderr.write('boom\\n')\nraise SystemExit(3)\n")
+            _out = _sp.run(["bash", str(_r / ".claude/hooks/report-plan-state.sh")],
+                           capture_output=True, text=True, stdin=_sp.DEVNULL)
+            case("a crashing reader still exits 0 (or its text would never reach context)",
+                 _out.returncode == 0)
+            case("…and the wrapper puts a CANNOT RUN on STDOUT rather than nothing",
+                 "CANNOT RUN" in _out.stdout)
+            case("…saying plainly it is NOT a statement about outstanding work",
+                 "TREAT THIS AS NOT RUN" in _out.stdout)
+            case("…and stdout is not empty, which was the shipped defect",
+                 _out.stdout.strip() != "")
+
+            # the CONTROL for the three cases above: a reader that works must NOT be reported
+            # as a failure. Without this, a wrapper that printed CANNOT RUN unconditionally
+            # would pass every case above.
+            (_r / "scripts/check-plan-progress.py").write_text(
+                "print('[plan-progress/unarmed] nothing armed')\n")
+            _ok = _sp.run(["bash", str(_r / ".claude/hooks/report-plan-state.sh")],
+                          capture_output=True, text=True, stdin=_sp.DEVNULL)
+            case("CONTROL — a working reader is passed through verbatim",
+                 "[plan-progress/unarmed] nothing armed" in _ok.stdout)
+            case("CONTROL — and is NOT reported as a CANNOT RUN",
+                 "CANNOT RUN" not in _ok.stdout)
+
+    # ⛔ r1 Codex L2 — the delivery cases checked nonempty stdout and never asserted that stderr
+    # stayed EMPTY, so a verdict written to the wrong stream passed. The channel claim is about
+    # which stream, so the negative half has to be asserted too.
+    _buf_err = _io.StringIO()
+    with _ctx.redirect_stdout(_io.StringIO()), _ctx.redirect_stderr(_buf_err):
+        run_session_start()
+    case("run_session_start writes NOTHING to stderr — the channel claim's negative half",
+         _buf_err.getvalue() == "")
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
