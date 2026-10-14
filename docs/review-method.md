@@ -198,7 +198,10 @@ being argued with.
 ⛔⛔ **AND THE EXHAUSTIVENESS PASS IS ITSELF A TELL — MEASURED 2026-10-13 ACROSS THREE ROUNDS,
 backlog #281.** The row above sends a branch-coverage defect to *FIX, plus an exhaustiveness pass*.
 **If that pass comes back with a NEW MEMBER, SUSPECT the finding was MECHANISM and was graded
-wrong** — then re-apply the one test above to the **PATTERN** rather than to the finding.
+wrong** — then re-apply this section's one test (*“Can a redesign remove it?”*, stated BELOW, under
+*THE SYMPTOM LIST IS A PROMPT*) to the **PATTERN** rather than to the finding. ⟳ r2: this read *“the
+one test above”* and pointed the reader the WRONG WAY — the test is below, and following the old
+wording literally landed them on the symptom table this section forbids using as a test.
 
 ⛔ **IT IS A TELL, NOT A DEDUCTION — r1 REFUTED THE STRONGER WORDING THAT STOOD HERE.** This block
 read *"that is not a heuristic; it is what the two rows mean"*. One counter-example is enough: a rule
@@ -206,8 +209,12 @@ governing a FINITE enum — say `{ready, failed, cancelled}` — whose first enu
 `ready` and `failed` is genuinely **branch-coverage**, and a pass that discovers `cancelled`
 completes it without any shape being wrong.
 
-⛔⛔ **AND r2 REFUTED MY REPLACEMENT DISCRIMINATOR TOO, SO THIS BLOCK NO LONGER OFFERS A CATEGORICAL
-TEST AT ALL.** I had written *"finiteness means the pass TERMINATES"* and *"a wrong shape generates
+⛔⛔ **AND r2 REFUTED MY REPLACEMENT DISCRIMINATOR — SO THIS *PARAGRAPH* NO LONGER OFFERS A
+GRADING TEST OF ITS OWN.** ⟳⛔ It said *"this block no longer offers a categorical test AT ALL"*,
+which r2's Claude half refuted as a THIRD overshoot in the same place: **this section's one test is
+alive and sixty lines below** — *"THE SYMPTOM LIST IS A PROMPT, NOT THE TEST. There is one test, and
+it is this: Can a redesign remove it?"* What is withdrawn is the EXHAUSTIVENESS-PASS shortcut, not
+the section's test. I had written *"finiteness means the pass TERMINATES"* and *"a wrong shape generates
 them, so the pass never terminates"*. Both are false. Finiteness alone supplies no terminating
 enumeration METHOD over a discoverable population; and a wrong shape need not generate members —
 **two fully enumerated states with contradictory ownership requirements are a MECHANISM defect over
@@ -215,8 +222,11 @@ which an exhaustive pass terminates immediately, discovering nothing.** A redesi
 contradiction.
 
 ⭐ **What remains is the only part the evidence supports: A NEW MEMBER WARRANTS INVESTIGATION.** It
-does not settle the grade. Three cases where it decides nothing, all stated rather than discovered
-later: a member **out of scope** of the rule; a pass that **CANNOT RUN** (a NOT RUN, never a clean
+does not settle the grade. ⛔⛔ **AND THE LIST BELOW IS NOT CLAIMED COMPLETE — r2 CAUGHT THE
+PREVIOUS VERSION REPRODUCING THIS BLOCK'S OWN DEFECT ONE LEVEL UP.** It said *“Three cases … all
+stated rather than discovered later”*, where its predecessor had said *“Two cases … both now stated”*
+and grew to three in a single round. A fourth is already witnessed on this branch: a review landing
+moved a population from 3 to 4. **So: KNOWN cases where it decides nothing, and expect more:** a member **out of scope** of the rule; a pass that **CANNOT RUN** (a NOT RUN, never a clean
 pass, and never evidence of a finite set); and — r2's case — a **completed, finite enumeration that
 still contains a mechanism defect**, where the pass returns nothing and the shape is wrong anyway.
 

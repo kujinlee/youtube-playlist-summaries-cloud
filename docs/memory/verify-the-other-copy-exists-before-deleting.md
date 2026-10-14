@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file. `stat -f %l` was 1 — ⛔ and LINK COUNT IS THE WRONG CHECK, it discriminates nothing. Compare `stat -L` (dev,inode) pairs, which FOLLOWS symlinks, and prove the content survives with a reversible `mv`, never `rm`"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file. `stat -f %l` was 1 — ⛔ and LINK COUNT ALONE IS THE WRONG CHECK and so is the (dev,inode) pair alone. `stat -L` BOTH paths: same pair AND `links==1` ⇒ deleting either DESTROYS it; `links>=2` is a hard link and survives. Then prove it with a reversible `mv`, never `rm`"
 metadata:
   node_type: memory
   type: feedback
@@ -26,14 +26,28 @@ committed and shipped as PR #369. Nothing was lost but the ~1.3 KB of edits made
 ## The check that costs one command
 
 ```bash
-# ⛔ -L IS LOAD-BEARING: it RESOLVES symlinks. Without it a direct file symlink reports two
-#    different inodes and this check says "two files" about one file. Measured below.
-stat -L -f 'dev=%d inode=%i %N' <pathA> <pathB>    # SAME (dev,inode) => ONE file. DO NOT DELETE
+# ⛔ TWO THINGS ARE LOAD-BEARING AND I GOT EACH WRONG IN TURN: `-L`, which RESOLVES symlinks
+#    (without it a file symlink reports two inodes and this says "two files" about ONE file),
+#    and the LINK COUNT, which I then wrongly declared meaningless. Both are needed:
+stat -L -f 'dev=%d inode=%i links=%l %N' <pathA> <pathB>
+#   different (dev,inode)            -> two independent files        -> deleting one is SAFE
+#   same (dev,inode) AND links >= 2  -> several REAL entries (hard link) -> deleting one is SAFE
+#   same (dev,inode) AND links == 1  -> ONE real entry, the rest are symlinks -> DELETING DESTROYS
 stat    -f 'dev=%d inode=%i %N' <pathA> <pathB>    # differs from the above => one of them IS a link
 readlink <pathA> <pathB>; ls -ld "$(dirname <pathA>)" "$(dirname <pathB>)"   # which link, and where
-# ⭐ THEN PROVE IT, because every line above is an inference about a moment:
-mv <pathA> <pathA>.parked && cat <pathB> >/dev/null && echo "B SURVIVES" || echo "B IS GONE — UNDO"
-mv <pathA>.parked <pathA>    # reversible. `rm` is not, and that is how the 40KB page died
+```
+
+⭐ **THEN PROVE IT, because every line above is an inference about a moment** — and the proof has to
+be written so it cannot lie, which the first version was not:
+
+```bash
+# ⛔ FILES ONLY, and only after the stat check above says same-inode-and-links==1.
+PARKED="<pathA>.parked.$$"                       # $$ so it cannot clobber an existing .parked
+[ -e "$PARKED" ] && { echo "CANNOT RUN: $PARKED exists"; exit 2; }
+[ -d "<pathA>" ] || [ -d "<pathB>" ] && { echo "CANNOT RUN: directories, this proof is for files"; exit 2; }
+mv "<pathA>" "$PARKED" || { echo "CANNOT RUN: mv failed, NOTHING was tested"; exit 2; }
+if cat "<pathB>" >/dev/null 2>&1; then echo "B SURVIVES"; else echo "B IS GONE — RESTORE NOW"; fi
+mv "$PARKED" "<pathA>"                            # reversible. `rm` is not: that is how the page died
 ```
 
 ⛔⛔ **CORRECTED 2026-10-13 — THIS NOTE'S OWN TEST WAS FALSE, AND IT FAILED TOWARD "TWO FILES".**
@@ -46,10 +60,27 @@ It read *"same inode **or** `links=1` means deleting either name deletes the con
 | a real hard link | 2, 2 | same | yes |
 | **the symlinked-PARENT case this note is about** | **1, 1** | **same** | **YES** |
 
-`links=1` is true in the one-file case AND in the two-file case, so it discriminates **nothing**.
-⭐ **The test is the `(device, inode)` PAIR** — same pair, one file, whatever the link count says.
+`links=1` ALONE is true in the one-file case AND in the two-file case, so by itself it decides
+nothing — which is what the original rule got wrong by using it alone.
+⛔⛔ **BUT "IT DISCRIMINATES NOTHING" WAS MY OWN OVERCORRECTION, REFUTED 2026-10-13 IN ROUND 2 OF
+THE SAME BRANCH, AND IN THE DANGEROUS DIRECTION: it made the rule REFUSE A SAFE DELETE.** Measured —
+a **hard link** has the SAME `(dev,inode)` under `-L` and `links=2`, and `rm` on one name leaves the
+content intact through the other. A rule of "same pair ⇒ DO NOT DELETE" is simply wrong there.
+
+⭐ **SO BOTH FIELDS ARE LOAD-BEARING, AND THE COMPLETE RULE IS THREE-WAY** (measured, all three):
+
+| `stat -L` on both paths | what it means | deleting ONE name |
+|---|---|---|
+| different `(dev,inode)` | two independent files | **safe** |
+| same `(dev,inode)`, `links >= 2` | several REAL directory entries | **safe** — content survives |
+| same `(dev,inode)`, `links == 1` | ONE real entry; anything else reaching it is a symlink | **DESTROYS IT** |
+
 ⚠ And the old command omitted the DEVICE, which is not pedantry: inode numbers are only unique
 per filesystem, so two unrelated files can share one.
+⭐ Three versions of this one test, and each correction broke it the other way: `links=1` alone
+(unsafe), then the pair alone (refuses safe deletes), then both. **The pattern worth keeping is not
+the rule — it is that a safety check gets PROVED with the reversible `mv` below, never reasoned
+about.**
 
 ⛔⛔ **AND THE (device, inode) RULE WAS ITSELF INSUFFICIENT — CORRECTED AGAIN 2026-10-13, round 2,
 AND IT FAILED IN THE SAME DIRECTION AS THE RULE IT REPLACED.** A **direct FILE symlink** defeats it:

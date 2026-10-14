@@ -46,6 +46,11 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting i
 
 ### 2. Present candidates
 
+⛔ **STOP — IF THIS REVIEW WAS ARMED BY THRASHING, DO STEP 2a BELOW BEFORE YOU PRESENT ANYTHING.**
+⟳ r2 M3 twice: the prerequisite was first written AFTER this section, then at its closing line —
+both times the agent's PRIMARY PATH reached "present a numbered list" before ever seeing it. It is
+now the first thing in the step it gates.
+
 Present a numbered list of deepening opportunities. For each candidate:
 
 - **Files** — which files/modules are involved
@@ -123,9 +128,25 @@ telling you to emit a card this repository physically refuses. Every option need
 a rationale and a trade-off; **exactly one carries `(Recommended)` and is placed FIRST**; and the
 **last option is always a question exit**. Shape:
 
+⛔ **FOUR OPTIONS, NOT FIVE** — r2 H1: `check-selection-card.py` enforces `MAX_OPTIONS = 4`, and the
+version of this step that offered redesign, narrowing, acceptance AND an investigation exited **rc=2**
+over a green control. So the investigation **REPLACES** redesign rather than joining it — which is
+also the honest shape, because you cannot card "redesign: <what it removes>" while unable to say what
+it removes.
+
+**When you CAN name the recurring assertion:**
+
 > **A — redesign: <what it removes> (Recommended)** — <why, and what it costs>
 > **B — keep narrowing: <the next narrowing>** — <its cost, and that the previous N each produced
 > the following round's finding>
+> **C — accept and record: <what ships>** — <what the backlog row will say>
+> **D — I have a question about these** — ask before choosing
+
+**When you CANNOT:**
+
+> **A — spend a round establishing what these findings share (Recommended)** — <what would make it
+> conclusive, and what it costs>
+> **B — keep narrowing: <the next narrowing>** — <its cost, and the previous N>
 > **C — accept and record: <what ships>** — <what the backlog row will say>
 > **D — I have a question about these** — ask before choosing
 
