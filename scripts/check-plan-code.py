@@ -1358,7 +1358,7 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
-    "scripts/check-canonical-source.py": 1,   # r6 redesign: the inverted-restatement mutation
+    "scripts/check-canonical-source.py": 3,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -4960,7 +4960,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1409)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1411)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

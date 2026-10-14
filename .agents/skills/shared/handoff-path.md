@@ -141,6 +141,24 @@ one to obey; only the reason differs.
 
 * It does not claim the list of triggers is complete — it is the three the vendor's own test
   enumerates, at version 0.33.0, and a vendor bump can add a fourth.
+
+⛔⛔ **AND A FOURTH ALREADY EXISTS AT 0.33.0 — NO VENDOR BUMP NEEDED (r6 CLAUDE H2).** A FLATTENED
+CONFIG CACHE at `${TMPDIR:-/tmp}/remember-config-cache-<key>` is keyed on **`REMEMBER_DIR` alone**
+(`log.sh`'s cache writer; its only identity line is `#REMEMBER_DIR=…`). Its source list includes
+`${HOME}/.remember/config.json`, but an **absent** layer cannot be newer than the cache — so a cache
+published under one `HOME` is served to a session whose `HOME` contributes no config at all, and
+`handoff_mode=per_session` is set from a cached value. Measured 2/2, with a fresh-`TMPDIR` negative
+control and a cache-removal control: `HOME=A` (no config) → no hint; `HOME=B` with the key → hint;
+`HOME=A` again, still no config, same `TMPDIR` → **hint fires**; fresh `TMPDIR` → no hint.
+⚠ **The bound, because it is narrow:** single-`HOME` config changes invalidate correctly (add the
+key, remove it, delete the file — the hint stops immediately). What is reachable is **two `HOME`s
+over one `REMEMBER_DIR` sharing a `$TMPDIR`** — two users where `TMPDIR` is unset so both fall back
+to `/tmp`, or one user whose `HOME` changes.
+⛔ **Why it matters even so:** this canon's stated job is answering *"why was a path printed at
+session start"*, and a reader following it will inspect three config layers, find nothing, and
+conclude the canon is wrong. ⚠ And the hinted path in that state is `remember.<session-id>.md`,
+which the NEXT session (cache gone) will not read — the original *handoff with no reader* defect,
+resurrected by a cache.
 * It says nothing about what a reader SEES. Shell exit codes and stderr do not establish host or UI
   delivery, and that has never been measured here.
 * The enforcement layering — which layer survives a vendor update and which does not — is in

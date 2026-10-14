@@ -38,7 +38,7 @@ FAILS IF
   * a declared citing site does not cite the canonical path;
   * any non-exempt file RESTATES a mechanism (carries its tokens) without citing its canon.
 
-  --self-test  runs 15 cases over synthetic trees, including that each failure mode is DETECTED.
+  --self-test  runs 23 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
 import contextlib
@@ -80,13 +80,85 @@ CANONS: list[dict] = [
     },
 ]
 
-EXEMPT = re.compile(r"^(docs/reviews/|docs/dashboard-entries\.md$|\.remember/)")
+# ⚠ `\.remember/` WAS AN UNREACHABLE ALTERNATIVE and is gone (r6 CLAUDE H4). The walk can
+# only ever yield the repo root plus `.agents/`, `.claude/`, `docs/` and `scripts/`, so that
+# branch matched nothing and no case covered it — an exemption written against an imagined
+# population, which is the same defect as measuring one.
+EXEMPT = re.compile(r"^(docs/reviews/|docs/dashboard-entries\.md$)")
 SEARCHED = ("*.md", "*.py", "*.sh")
 MARKER = "<!-- canon: {} -->"
 
 
+# ⛔⛔ THE REPO ROOT IS IN THE WALK, AND LEAVING IT OUT WAS THE WORST MISS (r6 CLAUDE H4).
+# Measured on a copy, green control before and after: a root `CLAUDE.md` carrying a mechanism's
+# token with NO citation gave rc=0 while the same text under `.agents/` gave rc=1. `CLAUDE.md`
+# `@`-imports `AGENTS.md`, `docs/dev-process.md` and `docs/plugins.md`, so those two files are the
+# surfaces a session reads FIRST and ALWAYS — and `docs/plugins.md`, a DECLARED citing site, is
+# reachable only through them. A guard that cannot see the entry point to its own citing sites is
+# measuring the wrong population.
+#
+# ⚠ AND THE BOUND IS NOW STATED WHERE IT IS TRUE. The docstring used to name two EXEMPTIONS and
+# imply everything else was covered; the real population was `{.agents,.claude,docs,scripts}` x
+# `{md,py,sh}`, which is a far larger exclusion than the exemptions and was written nowhere. What
+# is STILL not covered, said plainly rather than discovered later: `*.html` (so a generated
+# explainer page can carry a seventh copy), `*.txt`, `*.json`, `*.yml`, and any directory outside
+# the five below — `tests/`, `lib/`, `.github/`. Widening to those is backlog #282's subject; what
+# this fixes is the entry point, which is the one no reader can avoid.
+ROOT_GLOBS = ("*.md",)
+
+
+def _cites(body: str, cite_token: str, canon_abs: Path, citing_abs: Path,
+           repo_root: Path) -> bool:
+    """True if `body` carries a path ending in `cite_token` that RESOLVES to the canon.
+
+    ⛔ WHY A PLAIN `in` IS NOT ENOUGH (r6 CLAUDE H4). `cite_token` is a relative reference such as
+    `shared/handoff-path.md`, so `cite_token in body` is satisfied by
+    `See docs/nowhere/shared/handoff-path.md.` — a citation that reads as compliance and sends the
+    reader nowhere.
+
+    ⚠ THREE WRONG REPAIRS BEFORE THIS ONE, each recorded because each looked right and the next
+    measurement refuted it:
+      1. resolve the token from the REPO ROOT — a relative reference does not point there; the real
+         repository went red, 9/15, including "the REAL repository is clean";
+      2. require the token NOT be preceded by a path character — the real citations are full paths
+         ending in the token, so `/` precedes them too; that rejected all nine citing sites, 10/15;
+      3. accept the canon's own repo-relative path OR a bare token — still rejected
+         `.agents/skills/handoff/SKILL.md`, which cites `../shared/handoff-path.md`, a path relative
+         to the CITING FILE. 10/15 again, one site.
+    ⭐ Each repair was written from the illegitimate example and never checked against the
+    legitimate ones. The property is not a spelling: **a citation is a path, and the question is
+    where it resolves.** So expand each occurrence leftwards over path characters and resolve the
+    candidate against the citing file's own directory AND the repo root; a different path ending in
+    the same token resolves to neither.
+    """
+    pathish = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-")
+    canon = canon_abs.resolve()
+    start = 0
+    while True:
+        i = body.find(cite_token, start)
+        if i < 0:
+            return False
+        a = i
+        while a > 0 and body[a - 1] in pathish:
+            a -= 1
+        cand = body[a:i + len(cite_token)]
+        # ⚠ BOTH BASES ARE PASSED IN, NOT DERIVED. A fourth wrong attempt derived the repo root as
+        # `canon_abs.parents[-1]`, which is the FILESYSTEM root — every candidate then resolved
+        # somewhere outside the tree and the BUILT-world case went red. Deriving a root from a file
+        # path is exactly the "defined, not derived" trap this repo keeps paying for.
+        for base in (citing_abs.parent, repo_root):
+            try:
+                if (base / cand).resolve() == canon:
+                    return True
+            except (OSError, ValueError):
+                pass
+        start = i + 1
+
+
 def _tracked_textfiles(root: Path) -> list[Path]:
     out: list[Path] = []
+    for pat in ROOT_GLOBS:
+        out += sorted(root.glob(pat))          # top level only: CLAUDE.md, AGENTS.md, README.md
     for sub in (".agents", ".claude", "docs", "scripts"):
         d = root / sub
         if not d.is_dir():
@@ -130,8 +202,10 @@ def audit(root: Path, canons: list[dict] | None = None) -> list[str]:
             if not cp.is_file():
                 problems.append(f"{cite_rel} is declared a citing site but does not exist")
                 continue
-            if cite_token not in cp.read_text(encoding="utf-8", errors="replace"):
+            if not _cites(cp.read_text(encoding="utf-8", errors="replace"), cite_token,
+                          root / rel, cp, root):
                 problems.append(f"{cite_rel} does not cite {rel}")
+
 
         for f in files:
             frel = str(f.relative_to(root))
@@ -139,7 +213,7 @@ def audit(root: Path, canons: list[dict] | None = None) -> list[str]:
                 continue
             body = f.read_text(encoding="utf-8", errors="replace")
             hit = next((t for t in canon["tokens"] if t in body), None)
-            if hit and cite_token not in body:
+            if hit and not _cites(body, cite_token, root / rel, f, root):
                 problems.append(
                     f"{frel} restates {name} (carries {hit!r}) without citing {rel}"
                 )
@@ -154,11 +228,15 @@ def _built_world(base: Path, complete: bool = True) -> Path:
         f = base / canon["file"]
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(MARKER.format(canon["name"]) + "\n" + "\n".join(canon["tokens"]) + "\n")
-        token = "/".join(Path(canon["file"]).parts[-2:])
+        # ⚠ THE FIXTURE CITES THE CANON'S FULL REPO-RELATIVE PATH, as real citing sites do. It used
+        # to write the bare two-segment token, which satisfied the old substring test and resolves
+        # from NEITHER base under the new one — so the stricter rule turned this constructed world
+        # red, correctly. A fixture that cites in a way no real site does is a fixture that tests a
+        # rule nobody is subject to.
         for i, rel in enumerate(canon["cites"]):
             c = base / rel
             c.parent.mkdir(parents=True, exist_ok=True)
-            body = "" if (not complete and i == 0) else f"see {token}\n"
+            body = "" if (not complete and i == 0) else f"see {canon['file']}\n"
             c.write_text(c.read_text() + body if c.exists() else body)
     return base
 
@@ -191,13 +269,72 @@ def self_test() -> int:
             print(f"  [FAIL] {label}: got {got!r} want {want!r}")
 
     CANON = "<!-- canon: c -->\nMECHTOKEN lives here.\n"
-    CITE = "See ../shared/c.md for the mechanism.\n"   # the RELATIVE form a real link uses
+    # ⛔ THE ROOT-RELATIVE FORM, AND THE OLD FIXTURE'S RELATIVE ONE NEVER RESOLVED (r6 CLAUDE H4).
+    # It read `See ../shared/c.md …` and was commented "the RELATIVE form a real link uses" — but
+    # the citing site is `docs/site.md`, so `../shared/c.md` points at `<root>/shared/c.md`, which
+    # the fixture never creates. It passed only because the old rule was a substring test. This is
+    # the form `docs/plugins.md` actually uses; the `../` form is covered separately below, in a
+    # layout where it genuinely resolves, because that is what `.agents/skills/handoff/SKILL.md`
+    # writes and a rule that rejected it would have broken a real site.
+    CITE = "See .agents/skills/shared/c.md for the mechanism.\n"
 
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
 
         r = _tree(t / "ok", CANON, {"docs/site.md": CITE})
         case("a canon plus a citing site is clean", r, [])
+
+        # ⭐ THE `../` FORM, TESTED DIRECTLY ON `_cites` OVER THE REAL LAYOUT. `_tree` hardcodes
+        # its citing site at `docs/site.md`, from which no `../`-relative path reaches
+        # `.agents/skills/shared/`, so routing this through `_tree` tested the wrong geometry — my
+        # first version of this case failed for that reason, not because the rule was wrong.
+        # ⛔ This is the exact pair that exists in the repository: `.agents/skills/handoff/SKILL.md`
+        # citing `../shared/handoff-path.md`. My third attempt at the rule rejected it, so the case
+        # is a regression guard for a real site a stricter rule would have broken.
+        _rel = t / "relgeom"
+        (_rel / ".agents/skills/shared").mkdir(parents=True, exist_ok=True)
+        (_rel / ".agents/skills/handoff").mkdir(parents=True, exist_ok=True)
+        _canon_f = _rel / ".agents/skills/shared/handoff-path.md"
+        _canon_f.write_text("canon\n")
+        _site_f = _rel / ".agents/skills/handoff/SKILL.md"
+        _site_f.write_text("described ONCE, in [`../shared/handoff-path.md`](../shared/x)\n")
+        case("a `../` citation relative to the CITING FILE is accepted",
+             _cites(_site_f.read_text(), "shared/handoff-path.md", _canon_f, _site_f, _rel), True)
+        _bad_f = _rel / ".agents/skills/handoff/BAD.md"
+        _bad_f.write_text("see docs/nowhere/shared/handoff-path.md\n")
+        case("…and the same token as the tail of ANOTHER path is not",
+             _cites(_bad_f.read_text(), "shared/handoff-path.md", _canon_f, _bad_f, _rel), False)
+        _root_f = _rel / "CLAUDE.md"
+        _root_f.write_text("see .agents/skills/shared/handoff-path.md\n")
+        case("…and the repo-root-relative form is accepted too",
+             _cites(_root_f.read_text(), "shared/handoff-path.md", _canon_f, _root_f, _rel), True)
+
+        # ⛔ AND THE NEGATIVE THE WHOLE REPAIR EXISTS FOR: a path ending in the same token that
+        # resolves somewhere else entirely. Adjacent to the accepted forms, not absurd.
+        r = _tree(t / "dangle", CANON,
+                  {"docs/site.md": "See docs/nowhere/shared/c.md for the mechanism.\n"})
+        case("a citation that resolves NOWHERE is NOT accepted",
+             any("does not cite" in x for x in r), True)
+
+        # ⛔ THE REPO ROOT, WHICH THE WALK DID NOT REACH (r6 CLAUDE H4). Measured before the fix,
+        # on a copy with green controls: a root `CLAUDE.md` carrying a token with no citation gave
+        # rc=0 while the identical text under `.agents/` gave rc=1. These two files are the surfaces
+        # a session reads FIRST — `CLAUDE.md` `@`-imports `docs/plugins.md`, a declared citing site.
+        r = _tree(t / "rootmiss", CANON, {"docs/site.md": CITE, "CLAUDE.md": "MECHTOKEN again\n"})
+        case("a restatement in the repo-root CLAUDE.md is detected",
+             any("restates c" in x and "CLAUDE.md" in x for x in r), True)
+        r = _tree(t / "rootmiss2", CANON, {"docs/site.md": CITE, "AGENTS.md": "MECHTOKEN again\n"})
+        case("…and in AGENTS.md", any("restates c" in x and "AGENTS.md" in x for x in r), True)
+        # CONTROL — a root file that DOES cite must stay clean, or the rule above could be a blanket
+        # refusal of any root file carrying the token.
+        r = _tree(t / "rootok", CANON, {"docs/site.md": CITE, "CLAUDE.md": "MECHTOKEN " + CITE})
+        case("CONTROL — a root file that cites the canon is clean",
+             [x for x in r if "CLAUDE.md" in x], [])
+        # CONTROL — the walk must not reach deeper than the root's own files, or it would start
+        # auditing node_modules and every untracked tree.
+        r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})
+        case("CONTROL — `tests/` is still outside the walk (a STATED bound, not a silent one)",
+             [x for x in r if "tests/deep.md" in x], [])
 
         r = _tree(t / "nocanon", None, {"docs/site.md": CITE})
         case("a MISSING canonical file is detected", any("is MISSING" in x for x in r), True)

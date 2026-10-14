@@ -11,5 +11,31 @@
     "expect": [
       "a RESTATEMENT without a citation is detected"
     ]
+  },
+  {
+    "name": "the walk stops reading the repo root, so CLAUDE.md and AGENTS.md go unaudited (r6 H4)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "    for pat in ROOT_GLOBS:\n        out += sorted(root.glob(pat))          # top level only: CLAUDE.md, AGENTS.md, README.md\n",
+        "    for pat in ():\n        out += sorted(root.glob(pat))\n"
+      ]
+    ],
+    "expect": [
+      "a restatement in the repo-root CLAUDE.md is detected"
+    ]
+  },
+  {
+    "name": "a citation is accepted without resolving it, so a path to nowhere passes (r6 H4)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "        for base in (citing_abs.parent, repo_root):\n",
+        "        for base in (citing_abs.parent, repo_root):\n            return True\n        for base in ():\n"
+      ]
+    ],
+    "expect": [
+      "a citation that resolves NOWHERE is NOT accepted"
+    ]
   }
 ]
