@@ -14873,7 +14873,7 @@ claim is, the honest option to offer is a round spent finding out. A list of sma
 the right output for a routine review; for this one, the list has to be audited against the thing
 going wrong before anyone is asked to choose from it.
 
-⚠ And THREE ways of satisfying that and fixing nothing are written down as refusals (⟳ r4 M7: this said "two" and described two, while the skill lists three — the third copy of the enumeration round 3 corrected at its two other sites): narrowing the scope, and dropping the
+⚠ And THREE shapes are written down here — ⛔ **r5 M2: TWO are cheats to refuse and the middle one is the OPPOSITE, a redesign that is "the right answer anyway"; "three ways … fixing nothing … refusals" was wrong about its own third member and disagreed with the skill, which r4 M3 had already corrected** (⟳ r4 M7: and before that it said "two" while describing two, the third copy of an enumeration round 3 corrected at its two other sites): narrowing the scope, and dropping the
 wording while keeping the behaviour, and the reverse — a rebuild that makes a promise TRUE still
 makes the promise, and is the right answer anyway.
 
@@ -14925,9 +14925,14 @@ AUTHORITY.** Round 4 measured it printing **SAFE while deleting destroys the onl
 hashes the survivor TWICE and never the doomed file — so after five refuted rules in five rounds
 the arming condition was called as THRASHING and the rule was replaced rather than patched a
 sixth time. ⛔ The first replacement was ALSO wrong in the fatal direction (`git diff --quiet
-HEAD` exits 0 on a path matching nothing, so an untracked file read as safe); what ships now
-compares BYTES — `git show HEAD:<path> | shasum` against `shasum <path>` — and FAILS CLOSED,
-measured over 8 of 8 cases including `assume-unchanged`, `skip-worktree` and a tracked symlink.
+HEAD` exits 0 on a path matching nothing, so an untracked file read as safe); ⛔⛔ **and round 5 refuted THAT TOO**: an
+EMPTY untracked file passed, because a failing `git show` emits zero bytes and `shasum` of
+nothing equals `shasum` of an empty file; so did a hashing tool that printed `partial` and
+exited 74 on both calls. ⛔ **And no observation can license a delete at all — A can change
+between the check and the `rm`, demonstrated deterministically.** So the DELETION-PERMISSION
+VERDICT IS WITHDRAWN: what ships reports what it OBSERVED (git's own content addressing, no
+pipes), and the note now says plainly that if you cannot afford to lose it you should `mv` it
+aside rather than delete it.
 
 Batched per `dev-process.md` Phase 5: `docs/memory/verify-the-other-copy-exists-before-deleting.md`
 and `printing-more-evidence-weakens-substring-cases.md`, taken verbatim from branch

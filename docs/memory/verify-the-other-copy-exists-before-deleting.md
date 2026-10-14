@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⭐⭐ ASK GIT, BUT COMPARE BYTES: `git show \"HEAD:$A\" | shasum` against `shasum \"$A\"` — equal ⇒ HEAD holds this exact content and `rm` cannot destroy it, whatever the aliasing; anything else ⇒ CANNOT SAY, treat deletion as destructive. ⛔ NEVER classify the path's state: \"tracked and unmodified\" was my SIXTH rule here and it was fatal — `git diff --quiet HEAD` exits 0 on a path that matches NOTHING, so an untracked file read as safe. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⛔⛔ NOTHING HERE MAKES DELETING SAFE — THREE RULES IN THREE ROUNDS SAID *safe* WHERE DELETING DESTROYED THE ONLY COPY. You can OBSERVE that HEAD held these bytes a moment ago — `git rev-parse --verify --quiet \"HEAD:$A\"` against `git hash-object -- \"$A\"` — and that is an observation, not permission: A can change between the look and the `rm`, measured. ⭐ If you cannot afford to lose it, DO NOT DELETE IT — `mv` it aside and leave it. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
 metadata:
   node_type: memory
   type: feedback
@@ -84,31 +84,48 @@ all, so "three states distinguished" never reproduced either.
 `return`, instead of the two lines in the fence.** The artifact I tested was not the artifact I
 delivered — so run the fence, from the fence.
 
-⭐ **The replacement observes CONTENT, which is the only thing this note has ever been right
-about, and it FAILS CLOSED:**
+⭐ **The replacement OBSERVES and does not permit** — ⛔ r5: *"and it FAILS CLOSED"* stood
+here and is WITHDRAWN, measured false twice below; this block reports what it saw:
 
 ```bash
-# Does HEAD hold THIS EXACT CONTENT? Compare BYTES. Never classify the path.
-H=$(git show "HEAD:$A" 2>/dev/null | shasum -a256 | cut -d' ' -f1)
-W=$(shasum -a256 "$A" 2>/dev/null | cut -d' ' -f1)
-if [ -n "$W" ] && [ -n "$H" ] && [ "$H" = "$W" ]
-  then echo "HEAD holds this exact content - deleting the working file cannot destroy it"
-  else echo "CANNOT SAY HEAD HOLDS IT - treat deletion as DESTRUCTIVE"; fi
+# An OBSERVATION, never a permission. No pipes, so every exit status is meaningful.
+HB=$(git rev-parse --verify --quiet "HEAD:$A" 2>/dev/null) \
+  || { echo "CANNOT SAY: HEAD has no such path"; exit 2; }
+WB=$(git hash-object -- "$A") || { echo "CANNOT RUN: cannot hash $A"; exit 2; }
+if [ "$HB" = "$WB" ]; then echo "OBSERVED: HEAD held these exact bytes just now"
+else echo "DIFFERENT: HEAD does not hold these bytes"; fi
 ```
 
-Measured over **8 of 8** cases, fence extracted and run, green control first: tracked+unmodified
-→ holds; untracked → CANNOT SAY; nonexistent → CANNOT SAY; tracked+modified → CANNOT SAY;
-`assume-unchanged`+edited → CANNOT SAY; `skip-worktree`+edited → CANNOT SAY; tracked symlink →
-CANNOT SAY; content in HEAD but dropped from the index → holds.
-⚠ **Its bound, stated:** it errs CONSERVATIVE — a tracked symlink whose target is committed is
-safe to delete and this says CANNOT SAY, because `git show` yields the link TARGET while `shasum`
-follows the link. And it only ever asks about **HEAD**: content living only in another ref, a
-stash or the reflog reads as CANNOT SAY. Both directions are *refuse*, never *permit*.
+⛔⛔ **r5 — AND THE SEVENTH RULE PERMITTED A DESTRUCTIVE DELETE TOO, SO THE PERMISSION VERDICT
+IS WITHDRAWN ALTOGETHER.** Two independent refutations, measured against the shipped fence:
+* an **EMPTY** untracked file passed as *"HEAD holds this exact content"*, because a failing
+  `git show` emits ZERO BYTES and `shasum` of nothing is byte-identical to `shasum` of an empty
+  file (`e3b0c442…` both ways). Same outside any repository.
+* a hashing tool that printed `partial` and exited **74** on BOTH calls passed, while HEAD held
+  `CONTROL` and the working file held the only copy of something else. Neither pipeline checked
+  its producer's status — so *"FAILS CLOSED"* and *"both directions are refuse, never permit"*
+  were false.
+* ⛔ **AND NO OBSERVATION CAN LICENSE A DELETE ANYWAY (B2):** a transparent wrapper ran the real
+  `shasum`, kept its success status, then changed A deterministically AFTER the hash. The fence
+  permitted; deleting A then destroyed content that had never been in HEAD. The check observes
+  EARLIER bytes and was promising safety for LATER bytes, with no stability boundary.
 
-⭐ **When it says HEAD holds the content, the ALIASING QUESTION IS MOOT** — one file under two
-paths is still ONE BLOB, and deleting either path cannot destroy what HEAD already has. ⛔ The
-incident this note exists for was an **UNCOMMITTED** file, which is why it was unrecoverable, and
-the cheapest correct habit remains *commit first, then delete*.
+⭐ **So this is a REFUSAL remedy, not an eighth rule** — the reviewer's own disposition. The block
+above reports what it SAW and nothing more: it uses git's own content addressing (`rev-parse`
+and `hash-object`, no pipes, every exit status meaningful), which is why the empty-file collision
+cannot arise — `git hash-object` of an empty file is `e69de29b…` while a missing path makes
+`rev-parse` FAIL instead of yielding nothing. Measured 8 of 8, fence extracted and run: tracked
+and unmodified → OBSERVED; a tracked EMPTY file → OBSERVED; empty-untracked, untracked,
+nonexistent → CANNOT SAY; `assume-unchanged`+edited, a tracked symlink, tracked+modified →
+DIFFERENT; outside a repository → CANNOT SAY with no leaked `fatal:`.
+
+⛔⛔ **AND IT STILL DOES NOT MAKE DELETING SAFE.** Nothing in this note does. Three rules in
+three rounds said *safe* where deleting destroyed content; the honest statement is that HEAD
+held those bytes at the moment you looked. ⭐ **If you cannot afford to lose it, do not delete
+it — `mv` it aside and leave it there.** That has no false-permit mode, because nothing is
+destroyed. ⚠ The incident this note exists for was an **UNCOMMITTED** file, so *commit first*
+remains the cheapest habit — but committing is what makes recovery POSSIBLE, not what makes a
+delete safe.
 
 ## ⛔⛔ r4 — AND THE PROOF BELOW IS NOT AN AUTHORITY. FOUR DEFECTS, MEASURED.
 
@@ -165,7 +182,10 @@ else echo "⛔ DO NOT DELETE: B vanished or changed without A"; exit 1; fi
 ⭐ **Why each line is there — every one of them is a defect a review round found in an earlier
 version of this block:**
 
-* it **hashes** B rather than testing existence, so a replacement race or a changed file is caught;
+* it **hashes** B rather than testing existence — ⛔ **r5 M1: and the clause that stood here,
+  "so a replacement race … is caught", is WITHDRAWN.** This same note's B2 describes the
+  replacement interleaving that defeats it: hashing observes earlier bytes and says nothing
+  about later ones. Hashing beats an existence test; it does not catch a race;
 * it establishes readability **BEFORE** moving anything, so an unreadable-but-present B is a
   **CANNOT RUN** and not the false verdict *"B IS GONE"* (measured: a mode-`000` file produced
   exactly that lie, then exited 0);
@@ -187,8 +207,11 @@ version of this block:**
   the false SAFE verdicts were directory cases;
 * `-L` as well as `-e` on the park name — measured: `[ -e ]` is FALSE for a DANGLING symlink, so an
   earlier version would have silently overwritten one sitting at that exact name;
-* it refuses to restore over **anything new at A**, and names where your original is parked — an
-  earlier version silently overwrote a file created during the read and still exited 0.
+* it refuses to restore over **anything new at A** that exists AT THE MOMENT OF THE CHECK, and
+  names where your original is parked — an earlier version silently overwrote a file created
+  during the read and still exited 0. ⛔ **r5 M1: the unqualified promise is WITHDRAWN** — B2
+  measured new content created AFTER the destination check and silently overwritten by the
+  restore, so the check bounds a moment, not the interval;
 
 **Measured 7 of 7 on the cases that defeated the four rules it replaces** — two independent files
 (SAFE), B a symlink to A (REFUSE), A a symlink to B (SAFE — correctly asymmetric), B dangling
