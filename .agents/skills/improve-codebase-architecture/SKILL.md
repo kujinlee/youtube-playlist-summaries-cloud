@@ -57,7 +57,11 @@ Present a numbered list of deepening opportunities. For each candidate:
 
 **ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly (e.g. _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
-Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
+Do NOT propose interfaces yet. ⛔ **r2 M3 — IF THIS REVIEW WAS ARMED BY THRASHING, STOP HERE AND
+DO STEP 2a FIRST: it is a PREREQUISITE to presenting this list, not a follow-up.** Calling it an
+audit settled which card wins and left the execution order wrong — the list must already contain
+the claim-removal option before the owner sees it. Otherwise: ask the user *"Which of these would
+you like to explore?"*
 
 ### ⛔ 2a. If this review was ARMED BY THRASHING, your candidate list MUST contain the option that removes the recurring claim
 
@@ -79,17 +83,37 @@ deep module over 'the child's verdict' … one module with named states"*); and 
 mechanism redesign was carded, interrogated and declined** — so "the owner cannot choose a redesign
 they were not offered" was the wrong diagnosis, and a step built on it would have prevented nothing.
 
-⭐ **WHAT ACTUALLY WENT WRONG, and it is the rule this step now states:** the redesign that
-eventually dissolved the thrashing — **stop claiming the enumeration is complete** — was **not among
-the four candidates**. They addressed other seams (a mandatory clause, a verdict module, one
-combiner, retiring a function). The list LOOKED complete and omitted the only option that removed
-the recurring claim, which cost the same two rounds that offering no fork would have.
+⭐ **WHAT THE RECORD ACTUALLY SUPPORTS — ⟳ r2 H2 CAUGHT THE FIRST CORRECTION OVERSHOOTING.** It said
+the redesign that dissolved the thrashing *"was not among the four candidates at all"*. That reverses
+one categorical claim into another. The record supports exactly this: **A was chosen after the owner
+questioned A versus B**, and **none of the four candidates EXPLICITLY proposed abandoning the
+completeness claim**. It does NOT support saying the remedy was unavailable through them — the
+document says the candidates were *"NOT designed here"*, and a candidate-2 design over observational
+states with no causal attribution fits its published description and WOULD have removed the claim.
+"Not explicitly proposed" is not "not there", least of all for an undesigned module.
 
-**So: name the cause, then audit your own list against it.**
+**So: name the claim, then audit your own list against it — and say what you could not establish.**
 
-> For each recurring finding, name the CLAIM the component keeps making and keeps having refuted.
-> Then point at the option in your list that STOPS MAKING THAT CLAIM. If no option does, the list is
-> incomplete — add it before you card anything.
+> For each recurring finding, name the ASSERTION the component keeps making and keeps having refuted,
+> **and cite the round that refuted it.** Then point at the option in your list whose BEHAVIOUR would
+> stop that assertion from being made, and say what change in behaviour that is. If no option does,
+> the list is incomplete — add one before you present it.
+
+⛔ **r2 H1 — AND THE RULE DOES NOT ALWAYS APPLY, SO IT NOW SAYS WHAT TO DO INSTEAD.** Thrashing
+establishes that fixes cause the next round's findings in one component. It does **not** establish
+that those findings refute ONE identifiable assertion. Counterexample: a lock-order repair introduces
+stale reads, whose snapshot repair introduces cancellation leaks — only designing a single-owner
+queue reveals the hidden ownership assumption joining them, and this skill defers interface design
+until after selection. **When you cannot name the shared assertion, the honest card is an
+INVESTIGATION, not a redesign:** offer "spend a round establishing what these findings share" as the
+recommended option, and say what would make it conclusive.
+
+⚠ **Two ways to satisfy this rule and fix nothing, both to be refused:**
+> * **withdrawing the ASSERTION while keeping the defective BEHAVIOUR** — the words change, the
+>   defect ships. That is why the audit asks for a behavioural change, not a wording change.
+> * the inverse: **a redesign that makes a required guarantee TRUE** keeps making the claim, and so
+>   FAILS a literal reading of "stops making that claim" while being exactly the right answer.
+>   The test is whether the recurring REFUTATION becomes impossible, not whether a sentence vanishes.
 
 ⛔ **AND THE CARD ITSELF MUST SATISFY `portable-practices.md` §19, OR A HOOK REFUSES IT** — r1 H1
 measured the template that stood here: piped through `scripts/check-selection-card.py` it exited

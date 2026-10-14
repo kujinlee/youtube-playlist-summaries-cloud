@@ -204,14 +204,27 @@ wrong** — then re-apply the one test above to the **PATTERN** rather than to t
 read *"that is not a heuristic; it is what the two rows mean"*. One counter-example is enough: a rule
 governing a FINITE enum — say `{ready, failed, cancelled}` — whose first enumeration documented only
 `ready` and `failed` is genuinely **branch-coverage**, and a pass that discovers `cancelled`
-completes it without any shape being wrong. **Finiteness means the pass TERMINATES, not that it
-discovers nothing.** What separates the two is whether members KEEP coming: a wrong shape generates
-them, so the pass never terminates. ⚠ Two cases the strong form had no answer for, both now stated:
-a pass returning a member **out of scope** of the rule re-grades nothing, and a pass that **cannot
-run** is a NOT RUN — never a clean pass, and never evidence of a finite set.
+completes it without any shape being wrong.
+
+⛔⛔ **AND r2 REFUTED MY REPLACEMENT DISCRIMINATOR TOO, SO THIS BLOCK NO LONGER OFFERS A CATEGORICAL
+TEST AT ALL.** I had written *"finiteness means the pass TERMINATES"* and *"a wrong shape generates
+them, so the pass never terminates"*. Both are false. Finiteness alone supplies no terminating
+enumeration METHOD over a discoverable population; and a wrong shape need not generate members —
+**two fully enumerated states with contradictory ownership requirements are a MECHANISM defect over
+which an exhaustive pass terminates immediately, discovering nothing.** A redesign removes the
+contradiction.
+
+⭐ **What remains is the only part the evidence supports: A NEW MEMBER WARRANTS INVESTIGATION.** It
+does not settle the grade. Three cases where it decides nothing, all stated rather than discovered
+later: a member **out of scope** of the rule; a pass that **CANNOT RUN** (a NOT RUN, never a clean
+pass, and never evidence of a finite set); and — r2's case — a **completed, finite enumeration that
+still contains a mechanism defect**, where the pass returns nothing and the shape is wrong anyway.
 
 **What it cost, measured — and the unit is CLAIMS, not rounds.** PR #371 rounds 11, 12 and 13:
-**THREE rounds carrying FIVE refuted completeness claims** (two in r11, two in r12, one in r13) — a
+**THREE rounds carrying FIVE refuted completeness claims**, distributed **1/2/2** across rounds 11,
+12 and 13 (⟳ r2 M1: my fold published *2/2/1*, which belonged to the redesign commit's DIFFERENT
+five-item selection — I swapped the examples and kept the old distribution. Witnesses: r11 Claude H1;
+r12 Codex H1 twice; r13 Codex H1 and H2) — a
 heading rule keyed on a header CPython omits; one that read any indented run as a traceback; an
 ASCII-only name validator; an identifier validator that dropped `type("bad-name", …)`; and a
 three-world enumeration that was four. ⟳ **r1 CORRECTED "OVER FIVE ROUNDS" HERE — five examples is
@@ -237,9 +250,19 @@ B was declined on a **measured** width (2 callers — *not a real seam*). **A me
 carded, interrogated and declined.** The owner was never deprived of a fork, and a rule built on
 "they were not offered one" would not have prevented anything that happened.
 
-⭐ **THE TRUE DEFECT IS NARROWER AND MORE USEFUL: the redesign that actually dissolved the thrashing
-— STOP CLAIMING THE ENUMERATION IS COMPLETE — WAS NOT AMONG THE FOUR CANDIDATES AT ALL.** They
-addressed other seams: a mandatory clause, a verdict module, one combiner, retiring `run_suite`. So
+⛔⛔ **AND r2 CAUGHT THAT CORRECTION OVERSHOOTING — I REVERSED ONE CATEGORICAL DIAGNOSIS INTO
+ANOTHER, WHICH IS THIS REPOSITORY'S OWN RECORDED FAILURE SHAPE.** The source supports exactly one
+thing: **A was chosen after the owner questioned A versus B.** It does NOT support three claims I
+made. (a) That candidate 2 WOULD have dissolved the mechanism defect — the document says the
+candidates were *"NOT designed here"*, so its behaviour is unknown. (b) That the eventual remedy was
+UNAVAILABLE through them — a candidate-2 design over observational states with quoted diagnostics and
+no causal attribution fits its published description and WOULD remove the recurring claim. (c) The
+two-round counterfactual cost.
+
+⭐ **The defensible statement is narrower, and it is enough: none of the four candidates EXPLICITLY
+proposed abandoning the completeness claim — and "not explicitly proposed" is not "not among them at
+all", least of all for an undesigned module.** They nominally addressed other seams: a mandatory
+clause, a verdict module, one combiner, retiring `run_suite`. So
 the rule is: **when the arming condition is THRASHING, the candidate list must contain the option
 that REMOVES THE RECURRING CLAIM ITSELF.** Name the cause, then check that one option actually
 dissolves it — a complete-looking fork that omits the relevant option costs exactly what no fork

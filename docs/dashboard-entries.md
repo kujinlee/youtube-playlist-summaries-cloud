@@ -14857,10 +14857,18 @@ shape. What separates the two is whether the cases KEEP coming: a limited list r
 shape keeps producing them. Three rounds of searching turned up five such cases between them — not
 five rounds, which this entry also said — and nobody read that as the answer it was.
 
-The second change tells the deeper review what to ask first. If it was convened because fixes keep
-causing findings, its opening question is the one about shape — rebuild, keep patching, or accept
-and record — with what each costs. A list of smaller opportunities is the right output for a routine
-review, not for this one.
+The second change is about the list of options a deeper review hands over. ⛔ **This paragraph first
+said its OPENING QUESTION must be the one about shape, and that was withdrawn** — a later review
+showed the shape question HAD been asked on the occasion being described, so "ask it first" was not
+the missing thing. What was missing is narrower: **the list must contain the option that stops the
+component making the claim that keeps being proved wrong** — and if nobody can yet say what that
+claim is, the honest option to offer is a round spent finding out. A list of smaller opportunities is
+the right output for a routine review; for this one, the list has to be audited against the thing
+going wrong before anyone is asked to choose from it.
+
+⚠ And two ways of satisfying that and fixing nothing are written down as refusals: dropping the
+wording while keeping the behaviour, and the reverse — a rebuild that makes a promise TRUE still
+makes the promise, and is the right answer anyway.
 
 Neither change is ENFORCED by anything, which is worth saying plainly — ⛔ **but the first version
 of that sentence went further and was false.** It said no automated check reads the review
@@ -14869,10 +14877,13 @@ checks, and another reads the full text of every skill file, including this one.
 the new rules, which is the honest and narrower statement.
 
 ⛔ **And "the condition that would prove this failed can only be seen after the next round" was also
-wrong.** One such condition is visible immediately: look at a deeper review that was convened by
-this signal and at the first choice it put to the owner. If that choice is about one small piece, or
-if the menu contains no option that removes the recurring problem, the instruction was already
-broken — no further round required.
+wrong — though a later review trimmed how much of it is checkable up front.** What IS visible
+immediately: take a deeper review convened by this signal and ask whether its list contains an
+option that declares it removes the recurring problem. If there is none, the instruction was broken
+with no further round required. ⚠ What is NOT settled that early: whether a listed option *actually*
+removes it. That needs evidence the list itself does not carry — and an option's position in the
+list, or which question was asked first, proves nothing either way. So the leading check is
+existence, and the rest still lags.
 
 Also included: two notes from earlier work that had never been committed to the project at all. One
 of them is the note recording that someone once deleted the only copy of a finished page, which was
@@ -14887,7 +14898,11 @@ at `:195-196`; the file is not line-budgeted. `.agents/skills/improve-codebase-a
 symlink itself** — the entry `.claude/skills/improve-codebase-architecture` is the symlink into
 `.agents/…`. One file, two paths, so the conclusion stands and the stated check did not.
 ⚠ **Also corrected: the skill's project-local ownership was credited to a `projectSettings:`
-frontmatter key that does not exist** — 0 occurrences repo-wide (control: `description:`, 21 files);
+frontmatter key that does not exist** — 0 occurrences among the tracked skill files, against 21 for
+the control `description:`. ⚠ **Corrected again: that is a SCOPED result, not "repo-wide", which this
+paragraph first claimed.** Repo-wide the token appears in 3 tracked files and the control in 193 —
+and all 3 are this paragraph and the two reviews discussing its absence, so the measurement's own
+write-up is what the search now finds. The key is still absent from every skill's frontmatter;
 the frontmatter carries only `name` and `description`. It IS project-local, because it is a tracked
 file in this repo rather than a vendored plugin copy — which is the evidence that actually supports
 the claim. Backlog #281 carries the measurement; its row lives on `backlog-249-260-fixes` and must be
