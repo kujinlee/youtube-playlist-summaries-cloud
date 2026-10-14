@@ -1709,8 +1709,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))\n    return out\n",
-        "            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))\n    return out[-1:]\n"
+        "            out.append(lines[i].strip())\n    return out\n",
+        "            out.append(lines[i].strip())\n    return out[-1:]\n"
       ]
     ],
     "expect": [
@@ -1718,42 +1718,16 @@
     ]
   },
   {
-    "name": "⛔ r11 H1 (retargeted AGAIN at r14 — the #280 redesign moved this line) — the report stops QUOTING the child's column-zero lines and gives the reader only the diagnostic window",
+    "name": "⛔ r11 H1 (retargeted a THIRD time at r15, when the annotation's deletion collapsed the join onto one line) — the report stops QUOTING the child's column-zero lines and gives the reader only the diagnostic window",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                        + \" \\u00b7 \".join(\n",
-        "                        + \"\".join(\n"
+        "                        + \" \\u00b7 \".join(heads)\n",
+        "                        + \"\".join(heads)\n"
       ]
     ],
     "expect": [
       "⭐⭐ #280: the report QUOTES the child's column-zero lines, joined"
-    ]
-  },
-  {
-    "name": "⛔ r11 Claude H1 — the shutdown flag is forced off, so a `__del__` raise reads as an ordinary exception the child died of",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            out.append((lines[i].strip(), intro.startswith(IGNORED_AT_SHUTDOWN)))\n",
-        "            out.append((lines[i].strip(), False))\n"
-      ]
-    ],
-    "expect": [
-      "...and CPython's own `Exception ignored in` label is what FLAGS the non-fatal one"
-    ]
-  },
-  {
-    "name": "⛔ r11 Claude H1 — the look-PAST a bare traceback header is removed, so the intro of a shutdown block is the header rather than `Exception ignored in`",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "            if lines[k].strip() and lines[k].strip() != _TB_HEADER:\n",
-        "            if lines[k].strip():\n"
-      ]
-    ],
-    "expect": [
-      "⭐⭐ r11 H1: a __del__ raise at SHUTDOWN does not displace the real exception"
     ]
   },
   {
@@ -1910,19 +1884,6 @@
     ],
     "expect": [
       "⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped"
-    ]
-  },
-  {
-    "name": "⭐⛔ r14 H1 (RETARGETED at the r14 Claude fold — the wording it anchors was false about POSITION and was rewritten) — the harness's OWN note about the line introducing the frame-shaped run is removed, so the report quotes the lines and says NOTHING about what introduced them. Added because severing this annotation left 298/298 GREEN: its only cover asserted `Exception ignored in`, a phrase CPython writes and `diagnostic_tail` carries into the same string",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "                            h + (\" [a line ABOVE that run began 'Exception ignored in',\"\n                                 \" which the CHILD wrote]\" if ig else \"\")\n",
-        "                            h\n"
-      ]
-    ],
-    "expect": [
-      "...and the harness's OWN note is there, in text raw stderr cannot supply"
     ]
   }
 ]
