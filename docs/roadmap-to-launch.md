@@ -3081,7 +3081,7 @@ completeness claim in one harness message-and-parser, each fix adding a list mem
 refuted. The redesign removes the claims rather than extending the lists:
 
 * `_is_type_name` and `is_exception_heading` — the two functions that decided what *is* an
-  exception from text the child controls — are **DELETED**. Nothing classifies any more.
+  exception from text the child controls — are **DELETED**. ⟳ ⛔ **r17 M2: "Nothing classifies any more" is WITHDRAWN** — `FRAME_LINE` still classifies a line as frame-shaped and `parse_fail_names` still classifies one as a named failure (both measured). What the deletions established is that **no function decides whether a line is an EXCEPTION**.
 * `exception_headings` is renamed — first to `column_zero_after_frames`, and at round 16 to
   **`lines_after_frame_runs`**, because each old name WAS the claim and ⟳ **the first rename
   simply restated it** ("column zero" was refuted as wording #5: the run test reads only

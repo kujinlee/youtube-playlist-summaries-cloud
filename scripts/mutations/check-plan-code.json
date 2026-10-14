@@ -1744,19 +1744,6 @@
     ]
   },
   {
-    "name": "⛔ r11 Claude H2 (retargeted #280) — the NO-LINES world stops naming itself, so a stderr with no quotable line is described in words that fit any red suite",
-    "file": "scripts/check-plan-code.py",
-    "edits": [
-      [
-        "                said = (\"this harness read no line it could quote, so read the \"\n",
-        "                said = (\"the suite went red, so read the \"\n"
-      ]
-    ],
-    "expect": [
-      "the no-lines world is named as well, in the redesigned wording"
-    ]
-  },
-  {
     "name": "⛔⛔ #271 — `bool(fails)` is dropped from `attributed`, so an entry that omits `expect` records attribution over an EMPTY fails list: the field contradicts its own definition and a crashed suite reads as killed",
     "file": "scripts/check-plan-code.py",
     "edits": [
@@ -1887,55 +1874,68 @@
     ]
   },
   {
-    "name": "⛔⛔ r16 CLAUDE H1 (refusal 1 of 4) — the report stops REFUSING to call a quoted line THE EXCEPTION, which is the claim `is_exception_heading` was deleted for",
+    "name": "⛔⛔ r16 CLAUDE H1, retargeted r17 onto `_REFUSAL` (refusal 1 of 4) — the report stops REFUSING to call a quoted line THE EXCEPTION, which is the claim `is_exception_heading` was deleted for",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                        + \". \\u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, NOR \"\n",
-        "                        + \". \\u26d4 THIS HARNESS DOES NOT CLAIM NOR \"\n"
+        "    \"ANY OF THEM IS THE EXCEPTION, NOR \"\n",
+        "    \"\"\n"
       ]
     ],
     "expect": [
-      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+      "⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included"
     ]
   },
   {
-    "name": "⛔⛔ r16 CLAUDE H1 (refusal 2 of 4) — the report stops REFUSING to claim a quoted line KILLED the child, which is the causal attribution round 14 filed as forged",
+    "name": "⛔⛔ r16 CLAUDE H1, retargeted r17 onto `_REFUSAL` (refusal 2 of 4) — the report stops REFUSING to claim a quoted line KILLED the child, which is the causal attribution round 14 filed as forged",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                          \"THAT IT KILLED THE CHILD, NOR \"\n",
-        "                          \"\"\n"
+        "    \"THAT IT KILLED THE CHILD, NOR \"\n",
+        "    \"\"\n"
       ]
     ],
     "expect": [
-      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+      "⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included"
     ]
   },
   {
-    "name": "⛔⛔ r16 CLAUDE H1 (refusal 3 of 4) — the report stops REFUSING to attribute the stream to CPYTHON, which is wording #1 — the subject under test writes this stream",
+    "name": "⛔⛔ r16 CLAUDE H1, retargeted r17 onto `_REFUSAL` (refusal 3 of 4) — the report stops REFUSING to attribute the stream to CPYTHON, which is wording #1 — the subject under test writes this stream",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                          \"THAT CPYTHON WROTE ANY OF IT, NOR \"\n",
-        "                          \"\"\n"
+        "    \"THAT CPYTHON WROTE ANY OF IT, NOR \"\n",
+        "    \"\"\n"
       ]
     ],
     "expect": [
-      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+      "⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included"
     ]
   },
   {
-    "name": "⛔⛔ r16 CLAUDE H1 (refusal 4 of 4) — the report stops REFUSING to say WHERE in the stream the lines sat, which is the whole class of six refuted wordings",
+    "name": "⛔⛔ r16 CLAUDE H1, retargeted r17 onto `_REFUSAL` (refusal 4 of 4) — the report stops REFUSING to say WHERE in the stream the lines sat, which is the whole class of six refuted wordings",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "                          \"ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under \"\n",
-        "                          \"the subject under \"\n"
+        "    \"ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under \"\n",
+        "    \"the subject under \"\n"
       ]
     ],
     "expect": [
-      "⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately"
+      "⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included"
+    ]
+  },
+  {
+    "name": "⛔⛔ r17 CODEX H1 — the refusal's POLARITY is reversed (`DOES NOT CLAIM` -> `DOES CLAIM`) so the report ASSERTS exception-hood while retaining every token r16's case tested: measured, that left the suite 297/297 green",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    \"\\u26d4 THIS HARNESS DOES NOT CLAIM \"\n",
+        "    \"\\u26d4 THIS HARNESS DOES CLAIM \"\n"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included"
     ]
   }
 ]

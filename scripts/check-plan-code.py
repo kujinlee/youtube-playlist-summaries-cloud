@@ -550,7 +550,10 @@ FRAME_LINE = re.compile(r'^[ \t]+File "')
 #
 # ⭐ Each repair was correct about the instance it was given and the next round found another
 # member. The defect was never the predicate — it is that A HARNESS CANNOT DECIDE WHAT A LINE
-# MEANS WHEN THE SUBJECT UNDER TEST WRITES THE LINE. So nothing decides any more:
+# MEANS WHEN THE SUBJECT UNDER TEST WRITES THE LINE. ⛔ r17 M2: "so nothing decides any more" is
+# FALSE and is withdrawn — `FRAME_LINE` still classifies a line as frame-shaped, and
+# `parse_fail_names` still classifies one as a named failure. What the deletions established is
+# narrower and is all that is claimed: NO FUNCTION DECIDES WHETHER A LINE IS AN EXCEPTION.
 # `lines_after_frame_runs` reports what the child printed — ⛔ r14 M1 withdrew "verbatim" and this
 # site kept it: the lines are `.strip()`ped, so they are a QUOTATION with the surrounding
 # whitespace removed — and the caller says it cannot tell. #279 removes the matching completeness claim from the message.
@@ -562,13 +565,45 @@ FRAME_LINE = re.compile(r'^[ \t]+File "')
 # NOT contain it — the CPython behaviour the no-header bound rests on.
 _TB_HEADER = "Traceback (most recent call last):"
 
+# \u26d4\u26d4 r17 CODEX H1 — THE FOUR REFUSALS LIVE HERE, AS ONE CONSTANT, BECAUSE A SUBSTRING
+# TEST CANNOT POLICE A REFUSAL. r16 added a case asserting four refusal TOKENS were present in
+# the rendered report, on the argument that "a refusal's correctness IS its presence". ⛔ That
+# argument is WITHDRAWN and the case is gone. Measured over a green control in a complete tree:
+# deleting the single word `NOT` reverses the refusal into an ASSERTION while retaining every
+# tested token, and the suite stayed 297/297. A refusal has SCOPE and POLARITY; its tokens
+# survive their own reversal.
+# \u26d4 AND THE CHILD-UNPRODUCIBILITY PREMISE FAILED TOO: `diagnostic_tail` carries raw stderr
+# into the SAME report string, so a child run beneath a DIRECTORY NAMED with those tokens prints
+# them in its own traceback and supplies all four to the case — a false report then passed.
+# \u2b50 So the oracle is EXACT EQUALITY against this constant (`_self_test` pins the literal),
+# which no polarity edit and no child can satisfy; a second case asserts it is still EMITTED.
+# \u26a0 Stated rather than hidden: the emission case reads the report, so a child that writes
+# this entire string verbatim to stderr would satisfy it. It cannot arrive via a FILENAME — the
+# constant is longer than the 255-byte limit on one path component, and any multi-component path
+# carries `/` characters the constant does not contain.
+# \u26a0 THE SPLIT AFTER "DOES NOT CLAIM" IS LOAD-BEARING, not formatting: `--binding` REFUSES
+# two entries that share an edit anchor ("it measures nothing new"), and the POLARITY mutation
+# and the exception-hood mutation would otherwise both anchor on one line. Measured r17.
+_REFUSAL = (
+    "\u26d4 THIS HARNESS DOES NOT CLAIM "
+    "ANY OF THEM IS THE EXCEPTION, NOR "
+    "THAT IT KILLED THE CHILD, NOR "
+    "THAT CPYTHON WROTE ANY OF IT, NOR "
+    "ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under "
+    "test writes this stream, so every reading of it is a QUOTATION and not "
+    "a measurement"
+)
+
 
 def lines_after_frame_runs(stderr: str) -> list[str]:
     """Lines quoted from `stderr` by the run rule implemented below, in stream order. PURE.
 
     ⛔ r16 M1 — THE NAME AND THIS LINE BOTH SAID "COLUMN ZERO" AND BOTH WERE FALSE. The run test
-    reads only `" "` and `"\t"`, so a line led by ANY other whitespace is returned here with that
-    whitespace `.strip()`ped away: measured, `\u3000END` is returned as `END`. The function was called
+    reads only `" "` and `"\t"`. ⛔ r17 M1: the GENERALISATION that stood here — "a line led by ANY
+    other whitespace is returned" — is false, because a line that is ONLY such whitespace is
+    CONSUMED (`lines_after_frame_runs('  File "f"\n\u3000\n')` is `[]`). What is measured is the one
+    witness: `\u3000END` is returned as `END`. ⚠ No further description of this stream is written
+    here; the selection rule is the implementation below. The function was called
     `column_zero_after_frames`; it is now `lines_after_frame_runs`, which claims nothing about
     position. That was the sixth and last positional claim about this stream to be withdrawn.
 
@@ -617,8 +652,13 @@ def lines_after_frame_runs(stderr: str) -> list[str]:
     ⚠ NO HEADER LITERAL IS USED TO FIND A HEADING. The predecessor keyed on a line equal to
     `Traceback (most recent call last):`, and Python OMITS that header when the MAIN SCRIPT fails
     to compile — so a top-level `SyntaxError`, the likeliest way a blind text substitution kills a
-    suite, returned None exactly where it was needed. A heading is instead *the first line that ENDS a
-    run of indented frame lines*, which holds with or without a header
+    suite, returned None exactly where it was needed. ⛔ r17 M1: AND NO REPLACEMENT DEFINITION IS
+    WRITTEN HERE. "The first line that ENDS a run of indented frame lines" was the seventh
+    structural sentence about this stream and was still wrong — the run it ends also swallows
+    arbitrary INDENTED PROSE and wholly strippable whitespace lines, so it is not "a run of frame
+    lines". Seven wordings, seven refutations: the selection rule is the implementation, and a
+    reader who needs the contract reads it there. What survives is only that NO HEADER LITERAL
+    is used, which holds with or without a header
     — ⛔ r16 M1: and NOT "at column zero", which this sentence used to say and which is false for
     any whitespace outside `{" ", "\t"}`.
     ⟳ r15: `_TB_HEADER` is no longer consulted here at all — it was read ONLY by the backward scan
@@ -3086,14 +3126,9 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
                 said = ("stderr printed these lines, in stream order, each "
                         "STRIPPED of surrounding whitespace \u2014 "
                         + " \u00b7 ".join(heads)
-                        + ". \u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, NOR "
-                          "THAT IT KILLED THE CHILD, NOR "
-                          "THAT CPYTHON WROTE ANY OF IT, NOR "
-                          "ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under "
-                          "test writes this stream, so every reading of it is a QUOTATION and not "
-                          "a measurement")
+                        + ". " + _REFUSAL)
             else:
-                said = ("this harness read no line it could quote, so read the "
+                said = ("read the "
                         "window \u2014 \u26a0 and note a traceback with NO frames (for example "
                         "under `sys.tracebacklimit = 0`) also lands here")
             report.append(
@@ -3895,8 +3930,13 @@ def _self_test() -> int:
                 "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
                 "expect": "the value is one"}]
         _okw3, _repw3, _, _ = run_mutations(_dw3p, _w3, {"w.py"})
-        case("the no-lines world is named as well, in the redesigned wording",
-             any("read no line it could quote" in r for r in _repw3), True)
+        # ⛔⛔ RETIRED WITH ITS SUBJECT, r17 M4. This case asserted the phrase "read no line it
+        # could quote", and that phrase is DELETED: it upgraded an empty EXTRACTOR RESULT into an
+        # inability, and the else-arm is reachable while a quotable line exists — measured, a child
+        # with `sys.tracebacklimit = 0; raise RuntimeError("QUOTABLE")` lands here AND the
+        # diagnostic window quotes `RuntimeError: QUOTABLE` three lines below the claim.
+        # ⭐ Nothing is lost: the case immediately below asserts the else-arm's own surviving bound,
+        # so this world's emission is still covered, and no replacement wording is written.
         case("⭐ #280: ...and it states the no-frame traceback BOUND rather than hiding it",
              any("sys.tracebacklimit = 0" in r for r in _repw3), True)
         # ⚠ The pair: this fixture must NOT be read as world one, or the case above passes for
@@ -3943,19 +3983,24 @@ def _self_test() -> int:
         # in reverse order, each one a VALIDATED exception class") with the join kept, and the
         # suite stayed 296/296 GREEN. So all six withdrawn wordings could return AND the disclaimer
         # that is now the reader's only protection could go with them, unnoticed.
-        # ⭐ WHY A PRESENCE TEST IS THE RIGHT SHAPE HERE, three lines from where r16 H2 RETIRED it:
-        # that case policed an ASSERTION, whose truth depends on the world, so its presence proved
-        # nothing about its truth. These four are REFUSALS. A refusal's correctness IS its presence
-        # — "the report refuses to claim causation" is falsified exactly by the refusal's absence.
-        # ⚠ Every token is one THIS fixture's child cannot write (it writes only `FIRST_KILLER`,
-        # `SHUTDOWN_SECOND` and `the value is one`), so `diagnostic_tail`'s raw-stderr dump into the
-        # same report string cannot supply them — the trap that made four false wordings pass.
-        # ⚠ A LIST, not four cases: one mutation per refusal, each killed through this one case.
-        _refusals = ("ANY OF THEM IS THE EXCEPTION", "NOR THAT IT KILLED THE CHILD",
-                     "NOR THAT CPYTHON WROTE ANY OF IT",
-                     "NOR ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED")
-        case("⭐⭐ r16 H1: the report REFUSES all four attributions, each one separately",
-             [any(_t in r for r in _repq) for _t in _refusals], [True, True, True, True])
+        # ⛔⛔ r17 CODEX H1 — AND THE SHAPE ARGUMENT THAT JUSTIFIED THE FIRST ATTEMPT IS WITHDRAWN.
+        # r16 asserted four refusal TOKENS were present in the rendered report, reasoning that a
+        # refusal differs from an assertion because "its correctness IS its presence". Measured over
+        # a green control in a complete tree: deleting the single word `NOT` reverses the refusal
+        # into an ASSERTION, retains every tested token, and leaves the suite 297/297. A refusal has
+        # SCOPE and POLARITY. ⛔ The child-unproducibility premise failed too — a child run beneath a
+        # DIRECTORY NAMED with those tokens prints them in its own traceback, and `diagnostic_tail`
+        # feeds them into the same report string.
+        # ⭐ So the oracle is EXACT EQUALITY against `_REFUSAL`, which is PURE: no polarity edit
+        # survives it and nothing the child writes can reach it. The second case only asserts the
+        # constant is still EMITTED — see the bound recorded at `_REFUSAL`.
+        case("⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included",
+             _REFUSAL,
+             "\u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, NOR THAT IT KILLED "
+             "THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT, NOR ANYTHING ABOUT WHERE IN THE STREAM "
+             "THEY APPEARED: the subject under test writes this stream, so every reading of it is a "
+             "QUOTATION and not a measurement")
+        case("...and the report still EMITS the refusal", any(_REFUSAL in r for r in _repq), True)
         # ⛔⛔ r15 CLAUDE H2 — THE SURVIVING SENTENCE HAD NO FALSIFIER IN EITHER DIRECTION, which the
         # annotation's deletion caused: the retired case had covered the sentence's PRESENCE, and
         # once it went, nothing read the text at all. PROVED with a green control (296/296): the
