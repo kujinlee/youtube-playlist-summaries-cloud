@@ -18,7 +18,7 @@ red from text the child controls. Each repair fixed one inference and left the m
 | *"stderr is EMPTY, so the suite RAN and its PRINTER is the subject"* | `import os; os._exit(1)` — rc 1, stderr empty, **nothing ran, no printer involved** |
 | *"killed, attributed to case `fabricated`"* | `raise RuntimeError("no cases ran\n[FAIL] fabricated: got 0 want 1")` — **zero cases executed**; the traceback FORGED the failure name |
 
-⭐ **The repairs that worked were all SUBTRACTIVE or NARROWING**, never a cleverer parser:
+⭐ **The repairs that were ATTEMPTED were all SUBTRACTIVE or NARROWING**, never a cleverer parser — ⛔ **r5 M2: "that worked" is WITHDRAWN**, because the line above records round 13 refuting exactly these as having worked: two of them still drop real exceptions and still invent fake ones (#279/#280). What the evidence supports is the DIRECTION, not the outcome:
 require a structural marker (`  File "`) before believing a run of indented lines is a traceback;
 validate a type name with Python's own `str.isidentifier()` instead of an ASCII regex; report the
 observation (`0 bytes`) and state explicitly that it is NOT evidence of execution; and read failure

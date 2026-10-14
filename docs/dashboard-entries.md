@@ -14857,7 +14857,7 @@ contents from disk ONLY when the file has not been flagged to be ignored or remo
 file is still a tracked file, so it can return the old text and miss what is actually there. Measured
 three ways, each against a working control. So the instruction is no longer a command but a CHECK:
 run it, run its cached variant, walk the filesystem, and treat any disagreement between the three as
-the answer. One search cannot be trusted here; two that agree can.
+a PROMPT TO LOOK. ⛔ Round 5 withdrew the other half: *"two that agree can be trusted"* is false, because all three can agree while reading different content — an index-masked file lists under every one of them while the default search returns the stale indexed line. Disagreement also has innocent causes (ignored files, submodules, binary files, a case-only rename on a case-insensitive filesystem). Agreement is not a guarantee: compare the CONTENT when content is what matters.
 
 An earlier review had listed one of these pointers while discussing something else; this entry first
 described that as the same problem being spotted and ignored, which overstates what that review

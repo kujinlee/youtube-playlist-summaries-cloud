@@ -74,7 +74,14 @@ CONTENT, so reading one does not consume it.
   indexed string and misses the one on disk. It also misses untracked, ignored,
   submodule, nested-checkout and vendored content.
   So CROSS-CHECK: git grep -l  vs  git grep --cached -l  vs  grep -rl .
-  Any disagreement IS the signal.
+  Any disagreement is a PROMPT TO LOOK -- r5: and that is ALL it is. Agreement
+  proves nothing about CONTENT (an assume-unchanged file lists under all three
+  while git grep returns the stale indexed line); disagreement has innocent
+  causes (ignored, .git, submodules, binary files, a case-only rename on a
+  case-insensitive filesystem); the filesystem leg's reach is TOOL-SPECIFIC
+  (default rg skips ignored files; plain recursive grep does not follow
+  symlinks); and outside a repository git grep exits 128 -- an ERROR, not an
+  empty result. Compare CONTENT when content matters.
   The assignment itself is REMEMBER_HANDOFF= -- keep the '=', it matches the two
   assignments where the bare name matches 23 lines. This locator is also a
   runnable discovery command (r4 L1: a literal <version> is a shell REDIRECT):
@@ -83,12 +90,18 @@ CONTENT, so reading one does not consume it.
 NOT .remember/handoff.md — nothing reads that name either.
 
 If a session-start block printed 'Write next handoff to: <path>', obey THAT path
--- it is always the right one. THREE things print it: the store directory is not
-an immediate CHILD of the project directory -- which INCLUDES a linked git
-worktree, and a data_dir nested two deep (measured: data_dir=a/b prints a hint,
-data_dir=notes does NOT, because the hook compares the store's PARENT with the
-project dir -- r4 H2 corrected this label twice); per_session
-mode (.handoff_mode), where the path is remember.<session-id>.md; and a per_session
+-- it is always the right one. THREE things print it. (1) The store directory's
+LEXICAL parent differs, AS TEXT, from the project directory. r5 H2: three LABELS
+for this were each measured false, so this is the MECHANISM and there is no
+fourth label. REMEMBER_ROOT strips trailing slashes, then drops everything after
+the last '/' -- a pure STRING operation with NO resolution of '.', '..' or
+symlinks -- and the hint fires iff that string differs from PROJECT_DIR
+(REMEMBER_ROOT in lib-memory-context.sh; the test in session-start-hook.sh).
+Measured on 0.33.0: data_dir=a/b hints; data_dir=notes does NOT; './notes' DOES
+hint although the store is an immediate child; '..' does NOT although the store
+is outside the project; nor does an immediate-child symlink pointing outside.
+So predict nothing from where the store is -- read the printed path. (2) per_session
+mode (.handoff_mode), where the path is remember.<session-id>.md; and (3) a per_session
 request with no usable session id, where it prints the SHARED file in whatever
 store is resolved -- which is NOT always the path above: a data_dir setting moves
 it -- plus a line saying the mode you asked for did not apply.

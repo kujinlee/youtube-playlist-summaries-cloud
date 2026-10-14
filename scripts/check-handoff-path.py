@@ -46,7 +46,9 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # ⟳ 2026-10-13 — the LINE NUMBER that stood here (`:795`) is GONE. A line number in a VENDORED file
 # has no owner in this repo: no guard can check it and a plugin bump invalidates it silently. What
 # is stable is the SYMBOL and the PATH — `REMEMBER_HANDOFF` in
-# `~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh`,
+# `ls ~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh`
+# — r5 L1: WITH the `ls`. Pasting the bare glob EXECUTES the hook, and with two matches it runs
+# the first script with the second path as its argument; `ls` is the discovery command,
 # where there are TWO assignments: the per-session path, then the shared one.
 # ⚠ HOW FAR it drifted is NOT measured, and the "stale by 376 lines" that stood here is withdrawn —
 # the pre-0.33.0 hook was never fetched (round 2 M3 caught that figure surviving here after being
@@ -75,7 +77,11 @@ SKILL_REL = ".agents/skills/handoff/SKILL.md"
 # assume-unchanged or absent -- then the cached blob, or nothing. Measured, all on TRACKED files:
 # assume-unchanged returns the STALE indexed string; skip-worktree -> 0; deleted-from-worktree -> 0.
 # So naming the corpus does not save a reader. CROSS-CHECK instead: git grep -l vs git grep --cached
-# -l vs grep -rl, and treat disagreement as the signal;
+# -l vs grep -rl, and treat disagreement as a PROMPT TO LOOK -- r5: agreement proves nothing about
+# CONTENT (an assume-unchanged file lists under all three while git grep returns the stale indexed
+# line), disagreement has innocent causes (ignored, .git, submodules, binary, case-only renames on
+# a case-insensitive filesystem), the filesystem leg's reach is TOOL-SPECIFIC, and outside a repo
+# git grep exits 128 -- an error, not an empty result. Compare CONTENT when content matters;
 # a VENDORED plugin file -> no repo-side search reaches it, so name the SYMBOL and the path.
 #
 # ⚠ No gate in this repo can see a stale figure HERE — this is a code comment and the document

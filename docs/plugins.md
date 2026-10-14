@@ -84,7 +84,7 @@ When multiple installed skills can handle the same task, use this table.
 > next one's note. ⟳ **2026-10-13: four stale LINE NUMBERS removed — a vendored line has no owner.**
 >
 > **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⟳ **THREE triggers**
-> (a resolved store root ≠ the project dir ITSELF — ⚠ **a linked WORKTREE counts, and r4 M3: so does a `data_dir` that stays INSIDE the project**; `per_session`; degraded); no hint in the ordinary setup is BY DESIGN → [`process-rationale.md`](process-rationale.md).
+> (⛔ **r5 H2: the three LABELS for the first trigger were each false — including this site's, which the r4 fold never edited — so the MECHANISM:** the store dir's LEXICAL parent ≠ `PROJECT_DIR` **as text**, with no `.`/`..`/symlink resolution, so `./notes` hints though it IS an immediate child and `..` does not though the store is OUTSIDE — `REMEMBER_ROOT` in `lib-memory-context.sh`; `per_session`; degraded); no hint in the ordinary setup is BY DESIGN → [`process-rationale.md`](process-rationale.md).
 
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
 `$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the
