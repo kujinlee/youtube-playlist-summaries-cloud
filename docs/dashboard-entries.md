@@ -14822,3 +14822,60 @@ model while `.gitignore` is a file read by `git`.
 contract) and `check-vocabulary-collisions.py`. The edit was first applied in a throwaway worktree,
 tested, and reverted to a byte-identical 20,204 before being made here.
 ⛔ `NO-REVIEW:` declared — see the PR body for the reason and its bound.
+
+## 2026-10-13
+A review process that had already worked out what was wrong kept asking the wrong question, so the
+same answer had to be discovered three times. Two sentences now make it ask the right one.
+
+Reviews here come in rounds. When the fixes from one round keep causing the findings of the next,
+that is a recognised signal that the thing being fixed is the wrong shape and should be rebuilt
+rather than patched — and the process has a check for exactly that, plus a separate deeper review it
+convenes when the signal appears. All of that worked. The deeper review ran, and it wrote down the
+real cause correctly.
+
+Then it offered a choice about one small piece instead of about the shape. Nobody can choose to
+rebuild something when rebuilding was never on the menu, so two more rounds went by rediscovering a
+conclusion already written down, and the rebuild was chosen at the end of them. Each of those rounds
+took a couple of hours.
+
+The first change adds a test with a sharp edge. When a finding is judged to be merely an unfinished
+rule rather than a wrong shape, the prescribed follow-up is to go looking for other cases the rule
+forgot. The new sentence says: if that search turns up a new case, the original judgement was wrong
+and the thing is the wrong shape after all. That is not a rule of thumb — an unfinished rule has a
+limited number of forgotten cases, so the search ends; a wrong shape keeps producing them, so it
+does not. Five rounds of searching had each turned up another case, and nobody read that as the
+answer it was.
+
+The second change tells the deeper review what to ask first. If it was convened because fixes keep
+causing findings, its opening question is the one about shape — rebuild, keep patching, or accept
+and record — with what each costs. A list of smaller opportunities is the right output for a routine
+review, not for this one.
+
+Neither change is enforced by anything, which is worth saying plainly. No automated check reads the
+review instructions, and the condition that would prove this failed can only be seen after the next
+round has happened.
+
+Also included: two notes from earlier work that had never been committed to the project at all. One
+of them is the note recording that someone once deleted the only copy of a finished page, which was
+itself a single uncommitted copy — one careless command from becoming the thing it warns about. Six
+other files that looked equally at risk turned out to be safely stored already; the alarm was raised
+before the check that would have shown that.
+
+<!--tech-->
+`docs/review-method.md` — the exhaustiveness-pass tell, beside the Mechanism/Branch-coverage table
+at `:195-196`; the file is not line-budgeted. `.agents/skills/improve-codebase-architecture/SKILL.md`
+— a new step 2a (⚠ edited via `.claude/skills/…`, which is a symlink to `.agents/…`). Backlog #281
+carries the measurement; its row lives on `backlog-249-260-fixes` and must be ticked there.
+
+⚠ `docs/dev-process.md` is at 219/220 lines, so its Phase 6 row was deliberately NOT touched —
+taking the last line would force an eviction decision that is the owner's.
+
+Batched per `dev-process.md` Phase 5: `docs/memory/verify-the-other-copy-exists-before-deleting.md`
+and `printing-more-evidence-weakens-substring-cases.md`, taken verbatim from branch
+`rescue-two-uncommitted-memories` (which is now superseded and should not be opened as its own PR),
+with their author's own index rows. `git log --all` found both on **zero refs**; the other six
+candidates were on `origin/master` and byte-identical.
+
+⚠ Same-day `## 2026-10-13` sections also exist on `backlog-249-260-fixes` and
+`plugins-handoff-citations`. Whichever merges second must check `grep -c '^## '` RISES — matching
+headers fuse silently on a keep-both resolution.
