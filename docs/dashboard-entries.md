@@ -14922,3 +14922,50 @@ corrected the first disclosure, which named one guard): `check-selftest-counts.p
 because **two** guards need `node_modules` this worktree lacks — `check-plan-code.py`
 (`HARNESS_TREE` wants `node_modules/typescript`) and `check-paid-caller-arrival.py`
 (`ERR_MODULE_NOT_FOUND`, 12/32). Both are unchanged by this diff and green in CI.
+## 2026-10-15
+**A reader followed a number to the wrong thing, and now a check refuses that number.** Two
+sequences in this project share one visual space: GitHub pull-request numbers and the row numbers in
+the backlog. Pull-request numbers only ever grow, and they have overtaken the backlog — so a number
+written on its own, below the current pull-request ceiling, means two different things and the page
+gives no clue which. Yesterday one of them pointed at a redesign filed that morning *and* at
+something merged five weeks earlier. A reader looked it up and got the wrong one.
+
+**What changed:** writing such a number bare into one of the documents people read for rules is now
+refused at the point a pull request is checked. Writing it with its namespace attached — which
+sequence it belongs to — passes.
+
+**⛔ The honest limit, stated because it matters more than the fix:** this would **not** have caught
+yesterday's incident. That number was written in a chat message, with copies in commit messages, and
+neither is reachable by any check — a commit message cannot be amended afterwards. What the new
+check buys is the *next* time it happens in a document. The habit is still the only thing covering
+the place it actually went wrong.
+
+**Why this is worth noting at all:** the same idea was examined on 2026-08-27 and deliberately
+rejected as unenforceable, with numbers. That verdict was right about what it tested, and it has not
+been retracted — it sits directly below the new entry in the same document. What changed is the
+question being asked, not the standard of evidence.
+
+<!--tech-->
+**`namespace-token-guard` → `64b251d7`. New guard `scripts/check-reference-namespace.py`, PR-scoped,
+with its own cases and manifest. Branch pushed; no pull request opened.**
+
+| | |
+|---|---|
+| **the collision** | PR numbers have overtaken `docs/backlog.md` row ids, so every backlog id below the PR ceiling is ambiguous bare. Measured: `` `#291` `` resolves to backlog row 291 and to a PR merged five weeks earlier |
+| **why it can be a gate when 2026-08-27 measured that it could not** | that verdict tested *"given a bare reference, should it have been qualified?"* — semantic, 1,556 hits across `docs/`, ~90% false positives on a diff. This asks *"does this ADDED line carry a reference with no namespace?"* — a shape question |
+| **the axis that decided it was SCOPE, not spelling** | with `scripts/` in scope: 158 firings over 40 commits, **137 of them (87%) in `scripts/`** — code commentary read from inside the guard. Dropping it leaves **20 firings, 0.50/commit** (0.21 over 120) |
+| **one exemption, derived from the firings** | hand-classifying all 21 found exactly one false positive — a reference in backticks, quoted *as the wrong form*, inside the rule's own section. Checked it bought no fail-open: same diff, 21 → 20 firings, and the one newly-passing case **is** that false positive. Zero false negatives over 1,029 in-scope added lines |
+| **the stated risk** | the qualifier word list is the "unbounded supply of answers" the old verdict warned about, and it already needed widening once (`Phase 6 #1` puts an ordinal in the way — caught by the self-test's first run). Tolerable only while an omission fails toward a FIRING, never a silent pass. That allowance has no live witness, only a constructed case |
+
+**What the repo's own contracts charged for it, which is the interesting half:**
+`check-fixture-variation` refused the file until `main(root=…)` took more than one value (*"3x
+`bad`"*) — hence a second, hook-shaped world driven in both directions. `check-ratchet-contract`
+reported no caller and no manifest, and offered `MANIFEST_BASELINE = 1`, which would have *accepted*
+the debt; six entries take it to zero. `check-merge-ready` went red because it **pins which workflow
+steps are pull-request-gated, by count rather than presence** — allowance 2 → 3 with its reason.
+
+**Verified:** self-test **23/23** on Python 3.10, 3.12 and 3.14. Mutations **6/6 killed, 6
+attributed, 0 survivors** on 3.12 and 3.14, green control and re-control. Guard sweep 54 discovered
+→ **49 ran, 5 skipped each with a reason, 0 red**. ⭐ And the falsifier for the documentation: the
+guard reads **46 in-scope added lines of the document that documents it** — every example backticked
+— and stays green, with the line count checked rather than the exit code trusted.
