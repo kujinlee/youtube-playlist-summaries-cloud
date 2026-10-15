@@ -55,8 +55,15 @@ repo, no guard can watch it, and a plugin bump invalidates it silently. Discover
 ⚠ WITH the `ls` — pasting the bare glob EXECUTES the hook, and with two matches it runs the first
 script with the second path as its argument.
 
-**If a session-start block prints a path, obey THAT path.** It is always the right one. Three things
-print it, and only the first has a subtle mechanism.
+**If a session-start block prints a path, obey THAT path.** It is always the right one. ⛔⟳ **r7
+CLAUDE M4 — THE COUNT IS NOT CLOSED, AND SAYING "THREE" CONTRADICTED THIS FILE'S OWN §"What this
+file does NOT claim", WHICH RECORDS A MEASURED FOURTH AT 0.33.0.** Three triggers are described
+below in detail (① ② ③) and only the first has a subtle mechanism; a **FOURTH is measured and
+recorded at the end of this file** — a flattened config cache served across two `HOME`s sharing one
+`$TMPDIR`. ⭐ So: read the numbered sections for the mechanism, and do not treat their count as the
+whole list. ⚠ The count was ALSO restated at three citing sites, which is why a number is the one
+part of a claim that is cheap to police: one search for the number beside its subject found every
+one of them, where no search for the prose would have.
 
 ---
 
@@ -177,8 +184,9 @@ one to obey; only the reason differs.
 
 ## ⚠ What this file does NOT claim
 
-* It does not claim the list of triggers is complete — it is the three the vendor's own test
-  enumerates, at version 0.33.0, and a vendor bump can add a fourth.
+* It does not claim the list of triggers is complete. ⛔ The three numbered above are the three the
+  vendor's own test enumerates at 0.33.0 — and a FOURTH is measured below, so "three" was never the
+  whole list even at this version, let alone after a vendor bump (r7 CLAUDE M4).
 
 ⛔⛔ **AND A FOURTH ALREADY EXISTS AT 0.33.0 — NO VENDOR BUMP NEEDED (r6 CLAUDE H2).** A FLATTENED
 CONFIG CACHE at `${TMPDIR:-/tmp}/remember-config-cache-<key>` is keyed on **`REMEMBER_DIR` alone**

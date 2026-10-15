@@ -83,7 +83,7 @@ When multiple installed skills can handle the same task, use this table.
 > this row does not restate it (r7 CODEX M1; the recital it replaced disagreed with the canon for a
 > round):** [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md).
 >
-> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⛔ **the THREE triggers and the mechanism behind the first are described ONCE, in [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md); this row does not restate them** (three labels for that trigger were each measured false, and the copies drifted for five rounds). No hint in the ordinary setup is BY DESIGN.
+> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⛔ **the triggers and the mechanism behind the subtle one are described ONCE — and NOT as a count of three, which that canon's own last section refutes with a measured fourth (r7 CLAUDE M4) — in [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md); this row does not restate them** (three labels for that trigger were each measured false, and the copies drifted for five rounds). No hint in the ordinary setup is BY DESIGN.
 
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
 `$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the

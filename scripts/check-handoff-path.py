@@ -38,10 +38,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_REL = ".agents/skills/handoff/SKILL.md"
 
-# The path the remember plugin's SessionStart hook actually reads:
-#   session-start-hook.sh   REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
-# Verified by EXECUTING that hook, not by reading it — the `=== LAST HANDOFF ===` block came out
-# first, ahead of `=== REMEMBER ===` and `=== MEMORY ===`.
+# The path this guard enforces, and the ONE place the mechanism behind it is described:
+#   .agents/skills/shared/handoff-path.md
+# ⛔⛔ r7 CLAUDE M3 — WHAT STOOD HERE WAS A FOURTH RECITAL, four lines above the comment below
+# that claims the recital moved out. It quoted the symbol, the emission banner and the injection
+# order — the same three clauses deleted from the skill, the hook's refusal text and
+# `docs/plugins.md` in the commit before this one, and missed by that commit's own sweep.
+# ⛔ AND ITS HEADLINE WAS FALSE AS WELL, which is the worse half: it said "the path the hook
+# ACTUALLY READS" over ONE of TWO assignments — the vendor's `else` branch (0.33.0 `:1168` is the
+# per-session path, `:1171` the shared one), so under `handoff_mode: per_session` the hook reads a
+# different path than the line quoted here. The canon states both and their bounds; a citation
+# cannot be wrong about which branch it quotes, because it quotes none.
 #
 # ⟳ 2026-10-14 — WHAT STOOD HERE IS NOW IN ONE PLACE, AND THIS COMMENT CITES IT.
 # The vendored-symbol rule, the discovery command, the GNU flag provenance and the corpus
