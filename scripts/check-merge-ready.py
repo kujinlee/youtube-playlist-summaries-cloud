@@ -130,8 +130,14 @@ def pr_only_steps(workflow: str) -> list[str]:
         step vanished. Folded scalars (`if: >`) vanished too.
 
     ⭐ THE REAL LESSON, and why the fix is not a fifth regex: this is a hand-rolled YAML parser and
-    the project is stdlib-only, so `yaml` is unavailable. A hand-rolled parser CANNOT be made
-    correct. It CAN be made unable to be silently wrong — which is what the soundness check does.
+    `yaml` is not installed here. A hand-rolled parser CANNOT be made correct. It CAN be made
+    unable to be silently wrong — which is what the soundness check does.
+    ⟳ 2026-10-12, r10 Codex L1 — THIS SENTENCE USED TO SAY *the project is stdlib-only*, and that
+    premise died with backlog #267: `requirements.txt` now pins `markdown-it-py` for
+    `check-withdrawal.py`. The narrow claim survives — PyYAML is still not a dependency — but the
+    repo-wide one does not, and a reader reasoning from it would reason wrongly. ⚠ This is NOT an
+    argument that this file should now parse: #153's verdict stands for the workflow readers, and
+    #267 was superseded for ONE case on evidence this file does not have.
 
     An `if:` counts only at the step's own KEY INDENT: deeper is inside `with:`/`run:`, shallower
     belongs to the job.

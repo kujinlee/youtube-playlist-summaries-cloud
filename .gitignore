@@ -174,3 +174,12 @@ docs/explainers/.serve.pid
 # ⚠ This stops NEW questions being published. The 81 already in git history remain there; removing
 # those needs a history rewrite of a public repo, which was considered and NOT chosen.
 docs/explainers/questions.md
+
+# ⛔ BACKLOG #273. `requirements.txt` TELLS the reader to create this, and nothing ignored it:
+# `git check-ignore -v .venv` exited 1 (not ignored) while `node_modules` exited 0 — measured
+# 2026-10-13 by the Phase 6 architecture review. This branch introduced the repo's first
+# third-party Python dependency (#267), so a venv at the repo root is now the NORMAL state of a
+# working tree, and three entries in this file already exist because `git add -A` committed an
+# untracked artifact once. Added before the fourth.
+/.venv/
+/venv/

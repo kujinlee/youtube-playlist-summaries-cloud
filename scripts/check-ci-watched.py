@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 82 cases
+    python3 scripts/check-ci-watched.py --self-test  # 85 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -462,6 +462,32 @@ def payload_from(stream, wait: "float | None" = None) -> str:
     return b"".join(chunks).decode("utf-8", "replace")
 
 
+def arm_names_newest_first(d) -> list[str]:
+    """Sentinel record names, newest first, tolerating concurrent removal.
+
+    ⛔ BACKLOG #253. This was an inline `sorted(..., key=lambda q: q.stat().st_mtime)`, and a
+    record removed by ANOTHER worktree's `--clear` between `iterdir()` and the key's `stat()`
+    raised `FileNotFoundError`. Measured by intercepting `Path.iterdir()` to delete the yielded
+    record before the key ran. The window exists only because of the per-sha layout, which
+    exists only because one shared record clobbered arms — the third layer of a single subject.
+
+    A vanished record is simply gone: it cannot be the arm we are looking for, so it is skipped.
+    Newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one.
+
+    ⚠ NAMED rather than inline so a case can drive it: the race is unreachable through
+    `run_decide` without also standing up a payload, and a defect you cannot address directly
+    is one the suite will not cover.
+    """
+    pairs: list[tuple[float, str]] = []
+    for q in d.iterdir():
+        try:
+            if q.is_file():
+                pairs.append((q.stat().st_mtime, q.name))
+        except OSError:
+            continue
+    return [n for _, n in sorted(pairs, reverse=True)]
+
+
 def run_decide(payload: str = "") -> int:
     """`payload` is the Stop hook's JSON, piped in by `block-idle-stop.sh:149`.
 
@@ -508,10 +534,7 @@ def run_decide(payload: str = "") -> int:
 
     watching = None
     if SENTINEL.is_dir():
-        # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
-        recs = sorted((q for q in SENTINEL.iterdir() if q.is_file()),
-                      key=lambda q: q.stat().st_mtime, reverse=True)
-        watching = relevant_arm([q.name for q in recs], head)
+        watching = relevant_arm(arm_names_newest_first(SENTINEL), head)
 
     code, message = decide(head, watching, rows)
     if code == WARN:
@@ -995,6 +1018,69 @@ def _self_test() -> int:
     case("`main --clear` removes the sentinel and is QUIET — a second dispatch branch, driven at "
          "a distinct argv and a distinct stream",
          safe(_main_clear))
+
+    # ── backlog #255: --clear could not identify its target, so it must not report success ──
+    def _clear_unreadable_head():
+        g = globals(); keep = {k: g[k] for k in ("SENTINEL", "_run")}
+        with tempfile.TemporaryDirectory() as td:
+            g["SENTINEL"] = pathlib.Path(td) / "ci-watching.d"
+            g["SENTINEL"].mkdir()
+            (g["SENTINEL"] / "cafef00dcafef00d").write_text("sha: cafef00dcafef00d\n")
+            g["_run"] = lambda *a, **k: None          # git rev-parse HEAD fails
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rc = main(["--clear"], None)
+                # the OTHER record must survive — preserving it was always correct — and the
+                # exit code must not be the one that means "cleared".
+                return rc == CANNOT_RUN and (g["SENTINEL"] / "cafef00dcafef00d").is_file()
+            finally:
+                g.update(keep)
+    case("⭐ `--clear` with an unreadable HEAD is CANNOT_RUN, not QUIET — it cleared nothing "
+         "and a caller reading rc must not believe otherwise (backlog #255)",
+         safe(_clear_unreadable_head))
+
+    # ── backlog #253: a record removed between iterdir() and stat() is skipped, not raised ──
+    def _arm_names_race():
+        with tempfile.TemporaryDirectory() as td:
+            d = pathlib.Path(td)
+            (d / "aaaaaaaaaaaaaaaa").write_text("a\n")
+            (d / "bbbbbbbbbbbbbbbb").write_text("b\n")
+
+            class Vanished:
+                """A record that EXISTS when checked and is GONE when stat'd.
+
+                ⚠ The window is between `is_file()` and `stat()`, not before `is_file()`. A
+                first version of this case deleted the file before yielding it; `is_file()` then
+                returned False, `stat()` was never reached, and the case passed with the fix
+                REMOVED — unfalsifiable. Measured: the mutation survived.
+                """
+                name = "aaaaaaaaaaaaaaaa"
+                def is_file(self): return True
+                def stat(self): raise FileNotFoundError(2, "No such file or directory", self.name)
+
+            class Racing:
+                """Another worktree's `--clear` landing mid-enumeration."""
+                def iterdir(self):
+                    yield Vanished()
+                    yield from sorted(q for q in d.iterdir() if q.name.startswith("b"))
+            names = arm_names_newest_first(Racing())
+            # the survivor is reported; the vanished record is skipped rather than raising
+            return names == ["bbbbbbbbbbbbbbbb"]
+    case("⭐ a record removed between iterdir() and stat() is SKIPPED, not a traceback "
+         "(backlog #253)",
+         safe(_arm_names_race))
+
+    def _arm_names_order():
+        with tempfile.TemporaryDirectory() as td:
+            d = pathlib.Path(td)
+            (d / "0000000000000000").write_text("old\n")
+            os.utime(d / "0000000000000000", (1_000_000, 1_000_000))
+            (d / "1111111111111111").write_text("new\n")
+            os.utime(d / "1111111111111111", (2_000_000, 2_000_000))
+            return arm_names_newest_first(d) == ["1111111111111111", "0000000000000000"]
+    case("...and the surviving records still come back NEWEST FIRST, which is what "
+         "`relevant_arm` relies on",
+         safe(_arm_names_order))
     case("...and for a stream that RAISES on read, at two distinct exception types",
          safe(lambda: payload_from(_S(False, boom=OSError("gone"))) == ""
               and payload_from(_S(False, boom=ValueError("closed"))) == ""))
@@ -1153,8 +1239,18 @@ def main(argv: "list[str] | None" = None, stream=None) -> int:
         if legacy.is_file():
             legacy.unlink()
             gone = True
-        print(f"cleared {SENTINEL.name}/{(head or '?')[:8]}" if gone
-              else f"nothing to clear for {(head or '?')[:8]}")
+        # ⛔ BACKLOG #255 — an operation that could not identify its target must not return the
+        # code for success. Preserving the OTHER records is correct; the defect was the report.
+        # Measured: record created, `_run` patched to None, `main(['--clear'])` -> rc 0 with the
+        # record still present, so a caller reading rc believed the sentinel was cleared. This is
+        # the house rule — a check that cannot reach its subject FAILS, never passes — in a
+        # command rather than a gate.
+        if head is None:
+            print("CANNOT RUN — HEAD is unreadable, so --clear could not identify this "
+                  "worktree's record and has NOT cleared it. Treat the sentinel as STILL ARMED.")
+            return CANNOT_RUN
+        print(f"cleared {SENTINEL.name}/{head[:8]}" if gone
+              else f"nothing to clear for {head[:8]}")
         return QUIET
     if a.decide:
         return run_decide(payload_from(stream))

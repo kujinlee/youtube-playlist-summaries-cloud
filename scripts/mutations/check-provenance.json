@@ -1,0 +1,275 @@
+[
+  {
+    "name": "a bolded DATE stops being stripped, so a decision marker reads as a measurement ⟳ r2: retargeted — `bolded_figures` now reads the ROW so the counted noun outside the span is visible, and the DATE strip moved with it",
+    "edits": [
+      [
+        "        if figures_in_span(DATE_RE.sub(\"\", b), after_within_cell(row, m.end())):",
+        "        if figures_in_span(b, after_within_cell(row, m.end())):"
+      ]
+    ],
+    "expect": [
+      "⛔ a bolded DATE is a decision marker, not a measurement"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "⭐ provenance is always satisfied, so a figure with only a filing date passes",
+    "edits": [
+      [
+        "    return bool(PROVENANCE_RE.search(row))",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "⭐ a row with a bolded figure and only a date FIRES"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "the provenance test is dropped at the call site, so every figure row is a finding",
+    "edits": [
+      [
+        "if figs and not has_provenance(line):",
+        "if figs:"
+      ]
+    ],
+    "expect": [
+      "a row naming a commit passes"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "--strict stops being strict",
+    "edits": [
+      [
+        "return (1 if strict else 0), (",
+        "return 0, ("
+      ]
+    ],
+    "expect": [
+      "findings under --strict exit 1"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "an empty row set stops being ok and falls through to the figure arms",
+    "edits": [
+      [
+        "    if n_rows == 0:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ no rows touched says so, rather than claiming everything passed"
+    ],
+    "file": "scripts/check-provenance.py"
+  },
+  {
+    "name": "#251: added_rows stops filtering to added lines, so removed rows count as authored",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "            if l.startswith(\"+\") and is_backlog_row(l[1:])]",
+        "            if is_backlog_row(l[1:])]"
+      ]
+    ],
+    "expect": [
+      "added_rows keeps an added backlog row"
+    ]
+  },
+  {
+    "name": "#251: is_backlog_row accepts any line, so prose is read as a row",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    return bool(ROW_RE.match(line))",
+        "    return True"
+      ]
+    ],
+    "expect": [
+      "is_backlog_row on a table separator"
+    ]
+  },
+  {
+    "name": "#251: row_id returns a constant, so every finding names the same row",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    return m.group(1) if m else \"\"",
+        "    return \"0\""
+      ]
+    ],
+    "expect": [
+      "row_id on a non-row is empty"
+    ]
+  },
+  {
+    "name": "the bold regex stops pairing delimiters, so a figure between two bold spans is lost",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "BOLD_RE = re.compile(r\"\\*\\*(?:(?!\\*\\*).)+?\\*\\*\", re.S)",
+        "BOLD_RE = re.compile(r\"\\*\\*[^*]*?\\d[\\d,]*\\.?\\d*[^*]*?\\*\\*\")"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and the span it returns is the REAL figure, not the text between two bold runs"
+    ]
+  },
+  {
+    "name": "⟳ r2 Claude HIGH — the HEAD prong goes back to accepting a BARE `HEAD`, so prose about git counts as provenance and all eleven witnesses pass again ⟳ r3: retargeted — the token pattern tightened for `HEAD123` ⟳ RETARGETED r4: the r4 Claude M2 suffix fix moved this line ⟳ RETARGETED r5: the r5 Codex M4 digit fix moved this line — the SIXTH orphan on this one regex across rounds 4-5 (#252) ⟳ RETARGETED again r5 Claude M1 (the whitelist rewrite) — this is the SEVENTH orphan on this one line across rounds 4-5; #252 is a property of the LINE, not of any one edit",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    r\"|`HEAD(?:[~^][0-9]*)?`|\\bHEAD(?:[~^][0-9]*)+(?=\\s|$|`|[.,;:!?)\\]](?![\\d.]))\"",
+        "    r\"|\\bHEAD\\b\""
+      ]
+    ],
+    "expect": [
+      "⭐ r2 Claude H2: `unverified at HEAD` asserts NO measurement and was read as provenance"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — LABEL_BEFORE is emptied, so a number its preceding word LABELS reads as a count: `**ADR 2 says**`, `**step 2 of 5**`, `**rc 1 ...**` ⚠ `frozenset(set()) or frozenset({...})` was a NO-OP — an empty frozenset is FALSY, so `or` returned the full set and the mutation measured nothing. A mutation must produce a WRONG ANSWER, not a tautology",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "LABEL_BEFORE = frozenset({",
+        "LABEL_BEFORE = frozenset() if True else frozenset({"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and the LABEL half alone refuses this one, whose next word is not a subject word"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — SUBJECT_AFTER is emptied, so a STATUS CODE reads as a measurement: `**rc 1 is failure**` and `**Phase 1 is complete**` were both counted before this. ⚠ Mutates the SET, not the test, because the test's line is already the LABEL_BEFORE entry's anchor and the harness refuses a repeat ⚠ `frozenset(set()) or frozenset({...})` was a NO-OP — an empty frozenset is FALSY, so `or` returned the full set and the mutation measured nothing. A mutation must produce a WRONG ANSWER, not a tautology",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "SUBJECT_AFTER = frozenset({",
+        "SUBJECT_AFTER = frozenset() if True else frozenset({"
+      ]
+    ],
+    "expect": [
+      "⭐ ...while the SUBJECT half alone refuses this one, which nothing labels"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — a PARENTHESISED digit stops being a label, so row #152's own `**CANNOT RUN (2)**` becomes a figure needing provenance",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "        if m.start() in labelled:\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "...and a PARENTHESISED digit is a code, which is row #152's own wording"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — the single-digit PERCENTAGE alternative goes, so `**3%** failed` is invisible again — one of the two measurements the review found MISSED",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "MULTI_NUM_RE = re.compile(r\"\\d[\\d,]*\\.?\\d+|\\d{2,}|\\d\\s*%\")",
+        "MULTI_NUM_RE = re.compile(r\"\\d[\\d,]*\\.?\\d+|\\d{2,}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: a single-digit PERCENTAGE is a measurement and was missed entirely"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM → r2 Claude M3 — the cell clip is replaced by the flat 40-character window again, so the counted noun comes from the NEXT table column",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "after_within_cell(row, m.end())",
+        "row[m.end():m.end() + 40]"
+      ]
+    ],
+    "expect": [
+      "⭐ r2: the counted noun may NOT come from the next table column"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex MEDIUM — SINGLE_NUM_RE goes back to excluding only digits, so the `2` inside `**M2b**` and the `6` inside `**F6 (Low)**` match and two identifier rows become figures (measured)",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "SINGLE_NUM_RE = re.compile(r\"(?<![\\w.,])\\d(?![\\w.,%])\")",
+        "SINGLE_NUM_RE = re.compile(r\"(?<![\\d.,])\\d(?![\\d.,%])\")"
+      ]
+    ],
+    "expect": [
+      "a digit inside an identifier is not a standalone digit at all"
+    ]
+  },
+  {
+    "name": "⟳ r2 Claude HIGH — the BACKTICKED form stops being accepted, leaving only the suffixed one, so the convention this repo actually writes refs in is refused ⚠ anchors the BACKTICKED alternative alone; the sibling entry anchors the whole clause, and the harness refuses two entries sharing a find-string ⟳ r3: retargeted — same reason ⟳ RETARGETED r5: the r5 Codex M4 digit fix moved this line — the SIXTH orphan on this one regex across rounds 4-5 (#252) ⟳ RETARGETED again r5 Claude M1 (the whitelist rewrite) — this is the SEVENTH orphan on this one line across rounds 4-5; #252 is a property of the LINE, not of any one edit",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "`HEAD(?:[~^][0-9]*)?`|",
+        ""
+      ]
+    ],
+    "expect": [
+      "HEAD is provenance when it is BACKTICKED, as this repo writes every other ref"
+    ]
+  },
+  {
+    "name": "the ref pattern loses its word boundary, so `notorigin/fiction` reads as a ref ⟳ r2: RESTORED — I overwrote this entry's edits with the HEAD mutation because a `next()` lookup matched on its NAME, which already carried the string I searched for. A mutation silently replaced is a mutation silently lost; `--binding` could not see it, because the slot still held a well-formed entry",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "r\"|\\borigin/\\w+\"",
+        "r\"|origin/\\w+\""
+      ]
+    ],
+    "expect": [
+      "⭐ `notorigin/fiction` is NOT a ref — the word boundary (r1 Codex Medium)"
+    ]
+  },
+  {
+    "name": "⟳ r2 — figures_in_span drops the single-digit half, so the composition of the two rules silently becomes the multi-digit rule alone (`--diff-coverage` named this function as changed with no mutation reaching it) ⚠ the expect must name a case that routes THROUGH the composition: the `single_digit_figures` cases call that function directly and are blind to a mutation in its only caller",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    return [m.group(0) for m in MULTI_NUM_RE.finditer(span)] + single_digit_figures(span, after)",
+        "    return [m.group(0) for m in MULTI_NUM_RE.finditer(span)]"
+      ]
+    ],
+    "expect": [
+      "⭐ M2's own witness: #256's third motivating defect is no longer invisible to it"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex MEDIUM — digits are allowed again without a `~` or `^` before them, so `` `HEAD123` `` reads as a ref. `git rev-parse --verify` rejects it ⟳ RETARGETED r4: same line moved; the replacement keeps the r4 suffix fix so this entry still isolates the DIGIT hole r3 closed ⟳ RETARGETED r5: the r5 Codex M4 digit fix moved this line — the SIXTH orphan on this one regex across rounds 4-5 (#252) ⟳ RETARGETED again r5 Claude M1 (the whitelist rewrite) — this is the SEVENTH orphan on this one line across rounds 4-5; #252 is a property of the LINE, not of any one edit",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "r\"|`HEAD(?:[~^][0-9]*)?`|\\bHEAD(?:[~^][0-9]*)+(?=\\s|$|`|[.,;:!?)\\]](?![\\d.]))\"",
+        "r\"|`HEAD[~^]?[0-9]*`|\\bHEAD(?:[~^][0-9]*)+(?=\\s|$|`|[.,;:!?)\\]](?![\\d.]))\""
+      ]
+    ],
+    "expect": [
+      "⭐ r3: `` `HEAD123` `` is not a ref — git rejects it, and this branch INTRODUCED it"
+    ]
+  },
+  {
+    "name": "⟳ r3 — `after_within_cell` stops clipping at the cell and returns the flat window, so the counted noun comes from the next column again (`--diff-coverage` named this function as changed with no mutation reaching it)",
+    "file": "scripts/check-provenance.py",
+    "edits": [
+      [
+        "    end = min(nxt.start(), at + limit) if nxt else at + limit",
+        "    end = at + limit"
+      ]
+    ],
+    "expect": [
+      "⭐ after_within_cell stops at the figure's own cell boundary (r2 Claude M3)"
+    ]
+  }
+]

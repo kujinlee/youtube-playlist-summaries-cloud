@@ -472,5 +472,44 @@
       ]
     ],
     "expect": "⭐ `main --watching` writes a record NAMED AFTER HEAD, not one shared file"
+  },
+  {
+    "name": "#253: a vanished record raises instead of being skipped",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        except OSError:\n            continue",
+        "        except OSError:\n            raise"
+      ]
+    ],
+    "expect": [
+      "⭐ a record removed between iterdir() and stat() is SKIPPED, not a traceback (backlog #253)"
+    ]
+  },
+  {
+    "name": "#253: records stop coming back newest-first, so relevant_arm names the wrong arm",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "return [n for _, n in sorted(pairs, reverse=True)]",
+        "return [n for _, n in sorted(pairs)]"
+      ]
+    ],
+    "expect": [
+      "...and the surviving records still come back NEWEST FIRST, which is what `relevant_arm` relies on"
+    ]
+  },
+  {
+    "name": "#255: --clear reports success when it could not read HEAD and cleared nothing",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        if head is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ `--clear` with an unreadable HEAD is CANNOT_RUN, not QUIET — it cleared nothing and a caller reading rc must not believe otherwise (backlog #255)"
+    ]
   }
 ]

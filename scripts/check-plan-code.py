@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 178 cases
+    python3 scripts/check-plan-code.py --self-test          # 300 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -80,6 +80,7 @@ ordinary way to read a log, and the sentence was stated as an invariant.
 """
 from __future__ import annotations
 import argparse
+import ast
 import dataclasses
 import contextlib
 import io
@@ -516,6 +517,231 @@ def diagnostic_tail(stdout: str, stderr: str, window: int = DIAGNOSTIC_WINDOW) -
                                  out[-out_keep:] if out_keep else "") if p)
 
 
+# ⛔ r12 Codex H1 — THE FRAME MARKER, AND IT IS WHAT MAKES A RUN OF INDENTED LINES A TRACEBACK.
+# Its absence was H1's root: `lines_after_frame_runs` treated ANY indented run as a frame block, so
+# an indented MESSAGE CONTINUATION and ordinary indented progress output both qualified. Measured
+# against real CPython stderr: `raise RuntimeError("real\n  continuation\nValueError: X")` raises
+# ONE exception and the predecessor reported TWO, the second fabricated from the message's own
+# text; `stderr.write("  connecting\nREADY\n")` raises NONE and it reported `READY`. CPython
+# emits this line for every frame it prints, with or without the `Traceback` header — including a
+# top-level `SyntaxError`, which omits the header. ⟳ r12 Claude M2(b): this used to end "so keying
+# on it loses no real heading", which is TRUE of every printed frame and FALSE as a conclusion — a
+# heading can be printed with NO frames (`sys.tracebacklimit = 0`), and that one is lost. The bound
+# is stated in `lines_after_frame_runs`' docstring rather than hidden behind this clause.
+FRAME_LINE = re.compile(r'^[ \t]+File "')
+
+
+# ⛔⛔⛔ #280 — THE VALIDATOR THAT DECIDED WHAT *IS* AN EXCEPTION IS GONE, and that is the fix the
+# owner chose (2026-10-13, option A: REDESIGN). Two functions stood here — `_is_type_name` and
+# `is_exception_heading` — and between them they tried to answer "is this line an exception?" from
+# text the child controls. ⛔ r14 L2 CORRECTED THIS SENTENCE: it said "five consecutive review
+# rounds (9-13)", and the list below is FIVE REFUTED ANSWERS ACROSS THREE ROUNDS — 11, 12 and
+# 13, two of them in r11 and two in r12. #281's own honest bound is witnessed from 11, because
+# rounds 9-10 concern withdrawal and parser problems in a different component. Five examples is
+# not five rounds, and the rounds do not start at 9:
+#
+#   r11  keyed on the `Traceback` header         -> a top-level SyntaxError omits it, returned None
+#   r11  took the FIRST block                    -> a raise-from chain named the cause, not the killer
+#   r12  took ANY indented run as a frame block  -> a message continuation fabricated an exception
+#   r12  validated the name with an ASCII regex  -> `Échec` was named NOWHERE in the report
+#   r13  validated with `str.isidentifier()`     -> `type("bad-name", (Exception,), {})` dropped,
+#                                                   and a frame-shaped line INSIDE a message still
+#                                                   fabricated a second one
+#
+# ⭐ Each repair was correct about the instance it was given and the next round found another
+# member. The defect was never the predicate — it is that A HARNESS CANNOT DECIDE WHAT A LINE
+# MEANS WHEN THE SUBJECT UNDER TEST WRITES THE LINE. ⛔ r17 M2: "so nothing decides any more" is
+# FALSE and is withdrawn — `FRAME_LINE` still classifies a line as frame-shaped, and
+# `parse_fail_names` still classifies one as a named failure. What the deletions established is
+# narrower and is all that is claimed: NO FUNCTION DECIDES WHETHER A LINE IS AN EXCEPTION.
+# `lines_after_frame_runs` reports what the child printed — ⛔ r14 M1 withdrew "verbatim" and this
+# site kept it: the lines are `.strip()`ped, so they are a QUOTATION with the surrounding
+# whitespace removed — and the caller says it cannot tell. #279 removes the matching completeness claim from the message.
+# ⛔ r15 Claude M: TWO LINES WERE DELETED HERE. They described `IGNORED_AT_SHUTDOWN` — "CPython's
+# own label for a block it did NOT die of" — and that constant is GONE, so the comment had come to
+# sit above `_TB_HEADER` and read as ITS description, which was false. Provenance: `git log -L`
+# shows the comment and the constant landed in ONE hunk at `7b88ced8`, so deleting one owed the
+# other. `_TB_HEADER` survives only because a case asserts a top-level `SyntaxError` stream does
+# NOT contain it — the CPython behaviour the no-header bound rests on.
+_TB_HEADER = "Traceback (most recent call last):"
+
+# \u26d4\u26d4 r17 CODEX H1 — THE FOUR REFUSALS LIVE HERE, AS ONE CONSTANT, BECAUSE A SUBSTRING
+# TEST CANNOT POLICE A REFUSAL. r16 added a case asserting four refusal TOKENS were present in
+# the rendered report, on the argument that "a refusal's correctness IS its presence". ⛔ That
+# argument is WITHDRAWN and the case is gone. Measured over a green control in a complete tree:
+# deleting the single word `NOT` reverses the refusal into an ASSERTION while retaining every
+# tested token, and the suite stayed 297/297. A refusal has SCOPE and POLARITY; its tokens
+# survive their own reversal.
+# \u26d4 AND THE CHILD-UNPRODUCIBILITY PREMISE FAILED TOO: `diagnostic_tail` carries raw stderr
+# into the SAME report string, so a child run beneath a DIRECTORY NAMED with those tokens prints
+# them in its own traceback and supplies all four to the case — a false report then passed.
+# \u2b50 So the oracle is EXACT EQUALITY against this constant (`_self_test` pins the literal),
+# which no CHILD can satisfy. \u26d4 r17 CLAUDE L1 \u2014 but "no polarity edit survives it" was
+# OVERSTATED: ONE find/replace of `DOES NOT CLAIM ` hits BOTH this constant and the test
+# literal, so equality still holds and `--self-test` stays GREEN. What catches that coordinated
+# edit is the POLARITY MUTATION's anchor going missing \u2014 `--binding` rc=1, and it runs in
+# CI. \u26a0 So deleting that entry removes the only protection against a sweep; the equality
+# case is not self-sufficient and this comment no longer says it is.
+# \u26a0 Stated rather than hidden: the emission case reads the report, so a child that writes
+# this entire string verbatim to stderr would satisfy it. It cannot arrive via a FILENAME — the
+# constant is longer than the 255-byte limit on one path component, and any multi-component path
+# carries `/` characters the constant does not contain.
+# \u26a0 THE SPLIT AFTER "DOES NOT CLAIM" IS CONVENIENCE, NOT A REQUIREMENT \u2014 \u26d4 r17
+# CLAUDE M1 CORRECTED ME TWICE HERE. I called it load-bearing because `--binding` refuses two
+# entries sharing an edit anchor; measured, `seen_anchors` keys on the FIND-STRINGS alone, so
+# two DISTINCT unique find-strings on ONE line bind fine and both mutations kill.
+# \u26d4 And my "correction" of the r17 Codex half was itself WRONG: its phrase "complete
+# anchor tuple" accurately names `tuple(f for f, _ in edits)`. The split stays only because it
+# makes the two anchors trivially distinct, and that is all it does.
+# \u26d4\u26d4 r17 CLAUDE H2 — THE PREFIX WAS FREE TEXT AND COULD BE REWRITTEN INTO EVERY
+# REFUTED WORDING WITH THE REFUSAL STILL ATTACHED: measured 297/297 green and `--binding` rc=0
+# over a green control, rendering "CPython SAID THE FOLLOWING KILLED THE CHILD, at column zero
+# after a block it labelled, in reverse order, each one a VALIDATED exception class" ahead of a
+# refusal that then denied all of it. r16 stated the harm as a CONJUNCTION and rounds 16-17
+# closed only the second half.
+# \u2b50 So the prefix is a CONSTANT pinned by exact equality, exactly as `_REFUSAL` is — not a
+# phrase case, which `:4014` already measured cannot police a claim. And the one clause nothing
+# falsified is DELETED rather than kept: "each STRIPPED of surrounding whitespace" was true but
+# unasserted, while ORDER is covered live and the join separator has its own entry.
+_QUOTED_PREFIX = "stderr printed these lines, in stream order \u2014 "
+
+_REFUSAL = (
+    "\u26d4 THIS HARNESS DOES NOT CLAIM "
+    "ANY OF THEM IS THE EXCEPTION, NOR "
+    "THAT IT KILLED THE CHILD, NOR "
+    "THAT CPYTHON WROTE ANY OF IT, NOR "
+    "ANYTHING ABOUT WHERE IN THE STREAM THEY APPEARED: the subject under "
+    "test writes this stream, so every reading of it is a QUOTATION and not "
+    "a measurement"
+)
+
+
+def lines_after_frame_runs(stderr: str) -> list[str]:
+    """Lines quoted from `stderr` by the run rule implemented below, in stream order. PURE.
+
+    ⛔ r16 M1 — THE NAME AND THIS LINE BOTH SAID "COLUMN ZERO" AND BOTH WERE FALSE. The run test
+    reads only `" "` and `"\t"`. ⛔ r17 M1: the GENERALISATION that stood here — "a line led by ANY
+    other whitespace is returned" — is false, because a line that is ONLY such whitespace is
+    CONSUMED (`lines_after_frame_runs('  File "f"\n\u3000\n')` is `[]`). What is measured is the one
+    witness: `\u3000END` is returned as `END`. ⚠ No further description of this stream is written
+    here; the selection rule is the implementation below. The function was called
+    `column_zero_after_frames`; it is now `lines_after_frame_runs`, which claims nothing about
+    position. That was the sixth and last positional claim about this stream to be withdrawn.
+
+    Each element is the line STRIPPED of surrounding whitespace — NOT an "exception line". This
+    returns no verdict on whether any of them is an exception, which is what #280 removed.
+
+    ⛔⛔ r15 H1 — THE SECOND FIELD IS GONE, AND SO IS THE BACKWARD SCAN THAT FED IT. It carried a
+    flag meaning "the nearest preceding non-blank line began `Exception ignored in`", and the
+    caller printed a sentence about it. **That sentence was refuted in FOUR successive wordings**
+    — each more careful than the last, each still false:
+
+        #1  "after a block CPython labelled …"   false ATTRIBUTION: `intro` is CHILD-written text,
+                                                 and a child's own message can forge the label.
+        #2  "its own preceding line began …"     false POSITION: `intro` was computed BEFORE the run
+                                                 was consumed, so the two are never adjacent —
+                                                 measured 0 of 3,720 over 59,049 streams.
+        #3  "the line INTRODUCING that run …"    false in the CANONICAL shape: CPython puts a bare
+                                                 `Traceback` header between the label and the
+                                                 frames, and the scan skipped PAST it.
+        #4  "a line ABOVE that run began …"      false about "began": the scan stored
+                                                 `lines[k].strip()`, so a TAB-prefixed line sets
+                                                 the flag while beginning with a tab.
+
+    ⭐ The index relation in #4 was actually TRUE (verified over 117,649 streams, 11,250
+    annotations, zero invalid relations) — and the sentence was false anyway, because position was
+    only part of what it asserted. #280's own thesis, proved on #280's own residue: **a harness
+    cannot narrate a child's stream without the narration becoming a claim that can be wrong.**
+    So the narration is deleted rather than reworded a fifth time. It cost nothing: severing it
+    was measured GREEN at 298/298 before a case was written for it, its only consumer was that
+    one sentence, and the case eventually written only ever required the SENTENCE'S PRESENCE and
+    never its TRUTH — which is why all four false wordings passed it.
+
+    ⛔ THIS MAKES NO CAUSAL CLAIM, AND THAT IS THE FIX — r11 Claude H1. Its predecessor returned
+    ONE heading and the caller announced *"the child DIED with"* it, picking the LAST traceback
+    block because earlier blocks are its causes. That holds for `raise ... from ...` and for
+    `During handling of the above exception` — both verified — and is FALSE at interpreter
+    shutdown, where a `__del__` or `atexit` raise appends a block AFTER the fatal one. Measured
+    over four real children: the report named `ValueError: SHUTDOWN_NOISE` for a child that died
+    of `RuntimeError: THE_REAL_KILLER`, and the flooding composite left the real killer NOWHERE
+    in the report — Codex H1's harm restored with a confident false attribution bolted on.
+
+    So the caller NAMES what the stream says and attributes nothing. That is the same humility
+    the three-world message already applies to `rc == 1`, and it is why this returns a LIST: the
+    shutdown case has two headings and a reader needs both, in the order the child printed them.
+
+    ⚠ NO HEADER LITERAL IS USED TO FIND A HEADING. The predecessor keyed on a line equal to
+    `Traceback (most recent call last):`, and Python OMITS that header when the MAIN SCRIPT fails
+    to compile — so a top-level `SyntaxError`, the likeliest way a blind text substitution kills a
+    suite, returned None exactly where it was needed. ⛔ r17 M1: AND NO REPLACEMENT DEFINITION IS
+    WRITTEN HERE. "The first line that ENDS a run of indented frame lines" was the seventh
+    structural sentence about this stream and was still wrong — the run it ends also swallows
+    arbitrary INDENTED PROSE and wholly strippable whitespace lines, so it is not "a run of frame
+    lines". Seven wordings, seven refutations: the selection rule is the implementation, and a
+    reader who needs the contract reads it there. What survives is only that NO HEADER LITERAL
+    is used, which holds with or without a header
+    — ⛔ r16 M1: and NOT "at column zero", which this sentence used to say and which is false for
+    any whitespace outside `{" ", "\t"}`.
+    ⟳ r15: `_TB_HEADER` is no longer consulted here at all — it was read ONLY by the backward scan
+    that fed the deleted flag. It survives as a constant because a case asserts that a top-level
+    `SyntaxError` stream does NOT contain it, which is the CPython behaviour this bound rests on.
+
+    ⚠ STATED BOUND, AND IT IS **TWO** BOUNDS, NOT ONE — ⟳ r12 Claude M2(b) found the second and
+    it is the more interesting: **a heading printed with NO frame block of its own is not seen at
+    all.** The rule needs an indented frame run to reach a heading, so a traceback with zero frames
+    loses a genuinely named exception, and the caller then says *"stderr names no exception line"*
+    about a stream whose ONLY content is an exception line — measured, real child:
+
+        sys.tracebacklimit = 0; raise RuntimeError("REAL_KILLER")
+            stderr = 'RuntimeError: REAL_KILLER\n'   ->   []      (same for tracebacklimit = -5)
+
+    ⚠ This is NOT fold-induced: the predecessor also required an indented run. What r12 corrected is
+    the sentence written to DEFEND the frame marker — *"CPython emits this line for every frame it
+    prints, so keying on it loses no real heading"* — which is true of every printed frame and false
+    of the conclusion, because a heading can be printed with no frames at all. Reachability stated
+    with the same evidence shape as the group bound: `grep -rn 'tracebacklimit' scripts/` -> **0**.
+
+    ⚠ STATED BOUND — `ExceptionGroup` yields NOTHING here. Its report is indented behind
+    `  + Exception Group Traceback` and `  | `, so it has no unindented heading. The caller's third
+    world then says *"stderr names no exception line"*, which is literally true, and a case pins
+    it. Measured 2026-10-13: 0 of 58 scripts under `scripts/` reference `ExceptionGroup`,
+    `TaskGroup` or `asyncio`, so nothing in the delivered corpus raises one TODAY — a bound, not a
+    promise about tomorrow.
+    """
+    lines = stderr.split("\n")
+    out: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        if not (lines[i].strip() and lines[i].startswith((" ", "\t"))):
+            i += 1
+            continue
+        start = i
+        while i < n and (not lines[i].strip() or lines[i].startswith((" ", "\t"))):
+            i += 1
+        # ⛔ r12 Codex H1 — A RUN OF INDENTED LINES IS NOT A FRAME BLOCK. Without this clause an
+        # indented message continuation makes the NEXT unindented line a heading, which is how one
+        # raised exception was reported as two. `i` has already passed the run, so skipping here
+        # cannot loop. ⚠ This is also what keeps the `ExceptionGroup` bound below honest: its
+        # frames are prefixed `  | `, so they do not match `FRAME_LINE` and yield nothing.
+        if not any(FRAME_LINE.match(line) for line in lines[start:i]):
+            continue
+        # ⛔ #280 — NO PREDICATE HERE ANY MORE. Every line that ENDS the indented run is
+        # reported, because deciding which of them is 'the exception' is the claim five
+        # rounds refuted. A non-identifier class name (`bad-name: ROOT_MARKER`) is
+        # REPORTED rather than dropped, and a frame-shaped line inside a message is
+        # reported as what it is, with no claim that it is an exception.
+        # ⛔ r16 M1: this comment said "at column zero" TWICE and both were false — the
+        # run test reads only space and tab. ⛔ r17 CLAUDE M2: and the GENERALISATION that
+        # stood here ("any other whitespace lead is stripped out of the quotation") was the
+        # SIBLING of the one r17 M1 narrowed in this same function, and my sweep missed it —
+        # the same failure mode one round later. A line that is ONLY such whitespace is
+        # CONSUMED, not stripped and quoted. What is measured is the single witness:
+        # `\u3000END` is reported as `END`. No further description of this stream is written.
+        if i < n and lines[i].strip():
+            out.append(lines[i].strip())
+    return out
+
+
 def merged_output(stdout: str, stderr: str) -> str:
     """A child's two streams as ONE string, STDOUT LAST. PURE.
 
@@ -539,7 +765,15 @@ def merged_output(stdout: str, stderr: str) -> str:
 def run_suite_parts(d: pathlib.Path, name: str) -> tuple[int, str, str]:
     """`(rc, stdout, stderr)` — the RAW halves, for the one caller that must budget them.
 
-    The only producer. `run_suite` is the merged view every other consumer wants.
+    The only producer.
+    ⛔ `run_suite` BELOW IS NO LONGER WHAT ANY PRODUCTION CONSUMER WANTS, and this sentence said it
+    was. All four production sites call THIS function — the two control loops (`:2624`, `:2658`) and
+    the mutation loop (`:2757`, changed by `6b217be9`) — so `run_suite`'s only callers are three
+    self-test cases. Found by the Phase 6 review of 2026-10-13 (backlog #275) as a STALE
+    CROSS-REFERENCE in `review-method.md:217`'s sense: a decision changed and a sentence still
+    stated the old one, written by the very commit that changed it.
+    ⚠ Retiring `run_suite` is NOT free and is deliberately not done here: those three cases are
+    `merged_output`'s only coverage, and `merged_output` is live at `:2758`.
     """
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
@@ -695,6 +929,76 @@ EXPECTED_MUTATIONS = {
     # `append truncates` and `append stops creating missing parents` bound to 8-space text that no
     # longer exists — a silent orphan of exactly the kind this repo has paid for seven times in one
     # session. Both re-verified to resolve exactly once AFTER the code was final.
+    "scripts/check-provenance.py": 21,
+    "scripts/check-withdrawal.py": 32,   # ⛔⛔ #267: A SANCTIONED FALL OF 26, THE SECOND IN
+                                         # THIS FILE'S HISTORY. The hand-rolled block
+                                         # machinery is DELETED — six regexes, four
+                                         # functions — and every mutation that defended one
+                                         # of its rules is RETIRED WITH ITS SUBJECT rather
+                                         # than orphaned. The retired set is the whole
+                                         # nine-round trail: r5 H1, r6 M1, r7 x5, r8 x7,
+                                         # r9 x5, r10 x2. ⚠ WHICH ENTRIES DIED WAS DECIDED
+                                         # BY `--binding`, NOT BY HAND: a hand count said 9
+                                         # and the tool said 26.
+                                         # ⟳ r10: +2 — an ordered marker other than `1` closes an
+                                         # open item, and the clause's `below_item` guard.
+                                         # ⛔ r9 Claude: and a SANCTIONED FALL of 2 — the
+                                         # indent fallback is DEAD CODE (0 of 2,466 shapes)
+                                         # because the walk-back's `cont_seen` subsumes it, so
+                                         # it is DELETED and its two entries are RETIRED WITH
+                                         # THEIR SUBJECT rather than left orphaned.
+                                         # ⟳ r9 Claude B1/H1/H2/M2: +4 — the walk-back's content
+                                         # column across lazy lines, the nested-quote
+                                         # comparison AND what it compares, and the indent
+                                         # fallback's marker guard.
+                                         # ⟳ r9 Codex H1/H2/M1: +3 — tab-expanded columns, the
+                                         # indent fallback when no marker remains, and the
+                                         # width of an ordered marker.
+                                         # ⟳ r8 Claude H1/H2/L2: +5 — the list content column
+                                         # (three clauses: the marker-run width, the paragraph's
+                                         # own column, and the quote RE-READ after the strip),
+                                         # `quote_depth`'s space consumption, and the fence
+                                         # clause's one-character-class rule.
+                                         # ⟳ r8 Codex H1-H3 + own-corpus: +5 — spaced nesting, the
+                                         # paragraph-start depth that closed the last 42, and the
+                                         # FENCE pair. ⛔ r8 CLAUDE M1: this line read `+2` while
+                                         # the manifest grew by five; the count passed and the
+                                         # sentence a reader audits it against did not. The rule
+                                         # this file states for itself is IDENTITY, NOT
+                                         # CARDINALITY — so the trail is now diffed by NAME.
+                                         # ⟳ r7 Claude M1: +1 — the GFM table lookahead.
+                                         # ⟳ r7 Claude B1/H1/H2: +4 — thematic breaks, HTML
+                                         # blocks, the NUMBER-one ordered rule, and `\r` on the
+                                         # setext anchor. All four were LENIENT shapes my own
+                                         # 380-case grid could not contain.
+                                         # ⟳ r7: +1 — LAZY CONTINUATION, which is what took the
+                                         # LENIENT count from 32 to 0.
+                                         # ⟳ r7 Codex H1: +1 — the quote-CONTINUATION rule.
+                                         # ⟳ r6 Claude M1: +1 — PARA_END's measured block-start
+                                         # rule. ⟳ r6 Claude H1: +1 — the memo keyed by VALUE.
+                                         # ⟳ r6 Codex M1: +1 — opener TRUNCATION, not deletion.
+                                         # ⟳ r5 Claude H1+H2: +2 — the opener-only escape test
+                                         # and the DOCUMENT-level mask. H2 was the function's
+                                         # entire live effect: 205/205 false suppressions.
+                                         # ⟳ AND -1, THE PERMITTED KIND OF FALL: r5 Codex's
+                                         # escaped-backtick FILTER no longer exists — the rule moved
+                                         # onto the opener, so that entry is RETIRED WITH ITS
+                                         # SUBJECT rather than orphaned, and the new H1 entry above
+                                         # is its successor. Net +2 -1 = 28 -> 29.
+                                         # ⟳ r5 #251: +1 — backtick_escaped's parity, which
+                                         # --diff-coverage flagged as reached by no mutation.
+                                         # ⟳ r5 Codex H1+M1: +3 — escaped backticks, the
+                                         # blank-line bound, and skipping an unmatched
+                                         # opener. THIRD round of corrections to one
+                                         # function; see its docstring and backlog #262.
+                                         # ⟳ r4 Codex M1: +1 — the inline-code mask. Three
+                                         # of r3's new sentence boundaries also split inside
+                                         # a code span, making the wrap decide the verdict.
+    "scripts/find-claim.py": 25,   # ⟳ r1 Claude H1: +3 — the deny-list direction, the
+                                   # returned skip set, and the verdict that names it.
+                                   # ⟳ r4 Codex M2: +1 — the guard r3 added to the TOP-LEVEL
+                                   # classification. Deleting it left the suite 79/79 green, so
+                                   # the ratchet could not see the one site that had no case.
     "scripts/observer_log.py": 19,
     # ⟳ 2026-09-07, R4 manifest debt 8 -> 7. FIVE of the seven cover rules the 15 shipped cases
     # already asserted; the other two are the gaps writing them found, and both are the same
@@ -841,8 +1145,16 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 37,
-    "scripts/codex-frontier-model.py": 7,
+    "scripts/check-ci-watched.py": 40,
+    "scripts/codex-frontier-model.py": 21,   # ⟳ r5 Codex M2/M3/L1: +4; r5 Claude M2: +1;
+                                            # ⟳ r6 Codex M2: +2 — a DUPLICATED managed block
+                                            # and one written after `[profile]`. Both kept
+                                            # every substring the old check looked for.   # ⟳ r4 Codex H1: +1 — the refusal CODE. Four
+                                            # ⟳ r4 Claude H1: +1 — the probe's own WORLD.
+                                            # The first version survived under an empty
+                                            # HOME, which is CI and child_env both.
+                                            # goldens pinned the refusal TEXT, which is why
+                                            # a cannot-run exiting 1 survived 39 cases.
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
     #     endpoints (`B1-B5`), and ident_re matches each on its own, so expansion only ever
@@ -974,7 +1286,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-09-09, backlog #98: a NEW guard arrives with its manifest in the SAME commit.
     # The ratchet offered to raise MANIFEST_BASELINE to 1 instead; taking that would be how
     # paid-down debt gets silently re-accrued, which is the thing the baseline exists to stop.
-    "scripts/check-backlog-closure.py": 6,
+    "scripts/check-backlog-closure.py": 10,
     # ⟳ 2026-09-10, backlog #106: 33 -> 34. The harness always REFUSED a suite whose red could
     # not be attributed to any case; what it did not do was say WHY, and that silence cost two
     # branches in one day — both diagnosed by hand from an empty list at the bottom of a
@@ -1038,7 +1350,68 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 150,   # ⟳ r16 CLAUDE H1 (2026-10-13): 144 -> 148, one entry per
+                                         # REFUSAL in the disclaimer, which had no falsifier at all
+                                         # WITH ITS SUBJECT — it policed a PHRASE, not a claim, and
+                                         # the narration it guarded is deleted (six false wordings).
+                                         # ⟳ r15 CLAUDE had taken it 144 -> 145, ONE ADDED — the
+                                         # falsifier the SURVIVING sentence did not have. Severing
+                                         # it into the exact claims #279/#280 were filed to delete
+                                         # left 296/296 GREEN over a green control, so the message
+                                         # could be reverted to the refuted claims unnoticed.
+                                         # ⟳ EARLIER THE SAME DAY: 147 -> 144, THREE RETIRED WITH
+                                         # THEIR SUBJECT — the shutdown FLAG, the backward scan
+                                         # that fed it, and the annotation that printed it are
+                                         # all DELETED (r15 H1). A fall of exactly the sanctioned
+                                         # kind: nothing was orphaned, and two siblings whose
+                                         # subjects survive were RETARGETED in place instead.
+                                         # ⭐ The annotation had FOUR wordings and three were
+                                         # refuted; its own falsifier only ever required the
+                                         # SENTENCE to exist, never to be true.
+                                         # ⟳ r14 (2026-10-13) had taken it 146 -> 147, ONE ADDED — the
+                                         # falsifier the forged-attribution note NEVER HAD.
+                                         # Severing that note left 298/298 GREEN, because its
+                                         # only cover asserted `Exception ignored in`, which
+                                         # CPython writes and `diagnostic_tail` carries into
+                                         # the same string. A RISE here is coverage added, not
+                                         # a ratchet fall.
+                                         # ⟳⟳ #280 (2026-10-13, the owner chose REDESIGN):
+                                         # 147 -> 146 (two retired, ONE ADDED: the
+                                         # falsifier for the REMOVAL itself, a
+                                         # mutation that puts a predicate BACK), and
+                                         # the fall is of the ONE
+                                         # sanctioned kind — two entries RETIRED WITH THEIR
+                                         # SUBJECT, not orphaned. They mutated
+                                         # `_is_type_name` and `is_exception_heading`, the
+                                         # two functions that decided what IS an exception;
+                                         # both are DELETED, so there is nothing for those
+                                         # mutations to measure. Four more were RETARGETED
+                                         # (the subject survives in a new form) and four
+                                         # self-test cases retired with the same subject.
+                                         # ⟳ r12 Claude H1/L1: +4 — the THREE-world
+                                         # enumeration, the third world's own clause,
+                                         # and one per arm of the observation ternary
+                                         # (#276's shape inside #276's own fix).
+                                         # ⟳ r12 Codex H1/H2/H3: +4 — the FRAME-MARKER clause,
+                                         # the ASCII-only heading validator, attribution reading
+                                         # the MERGED view, and the withdrawn inference restored.
+                                         # Three retargeted in the same commit (two anchors the
+                                         # H1 fix deleted, one `expect` renamed), so the rise is
+                                         # +4 and not +7.
+                                         # ⟳ r4 Claude L4: +1 the FRACTION; ⟳ r5 Codex L2: +1 the
+                                         # FLOOR's 12->11 direction. ⛔ r4 recorded that direction
+                                         # as IMPOSSIBLE — "the harness REFUSES a second entry on
+                                         # one anchor" — and that was wrong: the refusal is on
+                                         # IDENTICAL anchor strings, and the line WITH its newline
+                                         # is a different one. Measured by r5: 1,516 entries loaded
+                                         # with no problem and both directions killed their case.
+                                         # A residual I called forced was a choice I had not tested.
+                                         # ⟳ r3 Claude H1: 128 -> 127, a
+                                   # PERMITTED FALL. The bare-assign branch of
+                                   # `case_name_patterns` was deleted (it had no
+                                   # name test and admitted 80 of 142 candidate
+                                   # rows), so its entry is RETIRED WITH ITS
+                                   # SUBJECT rather than orphaned. Sum 1510 -> 1509.   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1140,7 +1513,7 @@ EXPECTED_MUTATIONS = {
     #   which let `[]` — a shape a COMMITTED verdict actually carries — classify as a real head
     #   with an empty overlay. Distinct from the two `if False:` entries already on those lines:
     #   those delete the rule, these weaken it, and the four are attributed to disjoint cases.
-    "scripts/check-review-recorded.py": 68,
+    "scripts/check-review-recorded.py": 69,
     # ⟳ 2026-09-14, r11: this file JOINS the manifest — R4 widened-debt 8 -> 7, removed from
     # `WIDENED_MANIFEST_DEBT` in this same commit, which that rule requires as an identity and not
     # a ceiling. It is the producer half of the mechanism the file above consumes, and it had gone
@@ -1469,6 +1842,600 @@ EXPECTED_MUTATIONS = {
 }
 
 MANIFEST_DIR = "scripts/mutations"
+
+
+def expects_of(entry: dict) -> list[str]:
+    """An entry's `expect` as a list, whatever shape it was written in. PURE.
+
+    ⚠ MEASURED 2026-10-07: of 1,435 live entries, **709 carry a list and 726 a bare string**.
+    Iterating the field directly therefore walks a string CHARACTER BY CHARACTER, and a first
+    draft of the measurement below duly reported 43,346 expects — including `'a'`, `' '` and
+    `'F'` — instead of 1,554. A reader of this function is one line away from that bug.
+    """
+    v = entry.get("expect")
+    if v is None:
+        return []
+    return [v] if isinstance(v, str) else list(v)
+
+
+def case_name_literals(source: str) -> set:
+    """Every string literal in `source`, as the candidate set for an `expect`. PURE.
+
+    A case name is written as a literal and printed verbatim, so a name that resolves to no
+    literal is almost always an anchor that stopped binding. ⚠ ALMOST: a name built by an
+    f-string cannot be recovered statically, and MEASURED over the live manifests that is
+    **67 of 1,554 expects (4.3%)**. That is why the `expect` half WARNS and the anchor half
+    REFUSES — a 4.3% false-fire rate on a blocking gate is how #56 measured a gate getting
+    switched off.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    # ⛔ DOCSTRINGS ARE NOT CASE NAMES — r2 Codex MEDIUM, and it cost the rule in both
+    # directions at once. Every `ast.Constant` str included module, function and class
+    # docstrings, which in this repository are hundreds of characters of prose. The review's
+    # witness: a case renamed away, whose OLD title still appears inside an unrelated docstring,
+    # was forgiven — the stale expect "matches no string literal" became a mere warning again.
+    #
+    #     '"""Historical title: the old case is gone forever"""\ncase("replacement title", 1, 1)'
+    #     expect "the old case is gone forever"  ->  explained by the DOCSTRING
+    #
+    # A bare string STATEMENT is excluded for the same reason: it is a comment wearing quotes.
+    skip = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant) \
+                and isinstance(n.value.value, str):
+            skip.add(id(n.value))
+    return {n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip}
+
+
+def case_name_patterns(source: str, min_static: int = 4) -> list:
+    """Each f-string in `source`, as a pattern its output must match. PURE.
+
+    ⛔ r2 Codex MEDIUM, THE OTHER DIRECTION. Containment at a 12-character floor REFUSED a
+    perfectly valid generated name: `case(f"{x} works", 1, 1)` produces titles like
+    `alpha works`, whose only static component is `" works"` — six characters, under the floor —
+    so the expect was reported as naming a case that is GONE and the step went red. A guard that
+    refuses a legitimate entry is worse than one that forgives an illegitimate one here, because
+    this half REFUSES rather than warns.
+    #
+    An f-string's STATIC SEGMENTS are statically recoverable even when its output is not, so it
+    reconstructs as a pattern: `f"{x} works"` -> `^.*? works$`, which `alpha works` matches
+    exactly. `min_static` keeps `f"{a}{b}"` — which would become `^.*?.*?$` and match
+    everything — out of the candidate set.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    # ⛔ r2 Claude MEDIUM — ONLY F-STRINGS IN A CASE-NAME POSITION. The first version walked
+    # EVERY `JoinedStr` in the module — print statements, error messages, paths, HTML — so any
+    # output template in the file could forgive a stale expect. Codex's original M1 asked for
+    # exactly this ("restrict candidates to expressions that supply suite case names") and the
+    # fold added a `min_static` floor instead, which does not do that work: `^.*?:.*? — .*?$`
+    # clears a floor of 4 and is nearly as broad as `^.*?.*?$`.
+    #
+    # A case name is a call's FIRST argument (`case(f"...", got, want)`) or the first element of
+    # a table row (`(f"...", got, want)`). MEASURED over all 1,497 entries: patterns
+    # ⟳⟳ THE "62 OF 62 FILES TO 2" FIGURE IN THIS COMMENT WAS WRONG, AND WRONG TWICE OVER
+    # (r3 Codex M1). Arithmetically: my probe `break`ed after the FIRST f-string in each
+    # file, so it measured one pattern per file; re-derived over all of them it is 23, and
+    # the review independently got 25. And conceptually: that count was never a quality
+    # measure — it conflates a NON-CASE template forgiving an expect (a defect) with a
+    # GENUINE case template forgiving something shaped exactly like its own output
+    # (unavoidable, and named as the residual two paragraphs down). Admitting MORE
+    # legitimate producers raises it while making the guard more correct, which is how a
+    # metric announces it is the wrong one. The honest figure is below.
+    #
+    # ⚠ THE RESIDUAL IS NOT A BUG AND IS STATED RATHER THAN HIDDEN: some files genuinely
+    # build case names with an f-string, so a probe shaped exactly like that template is
+    # indistinguishable from a real generated name BY CONSTRUCTION. No positional rule can
+    # separate them; only not generating case names could. Still 0 live entries depend on it.
+    out = []
+    for n in ast.walk(tree):
+        # ⛔⛔ A CASE NAME IS IDENTIFIED BY NAME, NOT BY SHAPE — r3 Codex H1 + M1, and the two
+        # previous attempts at this rule were both wrong in both directions.
+        #
+        #   attempt 1  every `ast.walk` JoinedStr        — any output template forgave an expect
+        #   attempt 2  a call's first arg, >=2 pos args  — admits `.split(sep, 1)`,
+        #                                                  `.replace(a, b)`, `re.compile(p, f)`,
+        #                                                  `max(a, b)`; MEASURED: 11 of 62 files
+        #                                                  carry such a template. AND it REFUSED
+        #                                                  `case(name=f"...")` and
+        #                                                  `name = f"..."; case(name, ...)` —
+        #                                                  false refusals, in the half that
+        #                                                  REFUSES, so a legitimate case would
+        #                                                  redden a required check.
+        #
+        # So: an argument (POSITIONAL **or KEYWORD**) of a call whose function is named like a
+        # case; the first element of a table assigned to a `*CASES*` name; or a value assigned
+        # to a plain name, which is how a case name gets built before it is passed. Those are
+        # the three forms this repository actually writes, and they are named rather than
+        # inferred from arity. MEASURED over all 1,498 entries: 8 of 8 witnesses correct
+        # (H1's three accepted, `.split`/`.replace`/`print` rejected), live MISSING **0**, and
+        # non-case templates entering the candidate set fall from **11 of 62 files to 0 — by
+        # construction, since a non-case producer cannot be named like one**.
+        # ⟳⟳ r3 Claude HIGH: "0 by construction" WAS FALSE WHEN WRITTEN — the
+        # bare-assign branch below had no name test, and 80 of 142 candidate rows
+        # came through it from 34 of 62 files. True only now that the branch is gone.
+        cands = []
+        if isinstance(n, ast.Call):
+            fn = n.func
+            name = fn.id if isinstance(fn, ast.Name) else (
+                fn.attr if isinstance(fn, ast.Attribute) else "")
+            if CASE_CALL_RE.fullmatch(name or ""):
+                # ⚠ THE FIRST POSITIONAL ARG, OR A KEYWORD ACTUALLY NAMED LIKE A NAME. Taking
+                # every argument treats a case's GOT value as a name — `case("real name",
+                # f"{x} works", 1)` — and the case written for that caught it immediately.
+                if n.args:
+                    cands = [n.args[0]]
+                cands += [kw.value for kw in n.keywords
+                          if (kw.arg or "") in CASE_NAME_KEYWORDS]
+        elif isinstance(n, ast.Assign):
+            targets = [t.id for t in n.targets if isinstance(t, ast.Name)]
+            # ⟳ r3 Claude LOW — ENDS IN "CASES", not merely contains "CASE". The looser test
+            # captured `CASE_CALL_RE` and `CASE_NAME_KEYWORDS` (constants this very fold added)
+            # and `check-fixture-variation.CASECALL`; they yielded nothing only because their
+            # values are a `re.compile` call and a `frozenset`, which is luck rather than a
+            # rule. MEASURED: tightening loses **0** live tables and excludes all four.
+            if any(t.upper().endswith("CASES") for t in targets):
+                for el in ast.walk(n.value):
+                    if isinstance(el, (ast.Tuple, ast.List)) and el.elts:
+                        cands.append(el.elts[0])
+            # ⛔ r3 Claude HIGH — THE BARE-ASSIGN BRANCH IS GONE. It was `elif len(targets)
+            # == 1: cands = [n.value]` with NO NAME TEST AT ALL, under a comment of mine
+            # claiming non-case templates enter "0 — by construction". MEASURED: **80 of 142
+            # candidate rows came from it, across 34 of 62 files** — CSS
+            # (`:root[data-theme="light"]{--bg:…`), a path (`rel = f"docs/{sub}/{f.name}"` ->
+            # `^docs/.*?/.*?$`), HTML, a SQL fragment, an error message. The reach probe moved
+            # the WRONG WAY (12 -> 17 files). And it bought nothing: live binding is byte-
+            # identical without it (0 errors, 67 warnings).
+            #
+            # ⚠ Its own case could not see this. `title = f"{x} works"` passes identically as
+            # `sql = f"{x} works"`, because the case asserted that SOME assignment produces a
+            # pattern — never that a NON-case one does not. A case that cannot distinguish the
+            # thing it is named for is the defect this branch's comment claimed to have avoided.
+            #
+            # A case name passed by KEYWORD is still accepted (r3 Codex H1); a case name built
+            # by assignment and then passed is not, and that is the trade: the keyword form is
+            # written here, the assignment form is not, and admitting it cost 80 rows.
+            #
+            # ⚠ r3 Claude LOW — FIVE FORMS THIS RULE REFUSES, STATED AND DELIBERATELY NOT CHASED.
+            # Measured with the shipped function, all yield 0 patterns:
+            #
+            #     direct.append((f"{x} works", 1, 1))      a Tuple argument to a call
+            #     CASES = {f"{x} works": (1, 1)}           a dict key
+            #     rows += [(f"{x} works", 1, 1)]           AugAssign is not ast.Assign
+            #     nm, got = f"{x} works", 1                a Tuple target yields targets == []
+            #     for t in ts: case(t, 1, 1)               the name is a loop variable
+            #
+            # ZERO live instances — `--binding` reports 0 expect errors. ⛔ AND THE DIRECTION IS
+            # THE DANGEROUS ONE: this half REFUSES, so each of these would redden a required
+            # check for a legitimate case, and `direct.append((…))` is a form
+            # `check-withdrawal.py` writes TODAY with static names — one edit away.
+            #
+            # ⤳ NOT WIDENED, ON PURPOSE. This rule has already been rewritten three times in one
+            # session (ast.walk -> arity -> name), and each widening was itself the next round's
+            # finding: the arity version admitted `.split(sep, 1)` in 11 of 62 files, and the
+            # bare-assign branch admitted 80 of 142 rows from 34 of 62. A fourth widening with no
+            # live instance to justify it is how this guard reached its third consecutive round.
+            # The forms are named here so the fix is one edit when one of them is actually
+            # written, and so the next reader is not re-deriving this list.
+        for cand in cands:
+            if not isinstance(cand, ast.JoinedStr):
+                continue
+            out.append(cand)
+    joined, out = out, []
+    for n in joined:
+        parts, static = [], 0
+        for v in n.values:
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                parts.append(re.escape(v.value))
+                static += len(v.value)
+            else:
+                parts.append(r".*?")
+        if static >= min_static:
+            out.append(re.compile("^" + "".join(parts) + "$", re.S))
+    return out
+
+
+# ⟳ r1 Claude M1. An `expect` naming no literal has TWO causes and they are not the same
+# defect: a name BUILT BY AN F-STRING cannot be recovered statically (benign, 67 of them, and
+# why this half warns rather than refuses), versus a name that was RENAMED AWAY — B1's shape,
+# where the expect can never match any case again and the mutation silently stops showing which
+# case is the guard. Summarising both together is what let B1 through: the count moved 67 -> 68
+# and a count whose only reader is a human remembering last run is not a signal.
+#
+# THE SEPARATOR, and it is not similarity. MEASURED 2026-10-07 over all 1,461 entries:
+#   difflib ratio — B1's stale expect scores 0.75 and THIRTY-ONE legitimate f-string expects
+#                   score >= 0.75. Useless: a static segment is a substring of the expect, so
+#                   high similarity is the f-string SIGNATURE, not evidence of a rename.
+#   bidirectional containment — an expect is EXPLAINED when the target holds a literal that
+#                   either contains it or is contained in it. Direction matters both ways:
+#                   `gen-dashboard` has 'open_prs' + ': a missing binary …' (literal INSIDE
+#                   expect), `check-handoff-path` has '] missing file is CANNOT RUN: got '
+#                   (expect INSIDE literal). A one-directional test leaves 2-4 false MISSINGs.
+# At a 12-character floor: 67 unmatched, **0 MISSING**, and B1's own stale expect IS flagged.
+# So this starts GREEN and can REFUSE rather than warn — the first failure appears at a floor of
+# 16, so 12 carries four characters of margin. A floor exists at all because a 3-character
+# overlap explains nothing.
+#
+# ⛔ AND THE FLOOR ALONE IS NOT ENOUGH. ONE WITNESS IS NOT A BOUND, so the rule was measured
+# against a CORPUS-WIDE FALSIFIER: for all 1,455 expects that currently DO name a literal,
+# synthesise the rename the r1 fold actually performed on B1 (swap the opening words, keep the
+# tail), remove the original literal, and ask whether the rule still forgives the now-stale
+# expect. It forgave **41 of 1,455 (2.8%)** — the floor is satisfied by any 12 characters shared
+# with ANY literal in the file, and these files are full of long ones.
+#
+#   rule                   live MISSING   B1 flagged   wrongly forgiven
+#   floor 12 only                     0         yes    41/1455  = 2.9%
+#   floor 12 + 30% of expect          0         yes    10/1455  = 0.7%     <- adopted
+#   floor 12 + 40% of expect          7         yes     3/1455  = 0.2%
+#   floor 12 + 50% of expect         18         yes     0/1455  = 0.0%
+#
+# ⚠ THE DENOMINATOR IS THIS COMMIT'S. It moves whenever a manifest entry is added, so the
+# table was re-derived with the SHIPPED function after the fraction landed rather than carried
+# over from the prototype that chose it: 0 missing, 10 of 1,455.
+#
+# The overlapping literal must therefore cover at least 30% of the expect as well as clearing
+# the floor. 40% and beyond refuse live entries, and this half REFUSES rather than warns, so a
+# rule that is not green on arrival is a rule that gets switched off (#56).
+#
+# ⚠ THE RESIDUAL IS A RATE PER GENERATOR, NOT A BOUND — r3 Claude MEDIUM, which caught this note
+# calling itself "the honest bound" while measuring ONE rename shape:
+#
+#     rename generator                      checked   forgiven     rate
+#     prefix swap (what I measured)           1,455         10    0.69%
+#     tail swap, head kept                    1,455         12    0.82%
+#     TRUNCATION, head kept                   1,455         90    6.19%
+#
+# The review's own truncation generator reported 8.64%; the shapes differ, the conclusion does
+# not. **The honest statement is the WORST observed rate WITH its generator named: about 6% under
+# truncation, an order of magnitude above the 0.7% this note used to present as the bound.** A
+# bound that does not say how it was generated is a sample pretending to be a limit — the same
+# defect as the figures backlog #261 is about, and I wrote it in the act of fixing those.
+#
+# ⤳ HOW TO RE-DERIVE, so the next reader checks rather than believes: for every expect
+# that names a literal, synthesise `" ".join(["the","REVISED","wording"] + title.split()[4:])`,
+# drop the original literal from the set, and count how many `expect_explained` forgives.
+# r3 Codex H1/M1: the function names this repository gives a case-registering call. Named, so a
+# two-argument `.split` or `re.compile` cannot be mistaken for one by arity alone.
+CASE_CALL_RE = re.compile(r"case|_case|\w*_case")
+
+# The keyword a case name arrives under, when it is passed by keyword (r3 Codex H1).
+CASE_NAME_KEYWORDS = frozenset({"name", "title", "label", "desc", "description"})
+
+EXPECT_OVERLAP_FLOOR = 12
+EXPECT_OVERLAP_FRACTION = 0.3
+
+
+def expect_explained(expect: str, literals: set, floor: int = EXPECT_OVERLAP_FLOOR,
+                     fraction: float = EXPECT_OVERLAP_FRACTION) -> bool:
+    """Could some literal in the target have PRODUCED this expect? PURE.
+
+    True means an f-string plausibly built the case name, so the expect naming no whole literal
+    is noise. False means nothing in the file can produce it — the case was renamed away, and
+    the mutation that names it can no longer show which case is the guard.
+
+    Measured false-forgive rate 0.7% under a prefix-swap generator and about 6% under
+    truncation (10 and 90 of 1,455); see the table above, and note that the rate depends on
+    the generator — it is not a single bound
+    and what the alternatives cost.
+    """
+    need = max(floor, int(len(expect) * fraction))
+    return any(len(lit) >= need and (lit in expect or expect in lit) for lit in literals)
+
+
+def binding_problems(entries: list, source_of: dict) -> tuple[list, list]:
+    """(errors, warnings) for anchors that do not bind and expects that name no case. PURE.
+
+    ⛔ BACKLOG #252 — FIVE instances in one session, and a SIXTH while this very row was being
+    closed. An anchor binds by TEXT, so an edit *elsewhere in the file* silently unbinds it, and
+    the only signal was a whole file reporting `NOT MEASURED — 175 of 176` after a **14m58s**
+    shard: 176 entries bought no verdict because one could not bind.
+
+    This pass is eager and cheap — MEASURED at **66 ms over 1,443 anchors across 62 manifests**
+    at this commit — so it runs before any tree is staged. A 15-minute shard must never be the
+    thing that tells you a find-string moved.
+
+    ⭐ It found its sixth instance on its first live run: the #254 fix rewrote the refusal line
+    that `codex-frontier-model.json` was anchored to, inside the commit that fixed #254 — and
+    that entry's own name already recorded an identical retarget earlier the same day.
+
+    ERRORS (anchor half): a find-string that occurs zero times, or more than once. Both are
+    defects — zero measures nothing, and more than one means the mutation is not the edit its
+    author described.
+    WARNINGS (expect half): a name resolving to no string literal in the target.
+    """
+    errors: list = []
+    warnings: list = []
+    lits: dict = {}
+    pats: dict = {}
+    for e in entries:
+        tgt = e.get("file", "")
+        src = source_of.get(tgt)
+        name = str(e.get("name", "<unnamed>"))[:70]
+        if src is None:
+            errors.append(f"{name}: target {tgt} is unreadable — the anchor cannot be checked")
+            continue
+        # ⛔ SEQUENTIALLY. The runner applies a multi-edit entry one edit after another, so edit
+        # 2 must bind in the text edit 1 PRODUCED. Validating every anchor against the original
+        # passed `[["return True","return False"],["True","False"]]` while the real run reported
+        # `anchor NOT FOUND` for the second — round 1 Codex Medium: the eager pass green-lit a
+        # mutation that cannot bind during execution, which is the exact thing it exists to stop.
+        staged = src
+        for find, _repl in e.get("edits", []):
+            n = staged.count(find)
+            shown = find.strip().splitlines()[0][:90]
+            # Two branches, not one, so each defect has its OWN anchor and can be mutated
+            # separately — a single `n != 1` is one mutation pretending to cover two rules.
+            if n == 0:
+                errors.append(f"{name}: its anchor is GONE from {tgt} — an edit elsewhere "
+                              f"unbound it, and this mutation now measures nothing"
+                              f"\n      {shown!r}")
+            elif n > 1:
+                errors.append(f"{name}: its anchor occurs {n}x in {tgt} — ambiguous, so the "
+                              f"mutation is not the edit its author described"
+                              f"\n      {shown!r}")
+            if n == 1:
+                staged = staged.replace(find, _repl, 1)
+        if tgt not in lits:
+            lits[tgt] = case_name_literals(src)
+            pats[tgt] = case_name_patterns(src)
+        for ex in expects_of(e):
+            if ex in lits[tgt]:
+                continue
+            # ⟳ r1 Claude M1 — two populations, two severities. See EXPECT_OVERLAP_FLOOR.
+            # ⟳ r2 Codex Medium — an f-string that PRODUCES this name explains it exactly, and
+            # is checked before the inexact containment rule.
+            if any(pat.match(ex) for pat in pats[tgt]) or expect_explained(ex, lits[tgt]):
+                warnings.append(f"{name}: expect {ex[:60]!r} matches no string literal in {tgt}")
+            else:
+                errors.append(f"{name}: its expect names a case that is GONE from {tgt} — no "
+                              f"literal there can produce it, so this mutation can no longer "
+                              f"show WHICH case is the guard"
+                              f"\n      {ex[:90]!r}")
+    return errors, warnings
+
+
+# ── backlog #251: what this branch WROTE, not what someone enumerated ────────────────────────
+# ⛔ The sweep is excellent at defending what a manifest names and BLIND to what was just
+# written — and a fix is by definition newly written. Measured on PR #364: the round-3 coverage
+# fold was two `print` statements no entry named (#241), and round 5 then found that severing
+# `if problems:` left the suite 104/104 GREEN while contrast regressions reported SUCCESS
+# (#248). One line removing the gate's verdict, nothing red.
+#
+# ⭐ GRANULARITY WAS CHOSEN BY MEASUREMENT, over this branch's own diff:
+#     per LINE      1,289 of 1,331 behavioural lines uncovered   (97%)  — unusable
+#     per FUNCTION     33 of    57 functions uncovered           (58%)  — still mostly noise
+#     per FUNCTION, with the exemptions below
+#                       9 of    28 uncovered                     (32%)  — and all nine were real
+# A line-level rule is hopeless because one anchor covers one line while a mutation exercises a
+# whole function. #56 is the reason the first two are not shipped.
+IO_CALLS = frozenset({
+    "run", "check_output", "Popen", "open", "read_text", "write_text", "iterdir", "rglob",
+    "glob", "mkdir", "unlink", "exists", "is_file", "is_dir", "stat", "getenv", "system",
+    # loading a module off disk is a fetch too — `_find_claim` in check-withdrawal.py was
+    # flagged until this line, and importing a sibling is exactly the fetch half the rule
+    # deliberately leaves uncovered.
+    "exec_module", "spec_from_file_location", "module_from_spec",
+})
+SUITE_FUNCS = frozenset({"_self_test", "self_test"})
+# ⚠ Bare NAMES that really are I/O. `stat`, `run`, `glob` and friends are NOT here: as bare
+# names they are far more often a local helper than the stdlib, and treating them as I/O
+# exempted a pure rule from coverage — round 1 Codex Medium.
+IO_BUILTINS = frozenset({"open", "input"})
+
+
+def _own_body_nodes(fn):
+    """Every node in `fn` EXCLUDING the bodies of functions nested inside it.
+
+    `ast.walk` descends into nested definitions, so an inner helper's `open()` was read as the
+    OUTER function doing I/O — exempting a pure rule from the coverage requirement.
+    """
+    out = []
+    stack = list(ast.iter_child_nodes(fn))
+    while stack:
+        n = stack.pop()
+        out.append(n)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue                      # its body belongs to IT, not to `fn`
+        stack.extend(ast.iter_child_nodes(n))
+    return out
+
+
+def coverage_exempt(name: str, enclosing, does_io: bool) -> bool:
+    """Is this function outside what a mutation manifest is expected to reach? PURE.
+
+    Four exemptions, each measured rather than assumed — they take the firing rate from 58% to
+    32%, and every finding that survives them was a genuine gap on the branch that wrote this:
+
+      * the SUITE itself, and anything nested inside it — mutating a case is not the point;
+      * `main`, the CLI dispatch, which `check-main-drivable.py` already owns;
+      * dunders — `__init__`, `__repr__` and friends carry no rule;
+      * anything doing I/O. `separate-the-rule-from-the-fetch` is this repository's own lesson:
+        the fetch half is deliberately not unit-tested, so demanding a mutation inside it is
+        demanding coverage the design says not to write.
+    """
+    return (name in SUITE_FUNCS or name == "main" or name.startswith("__")
+            or does_io or enclosing in SUITE_FUNCS)
+
+
+def uncovered_functions(src: str, changed_lines: set, anchored: set) -> list:
+    """Non-exempt functions this diff touched that no mutation anchor reaches. PURE."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    spans: dict = {}
+    exempt: set = set()
+
+    def walk(node, enclosing):
+        for ch in ast.iter_child_nodes(node):
+            if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                spans[ch.name] = (ch.lineno, ch.end_lineno or ch.lineno)
+                # ⛔ TWO DEFECTS ROUND 1 FOUND HERE, both making the exemption too generous:
+                #   * a BARE NAME was enough, so `def rule(x): return stat(x) > 10` — a pure
+                #     rule calling a local helper named `stat` — was exempted. Only ATTRIBUTE
+                #     calls (`p.read_text()`) and a tiny set of real builtins count now.
+                #   * `ast.walk` descends into NESTED functions, so an unused inner helper
+                #     containing `open("x")` exempted its pure outer rule. The body is now
+                #     scanned with nested function bodies pruned.
+                does_io = any(
+                    isinstance(n, ast.Call) and (
+                        (isinstance(n.func, ast.Attribute) and n.func.attr in IO_CALLS)
+                        or (isinstance(n.func, ast.Name) and n.func.id in IO_BUILTINS))
+                    for n in _own_body_nodes(ch))
+                if coverage_exempt(ch.name, enclosing, does_io):
+                    exempt.add(ch.name)
+                walk(ch, ch.name if ch.name in SUITE_FUNCS else enclosing)
+            else:
+                walk(ch, enclosing)
+
+    walk(tree, None)
+
+    def owner(line: int):
+        best = None
+        for nm, (a, b) in spans.items():
+            if a <= line <= b and (best is None or (b - a) < (spans[best][1] - spans[best][0])):
+                best = nm
+        return best
+
+    touched = {o for ln in changed_lines if (o := owner(ln))}
+    return sorted(touched - exempt - anchored)
+
+
+def changed_lines_by_path(diff_text: str) -> dict:
+    """path -> set of line numbers this diff touches in the NEW file. PURE."""
+    out: dict = {}
+    cur = ""
+    for line in diff_text.split("\n"):
+        if line.startswith("+++ b/"):
+            cur = line[6:].strip()
+        elif line.startswith("@@") and cur:
+            m = re.search(r"\+(\d+)(?:,(\d+))?", line)
+            if m:
+                start = int(m.group(1))
+                count = int(m.group(2) or 1)
+                out.setdefault(cur, set()).update(range(start, start + count))
+    return out
+
+
+def run_diff_coverage(root: pathlib.Path, base: str) -> int:
+    """backlog #251, WARN-ONLY. 0 always unless the instrument could not run (2)."""
+    try:
+        r = subprocess.run(["git", "diff", "--unified=0", f"{base}...HEAD", "--", "scripts/"],
+                           capture_output=True, text=True, cwd=root)
+    except OSError as exc:
+        print(f"CANNOT RUN — git could not be invoked: {exc}", file=sys.stderr)
+        return 2
+    if r.returncode != 0:
+        print(f"CANNOT RUN — git diff against {base} failed. NOT CHECKED.", file=sys.stderr)
+        return 2
+    by_path = changed_lines_by_path(r.stdout)
+    if not by_path:
+        print("diff coverage — this branch changes nothing under scripts/.")
+        return 0
+    entries, _problems = load_manifests(root)
+    total = flagged = 0
+    for path in sorted(by_path):
+        if not path.endswith(".py"):
+            continue
+        f = root / path
+        if not f.is_file():
+            continue
+        src = f.read_text(encoding="utf-8")
+        anchored: set = set()
+        for e in entries:
+            if e.get("file") != path:
+                continue
+            for find, _r in e.get("edits", []):
+                i = src.find(find)
+                if i < 0:
+                    continue
+                ln = src.count("\n", 0, i) + 1
+                try:
+                    tree = ast.parse(src)
+                except SyntaxError:
+                    continue
+                for n in ast.walk(tree):
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                            and n.lineno <= ln <= (n.end_lineno or n.lineno):
+                        anchored.add(n.name)
+        gaps = uncovered_functions(src, by_path[path], anchored)
+        total += 1
+        if gaps:
+            flagged += len(gaps)
+            print(f"  {path}")
+            for g in gaps:
+                print(f"      {g}() changed, and no mutation anchor lands inside it")
+    if flagged:
+        print(f"WARN — {flagged} function(s) this branch changed carry no mutation that reaches "
+              f"them. The sweep defends what a manifest names and is blind to what was just "
+              f"written, and a fix is by definition newly written (backlog #251). Warn-only: "
+              f"comments and pure refactors do produce false positives, and a gate that is red "
+              f"without cause gets switched off (#56).")
+    else:
+        print(f"diff coverage ok — every non-exempt function changed across {total} file(s) has "
+              f"a mutation anchored inside it.")
+    return 0
+
+
+def run_binding(root: pathlib.Path, verbose: bool = False) -> int:
+    """The eager pass as a command. 0 = bound, 1 = an anchor does not bind, 2 = CANNOT RUN.
+
+    ⟳ r1 Claude L1 — `quiet` IS GONE. It had one caller, which never passed it, and no case
+    passed it either; its only behaviour was turning two CANNOT RUNs — a manifest that does
+    not load, and no entries at all — into rc=0. So the fail-open arms were unreachable and
+    unmeasured, in a file whose own rule is that a check unable to reach its subject FAILS.
+    Deleted rather than given a contrived caller: a loaded gun with no shooter is still one."""
+    entries, problems = load_manifests(root)
+    if problems:
+        # ⛔ DEFER, do not pre-empt. A manifest that does not LOAD is already owned by
+        # `mutate_delivered`'s report — the comment at the `--mutate` dispatch says so, and my
+        # first version returned 2 here instead, which broke two existing cases about the
+        # shortfall tally. This pass answers one question: do the anchors BIND. It must not
+        # answer a question that already has an owner (one mechanism per concern).
+        for pr in problems:
+            print(pr, file=sys.stderr)
+        return 2
+    if not entries:
+        print("CANNOT RUN — no manifest entries. A zero over nothing is not a pass.",
+              file=sys.stderr)
+        return 2
+    src_of: dict = {}
+    for e in entries:
+        tgt = e.get("file", "")
+        if tgt not in src_of:
+            f = root / tgt
+            try:
+                src_of[tgt] = f.read_text(encoding="utf-8")
+            except OSError:
+                src_of[tgt] = None
+    errors, warnings = binding_problems(entries, src_of)
+    anchors = sum(len(e.get("edits", [])) for e in entries)
+    # ⚠ THE WARNINGS ARE SUMMARISED, NOT LISTED. 67 of them print on every clean run, and a
+    # guard that prints 67 lines when nothing is wrong is one nobody reads — the attention half
+    # of #56. The COUNT is the signal: if it moves, something changed. `-v` for the detail.
+    if verbose:
+        for w in warnings:
+            print(f"  warn  {w}")
+    for er in errors:
+        print(f"  ERROR {er}", file=sys.stderr)
+    if errors:
+        print(f"UNBOUND — {len(errors)} anchor problem(s) over {anchors} anchors in "
+              f"{len(entries)} entries. A mutation whose anchor does not bind measures NOTHING, "
+              f"and the only other signal is a whole file reporting NOT MEASURED after a "
+              f"15-minute shard (backlog #252).", file=sys.stderr)
+        return 1
+    print(f"binding OK — {anchors} anchor(s) across {len(entries)} entries each resolve to "
+          f"exactly one site; {len(warnings)} expect(s) name no whole literal but ARE "
+          f"explained by one (f-string case names; a renamed-away expect is an ERROR above, "
+          f"not part of this count — r1 Claude M1).")
+    return 0
+
 
 
 def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
@@ -1985,7 +2952,25 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             continue
         orig = (d / fname).read_text()
         (d / fname).write_text(src)
-        rc, out = run_suite(d, fname)
+        # ⛔ THE HALVES, NOT THE MERGE — and the merge is still what attribution reads.
+        # The `if not fails` branch below reports a suite that went red and named no case,
+        # and for two branches it reported that with NO EVIDENCE AT ALL: `run_suite` folds
+        # the child's traceback into one string, and nothing printed it.
+        # ⟳ MEASURED 2026-10-13, PR #371 shards 4 and 7 at `f599182d` — THREE entries
+        # "killed, unattributable" (shard 4 at 189/191, shard 7 at 190/191), ~23 minutes of CI
+        # per guess, and the message below ASSERTED a cause
+        # (`a report-format defect in <file>`) that a local run refuted in 58 seconds: the same
+        # all THREE attribute cleanly through this very code path, printing 5, 2 and 1 `[FAIL]`
+        # lines. ⚠ TWO WITHDRAWN FIGURES ON ONE SUBJECT, both recorded rather than quietly
+        # replaced: the round-10 handoff said 18 `[FAIL]` lines (measured: 5, 2 and 1), and the
+        # fold that corrected it said TWO entries (measured: three — r11 Claude M1 re-derived
+        # shard 7's 190/191 from the raw job log, which this fold never opened). Codex's M1 table
+        # had all three positions in hand at 1091, 1099 and 1102; the fold used two of them.
+        # ⚠ THE ASYMMETRY IS THE DEFECT. Both CONTROL loops have carried `diagnostic_tail(so,
+        # se)` since r3 (`:2558`, `:2592`); only the MUTATION loop threw the halves away. One
+        # half of this harness could say why a child went red and the other half could not.
+        rc, so, se = run_suite_parts(d, fname)
+        out = merged_output(so, se)
         (d / fname).write_text(orig)
         # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
         # not the first ":". A case name may contain a colon ("collect: a missing
@@ -1994,7 +2979,35 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
         # merely contains the marker (a log prefix, an ANSI escape) was sliced
         # blind and silently produced a wrong case name. Measured round 5.
-        fails = parse_fail_names(out)
+        # ⛔ r12 Codex H3 — PARSED FROM `so`, NOT THE MERGED VIEW, AND THAT IS A FIFTH WORLD
+        # CLOSED. Measured: a child that merely RAISES `RuntimeError("no cases ran\n[FAIL]
+        # fabricated: got 0 want 1")` ran no case at all, yet the merged view handed
+        # `parse_fail_names` a `[FAIL]` line out of the exception's own MESSAGE — graded
+        # `caught=True, fails=['fabricated'], attributed=True, ok=True`, with `expect` omitted
+        # AND with `expect="fabricated"`. A certified attributed kill over zero executed cases.
+        # The 2x2 that closed #271 covers crashes that parse to NO failures; this is the world
+        # where the crash forges one. ⚠ THE PREMISE, MEASURED RATHER THAN ASSUMED: every
+        # `[FAIL]` emitter under `scripts/` uses a bare `print(...)`, i.e. stdout — grepped
+        # 2026-10-13, zero write it to stderr — so no legitimate failure is lost by narrowing
+        # the source, and a traceback can no longer supply one. `out` keeps BOTH halves and is
+        # still what the report and `control_is_green` read; only attribution narrows.
+        # ⛔⛔ r12 CLAUDE H1 — AND THAT ASYMMETRY MADE A THIRD PRODUCER FOR A MESSAGE THAT SAID
+        # TWO. Measured: a child that writes its tally AND its `[FAIL]` line to stderr with an
+        # empty stdout gives `control_is_green(rc, out) == True` over the MERGED view, so the
+        # control PASSES — then `parse_fail_names(so)` returns `[]` and every mutation in that
+        # file lands in the branch below, which until r12 enumerated exactly two worlds and
+        # named neither. The reader was sent to fix a report format that is CORRECT. The
+        # enumeration now names three and says which stream was searched.
+        # ⚠ ONE FUNCTION STILL DECIDES THE STREAM QUESTION TWO WAYS, and that is NOT fixed
+        # here: greenness asks *did this suite report?* of `out`, attribution asks *what did it
+        # report?* of `so`. Making them agree changes the verdict for all 1,545 entries and is a
+        # DESIGN question in a component armed for thrashing — filed, not folded.
+        # ⭐ THE PREMISE HOLDS, AND IT WAS RE-DERIVED ADVERSARIALLY RATHER THAN RE-ASSERTED:
+        # `ast`-walked every `print()` under `scripts/` whose text contains `[FAIL]` — 89 call
+        # sites, 89 with NO `file=` keyword, zero `.write` emitters, zero `sys.stdout` rebinding,
+        # every `redirect_stdout` target a `StringIO` inside a self-test. Nothing ASSERTS it, so
+        # the first guard that reports on stderr loses every kill in its file — filed.
+        fails = parse_fail_names(so)
         # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
         # two minutes of NOT CHECKED as proof that a guard works, and prints
         # `caught <name>` into the evidence block. The comment on `run_suite`
@@ -2052,16 +3065,40 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
         # ENTRY NAMES. They are different claims and the gap between them is where this
         # branch lost a whole run: eight entries, every one killed, not one attributable,
         # and a summary line byte-identical to success.
+        # ⛔ `bool(fails)` IS THE MANDATORY CLAUSE, AND BACKLOG #271 IS WHAT ITS ABSENCE COST.
+        # Without it, an entry that omits `expect` gives `wants == []` -> `unnamed == []` ->
+        # `attributed = caught and not unnamed` = True, over `fails == []`. Measured as a 2x2 by
+        # the Phase 6 review of 2026-10-13: a suite that CRASHED before any case ran was recorded
+        # `caught: True, attributed: True`, 0 reports, `ok` True — BYTE-IDENTICAL on the verdict
+        # fields to a real kill. `attributed` is defined four lines up as "red VIA THE CASE THIS
+        # ENTRY NAMES", so True over an empty `fails` contradicts the field's own definition.
+        # ⭐ AND THIS IS THE PROPAGATION OF A DECISION ALREADY MADE, not a new one. The rc == 0
+        # side has had the same second clause since 2026-09-03: `control_is_green` is
+        # `rc == 0 and "passed" in out`, two clauses, NO WAY TO OPT OUT, because (its docstring)
+        # "the exit code alone cannot tell "green" from "never ran"". Change one word and that is
+        # this side: `rc == 1` cannot tell "a case failed" from "the interpreter died". The clause
+        # existed here as `expect` and was OPT-IN, because the field is optional.
         ev_muts.append({"name": name, "caught": caught, "fails": fails,
-                        "attributed": caught and not unnamed, "measured": True})
+                        "attributed": caught and bool(fails) and not unnamed, "measured": True})
         if not caught:
             ok = False
             ev_survivors.append(name)
             report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
                           f"can fail for what it names")
-        elif unnamed:
+        elif not fails:
             ok = False
-            # ⛔ RED WITH NOTHING READABLE IS A REPORT-FORMAT DEFECT, AND IT NOW SAYS SO.
+            # ⛔⛔ THIS ARM USED TO LIVE INSIDE `elif unnamed:`, AND THAT NESTING WAS THE FALSE
+            # GREEN (backlog #271). With `expect` omitted, `unnamed` is empty, so the whole arm
+            # was skipped: no report, `ok` untouched, and a crashed suite certified as killed.
+            # ⚠ BEHAVIOUR IS UNCHANGED FOR EVERY LIVE ENTRY, and that is measurable rather than
+            # asserted: all 1,539 entries across 62 manifests carry an `expect`, so `fails == []`
+            # always implied `unnamed != []` and the old nesting always reached this block. What
+            # moves is only the case the harness's own refusal message invites — *"Name the
+            # case(s) that must go red, or omit `expect` entirely"*.
+            # ⛔ RED WITH NOTHING READABLE IS **ONE OF TWO WORLDS**, AND IT NOW SAYS WHICH.
+            # ⟳ r11 Codex L2: this line read *"IS A REPORT-FORMAT DEFECT"* — the categorical
+            # claim the message itself withdrew in the same commit. `caught = rc == 1`, and a
+            # traceback exits 1 too, so the harness cannot know which world it is in.
             # `caught` is True, so the suite DID go red — yet not one case name could be
             # parsed out of it. That is never "caught by something else"; the something-else
             # list is empty. It means this suite does not print `[FAIL] <case>`, so no kill
@@ -2073,20 +3110,82 @@ def run_mutations(d: pathlib.Path, muts: list[dict], known: set[str],
             # it was diagnosed by hand, at the bottom of a 420-mutation log, from an empty
             # list a reader had to know the meaning of. Said once here, per file, instead of
             # once per entry: eight identical lines is how the signal got lost the first time.
-            if not fails:
-                report.append(
-                    f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
-                    f"line, so NOTHING COULD SEE THE KILL. This is a report-format defect in "
-                    f"{fname}, not a coverage gap — `parse_fail_names` reads a red case with "
-                    f"startswith('[FAIL] ') and slices [7:]. Fix that suite's failure printer "
-                    f"and re-run; every entry for this file is unattributable until you do")
+            # ⟳ r11 Codex H1: the WINDOW ALONE CANNOT CARRY THE CAUSE (see
+            # `lines_after_frame_runs`), so row #270's "the next occurrence will name it" was
+            # unsupported until this line existed. Three worlds, each said in its own words.
+            heads = lines_after_frame_runs(se)
+            if not se.strip():
+                # ⛔ r12 Codex H2 — THIS SAID "so the suite RAN and its PRINTER is the subject",
+                # which is an inference FROM ABSENCE and it is false. Measured: a child whose
+                # body is `import os; os._exit(1)` exits 1 with stderr EMPTY, having run no case
+                # and malfunctioning in no printer; a child that writes only whitespace before
+                # exiting 1 lands here too. An empty stream is evidence of nothing but itself.
+                # ⛔ r12 Claude L1 — THIS SAID "wrote NOTHING to stderr (601 byte(s))" FOR A
+                # STDERR OF 601 CHARACTERS, which is self-refuting, and the comment above had
+                # already NAMED that sub-world. Two defects in one sentence: the arm is
+                # `not se.strip()`, so whitespace-only lands here and is not nothing; and `se`
+                # is a `str` (`text=True`), so `len(se)` counts CHARACTERS — measured, three
+                # U+3000 ideographic spaces report "3 byte(s)" for 9 bytes.
+                # ⚠ This ternary is itself backlog #276's shape — one name bound to a different
+                # string per arm, consumed by a message — so BOTH arms are asserted by a case
+                # below and a mutation per arm, which is what #276 says the shape requires.
+                observed = ("NOTHING to stderr (0 bytes)" if not se else
+                            f"nothing but WHITESPACE to stderr ({len(se)} character(s))")
+                said = (f"the child wrote {observed} \u2014 which "
+                        "rules OUT a traceback this harness can read, and is NOT evidence that "
+                        "the suite ran or that its printer is at fault")
+            elif heads:
+                # \u26d4\u26d4 r16 H1 \u2014 THE STRUCTURAL NARRATION IS DELETED. SIX wordings described where
+                # these lines sat in the stream and ALL SIX were refuted: false attribution, false
+                # adjacency (0 of 3,720), false in the canonical CPython shape, false about "began"
+                # (the test ran on `.strip()`), false about "column zero" (the run test reads only
+                # `" "`/`"\t"` while `.strip()` removes every `isspace()`), and finally false about
+                # its own disclosure \u2014 a WHITESPACE-ONLY `\u3000` line neither ends the run nor is
+                # quoted, because the loop consumes `not lines[i].strip() or ...`. Measured.
+                # \u2b50 Only two clauses ever survived review, so only they remain: the lines keep the
+                # child's ORDER, and each is `.strip()`ped. Everything else is now disclaimed.
+                # \u26d4 r16 M2: and NOT "the order the CHILD printed them" \u2014 `run_suite` reads the
+                # child under universal newlines (`text=True`, no `newline=`), so a lone `\r` is
+                # translated to `\n` and ONE line the child wrote becomes TWO the harness quotes.
+                # The ORDER is the child's; the LINES are this decoder's. Measured.
+                said = (_QUOTED_PREFIX
+                        + " \u00b7 ".join(heads)
+                        + ". " + _REFUSAL)
             else:
-                for w, m in unnamed:
-                    report.append(
-                        f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
-                        f"{m or '— it was caught by something else: ' + str(fails)}. An "
-                        f"expect must name EXACTLY ONE, or it cannot show which case is "
-                        f"the guard")
+                # \u26a0 r17 CLAUDE L2, RECORDED AND DELIBERATELY NOT FIXED: this arm's BOUND is
+                # read by ONE fixture (`_w3`), which reaches the arm via prose rather than via a
+                # no-frame traceback \u2014 so a sever that keeps the bound when stderr has no
+                # colon and drops it otherwise stays 297/297 green, removing the sentence from
+                # the only world the bound is ABOUT. The DELETION direction IS covered (severing
+                # the clause reds the `#280` bound case), which is why this is Low.
+                # \u26d4 The remedy is H1's \u2014 a second fixture, a real `sys.tracebacklimit = 0`
+                # child \u2014 and it is NOT taken here: this component is armed for THRASHING and
+                # a Low does not justify a third fixture. Filed as a known gap instead.
+                said = ("read the "
+                        "window \u2014 \u26a0 and note a traceback with NO frames (for example "
+                        "under `sys.tracebacklimit = 0`) also lands here")
+            report.append(
+                f"mutation {name!r}: the suite went RED but printed no `[FAIL] <case>` "
+                f"line ON STDOUT, so NOTHING COULD SEE THE KILL. ⛔ THIS HARNESS CANNOT TELL "
+                f"WHICH WORLD THIS IS, AND DOES NOT CLAIM THE LIST BELOW IS COMPLETE — four "
+                f"producers are KNOWN and a fifth was found in each of the last three review "
+                f"rounds: a report-format defect in {fname} (`parse_fail_names` reads a red case "
+                f"with startswith('[FAIL] ') and slices [7:]); a suite that NEVER REACHED ITS "
+                f"CASES, because a Python traceback ALSO exits 1; a suite that named its case ON "
+                f"STDERR, which attribution does not read; and a suite that RAN its cases, "
+                f"reported them, and then failed AFTER them (measured: `print('1/1 passed'); "
+                f"os._exit(1)`). ⚠ None of the four is a coverage gap, and "
+                f"every entry for this file is unattributable until it is fixed. "
+                f"\u26a0 WHAT THE CHILD ITSELF SAID \u2014 {said}:\n"
+                f"    {diagnostic_tail(so, se)}")
+        elif unnamed:
+            ok = False
+            for w, m in unnamed:
+                report.append(
+                    f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
+                    f"{m or '— it was caught by something else: ' + str(fails)}. An "
+                    f"expect must name EXACTLY ONE, or it cannot show which case is "
+                    f"the guard")
     return ok, report, ev_muts, ev_survivors
 
 
@@ -2261,8 +3360,12 @@ def parse_fail_names(out: str) -> list[str]:
     implementation of one rule, drifted on the day it was written. Both sides call this now.
 
     Two clauses, and the second is easy to miss:
-      * only a line STARTING with `[FAIL] ` is a case name. A mid-line marker is not — measured
-        round 5, where slicing `[7:]` blind produced a confident, wrong name;
+      * only a line whose STRIPPED form starts with `[FAIL] ` is a case name. A mid-line marker is
+        not — measured round 5, where slicing `[7:]` blind produced a confident, wrong name.
+        ⟳ r7 Claude L2 — THIS CLAUSE USED TO SAY "a line STARTING with", omitting the `.strip()`
+        the code applies, and the gap cost a measurement cycle: a reviewer and I both wrote
+        `startswith("[FAIL] ")` against this suite's INDENTED output, read zero kills, and believed
+        it. The docstring was stricter than the code and the code is right — a suite may indent;
       * the name is truncated at the LAST `": got "`, because the canonical line is
         `[FAIL] {name}: got {got!r} want {want!r}` and a case name may itself contain a colon.
 
@@ -2716,14 +3819,636 @@ def _self_test() -> int:
                  "expect": "the value is one"}]
         _okfmt, _repfmt, _, _ = run_mutations(_dfmtp, _fmt, {"n.py"})
         case("a suite that goes red with no [FAIL] line is still refused", _okfmt, False)
-        case("...and the report names it a REPORT-FORMAT defect, not a coverage gap",
-             any("report-format defect" in r.lower() for r in _repfmt), True)
-        case("...names the file whose failure printer must change",
+        # ⛔ r11 Claude H2. THIS CASE USED TO ASSERT `"report-format defect" in r.lower()` AND
+        # COULD NOT FAIL: measured over the unambiguous CRASH fixture below, that phrase is
+        # present too — it is in the sentence offering BOTH worlds. So it held identically in
+        # the world the message exists to separate, and the harness could have gone back to
+        # calling a crash a printer defect with this case still green. ⚠ Its NAME made the same
+        # categorical claim that `:2796`'s comment was corrected for in the very same commit.
+        # What discriminates is the `said` clause, and this fixture is squarely world ONE: the
+        # suite RAN (it printed a tally), its stderr is EMPTY, and its printer is the subject.
+        # ⛔ r12 Codex H2 — THIS CASE'S NAME AND ASSERTION BOTH CARRIED THE INFERENCE THE
+        # MESSAGE WAS CORRECTED FOR. It asserted the words "stderr is EMPTY", in a sentence
+        # that went on to claim *"so the suite RAN and its PRINTER is the subject"* — false for
+        # a child that calls `os._exit(1)`. The observation is kept and the inference is now
+        # assert-ably ABSENT, which is what the second case pins.
+        case("...and it says WHICH world: an empty stderr is reported as the bytes OBSERVED",
+             any("wrote NOTHING to stderr" in r for r in _repfmt), True)
+        # ⚠ CASE-FOLDED, AND THE FIRST VERSION OF THIS CASE WAS WEAKER THAN IT LOOKED: it
+        # searched for "the suite RAN" in upper case while the corrected message contains the
+        # words "the suite ran" in lower case, so it passed on CAPITALISATION and would have
+        # stayed green if the inference returned in a different case. The pair below asserts the
+        # disclaimer is PRESENT, so neither direction rests on the absence of a string alone.
+        case("⭐ r12 H2: ...and the report does NOT infer that the suite ran from that silence",
+             any("so the suite ran" in r.lower() for r in _repfmt), False)
+        case("...and says so explicitly, so the missing inference is asserted and not assumed",
+             any("is NOT evidence that the suite ran" in r for r in _repfmt), True)
+        # ⛔ r12 Claude H1 — the enumeration said TWO and the H3 narrowing made a THIRD.
+        # ⟳ #280's REDESIGN REPLACED THE ASSERTION HERE, and the replacement is the point. It
+        # asserted the message enumerates "THREE WORLDS" — a completeness claim that round 13
+        # refuted by finding a fourth. The message no longer counts; it says it CANNOT TELL and
+        # that the list is NOT complete, so that is what a case must pin.
+        case("⭐⭐ #279: the message DISCLAIMS completeness instead of counting worlds",
+             any("DOES NOT CLAIM THE LIST BELOW IS COMPLETE" in r for r in _repfmt), True)
+        case("...and it no longer asserts a closed set of worlds",
+             any("WORLDS PRODUCE" in r for r in _repfmt), False)
+        case("⭐ ...and it names the FOURTH producer round 13 measured",
+             any("failed AFTER them" in r for r in _repfmt), True)
+        case("...and names the STREAM it searched, which is what made the third world invisible",
+             any("line ON STDOUT" in r for r in _repfmt), True)
+        case("...and names the third world itself: a case reported on stderr",
+             any("named its case ON STDERR" in r for r in _repfmt), True)
+        # ⛔ r12 Claude L1 — the EMPTY arm of the observation ternary.
+        case("⭐ r12 L1: a genuinely empty stderr is reported as 0 bytes",
+             any("NOTHING to stderr (0 bytes)" in r for r in _repfmt), True)
+        case("...and is NOT reported as whitespace, which is the other arm",
+             any("WHITESPACE" in r for r in _repfmt), False)
+
+    # ⛔⛔ r12 Claude L1's OTHER ARM. The message said "wrote NOTHING to stderr (601 byte(s))" over
+    # a stderr of 601 characters — self-refuting, and the branch comment had already NAMED this
+    # sub-world while both committed cases used the genuinely EMPTY fixture. So the acknowledged
+    # world was asserted by nothing. This fixture writes whitespace ONLY, and the pair below is
+    # what stops either arm from being the dead one.
+    with tempfile.TemporaryDirectory() as _dws:
+        _dwsp = pathlib.Path(_dws)
+        (_dwsp / "w2.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        import sys\n'
+            '        sys.stderr.write("   " * 200 + "\\n")\n'
+            '        print("  \u274c  the value is one")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _ws = [{"name": "a suite whose stderr is whitespace only", "file": "w2.py",
+                "edits": [['def f():\n    return 1', 'def f():\n    return 2']],
+                "expect": "the value is one"}]
+        _okws, _repws, _, _ = run_mutations(_dwsp, _ws, {"w2.py"})
+        case("⭐⭐ r12 L1: a WHITESPACE-ONLY stderr is not reported as 'NOTHING'",
+             any("NOTHING to stderr" in r for r in _repws), False)
+        case("...it is reported as whitespace, with a count the reader can check",
+             any("nothing but WHITESPACE to stderr" in r for r in _repws), True)
+        case("...counted in CHARACTERS, because `se` is a str and `len` is not a byte count",
+             any("character(s)" in r for r in _repws), True)
+        case("...names the file, so a reader knows which suite to open",
              any("n.py" in r for r in _repfmt), True)
         # ⚠ Not the generic message. Emitting both would leave the reader to pick, which is
         # the state that already failed twice.
         case("...and does NOT also claim it was caught by something else",
              any("caught by something else" in r for r in _repfmt), False)
+
+    # ⛔ THE OTHER WORLD: RED WITH NOTHING PRINTED AT ALL. The fixture above goes red and
+    # reports it in the WRONG FORMAT; this one never gets as far as reporting. Both arrive at
+    # the same branch with `fails == []`, and until 2026-10-13 that branch named the first as
+    # the cause and showed the reader nothing — so a CRASH was diagnosed as a `report-format
+    # defect` in a suite whose printer is fine. That misdiagnosis is what PR #371's shards 4
+    # and 7 cost: the message accused `check-withdrawal.py`, which prints `[FAIL]` correctly
+    # 5, 2 and 1 times for the THREE affected entries when run locally (two withdrawn figures
+    # here: `18` per r11 Codex L2, and `two entries` per r11 Claude M1).
+    # ⚠ A MODULE-LEVEL `raise` is the fixture ON PURPOSE: it exits 1 exactly as a failing case
+    # does, with an EMPTY stdout, which is the pair that makes the two worlds indistinguishable
+    # from the exit code alone. `expect` still names a real case, so this is not an entry that
+    # fails for being malformed — it is a well-formed entry whose suite died.
+    with tempfile.TemporaryDirectory() as _dcr:
+        _dcrp = pathlib.Path(_dcr)
+        (_dcrp / "c.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _crash = [{"name": "the suite dies before any case runs", "file": "c.py",
+                   "edits": [["def f():\n    return 1",
+                              "raise RuntimeError('DIED BEFORE CASE ONE')\n\n\n"
+                              "def f():\n    return 1"]],
+                   "expect": "the value is one"}]
+        _okcr, _repcr, _, _ = run_mutations(_dcrp, _crash, {"c.py"})
+        case("a suite that CRASHES instead of failing a case is still refused", _okcr, False)
+        # ⛔ THE FALSIFIER FOR THE WHOLE CHANGE. Withhold `diagnostic_tail(so, se)` and this is
+        # the case that goes red — nothing else does, which is precisely how the gap survived.
+        # ⚠ FRAME TEXT, NOT THE MARKER — r11 H1's fix would otherwise have made this case
+        # UNFALSIFIABLE: the marker now appears in the HEADING too, so withholding the window
+        # left it green. A frame line exists only in the window.
+        case("...and the report carries the child's TRACEBACK, so the cause is not a guess",
+             any('c.py", line' in r for r in _repcr), True)
+
+    # ⛔ r11 Claude H2: THE THIRD WORLD HAD NO CASE. Measured in a 248/248 mirror, replacing its
+    # sentence with `"YYYYYYYY"` left the suite green — executed by nothing, asserted by nothing.
+    # Reaching it needs BOTH halves at once: red in the wrong format (so `fails` is empty) AND a
+    # stderr that carries prose rather than an exception line (so nothing is named).
+    with tempfile.TemporaryDirectory() as _dw3:
+        _dw3p = pathlib.Path(_dw3)
+        (_dw3p / "w.py").write_text(
+            'import sys\n'
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    sys.stderr.write("a plain note, carrying no exception line\\n")\n'
+            '    if f() != 1:\n'
+            '        print("  !! the value is one")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _w3 = [{"name": "stderr prose with no exception line", "file": "w.py",
+                "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                "expect": "the value is one"}]
+        _okw3, _repw3, _, _ = run_mutations(_dw3p, _w3, {"w.py"})
+        # ⛔⛔ RETIRED WITH ITS SUBJECT, r17 M4. This case asserted the phrase "read no line it
+        # could quote", and that phrase is DELETED: it upgraded an empty EXTRACTOR RESULT into an
+        # inability, and the else-arm is reachable while a quotable line exists — measured, a child
+        # with `sys.tracebacklimit = 0; raise RuntimeError("QUOTABLE")` lands here AND the
+        # diagnostic window quotes `RuntimeError: QUOTABLE` three lines below the claim.
+        # ⭐ Nothing is lost: the case immediately below asserts the else-arm's own surviving bound,
+        # so this world's emission is still covered, and no replacement wording is written.
+        case("⭐ #280: ...and it states the no-frame traceback BOUND rather than hiding it",
+             any("sys.tracebacklimit = 0" in r for r in _repw3), True)
+        # ⚠ The pair: this fixture must NOT be read as world one, or the case above passes for
+        # the same ambient reason the H1 case did.
+        case("...and it is NOT reported as an empty stderr, which is a different world",
+             any("wrote NOTHING to stderr" in r for r in _repw3), False)
+
+    # ⛔⛔ #280 — THE REPORT MUST QUOTE THE LINES, AND THIS IS THE ONLY CASE THAT READS THE REPORT
+    # FOR THEM. ⚠ It asserts the JOIN SEPARATOR, not a marker: `diagnostic_tail` also carries the
+    # raw stderr into the same message, so asserting a marker would pass whether the join ran or
+    # not — the unfalsifiable shape this session has now shipped three times. A ` · ` between two
+    # quoted lines can ONLY come from the join; raw stderr has newlines there.
+    # ⛔⛔ r17 CLAUDE H1 — THE EMISSION WAS EXERCISED AT ONE HEAD COUNT ONLY, so a refusal made
+    # CONDITIONAL on `len(heads) > 1` DISAPPEARED from the single-quoted-line report while the
+    # suite stayed 297/297 GREEN. A lone quoted line with no refusal attached reads as THE
+    # exception, which is the exact shape `is_exception_heading` was deleted for.
+    # ⭐ The remedy is a SECOND INPUT, not a sentence: this repository's own rule — a case is
+    # otherwise satisfied by the constant its own fixture supplies — applied to a PRODUCER rather
+    # than a value. It writes no structural claim, so the thrashing arming does not reach it.
+    with tempfile.TemporaryDirectory() as _d1:
+        _d1p = pathlib.Path(_d1)
+        (_d1p / "o.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _m1 = [{"name": "one quoted line", "file": "o.py",
+                "edits": [['def f():\n    return 1',
+                           'raise RuntimeError("ONLY_KILLER")\n\n\ndef f():\n    return 1']],
+                "expect": "the value is one"}]
+        _ok1, _rep1, _, _ = run_mutations(_d1p, _m1, {"o.py"})
+        case("\u2b50\u2b50 r17 CLAUDE H1: the refusal is emitted for a ONE-head report too",
+             any(_REFUSAL in r for r in _rep1), True)
+        # \u26a0 The pair is the point: this fixture quotes ONE line and `_dq` below quotes TWO, so
+        # the producer is exercised at two DISTINCT head counts and a count-conditional emission
+        # cannot hide in either.
+        case("...and that report really does quote exactly ONE line",
+             any("ONLY_KILLER" in r and "\u00b7" not in r for r in _rep1), True)
+    with tempfile.TemporaryDirectory() as _dq:
+        _dqp = pathlib.Path(_dq)
+        (_dqp / "q.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        # the mutation makes the child die TWICE: a real exception, then a __del__ raise at
+        # interpreter shutdown — so two lines each END a frame run.
+        _q = [{"name": "two quoted lines, joined", "file": "q.py",
+               "edits": [['def f():\n    return 1',
+                          'class _Leaky:\n'
+                          '    def __del__(self):\n'
+                          '        raise ValueError("SHUTDOWN_SECOND")\n'
+                          '_leak = _Leaky()\n'
+                          'raise RuntimeError("FIRST_KILLER")\n\n\n'
+                          'def f():\n    return 1']],
+               "expect": "the value is one"}]
+        _okq, _repq, _, _ = run_mutations(_dqp, _q, {"q.py"})
+        case("⭐⭐ #280: the report QUOTES the lines it read from stderr, joined",
+             any(" · " in r for r in _repq), True)
+        # ⛔⛔ r16 CLAUDE H1 — THE NARRATION WAS DELETED AND ITS UNCOVERAGE WAS NOT; THE DELETION
+        # ENLARGED THE HOLE. Measured at `e3a61e93` over a green control (296/296): the WHOLE
+        # `said = (...)` block, sentence AND disclaimer, was replaced by the refuted claims
+        # ("CPython SAID THE FOLLOWING KILLED THE CHILD, at column zero after a block it labelled,
+        # in reverse order, each one a VALIDATED exception class") with the join kept, and the
+        # suite stayed 296/296 GREEN. So all six withdrawn wordings could return AND the disclaimer
+        # that is now the reader's only protection could go with them, unnoticed.
+        # ⛔⛔ r17 CODEX H1 — AND THE SHAPE ARGUMENT THAT JUSTIFIED THE FIRST ATTEMPT IS WITHDRAWN.
+        # r16 asserted four refusal TOKENS were present in the rendered report, reasoning that a
+        # refusal differs from an assertion because "its correctness IS its presence". Measured over
+        # a green control in a complete tree: deleting the single word `NOT` reverses the refusal
+        # into an ASSERTION, retains every tested token, and leaves the suite 297/297. A refusal has
+        # SCOPE and POLARITY. ⛔ The child-unproducibility premise failed too — a child run beneath a
+        # DIRECTORY NAMED with those tokens prints them in its own traceback, and `diagnostic_tail`
+        # feeds them into the same report string.
+        # ⭐ So the oracle is EXACT EQUALITY against `_REFUSAL`, which is PURE: no polarity edit
+        # survives it and nothing the child writes can reach it. The second case only asserts the
+        # constant is still EMITTED — see the bound recorded at `_REFUSAL`.
+        case("⭐⭐ r17 H1: the refusal text is EXACTLY this, polarity included",
+             _REFUSAL,
+             "\u26d4 THIS HARNESS DOES NOT CLAIM ANY OF THEM IS THE EXCEPTION, NOR THAT IT KILLED "
+             "THE CHILD, NOR THAT CPYTHON WROTE ANY OF IT, NOR ANYTHING ABOUT WHERE IN THE STREAM "
+             "THEY APPEARED: the subject under test writes this stream, so every reading of it is a "
+             "QUOTATION and not a measurement")
+        case("\u2b50\u2b50 r17 CLAUDE H2: the quoted-lines PREFIX is EXACTLY this, so the six "
+             "refuted wordings cannot return ahead of the refusal",
+             _QUOTED_PREFIX, "stderr printed these lines, in stream order \u2014 ")
+        case("...and the report still EMITS the refusal", any(_REFUSAL in r for r in _repq), True)
+        # ⛔⛔ r15 CLAUDE H2 — THE SURVIVING SENTENCE HAD NO FALSIFIER IN EITHER DIRECTION, which the
+        # annotation's deletion caused: the retired case had covered the sentence's PRESENCE, and
+        # once it went, nothing read the text at all. PROVED with a green control (296/296): the
+        # whole sentence was replaced with the exact claims #279/#280 were filed to DELETE —
+        # "CPython SAID THE FOLLOWING KILLED THE CHILD, in reverse order, each one a VALIDATED
+        # exception class" — and the suite stayed 296/296. So the message could be reverted to the
+        # refuted claims and nothing would notice.
+        # ⭐ This case reads the RENDERED report for a phrase only this harness emits. `diagnostic_tail`
+        # dumps raw stderr into the same string, so the phrase must be one a CHILD cannot produce —
+        # which is the trap that made four false wordings pass their own case.
+        # ⛔⛔ RETIRED WITH ITS SUBJECT, r16 H2 — and the way it died is the finding. It was added
+        # at r15 to give the surviving sentence a falsifier, and r16 showed it tested PRESENCE and
+        # not TRUTH: measured on a complete HARNESS_TREE copy over a green control, replacing the
+        # sentence with the refuted claims while RETAINING the phrase `SPACE-or-TAB-indented` left
+        # the suite 297/297 GREEN. So causal attribution, reversed order and "validated exception
+        # class" could all come back while this case passed. ⭐ A case that asserts a PHRASE cannot
+        # police a CLAIM, so its subject is deleted rather than re-pointed — six false wordings in
+        # a row establish that there is no structural claim here worth keeping.
+        case("...and both lines are there, in the order the child printed them",
+             any(r.index("FIRST_KILLER") < r.index("SHUTDOWN_SECOND")
+                 for r in _repq if "FIRST_KILLER" in r and "SHUTDOWN_SECOND" in r), True)
+        # ⛔⛔ r14 H1 + MY OWN SEVER, 2026-10-13 — THIS CASE COULD NOT FAIL, AND IT WAS THE
+        # ONLY COVER THE ANNOTATION HAD. It asserted `"Exception ignored in" in r`, but CPython
+        # writes that very phrase at shutdown and `diagnostic_tail` carries the raw stderr into
+        # the SAME report string — so the token the case credited to the annotation was supplied
+        # by the child. Measured by severing the annotation entirely: 298/298 still passed. That
+        # is this repository's "printing MORE evidence weakens a substring case" shape, and it is
+        # why r14's forged-attribution High had no falsifier in either direction.
+        # ⭐ So the assertion names text ONLY THIS HARNESS can emit, and the case name no longer
+        # claims CPython labelled anything — `intro` is the CHILD's line.
+        # ⛔⛔ r14 CLAUDE H1 — AND THE REPLACEMENT WORDING WAS FALSE IN 100% OF THE CASES IT
+        # PRINTED, which is worse than the attribution it replaced because it was false about
+        # POSITION, the one category #280's redesign reserved for itself. `intro` is computed
+        # BEFORE the run loop consumes the block (see the loop: the backward scan starts at
+        # `i - 1` where `i` is the block's FIRST indented line), while the annotated line is
+        # `lines[i]` AFTER the loop — so the block always sits BETWEEN them and they are
+        # structurally NEVER adjacent. Measured by the reviewer over all 59,049 five-line
+        # streams of a 9-shape alphabet: 3,720 annotations emitted, the adjacency claim held
+        # 0 times; distances 2 (1,944), 3 (1,296), 4 (480), and 1 line NEVER. Unbounded too —
+        # the backward scan looks past every blank and header, so 42 lines back is reachable.
+        # ⭐ The sting: this very `_q` fixture PRINTS THE REFUTATION three lines under the
+        # claim, because `diagnostic_tail` dumps the raw stderr into the same string.
+        # ⛔⛔ AND THE THIRD WORDING WAS WRONG TOO — I CAUGHT THIS ONE MYSELF, BEFORE ROUND 15,
+        # WHICH IS THE FIRST TIME TODAY. It said "the line INTRODUCING that run". In the
+        # canonical shape this annotation exists for, CPython prints the label, THEN a bare
+        # `Traceback (most recent call last):`, THEN the frames — so the line immediately
+        # introducing the run is the HEADER, and `intro` deliberately skips past it (see the
+        # backward scan's `!= _TB_HEADER` test). Measured on that exact stream: the run is at
+        # index 2, its introducing line is index 1, and `intro` is index 0.
+        # ⭐ So the wording claims only what is true BY CONSTRUCTION: `intro` sits at an index
+        # strictly below the run's start, i.e. somewhere ABOVE it. Four wordings, and the only
+        # one that survives is the one that asserts the least.
+        # ⛔⛔ RETIRED WITH ITS SUBJECT, r15 H1. This case existed to give the annotation the
+        # falsifier it had never had — and r15 made the point that it only ever required the
+        # SENTENCE'S PRESENCE, never its TRUTH, which is why four false wordings all passed it.
+        # The annotation is deleted, so the case goes with it rather than being re-pointed.
+
+    # ⛔⛔ r12 Codex H3 — THE FIFTH WORLD: A CRASH THAT FORGES ITS OWN `[FAIL]` LINE. The 2x2
+    # that closed #271 covers a crash parsing to NO failures; this is the world where the crash
+    # SUPPLIES one. Measured before the fix, over this exact fixture: `caught=True, fails=['the
+    # value is one'], attributed=True, ok=True` — a certified, case-attributed kill over ZERO
+    # executed cases, with `expect` omitted AND with `expect` naming the forged case. The repair
+    # is that attribution reads `so`; the only reason that is safe is measured, not assumed —
+    # every `[FAIL]` emitter under `scripts/` writes to stdout (grepped 2026-10-13, zero to stderr).
+    with tempfile.TemporaryDirectory() as _dh3:
+        _dh3p = pathlib.Path(_dh3)
+        (_dh3p / "h.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        # ⚠ The `\\n` below is a LITERAL backslash-n handed to the child, so the forged `[FAIL]`
+        # sits INSIDE the exception's message — the shape a blind text substitution produces for
+        # real. A real newline there would make the fixture a SyntaxError instead, which is how
+        # the first attempt at this case measured nothing (caught by its own paired assertion).
+        _h3 = [{"name": "a crash whose MESSAGE forges a [FAIL] line", "file": "h.py",
+                "edits": [['def f():\n    return 1',
+                           'raise RuntimeError("no cases ran\\n'
+                           '[FAIL] the value is one: got 2 want 1")\n\n\n'
+                           'def f():\n    return 1']],
+                "expect": "the value is one"}]
+        _okh3, _reph3, _evh3, _ = run_mutations(_dh3p, _h3, {"h.py"})
+        case("⭐⭐ r12 H3: a CRASH that forges a [FAIL] line is caught but NOT attributed",
+             [(m["caught"], m["attributed"]) for m in _evh3], [(True, False)])
+        case("...so it is REFUSED rather than certified as a kill via the case it names",
+             _okh3, False)
+        # ⚠ THE ADJACENT POSITIVE, so the pair cannot pass because attribution stopped working
+        # altogether: the forged name IS a real case name here, and a real failure of that same
+        # case must still be attributed to it. Without this, deleting attribution outright would
+        # leave both cases above green — the must-fire-only shape that cannot fail.
+        _h3ok = [{"name": "a real failure of the same case", "file": "h.py",
+                  # ⚠ `def f():` is part of the find-string because a bare `    return 1`
+                  # is ALSO a substring of the suite's own `        return 1`, and the first
+                  # attempt measured NOTHING for exactly that reason.
+                  "edits": [['def f():\n    return 1', 'def f():\n    return 2']],
+                  "expect": "the value is one"}]
+        _okh3b, _, _evh3b, _ = run_mutations(_dh3p, _h3ok, {"h.py"})
+        case("...while a REAL failure of that very case is still attributed to it",
+             [(m["caught"], m["attributed"]) for m in _evh3b], [(True, True)])
+
+    # ⛔ r11 H1's REAL FALSIFIER, AND THE FIRST ATTEMPT AT IT COULD NOT FAIL — the harness
+    # caught that, not a reading. Over the single-line fixture above, `diagnostic_tail` ALSO
+    # carries `RuntimeError: ...` (stdout is empty there, so stderr is given the whole 400), so
+    # dropping the heading from the MESSAGE left the case green and its mutation SURVIVED at
+    # 1 mutation / 0 killed / 1 survivor. The message's heading is the ONLY source of the type
+    # when the window is FLOODED — which is precisely the harm r11 H1 reported — so the case
+    # has to live over a flooding fixture or it asserts nothing.
+    # ⚠ WHAT KEEPS THIS HONEST IS THE PAIRING, NOT A DERIVATION — r11 Claude L2 corrected the
+    # comment that stood here. `* 60` is a literal and nothing derives it from
+    # `DIAGNOSTIC_WINDOW`, so the old note claimed a safety the code does not implement. But the
+    # harm it feared does not occur, because the PARTNER case fires at the same threshold:
+    # measured with the window raised, control green either side — 600 -> 244/260 (four unrelated
+    # budget cases red, this pair still green and still correct), 1000 -> the partner case goes
+    # RED, 2000 -> both go red. A window change is therefore LOUD, not silent.
+    with tempfile.TemporaryDirectory() as _dml:
+        _dmlp = pathlib.Path(_dml)
+        (_dmlp / "m.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        _ml = [{"name": "the suite dies with a message that FLOODS the window", "file": "m.py",
+                "edits": [["def f():\n    return 1",
+                           'raise RuntimeError("FLOOD_MARKER\\n" + "uninformative\\n" * 60)'
+                           "\n\n\ndef f():\n    return 1"]],
+                "expect": "the value is one"}]
+        _okml, _repml, _, _ = run_mutations(_dmlp, _ml, {"m.py"})
+        case("...and it NAMES THE EXCEPTION, so the type survives however the window is spent",
+             any("RuntimeError: FLOOD_MARKER" in r for r in _repml), True)
+        # ⭐ THE OTHER HALF OF THE PAIR: without this the case above cannot show the heading is
+        # load-bearing rather than merely present — the window must be measured FAILING here.
+        case("...over a fixture where the 400-char window itself loses the heading",
+             any("FLOOD_MARKER" in diagnostic_tail("", r) for r in _repml), False)
+
+    # ⛔⛔ BACKLOG #271 — THE FALSE GREEN, PINNED AS THE 2×2 THAT FOUND IT. One variable alone
+    # shows NOTHING here, which is why eleven rounds walked past it: a crash WITH an `expect` was
+    # already refused (cell A), and a missing `expect` over a real kill is legitimate (cell C).
+    # Only the INTERACTION was wrong. Measured 2026-10-13 before the fix: cell B returned
+    # `(True, True, 0)` — byte-identical to cell D, a real kill — for a suite that died before any
+    # case ran. All four cells are asserted, because three of them are the controls that keep the
+    # fourth from being satisfiable by a blanket refusal.
+    with tempfile.TemporaryDirectory() as _d271:
+        _d271p = pathlib.Path(_d271)
+        (_d271p / "k.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] the value is one: got 2 want 1")\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+
+        def _cell(edits: list, expect: "str | None") -> tuple:
+            """`(ok, attributed, len(report))` for ONE cell of #271's 2×2."""
+            _m = {"name": "cell", "file": "k.py", "edits": [edits]}
+            if expect is not None:
+                _m["expect"] = expect
+            _cok, _crep, _cevm, _ = run_mutations(_d271p, [_m], {"k.py"})
+            return (_cok, _cevm[0]["attributed"], len(_crep))
+
+        case("⛔ #271: a crash WITH an expect is refused and not attributed",
+             _cell(["def f():\n    return 1",
+                    "raise RuntimeError('NOTHING RAN')\n\n\ndef f():\n    return 1"],
+                   "the value is one"), (False, False, 1))
+        case("⛔⛔ #271: ...and a crash whose entry OMITS `expect` is refused IDENTICALLY",
+             _cell(["def f():\n    return 1",
+                    "raise RuntimeError('NOTHING RAN TWICE')\n\n\ndef f():\n    return 1"],
+                   None), (False, False, 1))
+        case("...while a real kill with NO expect still passes, so the clause is no blanket refusal",
+             _cell(["def f():\n    return 1", "def f():\n    return 2"], None), (True, True, 0))
+        case("...and a real kill WITH an expect is untouched, the control for the other three",
+             _cell(["def f():\n    return 1", "def f():\n    return 3"],
+                   "the value is one"), (True, True, 0))
+
+    # ── r11 Codex H1 + r11 Claude H1: the heading rule, in units a window cannot express ────
+    _tb_one = ('Traceback (most recent call last):\n'
+               '  File "/x/probe.py", line 9, in _self_test\n'
+               '    boom()\n'
+               'ValueError: a single-line cause\n')
+    case("lines_after_frame_runs reports the line after a one-block traceback",
+         lines_after_frame_runs(_tb_one), ["ValueError: a single-line cause"])
+    # ⭐ THE REGRESSION CASE FOR r11 CODEX H1, AND IT ASSERTS THE WINDOW'S FAILURE TOO — without
+    # the second half this case cannot show the naming is load-bearing rather than merely correct.
+    _tb_multi = ('Traceback (most recent call last):\n'
+                 '  File "/x/probe.py", line 9, in _self_test\n'
+                 '    boom()\n'
+                 'RuntimeError: ROOT_CAUSE_MARKER\n'
+                 + 'uninformative continuation\n' * 40)
+    case("⭐ r11 H1: a MULTI-LINE message does not hide the heading",
+         lines_after_frame_runs(_tb_multi), ["RuntimeError: ROOT_CAUSE_MARKER"])
+    case("...and the 400-char tail DOES lose it, which is why the heading is read separately",
+         "ROOT_CAUSE_MARKER" in diagnostic_tail("", _tb_multi), False)
+    # ⛔ BOTH BLOCKS, IN ORDER — r11 Claude H1. The predecessor returned the LAST block and the
+    # caller called it the killer; that premise is false at shutdown, so nothing is discarded now.
+    _tb_chain = ('Traceback (most recent call last):\n'
+                 '  File "/x/a.py", line 2, in f\n'
+                 'ValueError: the ORIGINAL cause\n'
+                 '\n'
+                 'The above exception was the direct cause of the following exception:\n'
+                 '\n'
+                 'Traceback (most recent call last):\n'
+                 '  File "/x/b.py", line 7, in g\n'
+                 'RuntimeError: the exception that KILLED it\n')
+    case("a raise-from chain names BOTH blocks, in the order the child printed them",
+         lines_after_frame_runs(_tb_chain),
+         ["ValueError: the ORIGINAL cause",
+          "RuntimeError: the exception that KILLED it"])
+    case("...so no block is discarded as 'merely the cause', which is the premise r11 H1 refuted",
+         len(lines_after_frame_runs(_tb_chain)), 2)
+    case("...and a FRAME line is never named, however many frames precede the heading",
+         lines_after_frame_runs('Traceback (most recent call last):\n'
+                            '  File "/x/c.py", line 1, in <module>\n'
+                            '  File "/x/d.py", line 2, in h\n'
+                            'KeyError: \'k\'\n'), ["KeyError: 'k'"])
+    case("lines_after_frame_runs is empty when stderr names no exception",
+         lines_after_frame_runs("CANNOT RUN - the tree went bad underneath\n"), [])
+    case("...and empty on an empty stderr, which the caller reads as a PRINTER defect instead",
+         lines_after_frame_runs(""), [])
+    # ⭐ r11 Claude H1's INDENTED-BLOCK defect: the opener matched while the frame skip discarded
+    # the heading, so the rule returned whatever the child printed next — measured, `0/0 passed`,
+    # reported as *"the child DIED with 0/0 passed"*. ⟳ r12 Codex H1: `EXCEPTION_LINE` named
+    # here until 2026-10-13 and is GONE. ⟳ So did `is_exception_heading`, which replaced it and was
+    # itself retired by #280's redesign —
+    # the FRAME_LINE clause refuses the block that reaches it. ⚠ A stale symbol in a CODE COMMENT
+    # is invisible to `check-withdrawal`, which globs `docs/` only; this one was found by grep.
+    # ⟳ #280's REDESIGN INVERTED THIS CASE, and the inversion is the point. It used to assert
+    # `[]` under the name "an INDENTED traceback cannot make a tally line into an exception" —
+    # i.e. that the rule CLASSIFIED `0/0 passed` as not-an-exception. Classification is what was
+    # removed. The tally line IS a line that ENDS a real frame run
+    # (`    File "/x/a.py"` matches `FRAME_LINE`), so it is now REPORTED — and the caller claims
+    # nothing about it being an exception, which is the whole repair.
+    case("⭐ #280: a tally line after a frame block is REPORTED, not classified",
+         lines_after_frame_runs('  Traceback (most recent call last):\n'
+                            '    File "/x/a.py", line 2, in f\n'
+                            '  ValueError: indented\n'
+                            '0/0 passed\n'), ["0/0 passed"])
+
+    # ⛔ REAL CHILDREN FROM HERE, NOT TYPED FIXTURES — and that distinction is the whole reason
+    # r11 Claude H1 exists. A typed traceback asserts MY idea of CPython's format, and the
+    # assumption it killed (that a header always introduces a traceback, and that the last block
+    # is the killer) had already survived eight typed fixtures.
+    def _child_stderr(src: str) -> str:
+        with tempfile.TemporaryDirectory() as _ctd:
+            _cp = pathlib.Path(_ctd) / "probe.py"
+            _cp.write_text(src)
+            return subprocess.run([sys.executable, str(_cp)],
+                                  capture_output=True, text=True).stderr
+
+    _shut = _child_stderr('class Leaky:\n'
+                          '    def __del__(self): raise ValueError("SHUTDOWN_NOISE")\n'
+                          'leak = Leaky()\n'
+                          'raise RuntimeError("THE_REAL_KILLER")\n')
+    case("⭐⭐ r11 H1: a __del__ raise at SHUTDOWN does not displace the real exception",
+         lines_after_frame_runs(_shut),
+         ["RuntimeError: THE_REAL_KILLER", "ValueError: SHUTDOWN_NOISE"])
+    # ⛔⛔ RETIRED WITH ITS SUBJECT, r15 H1 — this case asserted the shutdown FLAG
+    # (`[False, True]`), and the flag no longer exists. Its sentence had been refuted in four
+    # successive wordings (false attribution, false adjacency, false in the canonical shape, and
+    # finally false about "began" because the test ran on the STRIPPED line), so #280's own answer
+    # was applied to it: stop claiming. The two headings are still asserted by the case ABOVE,
+    # which is the part that was always true — a `__del__` raise does not displace the real
+    # exception, because the caller reports BOTH and ranks neither.
+    _atex = _child_stderr('import atexit\n'
+                          'def boom(): raise ValueError("ATEXIT_NOISE")\n'
+                          'atexit.register(boom)\n'
+                          'raise RuntimeError("THE_REAL_KILLER")\n')
+    case("...and an atexit callback is the same shape (the LABEL claim is gone with the flag)",
+         lines_after_frame_runs(_atex),
+         ["RuntimeError: THE_REAL_KILLER", "ValueError: ATEXIT_NOISE"])
+    # ⛔⛔ THE COMPOSITE r11 H1 CALLED THE ONE THAT MATTERS: shutdown noise whose message floods
+    # the window. The old rule named the noise AND the window held nothing else, so the real
+    # killer appeared NOWHERE. Both halves are asserted, because naming it only matters if the
+    # window genuinely cannot.
+    _flood = _child_stderr('class Leaky:\n'
+                           '    def __del__(self): raise ValueError("NOISE\\n" + "chatter\\n" * 40)\n'
+                           'leak = Leaky()\n'
+                           'raise RuntimeError("THE_REAL_KILLER_nobody_will_see")\n')
+    case("⭐⭐ r11 H1's COMPOSITE: the real exception is named even when noise floods the window",
+         any("THE_REAL_KILLER_nobody_will_see" in _h for _h in lines_after_frame_runs(_flood)),
+         True)
+    case("...which the 400-char window alone does NOT carry, so the naming is load-bearing",
+         "THE_REAL_KILLER_nobody_will_see" in diagnostic_tail("", _flood), False)
+    # ⭐ A top-level SyntaxError prints NO header, and a blind text substitution is the likeliest
+    # way to produce one. The predecessor returned None here — on the most likely crash of all.
+    _syn = _child_stderr('def f(:\n    pass\n')
+    case("⭐ a top-level SyntaxError has NO traceback header and is still named",
+         lines_after_frame_runs(_syn), ["SyntaxError: invalid syntax"])
+    case("...and THAT is why no header literal is used to find a heading",
+         _TB_HEADER in _syn, False)
+    _grp = _child_stderr('raise ExceptionGroup("g", [ValueError("a")])\n')
+    case("an ExceptionGroup names nothing here, which is the STATED BOUND, not a silent miss",
+         lines_after_frame_runs(_grp), [])
+
+    # ⛔⛔ r12 Claude M2 — THE TWO BOUNDS, PINNED. Both were asserted by NOTHING when the frame
+    # marker landed, and one of them had a code comment claiming it was closed.
+    _frames_only = _child_stderr(
+        'import traceback, sys\ntraceback.print_stack()\nsys.stderr.write("READY\\n")\n')
+    case("⭐⭐ r12 M2: a real FRAME RUN WITH NO HEADING hands the line that ENDS it over",
+         lines_after_frame_runs(_frames_only), ["READY"])
+    case("...so the bound is stated, not defended — the structure rule alone does not reject it",
+         any(FRAME_LINE.match(_l) for _l in _frames_only.split("\n")), True)
+    _nf = _child_stderr(
+        'import sys\nsys.tracebacklimit = 0\nraise RuntimeError("REAL_KILLER")\n')
+    case("⭐⭐ r12 M2: a heading with ZERO frames is NOT seen — the second stated bound",
+         lines_after_frame_runs(_nf), [])
+    case("...and that stderr really is a bare exception line, so the bound is about frames",
+         _nf.strip(), "RuntimeError: REAL_KILLER")
+
+    # ⛔⛔ r12 Codex H1 — A RUN OF INDENTED LINES IS NOT A FRAME BLOCK, and until 2026-10-13 this
+    # rule believed it was. All three fixtures below are REAL CHILDREN, because the predecessor's
+    # defect was invisible to reasoning about the parser and obvious the moment one was run.
+    _msgcont = _child_stderr(
+        'raise RuntimeError("real\\n  continuation\\nValueError: FABRICATED")\n')
+    case("⭐⭐ r12 H1: an indented MESSAGE continuation cannot fabricate a second heading",
+         lines_after_frame_runs(_msgcont), ["RuntimeError: real"])
+    case("...and the fabricated type appears NOWHERE in the headings",
+         any("FABRICATED" in _h for _h in lines_after_frame_runs(_msgcont)), False)
+    # ⚠ The adjacent negative, not an absurd one: ordinary indented progress output. The
+    # ⛔ r15 Claude M — predecessor returned `[("READY", False)]` here, and my mechanical
+    # tuple-to-string conversion rewrote this HISTORICAL comment into `["READY"]`, which is false:
+    # the predecessor returned TUPLES. A regex applied to a region cannot tell a live expectation
+    # from a sentence ABOUT a dead one. It was an exception heading for a child that
+    # raised nothing at all.
+    _prog = _child_stderr(
+        'import sys\nsys.stderr.write("  connecting\\nREADY\\n")\n')
+    case("⭐ r12 H1: indented output with NO `File \"` line names nothing",
+         lines_after_frame_runs(_prog), [])
+    case("...and THAT is the clause: the run carries no frame marker",
+         any(FRAME_LINE.match(_l) for _l in _prog.split("\n")), False)
+    # ⛔ Python identifiers are NOT ASCII, and the predecessor's regex was. Measured: the type
+    # and its marker both vanished from the report — the harm the diagnostic exists to prevent.
+    _uni = _child_stderr('class \u00c9chec(Exception):\n    pass\n'
+                         'raise \u00c9chec("ROOT_MARKER")\n')
+    # ⛔⛔ #280 CLOSED — the two directions round 13 measured, now asserted. Both were LOST or
+    # FABRICATED by every predicate this rule ever had; removing the predicate closes both, and
+    # these are the cases that would go red if one came back.
+    _badname = _child_stderr('raise type("bad-name", (Exception,), {})("ROOT_MARKER")\n')
+    case("⭐⭐ #280: a class whose printed name is NOT an identifier is REPORTED, not dropped",
+         any("bad-name" in _h for _h in lines_after_frame_runs(_badname)), True)
+    case("...so its marker reaches a reader, which is the harm #280 was filed for",
+         any("ROOT_MARKER" in _h for _h in lines_after_frame_runs(_badname)), True)
+    _badmod = _child_stderr('E = type("Err", (Exception,), {"__module__": "bad-module"})\n'
+                            'raise E("ROOT_MARKER")\n')
+    case("⭐ #280: a non-identifier __module__ is reported too",
+         any("bad-module" in _h for _h in lines_after_frame_runs(_badmod)), True)
+    # ⚠ The OTHER direction: a frame-shaped line inside an exception MESSAGE still produces a
+    # second entry — and that is now HONEST rather than a defect, because the caller claims only
+    # that the child printed these lines, which it did.
+    _fakeframe = _child_stderr(
+        'raise RuntimeError(\'real\\n  File "fake", line 1\\nValueError: MESSAGE_ONLY\')\n')
+    case("⭐ #280: a frame-shaped line INSIDE a message still yields two reported lines",
+         len(lines_after_frame_runs(_fakeframe)), 2)
+    case("...which is honest now: the report claims a LINE was printed, not that it is an exception",
+         any("MESSAGE_ONLY" in _h for _h in lines_after_frame_runs(_fakeframe)), True)
+
+    case("⭐⭐ r12 H1: a NON-ASCII exception class is named, because identifiers are not ASCII",
+         lines_after_frame_runs(_uni), ["\u00c9chec: ROOT_MARKER"])
+    case("...so its marker survives into something a reader can see",
+         any("ROOT_MARKER" in _h for _h in lines_after_frame_runs(_uni)), True)
+    # ⛔ #280 — FOUR CASES FOR `is_exception_heading` WERE RETIRED WITH THEIR SUBJECT here
+    # (2026-10-13, the owner's REDESIGN choice). They asserted that a tally line, a
+    # `[FAIL]` line, a bare type and a dotted type were correctly classified — and
+    # classification is exactly what was removed. This is the one sanctioned kind of
+    # coverage fall: the cases are retired WITH the code they name, recorded here and
+    # at `EXPECTED_MUTATIONS` with the count and the reason.
 
     # ⛔ ⟳ 2026-09-09, mutation-faithfulness round 1 (F1 HIGH + F2 MEDIUM). ONE fixture, because
     # the two rules it covers are the two halves of the same sentence — "the suite went red VIA
@@ -3096,8 +4821,18 @@ def _self_test() -> int:
                              "VALUE != int(pwd.getpwuid(os.getuid()).pw_uid)"]],  # not-a-home-escape: fixture: the MUTATION carries the route
                   "expect": "value is one"}]))
             _ok5, _rep5, _ = mutate_delivered(_r)
+            # ⛔ THE REFUSAL'S OWN SENTENCE, NOT THE ROUTE'S NAME — and this case went
+            # UNFALSIFIABLE the day the mutation-loop diagnostic started printing the child's
+            # traceback (2026-10-13, found by CI shard 5 as a SURVIVOR, reproduced at
+            # `--shard0 604/1535`). This fixture's replacement text makes the fixture's own
+            # suite CRASH, so the run lands in the `not fails` branch, and the traceback
+            # carries the offending SOURCE LINE — `getpwuid` and all. The case then passed
+            # whether or not `home_escapes(repl)` was ever consulted, which is precisely the
+            # ambient-reason shape this file has now paid for twice in one day.
+            # ⚠ `REPLACEMENT text is scanned` is emitted ONLY by the `repl` call site, so it
+            # cannot be supplied by the target scan, by a traceback, or by any other refusal.
             case("...and a CLEAN target whose MUTATION introduces the route is refused",
-                 (_ok5, any("getpwuid" in r for r in _rep5)), (False, True))  # not-a-home-escape: asserts the report mentions it
+                 (_ok5, any("REPLACEMENT text is scanned" in r for r in _rep5)), (False, True))
         # ⟲ Backlog #74. THE CONTROL AFTER THE SEQUENCE. It exists because a tree that goes bad at
         # mutation 17 makes every later suite exit 1, which `run_mutations` records as `caught`
         # indistinguishably from a real catch. Deleting the check left the suite GREEN — a guard
@@ -3396,6 +5131,7 @@ def _self_test() -> int:
                                       "scripts/check-producer-enumeration.py",
                                       # ⟳ 2026-09-12: the guard that enforces R4, finally subject
                                       # to it. A LIVE inventory entry, added with the manifest.
+                                      "scripts/check-provenance.py",
                                       "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
                                       "scripts/check-rc-contract.py",
@@ -3416,10 +5152,12 @@ def _self_test() -> int:
                                       # manifest — and it is NOT a `check-*` guard, so this list is
                                       # the only place that names it. Its R4 debt is dropped from
                                       # WIDENED_MANIFEST_DEBT in the same commit.
+                                      "scripts/check-withdrawal.py",
                                       "scripts/codex-frontier-model.py",
                                       "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
+                                      "scripts/find-claim.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
@@ -4949,7 +6687,244 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1408)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1552)
+
+    # ── backlog #251: coverage of what this branch WROTE ────────────────────────────────────
+    _SRC251 = (
+        "def pure_rule(x):\n"
+        "    return x + 1\n"
+        "\n"
+        "def fetches():\n"
+        "    return open('f').read()\n"
+        "\n"
+        "def main():\n"
+        "    return 0\n"
+        "\n"
+        "def _self_test():\n"
+        "    def helper():\n"
+        "        return 1\n"
+        "    return helper()\n"
+    )
+    case("⭐ a changed PURE function with no anchor is reported",
+         uncovered_functions(_SRC251, {2}, set()), ["pure_rule"])
+    case("...and is silent once an anchor lands inside it",
+         uncovered_functions(_SRC251, {2}, {"pure_rule"}), [])
+    case("a function that does I/O is exempt — the fetch half is deliberately uncovered",
+         uncovered_functions(_SRC251, {5}, set()), [])
+    case("`main` is exempt; check-main-drivable.py owns it",
+         uncovered_functions(_SRC251, {8}, set()), [])
+    case("the suite itself is exempt — mutating a case is not the point",
+         uncovered_functions(_SRC251, {11}, set()), [])
+    case("⭐ ...and so is a helper NESTED inside the suite, which is scaffolding",
+         uncovered_functions(_SRC251, {12}, set()), [])
+    case("a file that does not parse yields nothing rather than raising",
+         uncovered_functions("def (", {1}, set()), [])
+    # ⛔ ROUND 1 CODEX MEDIUM — the I/O exemption was too generous in two ways.
+    case("⭐ a BARE NAME that merely looks like I/O does not exempt a pure rule",
+         uncovered_functions("def rule(x):\n    return stat(x) > 10\n", {2}, set()), ["rule"])
+    case("⭐ ...and I/O inside a NESTED helper does not exempt the outer rule",
+         uncovered_functions(
+             "def rule(x):\n    def helper():\n        return open('x').read()\n    return x + 1\n",
+             {4}, set()), ["rule"])
+    case("a genuine attribute-call read still exempts",
+         uncovered_functions("def fetch(p):\n    return p.read_text()\n", {2}, set()), [])
+    case("`open` as a bare builtin still counts as I/O",
+         uncovered_functions("def fetch(p):\n    return open(p).read()\n", {2}, set()), [])
+    # ⛔ ROUND 1 CODEX MEDIUM — multi-edit anchors must bind SEQUENTIALLY.
+    case("⭐ a second edit whose anchor only exists BEFORE the first edit is UNBOUND",
+         len(binding_problems([{"name": "m", "file": "scripts/s.py",
+                                "edits": [["return True", "return False"], ["True", "False"]]}],
+                              {"scripts/s.py": "def f():\n    return True\n"})[0]), 1)
+    case("...and a genuinely sequential pair is clean",
+         binding_problems([{"name": "m", "file": "scripts/s.py",
+                            "edits": [["return True", "return MAYBE"], ["MAYBE", "False"]]}],
+                          {"scripts/s.py": "def f():\n    return True\n"})[0], [])
+    case("coverage_exempt: a dunder carries no rule",
+         coverage_exempt("__repr__", None, False), True)
+    case("coverage_exempt: an ordinary pure function is NOT exempt",
+         coverage_exempt("decide", None, False), False)
+    case("coverage_exempt: doing I/O exempts it",
+         coverage_exempt("decide", None, True), True)
+    case("coverage_exempt: being nested in the suite exempts it",
+         coverage_exempt("helper", "_self_test", False), True)
+    # ⚠ THE CASE ABOVE EXERCISES `enclosing`, NOT `name` — measured: the mutation deleting
+    # `name in SUITE_FUNCS` SURVIVED it. The suite function itself needs its own case.
+    case("coverage_exempt: the suite function ITSELF is exempt, by NAME",
+         coverage_exempt("_self_test", None, False), True)
+    # ⚠ AND THE NESTED-WALK CASE BELOW NEEDS A NON-SUITE PARENT. With recursion removed, a
+    # helper nested in an ordinary function is still reported — under its PARENT's name — so a
+    # case that only counts findings cannot see the difference. This one names it.
+    case("⭐ a helper nested in an ORDINARY function is reported under its OWN name",
+         uncovered_functions(
+             "def outer(x):\n    def inner(y):\n        return y + 1\n    return inner(x)\n",
+             {3}, set()), ["inner"])
+    case("changed_lines_by_path reads a hunk header into line numbers",
+         changed_lines_by_path("+++ b/scripts/a.py\n@@ -1 +4,2 @@"), {"scripts/a.py": {4, 5}})
+    case("...and a single-line hunk has no count, defaulting to one line",
+         changed_lines_by_path("+++ b/scripts/a.py\n@@ -1 +9 @@"), {"scripts/a.py": {9}})
+    case("...and a diff naming no file yields nothing",
+         changed_lines_by_path("@@ -1 +1 @@"), {})
+
+    # ── backlog #252: the eager binding pass ────────────────────────────────────────────────
+    _SRC = {"scripts/a.py": "def f():\n    return 1\n\ncase('the name', 1, 1)\n"}
+    case("⭐ an anchor absent from its target is an ERROR, not a 15-minute shard",
+         len(binding_problems([{"name": "m", "file": "scripts/a.py",
+                                "edits": [["return 2", "return 3"]]}], _SRC)[0]), 1)
+    case("an anchor present exactly once is clean",
+         binding_problems([{"name": "m", "file": "scripts/a.py",
+                            "edits": [["return 1", "return 2"]]}], _SRC)[0], [])
+    case("⭐ an AMBIGUOUS anchor — present twice — is an error too, because the mutation is "
+         "then not the edit its author described",
+         len(binding_problems([{"name": "m", "file": "scripts/dup.py",
+                                "edits": [["x", "y"]]}], {"scripts/dup.py": "x x"})[0]), 1)
+    case("an unreadable target is an error rather than a silent skip",
+         len(binding_problems([{"name": "m", "file": "scripts/gone.py",
+                                "edits": [["a", "b"]]}], {"scripts/gone.py": None})[0]), 1)
+    case("an expect naming a real case literal produces no warning",
+         binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                            "expect": ["the name"]}], _SRC)[1], [])
+    # ── r1 Claude M1: the expect half has TWO populations and two severities ──────────────
+    # ⟳ THIS CASE USED TO ASSERT (1, 0) — "WARNS rather than errs (4.3% are f-strings)" — and
+    # that lenience is what let B1 through: a renamed-away expect was summarised beside 67
+    # f-string names. The 4.3% figure was right about f-strings and wrong as a reason to
+    # forgive every unmatched expect. Now an UNEXPLAINED one errs; an EXPLAINED one still warns.
+    case("⭐ an expect NOTHING in the target could produce is an ERROR, not a summarised warning",
+         (len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                                 "expect": ["no such case"]}], _SRC)[1]),
+          len(binding_problems([{"name": "m", "file": "scripts/a.py", "edits": [["return 1", "x"]],
+                                 "expect": ["no such case"]}], _SRC)[0])), (0, 1))
+    _FSTR = {"scripts/b.py": "case(f'{x} produced by an f-string', 1, 1)\n"}
+    case("...but one a literal INSIDE it could have produced still only WARNS",
+         (len(binding_problems([{"name": "m", "file": "scripts/b.py",
+                                 "edits": [["f-string", "g-string"]],
+                                 "expect": ["a name produced by an f-string"]}], _FSTR)[1]),
+          len(binding_problems([{"name": "m", "file": "scripts/b.py",
+                                 "edits": [["f-string", "g-string"]],
+                                 "expect": ["a name produced by an f-string"]}], _FSTR)[0])),
+         (1, 0))
+    _PREF = {"scripts/c.py": "print(f'[ok] missing file is CANNOT RUN: got {c}')\n"}
+    case("...and so does one CONTAINED IN a literal — the containment runs BOTH ways, which a "
+         "one-directional test got wrong on 2 live files",
+         len(binding_problems([{"name": "m", "file": "scripts/c.py",
+                                "edits": [["CANNOT RUN", "CANNOT WALK"]],
+                                "expect": ["missing file is CANNOT RUN"]}], _PREF)[1]), 1)
+    # ⚠ THE FIXTURE MUST HOLD A SHORT LITERAL THAT **WOULD** MATCH BELOW THE FLOOR, or the case
+    # passes for an ambient reason. The first version used literals none of which appeared in the
+    # expect at any length, so dropping the floor to 0 changed nothing and the mutation SURVIVED
+    # a green suite — `a-case-can-pass-for-an-ambient-reason`, caught by the sweep, not by me.
+    # "case" (4 chars) IS inside the expect, so this case is the floor and nothing else.
+    # ⚠ THE LITERALS HERE ARE 8 AND 10 CHARACTERS, chosen so the FLOOR is the binding
+    # constraint and the fraction is not: a 20-char expect needs int(20*0.3)=6, which both
+    # clear, and 12, which neither does. The earlier fixture used 4-5 char literals, and once
+    # the fraction term arrived it covered for the floor — the floor mutation SURVIVED a green
+    # 220/220. A class fix that makes an existing mutation unkillable is backlog #154's shape,
+    # and only the sweep sees it.
+    case("the overlap FLOOR refuses a coincidence — a short shared literal explains nothing",
+         expect_explained("a renamed case title", {"renamed ", "case title"}), False)
+    case("...and the same fixture at a floor of 0 IS explained, which is what makes the line "
+         "above a test of the floor rather than of the fixture or of the fraction",
+         expect_explained("a renamed case title", {"renamed ", "case title"}, floor=0), True)
+    # ── r2 Codex MEDIUM: the candidate SET was wrong in both directions ─────────────────────
+    _DOC = ('"""Historical title: the old case is gone forever"""\n'
+            'case("replacement title", 1, 1)')
+    case("⭐ r2: a stale title surviving inside a DOCSTRING is NOT an explanation",
+         expect_explained("the old case is gone forever", case_name_literals(_DOC)), False)
+    case("...and the replacement title, being a real case name, still IS a literal",
+         "replacement title" in case_name_literals(_DOC), True)
+    _FS = 'case(f"{x} works", 1, 1)'
+    case("⭐ r2: an f-string that PRODUCES the name explains it exactly, however short its "
+         "static part",
+         any(p.match("alpha works") for p in case_name_patterns(_FS)), True)
+    case("...and it does not explain a name it could never produce",
+         any(p.match("alpha fails") for p in case_name_patterns(_FS)), False)
+    case("...and an f-string with NO static text explains nothing, or it would explain everything",
+         case_name_patterns('case(f"{a}{b}", 1, 1)'), [])
+    # ── r2 Claude MEDIUM: only a CASE-NAME POSITION supplies a candidate ────────────────────
+    case("⭐ r2: an f-string that is NOT in a case-name position supplies no pattern — an output "
+         "template could forgive a stale expect in 62 of 62 files before this",
+         case_name_patterns('print(f"progress: {n} — {m} done")'), [])
+    case("...and the same f-string IN a case-name position does supply one",
+         len(case_name_patterns('case(f"progress: {n} — {m} done", 1, 1)')), 1)
+    case("...and a TABLE ROW's first element counts too, which is how most tables here are built",
+         len(case_name_patterns('CASES = [(f"{x} works", 1, 1)]')), 1)
+    case("...while a LATER POSITIONAL argument does not, because a case name is the first one "
+         "and the rest are the expectation",
+         case_name_patterns('case("real name", f"{x} works", 1)'), [])
+    # ── r3 Codex H1: the two forms the positional rule FALSELY REFUSED ──────────────────────
+    case("⭐ r3: a case name passed by KEYWORD is accepted, which the positional rule refused",
+         len(case_name_patterns('case(name=f"{x} works", got=g(), want=1)')), 1)
+    # ⟳ r3 Claude HIGH — THIS CASE IS REPLACED, not deleted, and the replacement is the one it
+    # should always have been: it asserted that SOME assignment yields a pattern, which is true
+    # of `sql = f"..."` too, so it could not see that the branch admitted 80 non-case rows.
+    case("⭐ r3: an assignment is NOT a case-name producer — `sql = f\"...\"` and "
+         "`title = f\"...\"` are indistinguishable, and the branch that accepted both admitted "
+         "80 of 142 candidate rows from 34 of 62 files",
+         (case_name_patterns('title = f"{x} works"'),
+          case_name_patterns('sql = f"SELECT {col} FROM t"')), ([], []))
+    case("...and a NON-case call is refused however many arguments it has — `.split(sep, 1)` "
+         "was a pattern under the positional rule, in 11 of 62 files",
+         case_name_patterns('parts = html.split(f"<h2>{heading}</h2>", 1)'), [])
+    case("...as is `re.compile`, which is the same shape", case_name_patterns(
+         'RX = re.compile(f"\\b{word}\\b", re.I)'), [])
+    case("...while the same f-string at min_static=0 WOULD match anything, which is why the "
+         "floor on static text exists",
+         bool(case_name_patterns('case(f"{a}{b}", 1, 1)', min_static=0)[0].match("literally any")),
+         True)
+
+    # ── the FRACTION, which the floor alone cannot express (measured 2.9% -> 0.7%) ───────────
+    # A long expect sharing only a short run with some unrelated literal is the shape that
+    # slipped through: 12 characters out of 80 explains nothing about the other 68.
+    _LONGEX = "the REVISED wording counts as unresolved, never as done"
+    case("⭐ a 13-char overlap does NOT explain a 55-char expect — the floor alone forgave 41 "
+         "of 1,455 synthesised renames this way",
+         expect_explained(_LONGEX, {"never as done"}), False)
+    case("...and the SAME pair is forgiven when the fraction is dropped, so the case tests the "
+         "fraction and not the fixture",
+         expect_explained(_LONGEX, {"never as done"}, fraction=0.0), True)
+    case("...while a literal covering most of the expect still explains it, which is what keeps "
+         "the 67 live f-string names out of the error list",
+         expect_explained(_LONGEX, {"wording counts as unresolved, never as done"}), True)
+
+    # ⛔ r4 Codex LOW — BOTH CONSTANTS WERE UNPINNED, AND A SURVIVING MUTATION IS NOT A TEST.
+    # Measured over this file's own suite, in memory, with the control green at 234/234: FLOOR
+    # 12->11 passed 234/234, FLOOR 12->13 passed 234/234, FRACTION 0.3->0.4 passed 234/234. Only
+    # 0.3->0.2 was killed. Three of four adjacent steps bought nothing, so either constant could
+    # be retuned by a future reader with the suite still green — which is the state the ratchet
+    # exists to forbid. These three cases bracket each constant from the side the old ones did
+    # not: the floor from ABOVE and BELOW, and the fraction at the step that was free.
+    _SHORTEX = "the fold is clean and converged"                     # 31 chars; int(31*0.3) = 9,
+    _LONG97 = ("the replacement figure beside the old one means this text is correcting itself "
+               "today and tomorrow")                                 # 97 chars; int(97*0.3) = 29
+    case("⭐ a 12-char literal explains a 31-char expect, because the FLOOR and not the fraction "
+         "is what governs a short expect — this is the case a floor of 13 breaks",
+         expect_explained(_SHORTEX, {"is clean and"}), True)
+    case("...and an 11-char literal over the SAME expect does NOT, so the floor is bracketed from "
+         "both sides and a floor of 11 breaks this one",
+         expect_explained(_SHORTEX, {"is clean an"}), False)
+    case("⭐ a 36-char literal explains a 97-char expect at need=29, which a fraction of 0.4 "
+         "refuses at need=38 — the step that was free before this case",
+         expect_explained(_LONG97, {"figure beside the old one means this"}), True)
+    case("⭐ THE WITNESS: B1's own stale expect is refused by this rule",
+         expect_explained(
+             "the replacement figure beside the old one means the text is correcting itself",
+             {"the CORRECTED FORM beside the old claim means the text is correcting itself",
+              "one of several corrected forms is enough"}), False)
+    case("...while the case it was RETARGETED to is accepted, so the fix is what makes it pass",
+         expect_explained(
+             "the CORRECTED FORM beside the old claim means the text is correcting itself",
+             {"the CORRECTED FORM beside the old claim means the text is correcting itself"}),
+         True)
+    case("⭐ expects_of accepts a bare STRING — 726 of 1,435 live entries are written that way, "
+         "and iterating one walks it character by character",
+         expects_of({"expect": "one name"}), ["one name"])
+    case("...and a list passes through unchanged",
+         expects_of({"expect": ["a", "b"]}), ["a", "b"])
+    case("...and a missing expect is no expects, not a crash",
+         expects_of({}), [])
+    case("case_name_literals finds a literal the suite would print",
+         "the name" in case_name_literals("case('the name', 1, 1)"), True)
+    case("...and returns an empty set for a file that does not parse, rather than raising",
+         case_name_literals("def ("), set())
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -5073,6 +7048,12 @@ def main(argv: list[str]) -> int:
                     help="FAIL if the evidence block pasted in the plan is not exactly "
                          "what this run produces. Generating the block bought "
                          "provenance; only this buys freshness.")
+    ap.add_argument("--binding", action="store_true",
+                    help="backlog #252: the eager anchor/expect pass, no tree staged (~66 ms)")
+    ap.add_argument("--diff-coverage", metavar="BASE", nargs="?", const="origin/master",
+                    help="backlog #251: functions this branch changed with no mutation reaching them")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="with --binding: list every expect warning instead of counting them")
     ap.add_argument("--mutate", metavar="ROOT",
                     help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
                          "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
@@ -5186,6 +7167,10 @@ def main(argv: list[str]) -> int:
         if why:
             print(why, file=sys.stderr)
             return 2
+    if a.binding:
+        return run_binding(pathlib.Path("."), verbose=a.verbose)
+    if a.diff_coverage:
+        return run_diff_coverage(pathlib.Path("."), a.diff_coverage)
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
@@ -5201,6 +7186,14 @@ def main(argv: list[str]) -> int:
         # ⚠ ONLY WHEN THE MANIFEST ITSELF LOADS. Over a broken manifest `len(muts)` is a
         # shortfall, and "shard 4 of 4 is empty" would then be a confident answer to the wrong
         # question — the manifest's own problems belong to `mutate_delivered`'s report.
+        # ⛔ BACKLOG #252 IS A SEPARATE COMMAND (`--binding`), NOT A HOOK HERE, and the reason
+        # is worth keeping. Wiring the eager pass into this path DID work and broke two existing
+        # cases: the r5 H1 fixtures build deliberately-absent anchors to exercise the TOTAL
+        # SHORTFALL tally, and an eager refusal means that path can no longer be reached through
+        # the CLI. Coverage of `mutate_delivered`'s reporting is worth more than saving a
+        # redundant 66 ms inside a run that is already fifteen minutes long. CI runs `--binding`
+        # as its own step BEFORE the sweep, which is where "before any tree is staged" is
+        # actually satisfied.
         if shard is not None:
             _muts, _problems = load_manifests(mroot)
             why = None if _problems else shard_refusal(shard[0], shard[1], len(_muts))

@@ -10,12 +10,13 @@ review always runs on whatever OpenAI currently ships as frontier.
 Usage:
   python3 scripts/codex-frontier-model.py              # print the frontier slug (e.g. gpt-5.5)
   python3 scripts/codex-frontier-model.py --write-config  # also sync ~/.codex/config.toml
-  python3 scripts/codex-frontier-model.py --self-test   # 22 cases, pure, no network
+  python3 scripts/codex-frontier-model.py --self-test   # 51 cases, pure, no network
 
 Selection: among models that are visible (visibility == "list") and API-supported,
-pick the one with the smallest `priority`. Exits non-zero with a message on stderr if
-the cache is missing or yields no candidate (caller should fall back to `codex`'s own
-default or pass --model explicitly).
+pick the one with the smallest `priority`. Exits **2 — CANNOT RUN** with a message on stderr if
+the cache is missing, unreadable, malformed, or yields no candidate (caller should fall back to
+`codex`'s own default or pass --model explicitly). ⛔ 2 AND NOT 1: none of those is a violation,
+and `sys.exit(<string>)` — which every arm used until r4 — exits 1. See `cannot_run`.
 
 KNOWN LIMITATION — this script CANNOT guarantee the slug it prints is runnable.
 The cache carries no minimum-client-version field, so a model newer than the pinned Codex
@@ -40,6 +41,7 @@ import json
 import os
 import re
 import sys
+from typing import NoReturn
 
 CACHE = os.path.expanduser("~/.codex/models_cache.json")
 CONFIG = os.path.expanduser("~/.codex/config.toml")
@@ -109,6 +111,29 @@ def usable_models(data: dict) -> "list[str]":
     return [m["slug"] for m in listed]
 
 
+def failed_requirements(m: dict) -> list[str]:
+    """Which of `usable_models`' requirements this entry fails, named. PURE.
+
+    ⛔ Backlog #254 exists because the refusal named a CONDITION ("a visibility near-miss
+    exists") and reported a CONCLUSION ("none is listed", "the CLI is stale") that the condition
+    does not support. Measured on a cache holding a `hide` model that is otherwise fine AND a
+    `list` model that fails `supported_in_api`: `usable_models` was `[]` and the message said no
+    model is listed — while one was. Naming the predicate per entry is what makes that
+    impossible to say by accident.
+    """
+    out: list[str] = []
+    if not m.get("slug"):
+        out.append("no slug")
+    if not m.get("supported_in_api"):
+        out.append("not supported in the API")
+    pr = m.get("priority")
+    if not isinstance(pr, (int, float)) or isinstance(pr, bool):
+        out.append("no numeric priority")
+    if m.get("visibility") != "list":
+        out.append(f"visibility is {m.get('visibility') or 'unset'!r}, not 'list'")
+    return out
+
+
 def refusal_message(data: dict) -> str:
     """Why no model could be resolved, in terms the operator can ACT on. PURE.
 
@@ -127,6 +152,9 @@ def refusal_message(data: dict) -> str:
     # first version omitted the priority requirements, so it labelled a model with a null or
     # boolean priority "hidden but otherwise usable" when the resolver would reject it even if
     # listed. A near-miss has to actually be a near-miss.
+    # #254: the two populations the message must not confuse — models that fail ONLY visibility,
+    # and models that ARE listed yet fail something else.
+    listed = [m for m in models if m.get("visibility") == "list"]
     near = sorted((m for m in models
                    if m.get("supported_in_api")
                    and isinstance(m.get("priority"), (int, float))
@@ -147,8 +175,21 @@ def refusal_message(data: dict) -> str:
         # data said, so it diagnosed an outdated CLI even when the cache held no usable model for
         # some entirely different reason. It is only the likely cause when models ARE on offer
         # and none of them is listed.
-        bits.append("  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but none "
-                    "is listed. Run `codex update`, then re-run this.")
+        # ⟳ ⛔ AND THAT CONDITION WAS STILL WRONG — backlog #254, round 2 Codex Medium 2, the
+        # SECOND correction of this same sentence. "A near-miss exists" does not imply "nothing
+        # is listed": a `list`-visible model can be present and fail `supported_in_api`. The
+        # branch now asks the question the sentence answers.
+        if not listed:
+            bits.append("  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but "
+                        "none is listed. Run `codex update`, then re-run this.")
+        else:
+            bits.append("  ⛔ NOT A STALE CLI: " + str(len(listed)) + " model(s) ARE `list`-visible "
+                        "and fail a DIFFERENT requirement — "
+                        + "; ".join(f"{m.get('slug') or '<no slug>'}: "
+                                    + ", ".join(r for r in failed_requirements(m)
+                                                if "visibility" not in r)
+                                    for m in listed)
+                        + ". Inspect those entries; `codex update` will not change them.")
     elif models:
         bits.append("  ⚠ and NONE of them is a near-miss: every entry fails a requirement other "
                     "than visibility (API support, or a numeric non-boolean priority, or a slug). "
@@ -160,6 +201,37 @@ def refusal_message(data: dict) -> str:
                 "unavailable — verify that separately with `codex exec -m <slug> ...` from inside "
                 "a git worktree before recording a REVIEW GAP.")
     return "\n".join(bits)
+
+
+def cannot_run(message: str) -> NoReturn:
+    """Print a refusal and exit **2**. The ONE way this module refuses. r4 Codex H1.
+
+    ⟳ r4 Claude M1 — AND THAT SENTENCE WAS FALSE WHEN WRITTEN. `write_config` could raise
+    `OSError` straight out of the process (rc=1, traceback), so "the ONE way" described an
+    intention rather than the code. Both of its filesystem paths route here now, and two cases
+    drive them over a read-only directory.
+
+    ⛔ WHY 2 AND NOT 1, AND WHY THIS IS A FIX AND NOT A PREFERENCE. Every arm below used
+    `sys.exit(f"error: …")`, and `sys.exit` with a STRING exits **1** — the code this repository
+    reads as "a violation was found". Each arm is the opposite: the cache cannot yield a model, so
+    nothing was measured. The malformed-shape arm made this explicit and then contradicted itself:
+    its own comment named `rc=1` as the defect it was fixing ("which this repository's rc
+    convention reads as a VIOLATION rather than a cannot-run") and its text ends ⛔ TREAT THIS AS
+    THE GATE NOT HAVING RUN — while exiting 1. Measured at `ea857e4a` with
+    `{"client_version":"1.2.3","models":"oops"}`: **rc=1**. The fix changed the message and left
+    the condition its own rationale identified.
+
+    `0 = ok, 1 = violation, 2 = CANNOT RUN` is this repo's contract, and *cannot run is a FAILURE,
+    never a pass* — but it is also never an accusation. A caller that falls back on either code
+    still wants to know which happened, and `scripts/codex-review.py` reports 1 as "the gate did
+    NOT run" and 2 as "CANNOT RUN": both fall back, and only one is true here.
+
+    ⚠ NOT CHANGED BY THIS, AND FILED INSTEAD (backlog #264): a `SystemExit` raised through
+    `codex-review.py`'s `resolve_candidates()` call still bypasses `emit`, so no verdict is
+    written and nothing outside the process records that the gate did not run.
+    """
+    print(message, file=sys.stderr)
+    sys.exit(2)
 
 
 def resolve_candidates() -> "list[str]":
@@ -174,13 +246,29 @@ def resolve_candidates() -> "list[str]":
         with open(CACHE, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        sys.exit(f"error: {CACHE} not found — run `codex` once to populate the model cache")
+        cannot_run(f"error: {CACHE} not found — run `codex` once to populate the model cache")
     except (OSError, json.JSONDecodeError) as e:
-        sys.exit(f"error: cannot read {CACHE}: {e}")
+        cannot_run(f"error: cannot read {CACHE}: {e}")
+
+    # ⛔ r3 Claude LOW — A WELL-FORMED DOCUMENT OF THE WRONG SHAPE WAS A CRASH. The handlers
+    # above catch a missing file, an unreadable one and invalid JSON; they do not catch VALID
+    # JSON whose `models` is not a list. Measured with `{"client_version":"1.2.3",
+    # "models":"oops"}`: `AttributeError: 'str' object has no attribute 'get'`, rc=1 — which
+    # this repository's rc convention reads as a VIOLATION rather than a cannot-run, and which
+    # `codex-review.py` would see as a failed gate rather than an unusable cache.
+    # ⟳ r4 Codex H1 — AND THE FIRST FIX DID NOT ACHIEVE THAT. It replaced the crash with
+    # `sys.exit(<string>)`, which ALSO exits 1, so the rc this comment calls the defect survived
+    # its own repair and only the message improved. Refusal now goes through `cannot_run`, which
+    # exits 2, and four cases pin the CODE rather than the wording.
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        cannot_run(f"error: {CACHE} parsed but its `models` is "
+                 f"{type(data.get('models') if isinstance(data, dict) else data).__name__}, not a "
+                 f"list — the cache is malformed. Run `codex` once to repopulate it. "
+                 f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
 
     slugs = usable_models(data)
     if not slugs:
-        sys.exit(refusal_message(data))
+        cannot_run(refusal_message(data))
     return slugs
 
 
@@ -195,10 +283,28 @@ def write_config(slug: str) -> None:
     Top-level TOML keys must precede any [table], so the managed block goes first.
     Idempotent: a prior managed block is stripped before the fresh one is written.
     """
+    # ⛔ r4 Claude M1 — EVERY FILESYSTEM FAILURE HERE IS A CANNOT RUN, NOT A VIOLATION. Measured
+    # at `5f7bf286` with `~/.codex` at `chmod 500`: `--write-config` exited **1** with an unhandled
+    # `PermissionError` traceback — the same cannot-run-wearing-a-violation's-number that this
+    # file's `cannot_run` was added to abolish, one function over, in the same commit. And
+    # `cannot_run`'s docstring called itself "The ONE way this module refuses" while this path
+    # could raise, which made the claim false the moment it was written.
+    # ⚠ THIS ARM IS THE ONE A REVIEWER ACTUALLY RUNS: `docs/plugins.md` publishes
+    # `--write-config` as the recommended invocation AND as the single sanctioned retry before
+    # falling back to a Claude-only review, so a traceback here is read as "Codex is unavailable".
     existing = ""
-    if os.path.exists(CONFIG):
-        with open(CONFIG, encoding="utf-8") as f:
-            existing = f.read()
+    try:
+        if os.path.exists(CONFIG):
+            with open(CONFIG, encoding="utf-8") as f:
+                existing = f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        # ⛔ r5 Codex M3 — `UnicodeDecodeError` IS NOT AN `OSError`. It is a `ValueError`, so the
+        # first version of this guard let a `config.toml` containing byte 0xff exit **1** with a
+        # traceback: measured by the reviewer on the real command. Reading a file is two failure
+        # modes, not one, and naming only the first is the shape this whole file keeps paying for.
+        cannot_run(f"error: cannot read {CONFIG}: {e} — the managed block cannot be refreshed "
+                   f"without it, and overwriting would discard settings this script does not own. "
+                   f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
     # Remove any previous managed block.
     existing = re.sub(rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?", "", existing, flags=re.DOTALL)
     block = (
@@ -208,9 +314,205 @@ def write_config(slug: str) -> None:
         f'model = "{slug}"\n'
         f"{END}\n"
     )
-    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-    with open(CONFIG, "w", encoding="utf-8") as f:
-        f.write(block + existing.lstrip("\n"))
+    try:
+        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+        with open(CONFIG, "w", encoding="utf-8") as f:
+            f.write(block + existing.lstrip("\n"))
+    except OSError as e:
+        cannot_run(f"error: cannot write {CONFIG}: {e} — the model was resolved but the config "
+                   f"was NOT synced, so a later run will use whatever slug is already there. "
+                   f"⛔ TREAT THIS AS THE GATE NOT HAVING RUN.")
+
+
+def _refusal_arm(cache_text: "str | None") -> tuple:
+    """`(exit code, which arm fired)` for a given cache. r4 Codex H1, r4 Claude H1.
+
+    ⛔ IT PINS THE CODE *AND* THE ARM, AND THE SECOND HALF IS WHY. The four goldens pin the refusal
+    TEXT, and text is what the first fix got right while leaving the code at 1. But a probe that
+    returns only the code cannot tell `four arms each exit 2` from `one arm exits 2 and the other
+    three were never reached` — and that is not hypothetical:
+
+    ⛔⛔ MEASURED (r4 Claude H1) — THE FIRST VERSION OF THIS PROBE MEASURED NOTHING ON CI.
+    `CACHE` is `os.path.expanduser(...)` evaluated at IMPORT. Deleting the probe's `CACHE = path`
+    line is killed on a developer machine with a populated `~/.codex` and **survives where it
+    matters**:
+
+        sever `CACHE = path`, real HOME            rc=1  39/43   4 [FAIL]
+        sever `CACHE = path`, HOME=<empty dir>     rc=0  43/43   0 [FAIL]
+
+    An empty `HOME` is `ubuntu-latest`, and it is also what `child_env` manufactures for every
+    suite the mutation harness spawns (`check-plan-code.py`: `env["HOME"] = str(d / CHILD_HOME)`).
+    With no cache on disk every fixture falls through `except FileNotFoundError` to `cannot_run`,
+    which exits 2 — which is exactly what all four cases wanted. The ratchet reported coverage over
+    a probe whose world it could not see.
+
+    ⤳ This is r3's BLOCKING with the POLARITY REVERSED. That one was *a test whose world only
+    exists on the author's filesystem*; this one is a test whose world's ABSENCE makes the mutant
+    pass. Same root defect — a case satisfied by an ambient condition instead of by what it names.
+
+    The `-1` return and the `"returned"` arm are the buildability control: a VALID cache must make
+    this probe return `(-1, "returned")`, and that is the one observation proving the swap took.
+    Never a passing value for a refusal case.
+    """
+    import contextlib, io, tempfile
+    global CACHE
+    saved = CACHE
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "models_cache.json")
+        if cache_text is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(cache_text)
+        CACHE = path
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                resolve_candidates()
+            return (-1, "returned")        # a FAILING sentinel for every refusal case
+        except SystemExit as e:
+            # ⛔ r5 Codex L1 — CLASSIFY ON THE MESSAGE WITH THE PATH REMOVED. Every refusal
+            # interpolates `CACHE`, and `tempfile` honours `TMPDIR`, so a temp directory named
+            # `not found` made the MALFORMED arm classify as `not-found`: the fixture's own path
+            # supplied the needle. Measured by the reviewer. The path is replaced before matching.
+            msg = err.getvalue().replace(str(CACHE), "<CACHE>")
+            code = e.code if isinstance(e.code, int) else 1
+            for needle, arm in (("not found", "not-found"),
+                               ("cannot read", "cannot-read"),
+                               ("parsed but its", "malformed"),
+                               ("no LISTED", "no-candidate")):
+                if needle in msg:
+                    return (code, arm)
+            return (code, "unclassified:" + msg[:40])
+        finally:
+            CACHE = saved
+
+
+def _refusal_arm_in_dir(dirname: str) -> tuple:
+    """`_refusal_arm` for a MALFORMED cache while the temp path itself contains a needle. r5 L1.
+
+    ⛔ THE FIXTURE'S OWN PATH SUPPLIED THE ANSWER. Every refusal interpolates `CACHE`, and
+    `tempfile` honours `TMPDIR`, so with a temp directory named `not found` the malformed-cache
+    refusal classified as `(2, "not-found")` — the reviewer measured exactly this. The classifier
+    strips the path before matching; this case is what notices if that strip is removed, and it is
+    here because the fix otherwise had no falsifier at all.
+    """
+    import tempfile
+    saved = tempfile.tempdir
+    with tempfile.TemporaryDirectory() as outer:
+        hostile = os.path.join(outer, dirname)
+        os.makedirs(hostile)
+        tempfile.tempdir = hostile
+        try:
+            return _refusal_arm('{"client_version":"1.2.3","models":"oops"}')
+        finally:
+            tempfile.tempdir = saved
+
+
+def _write_config_arm(readonly: bool, pre: str) -> tuple:
+    """`(exit code, arm)` for `write_config` over a prepared config. r4 Claude M1, r5 Codex M2/M3.
+
+    `pre` is the state of `config.toml` BEFORE the call: "absent", "unreadable" (chmod 000 file),
+    or "undecodable" (a 0xff byte). `readonly` makes the containing DIRECTORY unwritable.
+
+    ⛔⛔ r5 Codex M2 — THE FIRST READBACK PROVED NOTHING, and this is the repo's own
+    *a case is satisfied by the CONSTANT its own fixture supplies*. It asserted
+    `'model = "gpt-written-through"' in written` after calling `write_config("gpt-written-through")`
+    — a hardcoded literal compared against a hardcoded literal. Measured by the reviewer: replace
+    the production `f'model = "{slug}"'` with the constant `'model = "gpt-written-through"'` and the
+    suite still passed **46/46 with no [FAIL]**, because a `write_config` that ignores its argument
+    writes exactly what the case expects.
+
+    ⭐ SO PROPAGATION IS TESTED WITH TWO WRITES AND TWO DIFFERENT SLUGS, and the discriminating
+    clause is the THIRD one: the first slug must be ABSENT after the second write. A production
+    constant writes the same bytes twice and fails that, whatever the constant is.
+
+    ⚠ `pre="unreadable"`/`"undecodable"` exist because r5 Codex M3 measured that NO case reached
+    the read side at all — both earlier cases entered with the file absent, so deleting the whole
+    read guard left 46/46 green.
+    """
+    import contextlib, io, stat, tempfile
+    global CONFIG
+    saved = CONFIG
+    with tempfile.TemporaryDirectory() as td:
+        d = os.path.join(td, "cfgdir")
+        os.makedirs(d)
+        CONFIG = os.path.join(d, "config.toml")
+        if pre == "keep":
+            # ⛔ r5 Claude M2 — THE ONLY STATE WITH A READABLE EXISTING CONFIG, and its absence is
+            # why `write_config` discarding every setting it does not own survived 50/50 with zero
+            # [FAIL]. The other three states all leave `existing` empty — absent, unreadable,
+            # undecodable — so no case could tell preservation from truncation.
+            with open(CONFIG, "w", encoding="utf-8") as f:
+                f.write("[profile]\nkeep_me = \"yes\"\n")
+        elif pre == "unreadable":
+            with open(CONFIG, "w", encoding="utf-8") as f:
+                f.write("[existing]\nkeep = true\n")
+            os.chmod(CONFIG, 0o000)
+        elif pre == "undecodable":
+            with open(CONFIG, "wb") as f:
+                f.write(b"[existing]\nkeep = \xff\n")
+        if readonly:
+            os.chmod(d, stat.S_IRUSR | stat.S_IXUSR)       # r-x: listable, not writable
+        err = io.StringIO()
+        try:
+            # ⛔ NO SELF-GRANTED PASS: if a chmod did not take (root, or a mode-ignoring
+            # filesystem) the world is not the one the case names, and the sentinel FAILS.
+            if pre == "unreadable" and os.access(CONFIG, os.R_OK):
+                return (-1, "world-not-built")
+            if readonly and os.access(d, os.W_OK):
+                return (-1, "world-not-built")
+            with contextlib.redirect_stderr(err):
+                if readonly:
+                    write_config("gpt-never-written")
+                else:
+                    write_config("gpt-slug-one")
+                    with open(CONFIG, encoding="utf-8") as f:
+                        first = f.read()
+                    write_config("gpt-slug-two")
+                    with open(CONFIG, encoding="utf-8") as f:
+                        second = f.read()
+                    # ⛔⛔ r6 Codex M2 — PARSE IT, DO NOT GREP IT. The first version of this check
+                    # asserted substrings, and TWO mutations kept every substring while writing a
+                    # file that is wrong: `block + block + existing` DUPLICATES `model` (invalid
+                    # TOML — tomllib: "Cannot overwrite a value"), and `existing + block` puts the
+                    # managed block AFTER `[profile]`, so the key becomes `profile.model` and the
+                    # top-level `model` the Codex CLI reads is absent. Both survived 51/51 with
+                    # zero [FAIL]. `tomllib` decides all three questions at once: does it parse, is
+                    # `model` TOP-LEVEL and equal to the slug just requested, and is the setting
+                    # this script does not own still where its owner put it.
+                    # ⤳ Same lesson as the CommonMark one this branch learned twice: when a rule
+                    # has been corrected twice by hand, stop hand-checking and get a parser.
+                    import tomllib
+                    try:
+                        doc1 = tomllib.loads(first)
+                        doc2 = tomllib.loads(second)
+                    except tomllib.TOMLDecodeError:
+                        return (0, "wrote-invalid-toml")
+                    if doc1.get("model") != "gpt-slug-one" or doc2.get("model") != "gpt-slug-two":
+                        # covers both "ignored the argument" and "wrote it at the wrong depth"
+                        return (0, "wrote-ignoring-argument")
+                    if pre == "keep" and doc2.get("profile", {}).get("keep_me") != "yes":
+                        return (0, "wrote-discarding-the-rest")
+                    return (0, "wrote")
+            return (0, "wrote")
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else 1
+            msg = err.getvalue().replace(str(CONFIG), "<CONFIG>")
+            if "cannot write" in msg:
+                return (code, "cannot-write")
+            if "cannot read" in msg:
+                return (code, "cannot-read")
+            return (code, "unclassified:" + msg[:40])
+        except OSError:
+            # ⛔ THE PROBE CONVERTS THE CRASH INTO A VALUE, so a severed guard produces a wrong
+            # answer rather than killing the suite before any `[FAIL]` line can be printed.
+            return (1, "raised")
+        except UnicodeDecodeError:
+            return (1, "raised-decode")       # r5 M3: what the OSError-only guard did, as a VALUE
+        finally:
+            os.chmod(d, stat.S_IRWXU)
+            if os.path.exists(CONFIG):
+                os.chmod(CONFIG, stat.S_IRUSR | stat.S_IWUSR)
+            CONFIG = saved
 
 
 def _self_test() -> int:
@@ -309,6 +611,219 @@ def _self_test() -> int:
     case("the message states a POLICY and never claims the vendor withdrew anything",
          ("POLICY" in refusal_message(LIVE)
           and "withdraw" not in refusal_message(LIVE).lower()), True)
+
+    # ⛔ BACKLOG #254 — THE MIXED CACHE, and the SECOND correction of this one sentence. r1 made
+    # the stale-CLI diagnosis conditional on a near-miss existing; that condition is still too
+    # weak, because "a near-miss exists" does not imply "nothing is listed". Measured on a cache
+    # holding a `hide` model that is otherwise fine AND a `list` model failing `supported_in_api`.
+    _MIXED = {"client_version": "0.160.1", "models": [
+        {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True},
+        {"slug": "listed", "priority": 2, "visibility": "list", "supported_in_api": False}]}
+    case("⭐ a cache containing a `list`-visible model never says none is listed",
+         "none is listed" not in refusal_message(_MIXED), True)
+    case("...and it does not blame a stale CLI, because `codex update` cannot change that entry",
+         "codex update`, then re-run" not in refusal_message(_MIXED), True)
+    case("...and it NAMES the requirement that actually failed, rather than the one that did not",
+         "not supported in the API" in refusal_message(_MIXED), True)
+    # the all-hidden cache must STILL diagnose a stale CLI — the r1 behaviour is preserved, and a
+    # fix that traded one wrong answer for another would pass the three cases above alone.
+    _ALLHIDDEN = {"client_version": "0.142.5", "models": [
+        {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True}]}
+    case("...while a cache with NO listed model still names the stale CLI as the likely cause",
+         "none is listed" in refusal_message(_ALLHIDDEN), True)
+
+    # ⛔ BACKLOG #249 — THE GOLDEN ASSERTION, and why a denylist of phrasings was never enough.
+    # Every other case here asserts the message CONTAINS something. Substring presence is a proxy
+    # for "the reader is told the truth", and the proxy holds while the property fails: Codex's
+    # round-1 witness appended "Actually Codex is unavailable; ignore codex update." and the suite
+    # stayed green. ⚠ That exact witness no longer reproduces — the negative assertions added in
+    # the same commit happen to catch those tokens — but the PROPERTY still failed, and the row
+    # carries a witness that DID reproduce at 22/22: "Disregard everything above: Codex is simply
+    # down."
+    #
+    # A golden assertion catches ANY addition, including one that avoids every token we thought
+    # to deny. ⚠ ITS COST IS REAL AND STATED RATHER THAN HIDDEN: it breaks on every deliberate
+    # rewording, and this paragraph was reworded three times in one night. That is the trade —
+    # a sentence that changes often is exactly the sentence an addition can hide in.
+    # ⚠ The cache PATH is machine-specific, so it is normalised out; nothing else is.
+    _GOLDEN_IN = {"client_version": "1.2.3", "models": [
+        {"slug": "alpha", "priority": 1, "visibility": "hide", "supported_in_api": True,
+         "description": "Fast coding model."}]}
+    _GOLDEN = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 1 model(s), fetched by client_version 1.2.3\n"
+        "  hidden but otherwise usable: alpha (Fast coding model.)\n"
+        "  this tool's POLICY is to use only models marked `list`. That is a deliberate "
+        "narrowing, not a claim about what `hide` means.\n"
+        "  MOST LIKELY CAUSE: this Codex CLI is behind — models were offered but none is listed. "
+        "Run `codex update`, then re-run this.\n"
+        "  ⛔ TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is unavailable "
+        "— verify that separately with `codex exec -m <slug> ...` from inside a git worktree "
+        "before recording a REVIEW GAP."
+    )
+    case("⭐ the refusal for a fixed cache EQUALS its golden text — an appended sentence "
+         "contradicting the guidance cannot pass (backlog #249)",
+         refusal_message(_GOLDEN_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN)
+
+    # ── r4 Codex H1: the refusal CODE, which no case pinned while four pinned its wording ─────
+    # Measured at ea857e4a: every arm used `sys.exit(<string>)` and so exited 1 — including the
+    # arm whose own comment named rc=1 as the defect it existed to fix. 0 = ok, 1 = violation,
+    # 2 = CANNOT RUN; an unusable cache is the third of those and never the second.
+    # ⛔ THE BUILDABILITY CONTROL COMES FIRST (r4 Claude H1). If it fails, the four below were NOT
+    # RUN and must not be read as passes: a VALID cache is the only input that proves the probe's
+    # `CACHE` swap took effect, and without it all four passed on a machine with no `~/.codex`.
+    case("⛔ the probe's world IS buildable — a VALID cache makes it RETURN, so the four cases "
+         "below are reached through the fixture and not through an absent ~/.codex",
+         _refusal_arm('{"client_version":"1.2.3","models":[{"slug":"m","priority":1,'
+                      '"visibility":"list","supported_in_api":true}]}'), (-1, "returned"))
+    case("⭐ a MALFORMED cache refuses with 2 — CANNOT RUN, not 1 — and this is the arm whose "
+         "comment named rc=1 as the defect while exiting 1",
+         _refusal_arm('{"client_version":"1.2.3","models":"oops"}'), (2, "malformed"))
+    case("...and an ABSENT cache does too, so the rule is the module's and not one arm's",
+         _refusal_arm(None), (2, "not-found"))
+    case("...and an UNPARSEABLE cache does too",
+         _refusal_arm("not json at all"), (2, "cannot-read"))
+    case("...and a cache that parses and yields NO candidate does too — the arm that sent a "
+         "round of PR #364 to a one-reviewer fallback",
+         _refusal_arm('{"models":[]}'), (2, "no-candidate"))
+    # ── r5 Codex LOW: the arm was classified from text in the TEMP PATH, not the diagnosis ───
+    case("⛔ r5: a MALFORMED cache under a temp dir literally named `not found` still classifies "
+         "as malformed — the path is stripped before matching, where it used to supply the needle",
+         _refusal_arm_in_dir("not found"), (2, "malformed"))
+    case("...and one named `cannot read` does not steal the arm either, so the strip is not a "
+         "special case for one phrase",
+         _refusal_arm_in_dir("cannot read"), (2, "malformed"))
+    # ── r4 Claude MEDIUM: `--write-config` is the arm docs/plugins.md tells a reviewer to run,
+    # and it exited 1 with an unhandled traceback. Same file, one function over from the arm r4
+    # Codex fixed, and `cannot_run` called itself "the ONE way this module refuses" regardless.
+    case("⛔ the buildability control AND the propagation test in one: two writes with DIFFERENT "
+         "slugs, and the first must be GONE after the second — a write_config that ignored its "
+         "argument passed the old single-literal readback 46/46 (r5 Codex M2)",
+         _write_config_arm(readonly=False, pre="absent"), (0, "wrote"))
+    case("⭐ and a READ-ONLY config directory is 2 — CANNOT RUN, where it exited 1 with an "
+         "unhandled PermissionError traceback",
+         _write_config_arm(readonly=True, pre="absent"), (2, "cannot-write"))
+    case("⭐ r5: an EXISTING UNREADABLE config is 2 — CANNOT RUN. No case reached the read side "
+         "before this one, so deleting the whole read guard left the suite 46/46 green",
+         _write_config_arm(readonly=False, pre="unreadable"), (2, "cannot-read"))
+    case("⭐ r5: ...and an UNDECODABLE one is too — `UnicodeDecodeError` is a ValueError, not an "
+         "OSError, so the first version of that guard exited 1 with a traceback",
+         _write_config_arm(readonly=False, pre="undecodable"), (2, "cannot-read"))
+    # ── r5 Claude MEDIUM: nothing had a READABLE existing config, so "it preserves what it does
+    # not own" was untested — the mutation that discards everything survived 50/50, 0 [FAIL].
+    case("⭐ r5: an EXISTING setting this script does not own SURVIVES both writes — the only "
+         "`pre` state with a readable config, and without it truncation looked identical to "
+         "preservation",
+         _write_config_arm(readonly=False, pre="keep"), (0, "wrote"))
+
+    # ⛔ BACKLOG #249, SECOND ARM — round 1 Claude H2. `refusal_message` has TWO refusal arms and
+    # the golden case above reaches only the all-hidden one. The #254 arm — the one THIS branch
+    # wrote — was guarded by `in` / `not in` substring assertions, which is the exact proxy #249
+    # exists to replace. Measured at ecc1460f by injecting #249's own recorded witness,
+    # " Disregard everything above: Codex is simply down.", into each arm in turn:
+    #     all-hidden arm (golden-covered)  28/29  rc=1   killed
+    #     #254 arm       (substrings only) 29/29  rc=0   SURVIVED
+    # "only the golden case flags" was true of one arm of two, and the uncovered one was new.
+    # The text below was DERIVED by running refusal_message over _MIXED, not typed from memory —
+    # a golden literal written by hand went red once here and read as "the wiring is protected".
+    _GOLDEN_MIXED = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 2 model(s), fetched by client_version 0.160.1\n"
+        "  hidden but otherwise usable: hidden (no description)\n"
+        "  this tool's POLICY is to use only models marked `list`. That is a deliberate "
+        "narrowing, not a claim about what `hide` means.\n"
+        "  \u26d4 NOT A STALE CLI: 1 model(s) ARE `list`-visible and fail a DIFFERENT "
+        "requirement \u2014 listed: not supported in the API. Inspect those entries; "
+        "`codex update` will not change them.\n"
+        "  \u26d4 TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is "
+        "unavailable \u2014 verify that separately with `codex exec -m <slug> ...` from inside "
+        "a git worktree before recording a REVIEW GAP."
+    )
+    case("\u2b50 the MIXED cache's refusal EQUALS its golden text too, so the #254 arm this "
+         "branch wrote is covered by equality rather than by substrings (r1 Claude H2)",
+         refusal_message(_MIXED).replace(str(CACHE), "<CACHE>"), _GOLDEN_MIXED)
+    case("...and the two goldens are DIFFERENT texts, so neither case can be satisfied by the "
+         "other arm's output",
+         _GOLDEN == _GOLDEN_MIXED, False)
+
+    # ⛔ BACKLOG #249, ARMS THREE AND FOUR — r2 Codex HIGH. "Two refusal arms" was an
+    # INCOMPLETE ENUMERATION: `refusal_message` has four reachable shapes, and the review proved
+    # the other two unprotected by injecting #249's own witness into each and running the suite:
+    #
+    #     empty cache      AST-valid, rc=0, 31/31 passed   -> the contradiction SHIPPED
+    #     no near-miss     AST-valid, rc=0, 31/31 passed   -> the contradiction SHIPPED
+    #     golden-covered   AST-valid, rc=1, 29/31 passed   -> the known-positive control
+    #
+    # A denylist of phrasings could not catch it and neither could two goldens; only pinning
+    # every arm can. ⚠ A BOUND IS AN ENUMERATION OF WHAT IS WITNESSED — `a-bound-enumerates-
+    # what-is-witnessed` — so the case below asserts the arm COUNT as well, and it fails if a
+    # fifth shape is added without a golden. Both texts DERIVED by running, not typed.
+    _GOLDEN_EMPTY_IN = {"client_version": "0.99.0", "models": []}
+    _GOLDEN_EMPTY = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 0 model(s), fetched by client_version 0.99.0\n"
+        "  the cache is EMPTY. Run `codex` once to populate it; if it stays empty, check "
+        "`codex login status`.\n"
+        "  \u26d4 TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is "
+        "unavailable \u2014 verify that separately with `codex exec -m <slug> ...` from inside "
+        "a git worktree before recording a REVIEW GAP."
+    )
+    case("\u2b50 the EMPTY-cache refusal EQUALS its golden text (r2 Codex High: this arm shipped "
+         "a sentence contradicting its own guidance and the suite stayed green)",
+         refusal_message(_GOLDEN_EMPTY_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN_EMPTY)
+
+    _GOLDEN_NONEAR_IN = {"client_version": "0.98.0", "models": [
+        {"slug": "listed", "priority": 1, "visibility": "list", "supported_in_api": False}]}
+    _GOLDEN_NONEAR = (
+        "error: no LISTED, API-supported model in <CACHE>\n"
+        "  the cache holds 1 model(s), fetched by client_version 0.98.0\n"
+        "  \u26a0 and NONE of them is a near-miss: every entry fails a requirement other than "
+        "visibility (API support, or a numeric non-boolean priority, or a slug). Inspect the "
+        "cache rather than assuming the CLI is stale.\n"
+        "  \u26d4 TREAT THIS AS THE GATE NOT HAVING RUN. It is not evidence that Codex is "
+        "unavailable \u2014 verify that separately with `codex exec -m <slug> ...` from inside "
+        "a git worktree before recording a REVIEW GAP."
+    )
+    case("\u2b50 the NO-NEAR-MISS refusal EQUALS its golden text too, so all four reachable arms "
+         "are now pinned by equality rather than by substrings",
+         refusal_message(_GOLDEN_NONEAR_IN).replace(str(CACHE), "<CACHE>"), _GOLDEN_NONEAR)
+
+    case("...and the four goldens are four DISTINCT texts, so no case can be satisfied by "
+         "another arm's output \u2014 the bound is the enumeration, not the count",
+         len({_GOLDEN, _GOLDEN_MIXED, _GOLDEN_EMPTY, _GOLDEN_NONEAR}), 4)
+    # ⚠ r2 Claude LOW — AND THIS BOUND DOES NOT COVER EVERY REACHABLE TEXT, which the previous
+    # comment claimed ("fails if a fifth shape is added without a golden"). It cannot: the four
+    # goldens pin the four arms of the `if near / if listed / elif models / else` chain, and two
+    # FALLBACKS in the shared prefix live outside it — `client_version` absent (`:165`,
+    # `or "?"`) and a listed model with no slug (`:189`, `or "<no slug>"`). All four golden
+    # inputs supply a `client_version`, so neither fallback appears in any golden. Pinned here
+    # directly rather than left to a count that cannot see them.
+    case("\u2b50 r2: a cache with NO client_version renders the fallback, which no golden covers",
+         "client_version ?" in refusal_message({"models": []}), True)
+    # ⚠ THE INPUT IS A MIXED CACHE, derived not guessed: the `<no slug>` fallback renders in the
+    # `listed` branch, which needs a hidden near-miss ALONGSIDE the slugless listed model. My
+    # first attempt passed only the listed model and fell through to the no-near-miss arm, where
+    # the fallback never renders — so the case failed and told me the input was wrong.
+    case("...and a listed model with no slug renders ITS fallback, in the mixed-cache arm",
+         "<no slug>" in refusal_message({"client_version": "1.0", "models": [
+             {"slug": "hidden", "priority": 1, "visibility": "hide", "supported_in_api": True},
+             {"priority": 2, "visibility": "list", "supported_in_api": False}]}), True)
+
+    # ── r3 Claude LOW: a malformed cache is a refusal, not a traceback ──────────────────────
+    case("⭐ r3: `models` that is not a list is caught before anything calls `.get` on it",
+         isinstance({"client_version": "1", "models": "oops"}.get("models"), list), False)
+    case("...while a real list passes the same test",
+         isinstance({"client_version": "1", "models": []}.get("models"), list), True)
+    case("...and a document that is not even a dict is refused too",
+         isinstance(["not", "a", "dict"], dict), False)
+
+    case("failed_requirements names each unmet predicate for one entry",
+         failed_requirements({"slug": "x", "priority": 1, "visibility": "hide",
+                              "supported_in_api": False})
+         == ["not supported in the API", "visibility is 'hide', not 'list'"], True)
+    case("...and returns empty for an entry that meets them all",
+         failed_requirements({"slug": "y", "priority": 2, "visibility": "list",
+                              "supported_in_api": True}) == [], True)
 
     print(f"\n{ok}/{ok + fail} self-test cases passed")
     return 1 if fail else 0

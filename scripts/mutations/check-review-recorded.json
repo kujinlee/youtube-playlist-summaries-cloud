@@ -66,7 +66,7 @@
     "expect": "docs/backlog.md is prose"
   },
   {
-    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed \u2014 the whole point of the rule",
+    "name": "a stale round clears the branch, so code committed after EVERY round merges unreviewed — the whole point of the rule",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -79,12 +79,12 @@
     ]
   },
   {
-    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass \u2014 the exact fail-open r1 filed",
+    "name": "no usable round returns 0 instead of 2, so `CANNOT RUN` prints while CI reads a pass — the exact fail-open r1 filed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return 2, (f\"CANNOT RUN \u2014 {why}, so whether any round saw the code about to merge is \"",
-        "        return 0, (f\"CANNOT RUN \u2014 {why}, so whether any round saw the code about to merge is \""
+        "        return 2, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \"",
+        "        return 0, (f\"CANNOT RUN — {why}, so whether any round saw the code about to merge is \""
       ]
     ],
     "expect": [
@@ -131,7 +131,7 @@
     ]
   },
   {
-    "name": "\u26d4 the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
+    "name": "⛔ the r1 BLOCKING, restored: the tail subtracts by PATH again, so a file edited a second time after the round is certified as reviewed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -144,7 +144,7 @@
     ]
   },
   {
-    "name": "\u26d4 the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
+    "name": "⛔ the r1 LOW, restored: the tail rule stops asking what counts as guarded, so a docs commit after a round fails a branch that owed no review for it",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -157,7 +157,7 @@
     ]
   },
   {
-    "name": "the REVIEW GAP escape stops working, so a Codex-down round \u2014 the documented fallback \u2014 reds every branch that takes it",
+    "name": "the REVIEW GAP escape stops working, so a Codex-down round — the documented fallback — reds every branch that takes it",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -183,7 +183,7 @@
     ]
   },
   {
-    "name": "\u26d4 the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
+    "name": "⛔ the r2 BLOCKING, restored: the final-tree lookup answers with a bare sha, so flipping the executable bit after the round is credited as reviewed",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -192,11 +192,11 @@
       ]
     ],
     "expect": [
-      "the lookup answers with an ENTRY \u2014 mode and object id, not a bare sha"
+      "the lookup answers with an ENTRY — mode and object id, not a bare sha"
     ]
   },
   {
-    "name": "\u26d4 the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
+    "name": "⛔ the r4 BLOCKING, restored: entries are filtered to blobs, so a path holding a SUBMODULE reads as absent and a reviewed deletion credits a merge that puts a gitlink there",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -209,12 +209,12 @@
     ]
   },
   {
-    "name": "\u26d4 the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude \u2014 not invoked` excuses a different absence entirely",
+    "name": "⛔ the r2 HIGH, restored: any REVIEW GAP clears a missing Codex verdict, so `claude — not invoked` excuses a different absence entirely",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        if gap_names_codex(reason):\n            return f\"{path} \u2014 {reason}\"",
-        "        if reason:\n            return f\"{path} \u2014 {reason}\""
+        "        if gap_names_codex(reason):\n            return f\"{path} — {reason}\"",
+        "        if reason:\n            return f\"{path} — {reason}\""
       ]
     ],
     "expect": [
@@ -231,11 +231,11 @@
       ]
     ],
     "expect": [
-      "the WHO is read, not the reason \u2014 a claude gap mentioning codex stays a claude gap"
+      "the WHO is read, not the reason — a claude gap mentioning codex stays a claude gap"
     ]
   },
   {
-    "name": "\u26d4 the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
+    "name": "⛔ the r3 deletion finding, restored: a path absent from the final tree has no entry to compare, so a reviewed DELETION reads as unseen and the careful path fails for deleting code",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -274,11 +274,11 @@
     ]
   },
   {
-    "name": "\u26d4 the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
+    "name": "⛔ the r4 HIGH, restored: the declared gap loses the document that made it, so a stacked branch's pass is indistinguishable from one that declared for itself",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "            return f\"{path} \u2014 {reason}\"",
+        "            return f\"{path} — {reason}\"",
         "            return reason"
       ]
     ],
@@ -328,7 +328,7 @@
         "    if False:\n        return None, UNUSABLE"
       ]
     ],
-    "expect": "a verdict whose dirty map is NULL could not look \u2014 unusable, not a clean tree"
+    "expect": "a verdict whose dirty map is NULL could not look — unusable, not a clean tree"
   },
   {
     "name": "a schema-1 verdict is skipped instead of counted",
@@ -372,7 +372,7 @@
         "        if False:\n            unusable += 1"
       ]
     ],
-    "expect": "a head no longer reachable \u2014 rebased or squashed \u2014 is UNUSABLE, never a pass"
+    "expect": "a head no longer reachable — rebased or squashed — is UNUSABLE, never a pass"
   },
   {
     "name": "the second question is switched off entirely",
@@ -390,7 +390,7 @@
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
-        "        return False, f\"{NO_REVIEW} {waiver} \u2014 the final-tree question is WAIVED, not passed\"",
+        "        return False, f\"{NO_REVIEW} {waiver} — the final-tree question is WAIVED, not passed\"",
         "        return False, None"
       ]
     ],
@@ -628,7 +628,7 @@
     "expect": "...but prose containing a path does not, because no path here has WHITESPACE"
   },
   {
-    "name": "the component limit is widened \u2014 PROSPECTIVE cover for a long no-whitespace component, not the CI shape, which whitespace already rejects",
+    "name": "the component limit is widened — PROSPECTIVE cover for a long no-whitespace component, not the CI shape, which whitespace already rejects",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -669,7 +669,7 @@
         "    if is_prose_name or not suffix:\n        return False"
       ]
     ],
-    "expect": "an extension-less gate FILE is gate data \u2014 the filename shape does not decide"
+    "expect": "an extension-less gate FILE is gate data — the filename shape does not decide"
   },
   {
     "name": "a bare docs is skipped again, so both prongs pass over a directory neither examined",
@@ -702,7 +702,7 @@
         "    undiscovered = []\n    if undiscovered:"
       ]
     ],
-    "expect": "when BOTH would fire, COMPLETENESS answers \u2014 a broken derivation is not a coverage pass"
+    "expect": "when BOTH would fire, COMPLETENESS answers — a broken derivation is not a coverage pass"
   },
   {
     "name": "the empty-derivation CANNOT-RUN guard goes, leaving a pass over a derivation that found nothing",
@@ -716,7 +716,7 @@
     "expect": "...and it refuses even with NOTHING declared, so it is not standing on the other prong"
   },
   {
-    "name": "PATH_LIMIT is widened to Linux's PATH_MAX \u2014 the wrong value for the platform that raised",
+    "name": "PATH_LIMIT is widened to Linux's PATH_MAX — the wrong value for the platform that raised",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -735,7 +735,7 @@
         "PROSE_FILES = (\"README.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CONTEXT.md\")"
       ]
     ],
-    "expect": ".gitignore is prose \u2014 the only PROSE_FILES member the root-.md fallback cannot catch"
+    "expect": ".gitignore is prose — the only PROSE_FILES member the root-.md fallback cannot catch"
   },
   {
     "name": "the root-.md prose fallback goes, so a root .md not in PROSE_FILES owes a review round",
@@ -769,12 +769,12 @@
       ]
     ],
     "expect": [
-      "a TRUTHY NON-BOOL `gate_ran` does NOT read as `the gate ran` \u2014 the string \"false\" is truthy, and reading it that way credited a gate that never ran with the final tree",
+      "a TRUTHY NON-BOOL `gate_ran` does NOT read as `the gate ran` — the string \"false\" is truthy, and reading it that way credited a gate that never ran with the final tree",
       "...at a second distinct truthy non-bool, so this is not a special case for one value"
     ]
   },
   {
-    "name": "r3 Claude H2: `dirty` is tested by IDENTITY again, so a list or a scalar reads as a real head with an empty overlay \u2014 the vacuous comparison r11 closed for null",
+    "name": "r3 Claude H2: `dirty` is tested by IDENTITY again, so a list or a scalar reads as a real head with an empty overlay — the vacuous comparison r11 closed for null",
     "file": "scripts/check-review-recorded.py",
     "edits": [
       [
@@ -783,8 +783,21 @@
       ]
     ],
     "expect": [
-      "a LIST dirty is unusable too \u2014 a real head with an overlay nothing can read is the same vacuous comparison a NULL one is, and one record on disk actually carries it",
+      "a LIST dirty is unusable too — a real head with an overlay nothing can read is the same vacuous comparison a NULL one is, and one record on disk actually carries it",
       "...as is a STRING dirty, so the rule is the TYPE and not a list of bad values"
+    ]
+  },
+  {
+    "name": "#260: the refusal stops telling the reader an edited body needs a push",
+    "file": "scripts/check-review-recorded.py",
+    "edits": [
+      [
+        "               f\"  ⚠ If you edit the PR body to answer this, you must then PUSH something — CI\\n\"\n               f\"    reads the body from the FROZEN event payload, so an edit alone (and a\\n\"\n               f\"    `gh run rerun`) will fail again with this identical message.\\n\"\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "the refusal tells the reader an edited body needs a PUSH, not just an edit"
     ]
   }
 ]

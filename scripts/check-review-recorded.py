@@ -2,7 +2,7 @@
 """A branch that changes CODE records a review round, or says in writing why it did not.
 
     python3 scripts/check-review-recorded.py --base origin/master --pr-body-file /tmp/pr-body.md
-    python3 scripts/check-review-recorded.py --self-test  # 194 cases
+    python3 scripts/check-review-recorded.py --self-test  # 196 cases
 
 WHY THIS EXISTS
 ---------------
@@ -714,6 +714,19 @@ def verdict(changed: list[str], added: list[str], pr_body: str,
                f"    {shown}\n"
                f"  Add a review document under {REVIEW_DIR} (both halves — see docs/plugins.md),\n"
                f"  or put `{NO_REVIEW} <reason>` in the pull-request body.\n"
+               # ⛔ BACKLOG #260 / #168. #168 asked for this instruction on the REFUSAL, "since a
+               # comment is the mechanism that already failed" — and it landed on
+               # `check-dashboard-entry.py` instead, the step that originally lacked the ci.yml
+               # comment. So the asymmetry was INVERTED, not removed, and this guard's message
+               # told a reader to edit the body without saying an edit alone cannot be seen.
+               # MEASURED COST on PR #367: declaration saved 47 s after the run started, I read
+               # this refusal in the job log, edited the body, and spent a `gh run rerun --failed`
+               # that replayed the frozen payload and failed with a byte-identical message. Prior
+               # art: two rerun cycles on #322, one on #336. A comment on the workflow cannot
+               # reach someone reading a job log.
+               f"  ⚠ If you edit the PR body to answer this, you must then PUSH something — CI\n"
+               f"    reads the body from the FROZEN event payload, so an edit alone (and a\n"
+               f"    `gh run rerun`) will fail again with this identical message.\n"
                f"  MEASURED 2026-09-09: five PRs merged unreviewed in one night and nothing saw it.")
 
 
@@ -1383,6 +1396,17 @@ def self_test() -> int:
     case("a docs-only branch owes nothing", verdict(DOCS, [], "", none_reason)[0], 0)
     case("a code branch with no review FAILS", verdict(CODE, [], "", none_reason)[0], 1)
     case("...and the failure names the file", "scripts/x.py" in verdict(CODE, [], "", none_reason)[1], True)
+    # ⛔ BACKLOG #260 / #168: a gate whose remedy is an EDIT TO THE PR BODY must say the edit
+    # needs a new `pull_request` event. CI reads the body from the frozen event payload, so an
+    # edit alone — and `gh run rerun` — replays the old body and fails identically. Measured
+    # cost: one wasted cycle on #367, two on #322, one on #336. #168 asked for this on the
+    # REFUSAL rather than in a ci.yml comment, "since a comment is the mechanism that already
+    # failed", and it had landed only on the sibling guard.
+    case("the refusal tells the reader an edited body needs a PUSH, not just an edit",
+         ("PUSH something" in verdict(CODE, [], "", none_reason)[1]
+          and "FROZEN event payload" in verdict(CODE, [], "", none_reason)[1]), True)
+    case("...and it names the rerun specifically, because that is the step people try next",
+         "gh run rerun" in verdict(CODE, [], "", none_reason)[1], True)
     case("a code branch that ADDED a review passes",
          verdict(CODE, ["docs/reviews/claude/x-r1-claude.md"], "", none_reason)[0], 0)
     case("a NO-REVIEW: reason passes and is echoed",

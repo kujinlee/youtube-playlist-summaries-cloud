@@ -6,6 +6,7 @@ status: accepted 2026-10-01 (scoped Phase 6 architecture review, armed by THRASH
   had no stated bound before, and it supersedes backlog #213's proposed remedy.
   ⚠ ACCEPTED IS NOT IMPLEMENTED: 1 of 36 guards satisfied this before today and a second
   (`check-ratchet-contract.py`) satisfies it now. The remaining 29 are pinned debt, not compliance.
+  ⟳ **2026-10-13, Phase 6: THAT FIGURE IS STALE AND THE DECISION IS UNTOUCHED.** `check-main-drivable.py --report` says **12** drive `main()` over a constructed world and **27** are pinned as identity debt, where this header says 29. Corrected as a stale cross-reference (`review-method.md:217`), not as a reopening: the rule stands exactly as accepted. ⚠ And `scripts/check-plan-code.py` is COMPLIANT (`argv+rebind`), compliant since `28532810` on 2026-09-11 — three weeks before this ADR — which is why its 2026-10-13 thrashing was measured NOT to be an instance of this ADR's class.
 ---
 
 > **Anchor:** `review-decides-itself` — **ADR:** 0014

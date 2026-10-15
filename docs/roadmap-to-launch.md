@@ -1948,6 +1948,20 @@ anchor's whole subject: the loop decided its own next step from recorded evidenc
 - [x] **#153 — the architecture review itself.** Verdict: extract `_structural()` into a shared
       library. Not *parse* (no third-party dependency exists here, and adding one puts it inside the
       interpreter this guard pins) and not *refuse* (that is #157, worth doing but not instead).
+      ⟳⟳ **2026-10-12 — THE PARENTHESIS IS SUPERSEDED FOR ONE CASE, DELIBERATELY AND IN WRITING.**
+      Backlog #267 took the third-party dependency this verdict declined (`markdown-it-py`, now in
+      `requirements.txt`), so the repository is no longer stdlib-only and this sentence is no
+      longer a description of it. ⚠ **THE VERDICT ITSELF STANDS FOR ITS OWN SUBJECT** — the
+      workflow readers still do not parse, and nothing here argues they should. What changed is
+      the cost side, by an order of magnitude: #153's hand-rolled reader was a few lines of
+      structure, where #267's was **217 lines** carrying a review finding in **nine consecutive
+      rounds**, and the swap was measured at **0 verdict differences over 95,778 figures** (corpus pinned at `0792dcab`) before
+      it was taken. ⛔ **AND THE REASON THIS VERDICT GAVE IS REAL AND WAS NOT WISHED AWAY:** the
+      dependency does now sit inside the interpreter `check-python-pin.py` pins, so a Python bump
+      is also a dependency bump. It is pinned exactly, and that coupling is written at the top of
+      `requirements.txt` rather than discovered later. ⤳ The precedent is therefore CHANGED, not
+      broken: a future guard proposing a dependency must make the same argument on its own
+      evidence, and "but #267 did it" is not that argument.
       ⚠ The row's own scope was wrong in both directions — `check-ci-watched.py` is not a member,
       `check-ratchet-contract.py:835` is — which is why the population was swept rather than recalled.
 - [x] **backlog #154 — the false green the review FOUND.** ✅ **PR #331** (open, not merged).
@@ -3016,3 +3030,188 @@ slices.**
 **Loose end:** ~~uncommitted local modifications to `docs/local-validation-findings.md` and
 `supabase/config.toml`~~ — **stale, verified 2026-07-30:** `git status` reports no modifications
 to either file.
+
+---
+
+## ⟳ 2026-10-07 — PHASE 6 IS ARMED BY THRASHING ON THE TEXT-HEURISTIC GUARD FAMILY (backlog #262)
+
+Recorded here because `dev-process.md` requires a discovered step to reach the roadmap AND the
+backlog in the same turn, and because a Phase 6 arming that lives only in a review document is
+a discovery lost at the next `/compact`.
+
+**The arming condition, met in five components where the rule needs one.** On PR #371, round 2's
+Codex half found **7 of 7** findings in round 1's own fixes; its Claude half found **11 of 13** in
+round 2's. Both rounds hit `check-provenance`, `find-claim`, `check-withdrawal`,
+`check-plan-code` and `codex-frontier-model`.
+
+**Answered in the round document: THRASHING, not a prose floor** —
+`docs/reviews/claude/backlog-249-260-r2-claude.md` § 1, with per-finding attribution. The
+distinguishing test is *can a redesign remove it?*, and for the dominant class it provably can,
+because removing a mechanism is what fixed four of the five:
+
+- [x] H2 — DELETED an eight-verb word list; `HEAD` must be backticked or suffixed, which is what
+      every other alternative in the same regex already demands. 15/15 witnesses, 0 rows lose
+      provenance, and the rule got shorter.
+- [x] M3 — IMPORTED `check-docs.CELL_SPLIT`, the existing owner of the markdown-cell rule,
+      replacing a raw 40-character read that crossed into the next column.
+- [x] M1 — made the candidate set POSITIONAL: patterns 1,585 → 96, invented-expect downgrades
+      62 of 62 files → 2.
+- [x] H1 — routed unreadable directories into the `unreadable` channel that already existed for
+      unreadable files, where the correct sentence was already written.
+
+**What is NOT closed, and is the actual Phase 6 subject:**
+
+- [ ] **#262 — should this guard family exist in this shape at all?** M2 is the residual no
+      redesign reaches: nothing lexical separates `Stage 3 cloud-sync` from `3 rounds`, and the
+      proposed plural rule measured WORSE. It ships as a stated heuristic with 15 witnesses
+      pinned as cases, defensible only because its verdict is warn-only unless `--strict`.
+      ⤳ The question no per-round review can ask.
+- [ ] **#261 — 59 scripts assert a `MEASURED` figure in a comment and nothing reads one of them.**
+      Six findings across two rounds were a comment claiming a property or number that does not
+      reproduce. `check-provenance` enforces exactly this rule over backlog ROWS. This is
+      backlog #98's inverted-direction shape, one corpus over.
+
+⛔ **Sequencing is the owner's call.** PR #371 is NOT CONVERGED and needs round 3; whether Phase 6
+runs before or after it merges changes the shape of the work and is not a mechanical choice.
+
+## ⟳ 2026-10-14 — ROUND 18, AND A PHASE 6 REVIEW BOTH HALVES ARMED
+
+**Round 18 ran for the first time on 2026-10-14, both halves, and both returned THRASHING on the same
+component with the mechanism test applied per finding.** Record:
+[`architecture-review-2026-10-14-diagnostic-report.md`](reviews/architecture-review-2026-10-14-diagnostic-report.md).
+
+- [x] **Round 18, both halves** — Codex (`14867349`) and Claude (`5c42bf55`), each filed with its
+      verdict; H1, M1 and L1 reproduced by the coordinator before being believed.
+- [x] **Phase 6 convened and its record written**, scoped to THREE findings rather than the renderer
+      alone — the charge round 6 of the sibling branch levelled at its own architecture review.
+- [x] **The root cause named as a mechanism, not a symptom list.** `check-plan-code.py:3167-3180`
+      concatenates harness prose, the arm-selected sentence and the CHILD's `diagnostic_tail` into one
+      string, so no case can tell *the harness said it* from *the child said it*.
+- [x] **The class proved LOCAL by mechanism.** Derived with `ast` over every `scripts/check-*.py`:
+      exactly ONE guard splices externally-sourced text into a report its own cases substring-test —
+      this one, 3 sites — and every other guard does it at **0**. That is what makes a redesign the
+      right instrument rather than a methodology change.
+- [x] **H-A FIXED and its ratchet restored** — `find-claim.py` was 84/86 on 3.14 against 86/86 on 3.10
+      and 3.12, with 25 mutations `NOT MEASURED` there. Both stat sites now route through one
+      `_classify()` helper; 88/88 on all three interpreters and 25/25 attributed on 3.12 and 3.14.
+- [ ] **#291 — the renderer redesign**, approved in direction with amendments A1–A3: separateness of
+      the **observable** (not just the representation), and the SIX worlds as the input axis rather
+      than 0/1/many lines.
+- [ ] **#292 — a gate that MEASURES guards at more than one interpreter.** `check-python-pin.py` pins
+      and warns; nothing measures. Its own docstring names this exact divergence class.
+- [ ] **#293 — three of the four guards this branch adds (~8,200 lines) have no review round naming
+      them as subject.** The first round to look at the fourth found two Highs.
+- [ ] **#290 — `find-claim.py` exists as two different tools on two unmerged branches**, add/add
+      conflict at the merge-base, divergent matching semantics.
+
+⛔ **NOT CONVERGED, and not because of the renderer** — on the strength of H-A and H-B, which are new
+subjects rather than another turn of the same screw. ⛔ **Merging remains the human's gate**, and #293
+is material to it.
+
+## ⟳ 2026-10-13 — THE OWNER CHOSE REDESIGN, AND #279/#280 ARE CLOSED BY REMOVING CLAIMS
+
+⭐ **Decided by the owner 2026-10-13 (option A of two).** Five consecutive rounds (11–13) refuted a
+completeness claim in one harness message-and-parser, each fix adding a list member the next round
+refuted. The redesign removes the claims rather than extending the lists:
+
+* `_is_type_name` and `is_exception_heading` — the two functions that decided what *is* an
+  exception from text the child controls — are **DELETED**. ⟳ ⛔ **r17 M2: "Nothing classifies any more" is WITHDRAWN** — `FRAME_LINE` still classifies a line as frame-shaped and `parse_fail_names` still classifies one as a named failure (both measured). What the deletions established is that **no function decides whether a line is an EXCEPTION**.
+* `exception_headings` is renamed — first to `column_zero_after_frames`, and at round 16 to
+  **`lines_after_frame_runs`**, because each old name WAS the claim and ⟳ **the first rename
+  simply restated it** ("column zero" was refuted as wording #5: the run test reads only
+  `" "`/`"\t"`, so any other whitespace is neither at column zero nor treated as indent).
+* the message no longer counts worlds: it says it **cannot tell which** and **does not claim its
+  list is complete**, naming the four known producers including r13's fourth.
+
+⭐ **#280's real defect is closed by the removal**, not by a wider predicate:
+`type("bad-name", (Exception,), {})("ROOT_MARKER")` is now REPORTED rather than dropped, with a
+case, and the mutation that puts a predicate BACK kills through it.
+
+**Counts:** 291 → **298** cases, 147 → **146** entries, declared sum 1549 → **1548**, binding 1556
+anchors / 1548 entries. ⚠ The entry fall is the ONE sanctioned kind — two mutations retired WITH
+their subject, four retargeted, one added as the falsifier for the removal itself.
+⚠ One retarget SURVIVED its first scoped run (its `expect` named a case that calls the function
+directly and could never see a message mutation) and was repointed at a case that reads the REPORT;
+all five now kill, 1 attributed each.
+
+⛔ **#281 is the process finding this raised**, and it is the owner's own question made durable:
+*could the redesign have been reached earlier?* **Yes — round 11.** The thrashing arming fired then
+and convened Phase 6, which named the root cause correctly in prose and then put an INSTANCE-level
+card to the owner (#271's A/B on the attribution clause), leaving the mechanism unasked for two more
+rounds. The mis-grading has a name: MECHANISM graded as BRANCH-COVERAGE five times, because the
+single test was applied per finding rather than to the pattern. ⭐ **The tell to add to
+`review-method.md`: if an exhaustiveness pass returns a NEW member, the finding was MECHANISM.**
+
+⛔ Round 14 is owed: this changed guarded code, so the r13 verdict no longer covers the tree.
+
+## ⟳ 2026-10-13 — ROUND 12 RAN AFTER THE PHASE 6 REVIEW, AND FOUND THE SAME ROOT CAUSE AGAIN
+
+⛔ **THE THRASHING DID NOT STOP WHEN ITS ARCHITECTURE REVIEW RAN.** Round 12 carried **4 High, 3
+Medium, 3 Low** across both halves, and every High is the root cause the review below already
+named: *the harness reads meaning out of a child's text it does not control*. So *the Phase 6
+review ran* is not evidence *the component converged* — the arming condition is still satisfied.
+
+**Convergence: 0 of 2**, unchanged in twelve rounds. ⛔ **DO NOT MERGE** — the human gate has not
+been given.
+
+**Codex half** (`docs/reviews/codex/backlog-249-260-r12-codex.md`), all five verified by hand:
+one raised exception reported as TWO and a non-ASCII class reported as NONE; an empty stderr read
+as proof the suite RAN (`os._exit(1)`); and a crash that FORGES a `[FAIL]` line in its own exception
+message certified as an attributed kill over zero executed cases. Plus the architecture review's
+A-versus-B justification contradicting itself three ways.
+
+**Claude half** (`docs/reviews/claude/backlog-249-260-r12-claude.md`), run AFTER the Codex fold so
+its subject was the FIX — which is what rounds 2+ alternate for, and it paid: **its High is a
+world the Codex fold CREATED.** Narrowing attribution to stdout left `control_is_green` reading the
+merged view, so a suite reporting on stderr passes the control and then reports nothing — a third
+producer for a message that enumerated two. Filed as **#277**; its premise-without-a-falsifier half
+as **#278**.
+
+**What is still OPEN after round 12:** #270 (the intermittent shard red, NOT DIAGNOSED), #272,
+#275, #276 (⟳⛔ **this line published the WITHDRAWN figure "11 unasserted of 26" as fact until round 13's Claude half caught it — the FIFTH incomplete withdrawal of the day, and the rule that catches it is written in this very branch at `docs/reviews/architecture-review-2026-10-13.md:284`: *a withdrawal needs its dependents re-derived, not just its own string removed*. `check-withdrawal.py` is GREEN over it, because it tracks a withdrawn figure's own string and not the places that restate it — and this one sat in the ROADMAP, the compaction-proof layer a resuming session reads first.** The measured categories are in the row; the remedy is a DECISION the owner owns), **#279**, **#280** (⟳ added here by r13 M1 — they were filed in `backlog.md` and absent from the roadmap, while #277/#278 from the round before had both halves; `dev-process.md` says a discovered item goes to BOTH in the same turn), #277, #278, and
+⚠ **the 2026-10-07 arming below (#262/#261), which today's review did not touch.**
+
+## ⟳ 2026-10-13 — PHASE 6 RAN, ON A **SECOND** COMPONENT OF THE SAME BRANCH (the mutation harness's child-verdict path)
+
+⚠ **THIS IS NOT THE ARMING ABOVE, AND THE ONE ABOVE IS STILL OPEN.** The 2026-10-07 arming is the
+TEXT-HEURISTIC GUARD FAMILY (#262, #261) and asks *"should this guard family exist in this shape at
+all?"*. Today's is `scripts/check-plan-code.py`'s child-verdict path. Two Phase 6 armings now exist
+on one branch; **one has run and one has not**, and conflating them would retire an unaddressed
+question. #262 and #261 remain unaddressed by today's review.
+
+**Armed by:** rounds 1–11 on PR #371, and answered by the documented test rather than the symptom
+list — `docs/reviews/coordinator/backlog-249-260-r11-thrashing.md` (rewritten during the review it
+armed, because its first version led with the symptom that `review-method.md:137` says never to
+lead with). Two findings are MECHANISM defects by `:195`'s discriminator; the rest are
+branch-coverage and were fixed as such.
+
+**Sequenced by the owner, 2026-10-13**, choosing the review over a twelfth fold.
+
+**The review:** `docs/reviews/architecture-review-2026-10-13.md`.
+
+**The root cause, one sentence:** the harness asserts a cause it cannot read from a child's text, and
+each of eleven fixes moved the claim instead of removing it.
+
+- [ ] **#271 — the FALSE GREEN, and it is the one to do first.** `attributed: True` is recorded over
+      `fails: []` when a suite CRASHES and its entry omits `expect`. Reproduced as a 2×2; cell B is
+      byte-identical to a real kill. Latent at 0 of 1539 entries, and the route in is printed by the
+      harness's own refusal message. ⭐ The remedy is the propagation of an existing decision, not a
+      new one: `control_is_green` is already the mandatory two-clause form for `rc == 0`, with its
+      rationale recorded on 2026-09-03.
+- [ ] **#272 — one combiner guards the separator, its sibling does not, and the unguarded one feeds
+      ATTRIBUTION.** `merged_output` fuses the streams with no separator; the hazard is named in the
+      manifest for `diagnostic_tail`. The only producer of a newline-less stderr today is the
+      harness itself, safe by two accidents.
+- [ ] **#273 — the venv decision is undocumented and `.venv` is NOT git-ignored**, in a repo whose
+      `.gitignore` records two `git add -A` accidents.
+- [ ] **#274 — four places argued a sequencing rule from first principles while
+      `review-method.md` §Iterative Re-Review already owned it.** The remedy is a citation, not a
+      new rule. ⚠ This review's own author was one of the four.
+- [ ] **#275 — the diagnostic's test surface**: 3 property assertions (all the same one) against 9
+      substring assertions, plus `run_suite` now dead in production and a manifest entry naming the
+      wrong function.
+
+⛔ **NOT CLOSED BY THIS REVIEW:** the intermittent `mutation-sweep` failure's root cause (backlog
+#270) — it did not recur at `ff5b10f7` or `7b88ced8`, so it is NOT DIAGNOSED, not fixed. And
+**convergence**: PR #371 is 0 of 2, zero in eleven rounds, and `verify` is red only on the
+final-tree gate, which nothing but a round over the final tree can clear.

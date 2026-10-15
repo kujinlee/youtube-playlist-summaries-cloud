@@ -1,0 +1,418 @@
+[
+  {
+    "name": "a figure unchanged by the hunk is reported as a correction anyway",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "if n not in added_blob:",
+        "if True:"
+      ]
+    ],
+    "expect": [
+      "a figure present on BOTH sides is not a correction"
+    ]
+  },
+  {
+    "name": "⭐ the replacement filter goes, so an UNCHANGED figure becomes an exemption token (fail-open)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "n for n in NUMBER_RE.findall(added_blob) if n not in removed_blob",
+        "n for n in NUMBER_RE.findall(added_blob)"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCHANGED figure on the same line is NOT a replacement"
+    ]
+  },
+  {
+    "name": "the corrected-FORM prong stops exempting, so a self-correcting sentence reads as a survivor ⟳ r1 Claude B1: the r1 fold retargeted this entry's ANCHOR to the rewritten line and left its EXPECT naming the case title the same fix had renamed away, so the entry went red with `expect matched 0 red case(s)` and put the mutation shard red. The anchor and the expect are two bindings, and fixing one is not fixing the other.",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return any(cf and cf in window for cf in corrected_forms)",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "the CORRECTED FORM beside the old claim means the text is correcting itself"
+    ]
+  },
+  {
+    "name": "the history-marker prong goes, so a ⟳ trail reads as a live claim ⟳ r1 Claude M4: retargeted — the marker prong became a call to `history_marker`, which NAMES the marker instead of answering yes/no, so this anchor went with it. FOURTH orphan this fold; `--binding` found every one. ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    if history_marker(window, figure_at, masked=masked):\n        return True",
+        "    if False:\n        return True"
+      ]
+    ],
+    "expect": [
+      "a ⟳ trail is history"
+    ]
+  },
+  {
+    "name": "review and explainer directories stop being exempt",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return any(path.startswith(d) or f\"/{d}\" in path for d in EXEMPT_DIRS)",
+        "return False"
+      ]
+    ],
+    "expect": [
+      "a review document is exempt"
+    ]
+  },
+  {
+    "name": "--strict stops being strict, so survivors never fail a run that asked them to",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "return (1 if strict else 0), (",
+        "return 0, ("
+      ]
+    ],
+    "expect": [
+      "survivors under --strict exit 1"
+    ]
+  },
+  {
+    "name": "the signature loses its left context, so a figure binds on less than it should ⟳ retargeted in the r1 fold: the fix for the Codex finding rewrote the line this bound to",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    lo = max(0, idx - context_words) if context_words else idx",
+        "    lo = idx"
+      ]
+    ],
+    "expect": [
+      "figure with two words either side"
+    ]
+  },
+  {
+    "name": "#251: window_around ignores its span, so the history check reads the whole document",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return text[max(0, start - span):min(len(text), end + span)]",
+        "    return text"
+      ]
+    ],
+    "expect": [
+      "a window clips at the start of the text"
+    ]
+  },
+  {
+    "name": "#251 fold: hit_offset returns the first occurrence again, so repeats inherit its window",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return line_start + hit.col - 1",
+        "    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ hit_offset returns THIS match's offset, not the first occurrence's"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the weak markers go back to being window-wide, so a live claim one sentence away from any past-tense prose is exempted again. Window-wide, `was ` alone covered 7,620 of 47,988 figure occurrences ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    sentence = sentence_around(window, figure_at, masked=masked)\n    for mark in WEAK_MARKERS:\n        if mark in sentence:",
+        "    sentence = sentence_around(window, figure_at, masked=masked)\n    for mark in WEAK_MARKERS:\n        if mark in window:"
+      ]
+    ],
+    "expect": [
+      "⭐ M4: 'was ' in ANOTHER sentence does not exempt a live claim"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the STRONG markers become sentence-bound too, which is the over-correction: an author who wrote ⟳ nearby IS correcting something ⟳ REPLACEMENT FIXED r6: threading `masked=` made this mutant raise TypeError, so the suite CRASHED with no [FAIL] line and the kill was unattributable. CI caught it; --binding cannot, because it validates ANCHORS and not replacements",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    for mark in STRONG_MARKERS:\n        if mark in window:",
+        "    for mark in STRONG_MARKERS:\n        if mark in sentence_around(window, figure_at, masked=masked):"
+      ]
+    ],
+    "expect": [
+      "⭐ a STRONG marker still reaches ACROSS sentences, which is the half M4 did not narrow"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — the suppression report goes silent, so a run that exempted five hits reads identically to one that exempted none",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    if not counts:\n        return \"\"",
+        "    if True:\n        return \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ suppression_line NAMES each marker and its count, so a quiet run is not mistaken for a clean one (r1 Claude M4)"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — figure_offset_in_window stops clipping, so near the top of a document the sentence lookup lands on the wrong sentence — precisely the documents whose first lines carry the correction notices",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return min(start, span)",
+        "    return span"
+      ]
+    ],
+    "expect": [
+      "figure_offset_in_window clips at the start of a document, where window_around did too"
+    ]
+  },
+  {
+    "name": "⟳ r1 Claude M4 — sentence_around returns the WHOLE window, so weak markers are window-wide again by the back door: the function M4 added is the one the sweep did not reach (`--diff-coverage` said so before this entry existed) ⟳ RETARGETED r4: the r4 M1 mask moved this line (#252's 8th instance, again inside the commit fixing a finding)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    bounds = [0] + [m.end() for m in SENTENCE_SPLIT.finditer(masked)] + [len(window)]",
+        "    bounds = [0, len(window)]"
+      ]
+    ],
+    "expect": [
+      "...and a DIFFERENT window splits on ITS OWN sentence boundaries"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — figure_offset_in_hit stops searching and answers 0, which is the signature-start behaviour under a different name",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    i = hit_text.find(figure)\n    return i if i >= 0 else 0",
+        "    return 0"
+      ]
+    ],
+    "expect": [
+      "⭐ figure_offset_in_hit locates the FIGURE, not the signature's start"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — a bare newline becomes a sentence boundary again, so the verdict depends on where the line WRAPS: same claim, same marker, opposite answers ⟳ r3: retargeted — the block-start alternative gained `1)`",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|\\n(?=\\s*(?:[|#>]|[*+-]\\s|\\d+[.)]\\s))\"      # a markdown block start; `1)` too",
+        "    r\"|\\n\"                                          # a markdown block start; `1)` too"
+      ]
+    ],
+    "expect": [
+      "⭐ ...but a WRAPPED sentence is ONE sentence, so a wrap cannot change the verdict"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — `|` leaves the markdown-block class, so two TABLE ROWS share a sentence and a marker leaks from one row's prose into the next row's figure. ⚠ The first attempt at this entry added a never-matching alternative and SURVIVED: a no-op edit is not a mutation",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "[|#>]",
+        "[#>]"
+      ]
+    ],
+    "expect": [
+      "a markdown TABLE ROW is its own sentence — a marker must not leak between rows"
+    ]
+  },
+  {
+    "name": "⟳ r2 Codex HIGH — the LIVE caller's figure offset collapses to the signature's, caught only by the case that drives main() over a real repository ⟳ r3: retargeted — the caller now builds a LIST of per-occurrence offsets",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                base = figure_offset_in_window(start)\n                ats = [base + off for off in figure_offsets_in_hit(hit.text, figure)]",
+        "                base = figure_offset_in_window(start)\n                ats = [base]"
+      ]
+    ],
+    "expect": [
+      "⭐ LIVE: a marker in the PREVIOUS sentence does not suppress a survivor — the caller passes the FIGURE's offset, not the signature's (r2 Codex High)"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the COLON boundary goes, so a `was` in a lead-in exempts the separate claim below it. LIVE at docs/dashboard-entries.md:10440 ⟳ RETARGETED r7: the CRLF fix rewrote this alternative",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?<=:)\\r?\\n\"                                 # a colon lead-in ENDS a statement — `\\r?` because",
+        "    r\"|(?!x)x\"                                   # a colon lead-in — SEVERED"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: a COLON lead-in ends a statement — the live instance at docs/dashboard-entries.md:10440 had `was` in the lead-in exempting the claim below"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the markdown HARD-break boundary goes",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    r\"|(?<=\\s\\s)\\n\"                                # a markdown hard break\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and a markdown HARD break (two trailing spaces) is a boundary too"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — `1)` stops being a list marker, so only `1.` is modelled",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "\\d+[.)]\\s",
+        "\\d+[.]\\s"
+      ]
+    ],
+    "expect": [
+      "...and `1)` is a list marker, not only `1.`"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — only the FIRST occurrence of a repeated figure is considered, so a marked first occurrence exempts an unmarked second. The witness is two commits in a real repository: `was 1,414. 1,414 anchors today`",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    out, i = [], hit_text.find(figure)\n    while i >= 0:\n        out.append(i)\n        i = hit_text.find(figure, i + 1)\n    return out or [0]",
+        "    i = hit_text.find(figure)\n    return [i] if i >= 0 else [0]"
+      ]
+    ],
+    "expect": [
+      "⭐ r3: figure_offsets_in_hit returns ALL occurrences, so a repeated figure cannot inherit the first one's exemption"
+    ]
+  },
+  {
+    "name": "⟳ r3 Codex HIGH — the caller goes back to exempting on ANY occurrence instead of ALL, which is the same defect at the call site ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                if all(is_history_context(win, corrected, figure_at=a, masked=masked_win)\n                       for a in ats):",
+        "                if any(is_history_context(win, corrected, figure_at=a, masked=masked_win)\n                       for a in ats):"
+      ]
+    ],
+    "expect": [
+      "⭐ LIVE r3: a repeated figure whose FIRST occurrence is marked and second is not is a SURVIVOR — the caller requires every occurrence to be exempt"
+    ]
+  },
+  {
+    "name": "⛔ r4 Codex M1 — `mask_inline_code` is severed: a newline inside an inline code span cuts the sentence again, so WHERE A LINE WRAPS decides whether a stale figure is a survivor ⟳ RETARGETED r5: the r5 escaped-backtick filter split this statement across two lines (#252's 11th instance) ⟳ RETARGETED r5: threading the document-level `masked=` through this call moved the line (#252) ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    runs = [(mt.start(), mt.end(), backtick_escaped(text, mt.start()))\n            for mt in BACKTICK_RUN.finditer(text) if len(mt.group(0)) <= 2]",
+        "    runs = []"
+      ]
+    ],
+    "expect": [
+      "⭐ r4: ...and the SAME sentence wrapped at the span's COLON is exempted too, where it used to be a survivor — a colon inside code is not a sentence boundary"
+    ]
+  },
+  {
+    "name": "⛔ r5 Codex M1 — an unmatched opener STOPS the scan again, so one stray backtick disables masking for every later genuine span and turns a suppressed figure into a false survivor ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if j >= len(runs):\n            i += 1\n            continue",
+        "        if j >= len(runs):\n            break"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ...and ONE unmatched opener no longer disables every later span — it is SKIPPED, where `break` let a stray backtick turn a genuine span into a false survivor"
+    ]
+  },
+  {
+    "name": "⛔ r5 (#251 --diff-coverage) — backtick_escaped inverts its PARITY: an odd run of backslashes stops escaping and an even one starts, so a literal backslash before a real delimiter closes the span and `\\\\`` opens one",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    return n % 2 == 1",
+        "    return n % 2 == 0"
+      ]
+    ],
+    "expect": [
+      "...and backtick_escaped counts an EVEN run of backslashes as not escaping, so a literal backslash before a REAL delimiter still opens a span"
+    ]
+  },
+  {
+    "name": "⛔⛔ r5 Claude H2 — the mask is computed from the WINDOW again instead of the document: a window opening inside a code span pairs its orphan closer with a later opener and masks the prose boundary away. 205 of 205 live verdict changes were false suppressions",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "                masked_win = window_around(masked_of(text), start, start + len(hit.text))",
+        "                masked_win = mask_inline_code(win)"
+      ]
+    ],
+    "expect": [
+      "⭐⭐ r5 LIVE: a window that OPENS INSIDE a code span reports its survivor — the mask is decided on the DOCUMENT, where a fragment mask paired an orphan closer with a later opener and masked the prose boundary away (205/205 false suppressions measured)"
+    ]
+  },
+  {
+    "name": "⛔ r5 Claude H1 — the opener-only escape test is removed, so an escaped backtick can open a span again and the PROSE between two of them is masked (cmark and markdown-it-py both disagree with that) ⟳ RETARGETED r6: the r6 Codex M1 opener-truncation restructured this loop (#252)",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        open_start = s + 1 if esc else s",
+        "        open_start = s"
+      ]
+    ],
+    "expect": [
+      "⛔ r5: ESCAPED backticks are not delimiters, so the prose between two of them keeps its sentence boundary and the figure is a SURVIVOR — this was suppressed as history"
+    ]
+  },
+  {
+    "name": "⛔ r6 Codex M1 — an escaped run is DROPPED again instead of truncated, so `\\\\``` opens no span and the code-span newline after it goes unmasked, turning a suppressed figure into a false survivor",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "        if open_len < 1:",
+        "        if open_len < 1 or esc:"
+      ]
+    ],
+    "expect": [
+      "r6: an escaped FIRST backtick truncates the opener, it does not delete the run"
+    ]
+  },
+  {
+    "name": "⛔ r6 Claude H1 — the mask memo keys on `id(text)` again: CPython reuses an address for an object of the SAME SIZE, so the length in the key is implied by the collision rather than guarding it, and 18 of 33 hits served another document's mask over 40 real main() runs",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    key = text",
+        "    key = (id(text), len(text))"
+      ]
+    ],
+    "expect": [
+      "⛔ r6: the mask memo ignores the entry an id-KEYED cache would serve, so a recycled address cannot hand one document another's mask"
+    ]
+  },
+  {
+    "name": "⛔ r10 Claude H2 — the line ruler goes back to `split(\"\\n\")`, so a LONE CR stops being a line break. The parser normalises `\\r\\n?|\\n` BEFORE parsing, so its line map counts normalised lines while the offsets index raw text: measured 7 LENIENT of 10 on a CR corpus where `splitlines` was exactly correct",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "PARSER_NEWLINE = re.compile(r\"\\r\\n?|\\n\")",
+        "PARSER_NEWLINE = re.compile(r\"\\n\")"
+      ]
+    ],
+    "expect": [
+      "⛔ r10 Claude H2: a LONE CR is a line break to the parser (`NEWLINES_RE = \\r\\n?|\\n` normalises before parsing), so the block boundary after it must be seen. Reverting the ruler to `split(\"\\n\")` makes this False and went 7 LENIENT of 10 on a CR corpus"
+    ]
+  },
+  {
+    "name": "⛔ r10 Codex M1 — the line ruler goes back to `splitlines()`, which breaks on VT, FF, NEL, U+2028 and U+2029 as the parser does not, shifting every later line number. The two ruler entries pin it from BOTH sides: neither of Python's rulers is the parser's",
+    "file": "scripts/check-withdrawal.py",
+    "edits": [
+      [
+        "    starts = [0] + [m.end() for m in PARSER_NEWLINE.finditer(text)]\n    offs = starts + [len(text)]",
+        "    offs, pos = [], 0\n    for line in text.splitlines(keepends=True):\n        offs.append(pos)\n        pos += len(line)\n    offs.append(pos)"
+      ]
+    ],
+    "expect": [
+      "...while a VERTICAL TAB is NOT a line break to the parser, so there is no boundary here and the span is genuine. `splitlines()` breaks on VT and made this True — the two negatives together pin the ruler to the parser's own regex and to neither of Python's"
+    ]
+  }
+]
