@@ -2374,7 +2374,47 @@ numbered engineering list as a *candidate pool*, not a current plan, and check e
 this file claimed prod was at migration `0021` when it was at `0022`, which is how `0023` came to sit
 unapplied for eight days while every document read "merged, done".
 
-> ### ⭐ CURRENT GOAL — set by the user 2026-09-06. Three items, no ordering between them.
+> ### ⭐⭐ CURRENT GOAL — named by the owner 2026-10-14, mapping confirmed 2026-10-15. THREE PROGRAMMES.
+>
+> ⛔ **This supersedes the 2026-09-06 block below, which is KEPT and relabelled rather than deleted.**
+> The two are not rival answers to one question — they are at **different altitudes**. The September
+> block named three `docs/backlog.md` ROWS; these are three PROGRAMMES, each covering several
+> anchors. The September rows remain legitimate work; they are no longer the answer to *"what is the
+> current goal?"*. ⚠ **Measured 2026-10-15: that block had stood as "CURRENT" for five weeks while
+> naming work nobody was doing** — which is the exact staleness the paragraph above this one warns
+> about, reproduced by this file about itself.
+>
+> | # | the owner's name | anchors | deliverable | state, measured 2026-10-15 |
+> |---|---|---|---|---|
+> | **1** | overall comprehensibility suite | `status-visibility`, `explanation-on-demand`, `feature-map` | **D2** | pages built and generating. ⚠ The suite is **not yet registered** as a deliverable — see below |
+> | **2** | development speed enhancement | `review-decides-itself` (ADR-0014) | **D2** | §6+§7 ADOPTED 2026-09-24; **Q0 DESIGNED IN FORM, NOT BUILT** — one of the three items `check-roadmap-consistency` still reports open (A6, D2, Q0) |
+> | **3** | youtube-playlist-summaries-cloud | `cloud-publishing`, `cloud-sync`, `share-and-download`, `serve-money-guard`, `serve-path-bounding`, `stable-blob-addressing` (⏸ parked), `cloud-blob-key-encoding`, `corrections-in-cloud`, `prod-smoke` | **D1** | M1+M2+M3 closed. Live: **Fly v10, 2026-08-24**; prod schema **`0027`**. ⛔ **0 of the 213 commits on `master` in the 52 days since that deploy touched product code alone** (208 harness/docs only, 5 both) |
+>
+> **All 13 registered anchors are accounted for by these three, 9 / 1 / 3, with none left over** —
+> so there is no fourth goal hiding, and nothing in `docs/anchors.md` is unclaimed by a programme.
+>
+> ⭐ **D1 and D2 are the project's two DELIVERABLES, stated by the owner 2026-08-11 and not derivable
+> from this file or the code** — D1 the product, D2 a battle-tested harness and reproducible
+> framework for new projects, indexed by [`portable-practices.md`](portable-practices.md). Every D2
+> entry must pass two filters: **measured**, and **project-independent**. Most of this project's best
+> lessons fail the second, and that is the correct outcome — do not dilute that file to make this
+> table look tidier. Memory: `project-has-two-deliverables.md`.
+>
+> **Why goal 1 is D2 and not D1**, since it is the only one that was genuinely open: the suite makes
+> *this* project legible, which reads like product overhead — but D2's own rule is *what travels is
+> the QUESTION a tool asks, never the tool*, and the question *"how does someone returning see state
+> without reading a transcript?"* holds with no Supabase, no Gemini and no Fly. The tools mostly fail
+> the project-independence filter; the questions do not.
+>
+> ⛔ **THE GOAL CHANGE AT THE BOTTOM OF THIS BLOCK'S PREDECESSOR IS NOW SPENT, AND ITS REGISTRATION
+> IS OWED.** The 2026-09-06 block closes by putting *"declaring the comprehensibility suite a project
+> deliverable"* deliberately out of scope, as *"a goal change, whose home is `docs/anchors.md`"*. The
+> owner has now made that change. ⚠ **It is NOT discharged by this table**: `docs/anchors.md` holds
+> names that must each be claimed by a document (`check-anchors` R4 — *"claimed by no document — use
+> it or remove it"*), so the registration needs a claiming document and cannot be a one-line edit.
+> Tracked as **`docs/backlog.md` row 290**.
+
+> ### ⛔ SUPERSEDED 2026-10-15 by the block above — CURRENT GOAL as set by the user 2026-09-06. Three items, no ordering between them.
 >
 > **Everything else in this block remains a candidate pool. These three are the plan.** They are
 > also tracked in the session task list as `GOAL 1/3`–`GOAL 3/3` — *that is Claude Code's own
