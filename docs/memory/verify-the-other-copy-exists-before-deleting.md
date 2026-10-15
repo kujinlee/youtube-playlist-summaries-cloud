@@ -1,6 +1,6 @@
 ---
 name: verify-the-other-copy-exists-before-deleting
-description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⛔⛔ NOTHING HERE MAKES DELETING SAFE — THREE RULES IN THREE ROUNDS SAID *safe* WHERE DELETING DESTROYED THE ONLY COPY. You can OBSERVE that HEAD held these bytes a moment ago — `git rev-parse --verify --quiet \"HEAD:$A\"` against `git hash-object --no-filters -- \"$A\"` — and that is an observation, not permission: A can change between the look and the `rm`, measured. ⭐ If you cannot afford to lose it, DO NOT DELETE IT — `mv` it aside and leave it. ⛔ The hash-and-restore proof in this note is NOT an authority — round 4 measured it printing SAFE while deleting destroyed the only content. Files only"
+description: "FIRES-WHEN: about to rm, move or 'clean up' a file because a copy supposedly lives elsewhere — or a document/coordinator tells me a path is outside the repo. ⛔ I deleted the ONLY copy of a 40KB page: `~/explainers` is a SYMLINK into `docs/explainers`, so the two paths were ONE file — ⭐ and it was UNCOMMITTED, which is why it was LOST. ⛔⛔ THERE IS NO CHECK HERE AND THAT IS THE ANSWER, NOT A GAP: four rules in four rounds each said *safe* where deleting destroyed the only copy, because every one observed an INSTANT while the `rm` destroys the interval after it. ⭐ THE ONLY SANCTIONED OPERATION IS `mv "$A" "$A.aside-$(date +%Y%m%d-%H%M%S)"` — reversible, no false-permit mode, and reclaiming the space is a SEPARATE later decision. ⚠ This is not new: `bootstrap-explainers.sh` and `bootstrap-memory.sh` have shipped it since 2026-10-02, ELEVEN DAYS BEFORE the incident (*"NEVER destroy a real directory: it may hold authored pages never committed"*). Phase 6 chose this 2026-10-14. Files only"
 metadata:
   node_type: memory
   type: feedback
@@ -23,7 +23,7 @@ The fork never re-emitted — asked directly, it answered *"I never held that pa
 that was false too. **The page was recovered in full from the fork's own transcript**, restored,
 committed and shipped as PR #369. Nothing was lost but the ~1.3 KB of edits made after the write.
 
-## The check — ⛔ ASK GIT WHAT IT HOLDS; A DERIVATION FROM `stat` IS AT MOST A HINT
+## Are these two paths the SAME FILE? — ⛔ a DIAGNOSTIC, and `stat` is at most a hint
 
 ⚠ r4 L3: this heading said *"VERIFY, NEVER DERIVE"*, which the file then contradicted by
 keeping a `realpath` DERIVATION as a subordinate diagnostic. Narrowed rather than deleted,
@@ -78,7 +78,7 @@ survivor. Its known-positive control would have been the survivor itself.
 containing spaces and returned rc=1) and print each observation LABELLED: a bare
 `readlink "$A" "$B"` prints ONE unlabelled target and exits 1 without saying which argument
 produced it.
-## ⭐⭐ ASK GIT — COMPARE BLOB IDS, AND NEVER CLASSIFY THE PATH'S STATE
+## ⛔⛔ NO CHECK SHIPS HERE. THE ONLY SANCTIONED OPERATION IS `mv`
 
 ⛔⛔ **r4 CLAUDE B1 — MY FIRST VERSION OF THIS WAS THE SIXTH RULE HERE AND IT WAS WRONG IN THE
 FATAL DIRECTION.** It ran two INDEPENDENT lines, and `git diff --quiet HEAD -- <path>` exits **0
@@ -92,20 +92,42 @@ all, so "three states distinguished" never reproduced either.
 `return`, instead of the two lines in the fence.** The artifact I tested was not the artifact I
 delivered — so run the fence, from the fence.
 
-⭐ **The replacement OBSERVES and does not permit** — ⛔ r5: *"and it FAILS CLOSED"* stood
-here and is WITHDRAWN, measured false twice below; this block reports what it saw:
+⭐⭐ **PHASE 6 DECIDED THIS, 2026-10-14, AND THE OWNER PICKED IT: the question *"is it safe to
+delete?"* IS NOT ANSWERED HERE — IT IS REPLACED.** Nothing sanctioned deletes. The sanctioned
+operation moves the thing aside and leaves it there:
 
 ```bash
-# An OBSERVATION, never a permission. No pipes, so every exit status is meaningful.
-HB=$(git rev-parse --verify --quiet "HEAD:$A" 2>/dev/null) \
-  || { echo "CANNOT SAY: HEAD has no such path"; exit 2; }
-# --no-filters IS LOAD-BEARING: without it `hash-object` applies clean/eol filters, so this
-# printed OBSERVED over bytes HEAD never held — and a delete then destroyed the only copy.
-WB=$(git hash-object --no-filters -- "$A") \
-  || { echo "CANNOT RUN: cannot hash $A"; exit 2; }
-if [ "$HB" = "$WB" ]; then echo "OBSERVED: HEAD held these exact bytes just now"
-else echo "DIFFERENT: HEAD does not hold these bytes"; fi
+# The ONLY sanctioned operation. Reversible, and it has NO false-permit mode, because nothing
+# is destroyed. Reclaiming the space is a SEPARATE, later, deliberate decision.
+mv "$A" "$A.aside-$(date +%Y%m%d-%H%M%S)"
 ```
+
+⛔ **AND THIS IS NOT A NEW MECHANISM — IT IS THE POLICY THIS REPOSITORY ALREADY SHIPPED, FOUR TIMES,
+ELEVEN DAYS BEFORE THE INCIDENT.** The architecture review measured it
+(`docs/reviews/architecture-review-2026-10-14-deletion-safety.md`, Defect 3):
+
+| already implemented | since | what it does |
+|---|---|---|
+| `scripts/bootstrap-explainers.sh:29-35` | `5128b99b`, **2026-10-02** | *"⛔ NEVER destroy a real directory: it may hold authored pages never committed"* → `mv` to `.pre-symlink-<ts>` |
+| `scripts/bootstrap-memory.sh:38-42` | `5128b99b`, **2026-10-02** | the same, for the memory corpus |
+| `scripts/codex-review.py` `overwrite_refusal` | — | refuses to replace a filed review by default |
+| `scripts/codex-review.py` `quarantine` | — | moves agent-created files out of the artifact tree |
+
+The incident was on **2026-10-13**. Both bootstrap scripts distinguish a symlink (safe to `rm`)
+from a real directory (preserve by moving) for **exactly the hazard that occurred** — a path that may
+hold work never committed. ⭐ So *"`mv` it aside"* was never this note's discovery; it is the policy
+the repo already had, and the deletion bypassed it.
+
+⛔ **WHY NO CHECK SHIPS, which is the part that took four rounds to learn.** Every version of the
+check observed the file at an INSTANT, and the `rm` destroys it in the interval AFTER that instant.
+There is no stability boundary to observe, so the defect was never in any of the four rules — it was
+in the idea that an observation can license a deletion. ⚠ The seventh rule *"OBSERVES and does not
+permit"* and still printed `OBSERVED: HEAD held these exact bytes` over bytes HEAD had never held,
+because `git hash-object` applies clean/eol filters without `--no-filters`. **A digest is not the
+bytes** — which `quarantine`'s own docstring had already written down: *"an OVERWRITTEN file cannot
+be restored from a hash — the snapshot keeps digests, not bytes."*
+⚠ **If you want to know whether git holds something, that is a different question** and this note
+does not answer it: ask git directly, and remember that the answer is about the moment you asked.
 
 ⛔⛔ **r5 — AND THE SEVENTH RULE PERMITTED A DESTRUCTIVE DELETE TOO, SO THE PERMISSION VERDICT
 IS WITHDRAWN ALTOGETHER.** Two independent refutations, measured against the shipped fence:
@@ -180,11 +202,9 @@ the thing it describes. Filed as backlog #259.
 ## ⚠ A cleanup instruction is still an irreversible action
 
 "Remove the copies so the tree is clean" reads as tidying, so it bypassed the caution a *delete* would
-have triggered. **Tidying that uses `rm` is a delete.** The safe form costs nothing:
-
-```bash
-mv <path> "$SCRATCH/"   # reversible — and LEAVE it there. Nothing licenses a later `rm`.
-```
+have triggered. **Tidying that uses `rm` is a delete**, and it is subject to the same rule: the only
+sanctioned operation is the `mv` above. ⚠ It is NOT repeated here — one mechanism, one place, which
+is this repository's most-measured defect class and the reason that fence has a single copy.
 
 ⛔ **r5 CLAUDE H2 — THIS COMMENT USED TO READ *"rm only once the survivor is confirmed by sha"*,
 AND THAT IS WITHDRAWN.** It was the deletion permission intact, in the block a reader reaches last,
