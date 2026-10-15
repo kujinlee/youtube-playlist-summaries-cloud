@@ -15023,3 +15023,47 @@ from the guard's own `got 1419 want 0` against a deliberately wrong sentinel. Ta
 would have left the manifest declaring a total its own dict no longer sums to, green and wrong.
 `docs/dashboard-entries.md` conflicted too — both branches had appended to one log — and both dated
 blocks were kept in order, per this file's own append-only rule.
+
+## 2026-10-15
+**The product shipped for the first time in 52 days, and what it shipped had been finished for four
+weeks.** Three changes to how the background worker behaves were written and merged on 18–19
+September. They then sat on `master`, never released. The thing actually running in production was
+built on 24 August. Nothing was broken by this — the site worked the whole time — but the
+improvements were doing nothing for anybody, and no alarm exists for that condition.
+
+**The one that matters:** a cleanup routine was running at the same rate as the job poll and buying
+nothing for it. An idle worker was previously measured as effectively all of the production database
+traffic. That is what this release reduces.
+
+**What is still asleep.** A second change lets the worker shut down when there is nothing to do and
+wake when someone arrives. It is now running in production and it does **nothing**, because it needs
+a separate piece of infrastructure that has not been created. That is deliberate and it is written
+down; it is not an oversight, and it should not be recorded as done.
+
+**How this was checked, because "the deploy succeeded" is not the same claim.** The production test
+suite was run *before* deploying as well as after. That sounds redundant and is not: it is what makes
+a failure afterwards mean something. The suite needs a live sign-in session, and when that session
+expires the only fix is a human signing in to Google by hand — so a red run after a deploy could
+otherwise mean a bad release or an expired session, with no way to tell. Running it first ruled one
+of those out for 25 seconds of work. Both runs passed, and the spend ledger was identical at both
+ends, so the checking itself cost nothing.
+
+**A trap that was armed and did not fire.** A setting in the repository had previously disagreed with
+production in a way where the next deploy would silently undo a live cost saving — no error, nothing
+to notice, about $5 a month quietly returning. The fix had already landed; this deploy is the first
+moment that could be confirmed, and it was: the repository and the live configuration now agree.
+
+<!--tech-->
+**`deploy-v11-worker-lease`. Release **v11** from master `fa202473`, 2026-10-15 18:39Z. Step 3b
+**6/6, VERIFIED AGAINST: release v11**. Web `28654674b19d78` and worker `8654504a454428` both on
+version 11. No migration; prod stays at `0027`.**
+
+| | |
+|---|---|
+| **what shipped** | `35cf44c6` lease-sweep cadence, `a37a14c1` sweep rule collapsed four copies → one, `e693f36a` wake-on-visit — merged 2026-09-18/19, unreleased until now |
+| **what is inert** | `e693f36a`. Waking needs `deploy.md` § Step 5's six commands, which create the `yps-worker` app; `flyctl apps list` confirms **`yps-worker` does not exist**. Deploying it did not begin that migration |
+| **the control** | Step 3b run against **v10 before** the deploy — 6/6, `session=live`, ledger `audit 2, 2299¢` — so a post-deploy red could not be confused with an expired Google session (`npm run prod:session` does not work; recapture is manual) |
+| **deliberately not run** | Step 3's `fly scale count web=1 worker=1`. It predates the cost work and pins an always-on worker, reverting the saving this release delivers |
+| **backlog #141 falsifier, RUN** | *"`fly.toml` says 0 AND the live config still reports 0 after the next deploy."* Measured after v11: `fly.toml` `min_machines_running = 0`; `fly config show` → `min_machines_running = 0`, `auto_stop_machines = suspend`. ✅ The silent revert did not happen |
+| **behaviour change that arrived anyway** | the `kill_signal`/`kill_timeout` relocation predicted by `e693f36a`. Live config now reports **`SIGTERM` / `2m0s`** against Fly's `SIGINT`/5s defaults, for both process groups. Checked benign at merge; now live and verified |
+| **two stale checkboxes corrected** | **#141** ticked — closed with its falsifier run rather than asserted. **#142** left UNTICKED but rewritten: it said *"not started"* while the code had been on master for four weeks. Merged-and-inert is neither done nor not-started, and closing it on "the code shipped" would be the error |
