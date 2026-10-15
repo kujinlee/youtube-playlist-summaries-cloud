@@ -536,6 +536,27 @@ jobs:
       # found the cause on the sibling's comment. ⭐ The durable fix is in the REFUSAL MESSAGE
       # (`scripts/check-dashboard-entry.py`), which the reader actually sees; this comment is the
       # cheap half, for whoever is editing the workflow rather than reading its output.
+      # ⛔ TWO SEQUENCES SHARE ONE VISUAL SPACE: GitHub PR numbers and `docs/backlog.md` row ids.
+      # PR numbers grow monotonically and have overtaken the backlog, so a bare `#N` below the PR
+      # ceiling resolves to whichever the reader guesses. Measured 2026-10-15: `#291` names backlog
+      # row 291 AND a PR merged five weeks earlier about something else.
+      # ⚠ WHY THIS CAN BE A GATE WHEN 2026-08-27 MEASURED THAT IT COULD NOT: that verdict tested a
+      # predicate flagging EVERY bare `#N` — 1,556 across `docs/`, ~90% false positives on a diff
+      # (`Phase 6 #1`, `Architecture Review #2`). This one is ADDED LINES ONLY, accepts an adjacent
+      # qualifier, and is scoped to READER-FACING surfaces — `scripts/` held 137 of 158 firings and
+      # is excluded. Result: 20 firings over 40 commits, 0.50/commit, one false positive in the 21
+      # measured and an exemption derived from it. The verdict was right about its own predicate.
+      # ⭐ PR-SCOPED on purpose: the subject is "what this branch ADDED", so it needs a base ref.
+      # The guard is locally runnable with `--base origin/master` for the author who writes the line.
+      - name: reference namespaces are qualified
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-reference-namespace.py --base "origin/$GITHUB_BASE_REF"
+
+      # ⚠ AND ITS `--self-test` RUNS UNCONDITIONALLY, because the step above only fires on a PR —
+      # a guard whose every caller is conditional has no unconditional witness that it still works.
+      - name: reference-namespace guard's own cases
+        run: python3 scripts/check-reference-namespace.py --self-test
+
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
         env:

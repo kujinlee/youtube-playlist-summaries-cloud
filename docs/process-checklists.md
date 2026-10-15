@@ -391,7 +391,62 @@ Same for every other scarce namespace this project reuses across documents:
 rows as `#31` is unambiguous, and rewriting the 1,556 historical bare references would be churn
 with no reader on the other end.
 
+### ⟳ 2026-10-15 — IT IS NOW A RATCHET TOO, AND THE 2026-08-27 VERDICT BELOW IS NOT RETRACTED
+
+**`scripts/check-reference-namespace.py` refuses a bare reference ADDED to reader-facing prose.**
+The verdict below was right about the predicate it tested; this is a different predicate, and the
+difference is the whole reason it can be mechanical.
+
+**What forced it.** Two sequences share one visual space — GitHub PR numbers and this file's own
+backlog row ids — and **PR numbers grow monotonically and have overtaken the backlog**, so every
+backlog id below the current PR ceiling is ambiguous written bare. Measured 2026-10-15: `` `#291` ``
+names backlog row 291 *and* a PR merged five weeks earlier about something else. The reader followed
+it to the wrong one, which is how this surfaced.
+
+**How the predicate narrows, each axis chosen by measurement over 40 commits of `origin/master`:**
+
+| axis | effect |
+|---|---|
+| ADDED LINES only | nothing migrates; the corpus is not the subject |
+| an ADJACENT QUALIFIER passes (an ordinal may sit between, for `Phase 6 #1`) | 239 of 397 in-scope bare references already passed |
+| READER-FACING surfaces only | **the axis that decided it** — with `scripts/` in scope the rule fired 158 times; **137 of those (87%) were in `scripts/`**, code commentary read from inside the guard |
+
+⭐ **Result, dated because this document is INSIDE the population it describes:** 20 firings over
+those 40 commits, **0.50 per commit** (0.21 over 120). Against the *"fires 1,556 times and is
+disabled the same day"* figure below, that is the difference between a gate and a nuisance.
+
+⭐ **One exemption, and the firings asked for it rather than the author.** Hand-classifying all 21
+found exactly one false positive: a bare reference inside backticks, quoted *as the wrong form*, in
+this very section. **A reference inside inline code is a quotation, not a reference**, and that is
+why every example in this section is backticked — the guard's scope includes this file, so the
+document documenting the rule would otherwise trip it. ⚠ The bound is "no false positive in the 21
+firings of the last 40 commits", not "none exists"; the next counter-example is a finding.
+
+⚠ **AND THE QUALIFIER LIST IS THE RISK THE VERDICT BELOW NAMED, ARRIVING ON SCHEDULE.** It already
+needed widening once — `Phase 6 #1` puts an ordinal between the word and the number, caught by the
+guard's own first self-test run. It is tolerable for one reason, and only while that reason holds:
+**an omission fails toward a FIRING** — a false positive a human sees and fixes — never toward a
+silent pass. The moment that direction inverts, the list stops being safe to grow.
+
+⛔⛔ **AND IT WOULD NOT HAVE CAUGHT THE INCIDENT THAT PROMPTED IT. Stated first, because a gate
+that looks like it closed the reported hole is worse than no gate.** The reference a reader followed
+to the wrong PR was written in **chat**, with copies in commit messages. Both are out of scope and
+will stay out: no gate reaches a chat message, and a commit message cannot be amended afterwards.
+⭐ Measured against the two branches live when this was built: it would have fired **2** times
+(`docs/process-rationale.md`, both reader-facing) and **0** on the other. So it buys a real subset —
+future reader-facing prose — and the habit is still the only thing covering the surface where this
+actually went wrong. Judge it on that, not on the story that produced it.
+
+⛔ **Out of scope by construction, not by an exemption list:** this file's sibling `backlog.md`
+(it owns the namespace), `docs/reviews/**` (frozen testimony), `dashboard-entries.md` (dated
+records), `scripts/**` (measured above), and **commit messages and PR bodies** — GitHub autolinks
+`#N` there usefully, and a commit message cannot be amended afterwards. The habit still applies
+there; the gate does not.
+
 ### Why this is a rule and not a ratchet — MEASURED 2026-08-27, three scopes
+
+⟳ **Superseded in part by the entry above, and kept because its reasoning is still the reason the
+gate is narrow.** What follows was measured against a predicate that flagged EVERY bare reference.
 
 Before writing this, the obvious script was tried on paper at every scope that could carry it:
 

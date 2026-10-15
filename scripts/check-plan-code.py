@@ -1438,6 +1438,10 @@ EXPECTED_MUTATIONS = {
     # ⚠ Round 3 B2, round 4 Codex H1 and round 4 B1/M1/M2 were all findings in that one component
     # across two consecutive rounds, every one caused by the previous round's fix — which is
     # `dev-process.md:108`'s condition, met for the first time in this fold.
+    # ⟳ 2026-10-15: the reference-namespace guard arrives with a manifest rather than
+    # manifest DEBT. `check-ratchet-contract` offered `MANIFEST_BASELINE = 1`, which would
+    # have ACCEPTED the debt; six entries take it to 0 instead.
+    "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
@@ -3419,6 +3423,7 @@ def _self_test() -> int:
                                       "scripts/check-python-pin.py",
                                       "scripts/check-ratchet-contract.py",
                                       "scripts/check-rc-contract.py",
+                                      "scripts/check-reference-namespace.py",
                                       "scripts/check-review-decision.py",
                                       "scripts/check-review-recorded.py",
                                       "scripts/check-review-rounds.py",
@@ -4981,7 +4986,15 @@ def _self_test() -> int:
     # `_cites`. It bound 0 times at HEAD, so `--mutate .` read NOT MEASURED and the ratchet was
     # void from that commit until this one. Retargeted, not re-counted: the entry still exists.
     # ⚠ 1413 is the GUARD'S OWN FIGURE, read from `got 1413 want 1411`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1413)
+    # ⟳ 2026-10-15, REBASED ONTO #372: 1413 -> 1419. The reference-namespace guard arrives with
+    # SIX entries rather than manifest debt. ⛔ THIS BRANCH AND #372 DEVELOPED IN PARALLEL FROM
+    # 1408 and each declared its own sum — #372 landed 1413, this branch had written 1414 — so the
+    # rebase conflicted on exactly this line. NEITHER SIDE WAS TAKEN: the merged dict is 61 entries
+    # and the figure is RE-DERIVED from it. Resolving such a collision by picking the larger or the
+    # newer literal is how a manifest silently stops matching its own dict.
+    # ⚠ 1419 is the GUARD'S OWN FIGURE, read from `got 1419 want 0` against a deliberately wrong
+    # sentinel — not arithmetic and not memory, which is how this line has drifted before.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1419)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
