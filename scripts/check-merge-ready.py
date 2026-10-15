@@ -247,7 +247,13 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
     ("ci.yml", "if: github.event_name == 'pull_request'"):
-        (2, "the two pull-request-only steps this script invokes itself"),
+        # ⟳ 2026-10-15: 2 -> 3. `check-reference-namespace.py` is PR-only BY NECESSITY, not by
+        # choice: its subject is "what this branch ADDED", so it needs a base ref, and
+        # `GITHUB_BASE_REF` is set only on a pull_request event. ⚠ Its `--self-test` runs
+        # UNCONDITIONALLY in the same workflow, so the guard still has one witness on every push —
+        # a guard whose every caller is conditional has none.
+        (3, "the three pull-request-only steps: the two this script invokes itself, plus the "
+            "reference-namespace gate, which cannot run without a base ref"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     ("schema-gates.yml", "pull_request:"):
@@ -685,7 +691,8 @@ def _self_test() -> int:
     # ⚠ The REAL workflow, not a fixture: the derivation must agree with what CI actually gates.
     check("the derivation finds exactly the two steps ci.yml gates today",
           sorted(pr_only_steps(WORKFLOW.read_text())) if WORKFLOW.is_file() else [],
-          ["check-review-recorded (PR only)", "dashboard entry ratchet"])
+          ["check-review-recorded (PR only)", "dashboard entry ratchet",
+           "reference namespaces are qualified"])
 
     check("the real workflow has pull-request-only steps — an empty answer here is CANNOT RUN",
           len(pr_only_steps(WORKFLOW.read_text())) > 0 if WORKFLOW.is_file() else True, True)

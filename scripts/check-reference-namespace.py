@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""A bare `#N` in reader-facing prose resolves to whatever namespace the reader guesses.
+
+WHY THIS EXISTS
+---------------
+Two sequences share one visual space here: GitHub pull-request numbers and `docs/backlog.md` row
+ids. PR numbers grow monotonically and have overtaken the backlog, so **every backlog id below the
+current PR ceiling is ambiguous when written bare**. Measured 2026-10-15: `#291` names both backlog
+row 291 (the diagnostic-report redesign) and PR 291 (merged five weeks earlier, about something
+else). A reader who looks it up on GitHub lands on the wrong one and nothing says so.
+
+The rule itself is older — `docs/process-checklists.md` -> *Qualify every number in prose*, added
+2026-08-27: write `backlog #39` or `task #39`, never a bare `#39`.
+
+WHY IT IS A GATE NOW, WHEN 2026-08-27 MEASURED THAT IT COULD NOT BE
+-------------------------------------------------------------------
+That verdict was right about the predicate it tested, and this is a different predicate. The
+rejected one flagged EVERY bare `#N`: 1,556 across `docs/`, and on one branch diff 24 firings of
+which ~90% were `Phase 6 #1`, `Architecture Review #2`, `#54(a)` -- ordinals in titles, not
+references into a namespace. Its stated conclusion stands: *a syntactic proxy for "is this reference
+resolvable?" is the wrong instrument; the property is semantic.*
+
+This predicate narrows on three axes, each chosen BY MEASUREMENT over the last 40 commits of
+`origin/master` rather than by taste:
+
+  (1) ADDED LINES ONLY. The corpus is not the subject; new prose is. Nothing migrates.
+  (2) AN ADJACENT QUALIFIER PASSES, so `Phase 6 #1` and `backlog #39` are silent. This alone took
+      the firing rate from "every bare `#N`" to 39% of them (239 of 397 already qualified).
+  (3) READER-FACING SURFACES ONLY -- and this is the axis that decided it. With `scripts/` in
+      scope the rule fired 158 times over 40 commits, and **137 of those (87%) were in
+      `scripts/`**: code comments and mutation-manifest entry names, read by someone already
+      inside the guard, where the number resolves from its surroundings. Dropping `scripts/` leaves
+      **20 firings over 40 commits (0.50 per commit; 0.21 over 120)**.
+
+⭐ ONE EXEMPTION, AND THE FIRINGS ASKED FOR IT RATHER THAN ME. Hand-classifying those 21 firings
+found exactly one false positive: a bare `` `#39` `` inside backticks in `process-checklists.md`,
+quoted AS the wrong form by the rule that forbids it. A bare reference inside inline code is a
+QUOTATION, not a reference. With that exemption the sample is 20 true positives and 0 false ones.
+⚠ That is a measured 0 over 21, not a guarantee: the honest bound is "no false positive in the 21
+firings of the last 40 commits", and the next counter-example is a finding, not a surprise.
+
+WHAT IT ACTUALLY ASSERTS (and what it deliberately does not)
+------------------------------------------------------------
+It asserts a SHAPE: an added line in a reader-facing file carries no `#N` that lacks both an
+adjacent qualifier and inline-code quoting. It does NOT decide which namespace a number belongs to
+-- that is the semantic question 2026-08-27 refused, and refusing it is why this can be mechanical.
+
+⛔ OUT OF SCOPE BY CONSTRUCTION, stated rather than discovered later:
+  * `docs/backlog.md` -- owns the namespace; its own rows cite each other unambiguously, and the
+    2026-08-27 rule already exempts the owning document.
+  * `docs/reviews/**` -- frozen testimony, never edited.
+  * `docs/dashboard-entries.md` -- dated records of what was true on a day.
+  * `scripts/**`, `docs/memory/**`, `docs/superpowers/**`, `docs/explainers/**`, `docs/adr/**`,
+    `docs/roadmap-to-launch.md` -- measured above, or read by someone already in context.
+  * commit messages and PR bodies. GitHub autolinks `#N` there, usefully and correctly, and a
+    commit message cannot be amended after the fact. The habit still applies; the gate does not.
+
+FAILS IF
+--------
+  * an added line in a scoped file carries a bare `#N` with no adjacent qualifier and no inline-code
+    quoting;
+  * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
+    a pass.
+
+  --self-test  runs 23 cases over diff texts this file builds, including that each failure mode is
+               DETECTED and that both main() worlds are driven.
+"""
+from __future__ import annotations
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OK, VIOLATION, CANNOT_RUN = 0, 1, 2
+
+# Reader-facing surfaces. Hardcoded per `hardcode-only-what-fails-loudly`: a NEW spine document that
+# forgets to appear here is exactly what review catches, and a derived list would silently grow to
+# include `scripts/`, which is the one thing the measurement said to exclude.
+SCOPE: tuple[str, ...] = (
+    "CLAUDE.md", "AGENTS.md", "README.md", "CONTEXT.md",
+    "docs/CLAUDE.md", "docs/dev-process.md", "docs/process-checklists.md",
+    "docs/plugins.md", "docs/portable-practices.md", "docs/process-rationale.md",
+    ".agents/skills/", ".claude/hooks/",
+)
+
+# ⛔ `(?<![\w/#])` is load-bearing three times over: it keeps `v1#2` out, keeps a URL fragment
+# `path/page#3` out, and keeps `##4` out. Dropping it is a manifest mutation.
+BARE = re.compile(r"(?<![\w/#])#(\d{1,4})\b")
+
+# The qualifier words are the namespaces this repo actually reuses, plus the ORDINAL words whose
+# firings were ~90% of the 2026-08-27 sample. ⚠ This list is the "unbounded supply of answers"
+# that verdict warned about, and it is tolerable here ONLY because an omission fails toward a
+# FIRING (a false positive someone sees and fixes), never toward a silent pass.
+QUALIFIER = re.compile(
+    r"(backlog|task|pr|pull request|issue|phase|review|section|round|step|item|row|migration|adr"
+    r"|finding|question|slice|stage|goal|milestone|shard|rule|case|mutation)"
+    # ⛔ AN ORDINAL MAY SIT BETWEEN THE QUALIFIER AND THE `#`, and omitting that was a real gap the
+    # self-test caught on the first run: `Phase 6 #1` puts "6 " in the way, and it is exactly the
+    # shape that was ~90% of the 2026-08-27 sample. `Architecture Review #2` needs no such slack.
+    # ⚠ THIS IS THE SECOND SYNTACTIC ALLOWANCE IN THIS PREDICATE, which is the "unbounded supply of
+    # answers" that verdict warned about, arriving on schedule. It is tolerable for one reason,
+    # stated so a later reader can check it still holds: an omission here fails toward a FIRING —
+    # a false positive a human sees and fixes — never toward a silent pass. The moment that
+    # direction inverts, this list stops being safe to grow.
+    r"[\s`*_\]\)]*(\d+[\s`*_\]\)]*)?$",
+    re.I,
+)
+
+
+def in_inline_code(body: str, idx: int) -> bool:
+    """True if offset `idx` sits inside inline-code backticks. PURE.
+
+    An odd number of backticks before the offset means we are inside a span. ⭐ This is the one
+    exemption the firings asked for: a bare reference shown in backticks is a quoted
+    counter-example, which is how the rule's own text states itself.
+    """
+    return body.count("`", 0, idx) % 2 == 1
+
+
+def in_scope(path: str, scope: tuple[str, ...] = SCOPE) -> bool:
+    """True if `path` is a reader-facing surface. PURE."""
+    return any(path == s or path.startswith(s) for s in scope if s)
+
+
+def violations(diff_text: str, scope: tuple[str, ...] = SCOPE) -> list[str]:
+    """Findings over a unified diff. PURE — no git, no filesystem.
+
+    ⭐ THE RULE IS SEPARATED FROM THE FETCH ON PURPOSE. Three ratchets in this repo were
+    untestable for eight days because their only entry point needed Docker; a pure predicate over a
+    diff STRING can be driven by a case that builds its own world.
+    """
+    out: list[str] = []
+    path: str | None = None
+    for line in diff_text.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+            continue
+        if not line.startswith("+") or line.startswith("+++") or path is None:
+            continue
+        if not in_scope(path, scope):
+            continue
+        body = line[1:]
+        for m in BARE.finditer(body):
+            if in_inline_code(body, m.start()):
+                continue
+            before = re.sub(r"[`*_\[\]]", "", body[max(0, m.start() - 40):m.start()])
+            if QUALIFIER.search(before):
+                continue
+            out.append(
+                f"{path}: bare `{m.group(0)}` with no namespace — write `backlog {m.group(0)}`, "
+                f"`PR {m.group(0)}`, `task {m.group(0)}` or whichever it is\n"
+                f"    {body.strip()[:160]}"
+            )
+    return out
+
+
+def added_diff(base: str, root: Path) -> str:
+    """The unified diff of `base`..worktree. Raises on a git failure — never returns ''."""
+    r = subprocess.run(["git", "-C", str(root), "diff", "--unified=0", base],
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if r.returncode != 0:
+        raise RuntimeError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
+    return r.stdout
+
+
+def main(argv: list[str], root: Path = ROOT) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--base", default="origin/master",
+                    help="ref to diff against (default: origin/master)")
+    ap.add_argument("--self-test", action="store_true")
+    args = ap.parse_args(argv)
+    if args.self_test:
+        return self_test()
+    try:
+        diff = added_diff(args.base, root)
+    except RuntimeError as exc:
+        print(f"CANNOT RUN — {exc}. Treat this as NOT RUN, not as a pass.", file=sys.stderr)
+        return CANNOT_RUN
+    found = violations(diff)
+    if found:
+        print(f"⛔ {len(found)} bare reference(s) added in reader-facing prose:\n", file=sys.stderr)
+        for f in found:
+            print(f"  ✗ {f}", file=sys.stderr)
+        print("\nTwo sequences share this space: PR numbers and `docs/backlog.md` row ids, and the\n"
+              "PR numbers have overtaken the backlog — so a bare `#N` below the PR ceiling resolves\n"
+              "to whichever the reader guesses. Qualify it. See docs/process-checklists.md ->\n"
+              "'Qualify every number in prose'.", file=sys.stderr)
+        return VIOLATION
+    print(f"reference namespaces OK — no bare `#N` added in {len(SCOPE)} reader-facing surface(s)")
+    return OK
+
+
+def _d(path: str, *lines: str) -> str:
+    """Build a one-file unified diff whose added lines are `lines`. PURE."""
+    return f"--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n" + "".join(f"+{l}\n" for l in lines)
+
+
+def self_test() -> int:
+    failed = 0
+
+    def case(name: str, got, want=True) -> None:
+        nonlocal failed
+        if got != want:
+            failed += 1
+            print(f"  [FAIL] {name}: got {got!r} want {want!r}")
+
+    SPINE = "docs/dev-process.md"
+    # ── the defect this exists for ────────────────────────────────────────────────────────
+    case("⭐ a BARE #N added to a spine doc is DETECTED",
+         len(violations(_d(SPINE, "see #291 for the redesign"))), 1)
+    case("...and the finding NAMES the token, so a reader can find it",
+         "#291" in violations(_d(SPINE, "see #291 for the redesign"))[0])
+    case("...and it names the FILE",
+         SPINE in violations(_d(SPINE, "see #291 for the redesign"))[0])
+
+    # ── every way it must stay SILENT ─────────────────────────────────────────────────────
+    case("a QUALIFIED reference passes", violations(_d(SPINE, "see backlog #291")), [])
+    case("`PR #N` passes", violations(_d(SPINE, "landed in PR #371")), [])
+    case("an ORDINAL in a title passes — the ~90% of the 2026-08-27 sample",
+         violations(_d(SPINE, "## Phase 6 #1 — the arming condition")), [])
+    case("⭐ a bare #N inside INLINE CODE passes — a quoted counter-example, the one measured FP",
+         violations(_d(SPINE, "write `backlog #39`, not a bare `#39`")), [])
+    case("a qualifier through MARKUP still passes, because emphasis is not a word",
+         violations(_d(SPINE, "see **backlog** #291")), [])
+    case("a REMOVED line is not an added line",
+         violations(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -1 +0,0 @@\n-see #291\n"), [])
+    case("the +++ header itself is never scanned as content",
+         violations(f"--- a/{SPINE}\n+++ b/{SPINE}\n@@ -0,0 +1 @@\n+ok\n"), [])
+
+    # ── the three things the lookbehind holds, each its own case ──────────────────────────
+    case("a URL fragment is not a reference", violations(_d(SPINE, "see docs/page#3 below")), [])
+    case("a version-ish `v1#2` is not a reference", violations(_d(SPINE, "the v1#2 form")), [])
+    case("a markdown heading `##4` is not a reference", violations(_d(SPINE, "##4 heading")), [])
+
+    # ── SCOPE, in both directions, which is the axis the measurement chose ────────────────
+    case("⭐ a bare #N in scripts/ is OUT of scope — 87% of firings lived there",
+         violations(_d("scripts/check-docs.py", "# fixes #291")), [])
+    case("a bare #N in docs/backlog.md is out of scope — it OWNS the namespace",
+         violations(_d("docs/backlog.md", "| 291 | see #290 |")), [])
+    case("a bare #N in a frozen review is out of scope",
+         violations(_d("docs/reviews/claude/x-r1-claude.md", "see #291")), [])
+    case("a bare #N in a HOOK is IN scope — it prints to a reader at the moment of need",
+         len(violations(_d(".claude/hooks/enforce-handoff-path.sh", "# see #291"))), 1)
+    case("a bare #N in a SKILL is IN scope",
+         len(violations(_d(".agents/skills/handoff/SKILL.md", "see #291"))), 1)
+    case("⚠ `scope` is a PARAMETER, so a caller can narrow it — driven at a SECOND value",
+         violations(_d(SPINE, "see #291"), scope=("docs/other.md",)), [])
+
+    # ── ADR-0014: drive main() over worlds THIS CASE BUILT, in both directions ────────────
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        bad = Path(td) / "bad"
+        subprocess.run(["git", "init", "-q", str(bad)], check=True)
+        (bad / "docs").mkdir(parents=True)
+        (bad / "docs" / "dev-process.md").write_text("a line with no reference\n")
+        subprocess.run(["git", "-C", str(bad), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(bad), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", "base"], check=True, capture_output=True)
+        base_sha = subprocess.run(["git", "-C", str(bad), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True).stdout.strip()
+        (bad / "docs" / "dev-process.md").write_text("a line with no reference\nsee #291 here\n")
+        import contextlib, io
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc_bad = main(["--base", base_sha], root=bad)
+        case("main() over a world this case built returns VIOLATION", rc_bad, VIOLATION)
+
+        (bad / "docs" / "dev-process.md").write_text("a line with no reference\nsee backlog #291\n")
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc_ok = main(["--base", base_sha], root=bad)
+        case("...and OK once the same line is qualified — the pair is the point", rc_ok, OK)
+
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc_cr = main(["--base", "refs/heads/no-such-ref-xyz"], root=bad)
+        case("⛔ an unresolvable base is CANNOT RUN, never a pass", rc_cr, CANNOT_RUN)
+
+        # ⛔⛔ A SECOND ROOT, AND `check-fixture-variation` IS WHY — it refused this file until
+        # `main(root=…)` took more than one value: "passed the SAME value at every call site (3x
+        # `bad`). No case can tell that parameter apart from a constant." ⭐ The second world also
+        # varies the SUBJECT, so the pair exercises two distinct scoped surfaces rather than two
+        # spellings of one: this one puts the violation in a HOOK, where the earlier world put it
+        # in a spine doc.
+        hookworld = Path(td) / "hookworld"
+        subprocess.run(["git", "init", "-q", str(hookworld)], check=True)
+        (hookworld / ".claude" / "hooks").mkdir(parents=True)
+        (hookworld / ".claude" / "hooks" / "x.sh").write_text("# nothing to see\n")
+        subprocess.run(["git", "-C", str(hookworld), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(hookworld), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", "base"], check=True, capture_output=True)
+        hw_base = subprocess.run(["git", "-C", str(hookworld), "rev-parse", "HEAD"],
+                                 capture_output=True, text=True).stdout.strip()
+        (hookworld / ".claude" / "hooks" / "x.sh").write_text("# nothing to see\n# see #291\n")
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc_hook = main(["--base", hw_base], root=hookworld)
+        case("main() at a SECOND root finds a violation in a HOOK", rc_hook, VIOLATION)
+        (hookworld / ".claude" / "hooks" / "x.sh").write_text("# nothing to see\n# see backlog #291\n")
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc_hook_ok = main(["--base", hw_base], root=hookworld)
+        case("...and OK there once qualified, so the second root is not a one-way fixture",
+             rc_hook_ok, OK)
+
+    print(f"{23 - failed}/23 passed" if failed else "23/23 passed")
+    return OK if failed == 0 else VIOLATION
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,80 @@
+[
+  {
+    "name": "⛔ the inline-code exemption is removed, so a bare reference QUOTED as the wrong form fires — the one false positive the 21 measured firings actually contained",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    return body.count(\"`\", 0, idx) % 2 == 1\n",
+        "    return False\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a bare #N inside INLINE CODE passes — a quoted counter-example, the one measured FP"
+    ]
+  },
+  {
+    "name": "the qualifier test is INVERTED, so a qualified reference fires and a bare one passes — the whole predicate backwards, which is the defect this guard exists to avoid",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "            if QUALIFIER.search(before):\n                continue\n",
+        "            if not QUALIFIER.search(before):\n                continue\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a BARE #N added to a spine doc is DETECTED"
+    ]
+  },
+  {
+    "name": "the ORDINAL allowance goes, so `Phase 6 #1` fires — the shape that was ~90% of the 2026-08-27 sample and the gap the self-test caught on its first run",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    r\"[\\s`*_\\]\\)]*(\\d+[\\s`*_\\]\\)]*)?$\",\n",
+        "    r\"[\\s`*_\\]\\)]*$\",\n"
+      ]
+    ],
+    "expect": [
+      "an ORDINAL in a title passes — the ~90% of the 2026-08-27 sample"
+    ]
+  },
+  {
+    "name": "the lookbehind goes, so a URL fragment and a `##4` heading are read as references — three false-positive shapes at once",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "BARE = re.compile(r\"(?<![\\w/#])#(\\d{1,4})\\b\")\n",
+        "BARE = re.compile(r\"#(\\d{1,4})\\b\")\n"
+      ]
+    ],
+    "expect": [
+      "a URL fragment is not a reference"
+    ]
+  },
+  {
+    "name": "⛔ scope goes UNCHECKED, so scripts/ comes back in — 87% of firings lived there and that is the axis the measurement chose",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "        if not in_scope(path, scope):\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a bare #N in scripts/ is OUT of scope — 87% of firings lived there"
+    ]
+  },
+  {
+    "name": "a git failure returns an EMPTY diff instead of raising, so an unresolvable base is a silent PASS — the fail-open this repo's rc contract exists to refuse",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        raise RuntimeError(f\"git diff {base} failed: {r.stderr.strip()[:200]}\")\n",
+        "    if r.returncode != 0:\n        return \"\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ an unresolvable base is CANNOT RUN, never a pass"
+    ]
+  }
+]

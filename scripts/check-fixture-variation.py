@@ -383,6 +383,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # renders with no detail must EQUAL a hand-authored sentence in DECLARED_RENDER. No judgement
     # is computed; it moved to a human in a diff, which is the only authority a semantic question
     # has. The three keys below are its replacements.
+    # ⟳ 2026-10-15, the reference-namespace guard. Four parameters, all varied by cases:
+    # `violations.diff_text` over diffs the cases build, `violations.scope` over the live
+    # tuple and a one-element one, and `main.argv`/`main.root` over TWO worlds — a spine-doc
+    # world and a hook world, each driven in both directions.
+    # ⚠ `main.root` took one value until THIS guard refused the file ("3x `bad`"), which is
+    # the second world existing at all. The key set is DERIVED by calling `analyse()`, not
+    # typed from reading the source.
+    "check-reference-namespace.py": (
+        'main.argv', 'main.root', 'violations.diff_text', 'violations.scope',
+    ),
     "check-rc-contract.py": (
         'dead_arms.defined', 'dead_arms.hook_src', 'dead_arms.probe_max',
         'defined_codes.matcher_src', 'handled_codes.codes', 'handled_codes.hook_src',
