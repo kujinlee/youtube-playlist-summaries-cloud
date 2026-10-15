@@ -154,4 +154,10 @@ areas: (process)
 ### process-harness
 state: built
 for: Makes the way this project is built reusable by another repository, rather than resident in this one's habits.
+anchors: harness-ships-elsewhere
 areas: (process / deliverable #2)
+
+#### harness-installs-elsewhere
+state: absent
+for: Lets someone who has never seen this repository install the harness and use it in their own.
+expected-because: the harness is written down but has never been installed anywhere else. Its own coupling measurement puts 9 project-specific references in `brief/SKILL.md`'s ground-truth command list alone, and that list invokes `scripts/check-*` guards belonging to this repo's process rather than to any plugin — so a component can read as project-independent and still be unusable.
