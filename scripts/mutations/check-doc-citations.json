@@ -1,0 +1,93 @@
+[
+  {
+    "name": "⛔ the blank-line clause is removed, so a citation into an empty line passes — the shape SIX of the six measured firings had, and the `:66` instance row 49 names",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            if not lines[raw_line - 1].strip():\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "a blank cited line fires"
+    ]
+  },
+  {
+    "name": "the upper bound goes off by one (`>` becomes `>=`), so the LAST line of a file reads as out of range — the attributable form; deleting the bound outright raises IndexError, which is red but names no case",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            if raw_line < 1 or raw_line > len(lines):\n",
+        "            if raw_line < 1 or raw_line >= len(lines):\n"
+      ]
+    ],
+    "expect": [
+      "line 3 (last line) is in range"
+    ]
+  },
+  {
+    "name": "⛔ the ambiguity branch is removed, so two matching files report as 'no tracked file' — it still fires, but the reader is told the wrong reason",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if len(suffix_matches) > 1:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "the ambiguous message says how many matched"
+    ]
+  },
+  {
+    "name": "the reviews exclusion is dropped, so 94% of the corpus (37,071 of 39,312 citations) comes into scope",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        and not path.startswith(EXCLUDED_PREFIX)\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "docs/reviews/ is excluded"
+    ]
+  },
+  {
+    "name": "the .md restriction is dropped, so generated explainer pages are judged as living documents",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        and path.endswith(\".md\")\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "a generated .html page is excluded"
+    ]
+  },
+  {
+    "name": "⛔ CANNOT RUN returns 0 instead of 2, so an unreachable git reads as a clean pass",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n",
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 0\n"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 — CANNOT RUN — when git cannot be reached, never 0"
+    ]
+  },
+  {
+    "name": "the injected reader is ignored and a constant is read instead, so no case could tell `read` from a fixture",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            lines, how = resolve(path, tracked, read)\n",
+        "            lines, how = resolve(path, tracked, lambda _p: [\"content\"])\n"
+      ]
+    ],
+    "expect": [
+      "the verdict follows the INJECTED reader — blank at line 1 fires"
+    ]
+  }
+]

@@ -1441,6 +1441,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15: the reference-namespace guard arrives with a manifest rather than
     # manifest DEBT. `check-ratchet-contract` offered `MANIFEST_BASELINE = 1`, which would
     # have ACCEPTED the debt; six entries take it to 0 instead.
+    # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
+    # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
+    # injected reader each have a case that names them.
+    "scripts/check-doc-citations.py": 7,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -3390,6 +3394,7 @@ def _self_test() -> int:
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
+                                      "scripts/check-doc-citations.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
                                       # debt (MANIFEST_BASELINE 21 -> 20). This list is a LIVE
@@ -4986,6 +4991,9 @@ def _self_test() -> int:
     # `_cites`. It bound 0 times at HEAD, so `--mutate .` read NOT MEASURED and the ratchet was
     # void from that commit until this one. Retargeted, not re-counted: the entry still exists.
     # ⚠ 1413 is the GUARD'S OWN FIGURE, read from `got 1413 want 1411`.
+    # ⟳ 2026-10-15, backlog #49: 1419 -> 1426. ⚠ 1426 is the GUARD'S OWN FIGURE, read from its
+    # `got 1426 want 1419` — the manifest existed on disk before this literal moved, which is the
+    # only order in which the number is evidence rather than an intention.
     # ⟳ 2026-10-15, REBASED ONTO #372: 1413 -> 1419. The reference-namespace guard arrives with
     # SIX entries rather than manifest debt. ⛔ THIS BRANCH AND #372 DEVELOPED IN PARALLEL FROM
     # 1408 and each declared its own sum — #372 landed 1413, this branch had written 1414 — so the
@@ -4994,7 +5002,7 @@ def _self_test() -> int:
     # newer literal is how a manifest silently stops matching its own dict.
     # ⚠ 1419 is the GUARD'S OWN FIGURE, read from `got 1419 want 0` against a deliberately wrong
     # sentinel — not arithmetic and not memory, which is how this line has drifted before.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1419)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1426)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

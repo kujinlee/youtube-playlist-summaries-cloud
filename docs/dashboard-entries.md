@@ -15067,3 +15067,49 @@ version 11. No migration; prod stays at `0027`.**
 | **backlog #141 falsifier, RUN** | *"`fly.toml` says 0 AND the live config still reports 0 after the next deploy."* Measured after v11: `fly.toml` `min_machines_running = 0`; `fly config show` → `min_machines_running = 0`, `auto_stop_machines = suspend`. ✅ The silent revert did not happen |
 | **behaviour change that arrived anyway** | the `kill_signal`/`kill_timeout` relocation predicted by `e693f36a`. Live config now reports **`SIGTERM` / `2m0s`** against Fly's `SIGINT`/5s defaults, for both process groups. Checked benign at merge; now live and verified |
 | **two stale checkboxes corrected** | **#141** ticked — closed with its falsifier run rather than asserted. **#142** left UNTICKED but rewritten: it said *"not started"* while the code had been on master for four weeks. Merged-and-inert is neither done nor not-started, and closing it on "the code shipped" would be the error |
+
+## 2026-10-15
+**A reference that quietly points at the wrong line is now caught by a machine.** Documents here
+often say "see this file, line 157". Files change; the line number does not. One plan was found to
+have **eight** of them wrong — and the way they were found is the point: two separate careful sweeps
+each caught things the other missed. Nobody was careless. It is simply not a thing people can check
+reliably, and nothing about a wrong line number looks wrong.
+
+**Why it matters more than it sounds.** One of the eight was off by 82 lines, which lands whoever
+follows it inside a completely different function, confidently reading the wrong thing.
+
+**What now happens:** when a change adds such a reference to a document, it is resolved. If the file
+is gone, the line is past the end, or the line is blank, the change is refused with the specific
+reference named. Existing documents are untouched — the check looks only at what a change *adds*,
+which is deliberate: the old ones are mostly history citing files that have since moved, and
+rewriting them is not what this is for.
+
+**It was sized by measurement, not by instinct.** Checking everything would have objected ~175 times
+and been switched off within a week. Checking only what is newly written objects about **once every
+six changes** — and every one of the recent examples was real.
+
+**Two things it found in its own making, which is the honest part.** The check-writing tools here
+refused the first version twice: once because every one of its own tests fed it the same input, so
+none of them could tell whether a whole branch of the logic was even consulted; and once because its
+failure messages were printed in a format the surrounding machinery could not read, meaning its
+tests could pass while proving nothing. Both were fixed, and fixing the first uncovered a real gap —
+a reference ending in `:0` would have silently reported the file's *last* line.
+
+**Also corrected today:** three statements that had quietly gone out of date, including one that
+described a body of work as "9 files, 3,599 lines" when it is nearer 11,000 — a figure that had been
+quoted as settled for five weeks.
+
+<!--tech-->
+**`doc-citations-guard`. `scripts/check-doc-citations.py` — backlog #49, filed 2026-08-17, closed
+today. 30 cases, 7 mutations, 7 killed, **7 attributed**, 0 survivors.**
+
+| | |
+|---|---|
+| **scope, each axis measured first** | `docs/reviews/` excluded (**37,071 of 39,312** citations, 94% — point-in-time artifacts nobody navigates *to*); `*.md` only (row 49's own wording; 6 of 17 raw firings were in generated `.html`); ADDED lines only (living corpus fires **175/838, 20.9%**) |
+| **resulting rate** | **6 firings over 40 commits, 0.15/commit** — `check-reference-namespace` shipped at 0.50. All six hand-classified TRUE, one a blank mid-docstring line (`check-ci-watched.py:183`), the exact `:66` shape row 49 names |
+| **the one exemption, derived** | a path SUFFIX resolves when exactly one tracked file ends with it — 5 of 5 raw false positives did. ⛔ an AMBIGUOUS suffix **fires**, per *"cannot run is a FAILURE, never a pass"* |
+| **stated limit** | it does not verify the cited line *declares* the symbol named nearby — that needs a language-aware parser per file type. Blank and out-of-range are what all eight measured instances looked like |
+| **what the contracts changed** | `check-fixture-variation` refused the suite: all 24 cases passed the same `read`, so none could tell it from a constant → 2 cases now differ *only* in the injected reader. `check-main-drivable` (ADR-0014): `main()` takes its world as defaulted parameters and is driven to all three exit codes — the guard joins the **13 that drive `main()`** rather than the 27 pinned as debt |
+| **two unattributable kills, both mine** | the suite printed `[FAIL]` indented, and `parse_fail_names` reads `startswith("[FAIL] ")` — every kill in the file was unattributable; and one `expect` named a case that a *neighbour* caught instead. ⭐ Fixing the first exposed the `:0` gap: it would have read `lines[-1]` |
+| **declared sum** | `EXPECTED_MUTATIONS` **1419 → 1426**, read from the guard's own `got 1426 want 1419` with the manifest on disk *before* the literal moved |
+| **truth repairs** | `portable-practices.md` ×3 (suite size ~3× under; "10 anchors" → 14; "a second anchor is owed" → `explanation-on-demand` exists) and the roadmap's CURRENT GOAL cell, which said `Fly v10` while the same file recorded the v11 release four hours later |

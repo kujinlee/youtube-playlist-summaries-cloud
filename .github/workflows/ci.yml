@@ -557,6 +557,20 @@ jobs:
       - name: reference-namespace guard's own cases
         run: python3 scripts/check-reference-namespace.py --self-test
 
+      # backlog #49. A `path:line` that has drifted sends a reader into a different function, and
+      # nothing about the wrong number looks wrong — EIGHT were wrong in one document, found by two
+      # independent sweeps that each missed what the other caught. PR-scoped for the same reason as
+      # the guard above: the living corpus fires 175 times on 838 pathed citations (20.9%), almost
+      # all of it historical, while ADDED lines fire 6 times over 40 commits (0.15/commit).
+      - name: doc citations resolve
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-doc-citations.py --base "origin/$GITHUB_BASE_REF"
+
+      # ⚠ Unconditional, for the same reason as the sibling above: the step over it only fires on a
+      # pull request, so without this the guard has no witness that it still works.
+      - name: doc-citations guard's own cases
+        run: python3 scripts/check-doc-citations.py --self-test
+
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
         env:

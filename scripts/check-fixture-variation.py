@@ -496,6 +496,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # refused it until it was, which is the third time in two days it has caught a new file
     # arriving unmeasured. DERIVED by running `analyse()`, not transcribed. It reports NO
     # findings: all six parameters are genuinely varied by the suite.
+    # ⟳ 2026-10-15, backlog #49. `read` is varied by two cases that differ ONLY in the injected
+    # reader at one identical citation — this guard refused the suite until they existed.
+    'check-doc-citations.py': ('violations.diff_text', 'violations.read', 'violations.tracked'),
     'check-closing-table.py': (
         'closing_acts_of.records',
         'coalesce_injected.make',

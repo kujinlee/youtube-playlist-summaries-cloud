@@ -2389,9 +2389,9 @@ unapplied for eight days while every document read "merged, done".
 > |---|---|---|---|---|
 > | **1** | overall comprehensibility suite | `status-visibility`, `explanation-on-demand`, `feature-map` | **D2** | pages built and generating. ⚠ The suite is **not yet registered** as a deliverable — see below |
 > | **2** | development speed enhancement | `review-decides-itself` (ADR-0014) | **D2** | §6+§7 ADOPTED 2026-09-24; **Q0 DESIGNED IN FORM, NOT BUILT** — one of the three items `check-roadmap-consistency` still reports open (A6, D2, Q0) |
-> | **3** | youtube-playlist-summaries-cloud | `cloud-publishing`, `cloud-sync`, `share-and-download`, `serve-money-guard`, `serve-path-bounding`, `stable-blob-addressing` (⏸ parked), `cloud-blob-key-encoding`, `corrections-in-cloud`, `prod-smoke` | **D1** | M1+M2+M3 closed. Live: **Fly v10, 2026-08-24**; prod schema **`0027`**. ⛔ **0 of the 213 commits on `master` in the 52 days since that deploy touched product code alone** (208 harness/docs only, 5 both) |
+> | **3** | youtube-playlist-summaries-cloud | `cloud-publishing`, `cloud-sync`, `share-and-download`, `serve-money-guard`, `serve-path-bounding`, `stable-blob-addressing` (⏸ parked), `cloud-blob-key-encoding`, `corrections-in-cloud`, `prod-smoke` | **D1** | M1+M2+M3 closed. Live: **Fly v11, deployed 2026-10-15**; prod schema **`0027`**. ⟳ **This cell said `v10, 2026-08-24` and was contradicted by this file's own release log within four hours of being written** — see the v11 record below. The deploy it describes is what fixed the condition it reported: 0 of 213 commits in the preceding 52 days had touched product code alone, and v11 shipped the three worker/lease commits that had been merged and unreleased since 2026-09-18 |
 >
-> **All 13 registered anchors are accounted for by these three, 9 / 1 / 3, with none left over** —
+> **All registered anchors are accounted for by these three, with none left over** (13 when this was written; **14** after `harness-ships-elsewhere` was allocated 2026-10-15 — it belongs to goals 1 and 2, both D2) —
 > so there is no fourth goal hiding, and nothing in `docs/anchors.md` is unclaimed by a programme.
 >
 > ⭐ **D1 and D2 are the project's two DELIVERABLES, stated by the owner 2026-08-11 and not derivable
