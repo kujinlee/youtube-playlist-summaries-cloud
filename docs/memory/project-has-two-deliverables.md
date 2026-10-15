@@ -44,5 +44,33 @@ widening that anchor (one name, two readers). A new anchor needs a claiming docu
 descriptions-from-memory were wrong that day — [[a-test-that-cannot-fail]] has
 the count. A summary composed at the end of a long session is the highest-risk artifact in the repo.
 
+**⭐⟳ 2026-10-15 — THE OWNER RULED ON THE 3 → 2 MAPPING. Asked, answered, do not re-derive it.**
+They named three goals and asked for each part's status aligned to the deliverables. The mapping is
+now **settled**, by selection card:
+
+| owner's goal | deliverable | status when asked |
+|---|---|---|
+| (3) youtube-playlist-summaries-cloud | **D1** | M1–M3 closed; live v10 / schema `0027`; **0 of 213 commits in the 52 days since the deploy touched product code alone** |
+| (2) development speed enhancement | **D2** | anchor `review-decides-itself`; §6+§7 adopted, **Q0 designed in form, NOT built** |
+| (1) overall comprehensibility suite | **D2** — RULED | anchors `status-visibility`, `explanation-on-demand`, `feature-map` |
+
+⭐ **AND IT IS THE GOAL CHANGE `roadmap:2355` DEFERRED — the owner said REGISTER IT.** That line had
+put *"declaring the comprehensibility suite a project deliverable"* deliberately out of scope, as
+*"a goal change, whose home is `docs/anchors.md`"*. **That deferral is now spent.** The registration
+is owed as its own PR; it was sequenced AFTER merging the two authorised sidetrack branches, by the
+owner's answer to the same card.
+
+**Why (1) is D2 and not D1, in their words' logic:** the suite makes *this* project legible, which
+reads like product overhead — but D2's own rule is *what travels is the QUESTION a tool asks, never
+the tool*, and the question *"how does someone returning see state without reading a transcript?"*
+holds with no Supabase, no Gemini, no Fly. The tools mostly fail the project-independence filter;
+the questions do not. ⚠ **Do not dilute `portable-practices.md` to make the mapping look tidier** —
+that filter failing is the correct outcome, not a problem to fix.
+
+⚠ **The roadmap's own answer was five weeks stale when this was asked.** `roadmap:2308` still
+presents *"CURRENT GOAL — set by the user 2026-09-06"*, naming three **backlog rows**, while the
+owner's three goals are three **programmes**. Two different altitudes. Fixing that block is part of
+landing this decision — see [[launch-roadmap-state]].
+
 See [[quote-the-code-dont-characterise-it]] (same discipline, applied to code claims) and
 [[gates-detect-defects-not-design]].

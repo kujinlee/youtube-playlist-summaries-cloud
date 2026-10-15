@@ -5,7 +5,7 @@
 - [⭐ RESUME: anchors + stable ids](anchor-name-and-stable-id-handoff.md) — M4 MERGED (#155); `0027` LIVE ON PROD. The stable-id roadmap **EXISTS** — I once re-derived it wrongly
 - [⭐ Launch roadmap](launch-roadmap-state.md) — **START HERE.** M1+M2+M3 closed. Prod ops + `claude_ro` recipe
 - [⭐⭐ #191 — semantic recall REPLICATED](backlog-191-semantic-recall-replicated.md) — lexical **3/20** vs semantic **20/20**, 0 false fires in 60. Triggers GOOD, matcher was the problem. 2 branches, neither merged
-- [TWO deliverables](project-has-two-deliverables.md) — ⭐ the product AND a reusable harness (`docs/portable-practices.md`)
+- [TWO deliverables + the 3→2 mapping](project-has-two-deliverables.md) — ⭐ **2026-10-15 owner RULED: goal (1) comprehensibility → D2, and REGISTER it — the `roadmap:2355` goal change is spent**
 
 ## How things go wrong here (⭐ = costly, recurring)
 
