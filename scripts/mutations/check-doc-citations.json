@@ -115,5 +115,18 @@
     "expect": [
       "...and an out-of-scope changed file is never diffed at all"
     ]
+  },
+  {
+    "name": "⛔ `-z` is dropped from the file listing — r3 High: every safety property rests on that one flag, and removing it silently disables the whole guard (scoped=[] and rc=0 over a repo full of bad citations) while failing ZERO cases",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"diff\", \"--name-only\", \"-z\", base",
+        "\"diff\", \"--name-only\", base"
+      ]
+    ],
+    "expect": [
+      "⛔ changed_files() splits on NUL — the one flag every safety property rests on"
+    ]
   }
 ]

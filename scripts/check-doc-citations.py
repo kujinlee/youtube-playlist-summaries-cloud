@@ -217,7 +217,11 @@ def changed_files(base: str, root: pathlib.Path) -> tuple[str, ...]:
 
 def file_diff(base: str, root: pathlib.Path, path: str) -> str:
     """One file's unified diff against `base`. Raises on a git failure."""
-    r = subprocess.run(["git", "-C", str(root), "diff", "--unified=0", base, "--", path],
+    # ⛔ r3 Medium: `--literal-pathspecs`. A pathspec honours `*`, `?` and `[...]` EVEN AFTER `--`,
+    # so a document named `docs/[id].md` also pulled in `docs/i.md` and reported that file's
+    # citations under the wrong name, twice. This repo uses the `[id]` convention elsewhere.
+    r = subprocess.run(["git", "-C", str(root), "--literal-pathspecs",
+                        "diff", "--unified=0", base, "--", path],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"git diff for {path} failed: {r.stderr.strip()[:200]}")
@@ -247,6 +251,31 @@ def _reader(root: pathlib.Path):
             return None
         return target.read_text(encoding="utf-8", errors="replace").splitlines()
     return read
+
+
+def _nul_witness() -> int:
+    """Build a throwaway repo with two changed docs and count what `changed_files` returns.
+
+    Two is the answer ONLY if the NUL split works. Without `-z`, git joins the names with newlines
+    and `split("\0")` yields a single blob — which `in_scope` then rejects, emptying the scoped
+    list and silently disabling the guard. That is why this witness runs git rather than asserting
+    a predicate over a Python string (r3 High).
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        run = lambda *a: subprocess.run(["git", "-C", tmp, *a], capture_output=True, text=True)
+        run("init", "-q")
+        run("config", "user.email", "selftest@example.com")
+        run("config", "user.name", "selftest")
+        (root / "docs").mkdir()
+        (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+        run("add", "-A")
+        run("commit", "-qm", "base")
+        (root / "docs" / "one.md").write_text("one\n", encoding="utf-8")
+        (root / "docs" / "two.md").write_text("two\n", encoding="utf-8")
+        run("add", "-A")
+        return len([f for f in changed_files("HEAD", root) if in_scope(f)])
 
 
 def self_test() -> int:
@@ -318,8 +347,14 @@ def self_test() -> int:
     case("a non-docs path is out of scope", in_scope("scripts/x.md"), False)
     case("a docs/ root .md IS in scope", in_scope("docs/backlog.md"), True)
     case("a nested docs .md IS in scope", in_scope("docs/adr/0001-x.md"), True)
-    case("a unicode docs path IS in scope — git hands it over unquoted via -z",
-         in_scope("docs/e\u0301\t.md"), True)
+    # ⛔ r3 HIGH, AND IT IS THE FOURTH AMBIENT CASE THIS GUARD HAS PRODUCED. The case that stood
+    # here was named "git hands it over unquoted via -z" and called `in_scope` on a Python string —
+    # it never touched git, so deleting `-z` failed ZERO cases while silently disabling the whole
+    # guard (`split("\0")` returns one newline-joined blob, `in_scope` rejects it, `scoped=[]`,
+    # rc=0 over a repo full of bad citations). Every safety property rests on that one flag, so the
+    # witness has to RUN git. This case builds a repository to do it.
+    case("⛔ changed_files() splits on NUL — the one flag every safety property rests on",
+         _nul_witness() == 2)
 
     case("a REMOVED line is not examined",
          violations("docs/x.md", "-see `lib/a.ts:2`", tracked, read) == [])
