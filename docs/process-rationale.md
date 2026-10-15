@@ -349,11 +349,16 @@ added-column blindness; the 16 MB `.superpowers/` residue) went unsurfaced while
 **The near-miss worth recording.** The obvious repair was `.remember/handoff.md`. It is wrong, and
 wrong invisibly: **nothing reads that name either**, so the fix would have looked complete while
 rebuilding the identical defect at a prettier path. The path that works is `.remember/remember.md`
-because the `remember` plugin's SessionStart hook already reads it —
-`REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"` in `session-start-hook.sh`, emitted as
-`=== LAST HANDOFF ===` and injected **before** identity and memory so it survives context-preview
-truncation, with fingerprinted non-destructive delivery (a `cksum` of the handoff CONTENT) so a
-read-only session does not consume the next one's note.
+because the `remember` plugin's SessionStart hook already reads it.
+
+⭐ **WHY that path is the one that gets read is in ONE place now, and this document does not restate
+it: [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md)** — the
+symbol, the emission banner, the injection order and the content fingerprint. ⟳ **r6 CLAUDE H3: a
+four-clause copy of that mechanism stood right here**, and it was one of SIX live sites while
+`check-canonical-source.py` exited 0 over all of them, because neither of the two symbols those
+sites share was in its token list. What belongs here is the HISTORY — the near-miss above, and the
+account below of five documents citing a vendored line number — not a seventh copy of the
+mechanism.
 
 ### The handoff rule that was true of one mode
 

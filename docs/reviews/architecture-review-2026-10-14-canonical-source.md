@@ -58,6 +58,28 @@ of this branch's lifetime.** Instance, not class — which is itself a finding t
 ⭐ The redesign generalises that guard rather than inventing a mechanism: any mechanism, any kind of
 citing file (a skill, a hook, a script comment, a doc, a memory note).
 
+⟳ **2026-10-14, r6 CLAUDE H5 — THE SENTENCE ABOVE IS WRONG AND IS LEFT STANDING BECAUSE THIS IS A
+RECORD.** It does not generalise that guard; it is a second guard beside it, which is this branch's
+own most-cited defect committed at the guard layer — and the composition finding this very review
+should have produced. What the two share is a PATTERN (canonical file, marker, declared citing
+sites, a guard). What differs is the KIND of thing each forbids, and that is why they cannot be one:
+
+* `check-explainer-delivery.py` forbids a **runnable procedure** — oracle: a FENCED CODE BLOCK
+  carrying a delivery command, or a `Monitor({` arming block — scoped to `.agents/skills/*/SKILL.md`;
+  and it alone asserts **enumeration completeness** (a page-producing skill absent from `PAGE_SKILLS`
+  escapes the check). Folding it away would DELETE that falsifier, which nothing else makes.
+* `check-canonical-source.py` forbids a **symbol** — oracle: a token substring over four directories
+  and three extensions.
+
+⭐ **Measured, which is what settles it rather than taste:** in the canonical-source population
+`explainer-serve.py` carries **34** non-exempt sites and `brief-compose.py` **26**, fourteen of them
+the scripts that call or test the tool. A token oracle for the delivery procedure would fire on its
+own implementation. ⚠ H5's own supporting figure — "nine live non-review sites" — names no
+population and does not reproduce; 34 is derived by importing this guard's `_tracked_textfiles` and
+`EXEMPT` rather than by a separate walk.
+⚠ **The residual hole, stated rather than discovered later:** the delivery procedure restated in a
+file that is NOT a `SKILL.md` is invisible to both guards. Filed as backlog **#288**.
+
 ### F3 · The canonical statement is not self-validating, and the redesign does not claim it is
 
 Round 6 stated this limit and it is worth preserving: collapsing six copies into one removes

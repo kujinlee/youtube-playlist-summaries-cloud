@@ -13,9 +13,30 @@ it — a round-5 correction that reached the skill and never reached the hook, s
 printed a claim AND its own withdrawal in the same message.
 
 That is this repository's most-measured defect, `a second implementation of one rule drifts`
-(17 recorded instances), applied to prose instead of code. `scripts/check-explainer-delivery.py`
-already demonstrates the structural answer for skills; this generalises it to any mechanism and
-any kind of citing file.
+(17 recorded instances), applied to prose instead of code.
+
+⛔ IT DOES NOT GENERALISE `check-explainer-delivery.py`, AND SAYING SO WAS AN INSTANCE OF THIS
+FILE'S OWN SUBJECT (r6 CLAUDE H5). The claim stood at three sites. The two guards share a PATTERN
+— a canonical file, a marker, declared citing sites, a guard — and they are not one rule, because
+the thing each forbids is different in KIND:
+
+  * that one forbids a RUNNABLE PROCEDURE, so its oracle is a FENCED CODE BLOCK containing a
+    delivery command (or a `Monitor({` arming block), scoped to `.agents/skills/*/SKILL.md`;
+  * this one forbids a SYMBOL, so its oracle is a token substring over four directories and three
+    extensions.
+  * and only that one asserts ENUMERATION COMPLETENESS: a skill that produces a page but is absent
+    from its `PAGE_SKILLS` escapes the check. Nothing here replaces that, so folding it into this
+    file would DELETE a falsifier.
+
+⭐ MEASURED, which is what settles it rather than taste: in THIS guard's population
+`explainer-serve.py` carries 34 non-exempt sites and `brief-compose.py` 26 — fourteen of them the
+scripts that call or test the tool. A token oracle for the delivery procedure would fire on its own
+implementation. The fence oracle is not a weaker version of this one; it is the correct one there.
+
+⚠ WHAT IS STILL NOT GUARDED, because a stated bound beats a discovered one: the delivery procedure
+restated in a file that is NOT a `SKILL.md` is invisible to both guards — that one does not look
+outside skills, and this one has no `CANONS` entry for it (`shared/explainer-delivery.md` carries no
+`<!-- canon: -->` marker at all).
 
 WHAT IT ACTUALLY ASSERTS (and what it deliberately does not)
 ------------------------------------------------------------
@@ -38,7 +59,7 @@ FAILS IF
   * a declared citing site does not cite the canonical path;
   * any non-exempt file RESTATES a mechanism (carries its tokens) without citing its canon.
 
-  --self-test  runs 23 cases over synthetic trees, including that each failure mode is DETECTED.
+  --self-test  runs 25 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
 import contextlib
@@ -57,12 +78,46 @@ CANONS: list[dict] = [
         "name": "handoff-path",
         "file": ".agents/skills/shared/handoff-path.md",
         # Mechanism SYMBOLS. A site carrying these is handing the reader the mechanism again.
-        "tokens": ["REMEMBER_ROOT", "PER_SESSION_HANDOFF", "_resolve_memory_project_dir"],
+        #
+        # ⛔⛔ THE FIRST THREE WERE THE PATH-RESOLUTION HALF ONLY, AND THE HALF THE BRANCH EXISTS
+        # FOR WAS NOT IN THE LIST (r6 CLAUDE H3). The ⛔ RULE — *where a handoff goes and why that
+        # path is the one that gets read* — rests on two more symbols, and measured at the round-6
+        # tip they stood at SIX and FIVE non-exempt live sites with this guard exiting 0 over all
+        # of them: `REMEMBER_HANDOFF` in `.agents/skills/handoff/SKILL.md`,
+        # `.claude/hooks/enforce-handoff-path.sh`, `scripts/check-handoff-path.py`,
+        # `docs/plugins.md`, `docs/process-rationale.md` and
+        # `docs/memory/a-vendored-line-number-has-no-owner.md`; `=== LAST HANDOFF ===` at the
+        # first five of those and — the tell — ZERO times in the canon, so the one file that was
+        # supposed to be the superset was not even a superset.
+        #
+        # ⚠ They had not drifted yet: all four sub-claims checked out against the installed 0.33.0
+        # hook. That is the point, not a mitigation — this branch's thesis is that six uncompared
+        # copies drift WITHIN one review round, and a guard that waits for the drift is a guard
+        # that reports the damage.
+        #
+        # ⭐ WHY THESE TWO AND NOT THE PROSE. The sub-claims are PARAPHRASED at every site
+        # (`injected **before**` / `ahead of` / `injected BEFORE`), so no claim search polices
+        # them — a case-sensitive, markup-literal matcher returns 0 for a claim written at five
+        # sites. The SYMBOL and the BANNER are stable strings, so they are what a token oracle can
+        # actually hold, and holding them forces the paraphrases to one file.
+        "tokens": [
+            "REMEMBER_ROOT",
+            "PER_SESSION_HANDOFF",
+            "_resolve_memory_project_dir",
+            "REMEMBER_HANDOFF",
+            "=== LAST HANDOFF ===",
+        ],
         "cites": [
             ".agents/skills/handoff/SKILL.md",
             ".claude/hooks/enforce-handoff-path.sh",
             "scripts/check-handoff-path.py",
             "docs/plugins.md",
+            # ⟳ r6 CLAUDE H3: these two carry the delivery symbols and cited the canon ZERO times.
+            # Both are retrospectives, which this guard deliberately allows to DISCUSS the history
+            # — what they may not do is hand the reader the mechanism again with no link to the
+            # one file that owns it.
+            "docs/process-rationale.md",
+            "docs/memory/a-vendored-line-number-has-no-owner.md",
         ],
     },
     {
@@ -376,6 +431,28 @@ def self_test() -> int:
 
         # The real tree must pass — the check is pointless if it cannot measure its own subject.
         case("the REAL repository is clean", audit(ROOT), [])
+
+        # ⛔⛔ THE TWO DELIVERY SYMBOLS ARE BOUND ONE AT A TIME, AND THAT IS NOT PEDANTRY (r6 H3).
+        # Neither case above binds the CANONS LITERAL: `_built_world` constructs its tree FROM the
+        # live table, and `audit(ROOT)` asserts cleanliness — both are satisfied by a SMALLER token
+        # list, so deleting a token leaves the suite 23/23 green and the guard blind again, which is
+        # the state round 6 found. A falsifier for a token has to be a COUNTER-EXAMPLE: a site that
+        # carries it, cites nothing, and must be DETECTED.
+        # ⚠ AND ONE LEAK FILE PER TOKEN, EACH CARRYING ONLY ITS OWN. A single fixture carrying both
+        # is still flagged after one token is deleted — the case would be satisfied by the surviving
+        # token, this repo's `exercise-the-producer-at-two-distinct-inputs` defect. The assertion
+        # NAMES the token for the same reason: a finding raised by a different one must not satisfy
+        # it.
+        for tok, slug in (("REMEMBER_HANDOFF", "symbol"), ("=== LAST HANDOFF ===", "banner")):
+            w = _built_world(t / f"delivery-{slug}", complete=True)
+            leak = w / "docs" / "leak.md"
+            leak.parent.mkdir(parents=True, exist_ok=True)
+            leak.write_text(f"The handoff is {tok} and this file cites nothing at all.\n")
+            found = audit(w)
+            case(f"a site restating the handoff {slug} with no citation is detected",
+                 any("docs/leak.md restates handoff-path" in x and repr(tok) in x
+                     for x in found),
+                 True)
 
         # ADR-0014: drive `main()` over a world THIS CASE BUILT, in both directions, so no line of
         # it ships unmeasured. ⚠ Driving it over the real repo only is what `check-main-drivable.py`

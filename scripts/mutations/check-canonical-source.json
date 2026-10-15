@@ -1,11 +1,11 @@
 [
   {
-    "name": "⛔ the restatement test is INVERTED, so a second copy of a mechanism PASSES — the exact defect this guard exists for, and the one that cost five review rounds of drift",
+    "name": "⛔ the restatement test is INVERTED, so a second copy of a mechanism PASSES — the exact defect this guard exists for, and the one that cost five review rounds of drift ⟳ RETARGETED r6 H3 fold: c882c242 (H4) replaced the anchored line with a call to `_cites` and left this entry bound to deleted text, so the ratchet read NOT MEASURED",
     "file": "scripts/check-canonical-source.py",
     "edits": [
       [
-        "            if hit and cite_token not in body:\n",
-        "            if hit and cite_token in body:\n"
+        "            if hit and not _cites(body, cite_token, root / rel, f, root):\n",
+        "            if hit and _cites(body, cite_token, root / rel, f, root):\n"
       ]
     ],
     "expect": [
@@ -36,6 +36,32 @@
     ],
     "expect": [
       "a citation that resolves NOWHERE is NOT accepted"
+    ]
+  },
+  {
+    "name": "the handoff SYMBOL leaves the token list, so the mechanism the branch exists for goes unguarded again (r6 H3)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "            \"REMEMBER_HANDOFF\",\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a site restating the handoff symbol with no citation is detected"
+    ]
+  },
+  {
+    "name": "the `=== LAST HANDOFF ===` banner leaves the token list — the sub-claim the canon itself did not carry (r6 H3)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "            \"=== LAST HANDOFF ===\",\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a site restating the handoff banner with no citation is detected"
     ]
   }
 ]

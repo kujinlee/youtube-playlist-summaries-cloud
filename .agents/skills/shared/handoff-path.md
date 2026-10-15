@@ -18,6 +18,27 @@ measured as insufficient — a convention catches what you READ, a script catche
 **NOT `.remember/handoff.md`.** That name looks right and nothing reads it. The path is
 `REMEMBER_HANDOFF` in the installed `remember` plugin's `session-start-hook.sh`, where there are
 **TWO** assignments — the per-session path, then the shared one.
+⚠ Keep the `=` when you search for it: `REMEMBER_HANDOFF=` matches exactly those two, while the bare
+name matches **23** lines across three variables, so a bare-name grep answers a different question.
+
+⭐ **WHY THIS PATH AND NOT ANOTHER — the three facts the citing sites each used to restate, now
+stated here once (r6 CLAUDE H3).** The path is not a convention this repo picked; it is the one the
+hook already reads. These are what make it *the one that gets read*, and a citing site that needs
+them should link here rather than repeat them:
+
+* **It is emitted as `=== LAST HANDOFF ===`.** That banner is how a session confirms its note was
+  *delivered* rather than merely written — the original defect was a handoff with no reader.
+* **It is injected BEFORE identity and memory**, so it survives context-preview truncation.
+  ⭐ Verified by DIRECT OBSERVATION in a live session, which is the strongest evidence this clause
+  can have: the SessionStart block printed `=== LAST HANDOFF ===`, then `=== REMEMBER ===`, then
+  `=== MEMORY ===`, in that order.
+* **Delivery is fingerprinted on the handoff's CONTENT** — a `cksum` of the file, recorded against
+  `REMEMBER_HANDOFF_STATE` — so a session that READS a note without writing one back does not
+  consume it, and the next session still gets it.
+
+⚠ All three measured against the installed **0.33.0** hook (2,027 lines). ⛔ A later version can
+change any of them, which is why they are cited by SYMBOL and why they live in one file: four sites
+restating them is four places for a vendor bump to half-correct.
 ⚠ Cite the **SYMBOL**, never a line number: a line number in a vendored file has no owner in this
 repo, no guard can watch it, and a plugin bump invalidates it silently. Discover the file with:
 

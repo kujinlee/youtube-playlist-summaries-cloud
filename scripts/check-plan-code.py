@@ -1358,7 +1358,7 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
-    "scripts/check-canonical-source.py": 3,   # r6 redesign: the inverted-restatement mutation
+    "scripts/check-canonical-source.py": 5,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -4960,7 +4960,19 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1411)
+    # ⟳ 2026-10-14, r6 H3 FOLD: 1411 -> 1413. `check-canonical-source` goes 3 -> 5, one entry per
+    # delivery token — the two the canon owns, NOT NAMED HERE because naming them is what this
+    # whole fold is about and that guard went red on this very comment when they were
+    # (`.agents/skills/shared/handoff-path.md`) — because neither case that existed bound the
+    # CANONS literal — `_built_world` builds its tree FROM the live table and
+    # the real-repo case asserts cleanliness, so BOTH stay green on a smaller token list.
+    # ⛔ AND THE SAME FOLD FOUND A FOURTH ORPHANING IN THIS MANIFEST, pre-existing and not
+    # introduced here: the inverted-restatement entry bound `if hit and cite_token not in body:`,
+    # which `c882c242` (the H4 fold, the previous commit on this branch) replaced with a call to
+    # `_cites`. It bound 0 times at HEAD, so `--mutate .` read NOT MEASURED and the ratchet was
+    # void from that commit until this one. Retargeted, not re-counted: the entry still exists.
+    # ⚠ 1413 is the GUARD'S OWN FIGURE, read from `got 1413 want 1411`.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1413)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
