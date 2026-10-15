@@ -54,6 +54,29 @@ That is a warning on stderr, not a refusal: demanding a wrapped control would ma
 unusable on corpora where nothing happens to wrap, and a gate that cannot be satisfied gets
 switched off (backlog #56).
 
+⛔⛔ THE BOUND (d), AND IT IS THE ONE THAT HAS ALREADY MISLED A READER (r18 CLAUDE H-B). THE
+MATCHER IS MARKUP-LITERAL. Tokens are `re.escape`d, so INLINE EMPHASIS BETWEEN WORDS makes a
+different token: `**before**` is not `before`. Measured with this tool, with a known positive
+proving the words are present:
+
+    doc.md contains:  The hint is injected **before** identity and memory so it survives.
+    --pattern "INJECTED"                              -> FOUND          (the case axis works)
+    --pattern "injected before identity and memory"   -> rc=0, "ok — absent in the searched
+                                                         files … so the search worked"
+    --pattern "injected **before** identity and memory" -> FOUND        (so the words ARE there)
+
+⭐ WHY THIS IS WORSE THAN A MISS: the false answer arrives in `--expect absent` mode, where rc=0
+is a PASS, wearing this tool's OWN success wording. Property (c) says it cannot silently return
+zero; the control only proves the files were read, never that THIS pattern could have matched.
+⚠ It cost a real measurement on 2026-10-14: a coordinator searching for a delivery claim written
+at five sites got 0, published "case-sensitive and markup-literal" as the cause, and the case half
+was wrong — see the CASE note on `build_pattern`, which records this file already paying for the
+same class on the adjacent axis. Instance, not class, twice.
+⭐ WHAT TO DO, because a bound with no workaround is just bad news: search the SHORTEST
+markup-free run of words in the claim ("identity and memory so it survives"), or pass the claim
+exactly as the source spells it, markup included. A pinning case below records this behaviour as
+DATA, not as a preference — if it is ever fixed that case goes red, and the red is the alarm.
+
 EXIT CODES (repo convention): 0 = ok · 1 = the expectation was violated · 2 = CANNOT RUN.
 
   --expect absent   (default)  rc=1 when the claim IS present. "This corrected figure must not
@@ -68,7 +91,7 @@ USAGE
         --control "frontier" --expect absent scripts/codex-frontier-model.py
     python3 scripts/find-claim.py --case-sensitive --pattern "QUIET" --control "rc" scripts/
     python3 scripts/find-claim.py --pattern "..." --control "..." --report docs/
-    python3 scripts/find-claim.py --self-test        # 86 cases
+    python3 scripts/find-claim.py --self-test        # 88 cases
 
 ⚠ THE SELF-TEST COUNT IN THE LINE ABOVE IS VERIFIED BY RUNNING IT
 (`scripts/check-selftest-counts.py`), so it cannot drift from the suite.
@@ -79,6 +102,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import stat as _stat
 import sys
 from pathlib import Path
 
@@ -254,6 +278,40 @@ def dir_identity(path) -> tuple:
     return (st.st_dev, st.st_ino)
 
 
+def _classify(p: Path) -> tuple[bool, bool]:
+    """(is_dir, is_file) via `os.stat`, so a PERMISSION failure raises on EVERY interpreter.
+
+    ⛔⛔ r18 CLAUDE H-A — `pathlib`'s `is_dir()`/`is_file()` SWALLOW the OSError on 3.13+ and
+    return False, so the `except OSError` at both call sites never fires and an unreadable entry
+    is silently reclassified as "not a file". Measured on this machine, same tree, same 86 cases:
+
+        3.10.6  -> PermissionError raised   -> 86/86
+        3.12.9  -> PermissionError raised   -> 86/86     (the CI pin, which is why CI is green)
+        3.14.4  -> returns False            -> 84/86, and the find-claim ratchet NOT MEASURED
+
+    ⭐ The cost was not two red cases. In `--expect absent` mode the run then printed its own
+    SUCCESS wording — "ok — absent in the searched files … so the search worked" — over a corpus
+    where the claim was present, from the tool whose docstring property (c) is "IT CANNOT SILENTLY
+    RETURN ZERO". `os.stat` is used because `os.stat` still raises on 3.14; it is pathlib's
+    wrapper that changed.
+
+    ⚠ FileNotFoundError is answered "neither", NOT unreadable, and that is deliberate: a DANGLING
+    SYMLINK and a file that vanished between discovery and classification are pinned as
+    dropped-rather-than-unreadable by `_nonfile_entry_probe` (r4 Codex L1), which says in so many
+    words that it pins CURRENT behaviour as data and that backlog #263 may change it. Routing
+    ENOENT here would turn that pin red for an unrelated reason.
+
+    ⛔ AND IT IS ONE HELPER FOR BOTH SITES ON PURPOSE. The comment above the top-level call site
+    records that r3 "wrapped the WALK's `is_file()` and left this one bare — instance, not class".
+    Fixing only the site r18 named would have been the third pass over the same two lines.
+    """
+    try:
+        st = os.stat(p)
+    except FileNotFoundError:
+        return False, False
+    return _stat.S_ISDIR(st.st_mode), _stat.S_ISREG(st.st_mode)
+
+
 def collect_files(paths: list[str], suffixes: set[str] | None = None
                   ) -> tuple[list[Path], list[Path], list[Path], list[str], str]:
     """(files, skipped, pruned, unreadable_dirs, error). A directory contributes every
@@ -300,7 +358,7 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
         # the review showed me. Measured before this: `find-claim … <chmod-000>/claim.md ok.md`
         # -> rc=1, traceback, no CANNOT RUN.
         try:
-            is_dir, is_file = p.is_dir(), p.is_file()
+            is_dir, is_file = _classify(p)
         except OSError as exc:
             unreadable_dirs.append(f"{raw}: {type(exc).__name__}")
             continue
@@ -372,7 +430,7 @@ def collect_files(paths: list[str], suffixes: set[str] | None = None
                     # filed as backlog #263. The case below pins what the code ACTUALLY does, so
                     # the answer is not re-derived from this comment.
                     try:
-                        if not q.is_file():
+                        if not _classify(q)[1]:
                             continue
                     except OSError as exc:
                         unreadable_dirs.append(f"{q}: {type(exc).__name__}")
@@ -853,6 +911,28 @@ def self_test() -> int:
          bool(build_pattern("push something").search("you must then PUSH something —")), True),
         ("...and --case-sensitive still refuses it",
          bool(build_pattern("push something", ignore_case=False).search("then PUSH something")), False),
+        # ⛔⛔ r18 CLAUDE H-B — THE ADJACENT AXIS, PINNED AS DATA RATHER THAN AS A PREFERENCE.
+        # The two cases above cover CASE, which this file earned after a false negative. MARKUP
+        # between words is the same class on the next axis and was unstated: `re.escape` makes
+        # `**before**` a different token from `before`, so a claim a reader can see is reported
+        # ABSENT — and in `--expect absent` mode that is rc=0, a PASS, in this tool's own success
+        # wording. ⭐ The companion case is the KNOWN POSITIVE: the same words ARE matched when the
+        # pattern spells the markup, which is what makes the first case a statement about the
+        # MATCHER and not about the fixture. ⚠ If this is ever fixed the first case goes RED, and
+        # that red is the alarm — the same contract `_nonfile_entry_probe` states for backlog #263.
+        # ⛔⛔ AND THE FIXTURE USES `_emphasis_`, NOT `**emphasis**`, FOR A MEASURED REASON. `**`
+        # is ALSO a regex repeat, so a pattern containing it is only safe while `re.escape` is
+        # applied — and the manifest contains a mutation that removes exactly that. With a `**`
+        # fixture here, that mutation stopped being a clean kill and became
+        # `re.error: multiple repeat`: measured 25 killed but **24 attributed**, and a mutation
+        # that CRASHES the suite is a survivor in this repo's accounting, not a kill. `_` has no
+        # regex meaning, is equally valid markdown emphasis, and exercises the identical bound.
+        ("⛔ r18 H-B: INLINE EMPHASIS between words defeats the matcher — pinned, not endorsed",
+         bool(build_pattern("injected before identity").search(
+             "the hint is injected _before_ identity and memory")), False),
+        ("...and the KNOWN POSITIVE: the same words match when the pattern spells the markup",
+         bool(build_pattern("injected _before_ identity").search(
+             "the hint is injected _before_ identity and memory")), True),
         ("find_in_text carries the path it was handed into the Hit",
          find_in_text("alpha beta", build_pattern("alpha"), "docs/one.md")[0].path, "docs/one.md"),
         ("...and a different path comes back different, so it is not a constant",

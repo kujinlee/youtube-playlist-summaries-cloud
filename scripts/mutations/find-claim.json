@@ -273,12 +273,12 @@
     ]
   },
   {
-    "name": "⟳ r3 Codex MEDIUM — the classification guard goes, so a metadata failure crashes with an unhandled OSError and exits 1, which this repo's rc convention reads as 'violation found' rather than 'cannot run'",
+    "name": "⟳ r3 Codex MEDIUM — the classification guard goes, so a metadata failure crashes with an unhandled OSError and exits 1, which this repo's rc convention reads as 'violation found' rather than 'cannot run' ⟳ r18 H-A: retargeted — the guard now calls `_classify`, which stats explicitly so 3.13+ cannot swallow the error",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "                    try:\n                        if not q.is_file():\n                            continue\n                    except OSError as exc:\n                        unreadable_dirs.append(f\"{q}: {type(exc).__name__}\")\n                        continue",
-        "                    if not q.is_file():\n                        continue"
+        "                    try:\n                        if not _classify(q)[1]:\n                            continue\n                    except OSError as exc:\n                        unreadable_dirs.append(f\"{q}: {type(exc).__name__}\")\n                        continue",
+        "                    if not _classify(q)[1]:\n                        continue"
       ]
     ],
     "expect": [
@@ -312,12 +312,12 @@
     ]
   },
   {
-    "name": "⛔ r4 Codex M2 — r3's guard on the TOP-LEVEL classification is severed: a NAMED path whose parent is unreadable crashes instead of reporting CANNOT RUN",
+    "name": "⛔ r4 Codex M2 — r3's guard on the TOP-LEVEL classification is severed: a NAMED path whose parent is unreadable crashes instead of reporting CANNOT RUN ⟳ r18 H-A: retargeted — the guard now calls `_classify`, which stats explicitly so 3.13+ cannot swallow the error",
     "file": "scripts/find-claim.py",
     "edits": [
       [
-        "        try:\n            is_dir, is_file = p.is_dir(), p.is_file()\n        except OSError as exc:\n            unreadable_dirs.append(f\"{raw}: {type(exc).__name__}\")\n            continue",
-        "        is_dir, is_file = p.is_dir(), p.is_file()"
+        "        try:\n            is_dir, is_file = _classify(p)\n        except OSError as exc:\n            unreadable_dirs.append(f\"{raw}: {type(exc).__name__}\")\n            continue",
+        "        is_dir, is_file = _classify(p)"
       ]
     ],
     "expect": [
