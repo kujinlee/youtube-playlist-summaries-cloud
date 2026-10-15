@@ -39,7 +39,7 @@
     ]
   },
   {
-    "name": "the reviews exclusion is dropped, so 96.7% of the corpus (26,344 of 27,239 citations) comes into scope",
+    "name": "the reviews exclusion is dropped, so ~96.7% of the corpus (~26,350 of ~27,250 citations) comes into scope",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
@@ -48,7 +48,7 @@
       ]
     ],
     "expect": [
-      "docs/reviews/ is excluded"
+      "docs/reviews/ is out of scope"
     ]
   },
   {
@@ -61,20 +61,7 @@
       ]
     ],
     "expect": [
-      "a generated .html page is excluded"
-    ]
-  },
-  {
-    "name": "⛔ CANNOT RUN returns 0 instead of 2, so an unreachable git reads as a clean pass",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n",
-        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 0\n"
-      ]
-    ],
-    "expect": [
-      "⛔ main() returns 2 — CANNOT RUN — when git cannot be reached, never 0"
+      "a generated .html page is out of scope"
     ]
   },
   {
@@ -88,6 +75,45 @@
     ],
     "expect": [
       "a readable file that is NOT in the tracked list still resolves"
+    ]
+  },
+  {
+    "name": "⛔ the GIT-error CANNOT RUN returns 0 instead of 2, so an unreachable base ref reads as a clean pass",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    read = make_reader(root)",
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 0\n\n    read = make_reader(root)"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 — CANNOT RUN — when git cannot be reached, never 0"
+    ]
+  },
+  {
+    "name": "⛔ the READ-error CANNOT RUN returns 0 — r2-codex found this handler had no witness at all, so the mutant survived 40/40",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    if found:",
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 0\n\n    if found:"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 when a cited file exists but cannot be READ"
+    ]
+  },
+  {
+    "name": "the scope filter is dropped, so files git changed outside docs/ are diffed and judged",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        scoped = [f for f in fetch_changed(args.base, root) if in_scope(f)]\n",
+        "        scoped = list(fetch_changed(args.base, root))\n"
+      ]
+    ],
+    "expect": [
+      "...and an out-of-scope changed file is never diffed at all"
     ]
   }
 ]

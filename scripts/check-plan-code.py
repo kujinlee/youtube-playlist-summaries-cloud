@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 7,
+    "scripts/check-doc-citations.py": 9,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5002,7 +5002,7 @@ def _self_test() -> int:
     # newer literal is how a manifest silently stops matching its own dict.
     # ⚠ 1419 is the GUARD'S OWN FIGURE, read from `got 1419 want 0` against a deliberately wrong
     # sentinel — not arithmetic and not memory, which is how this line has drifted before.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1426)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1428)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

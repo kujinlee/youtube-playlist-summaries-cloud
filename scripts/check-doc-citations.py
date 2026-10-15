@@ -101,7 +101,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 40 cases over diff texts this file builds, with an injected resolver, so the
+  --self-test  runs 37 cases over diff texts this file builds, with an injected resolver, so the
                rule is exercised with no repository present.
 """
 from __future__ import annotations
@@ -169,87 +169,59 @@ def resolve(path: str, tracked: tuple[str, ...], read):
     return None, "no such file, and no tracked file ends with it"
 
 
-def _header_path(raw: str) -> "str | None":
-    """The path out of a `+++` header, C-quoted or not. None for /dev/null.
+def violations(path: str, diff_text: str, tracked: tuple[str, ...], read) -> list[str]:
+    """Findings over ONE file's unified diff. PURE — no git, no filesystem.
 
-    git quotes a path containing bytes outside the printable ASCII range, wrapping it in double
-    quotes and escaping each byte in octal. Decoding it is what stops a Unicode document name from
-    silently leaving the previous file's scope in place (r1-codex High).
-    """
-    raw = raw.strip()
-    if raw == "/dev/null":
-        return None
-    if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
-        body = raw[1:-1]
-        try:
-            # strict, so the documented None is REACHABLE — r2 Low found `errors="replace"`
-            # made it dead code and returned a replacement-character path instead.
-            raw = body.encode("latin-1", "backslashreplace").decode("unicode_escape") \
-                      .encode("latin-1").decode("utf-8")
-        except (UnicodeDecodeError, UnicodeEncodeError):
-            return None   # undecodable: no scope rather than the WRONG scope
-    return raw[2:] if raw.startswith("b/") else raw
+    THE PATH IS GIVEN, NEVER PARSED, AND THAT IS THE WHOLE POINT. Three consecutive rounds produced
+    a header-parsing defect, each introduced by the previous round's fix: a C-quoted non-ASCII path
+    judged the file under the PREVIOUS scope (r1-codex); the `---` boundary added to fix that also
+    matched `----`, which is a REMOVED markdown rule (r2); decoding C-quotes strictly, to make an
+    unreachable branch reachable, then rejected the literal UTF-8 git emits under
+    `core.quotePath=false` and skipped the file entirely (r2-codex). All three were FAIL-OPEN.
 
-
-def violations(diff_text: str, tracked: tuple[str, ...], read) -> list[str]:
-    """Findings over a unified diff. PURE — no git, no filesystem.
-
-    `tracked` is the tracked-file list and `read` maps a path to its lines, so a case can build
-    its own world and the rule is testable without a repository.
+    That is this project's THRASHING signal, and its rule is to ask whether a redesign removes the
+    class rather than fix a fourth instance. It does: `git diff --name-only -z` emits paths
+    NUL-delimited and never quoted, so the caller knows each path exactly and hands it in. There is
+    no header to misparse and no scope to leak.
     """
     found: list[str] = []
-    current: str | None = None
     for line in diff_text.splitlines():
-        # ⛔ r1-codex HIGH: `+++ b/...` is NOT the only header git emits. A path with non-ASCII
-        # bytes is C-quoted — `+++ "b/docs/\355\225\234\352\270\200.md"` — and a parser that
-        # only knows the bare form leaves `current` pointing at the PREVIOUS file, so the citation
-        # is either skipped or judged under another document's scope. Both are fail-open, and this
-        # repository has already lost a paid summary to a Korean title (backlog #36).
-        if line.startswith("+++ "):
-            current = _header_path(line[4:])
-            continue
-        # ⛔ r2 HIGH: `---` IS NOT A SAFE BOUNDARY MARKER and the first version of this clause was
-        # a fail-open. A REMOVED markdown horizontal rule is emitted as `----`, which starts with
-        # `---`, so editing out a `---` in any document silently cleared scope and disabled the
-        # guard for the rest of the hunk. This repo's docs use `---` everywhere. `diff --git` is
-        # unambiguous — a removed line carrying that text is emitted as `-diff --git`, which does
-        # not match — and it already marks every file boundary git produces.
-        if line.startswith("diff --git"):
-            current = None
-            continue
-        if not line.startswith("+"):
-            continue
-        if current is None or not in_scope(current):
+        if not line.startswith("+") or line.startswith("+++"):
             continue
         for match in CITE.finditer(line[1:]):
-            path, raw_line = match.group(1), int(match.group(2))
-            lines, how = resolve(path, tracked, read)
+            cited, raw_line = match.group(1), int(match.group(2))
+            lines, how = resolve(cited, tracked, read)
             if lines is None:
-                found.append(f"{current}: `{path}:{raw_line}` does not resolve — {how}")
+                found.append(f"{path}: `{cited}:{raw_line}` does not resolve — {how}")
                 continue
             if raw_line < 1 or raw_line > len(lines):
-                found.append(
-                    f"{current}: `{path}:{raw_line}` is outside the file "
-                    f"({len(lines)} lines)"
-                )
+                found.append(f"{path}: `{cited}:{raw_line}` is outside the file ({len(lines)} lines)")
                 continue
             if not lines[raw_line - 1].strip():
-                found.append(
-                    f"{current}: `{path}:{raw_line}` is a blank line — "
-                    f"a reader following it lands on nothing"
-                )
+                found.append(f"{path}: `{cited}:{raw_line}` is a blank line — "
+                             f"a reader following it lands on nothing")
     return found
 
 
-def added_diff(base: str, root: pathlib.Path) -> str:
-    """The unified diff of `base`..worktree. Raises on a git failure — never returns ''."""
-    result = subprocess.run(
-        ["git", "-C", str(root), "diff", "--unified=0", base],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"git diff {base} failed: {result.stderr.strip()[:200]}")
-    return result.stdout
+def changed_files(base: str, root: pathlib.Path) -> tuple[str, ...]:
+    """Paths changed against `base`, NUL-delimited so git never quotes or escapes them.
+
+    This is the half that makes header parsing unnecessary. Raises on a git failure.
+    """
+    r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "-z", base],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"git diff --name-only {base} failed: {r.stderr.strip()[:200]}")
+    return tuple(f for f in r.stdout.split("\0") if f)
+
+
+def file_diff(base: str, root: pathlib.Path, path: str) -> str:
+    """One file's unified diff against `base`. Raises on a git failure."""
+    r = subprocess.run(["git", "-C", str(root), "diff", "--unified=0", base, "--", path],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"git diff for {path} failed: {r.stderr.strip()[:200]}")
+    return r.stdout
 
 
 def tracked_files(root: pathlib.Path) -> tuple[str, ...]:
@@ -278,7 +250,7 @@ def _reader(root: pathlib.Path):
 
 
 def self_test() -> int:
-    """40 cases. The count is declared in the module docstring and verified by running this."""
+    """37 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -287,9 +259,7 @@ def self_test() -> int:
             passed += 1
         else:
             failed += 1
-            # ⛔ COLUMN 0, NO INDENT. `check-plan-code`'s `parse_fail_names` reads a red case
-            # with startswith("[FAIL] ") and slices [7:]; an indented line attributes to
-            # nothing, and the whole manifest for this file reads as unattributable.
+            # COLUMN 0, NO INDENT: `parse_fail_names` reads startswith("[FAIL] ") and slices [7:].
             print(f"[FAIL] {name}: got {got!r} want {want!r}", file=sys.stderr)
 
     world = {
@@ -299,157 +269,115 @@ def self_test() -> int:
         "docs/notes.md": ["# notes", "body"],
     }
     tracked = tuple(world)
-    # answers None for a path the world does not hold — the same contract as `_reader`, so the
-    # cases exercise the shape the shipped reader actually has (r1 H1/M1).
     read = lambda p: world.get(p)  # noqa: E731
-    def diff(path: str, *added: str) -> str:
-        return "\n".join([f"+++ b/{path}", *[f"+{a}" for a in added]])
+    def body(*added: str) -> str:
+        return "\n".join(f"+{a}" for a in added)
 
-    # --- the three failure shapes -------------------------------------------------------------
+    def first(f: list[str]) -> str:
+        # r1 M2: never index [0] — a mutation that empties this must FAIL a case, not crash the suite.
+        return f[0] if f else ""
+
     case("a blank cited line fires",
-         len(violations(diff("docs/x.md", "see `lib/a.ts:2`"), tracked, read)) == 1)
-    # ⛔ r1 M2: NEVER index [0] here. Under the mutation that removes the blank clause this list is
-    # empty, and an IndexError kills the whole suite at case 2 — cases 3-32 never run, so that
-    # mutation's "exclusive" attribution was an artifact of the crash rather than evidence.
-    def first(findings: list[str]) -> str:
-        return findings[0] if findings else ""
-
+         len(violations("docs/x.md", body("see `lib/a.ts:2`"), tracked, read)) == 1)
     case("the blank message names the reader's experience",
-         "lands on nothing" in first(violations(diff("docs/x.md", "`lib/a.ts:2`"), tracked, read)))
+         "lands on nothing" in first(violations("docs/x.md", body("`lib/a.ts:2`"), tracked, read)))
     case("a line past EOF fires",
-         len(violations(diff("docs/x.md", "`lib/a.ts:99`"), tracked, read)) == 1)
+         len(violations("docs/x.md", body("`lib/a.ts:99`"), tracked, read)) == 1)
     case("the out-of-range message states the file length",
-         "3 lines" in first(violations(diff("docs/x.md", "`lib/a.ts:99`"), tracked, read)))
+         "3 lines" in first(violations("docs/x.md", body("`lib/a.ts:99`"), tracked, read)))
     case("an unresolvable path fires",
-         len(violations(diff("docs/x.md", "`lib/gone.ts:1`"), tracked, read)) == 1)
-    # ⛔ r1 H1: the filesystem is the oracle. A real, readable file that git does not track must
-    # resolve — `.claude/` is where this project's harness lives and none of it is tracked.
-    case("a readable file that is NOT in the tracked list still resolves",
-         violations(diff("docs/x.md", "`lib/a.ts:1`"), (), read) == [])
-    case("...and the same path with a blank cited line still fires, so it is not passing blindly",
-         len(violations(diff("docs/x.md", "`lib/a.ts:2`"), (), read)) == 1)
+         len(violations("docs/x.md", body("`lib/gone.ts:1`"), tracked, read)) == 1)
     case("a populated cited line is silent",
-         violations(diff("docs/x.md", "`lib/a.ts:1`"), tracked, read) == [])
+         violations("docs/x.md", body("`lib/a.ts:1`"), tracked, read) == [])
     case("line 3 (last line) is in range",
-         violations(diff("docs/x.md", "`lib/a.ts:3`"), tracked, read) == [])
-    # ⚠ without the lower bound, `:0` indexes lines[-1] and silently reports the LAST line as the
-    # cited one — silent and wrong, which is worse than the drift this guard exists for.
+         violations("docs/x.md", body("`lib/a.ts:3`"), tracked, read) == [])
     case("a line number of 0 fires rather than reading the last line",
-         len(violations(diff("docs/x.md", "`lib/a.ts:0`"), tracked, read)) == 1)
+         len(violations("docs/x.md", body("`lib/a.ts:0`"), tracked, read)) == 1)
 
-    # --- the suffix exemption, and its refusal -------------------------------------------------
-    # ⚠ the suffix MUST carry a directory separator, or it is not a citation at all and the case
-    # passes for an ambient reason. The first version of this case used `a.ts:1` and tested nothing.
+    case("a readable file that is NOT in the tracked list still resolves",
+         violations("docs/x.md", body("`lib/a.ts:1`"), (), read) == [])
+    case("...and the same path with a blank cited line still fires, so it is not passing blindly",
+         len(violations("docs/x.md", body("`lib/a.ts:2`"), (), read)) == 1)
+
     case("a unique multi-segment suffix resolves and is silent",
-         violations(diff("docs/x.md", "`html-doc/ensure.ts:1`"),
+         violations("docs/x.md", body("`html-doc/ensure.ts:1`"),
                     ("lib/html-doc/ensure.ts",), read) == [])
-    case("⛔ an AMBIGUOUS suffix FIRES rather than being skipped",
-         len(violations(diff("docs/x.md", "`html-doc/ensure.ts:1`"), tracked, read)) == 1)
+    case("an AMBIGUOUS suffix FIRES rather than being skipped",
+         len(violations("docs/x.md", body("`html-doc/ensure.ts:1`"), tracked, read)) == 1)
     case("the ambiguous message says how many matched",
-         "ambiguous: 2" in first(violations(diff("docs/x.md", "`html-doc/ensure.ts:1`"), tracked, read)))
+         "ambiguous: 2" in first(violations("docs/x.md", body("`html-doc/ensure.ts:1`"),
+                                            tracked, read)))
     case("a suffix match still range-checks",
-         len(violations(diff("docs/x.md", "`html-doc/ensure.ts:99`"),
+         len(violations("docs/x.md", body("`html-doc/ensure.ts:99`"),
                         ("lib/html-doc/ensure.ts",), read)) == 1)
 
-    # --- scope ---------------------------------------------------------------------------------
-    case("docs/reviews/ is excluded",
-         violations(diff("docs/reviews/r.md", "`lib/a.ts:2`"), tracked, read) == [])
-    case("a generated .html page is excluded",
-         violations(diff("docs/explainers/p.html", "`lib/a.ts:2`"), tracked, read) == [])
-    case("a non-docs path is excluded",
-         violations(diff("scripts/x.md", "`lib/a.ts:2`"), tracked, read) == [])
-    case("a docs/ root .md IS in scope",
-         len(violations(diff("docs/backlog.md", "`lib/a.ts:2`"), tracked, read)) == 1)
-    case("a nested docs .md IS in scope",
-         len(violations(diff("docs/adr/0001-x.md", "`lib/a.ts:2`"), tracked, read)) == 1)
+    # scope is a predicate the caller applies to git's own NUL-delimited file list, so a scope leak
+    # is impossible by construction and these assert the predicate directly.
+    case("docs/reviews/ is out of scope", in_scope("docs/reviews/r.md"), False)
+    case("a generated .html page is out of scope", in_scope("docs/explainers/p.html"), False)
+    case("a non-docs path is out of scope", in_scope("scripts/x.md"), False)
+    case("a docs/ root .md IS in scope", in_scope("docs/backlog.md"), True)
+    case("a nested docs .md IS in scope", in_scope("docs/adr/0001-x.md"), True)
+    case("a unicode docs path IS in scope — git hands it over unquoted via -z",
+         in_scope("docs/e\u0301\t.md"), True)
+
     case("a REMOVED line is not examined",
-         violations("+++ b/docs/x.md\n-see `lib/a.ts:2`", tracked, read) == [])
+         violations("docs/x.md", "-see `lib/a.ts:2`", tracked, read) == [])
     case("a context line is not examined",
-         violations("+++ b/docs/x.md\n see `lib/a.ts:2`", tracked, read) == [])
-    # ⛔ r1-codex M3: the old version of this case was `+++ b/docs/x.md` alone — no citation, so it
-    # could fire under no mutation. These two carry citation-shaped content and witness the header
-    # handling itself.
-    # ⛔ r2 Medium: the first version asserted SILENCE after re-scoping out of docs/, which is also
-    # what happens if headers are ignored entirely and `current` stays None — it passed ambiently,
-    # the exact class r1-codex raised, reappearing in a case written to answer it. This pair pins
-    # the direction: re-scoping INTO docs/ must make a citation visible that was not before.
-    case("a second +++ header RE-SCOPES OUT of docs/, silencing a following citation",
-         violations("+++ b/docs/x.md\n+++ b/scripts/y.md\n+`lib/a.ts:2`", tracked, read) == [])
-    case("...and re-scoping INTO docs/ makes one VISIBLE — which fails if headers are ignored",
-         len(violations("+++ b/scripts/y.md\n+++ b/docs/x.md\n+`lib/a.ts:2`", tracked, read)) == 1)
-    # ⛔ r2 HIGH regression pin: a REMOVED markdown horizontal rule is emitted as `----`. Treating
-    # that as a file boundary cleared scope and disabled the guard for the rest of the hunk.
-    case("a removed `---` horizontal rule does NOT clear scope",
-         len(violations("+++ b/docs/x.md\n----\n+`lib/a.ts:99`", tracked, read)) == 1)
-    case("a `diff --git` boundary clears scope rather than leaving the last file in place",
-         violations("+++ b/docs/x.md\ndiff --git a/z b/z\n+`lib/a.ts:2`", tracked, read) == [])
-    # ⛔ r1-codex HIGH: a C-quoted header (git's form for a non-ASCII path) must decode, or the
-    # citation is judged under the PREVIOUS file's scope — a fail-open.
-    case("a C-quoted unicode header decodes and its citations are examined",
-         len(violations('+++ "b/docs/\\355\\225\\234\\352\\270\\200.md"\n+`lib/a.ts:2`',
-                        tracked, read)) == 1)
-    # ⛔ r1-codex LOW: a URL's port made `3000/lib/a.ts:2` look like a repository path, and it fired.
-    case("a URL is not a citation, so its port cannot become a path",
-         violations(diff("docs/x.md", "http://localhost:3000/lib/a.ts:2"), tracked, read) == [])
-    # ⚠ introduced by MY OWN widening for r1-codex M1 and caught by re-measuring: adding `(` to the
-    # path class made a prose `(lib/a.ts:2)` capture the opening bracket. Only the FIRST segment is
-    # restricted, so Next.js route groups still parse.
-    case("a citation wrapped in prose parentheses does not capture the bracket",
-         violations(diff("docs/x.md", "(lib/a.ts:1)"), tracked, read) == [])
-    case("...and a route group in a LATER segment still parses",
-         len(violations(diff("docs/x.md", "`app/(auth)/p.tsx:1`"), tracked, read)) == 1)
+         violations("docs/x.md", " see `lib/a.ts:2`", tracked, read) == [])
+    case("a +++ header inside the body is never read as content",
+         violations("docs/x.md", "+++ b/lib/a.ts:2", tracked, read) == [])
+    case("a removed `---` horizontal rule is inert, not a boundary",
+         len(violations("docs/x.md", "----\n" + body("`lib/a.ts:99`"), tracked, read)) == 1)
 
-    # --- the citation grammar ------------------------------------------------------------------
     case("backticks are optional",
-         len(violations(diff("docs/x.md", "see lib/a.ts:2 here"), tracked, read)) == 1)
+         len(violations("docs/x.md", body("see lib/a.ts:2 here"), tracked, read)) == 1)
     case("a [param] path segment parses",
-         len(violations(diff("docs/x.md", "`app/[id]/r.ts:1`"), tracked, read)) == 1)
+         len(violations("docs/x.md", body("`app/[id]/r.ts:1`"), tracked, read)) == 1)
     case("two citations on one line are both examined",
-         len(violations(diff("docs/x.md", "`lib/a.ts:2` and `lib/a.ts:99`"), tracked, read)) == 2)
+         len(violations("docs/x.md", body("`lib/a.ts:2` and `lib/a.ts:99`"), tracked, read)) == 2)
     case("a bare filename with no directory is NOT a citation",
-         violations(diff("docs/x.md", "`a.ts:2`"), tracked, read) == [])
+         violations("docs/x.md", body("`a.ts:2`"), tracked, read) == [])
     case("a docs/*.md target can itself be cited",
-         violations(diff("docs/x.md", "`docs/notes.md:1`"), tracked, read) == [])
-    # ⛔ r1-codex M3: without this, deleting `md` from the extension list changed nothing and 32/32
-    # still passed — the case above is silent either way, so it witnessed nothing on its own.
+         violations("docs/x.md", body("`docs/notes.md:1`"), tracked, read) == [])
     case("...and a BAD markdown target fires, so the form is really examined",
-         len(violations(diff("docs/x.md", "`docs/notes.md:9`"), tracked, read)) == 1)
+         len(violations("docs/x.md", body("`docs/notes.md:9`"), tracked, read)) == 1)
+    case("a URL is not a citation, so its port cannot become a path",
+         violations("docs/x.md", body("http://localhost:3000/lib/a.ts:2"), tracked, read) == [])
+    case("a citation wrapped in prose parentheses does not capture the bracket",
+         violations("docs/x.md", body("(lib/a.ts:1)"), tracked, read) == [])
 
-    # --- `read` is CONSULTED, not captured ------------------------------------------------------
-    # ⛔ check-fixture-variation refused this suite until these existed: every other case passes the
-    # same `read`, so none of them could tell it from a constant, and any clause reading it was
-    # unguarded. These two differ ONLY in the injected reader, at one identical citation.
-    _blank_at_1 = lambda p: ["", "content"]   # noqa: E731
-    _content_at_1 = lambda p: ["content", ""]  # noqa: E731
-    case("the verdict follows the INJECTED reader — blank at line 1 fires",
-         len(violations(diff("docs/x.md", "`lib/a.ts:1`"), ("lib/a.ts",), _blank_at_1)) == 1)
-    case("...and the SAME citation is silent under a reader whose line 1 has content",
-         violations(diff("docs/x.md", "`lib/a.ts:1`"), ("lib/a.ts",), _content_at_1) == [])
-
-    # --- main() is DRIVEN over a constructed world (ADR-0014) ----------------------------------
-    # ⛔ Not pinned as identity debt: 28 guards already are, and a new one should not join them.
-    # These three reach every exit code main() can return, with no git binary and no repository.
+    # --- main() is DRIVEN over a constructed world (ADR-0014), to every exit code ---------------
     import contextlib
     import io
 
-    def drive(diff_text: str, tracked_files_, reader_, base_ok: bool = True) -> int:
-        def fetch_diff(_base, _root):
-            if not base_ok:
-                raise RuntimeError("git diff origin/nope failed: unknown revision")
-            return diff_text
-        buf_out, buf_err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+    def drive(changed, diff_text, reader, git_ok: bool = True) -> int:
+        def fetch_changed(_b, _r):
+            if not git_ok:
+                raise RuntimeError("git diff --name-only origin/nope failed: unknown revision")
+            return changed
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return main([], root=pathlib.Path("/nonexistent"),
-                        fetch_diff=fetch_diff,
-                        fetch_tracked=lambda _root: tracked_files_,
-                        make_reader=lambda _root: reader_)
+                        fetch_changed=fetch_changed,
+                        fetch_file_diff=lambda _b, _r, _p: diff_text,
+                        fetch_tracked=lambda _r: tracked,
+                        make_reader=lambda _r: reader)
+
+    def raises(_p):
+        raise PermissionError("fixture is unreadable")
 
     case("main() returns 0 over a clean world",
-         drive(diff("docs/x.md", "`lib/a.ts:1`"), tracked, read) == 0)
+         drive(("docs/x.md",), body("`lib/a.ts:1`"), read) == 0)
     case("main() returns 1 when a citation has drifted",
-         drive(diff("docs/x.md", "`lib/a.ts:2`"), tracked, read) == 1)
+         drive(("docs/x.md",), body("`lib/a.ts:2`"), read) == 1)
     case("⛔ main() returns 2 — CANNOT RUN — when git cannot be reached, never 0",
-         drive("", tracked, read, base_ok=False) == 2)
+         drive((), "", read, git_ok=False) == 2)
+    # ⛔ r2-codex Medium: this handler had NO witness — replacing its `return 2` with `return 0`
+    # left 40/40 green. An existing-but-unreadable cited file is CANNOT RUN, never a finding.
+    case("⛔ main() returns 2 when a cited file exists but cannot be READ",
+         drive(("docs/x.md",), body("`lib/a.ts:1`"), raises) == 2)
+    case("...and an out-of-scope changed file is never diffed at all",
+         drive(("scripts/x.md",), body("`lib/a.ts:2`"), read) == 0)
 
     print(f"{passed}/{passed + failed} passed")
     return 1 if failed else 0
@@ -458,7 +386,8 @@ def self_test() -> int:
 def main(
     argv: list[str],
     root: pathlib.Path = ROOT,
-    fetch_diff=added_diff,
+    fetch_changed=changed_files,
+    fetch_file_diff=file_diff,
     fetch_tracked=tracked_files,
     make_reader=_reader,
 ) -> int:
@@ -482,22 +411,22 @@ def main(
         return self_test()
 
     try:
-        diff_text = fetch_diff(args.base, root)
+        scoped = [f for f in fetch_changed(args.base, root) if in_scope(f)]
         tracked = fetch_tracked(root)
     except (RuntimeError, OSError) as exc:
         print(f"CANNOT RUN — {exc}\n  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
         return 2
 
+    read = make_reader(root)
+    found: list[str] = []
     try:
-        # r2 Medium: `violations()` is documented PURE, but the injected reader touches the disk —
-        # an existing-but-unreadable file raised PermissionError straight out of it. r1 M1 fixed the
-        # MISSING-file branch and left its sibling. A read that cannot happen is CANNOT RUN (rc=2),
-        # never a finding and never a traceback.
-        found = violations(diff_text, tracked, make_reader(root))
-    except OSError as exc:
-        print(f"CANNOT RUN — a cited file could not be read: {exc}\n"
-              f"  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
+        for scoped_path in scoped:
+            found += violations(scoped_path,
+                                fetch_file_diff(args.base, root, scoped_path), tracked, read)
+    except (RuntimeError, OSError) as exc:
+        print(f"CANNOT RUN — {exc}\n  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
         return 2
+
     if found:
         print(f"⛔ {len(found)} drifted citation(s) added:\n", file=sys.stderr)
         for item in found:
