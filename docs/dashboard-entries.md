@@ -14891,3 +14891,66 @@ fixture (deleted the file before `is_file()`, so `stat()` was never reached), a 
 CRASHED instead of answering, dead code exposed by a surviving mutation, and twice adding
 mutations without updating `EXPECTED_MUTATIONS` — the second time my repair skipped the one
 entry with a trailing comment, which was the entry I had just changed.
+
+## 2026-10-14 [needs-you]
+**Review round 18 found the thing eighteen rounds had walked past.** It was not in the file every
+previous round had argued about — it was in a *search tool this same branch added*, which had been
+answering "that claim is not present" about claims that were present, on any recent Python. The tool's
+own documentation promises, in capital letters, that it cannot do that.
+
+Both independent reviewers then reached the same verdict on the original file: stop patching it and
+redesign it. They agreed on the call and disagreed usefully on the fix, and the disagreement turned
+out to be the better half of the answer.
+
+**The one sentence worth keeping:** the report at the centre of eighteen rounds glues together what
+the harness says and what the program being tested says, into a single piece of text — so no test can
+tell the two apart, and every test written against it can be satisfied by the program under test
+saying the right word. Each fix created the next one. That is a property of the design, not a run of
+bad luck, and it is why the verdict is "redesign" rather than "fix again".
+
+**What needs you — two things, neither urgent, both real:**
+
+1. **Two files every session reads are one line from a hard limit** — `docs/plugins.md` at 259 of 260,
+   `docs/dev-process.md` at 219 of 220. The check warns now and **blocks the next rule added to
+   either**. It deliberately refuses to choose: raise the limit in a reviewable change, or decide what
+   no longer earns its line. Today it briefly blocked for real, caused by a commit that was *removing*
+   text.
+2. **Merging.** Nothing is merged and no pull request was opened for unconverged work. One new item
+   (#293) is specifically material to the merge decision: three of the four safety checks this branch
+   adds — about 8,200 lines — have never had a review that took them as its subject. The one that
+   finally did got two serious findings in its first hour.
+
+<!--tech-->
+**PR #371 `backlog-249-260-fixes` → `1f710068`. Round 18 both halves, folded; Phase 6 convened and
+recorded. NOT CONVERGED.**
+
+| | |
+|---|---|
+| **H-A — the instrument was red on 3.13+ and CI could not see it** | `find-claim.py --self-test`: **3.10 → 86/86, 3.12 (the CI pin) → 86/86, 3.14 → 84/86**. `pathlib`'s `is_file()` swallows the error on 3.13+ and returns `False`, so `except OSError` never fired. In `--expect absent` mode — where `rc=0` is a PASS — it printed *"ok — absent … so the search worked"* over a corpus where the claim was present. Its 25 mutations were `NOT MEASURED` there against 25/25 on 3.12 |
+| **the second instance of a class with its own guard** | `check-python-pin.py:17-18` names this exact divergence in its own docstring. It PINS the version; nothing MEASURES a guard at more than one interpreter. Filed as **#292** |
+| **fixed at BOTH sites, not the one named** | the comment above the named site records that round 3 *"wrapped the WALK's `is_file()` and left this one bare — instance, not class"*. One `_classify()` helper now serves both: **88/88 on all three interpreters, 25/25 attributed on 3.12 and 3.14** |
+| **H-B — and it refuted a claim I had published four times** | the matcher is markup-literal: `injected before identity and memory` reports ABSENT over text reading `injected **before** identity and memory`. I had called it "case-sensitive and markup-literal" — the case half is wrong, and the reason is **#290**: there are TWO `find-claim.py` files on two unmerged branches (226 lines, case-sensitive; 1,132 lines, case-INsensitive), neither on `master`, **add/add conflict** at the merge-base |
+| **Phase 6 — the class is local by MECHANISM** | the given number (12 of 14 ambient candidates in one component) did not reproduce; my wider sweep found 216 across 24 guards, 35% in one file, which settles nothing. So I measured the channel instead: exactly **one** guard splices externally-sourced text into a report its own cases substring-test — 3 sites — and **every other guard does it zero times** |
+| **the redesign, amended twice** | (A1) one formatter is not enough unless its output is observable WITHOUT the child's text, or the defect is rebuilt prettier; (A2) the input axis is not 0/1/many lines but the **six worlds** the branches select on, five of which have fixtures and the real no-frame traceback has none — three of four findings are missing input KINDS |
+
+**`plugins-handoff-citations` → `e3d393d8`. Round 6 fully folded (H1–H5, M1–M6, L1–L9); round 7's
+Codex half filed and folded; its Claude half in flight. NOT CONVERGED.**
+
+Round 7's one Medium is the sharpest finding on that branch: the guard that stops a rule being written
+in six places enforces **one place, never one claim** — a site may restate a mechanism as long as it
+*cites* the canon, so three copies that correctly linked to the single source disagreed with it for a
+full round, one of them the message printed to someone at the moment they were being stopped. Fixed by
+deleting the recitals and keeping the citations; filed as **#289**.
+
+⭐ Two things about method, because they cost real time today. **The guard caught my own prose three
+times during one fold** — each correction added a NEW copy of the mechanism it was explaining, in the
+file that enforces the rule I had just written. And **a near-miss reproduction refuted a true
+finding**: my first attempt at one sever landed two indent levels off and gave the opposite verdict, so
+a failure to reproduce a specific measured finding is a defect in the reproduction until the placement
+has been varied.
+
+**Verified, not asserted:** guard sweeps derive their population from `ci.yml` and enumerate it
+(58 discovered → 53 ran, 5 skipped each with a stated reason, 0 red), assert `ran + skipped ==
+discovered`, and refuse below 40 — a floor that earned its keep when a first attempt used a bash
+builtin macOS lacks and reported `red=0` having run **zero** guards. Every anchor in every manifest
+re-checked after each edit: **1,560 anchors, all binding exactly once**.
