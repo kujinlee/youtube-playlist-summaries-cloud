@@ -14969,3 +14969,57 @@ attributed, 0 survivors** on 3.12 and 3.14, green control and re-control. Guard 
 → **49 ran, 5 skipped each with a reason, 0 red**. ⭐ And the falsifier for the documentation: the
 guard reads **46 in-scope added lines of the document that documents it** — every example backticked
 — and stays green, with the line count checked rather than the exit code trusted.
+
+## 2026-10-15
+**The project's answer to "what are we working on?" was five weeks out of date, and it now matches
+what you actually said.** You named three things — the comprehensibility suite, development speed,
+and the product itself — and asked which deliverable each one serves. The roadmap, meanwhile, still
+presented a list set on 6 September as current. Those two lists were not in conflict so much as at
+different sizes: the September one named three individual backlog items, yours names three whole
+programmes. Anyone reading the file for direction got the small, stale list.
+
+**What this changes:** the roadmap now opens with your three programmes, each with the part of the
+system it covers and an honest line on where it stands. The September list is kept directly below it,
+marked superseded rather than deleted — removing it would take its reasoning with it, and that
+reasoning is still good.
+
+**The number behind the question you asked.** In the 52 days since the product last shipped, 213
+changes landed. **None of them was product code alone.** 208 touched only the tooling and
+documentation, 5 touched both. That is not an accusation — the tooling *is* one of this project's two
+declared deliverables, and you declared it one — but it is the measured version of the worry you
+raised, and it should be visible rather than inferred.
+
+**One thing is decided but not yet done, and it is deliberately left open.** You asked for the
+comprehensibility suite to be registered as a deliverable in its own right. That registration is not
+a one-line edit: the registry holds names, and a check refuses any name that no document claims — so
+registering needs a document written to claim it, and there are three sensible candidates. The
+decision is recorded in two places so it cannot be lost; the work is filed rather than guessed at.
+
+<!--tech-->
+**`goal-mapping-ruled`. Roadmap `CURRENT GOAL` block superseded, not deleted; `docs/backlog.md` row
+290 filed; the ruling also written to memory `project-has-two-deliverables.md` (`e26e35ea`).**
+
+| | |
+|---|---|
+| **the mapping, settled by selection card** | (3) product → **D1**; (2) development speed → **D2**; (1) comprehensibility suite → **D2**, which was the only one genuinely open |
+| **why (1) is D2** | the suite makes *this* project legible, which reads like D1 overhead — but D2's rule is *what travels is the QUESTION a tool asks, never the tool*, and *"how does someone returning see state without reading a transcript?"* holds with no Supabase, no Gemini, no Fly |
+| **the effort split, measured** | `git rev-list --since=2026-08-25 origin/master` → 213 commits; classified by `git show --name-only` per commit: **0** product-only, **208** harness/docs-only, **5** both. Live release still **Fly v10, 2026-08-24**; prod schema `0027`; roadmap's deploy claim agrees, so no version drift |
+| **anchor coverage** | all **13** registered anchors divide 9 / 1 / 3 across the three programmes with none left over — so no fourth goal is hiding and nothing is unclaimed |
+| **why the registration is owed and not done** | `check-anchors.py` **R4** refuses a registry name nothing claims (*"claimed by no document — use it or remove it"*), so a new anchor without a claiming document goes red on arrival. Row 290 names the three candidate claimants rather than picking one |
+| **the trap row 290 names explicitly** | do **not** discharge it by widening `status-visibility` — that anchor is scoped to *"a person who was away"*, and one name serving two readers is a defect already recorded against this very anchor |
+
+**Also landed today, and the reason this branch exists at all:** the two side-tracked branches were
+merged on your priority call — **#372** (`8e917cb2`, seven review rounds, **not converged**) and
+**#373** (`0711e597`, **zero** rounds). Both carry `NO-REVIEW:` in the pull-request body quoting that
+call, because the gate's own message names that as the escape. What each still owes is written into
+its PR rather than dropped: #372 owes round 8 on three findings plus its reviewer's thrashing
+stop-condition; #373 owes review of its qualifier word list and of its own widening of the pin that
+exists to catch changes like it.
+
+**The merge collision, resolved by derivation.** Both branches independently moved
+`EXPECTED_MUTATIONS` from 1408 — #372 to 1413, #373 to 1414 — so the rebase conflicted on exactly
+that literal. **Neither side was taken**: the merged dict is 61 entries and the figure was re-read
+from the guard's own `got 1419 want 0` against a deliberately wrong sentinel. Taking either literal
+would have left the manifest declaring a total its own dict no longer sums to, green and wrong.
+`docs/dashboard-entries.md` conflicted too — both branches had appended to one log — and both dated
+blocks were kept in order, per this file's own append-only rule.
