@@ -107,6 +107,9 @@ POPULATION: frozenset[str] = frozenset({
     # on a NEW file would be that shape at one remove. ⚠ BARE NAMES here and FULL PATHS in
     # `check-plan-code.EXPECTED_MUTATIONS`: the same two scripts are registered under two
     # different string shapes, which is a trap worth naming rather than rediscovering.
+    "find-claim.py",                 # ⟳ 2026-10-14, backlog #258: the claim finder
+                                     # declares 19 cases; nothing would check that
+                                     # unless it is named here.
     "check-features.py",
     "gen-features-page.py",          # not a `check-*` guard, so the ratchet contract's population
                                      # never sees it — this is its only outside observer.

@@ -1,0 +1,41 @@
+[
+  {
+    "name": "normalise stops collapsing NEWLINES, so a claim pasted WITH its line breaks stops matching",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "    return re.sub(r\"\\s+\", \" \", text)\n",
+        "    return re.sub(r\"[ \\t]+\", \" \", text)\n"
+      ]
+    ],
+    "expect": [
+      "a pattern given WRAPPED matches flat text"
+    ]
+  },
+  {
+    "name": "line_of becomes 0-based, so every citation points one line short",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "    return text.count(\"\\n\", 0, offset) + 1\n",
+        "    return text.count(\"\\n\", 0, offset)\n"
+      ]
+    ],
+    "expect": [
+      "line_of is 1-based"
+    ]
+  },
+  {
+    "name": "search_text reports only the FIRST occurrence, so a second instance of a claim is hidden",
+    "file": "scripts/find-claim.py",
+    "edits": [
+      [
+        "        out.append((line_of(text, a), text[a:b + 1]))\n",
+        "        out.append((line_of(text, a), text[a:b + 1]))\n        return out\n"
+      ]
+    ],
+    "expect": [
+      "TWO occurrences are both reported"
+    ]
+  }
+]

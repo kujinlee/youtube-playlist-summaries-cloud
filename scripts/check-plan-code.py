@@ -1338,6 +1338,8 @@ EXPECTED_MUTATIONS = {
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
+    # ⟳ 2026-10-14, backlog #258: the claim finder, 3 entries.
+    "scripts/find-claim.py": 3,
     "scripts/begin-plan.py": 18,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
@@ -3420,6 +3422,12 @@ def _self_test() -> int:
                                       "scripts/codex-review.py",
                                       "scripts/coverage_verdict.py",
                                       "scripts/explainer-serve.py",
+                                      # ⟳ 2026-10-14, backlog #258 — the claim finder. NOT a
+                                      # `check-*` guard (it answers a question rather than failing
+                                      # when a claim stops being true), so like the two entries
+                                      # above this list is the only outside observer of its
+                                      # manifest.
+                                      "scripts/find-claim.py",
                                       "scripts/gen-backlog-page.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
@@ -4949,7 +4957,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1408)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1411)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

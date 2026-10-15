@@ -300,6 +300,18 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-10-14, backlog #258 — the claim finder. ⚠ DERIVED BY RUNNING `analyse()` on the
+    # file, not written by hand: this dict's own `check-main-drivable` comment records that a
+    # hand-written first attempt named two parameters this guard does not examine.
+    # ⛔ `line_of.text` is here because the first version of the suite drove it at ONE value and
+    # this guard refused the file — the fix was a third case over a different text, not an EXEMPT.
+    "find-claim.py": (
+        "line_of.offset",
+        "line_of.text",
+        "normalise.text",
+        "search_text.pattern",
+        "search_text.text",
+    ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
         # `case_locals` are GONE, deliberately: the review measured that the rule
