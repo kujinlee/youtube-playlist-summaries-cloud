@@ -349,11 +349,102 @@ added-column blindness; the 16 MB `.superpowers/` residue) went unsurfaced while
 **The near-miss worth recording.** The obvious repair was `.remember/handoff.md`. It is wrong, and
 wrong invisibly: **nothing reads that name either**, so the fix would have looked complete while
 rebuilding the identical defect at a prettier path. The path that works is `.remember/remember.md`
-because the `remember` plugin's SessionStart hook already reads it —
-`REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"` (`session-start-hook.sh:795`), emitted as
-`=== LAST HANDOFF ===` and injected **before** identity and memory so it survives context-preview
-truncation (`:809-812`), with fingerprinted non-destructive delivery (`:814-825`) so a read-only session
-does not consume the next one's note.
+because the `remember` plugin's SessionStart hook already reads it.
+
+⭐ **WHY that path is the one that gets read is in ONE place now, and this document does not restate
+it: [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md)** — the
+symbol, the emission banner, the injection order and the content fingerprint, **each with the bound it actually has** — ⟳ r7 CLAUDE H1: this clause said "the content fingerprint" flat, nine lines above the paragraph in which this very document withdraws exactly that, and the repair wording was applied to its three siblings in the same commit and not to it. ⟳ **r6 CLAUDE H3: a
+four-clause copy of that mechanism stood right here**, and it was one of SIX live sites while
+`check-canonical-source.py` exited 0 over all of them, because neither of the two symbols those
+sites share was in its token list. What belongs here is the HISTORY — the near-miss above, and the
+account below of five documents citing a vendored line number — not a seventh copy of the
+mechanism.
+
+### The recital that outlived its own canon — and why a citation was the only fix
+
+⟳ **2026-10-14, round 7 CODEX M1.** Round 6's L9 corrected the delivery fingerprint in
+[`handoff-path.md`](../.agents/skills/shared/handoff-path.md) to *where `cksum` exists* — the vendor
+falls back to `wc -c`, a byte COUNT, so two handoffs of equal length are indistinguishable. **Three
+reader-facing sites kept the unconditional form for a full round** while `check-canonical-source.py`
+returned `[]`: the handoff skill, the hook's REFUSAL TEXT, and this document's sibling spine row.
+
+⛔ **The guard was green because it enforces *one place*, never *one claim*.** Its restatement test
+permits a site to carry a mechanism's tokens whenever it also cites the canon — deliberately, so a
+retrospective like this one can discuss history instead of deleting measured content to satisfy a
+checker. The price is that a cited copy can disagree with what it cites, and nothing sees it. Filed
+as **backlog #289**, with the bound stated in the guard's own docstring.
+
+⭐ **The fix was not a better oracle; it was DELETING THE RECITAL AND KEEPING THE CITATION at all
+three sites.** A citation cannot drift. A recital can, and this one did — in the text printed to a
+blocked reader at the exact moment of need, which is the same site the original *handoff with no
+reader* defect burned. ⚠ And the spine row that carried it had claimed, two lines below itself, that
+it did not restate the mechanism; that claim is now true rather than aspirational.
+
+### The handoff rule that was true of one mode
+
+⟳ **2026-10-13 — FIVE sibling documents cited LINE NUMBERS inside a vendored file, and the vendor
+shipped a new version.** Measured against the **0.33.0** hook, which is **2,027 lines**:
+`REMEMBER_HANDOFF` is at `:1171`, the `=== LAST HANDOFF ===` emit at `:1666`, the delivery record at **`REMEMBER_HANDOFF_STATE`** (⟳ cited as `:1571-1640` until round 3 M4, which measured that range UNDER-BOUNDING the mechanism it names — the reads and writes continue past `:1660`; the symbol is cited instead, which is this rule applied to its own text), the hint at `:1546`. The citations were `:795`, `:809-812`, `:814-825`, `:800-802`.
+
+⚠ **THE COUNT WAS PUBLISHED AS FOUR AND IS FIVE — corrected by round 1's Claude half.** The fifth is
+`.agents/skills/handoff/SKILL.md:13`: git-tracked, authored in the **same commit** as the other four
+(`24ff8694`, 2026-08-27), listed as **Layer 3** of this very mechanism in
+[`plugins.md`](plugins.md), and — the part that stings — it is the file the refusal text tells a
+blocked reader to open (`enforce-handoff-path.sh`: `$EDITOR .agents/skills/handoff/SKILL.md`). So the
+branch's own strongest argument applied a second time, to the file the refusal hands you next.
+⭐ **Why it was missed, exactly:** the inventory grep used `grep -r`, which does **not** follow the
+symlink at `.claude/skills/handoff` → `../../.agents/skills/handoff`, and a recursive search that does not follow symlinks misses it. ⛔⟳ **NO FLAG IS NAMED HERE ANY MORE, AND THAT IS THE THIRD ATTEMPT.** v1 prescribed `grep -R`; round 2 measured BSD grep (macOS's) treating `-R` exactly like `-r` — finding NOTHING — while this shell's `ugrep` wrapper follows. v2 prescribed `-RS`; round 3 found GNU grep having **no `-S` at all** and ripgrep rejecting `-R`. ⛔ **r4 M1 — "MEASURED" WAS TOO STRONG HERE AND THIS IS THE WITHDRAWAL CATCHING UP WITH ITSELF:** the GNU leg came from **GNU grep 3.12's source option table**, not a runtime probe, because that round **could not build the binary** and said so in its own review. ⚠ r4 L4 restored the VERSION here: this branch's own rule is that a dated claim may cite a vendored artifact only when it NAMES the version it measured, and `-S` could be added in a later release — at which point an unversioned claim goes silently wrong exactly like a stale line number. The memory file was corrected the same day; this site and the guard's comment kept the stronger account, which is another instance of this branch's recurring class — ⚠ r4 M2: the ordinal that stood here ("the eighth") named no enumerated population and could not be reproduced by a reviewer, so it is dropped; the CLASS is what the evidence supports, not a count. ⭐ The LESSON survives and its old wording does not: *measure the population the code actually sees*, applied to a command line. ⛔⟳ **r6 CLAUDE M1 — THE WITHDRAWAL REACHED THE CANON A ROUND BEFORE IT REACHED HERE.** The retired phrasing — *"each version was checked against the binaries the author happened to have"* — is declared **WITHDRAWN** in [`corpus-search.md`](../.agents/skills/shared/corpus-search.md), because the GNU leg came from a SOURCE TABLE and no binary was ever run; it stood here verbatim beside the source-only provenance that refutes it. ⚠ A withdrawal applied at one site and not its neighbour is this branch's own class, committed inside the commit that exists to end it — and the guard cannot see it, because "binaries the author" is not a token. ⛔ **r4 M2 — AND "THE REPAIR IS TO PRESCRIBE NONE" IS NO LONGER WHAT THIS REPO DOES, so leaving it here contradicted three other sites.** There are **two corpora** and they need different answers: for this repo's **tracked** files, `git grep -l <string>` (no flag, no symlink question) — ⛔ **but r4 H1 refuted the mechanism sentence a FOURTH time: it searches the paths in the INDEX, reading each from the working tree UNLESS marked `skip-worktree`/`assume-unchanged` or absent, in which case it reads the cached blob or nothing.** Measured: a TRACKED `assume-unchanged` file returns the stale indexed string and misses the disk one; `skip-worktree` and a worktree-deleted tracked file both return 0 — all tracked, so naming the corpus does not help. ⭐ **The instruction itself is in ONE place now and this document does not restate it: [`.agents/skills/shared/corpus-search.md`](../.agents/skills/shared/corpus-search.md).** What belongs here is the HISTORY above — why five versions of that sentence were each refuted — not a sixth copy of the command. For a **vendored plugin file**, no repo-side search reaches it — name the SYMBOL and the path. One file,
+two paths — the shape this repo has already paid for once by deleting the only copy of a page.
+
+**The lesson is not "re-derive them" — it is that they should never have been written.** A line
+number in a VENDORED file has **no owner in this repo**: nothing here can hold it, no guard can check
+it, and `npx skills@latest add` or a plugin bump invalidates it silently. This repo already records
+*cite the SYMBOL, not the line* for retrospective figures; a vendored dependency is the strongest
+case of it. ⚠ ⟳ **An earlier version of this paragraph said a review half "had already flagged
+exactly this" and that is overstated** — `docs/reviews/claude/velocity-177-r5-claude.md:161`
+inventories the locator while discussing the scope of a documentation invariant; it neither
+establishes the citation was stale nor names the vendored-drift class. An earlier *inventory*, not
+an ignored finding.
+
+⛔ **THE SUBSTANTIVE HALF: the ⛔ RULE in [`plugins.md`](plugins.md) states its path
+unconditionally, and the hook has TWO MODES.** `config_into HANDOFF_MODE ".handoff_mode" "single"`
+(`:1164`), then `per_session` + a resolvable session id gives `remember.<session-id>.md`, otherwise
+`remember.md`. ⭐ **The rule is correct for this install** — but ⟳ **the evidence first published for
+that was the WRONG SET**, and the real evidence is stronger. `.handoff_mode` is not read from any
+Claude Code settings file at all; it comes from `$REMEMBER_CONFIG`, a tmpfile deep-merged from
+**three** layers in precedence order — the bundled `<plugin root>/0.33.0/config.json` (only
+`config.example.json` ships), `~/.remember/config.json`, and `<repo>/.remember/config.json`. **All
+three are absent**, so the merge falls to `{}` and the default stands. ⚠ And *".remember/ holds only
+`remember.md`"* described a store that does not exist: it holds **104** entries (⟳ *this read "~102" while the dashboard entry said 104 — round 2 L1; re-counted*), of which exactly one
+matches `remember*` — which was the intended claim and not what the sentence said.
+
+⛔⛔ **AND THE "⭐ LESSON" THIS SECTION ORIGINALLY DREW FROM THE HOOK WAS MEASURED FALSE — a Blocking
+in round 1, and the most instructive thing here.** It claimed *"the hook refuses to degrade quietly …
+withholds the hint … cannot-run-is-not-a-pass implemented in a vendored dependency"*. **The hook does
+the opposite.** Driven in an isolated tree varying only `.handoff_mode` and the presence of
+`session_id`, a degraded `per_session` request prints:
+
+```
+=== HANDOFF ===
+Write next handoff to: <…>/.remember/remember.md
+(handoff_mode is "per_session", but no session_id reached this hook -- writing to the shared file above, not a per-session one.)
+```
+
+So there are **three** hint triggers, not two: external mode, per-session, and **degraded**
+per-session — and in the third the path printed IS the shared one.
+
+⭐ **Where the false claim came from is the whole point.** The hook carries a comment at
+`:1153-1163` describing exactly the withholding behaviour that was published — and that comment is
+**stale**. ⟳ **22 to 26 lines later** the hook corrects itself — ⚠ *ambiguous by construction: the stale sentence is at `:1159`, its block ends at `:1163`, the correction is at `:1185`. Three parties gave three numbers (fifty, 26, 22); the anchors are the honest form*: *"NOT withheld on degrade. An earlier version
+… suppressed the hint outright … That reasoning was wrong … **The honest fix is not silence, it is a
+visible line.** A reviewer of PR #363 caught this before it shipped."* The code at `:1544` matches the
+second comment. ⛔ **So a correction written to stop citing a vendored file from memory cited that
+file's COMMENT from memory — the same defect with the line number taken out.** Quote the code; a
+comment is a characterisation, and in a dependency it is one nobody here owns either.
+
+⭐ And the true behaviour is the better lesson: **the hook neither goes silent nor lies — it prints
+the real path and a second line saying the mode you asked for did not apply.** Its own history
+records that silence was tried, reviewed and rejected.
 
 **Two general lessons.**
 

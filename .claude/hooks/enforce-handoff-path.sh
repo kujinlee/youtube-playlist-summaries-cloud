@@ -61,15 +61,19 @@ The documents were fine. They had no consumer.
 
 Write the handoff to:  .remember/remember.md
 
-That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh:795 —
-emitted as '=== LAST HANDOFF ===' and injected BEFORE identity and memory so it
-survives context-preview truncation (:809-812). Delivery is fingerprinted and
-non-destructive (:814-825).
+That is the one path the remember plugin's SessionStart hook reads. Described
+ONCE, and this refusal does not restate it -- WHY that path is the one that gets
+read, and why a DIFFERENT path may have been printed at session start:
+  .agents/skills/shared/handoff-path.md
+  To inventory where a string appears in this repo, and why ONE command is not
+  enough:  .agents/skills/shared/corpus-search.md
 
-NOT .remember/handoff.md — nothing reads that name either.
-
-If a session-start block printed '=== HANDOFF === / Write next handoff to: <path>'
-you are in external mode: obey THAT path instead.
+  Each is the ONE place that mechanism is described. This refusal used to RESTATE
+  both, and drift between the copies made it print a claim and its own withdrawal
+  in the same message -- which is the defect the single source removes.
+  (r7 CLAUDE L1: it also named handoff-path.md TWICE, four lines apart, under a
+  closing sentence saying "both"; and r7 M4: the second pointer restated the
+  trigger COUNT as THREE, which that canon's own last section refutes.)
 
 Then repair the vendored skill so this stops recurring:
   \$EDITOR .agents/skills/handoff/SKILL.md      # see docs/plugins.md -> Session Handoff

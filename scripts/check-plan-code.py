@@ -235,6 +235,24 @@ HARNESS_TREE = (
     # Recorded rather than silently re-justified, because an entry kept for a reason that has
     # expired is indistinguishable from one kept by accident. 44 KB, two files.
     ".github/workflows",
+    # ⟳ 2026-10-14, round 6 of the handoff-citation branch. `check-canonical-source.py` asserts
+    # that each mechanism is described in ONE file and cited elsewhere; its canonical sources
+    # live in `.agents/skills/shared/`. ⛔⟳ r6 CLAUDE M2 — THE CLAUSE THAT STOOD HERE WAS WRONG
+    # TWICE OVER AND IS DELETED, NOT CORRECTED. It read "three of its five citing sites are skill
+    # files": derived by importing the live table, there are 11 citing-site declarations across 6
+    # distinct files and exactly ONE skill file (`.agents/skills/handoff/SKILL.md`), and no reading
+    # of any per-canon split makes "three of five" true. ⭐ But the number was the lesser half —
+    # THE CITING SITES CANNOT BE THE REASON FOR THE RED AT ALL. `audit()` does
+    # `if not path.is_file(): … continue`, so on a tree without `.agents/skills` it never reaches
+    # the citing-site loop: the control reddens from the two ABSENT CANON FILES alone. Verified by
+    # removing the path on a copy. So the staging reason is the canons, and citing them was a
+    # plausible sentence for an unreachable branch.
+    # On a tree without them, `audit()` reports every canon MISSING, its own "the REAL repository
+    # is clean" case fails, and the CONTROL goes red — so the harness correctly refused the run
+    # and the entry would have shipped UNMEASURED. That is this tuple's own recorded failure
+    # ("a scripts-only tree gave each a red control") happening for a fifth subject.
+    # ⚠ `.agents/skills`, not `.agents`: only the skills are a subject here.
+    ".agents/skills",
 )
 
 
@@ -1349,6 +1367,7 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
+    "scripts/check-canonical-source.py": 5,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -3362,6 +3381,7 @@ def _self_test() -> int:
                                       "scripts/check-arch-findings.py",
                                       "scripts/check-backlog-closure.py",
                                       "scripts/check-banner-armed.py",
+                                      "scripts/check-canonical-source.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
@@ -4949,7 +4969,19 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1408)
+    # ⟳ 2026-10-14, r6 H3 FOLD: 1411 -> 1413. `check-canonical-source` goes 3 -> 5, one entry per
+    # delivery token — the two the canon owns, NOT NAMED HERE because naming them is what this
+    # whole fold is about and that guard went red on this very comment when they were
+    # (`.agents/skills/shared/handoff-path.md`) — because neither case that existed bound the
+    # CANONS literal — `_built_world` builds its tree FROM the live table and
+    # the real-repo case asserts cleanliness, so BOTH stay green on a smaller token list.
+    # ⛔ AND THE SAME FOLD FOUND A FOURTH ORPHANING IN THIS MANIFEST, pre-existing and not
+    # introduced here: the inverted-restatement entry bound `if hit and cite_token not in body:`,
+    # which `c882c242` (the H4 fold, the previous commit on this branch) replaced with a call to
+    # `_cites`. It bound 0 times at HEAD, so `--mutate .` read NOT MEASURED and the ratchet was
+    # void from that commit until this one. Retargeted, not re-counted: the entry still exists.
+    # ⚠ 1413 is the GUARD'S OWN FIGURE, read from `got 1413 want 1411`.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1413)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

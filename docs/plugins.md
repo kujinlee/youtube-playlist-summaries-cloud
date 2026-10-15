@@ -78,13 +78,12 @@ When multiple installed skills can handle the same task, use this table.
 > skill, which a patched vendor file cannot do on its own.
 >
 > **NOT `.remember/handoff.md`.** That name looks right and nothing reads it — choosing it would
-> rebuild the same bug somewhere prettier. The path is `REMEMBER_HANDOFF` in the `remember` plugin's
-> `session-start-hook.sh:795`, emitted as `=== LAST HANDOFF ===` and injected **before** identity and
-> memory so it survives context-preview truncation (`:809-812`). Delivery is fingerprinted and
-> non-destructive (`:814-825`), so a read-only session does not consume the next one's note.
+> rebuild the same bug somewhere prettier. ⛔ **WHY that path is the one that gets read — the symbol,
+> the banner, the injection order, the fingerprint and each one's real bound — is described ONCE and
+> this row does not restate it (r7 CODEX M1; the recital it replaced disagreed with the canon for a
+> round):** [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md).
 >
-> **If a session-start block prints `=== HANDOFF === / Write next handoff to: <path>`**, you are in
-> external mode — obey that path instead. It is absent in legacy mode by design (`:800-802`).
+> **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⛔ **the triggers and the mechanism behind the subtle one are described ONCE — and NOT as a count of three, which that canon's own last section refutes with a measured fourth (r7 CLAUDE M4) — in [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md); this row does not restate them** (three labels for that trigger were each measured false, and the copies drifted for five rounds). No hint in the ordinary setup is BY DESIGN.
 
 **⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
 `$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the

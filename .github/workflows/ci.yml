@@ -298,6 +298,23 @@ jobs:
       - name: Explainer delivery is described in ONE place
         run: python3 scripts/check-explainer-delivery.py
 
+      # ⛔ NOT a generalisation of the step above — that wording was this guard's own defect
+      # (r6 CLAUDE H5) and is corrected at all three sites it stood at. Same PATTERN, two
+      # guards, because what each forbids differs in KIND: that one forbids a RUNNABLE
+      # PROCEDURE (oracle: a fenced code block, scoped to `.agents/skills/*/SKILL.md`) and
+      # also asserts enumeration completeness over its `PAGE_SKILLS`; this one forbids a
+      # SYMBOL (oracle: a token substring over four directories and three extensions).
+      # Measured: in this guard's population `explainer-serve.py` carries 34 non-exempt
+      # sites, so a token oracle there would fire on the scripts that call it.
+      # Added after the handoff-path and corpus-search instructions drifted across SIX
+      # copies for five consecutive review rounds, including a fix that reached the skill
+      # and not the hook.
+      - name: Every mechanism is described in ONE place and cited elsewhere
+        run: python3 scripts/check-canonical-source.py
+
+      - name: Canonical-source guard's own cases
+        run: python3 scripts/check-canonical-source.py --self-test
+
       - name: Plan task order
         run: python3 scripts/check-plan-task-order.py
 

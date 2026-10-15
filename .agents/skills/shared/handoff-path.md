@@ -1,0 +1,211 @@
+<!-- canon: handoff-path -->
+# Where a session handoff goes, and why a hint sometimes appears
+
+**This file is the ONE place this mechanism is described.** Everywhere else cites it. That is not a
+style preference: the same mechanism was written out at SIX sites, nothing compared them, and for
+five consecutive review rounds a reviewer found at least one copy that had drifted, lost a clause, or
+kept a claim the others had withdrawn — ⛔ including a round-5 fix that reached the skill and never
+reached the hook, leaving the hook printing a claim and its own withdrawal in one refusal message.
+⭐ The pattern and its guard are the repo's answer to its most-measured defect, *a second
+implementation of one rule drifts* (17 recorded instances). `scripts/check-canonical-source.py`
+is what keeps this true; a prose rule saying "don't restate it" is the shape this project has
+measured as insufficient — a convention catches what you READ, a script catches what is THERE.
+
+---
+
+## ⛔ THE RULE — a session-continuity handoff is written to `.remember/remember.md`. Nowhere else.
+
+**NOT `.remember/handoff.md`.** That name looks right and nothing reads it. The path is
+`REMEMBER_HANDOFF` in the installed `remember` plugin's `session-start-hook.sh`, where there are
+**TWO** assignments — the per-session path, then the shared one.
+⚠ Keep the `=` when you search for it: `REMEMBER_HANDOFF=` matches exactly those two, while the bare
+name matches **23** lines across three variables, so a bare-name grep answers a different question.
+
+⭐ **WHY THIS PATH AND NOT ANOTHER — the three facts the citing sites each used to restate, now
+stated here once (r6 CLAUDE H3).** The path is not a convention this repo picked; it is the one the
+hook already reads. These are what make it *the one that gets read*, and a citing site that needs
+them should link here rather than repeat them:
+
+* **It is emitted as `=== LAST HANDOFF ===`.** That banner is how a session confirms its note was
+  *delivered* rather than merely written — the original defect was a handoff with no reader.
+* **It is injected BEFORE identity and memory**, so it survives context-preview truncation.
+  ⭐ Verified by DIRECT OBSERVATION in a live session, which is the strongest evidence this clause
+  can have: the SessionStart block printed `=== LAST HANDOFF ===`, then `=== REMEMBER ===`, then
+  `=== MEMORY ===`, in that order.
+* **Delivery is fingerprinted, and the fingerprint is `cksum` of the CONTENT *where `cksum`
+  exists*** — recorded against `REMEMBER_HANDOFF_STATE` — so a session that READS a note without
+  writing one back does not consume it, and the next session still gets it.
+  ⛔ **r6 CLAUDE L9 — THE UNCONDITIONAL FORM OF THIS SENTENCE WAS WRONG, AND IT WAS WRONG AT FIVE
+  SITES.** `_remember_handoff_fingerprint` is `cksum < "$1"` *if `command -v cksum` succeeds* and
+  **`wc -c < "$1"` otherwise** — a byte COUNT, not content. Under that fallback two handoffs of
+  equal length are indistinguishable, so a changed note of the same size reads as already
+  delivered. ⚠ The bound is narrow (`cksum` is POSIX and the vendor's own comment says the fallback
+  exists so a missing `cksum` degrades to *"re-delivery is under-detected"* rather than crashing a
+  hook that must never block startup) — and narrowness is not the point: five copies of one
+  sentence were each unconditional, which is this file's whole subject in miniature.
+
+⚠ All three measured against the installed **0.33.0** hook (2,027 lines). ⛔ A later version can
+change any of them, which is why they are cited by SYMBOL and why they live in one file: four sites
+restating them is four places for a vendor bump to half-correct.
+⚠ Cite the **SYMBOL**, never a line number: a line number in a vendored file has no owner in this
+repo, no guard can watch it, and a plugin bump invalidates it silently. Discover the file with:
+
+    ls ~/.claude/plugins/cache/claude-plugins-official/remember/*/scripts/session-start-hook.sh
+
+⚠ WITH the `ls` — pasting the bare glob EXECUTES the hook, and with two matches it runs the first
+script with the second path as its argument.
+
+**If a session-start block prints a path, obey THAT path.** It is always the right one. ⛔⟳ **r7
+CLAUDE M4 — THE COUNT IS NOT CLOSED, AND SAYING "THREE" CONTRADICTED THIS FILE'S OWN §"What this
+file does NOT claim", WHICH RECORDS A MEASURED FOURTH AT 0.33.0.** Three triggers are described
+below in detail (① ② ③) and only the first has a subtle mechanism; a **FOURTH is measured and
+recorded at the end of this file** — a flattened config cache served across two `HOME`s sharing one
+`$TMPDIR`. ⭐ So: read the numbered sections for the mechanism, and do not treat their count as the
+whole list. ⚠ The count was ALSO restated at three citing sites, which is why a number is the one
+part of a claim that is cheap to police: one search for the number beside its subject found every
+one of them, where no search for the prose would have.
+
+---
+
+## ① A store directory whose LEXICAL PARENT differs, as TEXT, from the project directory
+
+⛔ **Three LABELS for this trigger were each measured false, so what follows is the MECHANISM. A
+fourth label is not written.** The refuted ones, for the record: *"outside the project"* (a
+`data_dir` can relocate the store while leaving it inside); *"a resolved store root that is not the
+project directory itself"* (predicts the opposite of the `data_dir=notes` control); and *"the store
+directory is not an immediate CHILD of the project directory"* (refuted by `./notes`, which IS an
+immediate child and DOES hint, and by `..`, which is outside and does NOT).
+
+`REMEMBER_ROOT` is a pure STRING operation on the store path, with **no resolution of `.`, `..` or
+symlinks**. All five branches, confirmed by executing the vendor's own parameter-expansion block:
+
+| input shape | `REMEMBER_ROOT` |
+|---|---|
+| trailing slashes | stripped first — but `/` itself is never reduced |
+| `/` | `/` |
+| contains a slash | everything after the last `/` removed |
+| …and that leaves nothing | `/` |
+| no slash at all | `.` |
+
+**The hint fires when that string differs from `PROJECT_DIR`** — ⚠ **not "iff the hint fires"**:
+② and ③ below fire independently, and the vendor's test is a three-way **disjunction**
+(`[ "$REMEMBER_ROOT" != "$PROJECT_DIR" ] || [ -n "$PER_SESSION_HANDOFF" ] || [ -n "$HANDOFF_MODE_DEGRADED" ]`).
+Measured: `handoff_mode: per_session` hints while `REMEMBER_ROOT == PROJECT_DIR`.
+
+**Measured against the installed 0.33.0 hook, isolated `HOME` and project per row, positive control
+(`=== REMEMBER ===`) asserted on every row:**
+
+| `data_dir` | hint |
+|---|---|
+| `notes` | no |
+| `a/b` | **yes** |
+| `.` | no |
+| `./notes` | **yes** — physically an immediate child, and it hints |
+| `notes/` | no |
+| `a//b` | **yes** |
+| absolute, immediate child of the project | no |
+| absolute, outside the project | **yes** |
+| immediate-child symlink to an outside directory | no |
+| `..` | no — the store is OUTSIDE the project, and it does not hint |
+| unset / empty | no / no |
+| `~` | **yes** |
+| `/` | ⛔ **NOT a result about the mechanism — rc=127, the hook never LOADS** (r6 CLAUDE L1): one line, `session-start-hook: ERROR -- failed to source …/log.sh`. It printed neither block because it did not get far enough to have one. This is the row where *why* is the whole content, so the rc is stated rather than tabled as a behaviour. |
+
+The mechanism is true of **13 of 13 rows where the hook completes**.
+
+### The linked-worktree redirect — and the conditions it needs
+
+A session in a linked worktree writes to the **MAIN checkout's** store, so the lexical parent is
+`<main>` while `PROJECT_DIR` is `<worktree>`, the strings differ, and the hint fires.
+`_resolve_memory_project_dir` in `lib-memory-dir.sh` performs the redirect.
+
+⛔ **It is CONDITIONAL, and stating it generally is how it became an overbroad prediction once
+already.** The vendor compares common-dir against git-dir and then **verifies a candidate main
+checkout** — a `.git` FILE alone is not sufficient. Measured:
+
+| case | result |
+|---|---|
+| main checkout, default config | no hint |
+| ordinary linked worktree | hint → main checkout |
+| worktree created from another worktree | hint → the original main checkout |
+| subdirectory of a linked worktree | hint → main checkout |
+| main checkout moved, then `git worktree repair` | hint → the moved main checkout |
+| **bare-repository worktree**, default config | **no hint; the store stays local** |
+| **ordinary submodule** | **no hint; the store stays in the submodule** |
+| linked worktree, relative `data_dir=notes` | hint → `<main>/notes/remember.md` |
+| **linked worktree, ABSOLUTE `data_dir=<worktree>/localnotes`** | **no hint; the store stays in the worktree** |
+| main checkout moved **without** repair | completes, store local, no hint |
+
+⛔⛔ **THE RULE IS ONE CLAUSE, AND THE TABLE ABOVE IS EXAMPLES OF IT RATHER THAN ITS BOUNDARY
+(r6 CLAUDE H1).** The vendor derives a candidate main checkout as **`dirname(git-common-dir)`** and
+redirects **if and only if git confirms THAT directory is inside a work tree**
+(`_resolve_memory_project_dir`: `_main=$(dirname "$_gcd")`, then
+`git -C "$_main" rev-parse --is-inside-work-tree`). Everything below follows from that one sentence,
+and two measured configurations are NOT predictable without it:
+
+* ⛔ **A bare-repository worktree whose bare repo sits inside ANOTHER work tree DOES hint — and it
+  hints somewhere WRONG.** With `hostrepo/nested/bare.git` and a worktree at `hostrepo/nested/wt`,
+  `dirname(common-dir)` is `hostrepo/nested`, which git confirms is inside `hostrepo` — an unrelated
+  repository — so the handoff is written under `hostrepo`, not under the worktree. Measured; the
+  resolved toplevel's HEAD differs from the subject repo's. ⚠ The vendor's own comment says it
+  *"guard[s] against bare-repo worktrees (parent is not a work tree)"* — that is its ASSUMPTION, and
+  this configuration is where the assumption is false. **This is the only case in which the redirect
+  points somewhere wrong rather than merely staying local.**
+* ⛔ **A linked worktree of a `--separate-git-dir` repository does NOT hint**, though it is ordinary
+  and fully resolvable: `dirname(common-dir)` is the *gitdirs* directory, which is not a work tree,
+  so the chain falls through.
+
+⭐ **And the part that is unchanged:** an absolute `data_dir` bypasses main-relative placement
+entirely, and a submodule or an unresolvable main checkout falls back to a local store.
+
+⚠ **BUT THE SUBMODULE ROW DOES NOT FOLLOW FROM THE CLAUSE ABOVE, AND SAYING IT DID ATTRIBUTED TWO
+BRANCHES TO ONE (r6 CLAUDE L2).** For an ordinary submodule `git-dir == git-common-dir`
+(both `<super>/.git/modules/<sub>`), so `_resolve_memory_project_dir` returns at its
+**`[ "$_gcd" = "$_gd" ]`** test and never derives a candidate, never calls
+`--is-inside-work-tree`. Only the BARE-REPO row exercises the verification. The conclusion — no
+hint, store stays local — is right for both rows; the reason is right for one. ⭐ Worth stating
+because the two rows fail for different reasons, and a reader debugging a missing hint needs to know
+which test answered.
+
+---
+
+## ② `per_session` mode
+
+`handoff_mode: per_session` (in the plugin's config). The printed path is
+`remember.<session-id>.md`, and it hints even when `REMEMBER_ROOT == PROJECT_DIR`.
+
+## ③ A DEGRADED `per_session` request
+
+A `per_session` request with no resolvable session id: the hook prints the **shared** `remember.md`
+path plus a second line saying the mode you asked for did not apply. The printed path is still the
+one to obey; only the reason differs.
+
+---
+
+## ⚠ What this file does NOT claim
+
+* It does not claim the list of triggers is complete. ⛔ The three numbered above are the three the
+  vendor's own test enumerates at 0.33.0 — and a FOURTH is measured below, so "three" was never the
+  whole list even at this version, let alone after a vendor bump (r7 CLAUDE M4).
+
+⛔⛔ **AND A FOURTH ALREADY EXISTS AT 0.33.0 — NO VENDOR BUMP NEEDED (r6 CLAUDE H2).** A FLATTENED
+CONFIG CACHE at `${TMPDIR:-/tmp}/remember-config-cache-<key>` is keyed on **`REMEMBER_DIR` alone**
+(`log.sh`'s cache writer; its only identity line is `#REMEMBER_DIR=…`). Its source list includes
+`${HOME}/.remember/config.json`, but an **absent** layer cannot be newer than the cache — so a cache
+published under one `HOME` is served to a session whose `HOME` contributes no config at all, and
+`handoff_mode=per_session` is set from a cached value. Measured 2/2, with a fresh-`TMPDIR` negative
+control and a cache-removal control: `HOME=A` (no config) → no hint; `HOME=B` with the key → hint;
+`HOME=A` again, still no config, same `TMPDIR` → **hint fires**; fresh `TMPDIR` → no hint.
+⚠ **The bound, because it is narrow:** single-`HOME` config changes invalidate correctly (add the
+key, remove it, delete the file — the hint stops immediately). What is reachable is **two `HOME`s
+over one `REMEMBER_DIR` sharing a `$TMPDIR`** — two users where `TMPDIR` is unset so both fall back
+to `/tmp`, or one user whose `HOME` changes.
+⛔ **Why it matters even so:** this canon's stated job is answering *"why was a path printed at
+session start"*, and a reader following it will inspect three config layers, find nothing, and
+conclude the canon is wrong. ⚠ And the hinted path in that state is `remember.<session-id>.md`,
+which the NEXT session (cache gone) will not read — the original *handoff with no reader* defect,
+resurrected by a cache.
+* It says nothing about what a reader SEES. Shell exit codes and stderr do not establish host or UI
+  delivery, and that has never been measured here.
+* The enforcement layering — which layer survives a vendor update and which does not — is in
+  [`docs/plugins.md`](../../../docs/plugins.md), not here. One mechanism per file.

@@ -38,10 +38,43 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_REL = ".agents/skills/handoff/SKILL.md"
 
-# The path the remember plugin's SessionStart hook actually reads:
-#   session-start-hook.sh:795  REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"
-# Verified by EXECUTING that hook, not by reading it — the `=== LAST HANDOFF ===` block came out
-# first, ahead of `=== REMEMBER ===` and `=== MEMORY ===`.
+# The path this guard enforces, and the ONE place the mechanism behind it is described:
+#   .agents/skills/shared/handoff-path.md
+# ⛔⛔ r7 CLAUDE M3 — WHAT STOOD HERE WAS A FOURTH RECITAL, four lines above the comment below
+# that claims the recital moved out. It quoted the symbol, the emission banner and the injection
+# order — the same three clauses deleted from the skill, the hook's refusal text and
+# `docs/plugins.md` in the commit before this one, and missed by that commit's own sweep.
+# ⛔ AND ITS HEADLINE WAS FALSE AS WELL, which is the worse half: it said "the path the hook
+# ACTUALLY READS" over ONE of TWO assignments — the vendor's `else` branch (0.33.0 `:1168` is the
+# per-session path, `:1171` the shared one), so under `handoff_mode: per_session` the hook reads a
+# different path than the line quoted here. The canon states both and their bounds; a citation
+# cannot be wrong about which branch it quotes, because it quotes none.
+#
+# ⟳ 2026-10-14 — WHAT STOOD HERE IS NOW IN ONE PLACE, AND THIS COMMENT CITES IT.
+# The vendored-symbol rule, the discovery command, the GNU flag provenance and the corpus
+# cross-check were all restated here AND at five other sites. Nothing compared them, and five
+# consecutive review rounds each found a copy that had drifted — a withdrawn claim left standing,
+# a count with no unit, a qualification applied at one site and not its neighbour.
+#
+#   .agents/skills/shared/corpus-search.md   — inventorying where a string appears here
+#   .agents/skills/shared/handoff-path.md    — the handoff path, and why a hint appears
+#
+# ⚠ Do not restate either here. `scripts/check-canonical-source.py` refuses it, which is the
+# point: a prose rule saying "don't restate it" is the shape this project has measured as
+# insufficient — a convention catches what you READ, a script catches what is THERE.
+#
+# ⚠ No gate in this repo can see a stale figure HERE — this is a code comment and the document
+# guards read `docs/`. It was found by searching every mention of the hook ACROSS SYMLINKS:
+# `.claude/skills/handoff` is a symlink to `../../.agents/skills/handoff`, one file under two paths,
+# and a recursive search that does not follow it misses a FIFTH copy of these locators — which it
+# did for half a day (round 1 H1). ⛔ r4: the clause that stood here — "whether your tool follows
+# symlinks is tool-specific: check" — was the RETIRED lesson. For this repo's tracked corpus the
+# symlink question does not arise (`git grep` searches what git tracks); it arises only for
+# content git does not track, which is the case r4 H1 says to name and search separately.
+# ⟳ An earlier version named `check-withdrawal` as the guard that cannot see this. That guard does
+# not exist in this repo at this commit — it lives only on an unmerged branch — so the sentence
+# explaining why nothing caught this named something with no owner here, which is the defect it was
+# describing (round 1 M4).
 CONSUMED_PATH = ".remember/remember.md"
 
 

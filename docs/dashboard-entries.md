@@ -14822,3 +14822,103 @@ model while `.gitignore` is a file read by `git`.
 contract) and `check-vocabulary-collisions.py`. The edit was first applied in a throwaway worktree,
 tested, and reverted to a byte-identical 20,204 before being made here.
 ⛔ `NO-REVIEW:` declared — see the PR body for the reason and its bound.
+
+## 2026-10-13
+Five places in the documentation pointed at a specific line of somebody else's file, and that file
+has been replaced by a newer version since. Every one of those pointers now lands somewhere else.
+
+The rule they support is important: when a session ends, it writes a note for the next session, and
+that note has to go exactly where the next session will look for it. Once, three such notes were
+written to a temporary folder and not one was ever read — the notes were good and nothing collected
+them. So the rule names the correct destination, and five documents backed it up by citing the line
+of the plugin file that does the reading.
+
+That plugin has been updated since, and the citations now name lines whose contents are something
+else. How far they moved is not something this work measured — the old copy of the plugin was never
+fetched, so saying it "grew by a thousand lines" would be a guess dressed as a measurement, and an
+earlier version of this entry said exactly that. Nothing broke, because the destination itself is
+still right; what rotted was the evidence. One of the five is worse than merely stale: it is the
+message shown to you when the check refuses, so the one moment someone most needs to look it up is
+the moment they were sent to the wrong line. And a fifth place was missed by the first attempt at
+this fix — the file that same refusal message tells you to go and edit.
+
+The fix removes the line numbers rather than updating them. A line number in a file that belongs to
+somebody else cannot be kept honest here — no check in this project can watch it, and the next
+plugin update silently invalidates it again. ⛔ **This entry originally ended "the documents now name
+the thing to search for and leave the finding to the reader", which is the retired position in other
+words — and it stopped three rounds short.** What the documents say now, after four rounds: there are
+TWO things being searched, and they need different answers. For files this project tracks, a repo
+search finds them; for a file belonging to somebody else's plugin, no repo search reaches it at all,
+so the documents name the SYMBOL and give a locator that is also a runnable command.
+
+⛔ **And the repo search turned out not to be trustworthy on its own either, which took two more
+goes to state correctly.** The command reads the list of files the project tracks, but takes their
+contents from disk ONLY when the file has not been flagged to be ignored or removed — and a flagged
+file is still a tracked file, so it can return the old text and miss what is actually there. Measured
+three ways, each against a working control. So the instruction is no longer a command but a CHECK:
+run it, run its cached variant, walk the filesystem, and treat any disagreement between the three as
+a PROMPT TO LOOK. ⛔ Round 5 withdrew the other half: *"two that agree can be trusted"* is false, because all three can agree while reading different content — an index-masked file lists under every one of them while the default search returns the stale indexed line. Disagreement also has innocent causes (ignored files, submodules, binary files, a case-only rename on a case-insensitive filesystem). Agreement is not a guarantee: compare the CONTENT when content is what matters. ⟳ r5 Claude M1: and the two limits this entry omitted while the other five sites carried them — the filesystem leg's reach is **TOOL-SPECIFIC**, and outside a repository `git grep` exits **128**, an error rather than an empty result; `.git` internals belong in the innocent-cause list here too. ⛔ **r5 CLAUDE H2 — NOT a bare `rg` as the filesystem leg:** default `rg` skips DOT-PREFIXED paths, and measured here it misses exactly `.agents/skills/handoff/SKILL.md` and `.claude/hooks/enforce-handoff-path.sh` — the two files this lesson is ABOUT — which `rg --hidden` recovers and nothing else; it also misses a committed BINARY that both git legs find. So three distinct `rg` blind spots and only the ignore-rule one was named. Use `rg --hidden`, or `/usr/bin/grep -RSl` with its symlink leg stated. ⚠ And `/usr/bin/grep` EXPLICITLY: `grep` is a shell FUNCTION on this machine, so a prescribed `grep -rl` is not a determinate instrument, and no site said so.
+
+An earlier review had listed one of these pointers while discussing something else; this entry first
+described that as the same problem being spotted and ignored, which overstates what that review
+said.
+
+One real gap turned up alongside the stale numbers. The rule states its destination as if there
+were only one possibility, and the plugin actually has two modes: the ordinary one, and a mode that
+gives each session its own separate note file. In that second mode the destination the rule names is
+not the one that gets read. This installation uses the ordinary mode and always has, so the rule has
+never actually been wrong in practice — but it was stated more confidently than it was true. What
+already protected it is a sentence that was there for a different reason: if the session start
+prints a destination, use that one. That sentence now names all three situations that print it.
+
+One more thing, and it is the part that went wrong. This entry first said the plugin, when asked
+for per-session notes but unable to work out which session it is in, deliberately says nothing
+rather than naming a destination that was never really in use. That is not what it does. Asked to
+check, a reviewer ran the plugin in that exact state: it prints the destination, correctly, and then
+a second line saying the mode you asked for did not apply. Three situations print a destination, not
+two.
+
+Where the wrong claim came from is worth more than the claim. The plugin has a note inside it
+describing the silent behaviour — and that note is out of date. Twenty-odd lines further down — the exact distance depends on which end of the out-of-date note you measure from, which is why the note's own position is given in the technical block rather than a single number — the same
+file says so: silence was tried, someone reviewed it, and it was reversed, because going quiet
+reintroduced the very problem the message existed to prevent. The correction was written from the
+out-of-date note instead of from what the program does. A change made to stop quoting a file from
+memory quoted the same file's own commentary from memory.
+
+The real behaviour is the better lesson anyway: it neither goes quiet nor misleads — it tells you
+the true destination and tells you your setting did not take effect.
+
+<!--tech-->
+`docs/plugins.md` (net zero lines — it sits exactly on its 260-line budget, so the correction had to
+replace five lines with five), `docs/process-rationale.md` (the account, under a new heading),
+`scripts/check-handoff-path.py` (a code comment — no document guard reads it; an earlier version of
+this block named `check-withdrawal`, which does not exist in this repo at this commit, which globs
+`docs/` only, so it was found by grepping every mention of the hook), and
+`.claude/hooks/enforce-handoff-path.sh` (the refusal text; re-rendered through a stub guard to
+confirm `rc=2` and that nothing in the new lines expands inside its unquoted heredoc).
+
+Measured against `remember` **0.33.0**, a **2,027-line** hook: `REMEMBER_HANDOFF` `:1171`
+(per-session `:1168`, mode selected `:1164`), emit `:1666`, delivery record `REMEMBER_HANDOFF_STATE` (⟳ a line RANGE stood here and under-bounded it), hint
+`:1546`. The removed citations were `:795`, `:809-812`, `:814-825`, `:800-802`. Mode gate:
+`config_into HANDOFF_MODE ".handoff_mode" "single"` — default `single`, nothing configures
+`per_session` in any of the THREE `remember` config layers (plugin-bundled, `~/.remember/`,
+`<repo>/.remember/` — all absent; the plugin's own read-only `doctor.sh` reports `Storage mode: legacy (in-project)` ⚠ **WHEN RUN FROM THE MAIN
+CHECKOUT — from a linked worktree the same store reports as EXTERNAL (round 2 M4, which round 3
+saw and filed under SOUND, so nothing folded it). Where you run it changes what it says**), the store's **104** entries include exactly ONE matching `remember*`, and
+delivery is
+observed, so the rule is correct for this install. `docs/reviews/claude/velocity-177-r5-claude.md:161`
+is the prior observation. The historical review doc is left as written — merged review docs are
+records, not things to rewrite.
+
+⟳ **Second commit on this branch**, which the first version of this entry did not mention (round 1
+L4): two memory files — `a-harness-cannot-read-a-cause-from-a-childs-text.md` and
+`a-vendored-line-number-has-no-owner.md` — plus two `MEMORY.md` index rows, batched here per
+`dev-process.md` Phase 5 rather than left in the main checkout's uncommitted pile.
+
+⟳ **Third commit: round 1's fold.** Reviewed by both halves — **1 Blocking, 1 High, 8 Medium, 6
+Low** on a five-file docs change, which is the argument for reviewing docs branches at all. The
+Blocking and the High are both above. ⚠ **CANNOT RUN, and these are not passes** (round 1 L6
+corrected the first disclosure, which named one guard): `check-selftest-counts.py` is red here
+because **two** guards need `node_modules` this worktree lacks — `check-plan-code.py`
+(`HARNESS_TREE` wants `node_modules/typescript`) and `check-paid-caller-arrival.py`
+(`ERR_MODULE_NOT_FOUND`, 12/32). Both are unchanged by this diff and green in CI.

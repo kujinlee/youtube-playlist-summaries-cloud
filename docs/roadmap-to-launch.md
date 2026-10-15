@@ -2320,6 +2320,39 @@ only home, and `dev-process.md` requires the roadmap layer too.
       needs, not a corrected denominator. ⚠ The conclusion is unaffected — the seam concentration is
       overwhelming either way.
 
+### One canonical source per mechanism — ARMED BY THRASHING, redesign LANDED 2026-10-14
+
+Phase 6 review: `docs/reviews/architecture-review-2026-10-14-canonical-source.md`. The
+`plugins-handoff-citations` branch produced a drifted copy in five consecutive rounds, each caused
+by the previous round's own fix; the decisive instance was a round-5 correction that reached the
+skill and not the hook, so the hook's refusal printed a claim and its withdrawal together.
+
+- [x] **Two mechanisms collapsed to one file each**, with every live site citing rather than
+      restating — `.agents/skills/shared/handoff-path.md` and `.../corpus-search.md`.
+- [x] **`scripts/check-canonical-source.py`**, wired into `ci.yml`, refusing a missing canon, a
+      duplicated marker, a missing citation and a restatement — each failure mode proved detected,
+      and falsified on a copy over a green control.
+- [x] **Mutation coverage added** rather than debt declared: the inverted-restatement entry kills
+      through the case it names.
+- [ ] **The exempt surfaces are still uncompared** — `docs/dashboard-entries.md` and
+      `docs/reviews/**`; and a mechanism missing from `CANONS` is unprotected. Backlog #282.
+- [ ] **The exempt-surface half of #282 is the BOUND; its other half was an open defect** — ⟳ r6
+      CLAUDE H3: #282's FAILS IF as filed was already true at HEAD, so it reported a defect as a
+      bound. Narrowed, and the handoff-delivery mechanism it was blind to is now two `CANONS`
+      tokens with a case and a mutation each. The missing-entry half is split to **#288**.
+- [ ] **Round 7 IS owed — and ⟳ r6 CLAUDE L8 corrected WHY this line says so.** When it was
+      written the stated debt was round 6's CLAUDE half, which has since landed (`e0a98ecd`), so
+      the tracked copy carried a reason that had expired. The CURRENT reason is mechanical and
+      measured: `check-review-recorded.py` reports *"6 round(s) ran and guarded code was
+      committed after every one of them"*, naming this branch's own post-round-6 folds, and
+      `check-review-decision.py` reports `ROUND_OWED`. Still NOT CONVERGED; no PR by design.
+- [ ] **⚠ A HUMAN DECISION IS WAITING, and the guard says so rather than me** — ⟳ r6 CLAUDE L6:
+      `docs/plugins.md` is **259/260** and `docs/dev-process.md` **219/220**, both `TIGHT` with
+      ONE line of runway, and `check-docs.py` warns that the next rule added to either is
+      BLOCKED. Its two remedies — raise the budget in a reviewable PR diff, or prioritise and
+      retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
+      human's call, so neither is taken here.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

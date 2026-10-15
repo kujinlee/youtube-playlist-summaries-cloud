@@ -300,6 +300,30 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-10-14, the round-6 one-canonical-source redesign. ⟳⟳ r6 CLAUDE M5: **FOUR**
+    # parameters, all varied by cases — the word "Three" stood here while the enumeration below it
+    # listed four and this guard reported "4 parameter(s) examined", the third instance on this
+    # branch of a number sitting beside the data that contradicts it. They are: `audit.root` and
+    # `main.root` over synthetic trees and the real repo, `audit.canons` over the live table and a
+    # synthetic one-canon spec, and `main.argv` (see below).
+    # ⛔ AND THE DIRECTION THIS PIN IS UNGUARDED IN, STATED HERE BECAUSE NOTHING ELSE WILL SAY IT
+    # (r6 CLAUDE M5): under-pinning is SILENT. Measured on a copy over a green control and a green
+    # re-control — removing `main.argv` from this tuple, which is the exact defect this entry was
+    # corrected for, gives **rc=0, undetected**; adding a bogus `main.bogus` gives rc=1, caught.
+    # The comparison is `pinned - keys` only, so a parameter added to `audit` or `main` with no pin
+    # update produces NO signal. Re-derivation is what established this value and is all there is.
+    # ⚠ `main.argv` IS here, and the route to it is the point: this check caught both driving
+    # cases passing `[]`, so `argv` was indistinguishable from a constant. Removing the
+    # parameter satisfied THIS guard and then broke `check-main-drivable.py`, whose
+    # `_passes_extra_world` reads `positional[1:] | kwonly` and so needs the world to sit
+    # BEYOND argv (ADR-0014 D1). So argv stays and carries real behaviour — an unknown flag
+    # exits 2 — which is what makes it varied rather than exempted.
+    "check-canonical-source.py": (
+        "audit.canons",
+        "audit.root",
+        "main.argv",
+        "main.root",
+    ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
         # `case_locals` are GONE, deliberately: the review measured that the rule

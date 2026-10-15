@@ -82,6 +82,31 @@ about code that no longer existed.
 coordinator's work) and states plainly that **none of the must-serialise operations is mechanically
 enforced**. Still true. These are conventions, and I broke one of them twice in a day.
 
+## ⛔⛔ 2026-10-13 — AND THE RESTORE IS THE DANGEROUS HALF: `git checkout --` DISCARDED MY OWN UNCOMMITTED EDITS
+
+Measured, in a review worktree. To prove a guard's falsifier still fired I severed a TRACKED file
+(`.agents/skills/handoff/SKILL.md`), ran the guard, then restored with `git checkout -- <file>`.
+⛔ **That restored the file to HEAD — discarding the FOUR uncommitted fold edits I had just made to
+it.** The guard went green again either way, so the re-control said nothing was wrong.
+
+⭐ **The only reason I noticed: I hashed the file BEFORE the sever and compared after the restore.**
+`shasum` before → sever → restore → `shasum` again, and the mismatch is the alarm. Without that
+comparison the loss is silent and the next commit simply ships without the edits.
+
+⛔ **The fix is not "remember to commit first" — it is to never sever the tracked file at all.**
+Copy the tree and mutate the COPY:
+
+```bash
+BASE=$(mktemp -d); TMP=$BASE/tree; mkdir -p "$TMP"
+(cd "$WT" && tar cf - --exclude=.venv --exclude=node_modules .) | (cd "$TMP" && tar xf -)
+ln -s "$WT/node_modules" "$TMP/node_modules"
+```
+
+⚠ **A PARTIAL copy gives a RED CONTROL and then measures nothing** — the same day, a copy of
+`scripts/ docs/ supabase/` alone returned a 294/297 control where the complete tree returns 297/297.
+A red control is a CANNOT RUN, so that run was discarded rather than reported. Prove the control
+green on the copy BEFORE trusting any sever on it.
+
 See [[what-mutation-testing-proves]], [[test-harness-can-launder-failures]],
 [[guard-classification-shape-vs-sequence]], [[blob-addressing-spec-state]],
 [[concurrent-agents-go-wrong]], [[concurrent-agents-go-wrong]].
