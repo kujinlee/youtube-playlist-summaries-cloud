@@ -353,7 +353,7 @@ because the `remember` plugin's SessionStart hook already reads it.
 
 ⭐ **WHY that path is the one that gets read is in ONE place now, and this document does not restate
 it: [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md)** — the
-symbol, the emission banner, the injection order and the content fingerprint. ⟳ **r6 CLAUDE H3: a
+symbol, the emission banner, the injection order and the content fingerprint, **each with the bound it actually has** — ⟳ r7 CLAUDE H1: this clause said "the content fingerprint" flat, nine lines above the paragraph in which this very document withdraws exactly that, and the repair wording was applied to its three siblings in the same commit and not to it. ⟳ **r6 CLAUDE H3: a
 four-clause copy of that mechanism stood right here**, and it was one of SIX live sites while
 `check-canonical-source.py` exited 0 over all of them, because neither of the two symbols those
 sites share was in its token list. What belongs here is the HISTORY — the near-miss above, and the

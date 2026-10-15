@@ -61,13 +61,28 @@ recital and keep the citation. A citation cannot drift; a recital can. Filed as 
 fire:
   1. TOKENS MATCH AS SUBSTRINGS, so `REMEMBER_HANDOFF` also matches `REMEMBER_HANDOFF_STATE`. A file
      discussing only the DELIVERY RECORD would be required to cite a canon about the PATH.
-     Measured: LATENT, not live — every site carrying the string has at least one bare occurrence
-     (7 sites, bare counts 1-3), and a constructed state-only mention does get flagged.
-  2. THIS FILE CARRIES EVERY TOKEN OF EVERY CANON, necessarily, because they are in `CANONS` above
-     — measured 5/5 and 3/3. So this guard must itself cite every canon it declares, and
-     `shared/corpus-search.md` is cited exactly ONCE here. Deleting that one citation reddens the
-     guard against ITSELF, which reads as a repository defect rather than a self-reference. Anyone
-     adding a third canon must add its citation here in the same edit.
+     Measured at THIS commit by importing `_walked_textfiles` and `EXEMPT`: LATENT, not live —
+     **5 live non-exempt sites, bare counts 1-4**, every one with at least one bare occurrence, so
+     none is required to cite solely because of a `_STATE` match; and a constructed state-only
+     mention does get flagged.
+     ⟳ r7 CLAUDE M2: this read "7 sites, bare counts 1-3", which were the PARENT tree's figures —
+     measured before the edit and written after it, in a file inside the population it measures.
+     The commit stating them deleted two recitals (the hook and `docs/plugins.md`) and added the
+     sentence that took this file's own bare count to 4. The LATENT verdict was right; the numbers
+     were stale at commit time by the commit's own diff.
+  2. A CANON'S SELF-CITATION IS STRUCTURAL, NOT PROSE — and the sentence that stood here claimed the
+     opposite and offered a falsifier that PASSES.
+     ⛔⛔ r7 CLAUDE M1, and this is the correction that matters most of the three. It said
+     `shared/corpus-search.md` "is cited exactly ONCE here" and that "deleting that one citation
+     reddens the guard against ITSELF". All of it is wrong: the path occurs TWICE (this docstring
+     and `CANONS[1]["file"]`); deleting the prose mention leaves the guard GREEN (verified on a copy,
+     green control -> sever -> green); and adding a third `CANONS` entry with NO prose citation
+     anywhere is also green, because `_cites()` expands leftwards over path characters and resolves
+     the candidate, so the entry's own `"file"` VALUE satisfies the citation requirement.
+     ⭐ The real behaviour is BETTER than the claim: self-citation cannot be lost by editing prose.
+     ⚠ The lesson is not the wrong sentence, it is that I WROTE A FALSIFIER AND DID NOT RUN IT. A
+     bound whose falsifier passes is worse than no bound: it tells the next editor that an inert
+     line is load-bearing. Stating the observation that would make a claim fail is not making it.
 
 ⚠ EXEMPTIONS, STATED RATHER THAN HIDDEN. `docs/reviews/**` is frozen testimony and is never
 edited. `docs/dashboard-entries.md` holds DATED entries: a record of what was true on a day, not
