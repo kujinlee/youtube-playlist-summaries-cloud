@@ -360,6 +360,26 @@ sites share was in its token list. What belongs here is the HISTORY — the near
 account below of five documents citing a vendored line number — not a seventh copy of the
 mechanism.
 
+### The recital that outlived its own canon — and why a citation was the only fix
+
+⟳ **2026-10-14, round 7 CODEX M1.** Round 6's L9 corrected the delivery fingerprint in
+[`handoff-path.md`](../.agents/skills/shared/handoff-path.md) to *where `cksum` exists* — the vendor
+falls back to `wc -c`, a byte COUNT, so two handoffs of equal length are indistinguishable. **Three
+reader-facing sites kept the unconditional form for a full round** while `check-canonical-source.py`
+returned `[]`: the handoff skill, the hook's REFUSAL TEXT, and this document's sibling spine row.
+
+⛔ **The guard was green because it enforces *one place*, never *one claim*.** Its restatement test
+permits a site to carry a mechanism's tokens whenever it also cites the canon — deliberately, so a
+retrospective like this one can discuss history instead of deleting measured content to satisfy a
+checker. The price is that a cited copy can disagree with what it cites, and nothing sees it. Filed
+as **#289**, with the bound stated in the guard's own docstring.
+
+⭐ **The fix was not a better oracle; it was DELETING THE RECITAL AND KEEPING THE CITATION at all
+three sites.** A citation cannot drift. A recital can, and this one did — in the text printed to a
+blocked reader at the exact moment of need, which is the same site the original *handoff with no
+reader* defect burned. ⚠ And the spine row that carried it had claimed, two lines below itself, that
+it did not restate the mechanism; that claim is now true rather than aspirational.
+
 ### The handoff rule that was true of one mode
 
 ⟳ **2026-10-13 — FIVE sibling documents cited LINE NUMBERS inside a vendored file, and the vendor

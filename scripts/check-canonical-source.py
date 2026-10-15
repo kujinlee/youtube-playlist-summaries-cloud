@@ -47,6 +47,28 @@ reader the mechanism again: the SYMBOLS for `handoff-path`, the COMMAND FORMS fo
 Counting bare mentions would have forced deleting measured history to satisfy a checker, which is
 the check driving the docs rather than the other way round.
 
+⛔⛔ THE BOUND THAT MATTERS MOST, AND IT IS NOT AN EXEMPTION (r7 CODEX M1). A citing site may
+RESTATE a mechanism as long as it CITES the canon — `hit and not _cites(...)` — so this guard
+cannot detect a restatement that cites the canon and CONTRADICTS it. Measured: round 6's L9
+corrected the delivery fingerprint in the canon to *where `cksum` exists* (the vendor falls back to
+`wc -c`, a byte count), and THREE reader-facing sites kept the unconditional "fingerprinted on
+CONTENT" for a full round while `audit()` returned `[]`. The permissiveness is deliberate — a
+retrospective must be able to DISCUSS history — and this is its price: the guard enforces *one
+place*, never *one claim*. ⭐ The only remedy that works is the one the three sites took: DELETE the
+recital and keep the citation. A citation cannot drift; a recital can. Filed as backlog #289.
+
+⚠ TWO STRUCTURAL CONSEQUENCES OF THE TOKEN DESIGN, stated because both are invisible until they
+fire:
+  1. TOKENS MATCH AS SUBSTRINGS, so `REMEMBER_HANDOFF` also matches `REMEMBER_HANDOFF_STATE`. A file
+     discussing only the DELIVERY RECORD would be required to cite a canon about the PATH.
+     Measured: LATENT, not live — every site carrying the string has at least one bare occurrence
+     (7 sites, bare counts 1-3), and a constructed state-only mention does get flagged.
+  2. THIS FILE CARRIES EVERY TOKEN OF EVERY CANON, necessarily, because they are in `CANONS` above
+     — measured 5/5 and 3/3. So this guard must itself cite every canon it declares, and
+     `shared/corpus-search.md` is cited exactly ONCE here. Deleting that one citation reddens the
+     guard against ITSELF, which reads as a repository defect rather than a self-reference. Anyone
+     adding a third canon must add its citation here in the same edit.
+
 ⚠ EXEMPTIONS, STATED RATHER THAN HIDDEN. `docs/reviews/**` is frozen testimony and is never
 edited. `docs/dashboard-entries.md` holds DATED entries: a record of what was true on a day, not
 a rule a reader follows at the moment of need — which is exactly the distinction this branch's own

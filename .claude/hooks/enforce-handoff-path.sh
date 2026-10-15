@@ -61,10 +61,10 @@ The documents were fine. They had no consumer.
 
 Write the handoff to:  .remember/remember.md
 
-That is REMEMBER_HANDOFF in the remember plugin's session-start-hook.sh —
-emitted as '=== LAST HANDOFF ===' and injected BEFORE identity and memory so it
-survives context-preview truncation. Delivery is fingerprinted on the handoff's
-CONTENT, so reading one does not consume it.
+That is the one path the remember plugin's SessionStart hook reads. WHY it is
+the one that gets read — the symbol, the banner, the injection order and the
+delivery fingerprint, each with its real bound — is described ONCE, and this
+refusal does not restate it:  .agents/skills/shared/handoff-path.md
   To inventory where a string appears in this repo, and why ONE command is not
   enough:  .agents/skills/shared/corpus-search.md
   Why a path may have been printed at session start, and the THREE things that

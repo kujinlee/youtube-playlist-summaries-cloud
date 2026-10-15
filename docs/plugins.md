@@ -78,10 +78,10 @@ When multiple installed skills can handle the same task, use this table.
 > skill, which a patched vendor file cannot do on its own.
 >
 > **NOT `.remember/handoff.md`.** That name looks right and nothing reads it — choosing it would
-> rebuild the same bug somewhere prettier. The path is `REMEMBER_HANDOFF` in the `remember` plugin's
-> `session-start-hook.sh`, emitted as `=== LAST HANDOFF ===`, injected **before** identity and memory
-> so it survives truncation, and fingerprinted on CONTENT so a read-only session does not consume the
-> next one's note. ⟳ **2026-10-13: four stale LINE NUMBERS removed — a vendored line has no owner.**
+> rebuild the same bug somewhere prettier. ⛔ **WHY that path is the one that gets read — the symbol,
+> the banner, the injection order, the fingerprint and each one's real bound — is described ONCE and
+> this row does not restate it (r7 CODEX M1; the recital it replaced disagreed with the canon for a
+> round):** [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md).
 >
 > **If a session-start block prints `Write next handoff to: <path>`**, obey it — ⛔ **the THREE triggers and the mechanism behind the first are described ONCE, in [`.agents/skills/shared/handoff-path.md`](../.agents/skills/shared/handoff-path.md); this row does not restate them** (three labels for that trigger were each measured false, and the copies drifted for five rounds). No hint in the ordinary setup is BY DESIGN.
 
