@@ -210,7 +210,21 @@ def _cites(body: str, cite_token: str, canon_abs: Path, citing_abs: Path,
         start = i + 1
 
 
-def _tracked_textfiles(root: Path) -> list[Path]:
+def _walked_textfiles(root: Path) -> list[Path]:
+    """Text files found by WALKING the tree. ⛔ It never consults git, and the old name said it did.
+
+    r6 CLAUDE L4: the old name was `_tracked_text` + `files`, and it was the only thing claiming a
+    tracked corpus. Demonstrated: an untracked `docs/sneak-*.md` carrying a mechanism token with no
+    citation IS flagged. Two consequences a reader needs, neither of which the old name admitted:
+
+      * a LOCAL red can come from a scratch file that will never be committed; and
+      * a CI green says nothing about untracked content, because CI has none.
+
+    ⚠ Renaming was the honest fix rather than a docstring alone, and it is safe here only because
+    it was CHECKED first: the symbol appeared in TWO places in this file and in ZERO mutation anchors
+    across all 60 manifests. A rename that orphans an anchor voids a ratchet silently — a sibling
+    branch paid for exactly that this week.
+    """
     out: list[Path] = []
     for pat in ROOT_GLOBS:
         out += sorted(root.glob(pat))          # top level only: CLAUDE.md, AGENTS.md, README.md
@@ -227,7 +241,7 @@ def audit(root: Path, canons: list[dict] | None = None) -> list[str]:
     """Findings; empty means every mechanism is described exactly once and cited elsewhere."""
     canons = CANONS if canons is None else canons
     problems: list[str] = []
-    files = _tracked_textfiles(root)
+    files = _walked_textfiles(root)
 
     for canon in canons:
         name, rel = canon["name"], canon["file"]

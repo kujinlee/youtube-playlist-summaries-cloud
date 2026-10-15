@@ -32,9 +32,17 @@ them should link here rather than repeat them:
   ⭐ Verified by DIRECT OBSERVATION in a live session, which is the strongest evidence this clause
   can have: the SessionStart block printed `=== LAST HANDOFF ===`, then `=== REMEMBER ===`, then
   `=== MEMORY ===`, in that order.
-* **Delivery is fingerprinted on the handoff's CONTENT** — a `cksum` of the file, recorded against
-  `REMEMBER_HANDOFF_STATE` — so a session that READS a note without writing one back does not
-  consume it, and the next session still gets it.
+* **Delivery is fingerprinted, and the fingerprint is `cksum` of the CONTENT *where `cksum`
+  exists*** — recorded against `REMEMBER_HANDOFF_STATE` — so a session that READS a note without
+  writing one back does not consume it, and the next session still gets it.
+  ⛔ **r6 CLAUDE L9 — THE UNCONDITIONAL FORM OF THIS SENTENCE WAS WRONG, AND IT WAS WRONG AT FIVE
+  SITES.** `_remember_handoff_fingerprint` is `cksum < "$1"` *if `command -v cksum` succeeds* and
+  **`wc -c < "$1"` otherwise** — a byte COUNT, not content. Under that fallback two handoffs of
+  equal length are indistinguishable, so a changed note of the same size reads as already
+  delivered. ⚠ The bound is narrow (`cksum` is POSIX and the vendor's own comment says the fallback
+  exists so a missing `cksum` degrades to *"re-delivery is under-detected"* rather than crashing a
+  hook that must never block startup) — and narrowness is not the point: five copies of one
+  sentence were each unconditional, which is this file's whole subject in miniature.
 
 ⚠ All three measured against the installed **0.33.0** hook (2,027 lines). ⛔ A later version can
 change any of them, which is why they are cited by SYMBOL and why they live in one file: four sites
@@ -94,7 +102,7 @@ Measured: `handoff_mode: per_session` hints while `REMEMBER_ROOT == PROJECT_DIR`
 | `..` | no — the store is OUTSIDE the project, and it does not hint |
 | unset / empty | no / no |
 | `~` | **yes** |
-| `/` | ⛔ outside the mechanism: the hook **ABORTS**, printing neither block |
+| `/` | ⛔ **NOT a result about the mechanism — rc=127, the hook never LOADS** (r6 CLAUDE L1): one line, `session-start-hook: ERROR -- failed to source …/log.sh`. It printed neither block because it did not get far enough to have one. This is the row where *why* is the whole content, so the rc is stated rather than tabled as a behaviour. |
 
 The mechanism is true of **13 of 13 rows where the hook completes**.
 
@@ -142,6 +150,15 @@ and two measured configurations are NOT predictable without it:
 
 ⭐ **And the part that is unchanged:** an absolute `data_dir` bypasses main-relative placement
 entirely, and a submodule or an unresolvable main checkout falls back to a local store.
+
+⚠ **BUT THE SUBMODULE ROW DOES NOT FOLLOW FROM THE CLAUSE ABOVE, AND SAYING IT DID ATTRIBUTED TWO
+BRANCHES TO ONE (r6 CLAUDE L2).** For an ordinary submodule `git-dir == git-common-dir`
+(both `<super>/.git/modules/<sub>`), so `_resolve_memory_project_dir` returns at its
+**`[ "$_gcd" = "$_gd" ]`** test and never derives a candidate, never calls
+`--is-inside-work-tree`. Only the BARE-REPO row exercises the verification. The conclusion — no
+hint, store stays local — is right for both rows; the reason is right for one. ⭐ Worth stating
+because the two rows fail for different reasons, and a reader debugging a missing hint needs to know
+which test answered.
 
 ---
 
