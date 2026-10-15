@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three goals, two deliverables</title>
+
+<style>
+:root{
+  --bg:#f6f5f2; --card:#fffefb; --ink:#1a1c22; --ink-soft:#4b5060; --ink-faint:#656c7d;
+  --rule:#ddd9d0; --structure:#3f4bb8; --good:#1f7a55; --defect:#b03a2b; --pending:#8f6410;
+  --structure-bg:#eceef9; --good-bg:#e7f2ec; --pending-bg:#f6efdd; --defect-bg:#f8ebe8;
+  --accent:#3f4bb8; --em:#2d4a7c;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+}
+:root[data-theme="light"]{
+  --bg:#f6f5f2; --card:#fffefb; --ink:#1a1c22; --ink-soft:#4b5060; --ink-faint:#656c7d;
+  --rule:#ddd9d0; --structure:#3f4bb8; --good:#1f7a55; --defect:#b03a2b; --pending:#8f6410;
+  --structure-bg:#eceef9; --good-bg:#e7f2ec; --pending-bg:#f6efdd; --defect-bg:#f8ebe8;
+  --accent:#3f4bb8; --em:#2d4a7c;
+}
+:root[data-theme="dark"]{
+  --bg:#16151a; --card:#1d1c22; --ink:#eceaf0; --ink-soft:#c8c5cf; --ink-faint:#928e9c;
+  --rule:#38353f; --structure:#8f9bf0; --good:#6fcf9a; --defect:#f0937c; --pending:#d9b45e;
+  --structure-bg:#1e2140; --good-bg:#15271f; --pending-bg:#2a2314; --defect-bg:#2d1b17;
+  --accent:#8f9bf0; --em:#9db8e8;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --card:#1d1c22; --ink:#eceaf0; --ink-soft:#c8c5cf; --ink-faint:#928e9c;
+    --rule:#38353f; --structure:#8f9bf0; --good:#6fcf9a; --defect:#f0937c; --pending:#d9b45e;
+    --structure-bg:#1e2140; --good-bg:#15271f; --pending-bg:#2a2314; --defect-bg:#2d1b17;
+    --accent:#8f9bf0; --em:#9db8e8;
+  }
+}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);
+     font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.ex-body{max-width:51rem;margin:0 auto;padding:2.2rem 1.25rem 5rem}
+@media (max-width:40rem){ .ex-body{padding:1.4rem 1rem 3rem} body{font-size:16px} }
+
+.mast{margin:0 0 1.5rem}
+.eyebrow{font:600 .72rem/1.5 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+         color:var(--ink-faint);margin:0 0 .5rem}
+h1{font-family:var(--serif);font-size:clamp(1.85rem,4.4vw,2.7rem);line-height:1.12;
+   letter-spacing:-.015em;margin:0 0 .7rem;color:var(--head,var(--accent));text-wrap:balance}
+.standfirst{font-size:1.1rem;line-height:1.55;color:var(--ink-soft);margin:0 0 1.1rem;max-width:44rem}
+.standfirst b{color:var(--emph,var(--em))}
+
+h2{font-family:var(--serif);font-size:1.42rem;line-height:1.2;letter-spacing:-.01em;
+   margin:3.1rem 0 .3rem;color:var(--head,var(--accent));position:relative;text-wrap:balance}
+h2 .n{font:600 .74rem/1 var(--mono);color:var(--ink-faint);display:block;margin-bottom:.42rem;
+      letter-spacing:.08em}
+h3{font-size:1.02rem;margin:1.9rem 0 .4rem;color:var(--head,var(--accent));position:relative;
+   letter-spacing:-.005em}
+h4{font-size:.95rem;margin:1.3rem 0 .35rem;color:var(--ink);position:relative}
+p{margin:.72rem 0;color:var(--prose,var(--ink))}
+strong{color:var(--emph,var(--em))}
+a{color:var(--accent)}
+code,.k{font-family:var(--mono);font-size:.88em;background:var(--structure-bg);
+        padding:.08em .34em;border-radius:3px;color:var(--ink)}
+
+/* ── the decision stamp: this page exists because two answers are owed ── */
+.stamp{display:grid;grid-template-columns:7.5rem 1fr;gap:.9rem;align-items:start;
+       background:var(--pending-bg);border:1px solid var(--pending);
+       border-left:4px solid var(--pending);border-radius:0 8px 8px 0;
+       padding:.95rem 1.1rem;margin:1.3rem 0 1.5rem}
+.stamp .k{font:700 .78rem/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+          color:var(--pending);background:none;padding:0}
+.stamp .v{font-size:.95rem;color:var(--ink)}
+.stamp .v b{color:var(--emph,var(--em))}
+@media (max-width:34rem){ .stamp{grid-template-columns:1fr;gap:.4rem} }
+
+.howto{background:var(--card);border:1px solid var(--rule);border-radius:8px;
+       padding:.85rem 1.1rem;margin:1.3rem 0 1.8rem}
+.howto .eyebrow{margin:0 0 .35rem}
+.howto ol{margin:.3rem 0 0;padding-left:1.2rem;font-size:.9rem;color:var(--ink-soft)}
+.howto li{margin:.26rem 0}
+.howto .url{font-family:var(--mono);font-size:.86em;background:var(--structure-bg);
+            padding:.08em .34em;border-radius:3px;color:var(--ink)}
+
+.scope{border-left:3px solid var(--accent);background:var(--card);padding:.85rem 1.05rem;
+       margin:1.2rem 0 1.6rem;border-radius:0 6px 6px 0}
+.scope p{margin:.3rem 0}
+
+.new{border-left:3px solid var(--pending);background:var(--pending-bg);
+     padding:.8rem 1.05rem;margin:1.3rem 0;border-radius:0 6px 6px 0}
+.new p:first-child{margin-top:0} .new p:last-child{margin-bottom:0}
+.newtag{font:700 .68rem/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+        color:var(--pending);display:block;margin-bottom:.45rem}
+.keep{border-left:3px solid var(--good);background:var(--good-bg);
+      padding:.8rem 1.05rem;margin:1.3rem 0;border-radius:0 6px 6px 0}
+.keeptag{font:700 .68rem/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+         color:var(--good);display:block;margin-bottom:.45rem}
+.call{border-left:3px solid var(--defect);background:var(--defect-bg);
+      padding:.8rem 1.05rem;margin:1.3rem 0;border-radius:0 6px 6px 0}
+.calltag{font:700 .68rem/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+         color:var(--defect);display:block;margin-bottom:.45rem}
+.keep p:last-child,.call p:last-child,.new p:last-child{margin-bottom:0}
+.keep p:first-child,.call p:first-child{margin-top:0}
+
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.92rem;
+      font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto;margin:1rem 0}
+.scroll table{margin:0}
+th,td{text-align:left;padding:.44rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:600 .74rem/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+   color:var(--ink-faint);border-bottom:2px solid var(--rule);white-space:nowrap}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+td.mono{font-family:var(--mono);font-size:.86em;white-space:nowrap}
+
+/* ── deliverable chips. D1 filled, D2 outlined: one hue, two weights, so the
+     distinction survives greyscale and never competes with the semantic colours ── */
+.d{font:700 .68rem/1 var(--mono);letter-spacing:.06em;padding:.22em .5em;border-radius:4px;
+   white-space:nowrap;border:1px solid var(--structure)}
+.d1{background:var(--structure);color:var(--bg)}
+.d2{background:none;color:var(--structure)}
+.dq{background:var(--pending-bg);color:var(--pending);border-color:var(--pending)}
+
+.bars{margin:1.1rem 0}
+.bar{display:grid;grid-template-columns:11rem 1fr auto;gap:.6rem;align-items:center;
+     margin:.38rem 0;font-size:.9rem}
+.bar .lbl{color:var(--ink-soft)}
+.bar .track{background:var(--structure-bg);border-radius:3px;height:1.15rem;position:relative}
+.bar .fill{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--structure)}
+.bar .fill.hot{background:var(--defect)}
+.bar .fill.zero{background:none;border:1px dashed var(--ink-faint);border-radius:3px;
+                inset:0 auto 0 0;width:100%!important;opacity:.55}
+.bar .val{font-family:var(--mono);font-size:.84rem;color:var(--ink-soft);
+          font-variant-numeric:tabular-nums}
+.bar .val b{color:var(--ink)}
+@media (max-width:34rem){ .bar{grid-template-columns:7.5rem 1fr auto} }
+.axis{display:grid;grid-template-columns:11rem 1fr auto;gap:.6rem;font:.72rem/1 var(--mono);
+      color:var(--ink-faint);margin-top:.3rem}
+.axis .sc{display:flex;justify-content:space-between}
+@media (max-width:34rem){ .axis{grid-template-columns:7.5rem 1fr auto} }
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.7rem;margin:1.2rem 0}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:7px;padding:.75rem .85rem}
+.stat .big{font:700 1.5rem/1.1 var(--mono);display:block;color:var(--ink);
+           font-variant-numeric:tabular-nums}
+.stat .cap{font-size:.78rem;color:var(--ink-faint);display:block;margin-top:.2rem;line-height:1.35}
+.stat.good .big{color:var(--good)} .stat.bad .big{color:var(--defect)}
+.stat.pend .big{color:var(--pending)}
+
+pre{background:var(--card);border:1px solid var(--rule);border-radius:7px;
+    padding:.8rem .9rem;overflow-x:auto;font-family:var(--mono);font-size:.82rem;
+    line-height:1.5;margin:.9rem 0;color:var(--ink);white-space:pre}
+.src{font:.76rem/1.5 var(--mono);color:var(--ink-faint);margin:.25rem 0 1.1rem}
+
+ul,ol{margin:.7rem 0;padding-left:1.25rem;color:var(--prose,var(--ink))}
+li{margin:.32rem 0}
+li::marker{color:var(--ink-faint)}
+
+.rulebox{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);
+         border-radius:0 7px 7px 0;padding:.85rem 1.05rem;margin:1rem 0}
+.rulebox h4{margin:0 0 .3rem;color:var(--head,var(--accent));font-family:var(--serif);font-size:1.05rem}
+.rulebox p{margin:.3rem 0}
+.rulebox .why{font-size:.87rem;color:var(--ink-faint)}
+
+/* ── the goal ledger: one row per goal, carrying its deliverable and its anchors ── */
+.ledger{display:grid;gap:.7rem;margin:1.2rem 0}
+.lrow{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:.85rem 1rem;
+      display:grid;grid-template-columns:2.2rem 1fr 4.2rem;gap:.8rem;align-items:start}
+.lrow .gn{font:700 1.15rem/1 var(--mono);color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.lrow .gname{font-weight:600;color:var(--ink);display:block;margin-bottom:.15rem}
+.lrow .ganch{font:.78rem/1.5 var(--mono);color:var(--ink-faint);word-break:break-word}
+.lrow .gd{justify-self:end}
+.lrow.amb{border-color:var(--pending);background:var(--pending-bg)}
+@media (max-width:34rem){
+  .lrow{grid-template-columns:2rem 1fr;}
+  .lrow .gd{grid-column:2;justify-self:start;margin-top:.3rem}
+}
+
+/* a volatile figure — decays in minutes/hours, not days */
+.vol{color:var(--pending);font-weight:700;cursor:help}
+
+.qbox{background:var(--card);border:1px solid var(--rule);border-top:3px solid var(--pending);
+      border-radius:0 0 8px 8px;padding:1rem 1.1rem;margin:1.4rem 0}
+.qbox .qtag{font:700 .7rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+            color:var(--pending);display:block;margin-bottom:.5rem}
+.qbox h3{margin:0 0 .45rem}
+.opt{margin:.55rem 0;padding-left:.9rem;border-left:2px solid var(--rule)}
+.opt .ol{font:700 .76rem/1 var(--mono);letter-spacing:.05em;color:var(--ink-faint);
+         display:block;margin-bottom:.2rem}
+.rec{border-left-color:var(--good)} .rec .ol{color:var(--good)}
+
+.foot{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--rule);
+      font-size:.84rem;color:var(--ink-faint)}
+.foot code{font-size:.85em}
+.legend{font-size:.84rem;color:var(--ink-faint);margin:.5rem 0 0}
+
+:root            { --head:var(--accent); --prose:var(--ink-soft); --emph:var(--em); }
+:root[data-scheme="1"] { --head:var(--ink);    --prose:var(--ink); --emph:var(--ink); }
+:root[data-scheme="2"] { --head:var(--accent); --prose:var(--ink-soft); --emph:var(--ink); }
+.schemer{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin:1.3rem 0 .2rem;
+         font-size:.84rem;color:var(--ink-faint)}
+.schemer .lbl{opacity:.85}
+.schemer button{background:none;border:1px solid var(--rule);border-radius:1em;
+                padding:.12em .7em;cursor:pointer;color:var(--ink-faint);font:inherit}
+.schemer button:hover{border-color:var(--accent)}
+.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.schemer button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="ex-body">
+
+<div class="mast">
+<p class="eyebrow">Status &amp; alignment · as of origin/master 74a44551 · 2026-10-15 06:55 PDT</p>
+<h1>Three goals, two deliverables</h1>
+<p class="standfirst">You asked to revisit the three things and <b>align them to the
+deliverables</b>. All three are alive and none is lost. But the repository's own answer to
+<em>&ldquo;what is the current goal?&rdquo;</em> is <b>five weeks old and names different
+work</b> — and in the 52 days since the product last shipped, <b>0 of 213 commits</b> touched
+product code alone.</p>
+</div>
+
+<div class="stamp">
+<span class="k">Two answers<br>owed</span>
+<span class="v"><b>Q1 — confirm or correct the mapping of your three goals onto the two
+deliverables.</b> Goals (2) and (3) are unambiguous; goal (1) genuinely is not, and I should not
+pick for you. <b>Q2 — is goal (1) the goal change the roadmap deliberately defers?</b>
+Both are in §08. Everything above it is the evidence.</span>
+</div>
+
+<div class="howto">
+  <span class="eyebrow">How to ask a question inside this page</span>
+  <span id="modechip">● live — Send works</span>
+  <ol>
+    <li>This page lives at <span class="url">http://127.0.0.1:7391/latest</span> — that URL always
+    points at the newest page.</li>
+    <li>Select any text, or hover a heading, then press <b>ask</b> → type → <b>Send</b>. Then say
+    <b>&ldquo;read my questions&rdquo;</b> in the session.</li>
+    <li>If the URL will not load, run <code>python3 scripts/explainer-serve.py</code> — safe to run
+    twice. <b>A reboot stops it</b>, which is the one moment you will need this line.</li>
+    <li>A <code>file://</code> copy still reads fine. It only loses the <b>Send</b> button.</li>
+  </ol>
+</div>
+
+<div class="schemer" id="schemer">
+<span class="lbl">Text style:</span>
+<button type="button" data-s="3" class="on" aria-pressed="true">colour</button>
+<button type="button" data-s="2" aria-pressed="false">headings only</button>
+<button type="button" data-s="1" aria-pressed="false">plain</button>
+</div>
+
+<div class="scope">
+<p><strong>What this page is.</strong> Where each of your three named goals actually stands, read
+from <code>git</code>, the gates and the running system this morning — and which deliverable each
+one serves. It is a status-and-alignment review, not a plan and not a merge.</p>
+<p><strong>What it is not.</strong> It does not propose new work, and it does not re-open anything
+already decided. Where a number here disagrees with the repository, the repository is right and
+this page is a snapshot — §10 says exactly what it was taken against.</p>
+<p><strong>Marked <span class="vol" title="volatile figure">°</span></strong> means a figure that
+decays fast — a gate exit code or a branch count is true for hours; the 52-day deploy age and the
+213-commit split are history and will not move.</p>
+</div>
+
+<h2><span class="n">01</span>The numbers that characterise it</h2>
+
+<div class="stats">
+  <div class="stat bad"><span class="big">52</span>
+    <span class="cap">days since the product last shipped — Fly release <b>v10</b>,
+    Aug&nbsp;24. The roadmap's claim agrees, so this is a real pause, not drift</span></div>
+  <div class="stat bad"><span class="big">0</span>
+    <span class="cap">of <b>213</b> commits on master since that deploy touched product code
+    <em>alone</em>. 5 touched product and harness together</span></div>
+  <div class="stat"><span class="big">208</span>
+    <span class="cap">of those 213 touched harness and docs only — <code>scripts/</code>,
+    <code>docs/</code>, <code>.claude/</code>, <code>.github/</code></span></div>
+  <div class="stat"><span class="big">100</span>
+    <span class="cap">pull requests merged in the same 52 days. The machine has not been idle;
+    it has been pointed somewhere</span></div>
+  <div class="stat pend"><span class="big">12<span class="vol" title="volatile figure">°</span></span>
+    <span class="cap">branches carrying <b>88</b> commits that have <em>never had a pull
+    request</em> — work finished, or nearly, with no delivery path</span></div>
+  <div class="stat good"><span class="big">9 / 9</span>
+    <span class="cap">document and guard ratchets green this morning<span class="vol" title="volatile figure">°</span>
+    — including <code>check-anchors</code>, all 13 claimed</span></div>
+</div>
+
+<h2><span class="n">02</span>The shape: where 52 days of effort went</h2>
+
+<p>This is the measured form of your own worry. Each bar is the count of commits on
+<code>origin/master</code> since the last deploy, classified by which part of the tree the commit
+touches. Scaled to the largest bar.</p>
+
+<div class="bars" role="img" aria-label="Commits on master since the 2026-08-24 deploy, by area touched: harness and docs only 208; product and harness together 5; product code alone 0. Total 213.">
+  <div class="bar"><span class="lbl">harness &amp; docs only</span>
+    <span class="track"><span class="fill" style="width:100%" aria-label="208 commits"></span></span>
+    <span class="val"><b>208</b></span></div>
+  <div class="bar"><span class="lbl">product + harness</span>
+    <span class="track"><span class="fill" style="width:2.4%" aria-label="5 commits"></span></span>
+    <span class="val"><b>5</b></span></div>
+  <div class="bar"><span class="lbl">product code alone</span>
+    <span class="track"><span class="fill zero" aria-label="0 commits — none"></span></span>
+    <span class="val"><b>0</b></span></div>
+</div>
+<div class="axis"><span></span><span class="sc"><span>0</span><span>208 commits</span></span><span></span></div>
+<p class="src">208 + 5 + 0 = 213. <code>git rev-list --since=2026-08-25 origin/master</code>, each
+commit classified by <code>git show --name-only</code>. The dashed bar is a true zero, not a
+rounding to zero.</p>
+
+<div class="new">
+<span class="newtag">Read this bar correctly</span>
+<p>It does <strong>not</strong> say the last 52 days were wasted. You declared the harness a
+deliverable in its own right on 2026-08-11, so work landing there is work on <b>D2</b>, not
+overhead. What the bar says is narrower and harder: <strong>effort has been running
+single-file into one of your two deliverables</strong>, and the five product-touching commits are
+not five subjects — three of them are the same worker-and-lease change.</p>
+</div>
+
+<div class="scroll">
+<table>
+<caption class="src" style="text-align:left;caption-side:bottom">Every commit since the deploy that
+touched <code>lib/ app/ components/ worker/ supabase/</code>. There are five.</caption>
+<thead><tr><th>Commit</th><th>Date</th><th>Subject</th></tr></thead>
+<tbody>
+<tr><td class="mono">e693f36a</td><td class="mono">09-19</td><td>worker sleep / wake</td></tr>
+<tr><td class="mono">a37a14c1</td><td class="mono">09-18</td><td>the sweep rule</td></tr>
+<tr><td class="mono">35cf44c6</td><td class="mono">09-18</td><td>lease sweep cadence</td></tr>
+<tr><td class="mono">c517faa0</td><td class="mono">08-27</td><td>migration <code>0027</code></td></tr>
+<tr><td class="mono">1706930d</td><td class="mono">08-25</td><td><code>0027</code> rollback</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2><span class="n">03</span>The alignment ledger</h2>
+
+<p>Your three goals, each with the anchors that implement it and the deliverable I read it as
+serving. <strong>All 13 registered anchors are accounted for</strong> — none is orphaned, and no
+fourth goal is hiding in the registry.</p>
+
+<div class="ledger">
+  <div class="lrow">
+    <span class="gn">3</span>
+    <span><span class="gname">youtube-playlist-summaries-cloud — the product</span>
+    <span class="ganch">cloud-publishing · cloud-sync · share-and-download · serve-path-bounding ·
+    serve-money-guard · cloud-blob-key-encoding · corrections-in-cloud · prod-smoke ·
+    stable-blob-addressing (parked) — <b>9 anchors</b></span></span>
+    <span class="gd"><span class="d d1">D1</span></span>
+  </div>
+  <div class="lrow">
+    <span class="gn">2</span>
+    <span><span class="gname">development speed enhancement</span>
+    <span class="ganch">review-decides-itself (ADR-0014) — <b>1 anchor</b></span></span>
+    <span class="gd"><span class="d d2">D2</span></span>
+  </div>
+  <div class="lrow amb">
+    <span class="gn">1</span>
+    <span><span class="gname">overall comprehensibility suite</span>
+    <span class="ganch">status-visibility · explanation-on-demand · feature-map —
+    <b>3 anchors</b></span></span>
+    <span class="gd"><span class="d dq">D?</span></span>
+  </div>
+</div>
+
+<p class="legend"><span class="d d1">D1</span> the product &nbsp;·&nbsp;
+<span class="d d2">D2</span> the battle-tested harness and reusable framework
+(<code>docs/portable-practices.md</code>) &nbsp;·&nbsp;
+<span class="d dq">D?</span> genuinely undecided — that is <b>Q1</b> in §08.</p>
+
+<div class="call">
+<span class="calltag">Finding 1 — the alignment gap, and it is the most fixable thing here</span>
+<p>The roadmap still carries a block headed <strong>&ldquo;⭐ CURRENT GOAL — set by the user
+2026-09-06. Three items, no ordering between them&rdquo;</strong>
+(<code>docs/roadmap-to-launch.md:2308</code>). Its three items are <em>backlog rows</em>: row 78
+half (2), paying down 21 mutation manifests, and row 89 on forking observability pages.</p>
+<p>Your three goals of yesterday are <em>programmes</em>. <strong>These are two different answers
+at two different altitudes, and the file still presents the September one as current.</strong> So
+anyone — including me, on a fresh session — who asks the repository what the goal is gets work
+nobody is doing. That is not a disagreement about priorities; it is a stale record, and fixing it
+is cheap.</p>
+</div>
+
+<h2><span class="n">04</span>Goal (3) — the product <span class="d d1">D1</span></h2>
+
+<p><strong>State: shipped and healthy, and paused.</strong> The three milestones are closed; the
+application is live; nothing is broken. What has not happened is any new product work.</p>
+
+<table>
+<tbody>
+<tr><td>Milestones</td><td><b>M1 ✅ · M2 ✅ · M3 ✅</b> — M3 closed 2026-08-13 by your decision</td></tr>
+<tr><td>Live release</td><td>Fly <b>v10</b>, deployed Aug 24 2026 23:01 — <b>52 days ago</b></td></tr>
+<tr><td>Prod schema</td><td><b><code>0027</code></b>, matching the newest migration in the repo —
+<em>no drift</em> (<code>roadmap:777</code>)</td></tr>
+<tr><td>Roadmap vs reality</td><td><b>They agree.</b> The deploy claim at
+<code>roadmap:2421</code> matches <code>flyctl releases</code></td></tr>
+<tr><td>Parked</td><td><code>stable-blob-addressing</code> ⏸ parked 2026-08-11, your decision
+(<code>roadmap:767</code>)</td></tr>
+<tr><td>Open slice</td><td>honest-blob-read</td></tr>
+</tbody>
+</table>
+
+<div class="keep">
+<span class="keeptag">Worth saying plainly</span>
+<p>Two stale lines elsewhere in the roadmap still read <em>&ldquo;prod stays at
+<code>0026</code>&rdquo;</em>. They are superseded by <code>:777</code> and I checked rather than
+assumed — <strong>there is no migration drift.</strong> This matters because this project has been
+bitten before by production running eight days behind on a migration while every file on disk
+looked correct. Not this time.</p>
+</div>
+
+<h2><span class="n">05</span>Goal (2) — development speed <span class="d d2">D2</span></h2>
+
+<p><strong>State: half adopted, half designed-but-not-built.</strong> This is the goal the last
+several sessions were actually serving, and it has real shipped substance — but its centrepiece
+has not been built.</p>
+
+<table>
+<tbody>
+<tr><td>Anchor</td><td><code>review-decides-itself</code> — ADR-0014</td></tr>
+<tr><td>Adopted</td><td><b>§6 + §7 govern</b> as of 2026-09-24, from
+<code>docs/process-checklists.md</code></td></tr>
+<tr><td>Not built</td><td><b>Q0 — designed in form only.</b> You already decided Q0 is
+<em>hybrid</em>; the build has not happened</td></tr>
+<tr><td>Artifacts</td><td>three documents — the spec, the plan, and
+<code>docs/velocity-evidence-2026-09-24.md</code> (<code>roadmap:2060</code>)</td></tr>
+<tr><td>Gate's own view</td><td><code>check-roadmap-consistency</code> names <b>3</b> items still
+open: <b>A6, D2, Q0</b><span class="vol" title="volatile figure">°</span></td></tr>
+</tbody>
+</table>
+
+<p>Q0's question is the one worth remembering, because it is the goal in one sentence:
+<em>review-method §0 asks how much adversarial review to run, and never asks whether adversarial
+review is the right instrument at all.</em> Q0 is the step that would ask.</p>
+
+<h2><span class="n">06</span>Goal (1) — the comprehensibility suite <span class="d dq">D?</span></h2>
+
+<p><strong>State: built and in daily use — with no agreed place in the deliverables.</strong> The
+dashboard, the goals page, the feature map and these explainer pages all exist and regenerate
+themselves. The page you are reading is the suite working.</p>
+
+<table>
+<tbody>
+<tr><td>Anchors</td><td><code>status-visibility</code> · <code>explanation-on-demand</code> ·
+<code>feature-map</code> — all three registered and claimed</td></tr>
+<tr><td>Built</td><td>dashboard tasks <b>1–6</b> (<code>roadmap:1390</code>); goals, features and
+explainer pages generated, never hand-edited</td></tr>
+<tr><td>The open question</td><td><b><code>roadmap:2355</code> says declaring this suite a project
+deliverable is deliberately NOT in scope</b> — it is <em>&ldquo;a goal change, whose home is
+<code>docs/anchors.md</code>&rdquo;</em></td></tr>
+</tbody>
+</table>
+
+<div class="new">
+<span class="newtag">Why I will not decide this one for you</span>
+<p>If you name this a main goal, you may be asking for exactly the goal change that line defers —
+and a goal change is yours, not mine. That is <b>Q2</b>. It is a one-line edit to a registry, so
+the cost is not the issue; the issue is that it changes what this project says it is building.</p>
+</div>
+
+<h2><span class="n">07</span>What is blocked, and on what</h2>
+
+<p>Three different kinds of blocked, kept apart deliberately: waiting on <em>you</em>, waiting on a
+<em>machine</em>, and simply <em>not started</em>.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>What</th><th>Blocked on</th><th>Since</th></tr></thead>
+<tbody>
+<tr><td>Goal (1)'s place in the deliverables</td><td><b>You</b> — Q1 and Q2 in §08</td><td class="mono">2026-09-06</td></tr>
+<tr><td><code>MEMORY.md</code> truncating every session — ~900 bytes over cap</td><td><b>You.</b>
+Holding its 33 over-long rows to the file's own 200-char guidance recovers <b>2,194</b> bytes,
+deleting nothing</td><td class="mono">surfaced</td></tr>
+<tr><td><code>docs/plugins.md</code> 259/260 · <code>docs/dev-process.md</code> 219/220</td>
+<td><b>You</b> — one line of runway each; <code>check-docs.py</code> says the remedy is explicitly
+a human decision</td><td class="mono">surfaced</td></tr>
+<tr><td>A reader's question from 2026-10-05, apparently unanswered</td><td><b>Me</b> — on
+<em>&ldquo;Round 10, or stop and merge, or build the instrument&rdquo;</em>: <em>what is #224
+about? Could that be the resolution of root cause?</em></td><td class="mono">10 days</td></tr>
+<tr><td>PR #364 <code>unify-explainer-style</code></td><td><b>A machine</b> — <b>CONFLICTING</b>,
+needs a rebase</td><td class="mono">12 days</td></tr>
+<tr><td>PR #371 <code>backlog-249-260-fixes</code></td><td>Mergeable; not converged. Phase 6 ran,
+verdict THRASHING</td><td class="mono">7 days</td></tr>
+<tr><td>12 branches, 88 commits, no PR ever opened</td><td><b>Nothing</b> — not started, not
+scheduled</td><td class="mono">up to 09-25</td></tr>
+<tr><td>Q0 (goal 2's centrepiece)</td><td><b>Nothing</b> — designed in form, decided hybrid, not
+built</td><td class="mono">2026-09-24</td></tr>
+<tr><td>Goal (3) — any new product work</td><td><b>Nothing</b> — no decision pending, no blocker
+recorded</td><td class="mono">52 days</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="call">
+<span class="calltag">One durability item, and it is the only thing here I would act on unasked</span>
+<p><code>explainer-text-switcher</code> has <strong>2 commits that exist on no remote
+ref</strong> — single-copy, on this machine only. This project has already destroyed the only copy
+of a 40&nbsp;KB page once. Everything else is pushed; <code>shard-mutation-sweep</code>'s
+memory-durability commit <code>24475c14</code> is safely on the remote, though it has no path to
+<code>master</code> because PR #366 already merged.</p>
+</div>
+
+<h2><span class="n">08</span>The decision</h2>
+
+<div class="qbox">
+<span class="qtag">Q1 — the mapping</span>
+<h3>Do goals (3)→D1, (2)→D2 hold, and where does goal (1) belong?</h3>
+<p>Goals (2) and (3) are not in doubt: (3) <em>is</em> the product, and (2) is the review method,
+the ratchets and the process documents — the exact class your 2026-08-11 statement reframed as a
+first-class deliverable rather than overhead. <strong>Goal (1) is the real question.</strong></p>
+
+<div class="opt rec">
+<span class="ol">Recommended — D2, but only via its exported question</span>
+<p>The suite makes <em>this</em> project legible, which on its face is D1 overhead. But D2's own
+rule is <em>what travels is the <b>question</b> a tool asks, never the tool</em>. A dashboard built
+for this repository will never be reused; <em>&ldquo;a person who was away can see what changed and
+what needs them, without reading the transcript&rdquo;</em> travels to any project. So the suite is
+D1 scaffolding whose <b>question</b> is the D2 contribution.</p>
+</div>
+
+<div class="opt">
+<span class="ol">The strongest argument against</span>
+<p>That reasoning would make <em>everything</em> D2, because every tool here asks some question.
+If D2 accepts a contribution this abstract, <code>portable-practices.md</code> fills with
+restatements and stops being a harness anyone could pick up.</p>
+</div>
+
+<div class="opt">
+<span class="ol">The answer to it — two filters, and they must stay strict</span>
+<p>Every D2 entry has to pass both: <b>measured</b> (files, numbers, output — not a confident
+belief), and <b>project-independent</b> (it would hold with no Supabase, no Gemini, no Fly). The
+abstraction does not get in on being abstract; it gets in on passing those two. <strong>Most of
+this project's best lessons fail the second filter, and that is the correct outcome</strong> — the
+answer is to leave them out, never to loosen the filter so the alignment looks tidier.</p>
+</div>
+</div>
+
+<div class="qbox">
+<span class="qtag">Q2 — the goal change</span>
+<h3>Does &ldquo;overall comprehensibility suite&rdquo; mean the goal change <code>roadmap:2355</code> defers?</h3>
+
+<div class="opt">
+<span class="ol">Option A — the three existing anchors, gathered under one heading</span>
+<p>No goal change. Costs nothing, breaks nothing, and the anchors already exist and are already
+enforced by <code>check-anchors</code>. If you meant &ldquo;show me these three together&rdquo;,
+this is the whole job.</p>
+</div>
+
+<div class="opt rec">
+<span class="ol">Option B — recommended if you mean it as a main goal: register it</span>
+<p>Declaring the suite a deliverable in its own right <em>is</em> the goal change, and its home is
+<code>docs/anchors.md</code>. Register it there, because the registry is the only place that
+survives a rename and is the only one a machine checks.</p>
+</div>
+
+<div class="opt">
+<span class="ol">The strongest argument against B — and the answer</span>
+<p><em>Against:</em> you have one live product that has not shipped in 52 days; promoting its
+scaffolding to a deliverable is how a project ends up admiring its own instruments.
+<em>Answer:</em> that is an argument about <b>sequencing</b>, not about the registry. Registering an
+anchor costs one line and schedules nothing — and leaving it unregistered is what let the altitude
+gap in §03 survive five weeks. Register it, then decide what to work on next, which is a separate
+question I am not asking you here.</p>
+</div>
+</div>
+
+<h2><span class="n">09</span>Also worth knowing</h2>
+
+<div class="rulebox">
+<h4>The two sidetrack branches are authorised and queued</h4>
+<p><code>plugins-handoff-citations</code> and <code>namespace-token-guard</code> — you authorised
+merging both, overriding two recorded rules deliberately (neither is converged; merging is normally
+your gate and you gave it). Neither has a PR yet.</p>
+<p class="why">Each needs <code>NO-REVIEW:</code> starting its own line in the PR body, citing your
+priority call. They both touch <code>docs/backlog.md</code> and
+<code>scripts/check-plan-code.py</code>, so the second must be rebased after the first, and
+<code>EXPECTED_MUTATIONS</code>' declared sum re-derived from the merged dict — one says 1414, the
+other's base 1408. <b>Never by picking a side.</b></p>
+</div>
+
+<div class="rulebox">
+<h4>Housekeeping that is safe and unasked-for</h4>
+<p><b>20</b> local branches<span class="vol" title="volatile figure">°</span> whose pull request is
+already merged or closed are pure clutter — they are what made the branch list hard to read, and
+deleting them loses nothing.</p>
+<p class="why">Backlog shape, for context: <b>228</b> rows — <b>62</b> closed, <b>166</b> not
+closed. Of those 166, <b>99</b> carry no marker in the status cell at all, so they are
+<em>unmarked</em> rather than measured-open. <code>check-review-rounds</code> passes but notes
+<b>582</b> files in <code>docs/reviews/</code> with no round number, outside what it can check.</p>
+</div>
+
+<h2><span class="n">10</span>Ground truth — what this page was taken against</h2>
+
+<p>Every figure above came from a command run this morning, not from a summary. If you want to
+re-derive any of it, this is the horizon it was taken at.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Subject</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>origin/master</code></td><td class="mono">74a44551</td></tr>
+<tr><td>Working branch</td><td class="mono">shard-mutation-sweep</td></tr>
+<tr><td>Local <code>master</code> at session start</td><td><b>7 commits behind</b>
+<code>origin/master</code> — fetched and corrected before measuring</td></tr>
+<tr><td>Live release</td><td><code>flyctl releases</code> → <b>v10</b>, Aug 24 2026 23:01</td></tr>
+<tr><td>Unit suite</td><td><b>2,892</b> unit / <b>278</b> suites, verified by
+<code>check-test-counts</code></td></tr>
+<tr><td>Gates run, all <code>rc=0</code></td><td class="mono">check-docs · check-anchors ·
+check-test-counts · check-backlog-closure · check-review-rounds · check-roadmap-consistency ·
+check-producer-enumeration · check-ratchet-contract · check-guard-coverage</td></tr>
+<tr><td>Gate warnings, not failures</td><td><code>check-backlog-closure</code>: 2 rows may be
+stale, 0 orphaned. <code>check-review-rounds</code>: 582 files uncovered</td></tr>
+<tr><td>Page composed</td><td class="mono">2026-10-15 ~06:55 PDT</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="foot">
+<p><b>What I could not verify, stated rather than hidden.</b> The <b>99</b> unmarked backlog rows
+are unmarked, not known-open — I did not read 99 rows to classify them. Whether the 2026-10-05
+reader question was ever answered elsewhere I could not establish; it is still in
+<code>questions.md</code>, which is why it is listed as owed. The 52-day product pause is a
+measurement of commits and releases, <em>not</em> a judgement that the pause was wrong.</p>
+<p>A snapshot, taken at <code>74a44551</code>. Where it disagrees with the repository, the
+repository is right.</p>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var r=document.documentElement, box=document.getElementById('schemer');
+  if(!box) return;
+  var saved=null; try{ saved=localStorage.getItem('explainer-scheme'); }catch(e){}
+  function set(s){
+    if(s==='3'){ r.removeAttribute('data-scheme'); } else { r.setAttribute('data-scheme',s); }
+    var bs=box.querySelectorAll('button[data-s]');
+    for(var i=0;i<bs.length;i++){
+      var on = bs[i].getAttribute('data-s')===s;
+      bs[i].className = on?'on':'';
+      bs[i].setAttribute('aria-pressed', String(on));
+    }
+    try{ localStorage.setItem('explainer-scheme',s); }catch(e){}
+  }
+  box.addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;
+    if(b) set(b.getAttribute('data-s'));
+  });
+  set(saved==='1'||saved==='2'?saved:'3');
+})();
+</script>
+
+<div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><span class="chrome-when">generated <time>2026-10-15 07:08 · 24475c14 · uncommitted changes</time></span></div>
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

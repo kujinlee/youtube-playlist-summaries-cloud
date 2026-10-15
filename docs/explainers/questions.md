@@ -670,3 +670,85 @@ Are these actually share common idea?
 **Theme 4 — the repair that generated the defect**
    > Theme 4 — the repair that generated the defectask #360 is the largest of the seventeen and the only one whose finding is structural. Nine adversarial review rounds kept finding the same class of defect: a rule's result computed, then discarded at the point it is used, with every named test still passing and the guard printing OK over a real violation. Rounds 5 through 9 each fixed their instance c
    Q: have we found solution (and implemented) for the root cause of this issue?
+
+---
+
+## 2026-10-05 11:29:02 — 2026-10-05-topic-why-x-not-y.html
+
+**2 · Redesign or patch — and refuting the reviewer who proposed the redesign**
+   > (nothing highlighted)
+   Q: PROBE from coordinator verification — ignore. Does the section label arrive clean?
+
+---
+
+## 2026-10-05 12:07:16 — 2026-10-05-topic-why-x-not-y.html
+
+**1 · Round 10, or stop and merge, or build the instrument**
+   > C — park the PR, build the #224 dynamic instrument Three rounds had independently pointed at it. It removes the residual defect class rather than another instance of it REJECTED
+   Q: what is #224 about? Could that be the resolution of root cause? why this wasn't recommended?
+
+---
+
+## 2026-10-06 15:17:40 — 2026-10-06-brief-dev-process-speed.html
+
+**1 · Where the effort actually went**
+   > (nothing highlighted)
+   Q: PROBE-HEADING-PATH: does the section name arrive without the ask label?
+
+---
+
+## 2026-10-06 15:18:42 — 2026-10-06-brief-dev-process-speed.html
+
+**Why eight rounds — and what would have made it three**
+   > What this page is: why PR #366's review loop ran to eight rounds, and which specific changes would shorten it — measured from this branch, not general process advice. If you wanted generic guidance on code review, this is not that page.
+   Q: PROBE-SELECTION-PATH: does the quoted passage arrive with the question?
+
+---
+
+## 2026-10-06 16:27:18 — 2026-10-06-brief-dev-process-speed.html
+
+**Why eight rounds — and what would have made it three**
+   > What this page is: why PR #366's review loop ran to eight rounds, and which specific changes would shorten it — measured from this branch, not general process advice. If you wanted generic guidance on code review, this is not that page.
+   Q: Text style: colour · headings only · plain switcher is confirmed absent — zero matches for Text style, headings only, data-textscheme or --em across all 643 lines. That switcher comes from .claude/plans/d2-main-drivable.md, which is an armed-but-unshipped plan, so the page predates it rather than having dropped it.
+
+Can I get the switcher on this page. Also have the switcher for every explainer page. Default value should be "color"
+
+---
+
+## 2026-10-07 07:43:36 — 2026-10-06-brief-dev-process-speed.html
+
+**The nine that only review caught, and whether each has a shape**
+   > Three candidates, with costs — none adopted
+   Q: how these suggested solutions are related with previous table (The nine that only review caught...)
+
+---
+
+## 2026-10-07 07:56:03 — 2026-10-06-brief-dev-process-speed.html
+
+**Asked on this page · answered 2026-10-07**
+   > ⭐ And there is now a seventh shape the table does not have, with better evidence than C1. Measured on 2026-10-07, after this page was written:
+   Q: let's file a backlog for recommended checks C1, C2, C4
+
+---
+
+## 2026-10-07 07:58:36 — 2026-10-06-brief-dev-process-speed.html
+
+**Lever 10 — Grep for the concept's existing spelling before you name a mechanism**
+   > Six rules you could paste into dev-process.md
+   Q: how these recommended new rules are related with 10 levers in previous section
+
+---
+
+## 2026-10-07 09:21:18 — 2026-10-06-brief-dev-process-speed.html
+
+**09Six rules you could paste into dev-process.md**
+   > (nothing highlighted)
+   Q: let's add these six rules
+
+---
+
+## 2026-10-15 07:11:07 — 2026-10-15-brief-brief-status-alignment.html
+
+**01The numbers that characterise it**
+   > (nothing highlighted)
+   Q: VERIFICATION by the author (ignore): driving Send end-to-end before handing the page over.
