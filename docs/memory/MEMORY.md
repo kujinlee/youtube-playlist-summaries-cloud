@@ -9,18 +9,21 @@
 
 ## How things go wrong here (⭐ = costly, recurring)
 
-- [⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — green says nothing about the BASE (use `origin/master`); a red is a STOP, it hid a second failure. ⭐ **Never read `$?` after a PIPE**, and `grep | head || echo MISSING` can NEVER fire. ⭐⭐ **A restore verified against WHAT I DID lost a 32KB review** — diff the old tip BEFORE `reset --hard`
+- [⭐⭐ Verify the OTHER copy exists before deleting](verify-the-other-copy-exists-before-deleting.md) — ⛔ I `rm`'d the ONLY copy of a 40KB page: `~/explainers` is a **symlink INTO** `docs/explainers` — one file, **UNCOMMITTED**. ⛔⛔ **NOTHING HERE MAKES DELETING SAFE — 3 rules in 3 rounds said *safe* while deleting destroyed the only copy.** You can only OBSERVE that HEAD held these bytes a moment ago (`git rev-parse HEAD:$A` vs `git hash-object $A`); A can change before the `rm`. ⭐ Can't lose it? **`mv` it aside, don't delete.** ⭐ RECOVER from `subagents/*.jsonl`: scan Bash `command`, not just Write `file_path`
+- [⭐⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — ⭐⭐⭐ **a control proves the instrument RAN, never that the PATTERN was right**: 3 zeros in one day (case, markup, word order). Enumerate the SUBJECT, narrow, judge each. ⭐ Never read `$?` after a PIPE
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
 - [⭐⭐ Concurrent agents go wrong](concurrent-agents-go-wrong.md) — the WRONG SUBJECT, a report that never arrives, one Postgres → a FALSE BLOCKING. ⭐⭐ **A LIVE AGENT'S FILE IS NOT STATIC** — cost TWICE in one night (appended to it; `git add -A`'d it). Stage EXPLICIT PATHS. RULE in `docs/review-method.md`
 - [⭐⭐ An anchor is unbound by ANY nearby edit](a-mutation-anchor-is-unbound-by-any-edit-nearby.md) — 7 orphaned in ONE session; one was a BLOCKING red CI step. Use the HARNESS's own rule, over EVERY manifest
+- [⭐⭐ "Cannot die" may mean a SECOND clause](cannot-die-may-mean-a-second-clause.md) — I deleted on that reading TWICE in two commits; both reversed by the next review. **4 masking pairs in one file.** Construct an input, and ask what ELSE answers this
 - [⭐ A mutation loses its binding](a-mutation-loses-its-binding.md) — anchors bind by TEXT, so a refactor ORPHANS them; promoting one drops its fake-`HOME` redirect
 - [What mutation testing proves](what-mutation-testing-proves.md) — load-bearing, never complete; a MUTATION can be masked like a fixture
-- [⭐ A sever substitutes TODAY's value](a-sever-substitutes-todays-value.md) — a literal I typed from memory went RED and read as *"wiring is protected"*; the real value → 58/58 green and the defect was live. **Fails toward GOOD NEWS.** Derive by RUNNING the callee
+- [⭐⭐ A sever: TODAY's value, and the exact SPOT](a-sever-substitutes-todays-value.md) — ⭐⭐ **placement IS the claim**: 2 indent levels moved my repro 299→300, i.e. refute→confirm
 - [⭐⭐ Unit coverage does NOT compose](unit-coverage-does-not-compose.md) — 3 rounds, 3× the gap was BETWEEN two tested pieces. **Mutate the CALL SITE** — the whole change reverted there, suite green
 - [⭐⭐ A forced-choice test cannot fail](a-forced-choice-test-cannot-fail.md) — must-fire-only is UNFALSIFIABLE; negatives must be ADJACENT, not absurd. State the BOUND (0 in 60 → 5%), never "no false positives"
 - [⭐ Instruction is not isolation](instruction-is-not-isolation.md) — "read only these two files" is not a blind; the answer key was in the same directory. Rebuild the world, don't ask
-- [⭐ A test that cannot fail](a-test-that-cannot-fail.md) — what observation makes this FAIL? Removing a signal hollows out its falsifier
+- [⭐ A BOUND enumerates what is WITNESSED](a-bound-enumerates-what-is-witnessed.md) — I listed what the seam TOUCHES; the cases covered 3 of 4. The missing one reinstated the defect the harness exists for. ⚠ A caveat headed "stated rather than hidden" that is wrong is worse than none
+- [⭐⭐ A test that cannot fail — or ALREADY DID](a-test-that-cannot-fail.md) — ⭐⭐ run the FAILS IF **against HEAD as you write it** (#282, #289 both wrong about their own); ⭐⭐ and **stating a falsifier is not running it** — mine passed
 - [⭐⭐ Ask an agent to REFUTE, not confirm](ask-an-agent-to-refute-not-confirm.md) — 4-for-4 on 2026-09-23: the refuting prompts caught a wrong correction I had ALREADY PUBLISHED; the confirming one shipped a summary contradicting its own table. ⚠ The gap is VERIFICATION/RESEARCH agents — review halves already have a mandate (33 docs); I claimed otherwise without grepping
 - [⭐ Dual review: what it catches](dual-review-what-it-catches.md) — halves NOT redundant; the finding-reviewer right 3/3; ⭐ and **review is the wrong instrument for a SURFACE** — 6 rounds ≈ 7 edge cases, one corpus run ≈ 5,287
 - [⭐⭐ Running Codex](running-codex.md) — a "timeout" is MY `--timeout`: DOUBLE it (900s default, 2700-3600 for big reviews). Run from the coordinator
@@ -28,10 +31,11 @@
 - [Parallel branches, ONE log](parallel-branches-append-to-one-log.md) — ⭐ 3 same-day PRs: #1 clean, rest CONFLICT
 - [A report format is a CONTRACT](a-report-format-is-a-contract.md) — ⭐ "0 red cases" over a shape the harness can't parse
 - [⭐⭐ Negatives by INTERCEPTION can't terminate](proving-a-negative-by-interception-cannot-terminate.md) — FIVE unearned passes. PRE-COMMIT the retreat
+- [⭐⭐ More evidence WEAKENS substring cases](printing-more-evidence-weakens-substring-cases.md) — the traceback supplies the token the case credited to the rule. **3rd 2026-10-14**; inverted: my docstring fed my own assert
 - [Passing for an AMBIENT reason](a-case-can-pass-for-an-ambient-reason.md) — ⭐⭐ 4× on one file. BUILD the world; run 3 ways
 - [⭐⭐ Two DISTINCT inputs, in ONE case](exercise-the-producer-at-two-distinct-inputs.md) — a case is satisfied by the CONSTANT its own fixture supplies. 3 rounds, 9 survivors; pairwise-distinct FIXTURES are the weaker rule that already failed
 - […and a CORPUS](a-measurement-is-only-as-good-as-its-corpus.md) — ⭐ 4×. Code did what I measured; I measured the wrong SET
-- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **11×, SIX of them in one session (2026-09-26)**: a grep filter, a wrapped line, an off-by-one `tail`, a wrong CSS class, CSS-uppercased text, and `gh` check states — **check a KNOWN POSITIVE before trusting a negative**, and ⛔ a fix inside a heredoc is not a class fix. 5×. `splitlines()` where the subject uses `split("\n")`. ⭐ 2026-09-22: the RUN was right and the CONCLUSION was about a different subject — a synthetic fixture proved what the tool does to the FIXTURE; I never opened the real callee's signature
+- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **11×, SIX in one session**: before you trust a NEGATIVE, check a KNOWN POSITIVE. A correct run can answer about the wrong subject
 - [The CONTROL refuted the premise](the-control-refuted-the-premise.md) — ⭐⭐ "red → fix → green" is NOT a cause
 - [A mock tests the contract you IMAGINED](a-mocked-boundary-tests-the-contract-you-imagined.md) — ⭐ 2,808 green tests, 500s on first live press
 - [A privilege ≠ a CAPABILITY](a-privilege-is-not-a-capability.md) — ⭐ `has_table_privilege` said granted
@@ -45,7 +49,7 @@
 - [Positional reads need a VERIFIED shape](a-positional-read-needs-a-verified-shape.md) — ⭐ `cells[-2]` hit the wrong cell, closed 2 open items
 - [A hang isn't a diagnosis](a-hang-is-not-a-diagnosis.md) — ⭐ `nc -z` proves a listener accepts, not that it answers
 - [Separate the RULE from the FETCH](separate-the-rule-from-the-fetch.md) — ⭐ 3 ratchets untestable 8 days: the ENTRY POINT needed docker
-- [A second implementation DRIFTS](a-second-implementation-of-one-rule-drifts.md) — ⭐⭐ **17×**, newest 2026-09-22: `awk -F'|'` then `split("|")` on a backlog row, TWICE, while `check-docs.CELL_SPLIT` owns the rule and `gen-backlog-page.py` imports it. A weaker stand-in passes what it'd REFUSE. ⭐ **Ask which PART is slow** — `--mutate .` refuses a bad manifest in **<1s**, so the real gate IS the cheap pre-check
+- [A second implementation DRIFTS](a-second-implementation-of-one-rule-drifts.md) — ⭐⭐ **17×**: about to re-implement a rule a guard already owns? IMPORT it — a weaker stand-in passes what it would REFUSE
 - [Mechanical edits damage what they PRESERVE](a-mechanical-edit-damages-what-it-preserves.md) — ⭐ an AST pruner broke surviving code 3×
 - [⭐ The answer may only be in the TRANSCRIPT](the-answer-may-only-exist-in-the-transcript.md) — "what was the conclusion?" → grep `~/.claude/projects/<slug>/*.jsonl`, not just the docs. I reported "none recorded" and invented 4 directions; the real answer was one grep away
 - [An escalation has no closer](an-escalation-has-no-closer.md) — ⭐ only a REPLY closes it; work that MOOTS it leaves it standing
@@ -115,6 +119,7 @@
 
 ## Environments & product context
 
+- [⭐ Scoped mutation run in 4s](scoped-mutation-run-in-four-seconds.md) — 8 local shards TIME OUT → NOT MEASURED; `--shard` is round-robin and cannot isolate a file. Prune a COPY of HARNESS_TREE's SIX paths. ⭐ The harness is structurally browserless (`typescript` only → ERR_MODULE_NOT_FOUND)
 - [Local cloud validation](local-cloud-validation-run.md) — local Supabase (:3001); worker needs env-load + Node 22+
 - [Local manual-test env](local-manual-test-env.md) — `~/code/agentic-ai-docs/yps-sync-test/`; sync is ADDITIVE
 - [Staging Supabase](staging-supabase-project.md) — ⚠ throwaway `neeufoxdbgbpkjukzzuc`; DELETE when B3/B4 done
@@ -130,7 +135,7 @@
 - [M4 superseded trail](m4-superseded-trail.md) — history only, split out of the RESUME file when it outgrew the read limit. Fork (a), `0028` cannot be a migration, Phase 6 ran TWICE
 - [⭐⭐ pin-python — #317](pin-python-317-merged.md) — `e7ed8c1a`. **TEN defects, ONE function, 7 rounds**, all one root cause. ⭐ I tested the CONTAINER's shape not its CONTENTS (2×); a fix landed at the WRONG LAYER (2×); my pre-committed falsifier FIRED
 - [⭐⭐ closing-table r7–r11 — #327 + #328](closing-table-r7-r8-merged-327.md) — the independent read #325 shipped without. 16 findings/5 rounds. Marker fired on **96.7%→49%**, false-sentence firings **372→0**. ⛔ `check-review-recorded` keys on CODEX VERDICTS, not commit order — 2 of 5 reds
-- [⭐ merge-ready + budget slack — #324](merge-ready-slice-merged-324.md) — `af4d9033`. `check-merge-ready.py` runs the **PR-only** gates a local run can't reach; relay its verdict VERBATIM. ⭐ **2026-09-26: I skipped it and put TWO PRs red** — run it, not a gate subset; `NO-ENTRY:` ≠ `NO-REVIEW:`; and it reads the COMMITTED diff, so an uncommitted entry is a vacuous rc=0. 3 rounds, 4 silent misses, ONE parser. `--tick` REFUSES while `paused:`
+- [⭐ merge-ready + budget slack — #324](merge-ready-slice-merged-324.md) — `af4d9033`. About to judge a PR? Run `check-merge-ready.py` (the PR-only gates), never a gate subset — skipping it put TWO PRs red
 - [⭐ Wake-on-visit — #322](wake-on-visit-merged-322.md) — `e693f36a`. Worker sleeps/wakes, own Fly app NO public IP. INERT except the drain-key fix
 - [Lease-sweep cadence — #318](lease-sweep-merged-318.md) — ⭐ `35cf44c6`. Idle worker was **100%** of prod DB traffic. Found 🔴 **#139**; `fly.toml` drift reverts it
 - [#137 schema-gates REQUIRED — #315+#316](schema-gates-required-137-merged.md) — ⭐ `[verify, schema-gates]` live. The deleted filter had a SECOND CONSUMER (#138)

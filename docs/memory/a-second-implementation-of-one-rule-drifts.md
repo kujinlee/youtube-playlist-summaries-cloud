@@ -190,3 +190,41 @@ during this same session was demonstrating the correct move while I made the wro
 and to APPEND to a cell, locate the Nth-from-last **unescaped** pipe (`(?<!\\)\|`) rather than
 splitting at all. Verify the cell count with `CELL_SPLIT` before and after — a row that changes cell
 count is corrupted even when it renders plausibly.
+
+---
+
+## ⭐⭐ 2026-10-13 — THE WEAKER COPY WAS ON THE OTHER SIDE OF ZERO, AND IT WAS A FALSE GREEN
+
+**The newest instance is not a stand-in for a rule — it is the SAME rule stated twice about one
+concern, complete on one side of a boundary and incomplete on the other.** Found by a Phase 6
+architecture review after ELEVEN review rounds hit the incomplete half and never looked at the
+complete one.
+
+`scripts/check-plan-code.py`, the concern *"did this child actually report a verdict?"*:
+
+| side | predicate | second clause |
+|---|---|---|
+| `rc == 0` | `control_is_green(rc, out)` = `rc == 0 and "passed" in out` | **MANDATORY**, no opt-out |
+| `rc == 1` | `caught = rc == 1`, plus the `expect` attribution check | **OPT-IN** — `expect` is an optional field |
+
+The rc==0 docstring states the reasoning, decided 2026-09-03: *"the exit code alone cannot tell
+"green" from "never ran""*. Change one word and it is the rc==1 side: `rc == 1` cannot tell *"a case
+failed"* from *"the interpreter died"*. **What the optionality cost, reproduced as a 2×2:** a
+mutation whose suite crashed before any case ran, with `expect` omitted, was recorded
+`caught: True, attributed: True`, 0 reports, `ok` True — byte-identical to a real kill.
+
+## ⭐ THE QUESTION TO ASK, which is the reusable part
+
+> **When a predicate answers a concern on one side of a boundary, go and read the other side.
+> The complete form may already exist — and then the remedy is to PROPAGATE a reviewed decision,
+> not to design one.**
+
+That is what made the fix one small change instead of a new abstraction, and it is why the "deep
+module" alternative was measured NOT EARNED: the width of the class is 3 sites in 2 files, so a
+shared module would have had 2 callers.
+
+⚠ **AND THE "ONE LINE" WAS FOUR.** Making `attributed` require `bool(fails)` fixes the recorded
+FIELD and leaves the VERDICT wrong, because the refusal lived inside `elif unnamed:` and `unnamed`
+is empty exactly when `expect` is absent. The arm had to be lifted. **Check what else the weak
+clause was nested under** — the nesting can be the defect, not the clause.
+See [[one-rule-one-place]], [[fixing-a-premise-is-not-covering-the-branch]].

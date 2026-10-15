@@ -1,6 +1,6 @@
 ---
 name: a-sever-substitutes-todays-value
-description: "FIRES-WHEN: about to sever, stub or replace a call site to test whether its result is consumed — the substituted value must be WHAT THE CALLEE RETURNS TODAY, or the red you get is your own bad literal and it reads as good news"
+description: "FIRES-WHEN: about to sever, stub or replace a call site — or to REPRODUCE someone else's sever. Two ways it goes wrong: ⭐ the substituted value must be WHAT THE CALLEE RETURNS TODAY (else the red is your own bad literal and reads as good news), and ⭐⭐ PLACEMENT IS PART OF THE CLAIM — two indent levels moved my repro from 299/300 to 300/300, i.e. from refuting a finding to confirming it"
 metadata: 
   node_type: memory
   type: feedback
@@ -63,3 +63,32 @@ good as the moment it describes.
 Related: [[a-case-can-pass-for-an-ambient-reason]], [[quote-the-code-dont-characterise-it]],
 [[a-retrospective-number-needs-provenance]] — the root error was recalling a value instead of
 deriving one.
+
+## ⭐⭐ PLACEMENT is part of a sever's claim — and reproducing someone else's needs the exact spot
+
+**Measured 2026-10-14, round 18 of PR #371.** A review half reported: insert
+`if len(heads) == 1 and len(se) <= DIAGNOSTIC_WINDOW: heads = []` *"immediately before the production
+assignment"*, and the suite stays **300/300** — i.e. the case that claims to police one-head reports
+is satisfied by something ambient.
+
+I reproduced it and got **299/300**, with the named case FAILING. On that evidence the finding was
+unreproducible and I nearly said so.
+
+**The difference was two indent levels.** I inserted it before the `if not se.strip() / elif heads:`
+DISPATCH, where emptying `heads` changes which BRANCH runs — the refusal never gets appended, and a
+case catches it. The reviewer inserted it INSIDE `elif heads:`, where the branch is already chosen and
+only the `" · ".join(heads)` empties. Same four lines, same file, opposite verdicts: one tests *"what
+if this report takes the other branch"*, the other tests *"what if this branch renders nothing"*.
+
+**How to apply:**
+- ⭐ **When reproducing a reported sever, reproduce the SPOT, not the snippet.** Ask what the enclosing
+  block is and what is already decided by the time control reaches it. If the report does not say, that
+  is a finding about the report — ask, do not guess and conclude.
+- ⭐ **When WRITING one, state the insertion point in words a reader can land on** — the enclosing
+  `if`/`def`, and the line it goes immediately before.
+- ⚠ **A near-miss sever fails toward "no defect here"**, which is the same direction as
+  [[a-sever-substitutes-todays-value]]'s bad literal and
+  [[the-control-refuted-the-premise]]: the comfortable answer. Treat your own failure to reproduce a
+  specific, measured finding as a defect in your repro until you have varied the placement.
+
+See [[printing-more-evidence-weakens-substring-cases]] — the finding this sever was testing for.

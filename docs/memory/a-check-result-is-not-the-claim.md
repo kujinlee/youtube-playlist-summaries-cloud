@@ -243,3 +243,63 @@ the user as evidence the review was recorded. Accurate and meaningless.
   `('velocity-backfill', 3, 'claude')` for the plain one. The suffix would have made the round invisible
   to the gate, reproducing the defect being repaired. **The rule is not "label the filename" — it is put
   the label where the READER looks, and identify the reader first.**
+
+## ⭐⭐⭐ A CONTROL PROVES THE INSTRUMENT RAN. IT NEVER PROVES THE PATTERN WAS RIGHT
+
+**Measured 2026-10-14 — THREE times in one session, one family, every time with a passing control.**
+Each time I searched for a claim, got **0**, and the zero was my QUERY:
+
+| axis | my pattern | what the source said | cost |
+|---|---|---|---|
+| **case** | `injected before identity…` | `injected **BEFORE** identity…` | published "case-sensitive and markup-literal" as the cause; the case half was wrong |
+| **markup** | `injected before identity and memory` | `injected **before** identity…` | the tool answered `rc=0, "ok — absent … so the search worked"` over a present claim |
+| **word order** | `fingerprint\w*\s+on\s+…CONTENT` | "the **content fingerprint**" | published **FALSE at HEAD** in a backlog FAILS IF that was TRUE |
+
+⛔ **In all three I ran a control and the control PASSED.** That is the trap: a control establishes
+that the files were read and the matcher executed. It says nothing about whether the pattern could
+ever have matched the thing you are looking for. [[measure-the-population-the-code-actually-sees]]
+covers the corpus; this covers the QUERY, and they fail independently.
+
+⭐ **THE METHOD THAT WORKS — three steps, and the middle one is not optional:**
+
+1. **Enumerate the SUBJECT NOUN**, not the claim. Phrasing varies in ways you cannot enumerate ahead
+   of time (case, emphasis, word order, synonyms); the subject noun is enumerable.
+2. **NARROW to the mechanism by co-occurrence** with its own distinguishing tokens. ⚠ Measured:
+   `fingerprint` alone returned **96** occurrences across this repo — schema fingerprints, a
+   gate-staging fingerprint, `recall-llm`'s cache — against **16** for the handoff mechanism. Skipping
+   this step replaces a false negative with 80 false positives, which is not an improvement.
+3. **JUDGE each carrier individually.** Two of the final 16 were other mechanisms; no regex was ever
+   going to separate them.
+
+⭐⭐ **And it found an instance the reviewer who taught me the method had missed** — a fifth copy, in
+the backlog row I had written hours earlier to explain the defect. Pattern-matching a claim finds the
+spellings you thought of; enumerating its subject finds the ones you didn't.
+
+### ⭐⭐ AND THE THIRD REFINEMENT, from the reviewer who then beat my own version: POLICE THE NUMBERS
+
+The three-step rule above finds prose. It is still manual, because step 3 is judgement. **But where a
+claim contains a NUMBER, the number is mechanically findable and exact** — and that is the half worth
+automating.
+
+**Measured 2026-10-14, same session.** A canon said *"Three things print it"* while its own last
+section recorded a measured FOURTH, and the count THREE was restated at all three citing sites. ONE
+search for *the number beside its subject* found every one of them. No search for the surrounding
+prose would have: that same session produced three pattern defects on one family (case, markup, word
+order), each returning a zero I trusted.
+
+⭐ **So split the problem by what the claim is made of:**
+
+| the claim contains | how to police it |
+|---|---|
+| a **COUNT** ("three triggers", "five sites", "two assignments") | mechanically, and cheaply — search the number beside its subject. A count is one token and cannot be paraphrased |
+| **prose** (a mechanism, a bound, an attribution) | enumerate the SUBJECT NOUN → narrow by co-occurrence → judge each carrier. Manual, and there is no shortcut |
+
+⚠ **And a count is the part most likely to be stale**, because it is measured before an edit and
+written after it — measured twice in one day: "7 sites, bare counts 1-3" were the PARENT tree's
+figures, in a file inside the population it measures; and a declared case count went 298 where the
+parent said 297. [[a-retrospective-number-needs-provenance]] is the same lesson from the authoring
+side; this is the search side.
+
+See [[printing-more-evidence-weakens-substring-cases]] (the same failure from the assertion side),
+[[a-test-that-cannot-fail]] (a falsifier that was already true), [[a-sever-substitutes-todays-value]],
+[[a-document-inside-the-corpus-it-measures]].
