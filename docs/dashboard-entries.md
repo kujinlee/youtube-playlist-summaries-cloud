@@ -15162,3 +15162,49 @@ today. 74 cases, 33 mutations, 33 killed, **33 attributed**, 0 survivors.**
 | **three findings DECLINED with reasons** | an unreachable handler (a case would test `subprocess`, not the rule); `--base` naming a TIP rather than a merge base (pre-existing, not reachable in CI); and two flags that measurably protect nothing, kept because asserting *"git never colourises this"* from one version is the overreach that has already cost rounds |
 | **thrashing: 14 of 24 fix-induced, a FOURTH consecutive round** | ⚠ but the CHARACTER changed, and that is what to weigh: rounds 1–4 produced fail-opens by five routes through ONE seam; round 5's deliverable findings are a filename decoding bug, an index state, a read order and a containment test — four unrelated edges. 14 of 24 are instrument findings. The defect class that drove four rounds is gone |
 | **final state** | **78 cases · 37 mutations, 37 killed, 37 attributed, 0 survivors** · figures 96.7%, 111/895 (12.4%), 9/40 at 0.23/commit, each reproduced twice by different methods · declared sum 1456, every step read from the guard's own `got N want 0` · `ci.yml`'s figures corrected after four rounds carrying the first generation · ⛔ NOT CONVERGED, and the branch is the owner's call |
+## 2026-10-15 [needs-you]
+**Three things have been built over the last months, and none of them has ever been asked whether
+anyone but us could use it.** You asked for that question to be answered properly: take stock of the
+work on making rules actually fire when they apply, on making the test sweeps affordable, and on the
+pages that explain what is happening — then decide what, if anything, is fit to publish.
+
+**This is the plan for answering it, not the answer.** What exists today is a written proposal. It
+needs your read before any of it is acted on.
+
+**Four decisions you already made, now written down so they stop being re-litigated:** the audience
+is strangers rather than our own future projects, which sets a high bar; the work is one evaluation
+covering all three efforts before any publishing work begins; publication is to our own repository
+that people add themselves, rather than applying to the official list and waiting; and verdicts come
+from a measurement plus a real attempt to install the thing elsewhere, rather than from reading it
+and forming an opinion.
+
+**The last of those is the one that costs time and is worth it.** Reading something and judging
+whether a stranger could use it is exactly the kind of question this project has repeatedly got wrong
+— the misses are the things a newcomer trips over in the first five minutes, which are invisible to
+someone who knows where the bodies are. So the plan is to actually install it into an empty project
+and write down everything that breaks.
+
+**One result is already in, before the work starts.** The index that describes this material has been
+saying it is about 3,600 lines across nine files. It is roughly 11,000 lines. That figure has been
+quoted as settled for five weeks. It is not a disaster, but it is the clearest possible argument that
+an inventory was needed rather than a recollection.
+
+**What would make this a success:** a short list of what can be published, a clear statement of what
+cannot and why, and no half-shipped thing in between. "This should not be published" is a perfectly
+good answer for any of the three.
+
+<!--tech-->
+**`marketplace-inventory`. Spec at `docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md`
+(213 lines), anchor `harness-ships-elsewhere` allocated and claimed. Phase 1 artifact; nothing
+implemented.**
+
+| | |
+|---|---|
+| **decisions of record** | D1 public strangers / full support bar · D2 one evaluation across all three, then a spec per publishable unit · D3 self-published marketplace repo · D4 mechanical scan calibrated by a real install experiment |
+| **why D3 is safe** | the route is proven on this machine, not theorised — `~/.claude/plugins/marketplaces/` holds `omc`, a third-party self-published marketplace, beside the official one |
+| **scope** | **24 components** derived from disk: 17 (comprehensibility) + 3 (velocity) + 4 (recall). The spec's own self-review caught that it had said "~13" — an invented number in a document whose risk table names that exact drift |
+| **criteria** | C1 measured · C2 project-independent · C3 self-contained · C4 supportable. C2/C3 are mechanically countable; **C4 is not**, which is what the install experiment exists for |
+| **expected main killer** | C3. `brief/SKILL.md`'s ground-truth list invokes `scripts/check-*` — guards belonging to this repo's process, not to any plugin. A component can read as project-independent and still be unusable |
+| **closes a loop opened this morning** | backlog row 290 said registering the suite needed a *claiming document* and named three candidates. This spec is candidate (a). Row updated, not closed — the spec existing is not the spec merging |
+| **two gates improved the design** | `check-anchors` R4 forced anchor and claimant to land together. `check-features` then refused the anchor on an `absent` node with a better rule than the one I had: an absent feature names no fragments because it does not exist to carry them. The anchor sits on `process-harness` (built); the absent child `harness-installs-elsewhere` names only the gap |
+| **stale claims found in the D2 index** | "9 files / 3,599 lines" (≈11,000); "registers 10 anchors" (13 before this spec, 14 after); "a second anchor is owed" (`explanation-on-demand` exists). Correcting them is in scope for the milestone |
