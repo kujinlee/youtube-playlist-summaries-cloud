@@ -22,31 +22,37 @@ ninth.
 
 WHY IT CAN BE A GATE, AND ON WHICH CORPUS
 -----------------------------------------
-Scope was chosen BY MEASUREMENT over the last 40 commits of `origin/master`, not by taste. Each
-axis below was measured before it was adopted:
+⛔ **EVERY FIGURE BELOW IS DATED AND CARRIES THE COMMAND THAT PRODUCED IT. Re-derive; do not trust.**
+These numbers have now been wrong TWICE for the same reason — measured, then the rule changed
+underneath them (`md` joined the extensions; the suffix exemption arrived; then r1-codex widened the
+grammar again) and nobody re-took them. Both times every CONCLUSION survived and not one NUMBER did.
+Re-derive by IMPORTING this module, never by copying its regex into a scratch script: that copy is
+how they drifted the first time.
 
-  (1) `docs/reviews/` IS EXCLUDED. It holds **32,004 of the 32,901** citations in `docs/` — 97.3%.
+    measured 2026-10-15 against this module, over `docs/**/*.md` and the last 40 commits of
+    origin/master, by importing `CITE`, `in_scope`, `resolve` and `violations` directly.
+
+  (1) `docs/reviews/` IS EXCLUDED — **26,344 of 27,239** citations under `docs/`, **96.7%**.
       Reviews are point-in-time artifacts; they deliberately carry no anchor header and nobody
-      navigates *to* a goal through them. A citation inside one is a record of what was true that
-      day, not a pointer someone is meant to follow.
+      navigates *to* a goal through them.
   (2) `*.md` ONLY, which is row 49's own wording. Generated explainer pages under
-      `docs/explainers/*.html` are dated snapshots, and six of the seventeen raw firings were in
-      them.
-  (3) ADDED LINES ONLY. Over the living corpus the rule fires **110 times on 897 pathed
-      citations (12.3%)** — overwhelmingly historical: ADR-0007 citing `schema/*.sql` files that
-      M4 promoted into migrations, and 2026-06 specs citing files that have since shrunk. A
-      blocking gate over that corpus is unusable, and row 49 does not ask for it.
+      `docs/explainers/*.html` are dated snapshots of the same kind.
+  (3) ADDED LINES ONLY. Over the living corpus the rule fires **111 times on 895 pathed citations
+      (12.4%)** — overwhelmingly historical: ADR-0007 citing `schema/*.sql` files that M4 promoted
+      into migrations, and 2026-06 specs citing files that have since shrunk.
 
-With all three: **9 firings over 40 commits, 0.23 per commit.** (`check-reference-namespace`
-shipped at 0.50.) All nine were hand-classified as TRUE positives — six blank lines in
-`check-ci-watched.py`, `gen-backlog-page.py`, `portable-practices.md` and `dev-process.md`, and one
-citation into `development-velocity.md:262`, a file that is now a 70-line tombstone.
+Over the last 40 commits: **10 firings, 0.25 per commit** (`check-reference-namespace` shipped at
+0.50). All ten hand-classified as TRUE: eight blank lines, one citation into
+`development-velocity.md:262` which is now a 70-line tombstone, and one `dist/index.mjs:145` whose
+remedy is to write a path that resolves.
 
-⛔ **EVERY FIGURE ABOVE WAS RE-DERIVED BY IMPORTING THIS MODULE, after r1 H2 found that none of the
-first three reproduced.** They had been measured against an earlier rule and never re-taken when the
-rule changed — `md` joined the extension list and the suffix exemption arrived after the numbers
-were written. The conclusions all survived; not one of the numbers did. Re-measure here by running
-the module, never by copying its regex into a scratch script, which is how they drifted.
+⚠ **WHAT THAT 0.25 IS NOT, and r1-codex was right to refuse the stronger claim.** Those ten are
+resolved against TODAY's tree, so they measure *drift since the line was written*. Some of the cited
+lines held content at the revision that introduced them — `git show 5128b99b:scripts/check-ci-watched.py | sed -n '860p'`
+returns a `def main(...)` — so the gate would NOT have blocked those commits at the time. **0.25 is
+the rate at which citations in the recent window are wrong NOW; it is not a prediction of how often
+this gate refuses a pull request.** What the measurement establishes is the SCOPE decision — that
+the whole corpus is unusable and added-lines-only is not — which is what it is used for here.
 
 THE ONE EXEMPTION, DERIVED FROM THE FIRINGS RATHER THAN IMAGINED
 -----------------------------------------------------------------
@@ -87,7 +93,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 32 cases over diff texts this file builds, with an injected resolver, so the
+  --self-test  runs 38 cases over diff texts this file builds, with an injected resolver, so the
                rule is exercised with no repository present.
 """
 from __future__ import annotations
@@ -102,9 +108,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # A citation carries at least one directory separator — a bare `route.ts:12` names no path and is
 # measured at 1,266 occurrences in living docs, none of them resolvable by construction.
+# ⛔ r1-codex LOW: the leading lookbehind is what stops a URL becoming a citation.
+# `http://localhost:3000/lib/a.ts:2` previously matched `3000/lib/a.ts:2` — a nonexistent repo path
+# beginning with a port number, which then FIRED. A citation may not continue a `:` or `/`.
+# ⟳ r1-codex MEDIUM: `()` joins the path class for Next.js route groups (`app/(auth)/page.tsx`) and
+# css/scss/mjs/cjs/toml join the extensions. Both were silent false NEGATIVES, which are invisible
+# and which the success message was overstating.
 CITE = re.compile(
-    r"`?((?:[A-Za-z0-9_.@\[\]-]+/)+[A-Za-z0-9_.@\[\]-]+"
-    r"\.(?:ts|tsx|js|py|sh|sql|yml|yaml|json|md))`?:(\d+)\b"
+    r"(?<![:/\w.-])`?([A-Za-z0-9_.@\[][A-Za-z0-9_.@()\[\]-]*/"
+    r"(?:[A-Za-z0-9_.@()\[\]-]+/)*[A-Za-z0-9_.@()\[\]-]+"
+    r"\.(?:ts|tsx|js|mjs|cjs|py|sh|sql|yml|yaml|json|toml|css|scss|md))`?:(\d+)\b"
 )
 
 SCOPE_PREFIX = "docs/"
@@ -148,6 +161,26 @@ def resolve(path: str, tracked: tuple[str, ...], read):
     return None, "no such file, and no tracked file ends with it"
 
 
+def _header_path(raw: str) -> "str | None":
+    """The path out of a `+++` header, C-quoted or not. None for /dev/null.
+
+    git quotes a path containing bytes outside the printable ASCII range, wrapping it in double
+    quotes and escaping each byte in octal. Decoding it is what stops a Unicode document name from
+    silently leaving the previous file's scope in place (r1-codex High).
+    """
+    raw = raw.strip()
+    if raw == "/dev/null":
+        return None
+    if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+        body = raw[1:-1]
+        try:
+            raw = body.encode("latin-1", "backslashreplace").decode("unicode_escape") \
+                      .encode("latin-1").decode("utf-8", "replace")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return None   # undecodable: no scope rather than the WRONG scope
+    return raw[2:] if raw.startswith("b/") else raw
+
+
 def violations(diff_text: str, tracked: tuple[str, ...], read) -> list[str]:
     """Findings over a unified diff. PURE — no git, no filesystem.
 
@@ -157,10 +190,18 @@ def violations(diff_text: str, tracked: tuple[str, ...], read) -> list[str]:
     found: list[str] = []
     current: str | None = None
     for line in diff_text.splitlines():
-        if line.startswith("+++ b/"):
-            current = line[6:]
+        # ⛔ r1-codex HIGH: `+++ b/...` is NOT the only header git emits. A path with non-ASCII
+        # bytes is C-quoted — `+++ "b/docs/\355\225\234\352\270\200.md"` — and a parser that
+        # only knows the bare form leaves `current` pointing at the PREVIOUS file, so the citation
+        # is either skipped or judged under another document's scope. Both are fail-open, and this
+        # repository has already lost a paid summary to a Korean title (backlog #36).
+        if line.startswith("+++ "):
+            current = _header_path(line[4:])
             continue
-        if not line.startswith("+") or line.startswith("+++"):
+        if line.startswith("---") or line.startswith("diff --git"):
+            current = None   # a file boundary clears scope rather than inheriting it
+            continue
+        if not line.startswith("+"):
             continue
         if current is None or not in_scope(current):
             continue
@@ -221,7 +262,7 @@ def _reader(root: pathlib.Path):
 
 
 def self_test() -> int:
-    """32 cases. The count is declared in the module docstring and verified by running this."""
+    """38 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -309,8 +350,28 @@ def self_test() -> int:
          violations("+++ b/docs/x.md\n-see `lib/a.ts:2`", tracked, read) == [])
     case("a context line is not examined",
          violations("+++ b/docs/x.md\n see `lib/a.ts:2`", tracked, read) == [])
-    case("the +++ header itself is never treated as an added line",
-         violations("+++ b/docs/x.md", tracked, read) == [])
+    # ⛔ r1-codex M3: the old version of this case was `+++ b/docs/x.md` alone — no citation, so it
+    # could fire under no mutation. These two carry citation-shaped content and witness the header
+    # handling itself.
+    case("a second +++ header RE-SCOPES, so a following citation is judged under the new file",
+         violations("+++ b/docs/x.md\n+++ b/scripts/y.md\n+`lib/a.ts:2`", tracked, read) == [])
+    case("a `diff --git` boundary clears scope rather than leaving the last file in place",
+         violations("+++ b/docs/x.md\ndiff --git a/z b/z\n+`lib/a.ts:2`", tracked, read) == [])
+    # ⛔ r1-codex HIGH: a C-quoted header (git's form for a non-ASCII path) must decode, or the
+    # citation is judged under the PREVIOUS file's scope — a fail-open.
+    case("a C-quoted unicode header decodes and its citations are examined",
+         len(violations('+++ "b/docs/\\355\\225\\234\\352\\270\\200.md"\n+`lib/a.ts:2`',
+                        tracked, read)) == 1)
+    # ⛔ r1-codex LOW: a URL's port made `3000/lib/a.ts:2` look like a repository path, and it fired.
+    case("a URL is not a citation, so its port cannot become a path",
+         violations(diff("docs/x.md", "http://localhost:3000/lib/a.ts:2"), tracked, read) == [])
+    # ⚠ introduced by MY OWN widening for r1-codex M1 and caught by re-measuring: adding `(` to the
+    # path class made a prose `(lib/a.ts:2)` capture the opening bracket. Only the FIRST segment is
+    # restricted, so Next.js route groups still parse.
+    case("a citation wrapped in prose parentheses does not capture the bracket",
+         violations(diff("docs/x.md", "(lib/a.ts:1)"), tracked, read) == [])
+    case("...and a route group in a LATER segment still parses",
+         len(violations(diff("docs/x.md", "`app/(auth)/p.tsx:1`"), tracked, read)) == 1)
 
     # --- the citation grammar ------------------------------------------------------------------
     case("backticks are optional",
@@ -323,6 +384,10 @@ def self_test() -> int:
          violations(diff("docs/x.md", "`a.ts:2`"), tracked, read) == [])
     case("a docs/*.md target can itself be cited",
          violations(diff("docs/x.md", "`docs/notes.md:1`"), tracked, read) == [])
+    # ⛔ r1-codex M3: without this, deleting `md` from the extension list changed nothing and 32/32
+    # still passed — the case above is silent either way, so it witnessed nothing on its own.
+    case("...and a BAD markdown target fires, so the form is really examined",
+         len(violations(diff("docs/x.md", "`docs/notes.md:9`"), tracked, read)) == 1)
 
     # --- `read` is CONSULTED, not captured ------------------------------------------------------
     # ⛔ check-fixture-variation refused this suite until these existed: every other case passes the

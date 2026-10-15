@@ -39,7 +39,7 @@
     ]
   },
   {
-    "name": "the reviews exclusion is dropped, so 97.3% of the corpus (32,004 of 32,901 citations) comes into scope",
+    "name": "the reviews exclusion is dropped, so 96.7% of the corpus (26,344 of 27,239 citations) comes into scope",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
