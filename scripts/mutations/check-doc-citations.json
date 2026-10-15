@@ -39,7 +39,7 @@
     ]
   },
   {
-    "name": "the reviews exclusion is dropped, so 94% of the corpus (37,071 of 39,312 citations) comes into scope",
+    "name": "the reviews exclusion is dropped, so 97.3% of the corpus (32,004 of 32,901 citations) comes into scope",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
@@ -78,16 +78,16 @@
     ]
   },
   {
-    "name": "the injected reader is ignored and a constant is read instead, so no case could tell `read` from a fixture",
+    "name": "⛔ r1 H1 REGRESSION: `git ls-files` becomes the existence oracle again, so a real, readable but UNTRACKED file reports unresolvable — reproduced live against `.claude/skills/shared/explainer-delivery.md`, where this project's harness lives",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "            lines, how = resolve(path, tracked, read)\n",
-        "            lines, how = resolve(path, tracked, lambda _p: [\"content\"])\n"
+        "    lines = read(path)\n    if lines is not None:\n        return lines, \"exact\"\n",
+        "    lines = read(path) if path in tracked else None\n    if lines is not None:\n        return lines, \"exact\"\n"
       ]
     ],
     "expect": [
-      "the verdict follows the INJECTED reader — blank at line 1 fires"
+      "a readable file that is NOT in the tracked list still resolves"
     ]
   }
 ]

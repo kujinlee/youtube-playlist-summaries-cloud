@@ -15084,9 +15084,13 @@ reference named. Existing documents are untouched — the check looks only at wh
 which is deliberate: the old ones are mostly history citing files that have since moved, and
 rewriting them is not what this is for.
 
-**It was sized by measurement, not by instinct.** Checking everything would have objected ~175 times
+**It was sized by measurement, not by instinct.** Checking everything would have objected ~110 times
 and been switched off within a week. Checking only what is newly written objects about **once every
-six changes** — and every one of the recent examples was real.
+four changes** — and every one of the recent examples was real.
+
+**And the first set of those numbers was wrong, which an adversarial review caught.** They had been
+measured, then the rule changed underneath them and nobody re-measured. The conclusions held; none
+of the three figures did. They are now re-derived by running the shipped check itself.
 
 **Two things it found in its own making, which is the honest part.** The check-writing tools here
 refused the first version twice: once because every one of its own tests fed it the same input, so
@@ -15105,8 +15109,10 @@ today. 30 cases, 7 mutations, 7 killed, **7 attributed**, 0 survivors.**
 
 | | |
 |---|---|
-| **scope, each axis measured first** | `docs/reviews/` excluded (**37,071 of 39,312** citations, 94% — point-in-time artifacts nobody navigates *to*); `*.md` only (row 49's own wording; 6 of 17 raw firings were in generated `.html`); ADDED lines only (living corpus fires **175/838, 20.9%**) |
-| **resulting rate** | **6 firings over 40 commits, 0.15/commit** — `check-reference-namespace` shipped at 0.50. All six hand-classified TRUE, one a blank mid-docstring line (`check-ci-watched.py:183`), the exact `:66` shape row 49 names |
+| **scope, each axis measured first** | `docs/reviews/` excluded (**32,004 of 32,901** citations, 97.3% — point-in-time artifacts nobody navigates *to*); `*.md` only (row 49's own wording); ADDED lines only (living corpus fires **110/897, 12.3%**) |
+| **resulting rate** | **9 firings over 40 commits, 0.23/commit** — `check-reference-namespace` shipped at 0.50. All nine hand-classified TRUE: six blank lines, and one citation into `development-velocity.md:262`, now a 70-line tombstone |
+| **⛔ r1 H2 — every headline number was wrong** | measured against an earlier rule and never re-taken when `md` joined the extensions and the suffix exemption arrived. 94%→**97.3%**, 175/838→**110/897**, 6/40→**9/40**. Conclusions survived; figures did not. Now re-derived by importing the shipped module |
+| **⛔ r1 H1 — a live false positive** | `git ls-files` was the only existence oracle, so a real but UNTRACKED file reported unresolvable — reproduced against `.claude/skills/shared/explainer-delivery.md`, 346 lines, where this project's harness lives. The filesystem is the oracle now; a mutation pins the regression |
 | **the one exemption, derived** | a path SUFFIX resolves when exactly one tracked file ends with it — 5 of 5 raw false positives did. ⛔ an AMBIGUOUS suffix **fires**, per *"cannot run is a FAILURE, never a pass"* |
 | **stated limit** | it does not verify the cited line *declares* the symbol named nearby — that needs a language-aware parser per file type. Blank and out-of-range are what all eight measured instances looked like |
 | **what the contracts changed** | `check-fixture-variation` refused the suite: all 24 cases passed the same `read`, so none could tell it from a constant → 2 cases now differ *only* in the injected reader. `check-main-drivable` (ADR-0014): `main()` takes its world as defaulted parameters and is driven to all three exit codes — the guard joins the **13 that drive `main()`** rather than the 27 pinned as debt |
