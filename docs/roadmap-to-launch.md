@@ -3074,6 +3074,40 @@ because removing a mechanism is what fixed four of the five:
 ⛔ **Sequencing is the owner's call.** PR #371 is NOT CONVERGED and needs round 3; whether Phase 6
 runs before or after it merges changes the shape of the work and is not a mechanical choice.
 
+## ⟳ 2026-10-14 — ROUND 18, AND A PHASE 6 REVIEW BOTH HALVES ARMED
+
+**Round 18 ran for the first time on 2026-10-14, both halves, and both returned THRASHING on the same
+component with the mechanism test applied per finding.** Record:
+[`architecture-review-2026-10-14-diagnostic-report.md`](reviews/architecture-review-2026-10-14-diagnostic-report.md).
+
+- [x] **Round 18, both halves** — Codex (`14867349`) and Claude (`5c42bf55`), each filed with its
+      verdict; H1, M1 and L1 reproduced by the coordinator before being believed.
+- [x] **Phase 6 convened and its record written**, scoped to THREE findings rather than the renderer
+      alone — the charge round 6 of the sibling branch levelled at its own architecture review.
+- [x] **The root cause named as a mechanism, not a symptom list.** `check-plan-code.py:3167-3180`
+      concatenates harness prose, the arm-selected sentence and the CHILD's `diagnostic_tail` into one
+      string, so no case can tell *the harness said it* from *the child said it*.
+- [x] **The class proved LOCAL by mechanism.** Derived with `ast` over every `scripts/check-*.py`:
+      exactly ONE guard splices externally-sourced text into a report its own cases substring-test —
+      this one, 3 sites — and every other guard does it at **0**. That is what makes a redesign the
+      right instrument rather than a methodology change.
+- [x] **H-A FIXED and its ratchet restored** — `find-claim.py` was 84/86 on 3.14 against 86/86 on 3.10
+      and 3.12, with 25 mutations `NOT MEASURED` there. Both stat sites now route through one
+      `_classify()` helper; 88/88 on all three interpreters and 25/25 attributed on 3.12 and 3.14.
+- [ ] **#291 — the renderer redesign**, approved in direction with amendments A1–A3: separateness of
+      the **observable** (not just the representation), and the SIX worlds as the input axis rather
+      than 0/1/many lines.
+- [ ] **#292 — a gate that MEASURES guards at more than one interpreter.** `check-python-pin.py` pins
+      and warns; nothing measures. Its own docstring names this exact divergence class.
+- [ ] **#293 — three of the four guards this branch adds (~8,200 lines) have no review round naming
+      them as subject.** The first round to look at the fourth found two Highs.
+- [ ] **#290 — `find-claim.py` exists as two different tools on two unmerged branches**, add/add
+      conflict at the merge-base, divergent matching semantics.
+
+⛔ **NOT CONVERGED, and not because of the renderer** — on the strength of H-A and H-B, which are new
+subjects rather than another turn of the same screw. ⛔ **Merging remains the human's gate**, and #293
+is material to it.
+
 ## ⟳ 2026-10-13 — THE OWNER CHOSE REDESIGN, AND #279/#280 ARE CLOSED BY REMOVING CLAIMS
 
 ⭐ **Decided by the owner 2026-10-13 (option A of two).** Five consecutive rounds (11–13) refuted a
