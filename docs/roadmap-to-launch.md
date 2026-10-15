@@ -2314,6 +2314,21 @@ only home, and `dev-process.md` requires the roadmap layer too.
       `recall-llm.py` and once in the hook; measured today it is 93 loose-unreadable of 96 tracked.
       `CONTEXT.md`'s precedent is to REMOVE such a figure, not correct it — correcting it re-creates
       the defect at the next commit.
+- [x] **Phase 6 architecture review — THRASHING-armed — `architecture-review-2026-10-14-deletion-safety.md`.**
+      Convened at the owner's approval after four consecutive rounds whose findings came from the
+      previous round's own fix. ⭐ Diagnosis: the note shipped a mechanism **nothing ever ran** (3
+      references outside `docs/reviews/`, all records not readers; `rev-parse --verify --quiet "HEAD`
+      occurs in exactly one file) AND the project has **no word** for a check whose subject is a
+      user's file (`CONTEXT.md`'s Guard excludes it in its own words) — so its only falsifier was a
+      human reading it, and each reading could name just the instance in front of it. Measured
+      growth: **4,724 → 20,907 bytes over ten edits, 11 of 25 commits, 2 → 4 fences**, while the
+      central rule was false in every version.
+- [ ] **⛔ FOUR CANDIDATES AWAIT THE OWNER'S PICK — not designed in the review, per the skill.**
+      1 ship no check (the option that REMOVES the recurring claim, as a thrashing-armed review
+      requires); 2 make moving-aside the only sanctioned operation (precedent: the Codex wrapper's
+      `quarantine()`); 3 name it in `CONTEXT.md` (**filed as #286**, independent of the pick);
+      4 promote it to a real Guard (⛔ contradicts `CONTEXT.md`'s Guard definition, so that must be
+      resolved first).
 - [ ] **The seam measurement needs provenance.** *"15 of 19 at a seam (78%)"* does not reproduce —
       the filed halves carry 16 Blocking+High. ⛔ The arithmetic is the lesser half: the split came
       from a SINGLE classifier and was then quoted as a measurement. A second classifier is what it
