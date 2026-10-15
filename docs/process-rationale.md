@@ -372,7 +372,7 @@ returned `[]`: the handoff skill, the hook's REFUSAL TEXT, and this document's s
 permits a site to carry a mechanism's tokens whenever it also cites the canon — deliberately, so a
 retrospective like this one can discuss history instead of deleting measured content to satisfy a
 checker. The price is that a cited copy can disagree with what it cites, and nothing sees it. Filed
-as **#289**, with the bound stated in the guard's own docstring.
+as **backlog #289**, with the bound stated in the guard's own docstring.
 
 ⭐ **The fix was not a better oracle; it was DELETING THE RECITAL AND KEEPING THE CITATION at all
 three sites.** A citation cannot drift. A recital can, and this one did — in the text printed to a
@@ -437,7 +437,7 @@ per-session — and in the third the path printed IS the shared one.
 `:1153-1163` describing exactly the withholding behaviour that was published — and that comment is
 **stale**. ⟳ **22 to 26 lines later** the hook corrects itself — ⚠ *ambiguous by construction: the stale sentence is at `:1159`, its block ends at `:1163`, the correction is at `:1185`. Three parties gave three numbers (fifty, 26, 22); the anchors are the honest form*: *"NOT withheld on degrade. An earlier version
 … suppressed the hint outright … That reasoning was wrong … **The honest fix is not silence, it is a
-visible line.** A reviewer of #363 caught this before it shipped."* The code at `:1544` matches the
+visible line.** A reviewer of PR #363 caught this before it shipped."* The code at `:1544` matches the
 second comment. ⛔ **So a correction written to stop citing a vendored file from memory cited that
 file's COMMENT from memory — the same defect with the line number taken out.** Quote the code; a
 comment is a characterisation, and in a dependency it is one nobody here owns either.
