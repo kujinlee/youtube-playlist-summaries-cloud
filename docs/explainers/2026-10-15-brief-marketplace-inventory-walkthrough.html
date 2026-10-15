@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Could a stranger use any of this?</title>
+
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#716c63; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#716c63; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#8c8880; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#8c8880; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#8c8880; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#8c8880; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h);text-wrap:balance}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px;text-wrap:balance}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+
+/* the decision blocks — a verdict and its counter, as one object */
+.dec{background:var(--card);border:1px solid var(--hair);border-radius:11px;margin:20px 0;
+  overflow:hidden}
+.dec .hd{padding:14px 20px 12px;border-bottom:1px solid var(--hair)}
+.dec .hd .tag{font:600 11.5px/1 var(--mono);letter-spacing:.08em;color:var(--accent);
+  display:block;margin-bottom:6px}
+.dec .bd{padding:4px 20px 16px}
+.dec .against{border-top:1px dashed var(--rule);margin-top:14px;padding-top:12px}
+.dec .against .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  color:var(--danger);display:block;margin-bottom:6px}
+
+/* claimed-vs-measured bars */
+.chart{margin:24px 0 10px}
+.row{display:grid;grid-template-columns:132px 1fr 92px;gap:12px;align-items:center;margin:10px 0}
+.row .nm{font-size:14px;color:var(--fg2);text-align:right}
+.track{background:var(--raise);border:1px solid var(--hair);border-radius:5px;height:26px;
+  position:relative;overflow:hidden}
+.fill{display:block;height:100%;border-radius:4px 0 0 4px}
+.fill.claim{background:var(--danger);opacity:.55}
+.fill.real{background:var(--verified)}
+.row .val{font-variant-numeric:tabular-nums;font-weight:600;font-size:14.5px;color:var(--fg2)}
+.scale{display:flex;justify-content:space-between;font-size:12px;color:var(--fg3);
+  margin:6px 0 0;padding-left:144px;font-variant-numeric:tabular-nums}
+.prov{font-size:13.5px;color:var(--fg3);margin-top:10px}
+
+/* the how-to-ask block, static and correct with JS off */
+.howto{background:var(--raise);border:1px solid var(--hair);border-radius:11px;
+  padding:16px 20px;margin:26px 0}
+.howto .eyebrow{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  color:var(--fg2);display:block;margin-bottom:8px}
+.howto ol{margin:8px 0 0}
+.howto li{margin:7px 0;font-size:15px;color:var(--fg2)}
+.url{font:.9em var(--mono);background:var(--pill);color:var(--code-fg);padding:.15em .45em;
+  border-radius:5px}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="top">
+  <p class="kicker">Phase 1 spec · awaiting your gate</p>
+  <h1>Could a stranger use any of this?</h1>
+  <p class="sub">Spec <code>2026-10-15-marketplace-inventory-design.md</code> · branch <code>marketplace-inventory</code> at <code>e1cd5b8a</code> · PR <strong>376</strong> · anchor <code>harness-ships-elsewhere</code></p>
+  <p class="lede">You asked for an inventory of the three efforts and a milestone. This is the plan for
+  producing that, not the answer. <strong>It is the only human gate in this process</strong> — after it,
+  the plan and the build proceed without asking again. So the page is built to be argued with, not
+  approved: every decision below carries the strongest case <em>against</em> it.</p>
+</header>
+
+<div class="box warn">
+  <span class="lbl">Read this first — what state everything is in</span>
+  <p><strong>Nothing is implemented.</strong> What exists is a 213-line spec, an allocated anchor, and
+  a feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
+  <p class="note">As of <strong>2026-10-15 ~12:55 PDT</strong>, branch <code>marketplace-inventory</code>
+  at <code>e1cd5b8a</code>. 15 document guards run on the branch, 0 failing <span class="note">(volatile — a guard result decays in minutes)</span>.</p>
+</div>
+
+<div class="howto">
+  <span class="eyebrow">How to argue with this page</span>
+  <span id="modechip">● live — Send works</span>
+  <ol>
+    <li>This page lives at <span class="url">http://127.0.0.1:7391/latest</span> — that URL always points at the newest page.</li>
+    <li><strong>Select any text, or hover a heading, then press <em>ask</em></strong> → type → <strong>Send</strong>. Then say <strong>“read my questions”</strong> in the session. Your question arrives with the section and the passage you highlighted.</li>
+    <li>If the URL will not load, run <code>python3 scripts/explainer-serve.py</code> — safe to run twice. <strong>A reboot stops it</strong>, which is the one moment you will need this line.</li>
+    <li>A <code>file://</code> copy still reads fine. It only loses the <strong>Send</strong> button.</li>
+  </ol>
+</div>
+
+<h2><span class="n">1</span>What you asked, and what the spec turns it into</h2>
+
+<p>Your words: <em>“Now is the time to evaluate the efforts… Not all of them may not be suitable for
+publish but let's take inventory and establish a milestone.”</em></p>
+
+<p>The spec turns that into one question asked of every component: <strong>could someone who has never
+seen this repository install it and use it?</strong> Three efforts, <strong>24 components</strong>,
+four criteria, three permitted verdicts.</p>
+
+<div class="box acc">
+  <span class="lbl">Why this has never been answered before</span>
+  <p>Each of the three efforts was justified on its own terms — fewer review rounds, cheaper sweeps,
+  pages you can follow. <strong>None was ever asked whether it travels.</strong> That question is
+  Deliverable 2's entire content, and it has been answered informally, for one file, once.</p>
+</div>
+
+<h2><span class="n">2</span>The four decisions — and the case against each</h2>
+
+<p>You took these by selection card today. The spec records them as settled, which is only safe if you
+have seen what each one rules out. <strong>Every one of them is still reversible right now.</strong></p>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D1 · AUDIENCE</span>
+    <strong>Public strangers, full support bar.</strong> Works in any repo, documented for a newcomer,
+    failure modes handled without you.
+  </div>
+  <div class="bd">
+    <p>This is the expensive one, and it changes the other three. Coupling stops being untidiness and
+    becomes a <strong>release blocker</strong>. It adds newcomer documentation, failure handling, and an
+    ongoing support burden for tools whose real user is you.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p>Most of effort (2) — CI sharding, a mutation harness wired to this repo's workflow — is
+      <em>unlikely to clear this bar at all</em>, so the bar may simply convert that effort into a
+      <code>DON'T-SHIP</code> you could have predicted for free. And the support burden is real work
+      that competes with the product, which has just had its first deploy in 52 days.</p>
+      <p><strong>What would make the softer option right:</strong> if you do not actually intend to tell
+      anyone about this, or if the support burden would stop the work rather than shape it. Then
+      “install it into my own next project” is the honest target, and the bar drops a long way.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D2 · DECOMPOSITION</span>
+    <strong>One evaluation across all three efforts</strong>, then a spec per publishable unit.
+  </div>
+  <div class="bd">
+    <p>One PR produces the inventory and the milestone; the publishing work comes after, per surviving
+    unit.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p>Effort (3) is the obvious candidate — it is already shaped like a plugin, and its coupling is
+      already measured and concentrated in one file. Evaluating (1) and (2) to the same depth may be
+      <strong>work spent confirming a foregone conclusion</strong>, which is the most expensive kind of
+      thoroughness.</p>
+      <p><strong>What would make going straight at (3) right:</strong> if you are already confident that
+      (1) and (2) are <code>DON'T-SHIP</code>. Then the spec should <em>say so now</em> and spend the
+      effort on making (3) genuinely installable instead. This is question 2 at the bottom.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D3 · ROUTE</span>
+    <strong>A self-published marketplace repo</strong>, installed with
+    <code>/plugin marketplace add &lt;repo&gt;</code>.
+  </div>
+  <div class="bd">
+    <p>Proven rather than theorised: <code>~/.claude/plugins/marketplaces/</code> on this machine holds
+    <code>omc</code>, a third-party self-published marketplace, beside the official one. A marketplace
+    is a git repo carrying <code>.claude-plugin/marketplace.json</code>.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p><strong>Discovery is nil.</strong> Nobody finds a self-published marketplace by browsing;
+      “published” here means “installable by anyone you tell”. If the point of publishing is that
+      people <em>encounter</em> it, this route does not deliver that.</p>
+      <p><strong>What would make the official list right:</strong> if discovery matters more to you than
+      controlling the ship date. The cost is an acceptance gate on an unknown timeline — which makes
+      “done” undefinable, and is why the spec rules it out as a <em>definition of done</em> rather than
+      as a destination. It stays available as a later, separate milestone.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D4 · METHOD</span>
+    <strong>A mechanical scan across all components, plus one real install experiment</strong> on the
+    comprehensibility suite, where the experiment calibrates the scan.
+  </div>
+  <div class="bd">
+    <p>The scan counts what is countable. The install experiment is the falsifier: <strong>any blocker
+    it hits on a component the scan scored clean is a scanner defect</strong>, fixed in the scan — not
+    recorded as a footnote.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p>The install experiment costs real time and will fail noisily several times before it tells you
+      anything. A scan alone would land the inventory far sooner.</p>
+      <p><strong>What would make scan-only right:</strong> if criterion C4 (supportable) does not really
+      matter. But that contradicts D1 — a public bar is <em>mostly</em> C4. The two decisions are
+      coupled: soften D1 and D4 becomes optional; keep D1 and D4 is the only thing that tests it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="box acc">
+  <span class="lbl">The interaction worth noticing</span>
+  <p>D1 and D4 hold each other up, and D1 and D2 pull against each other. The public bar is what makes
+  the install experiment necessary — and it is also what makes evaluating effort (2) likely to be a
+  formality. <strong>If you were to soften any one of these, soften D1 first</strong>, because the other
+  three mostly follow from it.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">3</span>The scope, and a result that arrived before the work did</h2>
+
+<p>Twenty-four components, derived from disk on <strong>2026-10-15</strong> rather than recalled —
+<strong>17</strong> comprehensibility, <strong>3</strong> velocity, <strong>4</strong> recall.</p>
+
+<div class="box bad">
+  <span class="lbl">The index undercounts its own subject by about 3×</span>
+  <p><code>docs/portable-practices.md</code> has described the comprehensibility suite as
+  <strong>“9 files / 3,599 lines”</strong> since <strong>2026-09-07</strong>. The Python machinery alone
+  is <strong>10,373 lines across six files</strong>, before 604 lines of skills.</p>
+  <p>Nothing broke because of this. It is quoted in the one document whose job is to describe what
+  travels — and it is the clearest possible argument that an inventory was needed rather than a
+  recollection.</p>
+</div>
+
+<div class="chart">
+  <div class="row">
+    <span class="nm">index claims</span>
+    <span class="track" role="img" aria-label="The portable-practices index claims the comprehensibility suite is 3,599 lines; the measured total is 10,977 lines, so the claim is about one third of the real size.">
+      <span class="fill claim" style="width:32.8%"></span>
+    </span>
+    <span class="val">3,599</span>
+  </div>
+  <div class="row">
+    <span class="nm">measured</span>
+    <span class="track" role="img" aria-label="Measured size of the comprehensibility suite: 10,977 lines, being 10,373 lines of Python machinery plus 604 lines of skills.">
+      <span class="fill real" style="width:100%"></span>
+    </span>
+    <span class="val">10,977</span>
+  </div>
+  <p class="scale"><span>0</span><span>10,977 lines</span></p>
+  <p class="prov">10,373 Python (<code>brief-compose</code> 1,780 · <code>explainer-serve</code> 2,907 ·
+  <code>page_chrome</code> 450 · <code>page_markup</code> 438 · <code>gen-dashboard</code> 3,546 ·
+  <code>gen-goals-page</code> 1,252) + 604 skills. Derived 2026-10-15 <span class="note">(volatile — these files change)</span>.</p>
+</div>
+
+<p>Two further claims in that same block are stale: it says the registry <em>“registers 10 anchors”</em>
+(it held <strong>13</strong> before this spec and <strong>14</strong> after), and that <em>“a second
+anchor is owed”</em> for the present-tense reader — <code>explanation-on-demand</code> now exists.</p>
+
+<h3>What the other two efforts bring</h3>
+
+<div class="scroll">
+<table>
+<tr><th>Effort</th><th>Components</th><th>The fact that will drive its verdict</th></tr>
+<tr>
+  <td><strong>(2) velocity</strong></td>
+  <td>CI sharding (39 references in <code>ci.yml</code>), <code>check-plan-code.py</code>, three velocity documents</td>
+  <td>Sharding shipped and worked — the sweep went <strong>1,758s → 346s</strong>. But it is this repo's CI wiring. <strong>Q0 is designed in form and not built</strong>, and is one of two items the roadmap still reports open.</td>
+</tr>
+<tr>
+  <td><strong>(1) recall</strong></td>
+  <td><code>check-surface-recall.py</code> + its hook, 157 memory files, two unmerged branches</td>
+  <td>⭐ The measurement <strong>inverted</strong>: lexical scoring <strong>2/20</strong>; the same paraphrases read by an LLM <strong>19–20/20</strong>, with <strong>0 false fires in 60</strong>. Whatever ships here, <em>it cannot be the lexical matcher</em>.</td>
+</tr>
+</table>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">4</span>The four criteria, and the one that cannot be counted</h2>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>Criterion</th><th>How it is decided</th></tr>
+<tr><td><strong>C1</strong></td><td><strong>Measured</strong> — it works, with evidence</td><td>existing self-tests and manifests</td></tr>
+<tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill yes">countable</span></td></tr>
+<tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill yes">countable</span></td></tr>
+<tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for</td></tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">The expected main killer is C3, and the shape is already known</span>
+  <p><code>brief/SKILL.md</code>'s ground-truth command list invokes <code>scripts/check-*</code> —
+  guards that belong to <em>this repository's process</em>, not to any plugin.</p>
+  <p>So a component can be <strong>perfectly project-independent in its prose and still unusable</strong>,
+  because it calls a neighbour that is not shipping. That is why C2 and C3 are separate criteria rather
+  than one: the existing coupling measurement — <code>explainer-delivery.md</code> <strong>0</strong>
+  project references, <code>explain-topic</code> and <code>explain-findings</code> <strong>1</strong>
+  each, <code>brief/SKILL.md</code> <strong>9</strong> — only ever measured C2.</p>
+</div>
+
+<p>Verdicts are <span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span>
+<span class="pill no">DON'T-SHIP</span>, and nothing else. <strong>“Unknown” is not permitted</strong> —
+a component that cannot be assessed is <code>NEEDS-WORK</code> whose named defect is <em>“no way to
+assess it”</em>.</p>
+
+<hr class="hr">
+
+<h2><span class="n">5</span>Where this plan is weakest</h2>
+
+<p>Three things you should see rather than be protected from.</p>
+
+<div class="box warn">
+  <span class="lbl">1 · The install experiment covers effort (3) only</span>
+  <p>Efforts (1) and (2) get verdicts from C1–C3 <strong>plus argument</strong> — which is exactly the
+  judgement-based evaluation that D4 exists to avoid. The spec states this as a bound rather than
+  hiding it, and requires those verdicts be labelled as argument-based. <strong>It is still an
+  asymmetry, and it is question 1 below.</strong></p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">2 · The spec was written with an invented number</span>
+  <p>It said <em>“~13 components”</em>. The derived figure is <strong>24</strong>. Nothing depended on
+  13 — that is the point: a number with no provenance walked straight into a design document whose own
+  risk table names that exact drift.</p>
+  <p class="note">Caught by the spec's self-review and recorded in its §9b rather than quietly fixed. It
+  is evidence <em>for</em> the mechanical scan in §5 of the spec, not against it.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">3 · Nothing is installable at the end of this milestone</span>
+  <p>PR 1 produces no plugin, no marketplace repo, and fixes <strong>no coupling</strong> — not even
+  <code>brief/SKILL.md</code>'s nine known references. Its entire output is a decision you can trust,
+  plus the scan that keeps it honest.</p>
+  <p>That was deliberate: fixing a component while also judging it is how this project has previously
+  manufactured a false green. <strong>If you expected something shippable from this milestone, say so
+  now</strong> — it is a different plan, not a tweak to this one.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">6</span>Two gates improved the design while it was being written</h2>
+
+<p>Worth recording, because in both cases the machine's rule was better than mine.</p>
+
+<div class="two">
+  <div class="card">
+    <h4><code>check-anchors</code> R4</h4>
+    <p>Refuses a registry name that no document claims. That forced the anchor and its claiming
+    document to land <strong>in the same change</strong> — which is precisely what backlog row 290 said
+    was missing this morning when it recorded that registering the suite could not be a one-line edit.</p>
+  </div>
+  <div class="card">
+    <h4><code>check-features</code></h4>
+    <p>Refused the anchor on an <code>absent</code> node, with a sharper rule than I had: <strong>an
+    absent feature names no fragments, because it does not exist to carry them.</strong> So the anchor
+    sits on <code>process-harness</code> (built), and the absent child
+    <code>harness-installs-elsewhere</code> names only the gap.</p>
+  </div>
+</div>
+
+<p class="note">That split is the honest shape, and it is now in the feature map: the harness exists;
+its installability does not. <code>check-features</code> reports 27 nodes — 24 built, 3 declared absent
+— with 14 anchors and 21 backlog areas all claimed exactly once.</p>
+
+<hr class="hr">
+
+<h2><span class="n">7</span>Four things I would like you to weigh</h2>
+
+<div class="q">
+  <h4>1 · Is the lopsided evidence acceptable?</h4>
+  <p>Effort (3) gets a real install experiment. Efforts (1) and (2) get argument. <strong>My
+  recommendation: accept it</strong> — an install experiment for a CI harness and a memory matcher
+  would cost more than their likely verdicts are worth.</p>
+  <p>The counter is sharp, though: it means the two efforts you have spent the <em>most</em> recent
+  worry on get the <em>weakest</em> evidence, and their verdicts will be mine rather than measured.
+  If that is not acceptable, the fix is one experiment each, and it roughly doubles the milestone.</p>
+</div>
+
+<div class="q">
+  <h4>2 · Is effort (2) worth evaluating at all?</h4>
+  <p>CI sharding and the mutation harness are wired into this repository's workflow. Under D1's public
+  bar I expect most of it to come out <code>DON'T-SHIP</code>. <strong>My recommendation: evaluate it
+  anyway</strong>, because “I expect” is the kind of claim this project keeps finding wrong, and the
+  scan is cheap once written.</p>
+  <p>The counter: if the answer really is foregone, the spec should say so now and spend the effort on
+  making effort (3) installable instead. <strong>You have better information than I do about whether
+  the sharding idea is worth anything to someone else</strong> — it is a technique, not a tool, and
+  techniques travel as prose.</p>
+</div>
+
+<div class="q">
+  <h4>3 · Should the stale index claims be fixed here or separately?</h4>
+  <p>Three claims in <code>portable-practices.md</code> are wrong — the size, the anchor count, and an
+  owed anchor that now exists. The spec puts the corrections inside PR 1.
+  <strong>My recommendation: keep them here</strong>, because the inventory is what discovered them and
+  a correction separated from its evidence tends not to land.</p>
+  <p>The counter: it mixes a factual repair into a decision document, and if the milestone stalls, three
+  known-wrong sentences stay published while it does.</p>
+</div>
+
+<div class="q">
+  <h4>4 · Does “publishable” need a support policy decided first?</h4>
+  <p>D1 commits to a public bar, which implies versioning, breaking-change handling, and answering
+  strangers' issues. <strong>The spec does not price any of that</strong>, and the inventory will
+  happily mark things <code>SHIP</code> without it.</p>
+  <p><strong>My recommendation: decide it before the inventory, not after</strong> — a component is only
+  shippable against a stated support commitment, and “we will work that out later” is how an
+  open-source burden gets acquired by accident. But this is genuinely your call: you are the one who
+  would carry it.</p>
+</div>
+
+<div class="box ok">
+  <span class="lbl">What happens after you decide</span>
+  <p><strong>Approve</strong> → I write the implementation plan, it gets dual review to convergence,
+  then it is built autonomously per the process. <strong>Push back</strong> → I fold your objection the
+  way I would fold a review finding, and we go again. <strong>Redirect</strong> → the spec parks and
+  the milestone changes shape.</p>
+  <p class="note">Either way, highlight anything on this page and press <strong>ask</strong>. That is
+  what it is for, and it is the only part of this process where disagreeing is cheap.</p>
+</div>
+
+</div>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-15 14:06 · e1cd5b8a · uncommitted changes</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
