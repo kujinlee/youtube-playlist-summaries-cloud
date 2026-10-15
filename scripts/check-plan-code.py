@@ -1340,7 +1340,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-producer-enumeration.py": 5,
     # ⟳ 2026-10-14, backlog #258: the claim finder, 3 entries.
     "scripts/find-claim.py": 3,
-    "scripts/begin-plan.py": 18,
+    "scripts/begin-plan.py": 22,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -4957,7 +4957,7 @@ def _self_test() -> int:
     # and no case could see it — round 1 Claude HIGH, reproduced across this repo's 7 worktrees.
     # ⚠ 1408 is the GUARD'S OWN FIGURE, read from `got 1408 want 1406`. 1398/1399/1406 in the
     # trail above were intermediate drafts of this same commit, not shipped states.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1411)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1415)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

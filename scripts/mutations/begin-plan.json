@@ -232,5 +232,57 @@
     "expect": [
       "a restatement over a STAMP-LESS pause does not invent a baseline — the honest `cannot tell` survives `--pause` instead of becoming a definite silence"
     ]
+  },
+  {
+    "name": "the pause liveness gate is bypassed, so --pause is an unconditional escape again",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    ok, verdict = pause_verdict(blocked_on_human, waiting_on, _producer_alive)\n    if not ok:\n",
+        "    ok, verdict = pause_verdict(blocked_on_human, waiting_on, _producer_alive)\n    if False:\n"
+      ]
+    ],
+    "expect": [
+      "cmd_pause REFUSES once that producer goes stale"
+    ]
+  },
+  {
+    "name": "a pause naming NOTHING is allowed again — the exact seven-instance failure",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if not waiting_on:\n        return False, (\n",
+        "    if False:\n        return False, (\n"
+      ]
+    ],
+    "expect": [
+      "a pause naming NOTHING is REFUSED"
+    ]
+  },
+  {
+    "name": "a DEAD producer is accepted, so the pause names something that stopped",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if not alive:\n        return False, (\n",
+        "    if False:\n        return False, (\n"
+      ]
+    ],
+    "expect": [
+      "a pause naming a DEAD producer is REFUSED"
+    ]
+  },
+  {
+    "name": "the freshness bound is dropped, so a file written last year counts as a live producer",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "            if age <= FRESH_SECONDS:\n                return True\n",
+        "            if True:\n                return True\n"
+      ]
+    ],
+    "expect": [
+      "a STALE file does not — the producer stopped writing"
+    ]
   }
 ]

@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 63 cases
+    scripts/begin-plan.py --self-test  # 86 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -395,7 +395,108 @@ def cmd_banner() -> int:
     return _print_state(plan_abs, plan_rel)
 
 
-def cmd_pause(why: str) -> int:
+def pause_verdict(blocked_on_human: bool, waiting_on: "str | None",
+                  probe: "callable") -> "tuple[bool, str]":
+    """May this pause proceed? -> (ok, message). PURE: the liveness test is INJECTED.
+
+    ⛔⛔ WHY A PAUSE NOW HAS TO PROVE SOMETHING (chosen by the owner 2026-10-14, after the seventh
+    instance of the same failure). The Stop guard refuses an idle stop while a plan has unticked
+    steps — and `--pause` was an UNCONDITIONAL way out of it. Measured against `decide()`:
+
+        armed, NOT paused, steps left            -> BLOCK  (speaks)
+        paused, steps left, no stamp             -> WARN   (speaks)
+        paused, steps left, stamp says no change -> ALLOW, SILENTLY
+
+    `--pause` writes that stamp, so EVERY pause landed in the third row. The guard blocked exactly
+    one thing — an unpaused stop — and nothing checked that the reason named a real blocker. The
+    owner's words: *"didn't we spend the whole day to fix this?"* We had: the day's work closed the
+    case where outstanding work is never RECORDED. This is the case where it is recorded correctly
+    and the turn ends anyway.
+
+    ⭐ THE PREDICATE IS THE ONE THING THAT IS OBSERVABLE. Whether a reason is honest cannot be
+    checked; whether something is RUNNING can. So a pause must either name a live producer, or
+    declare that the next move needs the human — which is the escape backlog #94 built `paused:`
+    for, and which stays open on purpose.
+
+    ⚠ IT FAILS TOWARD ALLOWING IN EXACTLY ONE CASE, and that is a stated weakness rather than an
+    oversight: if the probe itself cannot run, the pause proceeds with a loud notice. A guard that
+    can TRAP a turn gets switched off (backlog #56's measured verdict), and this one supervises the
+    escape hatch — the most expensive possible thing to wedge.
+    """
+    if blocked_on_human:
+        return True, ("⏸ paused as BLOCKED ON HUMAN — the next move needs the owner. "
+                      "This is the escape `paused:` exists for; it asserts no producer.")
+    if not waiting_on:
+        return False, (
+            "refusing: a pause must say what it is waiting FOR, and that thing must be running.\n"
+            "   ⛔ `paused:` ALLOWS the stop, so an unproven pause is how a turn ends with work\n"
+            "   outstanding and nothing to resume it — measured seven times.\n"
+            "   → waiting on something live?    --pause \"why\" --waiting-on <pattern>\n"
+            "   → the next move needs the owner? --pause \"why\" --blocked-on-human\n"
+            "   → neither? THEN DO THE WORK. The plan has unticked steps and nothing is blocking.")
+    try:
+        alive = probe(waiting_on)
+    except Exception as exc:                                   # noqa: BLE001 - see docstring
+        return True, (f"⏸ paused, but the liveness probe CANNOT RUN ({exc}) — TREAT THIS AS NOT "
+                      f"VERIFIED. Allowing, because a guard over the escape hatch must never wedge "
+                      f"a turn; the claim that {waiting_on!r} is running is UNCHECKED.")
+    if not alive:
+        return False, (
+            f"refusing: nothing matching {waiting_on!r} is running, so this pause names no\n"
+            f"   producer and nothing would resume the plan.\n"
+            f"   → it finished already?  Fold its result, then tick or re-pause.\n"
+            f"   → it never started?     THAT is the defect this check exists for.\n"
+            f"   → the owner is the blocker? `--blocked-on-human` says so honestly.")
+    return True, f"⏸ paused, and {waiting_on!r} is RUNNING — verified, not asserted."
+
+
+FRESH_SECONDS = 15 * 60
+
+
+def _producer_alive(pattern: str) -> bool:
+    """True if `pattern` names a live producer. Raises when it cannot tell.
+
+    ⛔ TWO SOURCES, BECAUSE ONE WAS MEASURED INSUFFICIENT THE MOMENT IT SHIPPED.
+    `pgrep -f` covers a backgrounded process and nothing else — verified: `--waiting-on "sleep 25"`
+    matched a real background job, while `pgrep -f python3` returned NOTHING in this sandbox even
+    with python3 plainly running. ⛔⛔ And the producers this gate actually exists for are mostly
+    NOT local processes at all: a dispatched review half is a Claude subagent, which owns no pid
+    here. A gate that only knew `pgrep` would have REFUSED every legitimate pause of 2026-10-14 —
+    all of which waited on review halves — and pushed the caller toward `--blocked-on-human`, which
+    would have been a lie. A guard that forces a false declaration is worse than no guard.
+
+    So a pattern counts as live if EITHER:
+      * a process command line contains it (`pgrep -f`), or
+      * it is a PATH that exists and was modified within FRESH_SECONDS — which is how a background
+        task's output file, a review capture or a shard log looks while its producer is working.
+
+    ⚠ WHAT IT STILL CANNOT SEE, stated rather than papered over: an in-process subagent that writes
+    nothing until it finishes. For that, name the file it will write (it is created at dispatch) or
+    use `--blocked-on-human` if the owner is the real blocker. ⛔ It is NOT given a third
+    "trust me" escape: an unverifiable claim recorded as verified is exactly the defect this gate
+    was built to remove.
+    """
+    import subprocess
+    import time
+
+    candidate = Path(pattern)
+    try:
+        if candidate.exists():
+            age = time.time() - candidate.stat().st_mtime
+            if age <= FRESH_SECONDS:
+                return True
+    except OSError:
+        pass
+
+    r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL)
+    if r.returncode not in (0, 1):
+        raise RuntimeError(f"pgrep exited {r.returncode}: {r.stderr.strip()[:80]}")
+    return r.returncode == 0
+
+
+def cmd_pause(why: str, blocked_on_human: bool = False,
+              waiting_on: "str | None" = None) -> int:
     if not SENTINEL.is_file():
         print("refusing: nothing is armed, so there is nothing to pause.", file=sys.stderr)
         return REFUSED
@@ -404,6 +505,13 @@ def cmd_pause(why: str) -> int:
               "abandoning the plan, and the human reading the sentinel cannot tell which.",
               file=sys.stderr)
         return REFUSED
+
+    # ⛔ THE LIVENESS GATE, AND IT RUNS BEFORE ANYTHING IS WRITTEN — see `pause_verdict`.
+    ok, verdict = pause_verdict(blocked_on_human, waiting_on, _producer_alive)
+    if not ok:
+        print(verdict, file=sys.stderr)
+        return REFUSED
+
     # ⛔ ONE LINE, OR NOTHING — the reason is FIELD INJECTION, not tidiness (code review r1, M3).
     # The sentinel is a `key: value` file and this writes free text straight into it. A `why`
     # containing a newline puts its continuation lines at top level, and any of them shaped
@@ -576,6 +684,7 @@ def cmd_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    import tempfile as _tf
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -700,7 +809,35 @@ def _self_test() -> int:
             # possible, so the tick is where it is refused.
             plan_on_disk = ROOT / armed["plan"]
             before = plan_on_disk.read_text()
-            cmd_pause("waiting on CI")
+
+            # ⛔ THE INTEGRATED PAUSE, DRIVEN THROUGH `--waiting-on` WITH A REAL PRODUCER, and it
+            # is here because `check-fixture-variation.py` refused the first version: thirteen
+            # call sites all took the default, so no case could tell `waiting_on` from a constant.
+            # ⭐ The producer is a FRESH FILE, which is the shape this gate exists for — a
+            # dispatched review half owns no pid, so its output file is the only live evidence.
+            with _tf.NamedTemporaryFile(delete=False) as _prod:
+                _prod.write(b"a producer writing")
+                _prod_path = _prod.name
+            try:
+                _rc_live = cmd_pause("waiting on a dispatched half", waiting_on=_prod_path)
+                case("cmd_pause ACCEPTS a pause whose named producer is live", _rc_live == OK)
+                case("...and the sentinel records the pause",
+                     "paused:" in SENTINEL.read_text())
+                cmd_resume()
+                import os as _os2
+                import time as _time2
+                _os2.utime(_prod_path, (_time2.time() - FRESH_SECONDS - 60,) * 2)
+                _err = io.StringIO()
+                with contextlib.redirect_stderr(_err):
+                    _rc_dead = cmd_pause("waiting on a half that stopped", waiting_on=_prod_path)
+                case("cmd_pause REFUSES once that producer goes stale", _rc_dead == REFUSED)
+                case("...and the sentinel is NOT paused by a refused pause",
+                     "paused:" not in SENTINEL.read_text())
+            finally:
+                import os as _os3
+                _os3.unlink(_prod_path)
+
+            cmd_pause("waiting on CI", blocked_on_human=True)
             refusal = io.StringIO()
             with contextlib.redirect_stderr(refusal):
                 rc_paused = cmd_tick()
@@ -752,7 +889,7 @@ def _self_test() -> int:
             _saved_plan = plan_on_disk.read_text()
             cmd_resume()
             plan_on_disk.write_text(_wide)
-            cmd_pause("a plan where outstanding, done and total are three different numbers")
+            cmd_pause("a plan where outstanding, done and total are three different numbers", blocked_on_human=True)
             _fw = pp.parse_sentinel(SENTINEL.read_text())
             case("...and at a SECOND, distinct input where outstanding (3), done (1) and total (4) "
                  "all differ — a producer exercised once is satisfied by the constant its own "
@@ -760,7 +897,7 @@ def _self_test() -> int:
                  pp.count_steps(_wide) == (1, 4) and _fw.get("paused_unticked") == "3")
             cmd_resume()
             plan_on_disk.write_text(_saved_plan)
-            cmd_pause("waiting on CI")
+            cmd_pause("waiting on CI", blocked_on_human=True)
 
             # ── r2 Medium 3: a SECOND --pause restates the reason and keeps the FIRST baseline ──
             # ⛔ TWO DISTINCT INPUTS BY CONSTRUCTION, and the case is worthless without them: the
@@ -776,7 +913,7 @@ def _self_test() -> int:
             _plan_paused = plan_on_disk.read_text()
             plan_on_disk.write_text(_plan_paused.replace("- [ ]", "- [x]"))
             _repause_why = "restating the reason, which is not resuming the work"
-            _rc_repause = cmd_pause(_repause_why)
+            _rc_repause = cmd_pause(_repause_why, blocked_on_human=True)
             _f2 = pp.parse_sentinel(SENTINEL.read_text())
             case("a SECOND --pause keeps the FIRST baseline — the plan now has ZERO outstanding "
                  "and the stamp still reads the 1 it had when the work was actually parked",
@@ -807,7 +944,7 @@ def _self_test() -> int:
             cmd_resume()
             _orphan = SENTINEL.read_text().rstrip("\n") + "\npaused_unticked: 9\n"
             SENTINEL.write_text(_orphan)
-            _rc_orphan = cmd_pause("the first REAL pause, after a stray stamp")
+            _rc_orphan = cmd_pause("the first REAL pause, after a stray stamp", blocked_on_human=True)
             _f4 = pp.parse_sentinel(SENTINEL.read_text())
             case("a stray `paused_unticked:` with no `paused:` is NOT inherited as a baseline — "
                  "an unpaused sentinel never had one, and inheriting it fabricates the very "
@@ -832,7 +969,7 @@ def _self_test() -> int:
                  pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)[:2]
                  == (0, ""))
             cmd_resume()
-            cmd_pause("waiting on CI")
+            cmd_pause("waiting on CI", blocked_on_human=True)
 
             # ⛔ THE OTHER HALF OF THE SAME SENTENCE — a `paused:` with NO stamp (r4 Medium 3).
             # r2 fixed the case where the first pause left a stamp; r3 fixed the orphan-stamp
@@ -845,7 +982,7 @@ def _self_test() -> int:
             _handpause = SENTINEL.read_text().rstrip("\n") + "\npaused: parked by hand\n"
             SENTINEL.write_text(_handpause)
             _before_hand = pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)
-            _rc_hand = cmd_pause("restating it properly, after a hand-written park")
+            _rc_hand = cmd_pause("restating it properly, after a hand-written park", blocked_on_human=True)
             _f5 = pp.parse_sentinel(SENTINEL.read_text())
             _after_hand = pp.decide(SENTINEL.read_text(), plan_on_disk.read_text(), None, False)
             case("a restatement over a STAMP-LESS pause does not invent a baseline — the honest "
@@ -857,7 +994,7 @@ def _self_test() -> int:
                  _before_hand[0] == pp.WARN and _after_hand[0] == pp.WARN
                  and "cannot be told" in _after_hand[1])
             cmd_resume()
-            cmd_pause("waiting on CI")
+            cmd_pause("waiting on CI", blocked_on_human=True)
 
             # ── r2 Medium 2: --pause must still RECORD the pause when the plan is unreadable ────
             # The handler had no falsifier, and removing it makes `--pause` CRASH — so the human
@@ -866,7 +1003,7 @@ def _self_test() -> int:
             cmd_resume()
             plan_on_disk.write_bytes(b"### Task 1: x\n\n- [ ] \xff\xfe not utf-8 \xff\n")
             _unread_why = "the plan cannot be read, and parking must still work"
-            _rc_unread = cmd_pause(_unread_why)
+            _rc_unread = cmd_pause(_unread_why, blocked_on_human=True)
             _f3 = pp.parse_sentinel(SENTINEL.read_text())
             case("--pause RECORDS the pause when the plan is unreadable, rather than raising",
                  _rc_unread == OK and _f3.get("paused") == _unread_why)
@@ -878,7 +1015,7 @@ def _self_test() -> int:
                  "paused_unticked" not in _f3)
             cmd_resume()
             plan_on_disk.write_text(_plan_paused)
-            cmd_pause("waiting on CI")
+            cmd_pause("waiting on CI", blocked_on_human=True)
 
             # ── backlog #99: --resume is the only way out, and it must exist ───────────────
             # `paused:` had ONE writer and ZERO removers, which is why a stale pause could only
@@ -908,7 +1045,7 @@ def _self_test() -> int:
 
             # ── r1 M3: a multi-line pause reason is FIELD INJECTION ───────────────────────
             sent_before = SENTINEL.read_text()
-            rc_multi = cmd_pause("waiting on review\nplan: .claude/plans/other.md")
+            rc_multi = cmd_pause("waiting on review\nplan: .claude/plans/other.md", blocked_on_human=True)
             case("--pause REFUSES a multi-line reason", rc_multi == REFUSED)
             case("the refused pause wrote NOTHING — no injected `plan:` line survives",
                  SENTINEL.read_text() == sent_before)
@@ -941,7 +1078,7 @@ def _self_test() -> int:
             # that line. State is now asserted rather than assumed.
             case("precondition for the H1 cases: the plan really is fully ticked",
                  pp.count_steps(plan_on_disk.read_text()) == (2, 2))
-            cmd_pause("waiting on CI before the PR")
+            cmd_pause("waiting on CI before the PR", blocked_on_human=True)
             code_p, msg_p, unt_p = pp.decide(
                 SENTINEL.read_text(), plan_on_disk.read_text(), None, False)
             case("a fully-ticked PAUSED plan does not report 'clear the sentinel'",
@@ -956,6 +1093,79 @@ def _self_test() -> int:
                  not SENTINEL.exists() and not STATE.exists())
         finally:
             ROOT, PLAN_DIR, SENTINEL, STATE = real
+
+    # ── THE PAUSE LIVENESS GATE (owner's decision, 2026-10-14) ─────────────────────────────
+    # ⛔ `--pause` was an UNCONDITIONAL escape from the Stop guard: it writes the stamp, so the
+    # stop was ALLOWED SILENTLY with work outstanding. Seven instances. The predicate is the one
+    # thing observable — is a producer RUNNING — not whether the reason is honest.
+    _calls: list[str] = []
+
+    def _live(pat: str) -> bool:
+        _calls.append(pat)
+        return True
+
+    def _dead(pat: str) -> bool:
+        _calls.append(pat)
+        return False
+
+    def _broken(pat: str) -> bool:
+        _calls.append(pat)
+        raise RuntimeError("pgrep is not on PATH")
+
+    ok, msg = pause_verdict(False, None, _live)
+    case("a pause naming NOTHING is REFUSED", ok is False)
+    case("...and the refusal says to do the work instead", "THEN DO THE WORK" in msg)
+    case("...and it names BOTH escapes, so the refusal is actionable",
+         "--waiting-on" in msg and "--blocked-on-human" in msg)
+    case("...and it did not even consult the probe", _calls == [])
+
+    ok, msg = pause_verdict(False, "codex-review.py", _live)
+    case("a pause naming a LIVE producer is allowed", ok is True)
+    case("...and says the claim was VERIFIED, not asserted", "RUNNING" in msg)
+    case("...and the probe was asked about the pattern given",
+         _calls[-1] == "codex-review.py")
+
+    ok, msg = pause_verdict(False, "a-process-that-is-not-running", _dead)
+    case("a pause naming a DEAD producer is REFUSED", ok is False)
+    case("...and the refusal distinguishes finished from never-started",
+         "finished already" in msg and "never started" in msg)
+
+    _before = len(_calls)
+    ok, msg = pause_verdict(True, None, _dead)
+    case("--blocked-on-human is allowed — the escape backlog #94 built", ok is True)
+    case("...and it SKIPS the probe, because it asserts no producer", len(_calls) == _before)
+    case("...and it says plainly that it asserts no producer", "asserts no producer" in msg)
+
+    # ⛔ FAILS TOWARD ALLOWING, EXACTLY ONCE, AND THE CASE SAYS SO. A guard over the escape hatch
+    # that can WEDGE a turn gets switched off (backlog #56's measured verdict).
+    ok, msg = pause_verdict(False, "whatever", _broken)
+    case("a probe that CANNOT RUN allows the pause", ok is True)
+    case("...and says the liveness claim is UNCHECKED rather than verified",
+         "CANNOT RUN" in msg and "UNCHECKED" in msg)
+    # CONTROL — the allowed-live path must NOT claim cannot-run, or the two would be
+    # indistinguishable and the case above would pass for the wrong reason.
+    case("CONTROL — the verified path does not claim CANNOT RUN",
+         "CANNOT RUN" not in pause_verdict(False, "x", _live)[1])
+
+    # ⛔ THE FILE SOURCE, which `pgrep` alone could not cover. A dispatched review half is a
+    # Claude SUBAGENT and owns no pid here, so a pgrep-only gate would have refused every
+    # legitimate pause of 2026-10-14 and pushed the caller into a false `--blocked-on-human`.
+    import os as _os
+    import time as _time
+    with _tf.NamedTemporaryFile(delete=False) as _tmp:
+        _tmp.write(b"x")
+        _fresh = _tmp.name
+    try:
+        case("a FRESH file counts as a live producer", _producer_alive(_fresh) is True)
+        _os.utime(_fresh, (_time.time() - FRESH_SECONDS - 60,) * 2)
+        case("a STALE file does not — the producer stopped writing",
+             _producer_alive(_fresh) is False)
+    finally:
+        _os.unlink(_fresh)
+    case("a path that does not exist is not a producer",
+         _producer_alive("/no/such/path/for/a/producer") is False)
+    case("FRESH_SECONDS is a real bound, not zero or infinite",
+         0 < FRESH_SECONDS <= 60 * 60)
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
@@ -997,6 +1207,10 @@ if __name__ == "__main__":
     ap.add_argument("--banner", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--pause", metavar="WHY")
+    ap.add_argument("--waiting-on", metavar="PATTERN",
+                    help="what the pause waits for; must match a LIVE process")
+    ap.add_argument("--blocked-on-human", action="store_true",
+                    help="the next move needs the owner (asserts no producer)")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--finish", action="store_true")
     ap.add_argument("--self-test", action="store_true")
@@ -1011,7 +1225,7 @@ if __name__ == "__main__":
     if a.status:
         sys.exit(cmd_status())
     if a.pause is not None:
-        sys.exit(cmd_pause(a.pause))
+        sys.exit(cmd_pause(a.pause, a.blocked_on_human, a.waiting_on))
     if a.resume:
         sys.exit(cmd_resume())
     if a.finish:
