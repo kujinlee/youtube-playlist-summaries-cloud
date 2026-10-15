@@ -237,10 +237,19 @@ HARNESS_TREE = (
     ".github/workflows",
     # ⟳ 2026-10-14, round 6 of the handoff-citation branch. `check-canonical-source.py` asserts
     # that each mechanism is described in ONE file and cited elsewhere; its canonical sources
-    # live in `.agents/skills/shared/` and three of its five citing sites are skill files. On a
-    # tree without them, `audit()` reports every canon MISSING, its own "the REAL repository is
-    # clean" case fails, and the CONTROL goes red — so the harness correctly refused the run and
-    # the entry would have shipped UNMEASURED. That is this tuple's own recorded failure
+    # live in `.agents/skills/shared/`. ⛔⟳ r6 CLAUDE M2 — THE CLAUSE THAT STOOD HERE WAS WRONG
+    # TWICE OVER AND IS DELETED, NOT CORRECTED. It read "three of its five citing sites are skill
+    # files": derived by importing the live table, there are 11 citing-site declarations across 6
+    # distinct files and exactly ONE skill file (`.agents/skills/handoff/SKILL.md`), and no reading
+    # of any per-canon split makes "three of five" true. ⭐ But the number was the lesser half —
+    # THE CITING SITES CANNOT BE THE REASON FOR THE RED AT ALL. `audit()` does
+    # `if not path.is_file(): … continue`, so on a tree without `.agents/skills` it never reaches
+    # the citing-site loop: the control reddens from the two ABSENT CANON FILES alone. Verified by
+    # removing the path on a copy. So the staging reason is the canons, and citing them was a
+    # plausible sentence for an unreachable branch.
+    # On a tree without them, `audit()` reports every canon MISSING, its own "the REAL repository
+    # is clean" case fails, and the CONTROL goes red — so the harness correctly refused the run
+    # and the entry would have shipped UNMEASURED. That is this tuple's own recorded failure
     # ("a scripts-only tree gave each a red control") happening for a fifth subject.
     # ⚠ `.agents/skills`, not `.agents`: only the skills are a subject here.
     ".agents/skills",

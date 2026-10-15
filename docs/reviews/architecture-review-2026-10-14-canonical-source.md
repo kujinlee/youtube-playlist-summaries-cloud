@@ -80,6 +80,18 @@ population and does not reproduce; 34 is derived by importing this guard's `_tra
 ⚠ **The residual hole, stated rather than discovered later:** the delivery procedure restated in a
 file that is NOT a `SKILL.md` is invisible to both guards. Filed as backlog **#288**.
 
+⟳ **AND THIS CORRECTION IS WHAT r6 CLAUDE M6 ASKED THIS RECORD FOR.** M6's charge was that a
+Phase 6 review producing no composition finding about anything other than the change that armed
+it has done per-task review at milestone scale — every one of F1–F6 has the redesign as its
+subject. ⭐ The finding above does not: its subject is **how the new canon directory composes
+with what was already in it**, which was one `ls .agents/skills/shared/` away and is exactly the
+class `dev-process.md` says per-task review is structurally blind to. M6's second charge — that
+the hand-verified claims all SUPPORT the redesign while the two declined controls are the two
+that CONSTRAIN its scope — is answered by r6 H1, whose Cases A and B were reproduced and folded
+into the canon. ⚠ Both charges were fair and neither is retracted here; what is recorded is that
+the record now contains a finding it had to be asked for, which is itself the evidence M6 was
+right.
+
 ### F3 · The canonical statement is not self-validating, and the redesign does not claim it is
 
 Round 6 stated this limit and it is worth preserving: collapsing six copies into one removes
