@@ -58,9 +58,47 @@ hook, skill, guard or script reads the fence or depends on it existing.
 because there are no callers for it to reappear in. By the skill's own criterion it was never
 earning its keep as a mechanism: *"if complexity vanishes, it was a pass-through."*
 
+⟳ **AMENDED — THE SENTENCE THAT STOOD HERE WAS TOO STRONG, and the explore pass refuted it.** It
+read *"No hook, skill, guard or script reads the fence or depends on it existing."* **Nothing
+EXECUTES it — but its text is DELIVERED by code.** `scripts/recall-llm.py:340`
+(`frontmatter_description`) reads the `description:` value, and that description embeds fence 2
+inline as prose; `docs/memory/MEMORY.md:12` carries a third copy. So the fence has **delivery paths
+and no executor**, which is a narrower claim than mine and the more useful one: the always-delivered
+copies are why a false fence reached every session, and the absent executor is why only a reader
+could refute it.
+
 ⚠ And that is exactly why each refutation cost a round. A **Guard** is falsified by running it; this
 was falsified only by a reviewer reading it and constructing a fixture. The interface is the test
 surface — and this interface had no test surface at all.
+
+### ⭐⭐ Defect 3 — the policy candidate 2 proposes WAS ALREADY SHIPPING, in executable code, ELEVEN DAYS BEFORE THE INCIDENT
+
+This is the strongest finding in the review and it arrived from the explore pass, not from me.
+
+| site | first commit | what it does |
+|---|---|---|
+| `scripts/bootstrap-explainers.sh:29-35` | `5128b99b`, **2026-10-02** | `⛔ NEVER destroy a real directory: it may hold authored pages never committed` → `mv "$LINK" "$LINK.pre-symlink-<ts>"` |
+| `scripts/bootstrap-memory.sh:38-42` | `5128b99b`, **2026-10-02** | `⛔ NEVER destroy a real directory. It may hold entries that were never committed.` → the same `mv` |
+| the incident note | `d3324f86`, **2026-10-13** | — |
+
+Both scripts distinguish a symlink (safe to `rm`) from a real directory (preserve by moving), for
+**exactly the hazard that occurred** — a path that may hold work never committed — and both predate
+the deletion by eleven days.
+
+⭐ So *"if you cannot afford to lose it, `mv` it aside"* is not a lesson this branch discovered. It
+is the policy the repository already implemented, twice, and the incident bypassed. That makes
+candidate 2 a **second adapter at a real seam** rather than a new invention — the skill's own test,
+*one adapter = hypothetical seam, two adapters = real seam* — and it upgrades the F2 finding from
+*"a principle sat in a commit message"* to **"a working implementation sat in two scripts."**
+
+⚠ Two further adapters at the same seam, both EXECUTABLE:
+* `scripts/codex-review.py:590-621` (`overwrite_refusal`) — refuses to replace a filed review by
+  default, because *"four models overwrote one committed review in turn and its verdict flipped from
+  NO to YES between two reads."* Asked twice, pre-flight and again in `promote()`.
+* `scripts/codex-review.py:896-915` (`quarantine`) — moves agent-CREATED files out of the artifact
+  tree, and states its own bound: *"An OVERWRITTEN file cannot be restored from a hash — the
+  snapshot keeps digests, not bytes."* ⭐ That is the same lesson as this component's `--no-filters`
+  defect, already written down in a sibling: **a digest is not the bytes.**
 
 ### Defect 2 — the project's vocabulary explicitly excludes it, so no round could name the class.
 
@@ -150,8 +188,10 @@ lives in one place with no mechanism to drift from it. Zero callers means zero m
 **Cost**: a reader wanting to check a specific file gets no tool, only the advice.
 
 **2. Make moving-aside the only sanctioned operation** *(the constructive form of 1)*
-**Files**: the note; plus whatever runs it — precedent exists in the Codex wrapper's `quarantine()`
-and `watched_dirs`, which already **move** a file out of the way rather than deleting it.
+**Files**: the note; plus the FOUR existing implementations — `scripts/bootstrap-explainers.sh:29-35`
+and `scripts/bootstrap-memory.sh:38-42` (both `5128b99b`, **2026-10-02, eleven days before the
+incident**), `codex-review.py`'s `overwrite_refusal` and its `quarantine`. ⭐ This candidate is
+therefore NOT a new mechanism: it is making an already-shipping policy the only sanctioned one.
 **Problem**: the question *"is it safe to delete?"* has no sound answer, because every check observes
 an instant and the `rm` destroys the interval after it.
 **Solution**: replace the question. Nothing sanctioned deletes; the sanctioned operation moves to a
@@ -195,5 +235,16 @@ so picking this one means resolving that first, which is why it is listed last r
 * Whether candidate 2's scratch location would be reaped by anything. Nothing here reaps one.
 * Whether a Guard-shaped version (candidate 4) could be made sound at all — the interval between
   observation and `rm` is why four checks failed, and no candidate here is designed.
-* The explore pass dispatched for this review had not reported when this document was written; its
-  map of sibling sites may add members to Defect 1's population. The counts above are my own.
+* ⟳ **The explore pass has now reported and this section is updated rather than left standing.** It
+  refuted one sentence of mine (above) and supplied Defect 3. Its map: ~8 sites assert something
+  about removal/overwrite safety, but **only one has ever decided whether a specific file is safe to
+  remove** — so "one instance, not a class" was right about the DECIDING and wrong about the POLICY,
+  which has four implementations.
+* ⚠ **And my own instrument failed a third time today.** I ran a line-based `grep` for
+  `quarantine`'s stated bound, got nothing, and was about to report the agent's quote as not
+  reproducing; folded with `tr '\n' ' '` it is there verbatim. The clause wraps. That is the
+  third wrong measurement from a line-based grep on this branch, which is `docs/backlog.md` #258's
+  whole subject.
+* Whether candidate 2's scratch location would be reaped by anything — nothing here reaps one, and
+  `bootstrap-*.sh`'s `.pre-symlink-<ts>` directories have no reaper either.
+* Whether a Guard-shaped version (candidate 4) could be made sound at all.

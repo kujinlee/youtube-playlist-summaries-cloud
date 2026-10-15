@@ -2323,6 +2323,15 @@ only home, and `dev-process.md` requires the roadmap layer too.
       human reading it, and each reading could name just the instance in front of it. Measured
       growth: **4,724 → 20,907 bytes over ten edits, 11 of 25 commits, 2 → 4 fences**, while the
       central rule was false in every version.
+      ⟳ **AMENDED after the explore pass: a THIRD defect, and it is the strongest.** The `mv`-aside
+      policy candidate 2 proposes was ALREADY SHIPPING in `scripts/bootstrap-explainers.sh:29-35`
+      and `scripts/bootstrap-memory.sh:38-42` — both first committed `5128b99b`, **2026-10-02,
+      eleven days before the incident** — for exactly the hazard that occurred (*"NEVER destroy a
+      real directory: it may hold authored pages never committed"*). With `overwrite_refusal` and
+      `quarantine` that is FOUR implementations, so candidate 2 is making an already-shipping policy
+      the only sanctioned one, not inventing a mechanism. ⚠ One sentence of the review was also
+      refuted: nothing EXECUTES the fence, but `recall-llm.py:340` delivers its text via the
+      frontmatter `description:`.
 - [ ] **⛔ FOUR CANDIDATES AWAIT THE OWNER'S PICK — not designed in the review, per the skill.**
       1 ship no check (the option that REMOVES the recurring claim, as a thrashing-armed review
       requires); 2 make moving-aside the only sanctioned operation (precedent: the Codex wrapper's
