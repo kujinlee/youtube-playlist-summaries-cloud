@@ -32,13 +32,21 @@ how they drifted the first time.
     measured 2026-10-15 against this module, over `docs/**/*.md` and the last 40 commits of
     origin/master, by importing `CITE`, `in_scope`, `resolve` and `violations` directly.
 
-  (1) `docs/reviews/` IS EXCLUDED — **26,344 of 27,239** citations under `docs/`, **96.7%**.
+⚠ **THE CORPUS FIGURES CANNOT BE EXACT, AND THE REASON IS STRUCTURAL rather than fixable.** The
+backlog row and dashboard entry that quote these same numbers live *inside* `docs/`, so every commit
+that records them adds citations to the corpus being counted. r2 found the absolute counts had already moved by 12 between being measured and being
+written down. They are therefore stated as *approximately*, with the shape they establish — that
+reviews dominate the corpus by an order of magnitude, and that the living-corpus rate is far too
+high for a blocking gate — which is what the scope decision actually rests on. The PR-window
+figure does NOT have this property and reproduces exactly.
+
+  (1) `docs/reviews/` IS EXCLUDED — **~26,350 of ~27,250** citations under `docs/`, **96.7%**.
       Reviews are point-in-time artifacts; they deliberately carry no anchor header and nobody
       navigates *to* a goal through them.
   (2) `*.md` ONLY, which is row 49's own wording. Generated explainer pages under
       `docs/explainers/*.html` are dated snapshots of the same kind.
-  (3) ADDED LINES ONLY. Over the living corpus the rule fires **111 times on 895 pathed citations
-      (12.4%)** — overwhelmingly historical: ADR-0007 citing `schema/*.sql` files that M4 promoted
+  (3) ADDED LINES ONLY. Over the living corpus the rule fires **~111 times on ~895 pathed
+      citations (12.4%)** — overwhelmingly historical: ADR-0007 citing `schema/*.sql` files that M4 promoted
       into migrations, and 2026-06 specs citing files that have since shrunk.
 
 Over the last 40 commits: **10 firings, 0.25 per commit** (`check-reference-namespace` shipped at
@@ -93,7 +101,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 38 cases over diff texts this file builds, with an injected resolver, so the
+  --self-test  runs 40 cases over diff texts this file builds, with an injected resolver, so the
                rule is exercised with no repository present.
 """
 from __future__ import annotations
@@ -174,8 +182,10 @@ def _header_path(raw: str) -> "str | None":
     if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
         body = raw[1:-1]
         try:
+            # strict, so the documented None is REACHABLE — r2 Low found `errors="replace"`
+            # made it dead code and returned a replacement-character path instead.
             raw = body.encode("latin-1", "backslashreplace").decode("unicode_escape") \
-                      .encode("latin-1").decode("utf-8", "replace")
+                      .encode("latin-1").decode("utf-8")
         except (UnicodeDecodeError, UnicodeEncodeError):
             return None   # undecodable: no scope rather than the WRONG scope
     return raw[2:] if raw.startswith("b/") else raw
@@ -198,8 +208,14 @@ def violations(diff_text: str, tracked: tuple[str, ...], read) -> list[str]:
         if line.startswith("+++ "):
             current = _header_path(line[4:])
             continue
-        if line.startswith("---") or line.startswith("diff --git"):
-            current = None   # a file boundary clears scope rather than inheriting it
+        # ⛔ r2 HIGH: `---` IS NOT A SAFE BOUNDARY MARKER and the first version of this clause was
+        # a fail-open. A REMOVED markdown horizontal rule is emitted as `----`, which starts with
+        # `---`, so editing out a `---` in any document silently cleared scope and disabled the
+        # guard for the rest of the hunk. This repo's docs use `---` everywhere. `diff --git` is
+        # unambiguous — a removed line carrying that text is emitted as `-diff --git`, which does
+        # not match — and it already marks every file boundary git produces.
+        if line.startswith("diff --git"):
+            current = None
             continue
         if not line.startswith("+"):
             continue
@@ -262,7 +278,7 @@ def _reader(root: pathlib.Path):
 
 
 def self_test() -> int:
-    """38 cases. The count is declared in the module docstring and verified by running this."""
+    """40 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -353,8 +369,18 @@ def self_test() -> int:
     # ⛔ r1-codex M3: the old version of this case was `+++ b/docs/x.md` alone — no citation, so it
     # could fire under no mutation. These two carry citation-shaped content and witness the header
     # handling itself.
-    case("a second +++ header RE-SCOPES, so a following citation is judged under the new file",
+    # ⛔ r2 Medium: the first version asserted SILENCE after re-scoping out of docs/, which is also
+    # what happens if headers are ignored entirely and `current` stays None — it passed ambiently,
+    # the exact class r1-codex raised, reappearing in a case written to answer it. This pair pins
+    # the direction: re-scoping INTO docs/ must make a citation visible that was not before.
+    case("a second +++ header RE-SCOPES OUT of docs/, silencing a following citation",
          violations("+++ b/docs/x.md\n+++ b/scripts/y.md\n+`lib/a.ts:2`", tracked, read) == [])
+    case("...and re-scoping INTO docs/ makes one VISIBLE — which fails if headers are ignored",
+         len(violations("+++ b/scripts/y.md\n+++ b/docs/x.md\n+`lib/a.ts:2`", tracked, read)) == 1)
+    # ⛔ r2 HIGH regression pin: a REMOVED markdown horizontal rule is emitted as `----`. Treating
+    # that as a file boundary cleared scope and disabled the guard for the rest of the hunk.
+    case("a removed `---` horizontal rule does NOT clear scope",
+         len(violations("+++ b/docs/x.md\n----\n+`lib/a.ts:99`", tracked, read)) == 1)
     case("a `diff --git` boundary clears scope rather than leaving the last file in place",
          violations("+++ b/docs/x.md\ndiff --git a/z b/z\n+`lib/a.ts:2`", tracked, read) == [])
     # ⛔ r1-codex HIGH: a C-quoted header (git's form for a non-ASCII path) must decode, or the
@@ -462,7 +488,16 @@ def main(
         print(f"CANNOT RUN — {exc}\n  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
         return 2
 
-    found = violations(diff_text, tracked, make_reader(root))
+    try:
+        # r2 Medium: `violations()` is documented PURE, but the injected reader touches the disk —
+        # an existing-but-unreadable file raised PermissionError straight out of it. r1 M1 fixed the
+        # MISSING-file branch and left its sibling. A read that cannot happen is CANNOT RUN (rc=2),
+        # never a finding and never a traceback.
+        found = violations(diff_text, tracked, make_reader(root))
+    except OSError as exc:
+        print(f"CANNOT RUN — a cited file could not be read: {exc}\n"
+              f"  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
+        return 2
     if found:
         print(f"⛔ {len(found)} drifted citation(s) added:\n", file=sys.stderr)
         for item in found:
