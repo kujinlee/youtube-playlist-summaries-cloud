@@ -15208,3 +15208,57 @@ implemented.**
 | **closes a loop opened this morning** | backlog row 290 said registering the suite needed a *claiming document* and named three candidates. This spec is candidate (a). Row updated, not closed — the spec existing is not the spec merging |
 | **two gates improved the design** | `check-anchors` R4 forced anchor and claimant to land together. `check-features` then refused the anchor on an `absent` node with a better rule than the one I had: an absent feature names no fragments because it does not exist to carry them. The anchor sits on `process-harness` (built); the absent child `harness-installs-elsewhere` names only the gap |
 | **stale claims found in the D2 index** | "9 files / 3,599 lines" (≈11,000); "registers 10 anchors" (13 before this spec, 14 after); "a second anchor is owed" (`explanation-on-demand` exists). Correcting them is in scope for the milestone |
+
+## 2026-10-16 [needs-you]
+**The marketplace-inventory spec had never been reviewed, and its first review found four blocking
+problems — including one that says the spec was wrong about its own headline example.** The spec was
+written, committed and opened as a pull request yesterday with no review at all. That was found while
+setting up the page for you to walk through, which is the one thing that had to happen before you
+could sign it off.
+
+You asked a question on the page while this was running — whether the matcher had not already been
+decided to be the semantic one. **You were right, and it is the most serious of the four problems.**
+The semantic matcher was built and is live; the spec's list of things to evaluate named only the old
+word-matching version that the same paragraph says to throw away. So the instruction "it cannot be
+the word matcher" could not be carried out, because nothing else was in scope. That is fixed, and the
+answer is in the page under the section you asked from.
+
+The other three, in plain words. The scan was going to check "could I work out what files this
+component is made of?" and report a problem if it could not — but the dangerous case is when it
+*can* work it out and gets a short answer. Measured: the folder the spec named holds shortcuts rather
+than real files, and the tool that would read it skips shortcuts, so it would have found **nothing**
+and called that a clean result. Next, the install test could have passed by quietly using this
+machine's own setup — one of the folders involved is a shortcut back into this very repository, so a
+stranger would not have it. And the test's pass mark was "a page appears and you can ask it a
+question", which an empty page also satisfies.
+
+**One thing is left for you and is deliberately not decided.** Can something be marked "fit to
+publish" when the support test was never run on it? Two of the three efforts get no install test at
+all, so as written they could be marked publishable with no evidence for the hardest criterion. The
+two sensible answers pull in opposite directions and the choice changes what this milestone promises,
+so it is yours. It is written into the spec as an open question.
+
+<!--tech-->
+**`marketplace-inventory` round 1 folded. Dual adversarial review, both halves, at `a3fbb197`.
+CODEX (`gpt-6.1-sol`) 4B/6H/1M · CLAUDE 3B/6H/6M/2L · **18 distinct** after de-duplication.
+**NOT CONVERGED** — 17 of 18 fixed, 1 deferred with a reason, 1 half open for the owner. Round 2
+dispatched.**
+
+| | |
+|---|---|
+| **the spec had NO prior round** | PR #376 opened 2026-10-15 with zero review documents. Found 2026-10-16 while serving the Phase 1 page — `document-approval-is-interactive`'s *run the review before the page* clause is exactly what caught it, and the page was about to be walked with four Blockings standing |
+| **both halves found the same four cores** | dispatched concurrently from one brief, no shared state: scope omits `recall-llm.py` (CODEX 1 / CLAUDE B1) · `CANNOT RUN` misses a resolved-but-empty set (CODEX 2 / CLAUDE B3) · pass condition cannot establish C4 yet permits `SHIP` (CODEX 5 / CLAUDE B2) · plus four more agreeing findings |
+| **what each half found ALONE** | **CODEX**, Blocking: the experiment inherits the author's `HOME`, server and explainer corpus — verified by calling `brief-compose.py`'s source lookup against a clean-home path. An *environment* attack. **CLAUDE**: H1, which refuted this spec's own headline — a *document* attack |
+| ⭐ **the headline was refuted** | the *"3× undercount"* was cross-corpus. Same nine files `portable-practices.md` enumerates: **3,599 vs 3,737 at the commit that wrote it (`100cf498`, 2026-09-07) — accurate within 3.7%**; **3,599 vs 6,525 today — 1.81× low**. The 10,977 added `gen-dashboard` + `gen-goals-page` (**4,798 lines, 46% of the Python total**), which are not among the nine |
+| ⭐ **and the diagnosis changed** | the spec concluded *written from recall* and wired that into §3, §8's risk row and §7's correction item. `portable-practices.md:17` says *"Enumerated in backlog row 89, not recalled"*, and row 89 contains the enumeration. **It was derived, dated and correct; its subject grew 1.75×.** The failure is a dated count DECAYING — so the risk row mitigated a failure this case is not an instance of |
+| ⚠ **the paragraph committed the defect it shamed** | left on the record in §3 rather than quietly rewritten. The page's heading, prose and its only chart all carried it — the chart's `aria-label` asserted *"about one third of the real size"*. Now 3,599 vs 6,525 at 55.2% (rendered 299px of a 544px track) |
+| ⭐ **one shape, reached three ways** | all three remaining Blockings are *a measurement that cannot come back wrong*: `CANNOT RUN` fires on unresolvable, not on resolved-and-empty (`grep -rl 'check-' .claude/skills/` → **0** vs `.agents/skills/` → **6**, because mode `120000` symlinks are skipped on a walk; known positive confirmed first) · the pass condition asserted mechanism not content · the experiment asserted a different *directory*, not a different *environment* |
+| **numbers re-derived, not quoted** | 10,373 Python + 604 skills + **630 shared contracts** = **11,607** (the old 10,977 omitted the 630 its own table lists) · lexical **3/20**, semantic **20/20** (brief) vs **19/20** (shipped prompt), 0/60 false fires at a **5.0%** 95% upper bound · `recall-llm.py` **2,550 lines on `master`**, **201/201** self-test (run), **96** manifest entries |
+| ⚠ **two backlog figures were STALE** | its prose says `recall-llm.py` has 128 self-test cases and 53 mutations. Declared **201** (verified by running), manifest **96**. Derived rather than quoted |
+| ⚠ **`346s` was reinstated and is now gone** | the page's only effort-(2) evidence. `ci.yml:664-668` records `1758s → 353s` (one machine, 2026-10-05); `346` appears nowhere in the repo, and a prior review half had already filed it as a defect. ⚠ `172–239s` was **not** substituted — its provenance is another review doc about a different commit, which would repeat the defect one level down |
+| **deferred, with a reason** | F18, `regen-features-page.sh` is not executable unlike its three siblings. `chmod +x` not done: §7 says PR 1 repairs nothing, because evaluation is kept independent of repair (the owner's option A). It is a finding the **inventory must carry** |
+| **open for the owner** | may a component be `SHIP` on C1–C3 with C4 untested? Efforts (1) and (2) get no experiment, so they could reach `SHIP` with no C4 evidence against D1's *full support bar*. Require demonstrated C4 (capping them at `NEEDS-WORK`), or add `SHIP (untested support)` and relax D1 explicitly. **Changes what the milestone promises, so not folded** |
+| **what the fold added to the spec** | counting rule + per-effort enumeration (total still 24, **membership changed**) · component **roles** (`entry-point`/`library`/`data`) so a library is not scored as if a stranger runs it · detectors 4 (bare names) and 5 (prose-declared skill deps — `artifact-design` was in no component list) · scanned region stated · shipping set declared **per publishable unit** · §7 item 0 packaging spike · §7 item 2 shipping-set declaration as data · symlink resolution + non-zero expected count + a mutation that empties a set |
+| **spec / page** | spec **213 → 496 lines**; fragment 28,398 → 35,196 bytes; page recomposed three times, Ask tray preserved each time. Both folds applied by assert-once scripts — 15 and 5+2 edits, each required to match exactly once or abort |
+| **page verified by execution** | HTTP 200, 7 sections, 8 ask buttons, tray 848×52, Send 47×22 enabled, question reached the session with section attribution. Only console error is a missing `favicon.ico`. ⚠ `.lbl` is `text-transform: uppercase`, so a first `innerText` check read the wrong representation — the measured-the-wrong-population trap, caught by re-checking case-insensitively |
+| **method** | round 1 **concurrent** (measured-safe); rounds 2+ alternate, since a concurrent pair never reviews the fixes. Codex at `--timeout 2700`, success confirmed by reading the capture and `gate_ran: true`, never `rc=0` |

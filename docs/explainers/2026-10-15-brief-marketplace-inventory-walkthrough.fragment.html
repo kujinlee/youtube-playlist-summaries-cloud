@@ -157,8 +157,12 @@ li::marker{color:var(--fg3)}
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a 213-line spec, an allocated anchor, and
   a feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
-  <p class="note">As of <strong>2026-10-15 ~12:55 PDT</strong>, branch <code>marketplace-inventory</code>
-  at <code>e1cd5b8a</code>. 15 document guards run on the branch, 0 failing <span class="note">(volatile — a guard result decays in minutes)</span>.</p>
+  <p class="note">As of <strong>2026-10-16 ~13:30 PDT</strong>, branch <code>marketplace-inventory</code>
+  at <code>a3fbb197</code> plus the round-1 fold. <span class="note">⚠ This line previously claimed
+  “15 document guards … 0 failing” measured at <code>e1cd5b8a</code> — two commits behind the page,
+  and “15” was a denominator that exists nowhere (round 1, M6 and L1). The guard sweep for this
+  branch is re-run and recorded in the round-1 coordinator document rather than asserted here, where
+  it decays in minutes.</span></p>
 </div>
 
 <div class="howto">
@@ -297,39 +301,81 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 <strong>17</strong> comprehensibility, <strong>3</strong> velocity, <strong>4</strong> recall.</p>
 
 <div class="box bad">
-  <span class="lbl">The index undercounts its own subject by about 3×</span>
+  <span class="lbl">The index figure has decayed — it is 1.81× low against its own file set</span>
   <p><code>docs/portable-practices.md</code> has described the comprehensibility suite as
-  <strong>“9 files / 3,599 lines”</strong> since <strong>2026-09-07</strong>. The Python machinery alone
-  is <strong>10,373 lines across six files</strong>, before 604 lines of skills.</p>
+  <strong>“9 files / 3,599 lines”</strong> since <strong>2026-09-07</strong>, and it
+  <em>enumerates</em> those nine. Those same nine files today total
+  <strong>6,525 lines</strong>.</p>
   <p>Nothing broke because of this. It is quoted in the one document whose job is to describe what
-  travels — and it is the clearest possible argument that an inventory was needed rather than a
-  recollection.</p>
+  travels. <strong>But the reason matters, and round 1 corrected it:</strong> the figure was derived
+  and enumerated, and was <em>accurate within 3.7%</em> on the day it was written — its subject then
+  grew 1.75×. So this is an argument for <strong>re-deriving dated counts</strong>, not an argument
+  about recollection. See the refutation below.</p>
 </div>
 
 <div class="chart">
   <div class="row">
     <span class="nm">index claims</span>
-    <span class="track" role="img" aria-label="The portable-practices index claims the comprehensibility suite is 3,599 lines; the measured total is 10,977 lines, so the claim is about one third of the real size.">
-      <span class="fill claim" style="width:32.8%"></span>
+    <span class="track" role="img" aria-label="The portable-practices index claims its nine enumerated files total 3,599 lines. Those same nine files measure 6,525 lines today, so the claim is about 55 percent of the current size — a 1.81 times undercount.">
+      <span class="fill claim" style="width:55.2%"></span>
     </span>
     <span class="val">3,599</span>
   </div>
   <div class="row">
-    <span class="nm">measured</span>
-    <span class="track" role="img" aria-label="Measured size of the comprehensibility suite: 10,977 lines, being 10,373 lines of Python machinery plus 604 lines of skills.">
+    <span class="nm">same nine, today</span>
+    <span class="track" role="img" aria-label="The same nine enumerated files measure 6,525 lines today.">
       <span class="fill real" style="width:100%"></span>
     </span>
-    <span class="val">10,977</span>
+    <span class="val">6,525</span>
   </div>
-  <p class="scale"><span>0</span><span>10,977 lines</span></p>
-  <p class="prov">10,373 Python (<code>brief-compose</code> 1,780 · <code>explainer-serve</code> 2,907 ·
-  <code>page_chrome</code> 450 · <code>page_markup</code> 438 · <code>gen-dashboard</code> 3,546 ·
-  <code>gen-goals-page</code> 1,252) + 604 skills. Derived 2026-10-15 <span class="note">(volatile — these files change)</span>.</p>
+  <p class="scale"><span>0</span><span>6,525 lines</span></p>
+  <p class="prov"><strong>Same set on both bars</strong> — the nine files
+  <code>portable-practices.md</code> itself enumerates: the four page-producing skills, the shared
+  delivery contract, <code>brief-compose</code>, <code>explainer-serve</code>,
+  <code>page_chrome</code>, <code>page_markup</code>. Re-derived 2026-10-16
+  <span class="note">(volatile — these files change)</span>.</p>
+  <p class="prov">⚠ <strong>This chart previously compared 3,599 against 10,977</strong>, which added
+  <code>gen-dashboard</code> (3,546) and <code>gen-goals-page</code> (1,252) — <strong>4,798 lines,
+  46% of the Python total</strong> — neither of which is among the nine. That cross-corpus pairing
+  read as 3.05×, and its screen-reader label asserted “about one third of the real size”. Round 1
+  caught it.</p>
+  <p class="prov"><strong>Scope sizing, a different and larger set:</strong> effort (3)'s 17
+  components total <strong>11,607 lines</strong> — 10,373 Python (<code>brief-compose</code> 1,780 ·
+  <code>explainer-serve</code> 2,907 · <code>page_chrome</code> 450 · <code>page_markup</code> 438 ·
+  <code>gen-dashboard</code> 3,546 · <code>gen-goals-page</code> 1,252) + 604 skills + 630 shared
+  contracts. <span class="note">The earlier total of 10,977 omitted the 630 lines of shared contracts
+  that the component table itself lists (round 1, M3).</span></p>
 </div>
 
 <p>Two further claims in that same block are stale: it says the registry <em>“registers 10 anchors”</em>
 (it held <strong>13</strong> before this spec and <strong>14</strong> after), and that <em>“a second
 anchor is owed”</em> for the present-tense reader — <code>explanation-on-demand</code> now exists.</p>
+
+<div class="box warn">
+  <span class="lbl">⟳ Round 1 refuted this section's headline — and that is the most useful thing it did</span>
+  <p>The <strong>“3× undercount”</strong> above compared <code>portable-practices.md</code>'s
+  <strong>3,599</strong> against <strong>10,977</strong> — but 3,599 was never a count of those
+  files. That document <em>enumerates</em> its nine, and two of the six Python files in the larger
+  set (<code>gen-dashboard.py</code>, <code>gen-goals-page.py</code> — <strong>4,798 lines, 46% of
+  the Python total</strong>) are not among them. So the 3× was <strong>cross-corpus</strong>.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Comparison</th><th>Ratio</th></tr>
+    <tr><td>Same nine files, at the commit that wrote the figure (<code>100cf498</code>, 2026-09-07): 3,599 vs 3,737</td><td><strong>accurate within 3.7%</strong></td></tr>
+    <tr><td>Same nine files, today: 3,599 vs 6,525</td><td><strong>1.81× low</strong></td></tr>
+    <tr><td>As this page first stated it: 3,599 vs 10,977</td><td>3.05× — <em>different sets</em></td></tr>
+  </table>
+  </div>
+  <p><strong>So the diagnosis changes, which matters more than the number.</strong> The figure was
+  derived, enumerated, dated and <em>correct when written</em> — <code>portable-practices.md:17</code>
+  says <em>“Enumerated in <code>docs/backlog.md</code> row 89, not recalled”</em>, and row 89 contains
+  the enumeration. Its subject then grew 1.75×. <strong>The failure is a dated count decaying, not a
+  count invented</strong> — so the lesson this spec drew from it, and the risk row it wired that
+  lesson into, were both aimed at the wrong failure.</p>
+  <p class="note">⚠ And this section was itself a correct measurement over the wrong corpus, inside
+  the finding whose whole purpose was to shame that defect. It is left on the record rather than
+  quietly rewritten.</p>
+</div>
 
 <h3>What the other two efforts bring</h3>
 
@@ -339,14 +385,51 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 <tr>
   <td><strong>(2) velocity</strong></td>
   <td>CI sharding (39 references in <code>ci.yml</code>), <code>check-plan-code.py</code>, three velocity documents</td>
-  <td>Sharding shipped and worked — the sweep went <strong>1,758s → 346s</strong>. But it is this repo's CI wiring. <strong>Q0 is designed in form and not built</strong>, and is one of two items the roadmap still reports open.</td>
+  <td>Sharding shipped and worked — the unsharded sweep was <strong>1,758s</strong>, and <strong>shard 1 of 8 measured 353s</strong> <span class="note">(one machine, 2026-10-05, <code>ci.yml:664-668</code>)</span>. But it is this repo's CI wiring. <strong>Q0 is designed in form and not built</strong>, and is one of two items the roadmap still reports open. <span class="note">⚠ This cell previously said <strong>346s</strong> — a number that appears nowhere in the repo, and which a prior review half had already filed as a defect. Round 1 caught it reinstated here.</span></td>
 </tr>
 <tr>
   <td><strong>(1) recall</strong></td>
-  <td><code>check-surface-recall.py</code> + its hook, 157 memory files, two unmerged branches</td>
-  <td>⭐ The measurement <strong>inverted</strong>: lexical scoring <strong>2/20</strong>; the same paraphrases read by an LLM <strong>19–20/20</strong>, with <strong>0 false fires in 60</strong>. Whatever ships here, <em>it cannot be the lexical matcher</em>.</td>
+  <td><code>recall-llm.py</code> (2,550 lines, <strong>on <code>master</code></strong>), <code>check-surface-recall.py</code>, its hook, and 157 memory files. <span class="note">Corrected by round 1 — the semantic matcher was missing and the two unmerged branches are not components.</span></td>
+  <td>⭐ The measurement <strong>inverted</strong>: lexical top-1 <strong>3/20</strong> (53/60 true negatives); meaning-matching <strong>20/20</strong> with <strong>0 false fires in 60</strong>. <span class="note">⚠ 20/20 is the validation brief; <strong>19/20</strong> is the re-measurement against the prompt that actually ships — two experiments, stated separately rather than spanned as “19–20”. 0-in-60 is a 95% upper bound of <strong>5.0%</strong>, not “no false positives”.</span></td>
 </tr>
 </table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">Your question, answered — “it was decided that matcher has to be semantic matcher. Please check past investigations”</span>
+  <p><strong>You are right, and the spec was wrong.</strong> The decision was made, the semantic
+  matcher was <em>built</em>, and it is <strong>on <code>master</code></strong> — but this spec's
+  component list named only the lexical matcher that the same paragraph rejects. The round-1
+  adversarial review found this independently and filed it as its first <strong>Blocking</strong>
+  defect. It is now fixed in the spec.</p>
+
+  <p class="note"><strong>What the past investigation actually decided</strong> (backlog #191,
+  2026-09-29 → 09-30): the corpus was re-keyed to <code>FIRES-WHEN:</code> situation triggers, a
+  lexical matcher was refuted, and a meaning-matcher over the <em>same strings</em> replaced it.
+  Verdict recorded there: <em>“Token overlap is DEAD — do not tune it, do not write a sixth
+  combiner.”</em> Then on 2026-09-30 it shipped as <code>scripts/recall-llm.py</code>.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>What I checked, today, by running it</th><th>Result</th></tr>
+    <tr><td><code>scripts/recall-llm.py</code> — is it real, and where?</td><td><strong>2,550 lines, on <code>master</code></strong> — not on an unmerged branch</td></tr>
+    <tr><td>Is it the matcher actually <em>wired</em>?</td><td>Yes — <code>.claude/hooks/surface-recall.sh:60</code> defaults <code>MATCHER</code> to it</td></tr>
+    <tr><td><code>--self-test</code></td><td><strong>201/201 cases passed</strong> (rc=0)</td></tr>
+    <tr><td>Mutation manifest</td><td><strong>96 entries</strong></td></tr>
+  </table>
+  </div>
+
+  <p class="note">⚠ Two figures I nearly repeated from the backlog's own prose were <strong>stale</strong>:
+  it says 128 self-test cases and 53 mutations. The file declares 201 and its manifest holds 96.
+  Derived here rather than quoted.</p>
+
+  <p><strong>What this changes in the spec.</strong> Effort (1)'s four components are now
+  <code>recall-llm.py</code> (the semantic matcher), <code>check-surface-recall.py</code> (the
+  lexical one and its guard), <code>surface-recall.sh</code> (the caller), and the memory corpus. The
+  two unmerged branches are no longer counted — they are work in progress, not shippable units.
+  <strong>The verdict for this effort must now say which of the three mechanisms it is about</strong>,
+  because “it cannot be the lexical matcher” was an unexecutable instruction against a component list
+  that contained nothing else.</p>
 </div>
 
 <hr class="hr">
@@ -404,9 +487,11 @@ assess it”</em>.</p>
 
 <div class="box warn">
   <span class="lbl">3 · Nothing is installable at the end of this milestone</span>
-  <p>PR 1 produces no plugin, no marketplace repo, and fixes <strong>no coupling</strong> — not even
-  <code>brief/SKILL.md</code>'s nine known references. Its entire output is a decision you can trust,
-  plus the scan that keeps it honest.</p>
+  <p>PR 1 produces no plugin, no <em>published</em> marketplace repo, and fixes <strong>no
+  coupling</strong> — not even <code>brief/SKILL.md</code>'s nine repo-specific ground-truth items,
+  nor the three CWD-relative <code>python3 scripts/…</code> invocations in the shared delivery
+  contract that round 1 found affect <em>all four</em> skills. Its entire output is a decision you can
+  trust, plus the scan that keeps it honest.</p>
   <p>That was deliberate: fixing a component while also judging it is how this project has previously
   manufactured a false green. <strong>If you expected something shippable from this milestone, say so
   now</strong> — it is a different plan, not a tweak to this one.</p>

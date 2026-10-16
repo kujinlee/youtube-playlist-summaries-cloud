@@ -45,34 +45,88 @@ answered only informally, for one file, once.
 `~/.claude/plugins/marketplaces/` holds `omc`, a third-party self-published marketplace, alongside
 the official one. A marketplace is a git repo carrying `.claude-plugin/marketplace.json`.
 
+⚠ **WHAT THAT PROVES, AND WHAT IT DOES NOT (r1 CLAUDE M5, r1 CODEX 10).** It proves the *route*
+exists and that a third party can travel it. It says nothing about whether **this** suite can be
+packaged onto it — someone else's marketplace is evidence about the mechanism, not about our
+artifact. ⛔ **So packaging feasibility is an ASSUMPTION, not a finding**, and it is named in §9 as
+the assumption whose failure invalidates D4. §7 item 0 discharges it before any scanning starts.
+
 **Why D4 matters more than it looks.** This repository has measured that *review is the wrong
-instrument for a surface*: six review rounds produced roughly seven edge cases where a single corpus
-run produced 5,287. *"Can a stranger use this?"* is a surface question over **24 components** (17 + 3 + 4, enumerated in §3 — derived 2026-10-15, not estimated). Judgement
-alone will miss things, and the misses are precisely the ones a stranger meets first.
+instrument for a surface*: six review rounds produced roughly seven edge cases, where one corpus run
+over 5,287 inputs produced 456 fires and surfaced two real defects. ⚠ **Those are unlike units — edge
+cases against inputs-and-fires — and the comparison is offered as an order-of-magnitude contrast, not
+a ratio** (r1 CLAUDE M4; the first wording read as 7-versus-5,287 and invited a false 750x).
+*"Can a stranger use this?"* is a surface question over **24 components** (17 + 3 + 4 — the counting
+rule and the per-effort enumeration are in §3, derived 2026-10-15). Judgement alone will miss things,
+and the misses are precisely the ones a stranger meets first.
 
 ---
 
 ## 3. Scope — the components, derived from disk rather than recalled
 
-⚠ **Derived 2026-10-15 by enumeration.** The counts below are a dated measurement, not a live number.
+⚠ **Derived 2026-10-15 by enumeration, membership corrected 2026-10-16 (round 1).** The counts
+below are a dated measurement, not a live number.
+
+⛔ **THE COUNTING RULE, stated once because round 1 found the addends unobtainable from the prose
+(CLAUDE M1, CODEX 1).** **One component = one shippable unit**: a script, a skill, a shared contract,
+a hook, or one named data corpus. A mutation manifest is part of the unit it tests and is not counted
+separately. An unmerged branch is work in progress, not a shippable unit, and is **not** counted.
+
+Applying it: **17 + 3 + 4 = 24.**
+
+- **Effort (3) = 17** — 4 skills + 3 shared contracts + 6 Python files + 4 regen hooks.
+- **Effort (2) = 3** — the sharded `mutation-sweep` job, `scripts/check-plan-code.py`, and the
+  velocity document set (counted as one corpus).
+- **Effort (1) = 4** — `scripts/recall-llm.py`, `scripts/check-surface-recall.py`,
+  `.claude/hooks/surface-recall.sh`, and the memory corpus.
+
+⚠ **The TOTAL is unchanged at 24 and its MEMBERSHIP is not.** Round 1 found effort (1)'s list was
+counting two unmerged branches and omitting the matcher that actually ships (see Effort (1) below),
+so a total that reproduced was standing over a wrong set — which is this repository's most-measured
+failure shape, reached here by arithmetic that happened to agree.
 
 ### Effort (3) — comprehensibility
 
 | Component | Lines |
 |---|---|
 | `explain-diff` / `brief` / `explain-findings` / `explain-topic` (SKILL.md) | 158 / 195 / 156 / 95 |
-| `.claude/skills/shared/` — `explainer-delivery.md`, `corpus-search.md`, `handoff-path.md` | — |
+| `.agents/skills/shared/` — `explainer-delivery.md`, `corpus-search.md`, `handoff-path.md` | 346 / 73 / 211 |
 | `scripts/brief-compose.py` | 1,780 |
 | `scripts/explainer-serve.py` | 2,907 |
 | `scripts/page_chrome.py` / `scripts/page_markup.py` | 450 / 438 |
 | `scripts/gen-dashboard.py` / `scripts/gen-goals-page.py` | 3,546 / 1,252 |
 | `.claude/hooks/regen-{backlog-page,dashboard,features-page,goals-page}.sh` | — |
 
-⛔ **A FINDING BEFORE THE WORK STARTS: the D2 index undercounts its own subject by roughly 3×.**
-`docs/portable-practices.md` describes the suite as *"9 files / 3,599 lines"*. The Python machinery
-alone is **10,373 lines across six files**, before 604 lines of skills. That figure has been quoted as
-settled since 2026-09-07. **Correcting it is in scope for this milestone**, and it is the first
-evidence that an inventory was needed rather than a recollection.
+⛔ **A FINDING BEFORE THE WORK STARTS: the D2 index figure has DECAYED, and it is 1.81x low
+against its own file set.** ⟳ **CORRECTED 2026-10-16 by round 1 (CLAUDE H1), which refuted this
+paragraph's first version — and the refutation is the more useful finding.**
+
+`docs/portable-practices.md` describes the suite as *"9 files / 3,599 lines"* and **enumerates those
+nine**: the four page-producing skills, the shared delivery contract, `brief-compose.py`,
+`explainer-serve.py`, `page_chrome.py`, `page_markup.py`.
+
+- **Same set, today: 6,525 lines — a 1.81x undercount.**
+- **Same set, at the commit that introduced the figure (`100cf498`, 2026-09-07): 3,737 lines.**
+  3,599 against 3,737 is **accurate within 3.7% when written.**
+- The first version of this paragraph compared 3,599 against **10,977** — a set of its own
+  construction that adds `gen-dashboard.py` and `gen-goals-page.py` (**4,798 lines, 46% of the
+  Python total**), neither of which is among the nine. That is a **3.05x cross-corpus ratio**.
+
+⛔ **SO THE DIAGNOSIS CHANGES, AND THAT MATTERS MORE THAN THE NUMBER.** The figure was **derived,
+enumerated, dated and correct** (`portable-practices.md:17` says *"Enumerated in `docs/backlog.md`
+row 89, not recalled"*, and row 89 contains the enumeration). It was not written from recall. Its
+subject then grew 1.75x. **The failure mode is a dated count decaying, not a count invented** — and
+§3's own banner already handles decay. **Correcting it is in scope for this milestone**, and the
+correction must record *that* reason.
+
+⚠ **AND THIS PARAGRAPH WAS ITSELF A CORRECT MEASUREMENT OVER THE WRONG CORPUS** — placed in the
+finding whose entire purpose was to shame that defect. It is left on the record rather than quietly
+rewritten, because it is the best available evidence for why §5's CANNOT-RUN rule needs the
+companion that B3 forced (see §5).
+
+**The total, for scope sizing only:** 10,373 Python + 604 skills + 630 shared contracts =
+**11,607 lines** across the 17 components of effort (3). ⚠ That is a different and larger set than
+`portable-practices.md`'s nine, and the two must not be compared without saying so.
 
 ⚠ Two further claims in that same block are stale and must be corrected with it: it says the registry
 *"registers 10 anchors"* (it held **13** before this spec, and **14** after it, since this document allocates one) and that *"a second anchor is owed"* for the present-tense
@@ -86,12 +140,44 @@ form and not built** and is one of two items `check-roadmap-consistency` still r
 
 ### Effort (1) — recall
 
-`scripts/check-surface-recall.py` + `.claude/hooks/surface-recall.sh`, **157** memory files, and two
-unmerged branches: `c5-recall-matcher` (6 commits) and `backlog-117-parser-substrate` (10).
+⟳ **MEMBERSHIP CORRECTED 2026-10-16 by round 1 (CLAUDE B1, CODEX 1), and this was a Blocking
+defect: the list contained only the mechanism the evidence REJECTS, and omitted the one it endorses.**
 
-⭐ **The measured result that must drive this effort's verdict, because it inverted:** lexical scoring
-scored **2/20**; the same paraphrases read by an LLM scored **19–20/20**, with 0 false fires in 60.
-Whatever ships here, it cannot be the lexical matcher.
+The four components:
+
+| Component | Lines | Where |
+|---|---|---|
+| `scripts/recall-llm.py` — the semantic matcher | 2,550 | **`master`** |
+| `scripts/check-surface-recall.py` — the lexical matcher and its guard | 820 | `master` |
+| `.claude/hooks/surface-recall.sh` — the caller | 113 | `master` |
+| the memory corpus | 157 files | outside this repo |
+
+⛔ **`scripts/recall-llm.py` IS ON `master`, NOT ON AN UNMERGED BRANCH**, and so are its callers and
+its mutation manifest (`scripts/mutations/recall-llm.json`; nine referencing files under `.claude/`
+and `scripts/`). The branch the work was done on no longer exists — it folded into `master` — so the
+omission was of **landed code**, not of parked work.
+
+⚠ The two unmerged branches `c5-recall-matcher` (6 commits) and `backlog-117-parser-substrate` (10)
+are **work in progress, not shippable units**, and are no longer counted as components (§3's counting
+rule). They remain out of scope per §10.
+
+⭐ **The measured result that must drive this effort's verdict, because it inverted** — figures taken
+from `docs/dashboard-entries.md:12990-12992`, not from recall:
+
+| Mechanism | Recall | True negatives | False-fire rate |
+|---|---|---|---|
+| lexical top-1 | **3/20** | 53/60 | 11.7% |
+| semantic, isolated (80 mixed) | **20/20** | 60/60 | 0% |
+
+⚠ **THE RANGE "19–20/20" MERGED TWO DIFFERENT EXPERIMENTS AND IS NOT USED (r1 CLAUDE M2).** 20/20 is
+the validation brief; **19/20 is the re-measurement against the prompt that actually ships**. Both are
+stated, with which is which, rather than spanned.
+
+⚠ **AND THE BOUND, stated so it is not inflated:** 0 false fires in 60 is a **95% upper bound of
+5.0%** by the rule of three — *not* "no false positives".
+
+⛔ **So this effort's verdict must say WHICH of the three mechanisms it is about.** "It cannot be the
+lexical matcher" was unexecutable against a component list that contained nothing else.
 
 ---
 
@@ -102,18 +188,69 @@ Criteria 1 and 2 are `docs/portable-practices.md`'s existing filters. D1's publi
 | # | Criterion | Decidable by |
 |---|---|---|
 | **C1** | **Measured** — it works, with evidence, not a confident belief | existing self-tests and manifests |
-| **C2** | **Project-independent** — runs with no Supabase, no Gemini, no Fly | **mechanically countable** |
-| **C3** | **Self-contained** — does not depend on parts of this repo that are not shipping | **mechanically countable** |
+| **C2** | **Project-independent** — runs with no Supabase, no Gemini, no Fly | counting is **evidence, not a verdict** — see below |
+| **C3** | **Self-contained** — does not depend on parts of this repo that are not shipping | counting is **evidence, not a verdict** — see below |
 | **C4** | **Supportable** — a stranger can install it, use it, and recover from failure without the author | ⛔ **not countable** — this is what the install experiment is for |
 
-**C3 is expected to be the main killer, and the shape is already known.** `brief/SKILL.md`'s
-ground-truth command list calls `scripts/check-*` — guards that are part of *this* repo's process, not
-of any plugin. A component can be perfectly project-independent in its prose and still unusable
-because it invokes a neighbour that is not shipping.
+⛔ **C2 AND C3 ARE NO LONGER CALLED "MECHANICALLY COUNTABLE" (r1 CLAUDE H4, r1 CODEX 4), BECAUSE BOTH
+DIRECTIONS OF WRONG ANSWER ARE PRESENT IN THE SUITE TODAY AND WERE MEASURED:**
+
+- **Clean count, unusable component.** `scripts/page_chrome.py` has zero project vocabulary, a
+  self-test, and one outgoing import that is also shipping — C1/C2/C3 all pass. It has **no
+  `argparse` and no CLI**: a stranger cannot invoke it at all. It is a library.
+- **Dirty count, portable component.** `scripts/page_markup.py` matches `supabase` twice — both
+  inside a **self-test fixture** asserting that a path glob survives markup rendering. The file is
+  fully project-independent.
+
+**So a count is an input to a judgement, not the judgement.** §5 states which region is scanned and
+how a non-path reference is recognised.
+
+⭐ **EVERY COMPONENT CARRIES A ROLE, and the role decides what C4 even means for it:**
+
+| Role | What a stranger does with it | How C4 is assessed |
+|---|---|---|
+| `entry-point` | invokes it directly | per component, by the install experiment |
+| `library` | never invokes it; it is a dependency of an entry-point | **inherited** from the entry-points that import it |
+| `data` | supplies content (e.g. the memory corpus) | not applicable; C4 is recorded as `n/a` |
+
+⚠ **Without the role, the no-"unknown" rule manufactured defects.** `page_chrome.py` cannot be
+assessed for C4 per component, so the old text forced `NEEDS-WORK` with defect *"no way to assess
+it"*, and §7 item 5 turns every `NEEDS-WORK` into a backlog row — **a filed defect for a file that
+has none.** A `library` whose entry-points pass C4 inherits the pass.
+
+**C3 is still expected to be the main killer — but the known shape was mis-stated, and the real one
+is worse.** ⟳ **CORRECTED 2026-10-16 (r1 CLAUDE H3, H5; r1 CODEX 4):**
+
+- The literal `scripts/check-*` **does not occur in `brief/SKILL.md` at all** (measured: 0
+  occurrences). What its ground-truth block holds is **nine repo-specific items — 4 bare guard names
+  (`check-docs`, `check-producer-enumeration`, `check-roadmap-consistency`, `check-test-counts`), 4
+  document paths (`docs/backlog.md`, `docs/reviews/`, `docs/roadmap-to-launch.md`,
+  `docs/superpowers/`) and 1 tool name (`TaskList`)**. ⛔ **Five of those nine are neither paths nor
+  file invocations, so they are invisible to both of §5's original detectors** — the scan would have
+  scored at most 4 of 9 on the component D4 elects to calibrate against.
+- ⛔ **AND "the problem is concentrated in one file" IS FALSE (r1 CLAUDE H5).**
+  `.agents/skills/shared/explainer-delivery.md` scores **0** under the vocabulary detector — and
+  carries **three repo-relative `python3 scripts/...` invocations** resolved from the caller's CWD.
+  It is the contract **all four** page-producing skills route through, so in a stranger's repo those
+  resolve to nothing, or to an unrelated neighbour's `scripts/`. That is a C3/C4 blocker for every
+  component of effort (3), and it sits in the file this spec previously presented as the good news.
+  The existing measurement is C2-only; "concentrated in one file" is a C3 conclusion that a C2
+  measurement cannot support.
 
 **Verdicts are per component, and there are exactly three:** `SHIP`, `NEEDS-WORK` (with the named
 defect), `DON'T-SHIP` (with the reason). A fourth verdict — "unknown" — is not permitted; a component
-that cannot be assessed is `NEEDS-WORK` whose named defect is *"no way to assess it"*.
+that cannot be assessed is `NEEDS-WORK` whose named defect is *"no way to assess it"*. ⚠ **That rule
+now bites only where assessment is genuinely impossible**, because the role table above removes the
+case where it was firing on `library` components by construction.
+
+⛔ **OPEN QUESTION FOR THE OWNER — NOT DECIDED HERE (r1 CODEX 5, r1 CLAUDE B2).** May a component be
+recorded `SHIP` on C1–C3 alone, with C4 untested? Efforts (1) and (2) get no install experiment at
+all (§6's bound), so under the current text their components can reach `SHIP` with **no** C4
+evidence, while D1 sets a *"full support bar"*. The two coherent answers are: **(a)** `SHIP` requires
+demonstrated C4, so efforts (1) and (2) cap at `NEEDS-WORK` until they get their own experiment; or
+**(b)** a second grade — `SHIP (untested support)` — is introduced and D1's bar is explicitly relaxed
+for it. ⚠ **This changes what the milestone PROMISES, not how it is reached, so it is the owner's
+call and is deliberately left open.**
 
 ---
 
@@ -128,25 +265,107 @@ manifest, a caller, and no fail-open handler.
 1. **project-specific references** — matches against a derived vocabulary (`supabase`, `gemini`,
    `fly`, `youtube-playlist`, repo-rooted paths), not a hand-written list;
 2. **cross-repo dependencies** — invocations of files outside the component's declared shipping set;
-3. **presence of a self-test and of user-facing documentation.**
+3. **presence of a self-test and of user-facing documentation;**
+4. ⭐ **bare-name references (added by r1 CLAUDE H3, r1 CODEX 4)** — guard names, tool names and
+   skill names that are neither paths nor file invocations. Five of the nine references on the
+   component D4 calibrates against are of exactly this form, and detectors 1 and 2 cannot see any of
+   them;
+5. ⭐ **prose-declared skill dependencies (added by r1 CODEX 2)** — a skill that instructs the reader
+   to load another skill depends on it. `brief/SKILL.md` and `explain-findings` both require
+   `artifact-design`, which appears nowhere in §3's component table. A file-invocation scan finishes
+   successfully and never sees this form.
+
+⛔ **THE SCANNED REGION IS STATED, because the choice alone flips a verdict (r1 CLAUDE H4).**
+Self-test fixtures and comments are **excluded** from detector 1 and **included** in detectors 2, 4
+and 5. Rationale: `page_markup.py`'s only project vocabulary is a fixture string, so including
+fixtures reports a C2 violation on the suite's most portable file — whereas a *dependency* named in a
+comment or fixture is still a dependency a stranger's run can hit.
+
+⛔ **THE SHIPPING SET IS DECLARED PER PUBLISHABLE UNIT, NOT PER COMPONENT (r1 CLAUDE H5).** Read per
+component, `explainer-delivery.md` scores dirty because `brief-compose.py` is "outside its set", even
+though both ship together; read per unit, it scores clean and the real coupling is the CWD-relative
+path, which detector 2 reports against the *installed* layout. The spec previously said neither.
 
 ⛔ **It must report CANNOT RUN rather than a clean score when it cannot resolve a component's shipping
 set.** A zero over a set it failed to build is this repository's single most-measured failure.
 
+⭐ **AND CANNOT RUN NEEDS A COMPANION, BECAUSE A SET CAN RESOLVE SUCCESSFULLY AND BE WRONG — MEASURED
+AGAINST THIS SPEC'S OWN PATHS (r1 CLAUDE B3, Blocking; r1 CODEX 2).** §3 named the shared contracts
+as `.claude/skills/shared/`. That path is real, readable and non-empty, so nothing triggers CANNOT
+RUN. But its entries are **git symlinks (mode `120000`)** into `.agents/skills/`, and `grep -r` does
+not follow a symlink met during a directory walk. With a known positive confirmed first, a walk over
+the path this spec named finds **nothing**: `grep -rl 'check-' .claude/skills/ | wc -l` → **0**, while
+`.agents/skills/` → **6**. A scan built from §3's own component paths would have reported **zero
+project-specific references and zero cross-repo dependencies over a silently empty set** — a clean
+score, not CANNOT RUN.
+
+**So the scan must additionally:**
+
+- **resolve symlinks** when building a component's file set, and record the resolved real paths;
+- **assert a non-zero expected file count per component** and FAIL when the resolved set is empty or
+  smaller than declared — *a zero over a resolvable-but-empty set is indistinguishable from a clean
+  component*;
+- **carry a mutation that empties one component's set** and dies via the case that asserts the
+  non-zero count, so the companion rule is covered rather than merely written.
+
+⚠ **This spec's own component table now names `.agents/skills/shared/` (the real directory) rather
+than the symlink path**, so the measured failure above cannot be reached from §3 as written.
+
 **Its falsifier, which is the point of D4:** any blocker the install experiment hits on a component
 the scan scored clean is a **scanner defect**, fixed in the scan, not recorded as a footnote. The scan
 is not permitted to be an opinion in script form.
+
+⛔ **THE FALSIFIER COVERS DEGRADATION, NOT ONLY BLOCKAGE (r1 CLAUDE B2, Blocking; r1 CODEX 6).** As
+first written it keyed on *"any blocker the experiment hits"*, and the failure that matters here is
+not a blocker: the suite can **produce a hollow page and report success**. So it now reads — a
+component the scan scored clean against which the experiment hits **a blocker OR a degraded result**
+is a scanner defect.
+
+⚠ **AND IT IS UNREACHABLE FOR EFFORTS (1) AND (2) BY CONSTRUCTION**, since §6's experiment covers
+effort (3) only. For those two the scan has **no falsifier at all** — stated here rather than left to
+be discovered, and it is half of why §7 item 0 exists.
 
 ---
 
 ## 6. The install experiment
 
 A throwaway repository **outside** this one, with no Supabase, no Gemini, no Fly credentials and no
-`scripts/check-*`. The suite is added as a local marketplace and installed the way a stranger would.
+`scripts/check-*`. The suite is added as a **throwaway local marketplace — which is not the published
+marketplace repository §10 defers** (r1 CLAUDE H2, r1 CODEX 7: §2 defines a marketplace as a git repo
+carrying `.claude-plugin/marketplace.json`, so without this clause §6 required building the artifact
+§10 forbids) — and installed the way a stranger would.
 
-**Pass condition, stated so it can fail:** a page is **produced and served**, and the reader can ask a
-question inside it, from that repository. Producing a file that cannot be served is not a pass —
-serving is the half that carries the Ask channel, and `file://` loses it by design.
+⛔ **ISOLATION IS THE EXPERIMENT (r1 CODEX 3, Blocking). A DIFFERENT WORKING DIRECTORY IS NOT
+ISOLATION.** Run from a new directory but the author's own environment, the suite passes using
+resources a newcomer does not have: `~/.claude/` skills and plugin cache, an already-running
+`explainer-serve.py`, and — decisively — `~/explainers/`, **which is a symlink into this very
+repository**, so `brief-compose.py`'s source lookup finds a usable page that a stranger has none of.
+Round 1 verified the asymmetry: called against a clean-home path the composer exits *"no explainer
+directory … run /explain-diff once first."*
+
+**The experiment therefore specifies, and records:**
+
+- a **fresh `HOME`**, with its own `.claude/` config and plugin cache — not the author's;
+- **no inherited server**: the server is started by the experiment, from the installed package;
+- **no inherited explainer corpus** — in particular `~/explainers/` must not resolve into this repo;
+- an **explicit record of every resource the run touched**, so an inherited dependency is visible
+  afterwards rather than inferred.
+
+**Pass condition, stated so it can fail — and it asserts CONTENT, not mechanism (r1 CLAUDE B2,
+Blocking).** A page is **produced and served**, the reader can ask a question inside it, **and the
+page's ground-truth results are non-empty for every item the skill's step 1 enumerates.**
+
+⛔ **WHY THE MECHANISM-ONLY VERSION COULD NOT FAIL.** In a repo with no `scripts/check-*`, all nine
+of `brief`'s ground-truth items return nothing. The skill explicitly says to *report* that rather
+than stop (`brief/SKILL.md:42`, and its own note that a renamed file "fails silently by returning
+nothing"). Page production does not depend on step 1 — it runs through `brief-compose.py` and
+`explainer-serve.py`. So a page gets composed, the server starts, Ask works, **and the old pass
+condition was MET** by a page carrying no roadmap, no backlog, no ratchet results and no git
+reasoning: `brief`'s entire content. The experiment hit no blocker; it hit a hollow page, and `SHIP`
+would have been recorded for the component §4 elects as the expected main killer.
+
+Producing a file that cannot be served is also not a pass — serving is the half that carries the Ask
+channel, and `file://` loses it by design.
 
 **What is recorded:** every failure, its cause, and whether the scan predicted it. The experiment's
 output is two lists — defects in the suite, and defects in the scan.
@@ -160,20 +379,37 @@ and is a candidate follow-up if either survives.
 
 ## 7. What PR 1 produces
 
+0. ⭐ **A packaging spike, BEFORE the scan is written (added by r1 CLAUDE M5, r1 CODEX 10).** One
+   skill and one script, packaged into a throwaway local marketplace, installed under a fresh `HOME`
+   and invoked from an unrelated directory. It discharges D3's packaging assumption (§2) and builds
+   the isolated environment §6 needs. ⛔ **If it fails, D4 is unachievable and §9's third falsifier
+   has fired** — so it runs first, when that is still cheap to act on.
 1. This spec, reviewed and committed.
-2. `scripts/check-publishability.py` + `--self-test` + mutation manifest + CI registration.
-3. The install-experiment record: failures found, and which the scan predicted.
-4. **The inventory** — every component of all three efforts with `SHIP` / `NEEDS-WORK` / `DON'T-SHIP`
-   and its evidence.
-5. A roadmap milestone, and a `docs/backlog.md` row per `NEEDS-WORK` component.
-6. `docs/anchors.md` — `harness-ships-elsewhere` registered, claimed by this document. **Closes row 290.**
-7. Corrections to `portable-practices.md`'s three stale claims (§3 above).
-8. The scoring rubric as a `portable-practices.md` entry — a reusable publishability test is itself a
+2. ⭐ **The shipping-set declaration (added by r1 CLAUDE B3, r1 CODEX 2)** — per publishable unit,
+   as **data the scan reads**, listing member files with symlinks resolved and an expected file
+   count per component. ⛔ Nothing in the original nine deliverables produced this, so the scan had
+   only two options at build time: CANNOT RUN for all 24 components, which empties deliverable 5, or
+   infer the set — the condition §5 warns about, with no gate on the inference.
+3. `scripts/check-publishability.py` + `--self-test` + mutation manifest + CI registration,
+   **including the empty-set mutation §5 requires.**
+4. The install-experiment record: failures found, which the scan predicted, **and every resource the
+   run touched** (§6).
+5. **The inventory** — every component of all three efforts with its **role**, its `SHIP` /
+   `NEEDS-WORK` / `DON'T-SHIP` verdict, and its evidence. ⚠ Components whose C4 rests on argument
+   rather than the experiment are labelled as such (§6's bound).
+6. A roadmap milestone, and a `docs/backlog.md` row per `NEEDS-WORK` component. ⚠ A `library`
+   component that inherits a C4 pass does **not** generate a row (§4).
+7. `docs/anchors.md` — `harness-ships-elsewhere` registered, claimed by this document. **Closes row 290.**
+8. Corrections to `portable-practices.md`'s three stale claims (§3 above) — **the line-count one
+   recorded as a decayed dated count, not as a recalled figure** (r1 CLAUDE H1).
+9. The scoring rubric as a `portable-practices.md` entry — a reusable publishability test is itself a
    D2 contribution, and this milestone is the measurement that earns it.
-9. A dashboard entry.
+10. A dashboard entry.
 
-**What PR 1 explicitly does NOT do:** publish anything, create the marketplace repo, or fix any
-coupling — including `brief/SKILL.md`'s nine known references. Fixing a component while also judging
+**What PR 1 explicitly does NOT do:** publish anything, create the **published** marketplace repo, or
+fix any coupling — including `brief/SKILL.md`'s **nine repo-specific ground-truth items** (4 bare
+guard names, 4 document paths, 1 tool name — *not* nine `scripts/check-*` invocations; see §4) and
+the three CWD-relative invocations in `explainer-delivery.md`. Fixing a component while also judging
 it is how this repository has previously manufactured a false green, and the owner chose option A
 specifically to keep evaluation independent of repair.
 
@@ -184,7 +420,9 @@ specifically to keep evaluation independent of repair.
 | Risk | Mitigation |
 |---|---|
 | The scan becomes an opinion in script form | §5's falsifier: the install experiment can declare the scan defective |
-| The inventory is written from recall and drifts, like the 9-files figure | Every count derived by command, dated, and the derivation recorded beside it |
+| The inventory is written from recall and drifts | Every count derived by command, dated, and the derivation recorded beside it |
+| A derived count DECAYS as its subject grows — the actual 9-files failure (r1 CLAUDE H1) | Every count carries its date and its file set, so a stale figure is visibly stale rather than wrong; §3's banner states this |
+| A count is taken over the wrong set, and reproduces | §3's counting rule fixes membership before arithmetic; §5 asserts a non-zero expected file count per component. ⚠ This spec reached a correct total over a wrong set twice in round 1 |
 | Efforts (1) and (2) get weaker verdicts than (3) | Stated as a bound in §6 rather than hidden; their verdicts are explicitly labelled argument-based |
 | The milestone becomes "publish everything" by momentum | `DON'T-SHIP` is a first-class verdict; a component that fails C1–C4 is recorded as such, and that is a successful outcome of this work |
 | ~11,000 lines is too much to assess per line | Assessment is per component against four criteria, not per line |
@@ -192,7 +430,13 @@ specifically to keep evaluation independent of repair.
 ## 9. Falsifiers
 
 - **For the inventory:** a component marked `SHIP` that the install experiment cannot run.
-- **For the scan:** a blocker the experiment hits that the scan scored clean.
+- **For the scan:** a blocker **or a degraded result** the experiment hits on a component the scan
+  scored clean (§5).
+- **For the scan's completeness:** a component whose resolved file set is empty or smaller than its
+  declared count, and which the scan still scored (§5's companion rule).
+- **For D3's packaging assumption:** §7 item 0's spike cannot package one skill and one script onto a
+  local marketplace and invoke them from elsewhere. D3 claims the route is proven; it is not proven
+  that **this artifact** can travel it (r1 CLAUDE M5, r1 CODEX 10).
 - **For this spec:** if the install experiment cannot be made to run at all, D4 is unachievable and the
   method must be re-decided with the owner rather than silently downgraded to paper scoring.
 
@@ -207,7 +451,46 @@ written with an invented one.
 - **"the strongest candidate" was ambiguous** in D4 while §6 named the comprehensibility suite
   explicitly. D4 now names it too.
 
+## 9c. What round 1 caught — dual adversarial review, 2026-10-16
+
+Both halves returned **NOT CONVERGED**: Codex 4 Blocking / 6 High / 1 Medium, Claude 3 Blocking /
+6 High / 6 Medium / 2 Low. Full documents:
+`docs/reviews/codex/marketplace-inventory-r1-codex.md`,
+`docs/reviews/claude/marketplace-inventory-r1-claude.md`.
+
+⭐ **The four Blocking defects, and what each one was really about:**
+
+1. **The component list omitted the mechanism the evidence endorses.** `scripts/recall-llm.py`,
+   2,550 lines, on `master` — absent, while the lexical matcher the same paragraph rejects was the
+   only thing listed. §3's instruction was unexecutable against §3's own scope.
+2. **`CANNOT RUN` guarded the wrong failure.** It fires when a set cannot be resolved; the
+   dangerous case is a set that resolves **successfully and incompletely**. Reproduced against this
+   spec's own stated paths: a walk over `.claude/skills/shared/` finds nothing, because the entries
+   are git symlinks and `grep -r` does not follow them — a clean score over an empty set.
+3. **The experiment could pass by inheriting the author's machine.** `~/explainers/` is a symlink
+   into this repository, so the composer finds a usable page that a stranger has none of.
+4. **The pass condition could not fail in the way that matters.** All nine ground-truth items can
+   return nothing, a page still composes and serves, Ask still works — a hollow page scoring `SHIP`.
+
+⚠ **AND ROUND 1 REFUTED THIS DOCUMENT'S OWN HEADLINE FINDING**, which is the most useful thing it
+did. The *"3x undercount"* was a cross-corpus comparison; same-set the figure was **accurate within
+3.7% when written** and is **1.81x** low today. So the lesson drawn from it — *written from recall* —
+was wrong, and §8's risk row was mitigating a failure this case is not an instance of. The real
+failure is **a dated count decaying**. See §3 and §8.
+
+⚠ **Two numbers in the walkthrough page were produced by nothing** and are corrected with the spec:
+`346s` for the sharding result (`ci.yml` records `1758s → 353s`, measured on one machine
+2026-10-05; `346` appears nowhere in the repo, and a prior review half had already filed it as a
+defect), and *"15 document guards"*, a denominator that exists nowhere.
+
+⛔ **ONE FINDING IS DELIBERATELY NOT FOLDED** — whether `SHIP` may be recorded without demonstrated
+C4 evidence. It changes what this milestone promises rather than how it is reached, so it is the
+owner's decision and is stated as an open question in §4.
+
 ## 10. Out of scope, named so the gap is not read as closed
 
-Official-marketplace submission (D3); creating the marketplace repository; fixing any coupling;
-building Q0; merging the two recall branches; and an install experiment for efforts (1) and (2).
+Official-marketplace submission (D3); creating the **published** marketplace repository — ⚠ *not*
+the throwaway local marketplace §6 and §7 item 0 require, which is a different artifact (r1 CLAUDE
+H2, r1 CODEX 7); fixing any coupling; building Q0; merging the two recall branches
+(`c5-recall-matcher`, `backlog-117-parser-substrate`); and an install experiment for efforts (1) and
+(2).
