@@ -146,7 +146,13 @@ figure was introduced four days earlier, and there are **three** stages, not two
 | today | `HEAD` | **6,525** | **1.81x** low |
 
 ⛔ **SO THERE ARE TWO FAILURE MODES HERE, AND THE SECOND IS THE ONE WORTH CARRYING.** The count
-decayed (3,599 → 6,525, 1.75x growth). But it also **arrived in `portable-practices.md` already
+decayed. ⚠ **TWO DIFFERENT RATIOS LIVE HERE AND ROUND 1 PAIRED THE WRONG ONE WITH THIS ARROW
+(r2 CLAUDE M1):** `3,599 → 6,525` is **1.81x** (the gap against what the index SAYS), while
+`3,737 → 6,525` is **1.75x** (the growth of the SUBJECT since it was measured). The whole point of
+the three-stage history is that those are different numbers, so the arrow now carries the right one.
+⚠ And `3.7%` is `138/3737` — **the denominator is the value at republication**, stated because an
+unlabelled percentage is the same defect one level down. But the figure also **arrived in
+`portable-practices.md` already
 stale**, because it was *copied from an earlier measurement into a fresh-looking declaration without
 being re-measured*. A republished figure inherits staleness **and loses the fact that it is
 inherited** — the new document reads as a new measurement. That is a sharper rule than *date your
@@ -156,14 +162,17 @@ it was written into.**
 - The first version of this paragraph compared 3,599 against **10,977** — a set of its own
   construction that adds `gen-dashboard.py` and `gen-goals-page.py` (**4,798 lines, 46% of the
   Python total**), neither of which is among the nine. That is a **3.05x cross-corpus ratio**.
-- The first version of this paragraph compared 3,599 against **10,977** — a set of its own
-  construction that adds `gen-dashboard.py` and `gen-goals-page.py` (**4,798 lines, 46% of the
-  Python total**), neither of which is among the nine. That is a **3.05x cross-corpus ratio**.
+  ⚠ **AND THAT SET IS NOT THE ONE THIS SPEC'S OWN TABLE LISTS EITHER (r2 CLAUDE M2):** 10,977 is the
+  six Python files plus the four skills — a set that *adds* the two generators and *omits* the three
+  shared contracts. A paragraph whose subject is *a measurement is only as good as its corpus* has
+  now mis-described its own corpus twice.
 
 ⛔ **SO THE DIAGNOSIS CHANGES, AND THAT MATTERS MORE THAN THE NUMBER.** The figure was **derived,
 enumerated, dated and correct** (`portable-practices.md:17` says *"Enumerated in `docs/backlog.md`
 row 89, not recalled"*, and row 89 contains the enumeration). It was not written from recall. Its
-subject then grew 1.75x. **The failure mode is a dated count decaying, not a count invented** — and
+subject then grew **1.75x against the value measured at republication** (3,737 → 6,525); it is
+**1.81x** against the figure the index still prints. **The failure mode is a dated count decaying,
+not a count invented** — and
 §3's own banner already handles decay. **Correcting it is in scope for this milestone**, and the
 correction must record *that* reason.
 
@@ -239,6 +248,23 @@ Criteria 1 and 2 are `docs/portable-practices.md`'s existing filters. D1's publi
 | **C2** | **Project-independent** — runs with no Supabase, no Gemini, no Fly | counting is **evidence, not a verdict** — see below |
 | **C3** | **Self-contained** — does not depend on parts of this repo that are not shipping | counting is **evidence, not a verdict** — see below |
 | **C4** | **Supportable** — a stranger can install it, use it, and recover from failure without the author | ⛔ **not countable** — this is what the install experiment is for |
+| **C5** | ⭐ **Redistributable** — we are permitted to publish it, and it contains nothing that must not be published | ⛔ **not countable, and NOT YET ANSWERABLE** — see below |
+
+⭐ **C5 IS NEW, AND NOBODY HAD ASKED IT (r2 CLAUDE M10).** D1 commits to *"public strangers, full
+support bar"*, which means publishing — and **publishing requires a grant.** Measured: there is **no
+`LICENSE` file in this repository**, and this spec mentioned licensing **zero** times before this
+paragraph. Two sub-questions with different answers:
+
+| What | The question | Who answers it |
+|---|---|---|
+| the **code** | under what licence is it published? | ⛔ **the owner** — this is a choice, not a finding |
+| the **corpus** (effort (1)'s 157 memory files) | does it contain private content, credentials, or third-party material we may not redistribute? | a **content review**, which nobody has done |
+
+⚠ **Bound, stated rather than hidden:** no installed marketplace on this machine requires licence
+metadata, so this is not a mechanical blocker to *installing* — it is a blocker to *publishing*,
+which is what D1 commits to. ⛔ **And a component cannot be `SHIP` with C5 unanswered**, because
+unlike C4 there is no weaker-but-honest grade: *"we may not have the right to publish this"* is not
+an evidence strength, it is a veto. C5 therefore grades `measured` or blocks.
 
 ⛔ **C2 AND C3 ARE NO LONGER CALLED "MECHANICALLY COUNTABLE" (r1 CLAUDE H4, r1 CODEX 4), BECAUSE BOTH
 DIRECTIONS OF WRONG ANSWER ARE PRESENT IN THE SUITE TODAY AND WERE MEASURED:**
@@ -259,7 +285,7 @@ how a non-path reference is recognised.
 |---|---|---|
 | `entry-point` | invokes it directly | per component, by the install experiment |
 | `library` | never invokes it; it is a dependency of an entry-point | **inherited** — but only under the rules below |
-| `data` | supplies content (e.g. the memory corpus) | not applicable; C4 is recorded as `n/a` |
+| `data` | supplies content (e.g. the memory corpus) | **C4 is STRUCK, not graded** — the component is graded against C1–C3 only, and §4b's completeness rule is satisfied by a struck C4 rather than by a grade (r2 CLAUDE M5) |
 
 ⚠ **A component may hold BOTH `entry-point` and `library`** — a module that is executable *and*
 imported is not a third role, it carries two, and is assessed as an entry-point while also supplying
@@ -272,9 +298,24 @@ is undefined the moment there is more than one, and silently wrong when there ar
 | Situation | Rule |
 |---|---|
 | imported by entry-points that **all** pass | inherits the pass, grade `inherited` |
-| imported by a **mix** of passing and failing entry-points | **inherits the FAILURE.** A library implicated in any entry-point's failure is not carried by the others |
+| imported by a **mix** of passing and failing entry-points | ⛔ **inherits the failure ONLY IF the failure is ATTRIBUTED TO CODE IN THAT LIBRARY** — the entry-point's failure trace reaches it. A failure attributed elsewhere (an absent credential, a missing host binary) leaves the library on the passing importers' evidence |
+| imported only by entry-points that are themselves `argued` | the library is **`argued`** — not `inherited` (there is no measured scenario to inherit) and not `none` (something was established) |
 | imported by **no** entry-point | **no inheritance is possible** — grade `none`. ⚠ An orphan library is also a scope question: ask why it is shipping at all |
 | part of an **import cycle** | graded by the entry-points at the cycle's boundary; a cycle with no entry-point outside it is `none` |
+
+⛔ **WHY THE IMPLICATION TEST IS LOAD-BEARING, MEASURED ON THE FILE THIS TABLE WAS ADDED TO RESCUE
+(r2 CLAUDE H5, High, INTRODUCED BY ROUND 2'S FIX).** Round 2's first version read simply *"mixed
+inherits the FAILURE"*. `scripts/page_chrome.py` is imported by **eleven** files, among them
+`scripts/gen-dashboard.py`, which invokes `gh` (`gen-dashboard.py:521`). Under §6's fresh-`HOME`
+isolation `gh` has no credentials, so that entry-point fails **by construction** — and the unqualified
+rule made `page_chrome.py` inherit a failure caused by *an absent credential it never touches*. That
+is exactly the phantom backlog row D5 (§4b) was decided to eliminate, reinstated on the same file,
+**by the fix for the laundering case in the other direction.** Both directions now need the
+attribution test, and that is what the row above states.
+
+⚠ **AND `inherited` MUST NOT LAUNDER `argued` UPWARD (r2 CLAUDE H4).** `inherited` requires at least
+one named **`measured`** scenario. Without that clause a library under an entry-point that was itself
+only *argued* would be graded `inherited`, which reads stronger than its evidence.
 
 ⛔ **AND AN INHERITED PASS MUST NAME THE SCENARIO THAT EXERCISED IT.** The failure round 2
 constructed: an entry-point passes through one branch of a library while *an unexercised branch of
@@ -307,7 +348,10 @@ is worse.** ⟳ **CORRECTED 2026-10-16 (r1 CLAUDE H3, H5; r1 CODEX 4):**
   measurement cannot support.
 
 **Verdicts are per component, and there are exactly three:** `SHIP`, `NEEDS-WORK` (with the named
-defect), `DON'T-SHIP` (with the reason). A fourth verdict — "unknown" — is not permitted; a component
+defect), `DON'T-SHIP` (with the reason). ⛔ **AND D5 (§4b) NARROWS WHAT FOLLOWS — read them
+together, because this sentence alone is no longer the rule (r2 CLAUDE B1c).** Under D5 a component
+the experiment merely never reached is `argued`, **not** `NEEDS-WORK`, and files no backlog row;
+`NEEDS-WORK` means a *named defect*. A fourth verdict — "unknown" — is not permitted; a component
 that cannot be assessed is `NEEDS-WORK` whose named defect is *"no way to assess it"*. ⚠ **That rule
 now bites only where assessment is genuinely impossible**, because the role table above removes the
 case where it was firing on `library` components by construction.
@@ -356,10 +400,18 @@ three-verdict rule closes, and it still cannot separate *"fit to publish, and we
 
 ⚠ **THE COST, RECORDED RATHER THAN DISCOVERED LATER.** Two fields must be read together, and
 `SHIP / argued` can be mis-skimmed as plain approval by a reader who scans only the verdict column.
-**That is this decision's falsifier:** if the inventory is read and acted on as though `argued`
-meant `measured`, the two-axis scheme has failed and the stricter alternative — requiring
-`measured` or `inherited` for `SHIP` — is the fallback. The inventory must therefore render the
-grade **beside** the verdict, never in a footnote or a separate table.
+**That risk is a stated cost of this decision**, not a hidden one.
+
+⛔ **AND THE FALSIFIER IS THE CHECKABLE ONE, NOT THE UNOBSERVABLE ONE (r2 CLAUDE M4).** The first
+version said the scheme fails *"if the inventory is read and acted on as though `argued` meant
+`measured`"* — **nothing can observe how a document was read**, so that falsifier could never fire.
+The checkable form, which the same section already implies:
+
+> **The scheme has failed if any `SHIP` row renders its grade outside the same visual unit as its
+> verdict, or if any `inherited` grade names no scenario.**
+
+Both are mechanically decidable from the inventory itself, and the stricter alternative — requiring
+`measured` or `inherited` for `SHIP` — remains the fallback if they fire.
 
 ---
 
@@ -384,6 +436,14 @@ manifest, a caller, and no fail-open handler.
    `artifact-design`, which appears nowhere in §3's component table. A file-invocation scan finishes
    successfully and never sees this form.
 
+7. ⭐ **inbound registration dependencies (added by r2 CLAUDE H6).** ⛔ **All six detectors above
+   look OUTWARD from a component — what it reaches.** None asks the opposite question: *does this
+   component need an entry in host configuration, a hook registration, a `PATH` entry, or a plugin
+   manifest stanza in order to do anything at all?* The four regen hooks and the recall hook are
+   inert without a `settings.json` stanza a stranger does not have, and that dependency is invisible
+   to every outward-looking detector. **The check is cheap:** a component with no importer and no
+   invoker must declare what registers it, or it is `NEEDS-WORK` with that named defect.
+
 ⛔ **THE SCANNED REGION IS STATED, because the choice alone flips a verdict (r1 CLAUDE H4).**
 
 ⟳ **ROUND 1'S VERSION OF THIS RULE WAS WRONG IN BOTH DIRECTIONS AND IS REPLACED (r2 CODEX 6, High).**
@@ -399,7 +459,15 @@ wholesale, which confuses **a mention** with **a dependency**:
 
 1. **A match is a MENTION CANDIDATE until something makes it a dependency** — an import, an
    invocation, a documented prerequisite, or a runtime configuration read. Mention candidates are
-   **reported separately** from dependency findings and never alone decide a verdict.
+   **reported separately** from dependency findings.
+   ⛔ **AND "NEVER ALONE DECIDES A VERDICT" IS MADE ENFORCEABLE, NOT ADVISED (r2 CLAUDE M8).** Every
+   non-`SHIP` verdict **cites the dependency-finding ids it rests on**, and the scan **refuses to
+   emit a dependency-finding id for a mention candidate.** Then the rule has a falsifier: a non-`SHIP`
+   verdict citing no id, or citing a mention candidate's id, is a defect in the inventory.
+   ⚠ **A configuration read counts as a prerequisite only when the component FAILS OR DEGRADES
+   without it (r2 CLAUDE M7)** — i.e. there is no default, or the default leads to an error path. A
+   read with a working default is a **mention candidate**, not a dependency. Without that rule
+   detector 6 repeats the positional-matching defect detector 1 was just repaired for.
 2. ⭐ **Detector 6 — runtime prerequisites (added by r2 CODEX 6).** A generic Python import of an
    undeclared installed package is *none* of project vocabulary, an external file invocation, a bare
    guard name, or a prose-required skill — **so none of detectors 1–5 looks at it**, and it is
@@ -442,17 +510,33 @@ score, not CANNOT RUN.
   have the same author. **§7 item 2 therefore names who derives the declaration and what validates
   it against the installed layout and the dependency closure** — an oracle written from the output
   it is meant to check is not an oracle;
-- **carry three mutations**, each dying via the case it names: one that **empties** a component's
-  set, one that **substitutes** a member while preserving cardinality, and one that **omits** a
-  dependency and writes the count to match. ⚠ The empty-set mutation alone cannot expose
-  substitution — round 1 required only that one.
+- **carry a mutation per DETECTOR as well as per file-set rule (r2 CLAUDE H7).** Three guard the
+  file set — one that **empties** a component's set, one that **substitutes** a member while
+  preserving cardinality, and one that **omits** a dependency and writes the count to match — and
+  ⛔ **detectors 3, 4, 5 and 6 carry one each**, because round 2 added detector 6 as *the thing that
+  breaks a stranger's run first* and then required no mutation to reach it. A detector with no
+  mutation is a detector nothing proves fires. ⚠ For detector 6 the **known positive must be
+  constructed in the self-test fixture** — a fixture component that imports an absent package —
+  rather than relying on a real component happening to have one. ⚠ The empty-set mutation alone
+  cannot expose substitution; round 1 required only that one.
 
 ⚠ **This spec's own component table now names `.agents/skills/shared/` (the real directory) rather
 than the symlink path**, so the measured failure above cannot be reached from §3 as written.
 
-**Its falsifier, which is the point of D4:** any blocker the install experiment hits on a component
-the scan scored clean is a **scanner defect**, fixed in the scan, not recorded as a footnote. The scan
-is not permitted to be an opinion in script form.
+⚠ **A WORKED EXAMPLE OF STATING THE FALSIFIER, because this branch got it wrong three times in a row
+(r2 CLAUDE M9).** Round 1 filed *"`regen-features-page.sh` is not executable, unlike its three
+siblings"*. Round 2 checked that file, found mode `100755`, and directed the finding be withdrawn.
+The coordinator then checked the *claim* and found `regen-dashboard.sh` is the `100644` one. **All
+three parties checked a file or a claim, and none checked whether the mode MATTERS.** It does not:
+`.claude/settings.json` invokes all four as `bash <path>`, so the executable bit is never consulted.
+⛔ **So the inventory records the observation together with what would make it a defect** — *any hook
+invoked directly rather than through `bash`* — which is currently false for all four. A true
+observation with no consequence is not a defect, and saying so is cheaper than three rounds of
+checking the wrong thing.
+
+**Its falsifier, which is the point of D4:** **a blocker OR a degraded result** that the install
+experiment hits on a component the scan scored clean is a **scanner defect**, fixed in the scan, not
+recorded as a footnote. The scan is not permitted to be an opinion in script form.
 
 ⛔ **THE FALSIFIER COVERS DEGRADATION, NOT ONLY BLOCKAGE (r1 CLAUDE B2, Blocking; r1 CODEX 6).** As
 first written it keyed on *"any blocker the experiment hits"*, and the failure that matters here is
@@ -520,8 +604,13 @@ condition is:
 3. ⭐ **one identified USEFUL operation completes through the installed paths (r2 CODEX 8, High).** A
    script that prints `--help` and then cannot locate its packaged resources satisfies "it ran" and
    establishes nothing;
-4. ⭐ **one documented RECOVERY scenario succeeds**, because C4 says *"recover from failure without
-   the author"* and no part of the original method tested recovery at all;
+4. ⭐ **recovery is split into a question and a conditional (r2 CLAUDE H3).** The suite documents no
+   recovery procedure, so *"one documented recovery scenario succeeds"* had **no subject** — and
+   authoring one would collide with §7's no-repair rule. So: **(a)** the inventory answers *does this
+   component document how to recover from failure at all?* — answerable today, and the answer is
+   **no**, which is itself a C4 finding the inventory carries; and **(b)** a **conditional pass
+   condition**: *where a recovery procedure is documented, it succeeds under isolation*. A condition
+   over an empty set passes vacuously, and that is recorded rather than hidden;
 5. ⭐ **an entry-point COVERAGE MATRIX is recorded** — which entry-points were exercised and which
    were not. **Conclusions are bounded to the exercised ones**; an unexercised entry-point is
    `argued`, never `measured` (§4b).
@@ -556,11 +645,24 @@ and is a candidate follow-up if either survives.
    the isolated environment §6 needs. ⛔ **If it fails, D4 is unachievable and §9's third falsifier
    has fired** — so it runs first, when that is still cheap to act on.
 1. This spec, reviewed and committed.
+0b. ⭐ **The ISOLATION BASELINE, written before the spike runs (added by r2 CLAUDE H2).** A document
+   naming the interpreter version, the package set, the available commands, the network policy, and
+   **what the capture mechanism cannot observe**. ⛔ **§6 REQUIRED a baseline and nothing produced
+   one** — which is round 1's Blocking B3 (*"§5 requires a declared shipping set; nothing in §7
+   produces one"*) recurring one round later in the same pair of sections. It precedes item 0 because
+   the spike is the first thing that needs an environment to run in.
+1. This spec, reviewed and committed.
 2. ⭐ **The shipping-set declaration (added by r1 CLAUDE B3, r1 CODEX 2)** — per publishable unit,
    as **data the scan reads**, listing member files with symlinks resolved and an expected file
-   count per component. ⛔ Nothing in the original nine deliverables produced this, so the scan had
-   only two options at build time: CANNOT RUN for all 24 components, which empties deliverable 5, or
-   infer the set — the condition §5 warns about, with no gate on the inference.
+   count per component.
+   ⛔ **WHO DERIVES IT AND WHAT VALIDATES IT (r2 CLAUDE H1 — §5 asserted this item named both, and it
+   named neither):** it is derived from the **installed package tree** produced by item 0's spike, by
+   a step that **never reads the scan's output**; and it is validated by a third check that walks the
+   dependency closure of the installed tree and refuses a declaration missing any member the closure
+   reaches. **Three different producers, so no oracle checks its own output.**
+   ⚠ Nothing in the original nine deliverables produced this at all, so the scan had only two options
+   at build time: CANNOT RUN for all 24 components, which empties deliverable 5, or infer the set —
+   the condition §5 warns about, with no gate on the inference.
 3. `scripts/check-publishability.py` + `--self-test` + mutation manifest + CI registration,
    **including the empty-set mutation §5 requires.**
 4. The install-experiment record: failures found, which the scan predicted, **and every resource the

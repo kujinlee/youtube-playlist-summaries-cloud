@@ -232,14 +232,19 @@ li::marker{color:var(--fg3)}
 
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
-  <p><strong>Nothing is implemented.</strong> What exists is a 213-line spec, an allocated anchor, and
-  a feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
-  <p class="note">As of <strong>2026-10-16 ~13:30 PDT</strong>, branch <code>marketplace-inventory</code>
-  at <code>a3fbb197</code> plus the round-1 fold. <span class="note">⚠ This line previously claimed
-  “15 document guards … 0 failing” measured at <code>e1cd5b8a</code> — two commits behind the page,
-  and “15” was a denominator that exists nowhere (round 1, M6 and L1). The guard sweep for this
-  branch is re-run and recorded in the round-1 coordinator document rather than asserted here, where
-  it decays in minutes.</span></p>
+  <p><strong>Nothing is implemented.</strong> What exists is a
+  <strong data-derived="spec-lines">771</strong>-line spec, an allocated anchor, and a
+  feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
+  <p class="note">Branch <code>marketplace-inventory</code>, spec
+  <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
+  <span class="note">⚠ <strong>Two things this block got wrong, both now checked by a script rather
+  than written by hand.</strong> It said <em>“213-line spec”</em> while the spec was 669 lines — the
+  page was recomposed four times and this figure was never re-derived (round 2, B2). And it earlier
+  claimed <em>“15 document guards … 0 failing”</em> against a commit two behind the page, where “15”
+  was a denominator that exists nowhere (round 1, M6 and L1). Guard results are recorded in the
+  coordinator documents, not asserted here, because a guard result decays in minutes. The spec length
+  above carries <code>data-derived</code> and <code>scripts/check-claim-propagation.py</code> refuses
+  a page whose derived figures disagree with the spec.</span></p>
 </div>
 
 <div class="howto">
@@ -395,8 +400,12 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <strong>6,525 lines</strong>.</p>
   <p>Nothing broke because of this. It is quoted in the one document whose job is to describe what
   travels. <strong>But the reason matters, and round 1 corrected it:</strong> the figure was derived
-  and enumerated, and was <em>accurate within 3.7%</em> on the day it was written — its subject then
-  grew 1.75×. So this is an argument for <strong>re-deriving dated counts</strong>, not an argument
+  and enumerated, and was <strong>exactly right on the day it was measured</strong>
+  (<code>cacbac17</code>, 3,599 vs 3,599) — then <em>already 3.7% stale on the day it was
+  republished</em> into the index four days later. Its subject then
+  grew <strong>1.75×</strong> against the value measured when it was republished (3,737 → 6,525) —
+  and is <strong>1.81×</strong> against the 3,599 the index still prints. So this is an argument for
+  <strong>re-deriving dated counts</strong>, not an argument
   about recollection. See the refutation below.</p>
 </div>
 
@@ -448,7 +457,8 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
   <div class="scroll">
   <table>
     <tr><th>Comparison</th><th>Ratio</th></tr>
-    <tr><td>Same nine files, at the commit that wrote the figure (<code>100cf498</code>, 2026-09-07): 3,599 vs 3,737</td><td><strong>accurate within 3.7%</strong></td></tr>
+    <tr><td>Same nine files, at the commit that <strong>republished</strong> the figure into the index (<code>100cf498</code>, 2026-09-07): 3,599 vs 3,737</td><td>already <strong>3.7% stale</strong> (138/3737)</td></tr>
+    <tr><td>Same nine files, at the commit that <strong>originally measured</strong> it (<code>cacbac17</code>, 2026-09-03): 3,599 vs 3,599</td><td><strong>exactly right</strong></td></tr>
     <tr><td>Same nine files, today: 3,599 vs 6,525</td><td><strong>1.81× low</strong></td></tr>
     <tr><td>As this page first stated it: 3,599 vs 10,977</td><td>3.05× — <em>different sets</em></td></tr>
   </table>
@@ -456,7 +466,8 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
   <p><strong>So the diagnosis changes, which matters more than the number.</strong> The figure was
   derived, enumerated, dated and <em>correct when written</em> — <code>portable-practices.md:17</code>
   says <em>“Enumerated in <code>docs/backlog.md</code> row 89, not recalled”</em>, and row 89 contains
-  the enumeration. Its subject then grew 1.75×. <strong>The failure is a dated count decaying, not a
+  the enumeration. Its subject then grew <strong>1.75×</strong> against the republication value and
+  <strong>1.81×</strong> against the printed figure. <strong>The failure is a dated count decaying, not a
   count invented</strong> — so the lesson this spec drew from it, and the risk row it wired that
   lesson into, were both aimed at the wrong failure.</p>
   <p class="note">⚠ And this section was itself a correct measurement over the wrong corpus, inside
@@ -530,6 +541,7 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 <tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
 <tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
 <tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for</td></tr>
+<tr><td><strong>C5</strong></td><td>⭐ <strong>Redistributable</strong> — we are permitted to publish it, and it holds nothing that must not be published</td><td><span class="pill no">not answerable yet</span> — and two of its halves are yours</td></tr>
 </table>
 </div>
 
@@ -558,6 +570,25 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
   <code>explain-topic</code> and <code>explain-findings</code> <strong>1</strong> each,
   <code>brief/SKILL.md</code> <strong>9</strong> — only ever measured C2. “Concentrated in one file”
   is a C3 conclusion, and a C2 measurement cannot support it.</p>
+</div>
+
+<div class="box bad">
+  <span class="lbl">C5 is new, and nobody had asked it — two halves, and both need you</span>
+  <p>The decision to publish to <em>public strangers</em> means publishing, and publishing requires
+  permission. Measured: <strong>there is no <code>LICENSE</code> file in this repository</strong>, and
+  the spec mentioned licensing <strong>zero</strong> times before round 2 raised it.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
+    <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>⛔ <strong>you</strong> — this is a choice, not a finding</td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s 157 memory files</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong>, which nobody has done</td></tr>
+  </table>
+  </div>
+  <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
+  requires licence metadata, so this does not block <em>installing</em> — it blocks
+  <em>publishing</em>, which is what the public-stranger decision commits to. And unlike the support
+  criterion there is no weaker-but-honest grade: <em>"we may not have the right to publish this"</em>
+  is not an evidence strength, it is a veto. ⛔ <strong>So C5 either passes on evidence or blocks.</strong></p>
 </div>
 
 <div class="box warn">
@@ -629,6 +660,12 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 a component that cannot be assessed is <code>NEEDS-WORK</code> whose named defect is <em>“no way to
 assess it”</em>.</p>
 
+<p class="note">⚠ <strong>That was the rule you questioned, and D5 below narrows it — read them
+together.</strong> Under D5 a component the experiment merely never reached is
+<code>argued</code>, <strong>not</strong> <code>NEEDS-WORK</code>, and files no backlog row;
+<code>NEEDS-WORK</code> now means <em>a named defect</em>. The sentence above is kept because your
+question was asked against it.</p>
+
 <div class="box warn">
   <span class="lbl">Your question, answered — “this is a contradiction. what is reasonable answer? adding CANNOT-ASSESS?”</span>
 
@@ -659,14 +696,22 @@ assess it”</em>.</p>
   </table>
   </div>
 
-  <p><strong>What the round-1 fold already did to the narrow case.</strong> Every component now
-  carries a <strong>role</strong> — <code>entry-point</code>, <code>library</code> or
-  <code>data</code> — and a <code>library</code> <em>inherits</em> its support verdict from the
-  entry-points that import it. <code>page_chrome.py</code> is a library, so it is no longer
-  unassessable and no longer generates a phantom row. <strong>That removes most of the population
-  your question is about.</strong></p>
+  <p><strong>What the round-1 fold did to the narrow case — and what round 2 then found wrong with
+  it.</strong> Every component now carries a <strong>role</strong>: <code>entry-point</code>,
+  <code>library</code> or <code>data</code>.</p>
+  <p class="note">⟳ <strong>SUPERSEDED, twice.</strong> Round 1's rule was that a <code>library</code>
+  <em>inherits its support verdict from the entry-points that import it</em>. Round 2 showed that is
+  undefined once there is more than one importer and silently wrong when there are none, so §4 now
+  carries five rules — aggregation, orphan, cycle, dual-role and provenance. ⛔ <strong>And round 2's
+  Claude half then showed the replacement fails on the very file this answer named.</strong>
+  <code>page_chrome.py</code> is imported by <strong>eleven</strong> files including
+  <code>gen-dashboard.py</code>, which invokes <code>gh</code>; under §6's fresh-<code>HOME</code>
+  isolation that entry-point fails for want of a credential, so "mixed inherits the failure" makes
+  <code>page_chrome.py</code> inherit a failure <em>caused by something it never touches</em> — the
+  phantom row D5 exists to remove, reinstated. A library now inherits a failure only when the
+  failure is <strong>attributed to code in that library</strong>.</p>
 
-  <p><strong>What is left is the part I deliberately did not decide for you.</strong> After the role
+  <p><strong>What was left at the time — and you have since decided it, as D5 above.</strong> After the role
   fix, the only components that still cannot be assessed for support are entry-points the install
   experiment never reaches — which is <em>all of</em> efforts (1) and (2), because §6's experiment
   covers the comprehensibility suite only. <strong>So your question and the one open question in this
@@ -830,7 +875,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 14:57 · bea19c78 · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 15:57 · 5fa1155f · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

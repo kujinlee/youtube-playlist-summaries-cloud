@@ -1,0 +1,134 @@
+[
+  {
+    "name": "markdown treats every occurrence as a quotation, so a re-asserted retired rule survives",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if any(m in block for m in RETIREMENT_MARKERS):",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "md: bare assertion counts as asserted"
+    ]
+  },
+  {
+    "name": "the retirement-marker vocabulary is emptied, so every deliberate correction note reads as a fresh assertion",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    \"\u27f3\",  # \u27f3 \u2014 this project's correction glyph",
+        "    \"__NEVER_APPEARS__\","
+      ]
+    ],
+    "expect": [
+      "md: the correction glyph alone marks a retirement",
+      "html: inline marker is a quotation"
+    ]
+  },
+  {
+    "name": "the whole markdown file becomes ONE block, so a marker anywhere exempts an assertion anywhere",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    return [b for b in re.split(r\"\\n\\s*\\n\", text) if b.strip()]",
+        "    return [text] if text.strip() else []"
+      ]
+    ],
+    "expect": [
+      "md: marker in a DIFFERENT block does not exempt"
+    ]
+  },
+  {
+    "name": "HTML treats every occurrence as a quotation, so the page may assert a retired rule",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if \"note\" in classes or any(m in data for m in RETIREMENT_MARKERS):",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "html: bare <p> is an assertion"
+    ]
+  },
+  {
+    "name": "the enclosing-element classes are discarded, so a note ancestor no longer exempts a quotation",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        classes = \" \".join(a.get(\"class\", \"\") for _, a in chain)",
+        "        classes = \"\""
+      ]
+    ],
+    "expect": [
+      "html: class=note is a quotation",
+      "html: nested inside a note ancestor is a quotation"
+    ]
+  },
+  {
+    "name": "a re-asserted retired claim is no longer reported",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            if asserted:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "audit: a re-asserted retired claim is a problem"
+    ]
+  },
+  {
+    "name": "a live claim missing from every site is no longer reported, so a fold that never landed passes",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        elif absent and len(absent) == len(auditable):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "audit: a LIVE claim absent from all its sites is a problem"
+    ]
+  },
+  {
+    "name": "a derived figure disagreeing with its source is accepted, which is backlog B2 reinstated",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        elif int(digits) != actual:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "audit: a derived figure disagreeing with its source is a problem"
+    ]
+  },
+  {
+    "name": "a page that declares no derived figure is assumed correct, which is the fail-open B2 would reinstate",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        found = _derived_values(read(spec[\"page\"]))",
+        "        found = _derived_values(read(spec[\"page\"])) or {\n            spec[\"key\"]: str(len(read(spec[\"source\"]).splitlines()))\n        }"
+      ]
+    ],
+    "expect": [
+      "audit: a missing derived element is a problem"
+    ]
+  },
+  {
+    "name": "void elements are pushed onto the stack, so one <br> inside a carrier swallows the rest of the page",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if tag.lower() not in self.VOID:\n            self.stack.append((tag, a))",
+        "        self.stack.append((tag, a))"
+      ]
+    ],
+    "expect": [
+      "derived: a void element carrying the attribute captures nothing"
+    ]
+  }
+]

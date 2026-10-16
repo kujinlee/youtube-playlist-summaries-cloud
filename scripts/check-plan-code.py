@@ -623,6 +623,13 @@ EXPECTED_MUTATIONS = {
     # read one. The counts ARE the evidence, so a line that has lost them records that something
     # happened while destroying what was measured — the recorded *a guard's own output is a
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
+    # ⟳ 2026-10-16: check-claim-propagation.py joins the manifest at 10, raising the declared
+    # sum by 10. It is the mechanical half of `one-rule-one-place` for documents, built after
+    # two adversarial rounds on `marketplace-inventory` produced 4 then 14 fix-induced findings
+    # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
+    # updating the site the finding named. A convention had already failed at it twice in two
+    # rounds, which is why this is a guard and not a checklist.
+    "scripts/check-claim-propagation.py": 10,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
@@ -3392,6 +3399,7 @@ def _self_test() -> int:
                                       "scripts/check-canonical-source.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
+                                      "scripts/check-claim-propagation.py",
                                       "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-doc-citations.py",
@@ -5105,7 +5113,14 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1456)
+    # ⟳ 2026-10-16, AFTER #377 MERGED: check-claim-propagation.py arrives with 10. The rise is
+    # exactly its manifest size — no existing entry moved. ⚠ THIS BRANCH FIRST DECLARED 1429,
+    # against the 1419 master it branched from; #377 then merged and took master to 1456, so the
+    # branch figure was stale by 27 before it was ever pushed. Rebased, re-derived, and read off
+    # the guard's own refusal rather than added by hand — the same conflict backlog measured on
+    # PR #365 (1361 declared against an 1178 master). ⚠ 1466 is the GUARD'S OWN FIGURE, read from
+    # `got 1466 want 0` against a deliberately wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1466)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

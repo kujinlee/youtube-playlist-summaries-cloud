@@ -15312,3 +15312,56 @@ concurrent.**
 | ⭐ **a release criterion NEITHER half evaluated** | whether the memory corpus can be **redistributed** — private content, credentials, rights. r2's own NOT VERIFIED section raises it and is explicit it is *"an unexamined release criterion, not a claim that sensitive material is present"*. 157 files authored as private working notes, so not hypothetical. Now on the page and owed to the criteria |
 | **D5 — the owner's decision, settled mid-round** | verdict axis unchanged; every verdict carries an evidence grade `measured` / `inherited` / `argued` / `none`. A fourth verdict (`CANNOT-ASSESS`) was **considered and rejected**: it re-opens the shrug bucket, and still cannot separate *proved* from *argued* — the distinction that matters, since §6's bound means two of three efforts can only be argued. `NEEDS-WORK` returns to meaning *a named defect*, so a component merely unreached files **no backlog row**. ⚠ **Its falsifier is written down**: if the inventory is acted on as though `argued` meant `measured`, the scheme failed and the stricter rule is the fallback |
 | **page verified by execution, again** | 0 `countable` pills remain; the `scripts/check-*` claim gone; D5 renders; all 9 new method elements present; 8 ask buttons, tray live, Send 47px, **no horizontal overflow**. Composed 59,853 bytes |
+
+## 2026-10-16 [needs-you]
+**The review process tripped its own alarm, and the answer was better than the alarm suggested.** The
+rule is that if two reviews in a row find problems *caused by the previous fix*, something structural
+is wrong and a deeper review is owed. That happened: the first round's fixes caused four problems, and
+the second round's caused fourteen.
+
+You chose to fix the cause rather than convene another review, and that was right, because the cause
+turned out to be one thing repeated: **a rule written down in two places, and each fix updating only
+the place the reviewer pointed at.** The spec said one thing and the page said the old thing. Section
+5 required something section 7 was supposed to provide and didn't. That same shape appeared ten
+different times.
+
+**So the fix is a script, not a promise.** I had already written "I updated the spec and not the page"
+down as a lesson after the previous round — and then did it again in the very next one. A note that
+has to be remembered competes with the same forgetting that caused the problem. The new check refuses
+the pair of documents when one of them still states a rule the other has replaced, and it refuses a
+page whose stated spec length does not match the real one.
+
+**It found two real problems the moment it first ran** — things four human-equivalent review passes
+had missed. One of them was mine from twenty minutes earlier: the page's "the spec is N lines long"
+had gone stale again because my own edits grew the spec afterwards. That is exactly the problem it was
+built for, caught by machine this time instead of by a reviewer two rounds later.
+
+**Two things need you.** First, there is **no licence file in this repository**, and the spec never
+mentioned licensing — under a decision to publish to strangers, that is a gap only you can close,
+because choosing a licence is yours. Second, the memory notes that one of the three efforts would ship
+are **157 files written as private working notes**, and nobody has read them for private content or
+for whether they are ours to give away. Neither is a claim that something is wrong in there; both are
+questions nobody had asked.
+
+<!--tech-->
+**`marketplace-inventory` r2 CLAUDE half folded. 2B/7H/10M/2L (21), **14 fix-induced** → ⛔ **thrashing
+trigger FIRED at 2 of 2.** Verdict: **NEITHER thrashing nor prose floor** — one mechanism behind 13 of
+14, redesign removes it. Built `scripts/check-claim-propagation.py`: **31 cases · 10 mutations · 10/10
+kill cleanly**. Spec **669 → 771**. 21 of 21 addressed.**
+
+| | |
+|---|---|
+| ⛔ **the trigger, and the answer it is owed** | r1 **0** fix-induced (first round) → r2 CODEX **4 of 10** → r2 CLAUDE **14 of 21**, same component. `dev-process.md` arms Phase 6 on two consecutive such rounds. ⭐ **Answer, with a per-finding table: NEITHER.** Not a prose floor — those findings are refinements a redesign cannot remove, and 13 of 14 share **one** mechanism. Not classic thrashing — **no finding reverses an earlier fix**; the role table, D5, the seeded repo, detector 6, identity comparison and the spike all survived attack. **What failed is PROPAGATION** |
+| ⭐ **the mechanism, already in this branch's own record** | the coordinator wrote it against itself after r2 — *"I folded the spec thoroughly and the page partially"* — **and reproduced it in the very next round.** Per finding: B1(a–d) spec/page · B2 spec grew/page's state block · H1 §5 asserts/§7 contains · H2 §6 requires/§7 produces · H4 §4's row/§4b · H5 §4's row/§7 item 6 · H7 file-set mutations/detectors 3–6 · M1 §3's table 1.81x/§3's prose 1.75x (**the page had it right**) · M3 duplicated rather than edited |
+| ⛔ **why a checklist was REJECTED as the primary remedy** | it had already been written down once and failed within one round. A checklist competes with the recall that produced the defect. **A script beats a claim** |
+| **the guard** | `check-claim-propagation.py` — ① a retired claim is not re-asserted outside a marked correction block ② a live claim reaches **every** declared site ③ a `data-derived` figure equals its source. Registered against **five** contracts: `EXPECTED_MUTATIONS` 10 (declared sum **1419 → 1429**, read off the harness's own refusal not typed), the pinned manifest list, `EXAMINED_KEYS` (key set **derived by running `analyse()`**, as its refusal instructs), ADR-0014 (`main()` **driven from four distinct call sites**, not pinned as debt), `POPULATION`, + 2 CI steps |
+| ⭐ **it found 2 real defects on its FIRST run** | ① §5 still **flatly asserted** the retired *"any blocker"* falsifier, degradation clause in a separate paragraph below ② the page's derived spec length said **681** against a **771**-line spec — **B2 recurring inside one session**, because step-3's edits grew the spec after the figure was set. Four review passes had missed ①; ② was twenty minutes old |
+| ⚠ **4 of 10 mutations did not kill at first — the transferable part** | ① **a case-name near-miss**: manifest said `absent from ALL`, case says `absent from all`. Same class as this repo's measured `--self-test runs N` vs canonical `--self-test # N` — **silent, not wrong** ② **a mutation that CRASHED** (`KeyError`) so rc was non-zero for the wrong reason and the named case never printed — *a crash forging a `[FAIL]`*; replaced with the real fail-open (*assume an undeclared figure correct*) ③ **a mutation too weak to bite** — removed one retirement marker while others remained ④ ⭐ **`VOID` looked DEAD: deleting it left 25/25 green**, and the house rule says remove unkillable code. **It is live** — a void element *carrying the attribute* cannot have children, so without the set it is pushed, never popped, and swallows the document. The fixture had never constructed that input. `cannot-die-may-mean-a-second-clause` was right |
+| **H5, the fix that created the opposite defect** | r2's *"mixed inherits the FAILURE"* had no implication test. `page_chrome.py` is imported by **eleven** files incl. `gen-dashboard.py`, which invokes `gh` (`:521`); under §6's fresh-`HOME` that entry-point fails **by construction**, so `page_chrome.py` inherited a failure *caused by a credential it never touches* — **the phantom row D5 exists to remove, on the file the role table was added to rescue.** → inherits a failure only when **attributed to code in that library** |
+| **H6: all six detectors looked OUTWARD** | none asked *does this component need a `settings.json` stanza, a `PATH` entry or a manifest entry to do anything?* The four regen hooks and the recall hook are **inert** without one. → detector 7, inbound registration |
+| **H1/H2: round 1's Blocking, one round later** | B3 was *"§5 requires a declared set; nothing in §7 produces one"*. r2's fix added a baseline to **§6** and nothing to **§7** — `grep 'baseline|capture|prerequisite'` over §7 returned **zero**. → §7 item **0b** produces it; item 2 names the deriver (**the installed tree, never the scan's output**) and the validator (a third check over the dependency closure) — **three producers, so no oracle checks its own output** |
+| **M9: three parties, nobody falsified it** | r1 named the wrong hook; r2 CODEX checked *the named file* (`100755`) and directed **withdrawal**; the coordinator checked *the claim* (`regen-dashboard.sh` is `100644`). **r2 CLAUDE: all four are invoked `bash <path>`, so the mode is never consulted.** → the inventory records the observation **with what would make it a defect** (*any hook invoked directly*), currently false for all four |
+| ⭐ **M10 → criterion C5, Redistributable** | **no `LICENSE` file**; the spec mentioned licensing **zero** times under D1's public bar. Split, because the halves differ: the code needs a licence **the owner chooses**, the corpus (157 private working notes) needs a **content review**. ⚠ Bounded — no installed marketplace requires licence metadata, so it blocks *publishing*, not *installing*. **C5 grades `measured` or blocks**: *"we may not have the right"* is a veto, not an evidence strength |
+| ⚠ **the subject moved under the review** | `5fa1155f` landed mid-read (spec 663→669). The half re-verified **all 21 at the new tip**, confirmed by `md5`/`wc -l`/`git diff --quiet`, and reported it. ⛔ **A coordinator committing to a branch a review is reading is a hazard `review-method.md` does not list** |
+| ⚠ **§5b was done by two different parties** | the reviewing half **did not execute the page** (B1/B2 rest on committed source); the coordinator executed it after each recomposition and the Ask channel round-tripped twice |
+| **guards** | 30 run: **26 green**. `banner-armed` + `plan-code` rc=2 were **my invocation** (both need a mode flag; 160/160 and 178/178 on `--self-test`). `test-counts` needs CI's `jest-results.json`. `fixture-variation` **now OK** — 832 parameters across 67 files |

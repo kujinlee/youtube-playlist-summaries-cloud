@@ -81,6 +81,12 @@ SCRIPTS = ROOT / "scripts"
 # separately verified against the real suites and were all ACCURATE — including the two that print
 # no total at all, whose case lines were counted by hand (10 and 11).
 POPULATION: frozenset[str] = frozenset({
+    # ⟳ 2026-10-16, pinned in the commit that creates it. Its suite went 23 → 25 → 27 → 30
+    # while it was being written — twice because a mutation proved a case was missing — so a
+    # docstring count with no reader would have been wrong three times in one hour. ⚠ Backlog
+    # #291's branch shipped exactly this defect (`check-doc-citations.py` declared a count and
+    # was absent here), which is why this entry lands with the guard rather than after it.
+    "check-claim-propagation.py",
     # ⟳ 2026-10-07: gained a `--self-test`, so its declared count needs a reader.
     "codex-frontier-model.py",
     # ⟳ 2026-10-02, ADR-0014's rule D2: pinned in the commit that creates it. Its suite went

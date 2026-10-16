@@ -298,6 +298,23 @@ jobs:
       - name: Explainer delivery is described in ONE place
         run: python3 scripts/check-explainer-delivery.py
 
+      # ⛔ ONE RULE, ONE PLACE — FOR DOCUMENTS, AND IT IS THE MECHANICAL HALF OF A CONVENTION
+      # THAT FAILED TWICE IN TWO ROUNDS. Measured on `marketplace-inventory`, 2026-10-16: two
+      # adversarial rounds produced 18 then 21 findings, and 14 of the second round's were
+      # introduced by the first's own fix. ONE mechanism was behind thirteen of them — a rule
+      # stated in several places, and the fold updating the site the finding named. Round 1's
+      # Blocking ("§5 requires a declared set; nothing in §7 produces one") then RECURRED one
+      # round later in the same pair of sections, which is what armed the architecture review.
+      # The coordinator had already written the mechanism against itself after round 2 and then
+      # reproduced it in the very next round, so a checklist competing with recall is not the
+      # remedy. ⚠ It is a FLOOR, not a closure: a rule restated in words no registered token
+      # matches is invisible to it, and it says so in its own output.
+      - name: One rule, one place — a retired claim is not re-asserted
+        run: python3 scripts/check-claim-propagation.py
+
+      - name: claim-propagation self-test
+        run: python3 scripts/check-claim-propagation.py --self-test
+
       # ⛔ NOT a generalisation of the step above — that wording was this guard's own defect
       # (r6 CLAUDE H5) and is corrected at all three sites it stood at. Same PATTERN, two
       # guards, because what each forbids differs in KIND: that one forbids a RUNNABLE
