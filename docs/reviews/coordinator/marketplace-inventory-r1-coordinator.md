@@ -70,7 +70,7 @@ shared state, and converged on:
 | F15 | Medium | spec §2, §7, §9 | D3 proves the route, not installability | **FIXED** — §7 item 0 packaging spike; named in §9 as the assumption | false |
 | F16 | Medium | page | "15 document guards" denominator exists nowhere | **FIXED** — claim removed from the page; guard results recorded here instead | false |
 | F17 | Low | page | gate claims measured two commits behind the page | **FIXED** — state block re-stamped | false |
-| F18 | Low | hook | `regen-features-page.sh` not executable, unlike its three siblings | **NOT FIXED — DEFERRED** (below) | false |
+| F18 | Low | hook | ⟳ **SUBJECT CORRECTED by r2** — `regen-dashboard.sh` is mode `100644`, not `regen-features-page.sh` (which is `100755`). The finding STANDS; the file named was wrong | **NOT FIXED — DEFERRED** (below) | false |
 
 **17 of 18 fixed. One deferred, one half deliberately open.**
 

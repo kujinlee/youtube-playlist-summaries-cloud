@@ -15262,3 +15262,53 @@ dispatched.**
 | **spec / page** | spec **213 → 496 lines**; fragment 28,398 → 35,196 bytes; page recomposed three times, Ask tray preserved each time. Both folds applied by assert-once scripts — 15 and 5+2 edits, each required to match exactly once or abort |
 | **page verified by execution** | HTTP 200, 7 sections, 8 ask buttons, tray 848×52, Send 47×22 enabled, question reached the session with section attribution. Only console error is a missing `favicon.ico`. ⚠ `.lbl` is `text-transform: uppercase`, so a first `innerText` check read the wrong representation — the measured-the-wrong-population trap, caught by re-checking case-insensitively |
 | **method** | round 1 **concurrent** (measured-safe); rounds 2+ alternate, since a concurrent pair never reviews the fixes. Codex at `--timeout 2700`, success confirmed by reading the capture and `gate_ran: true`, never `rc=0` |
+
+## 2026-10-16
+**You answered the verdict question, and the second review round found that fixing the spec had
+quietly broken the page.** Your decision — keep three verdicts and record separately how strong the
+evidence behind each one is — is now written into the spec as a decision of record, and the page
+presents it as settled rather than as my suggestion.
+
+The round's most serious finding was my own doing. I corrected the spec carefully and the page only
+partly, so the two ended up describing **different methods**: the page still said two of the four
+criteria were decidable by counting, still gave an example of the main problem that does not exist in
+the file it names, and mentioned none of the six things the first round added. **The page is the thing
+you actually read and approve**, so that is worse than leaving both wrong. It is rebuilt from the spec
+now rather than patched again.
+
+Three more things worth knowing in plain words. The check meant to catch "I could not work out which
+files this component is made of" would also have passed on *the right number of the wrong files* —
+declare one file, find a different one, the count matches. Fixed by comparing the actual names. The
+test that proves a stranger can use this would have passed on a page full of **wrong** facts, because
+it only asked whether the page was non-empty; it now runs against a prepared repository whose true
+answers are known in advance, so "correctly empty" can be told apart from "broken". And a fresh user
+account is not enough isolation — it does not control which programs are on the path or which Python
+packages are installed, so the experiment now declares what a stranger is assumed to have and records
+every departure from it.
+
+One new question nobody had asked: **whether the memory notes could be published at all.** They were
+written as private working notes, 157 files of them. Nobody has checked them for private content or
+for whether they are ours to redistribute. That is now recorded as a thing to decide, not a claim that
+anything is wrong in there.
+
+<!--tech-->
+**`marketplace-inventory` round 2 folded (Codex half). NOT CONVERGED — 1B/7H/1M/1L, **10 of 10
+addressed**. Spec **496 → 663** lines. ⚠ **Thrashing watch at ONE of two: 4 of 10 findings were
+INTRODUCED BY ROUND 1'S FIX.** Round 3 (Claude half) dispatched against the fold — alternating, not
+concurrent.**
+
+| | |
+|---|---|
+| ⚠ **the fix-induced ratio, stated against myself** | **4 fix-induced** (findings 1, 2, 3, 9) + 1 from r1's review record + 1 partly; 4 present-before. `dev-process.md` arms the architecture review on **two consecutive rounds** of fix-induced findings in one component — **r2 is the first.** r3's document must answer *thrashing or prose floor?* with per-finding evidence, not a count |
+| ⛔ **the Blocking was mine, and its mechanism is worth naming** | I folded the **spec** thoroughly and the **page** partially, so the fix created a contradiction **between two artifacts** that neither contained before. Page still asserted `countable`, *"ground-truth command list invokes `scripts/check-*`"* (0 literal occurrences in that file), and *"any blocker"*; and mentioned **0** of: packaging spike, shipping set, symlink rule, fresh `HOME`, non-empty, degraded. **Rebuilt from the spec, not patched** |
+| **r2-4: the right number of WRONG files** | round 1's companion asserted a non-zero *count*. `len({"safe.py"}) == len({"coupled.py"})` is true — so declare `coupled.py`, resolve `safe.py`, pass. Worse: omit a dependency and write the count **from the already-truncated scan**, and every check passes because the oracle and its subject share an author. → identity compared **member-for-member**; declaration derived independently and validated; **three** mutations (empty · substituted · omitted-with-matching-count), where r1 required only the first |
+| **r2-3: `inherited` could launder the guilty component** | an entry-point passes through one branch of a library while an **unexercised** branch causes another entry-point's failure — so the library inherits a pass from a run that never touched the code at fault. → mixed inherits the **FAILURE**; orphan is `none`; cycles resolve at the boundary; dual `entry-point`+`library` role permitted; **an `inherited` grade must name the exercising scenario** |
+| **r2-2: "non-empty" failed BOTH ways** | accepts a page with an incorrect commit, fabricated roadmap status and unrelated guard output; **and** falsely refuses, because `git status --short` legitimately returns nothing (r2 measured 0 bytes in its own checkout) and the skill permits reporting empty. → **seeded repository with known facts**, so *correctly empty* ≠ *capability missing*; plus one useful operation through installed paths, one **recovery** scenario (C4 says "recover without the author" and nothing tested recovery), and an entry-point **coverage matrix** bounding conclusions |
+| **r2-7: fresh `HOME` is not isolation** | `HOME` does not govern `PATH`, the interpreter, installed packages, git config, env vars, `$TMPDIR` or network. And r1 required *"a record of every resource touched"* **with no mechanism to produce it** — an exhaustive-observation requirement with no implementation is an aspiration, not evidence. → declared **baseline** + named capture mechanism that **states what it cannot see**; an unobservable access is declared unobservable, never counted absent |
+| **r2-5: one word, two meanings** | verdicts are per *component*, shipping sets per *publishable unit*, and nothing said how supporting files attach — so the four regen hooks are components while their generators are not: `gen-backlog-page.py` **3,390** + `gen-features-page.py` **711**, both verified as invoked by those hooks. → two layers separated; every artifact maps to a component, a package, or a written exclusion; ⛔ **24 is now a LOWER BOUND, not a derived total** — r2's own words: enumerating the named rows *"proves the arithmetic, not exhaustive membership"* |
+| **r2-6: a mention is not a dependency** | a portable fixture containing the literal `TaskList` needs no such tool; a historical comment naming a guard is not an invocation; but a plain Python import of an absent package is invisible to **all** of detectors 1–5 and is what breaks a stranger first. → mention candidates reported **separately**; **detector 6** (imports, executables, config reads); fixtures exempt by **behaviour**, not location |
+| ⭐ **r2-9: the third correction to one paragraph, about number provenance** | r1 said `100cf498` *"introduced"* the figure and was *"accurate when written"*. **Wrong.** `cacbac17` (2026-09-03) measured the nine files at **3,599 exactly** — verified here with `git show`; `100cf498` (09-07) **republished** it already **3.7% stale**; today **6,525**, 1.81× low. ⭐ **So a republished number inherits staleness AND loses the fact that it is inherited** — the new document reads as a fresh measurement. Rule: **a copied count carries the commit it was MEASURED at, not the commit it was written into** |
+| ⭐ **r2-10: a reviewer refuting a reviewer committed the house defect** | r1 filed *"`regen-features-page.sh` not executable"*. r2 checked that file at three commits — `100755` every time — and directed **withdrawal**. Verified independently: `regen-dashboard.sh` is **`100644`**, the actual odd one out. **The finding stands; the subject was wrong.** r2 verified *the file the finding named* instead of *the claim it made* — `measure-the-population-the-code-actually-sees`, by a reviewer, while refuting one. Following its direction would have withdrawn a true finding on correct evidence about the wrong file |
+| ⭐ **a release criterion NEITHER half evaluated** | whether the memory corpus can be **redistributed** — private content, credentials, rights. r2's own NOT VERIFIED section raises it and is explicit it is *"an unexamined release criterion, not a claim that sensitive material is present"*. 157 files authored as private working notes, so not hypothetical. Now on the page and owed to the criteria |
+| **D5 — the owner's decision, settled mid-round** | verdict axis unchanged; every verdict carries an evidence grade `measured` / `inherited` / `argued` / `none`. A fourth verdict (`CANNOT-ASSESS`) was **considered and rejected**: it re-opens the shrug bucket, and still cannot separate *proved* from *argued* — the distinction that matters, since §6's bound means two of three efforts can only be argued. `NEEDS-WORK` returns to meaning *a named defect*, so a component merely unreached files **no backlog row**. ⚠ **Its falsifier is written down**: if the inventory is acted on as though `argued` meant `measured`, the scheme failed and the stricter rule is the fallback |
+| **page verified by execution, again** | 0 `countable` pills remain; the `scripts/check-*` claim gone; D5 renders; all 9 new method elements present; 8 ask buttons, tray live, Send 47px, **no horizontal overflow**. Composed 59,853 bytes |

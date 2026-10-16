@@ -271,9 +271,13 @@ have seen what each one rules out. <strong>Every one of them is still reversible
     comprehensibility suite, where the experiment calibrates the scan.
   </div>
   <div class="bd">
-    <p>The scan counts what is countable. The install experiment is the falsifier: <strong>any blocker
-    it hits on a component the scan scored clean is a scanner defect</strong>, fixed in the scan — not
-    recorded as a footnote.</p>
+    <p>The scan produces <strong>evidence, not verdicts</strong>. The install experiment is the
+    falsifier: <strong>a blocker <em>or a degraded result</em> it hits on a component the scan scored
+    clean is a scanner defect</strong>, fixed in the scan — not recorded as a footnote.</p>
+    <p class="note">⟳ Both halves of that sentence changed under review. “Counts what is countable”
+    was wrong because counting gives the wrong answer in both directions (see section 4). “Any
+    blocker” was wrong because the failure that matters here is not a blocker at all — the suite can
+    produce a <em>hollow page</em> and report success, which no blocker-keyed falsifier would catch.</p>
     <div class="against">
       <span class="lbl">The case against</span>
       <p>The install experiment costs real time and will fail noisily several times before it tells you
@@ -440,21 +444,101 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 <table>
 <tr><th>#</th><th>Criterion</th><th>How it is decided</th></tr>
 <tr><td><strong>C1</strong></td><td><strong>Measured</strong> — it works, with evidence</td><td>existing self-tests and manifests</td></tr>
-<tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill yes">countable</span></td></tr>
-<tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill yes">countable</span></td></tr>
+<tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
+<tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
 <tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for</td></tr>
 </table>
 </div>
 
 <div class="box bad">
-  <span class="lbl">The expected main killer is C3, and the shape is already known</span>
-  <p><code>brief/SKILL.md</code>'s ground-truth command list invokes <code>scripts/check-*</code> —
-  guards that belong to <em>this repository's process</em>, not to any plugin.</p>
-  <p>So a component can be <strong>perfectly project-independent in its prose and still unusable</strong>,
-  because it calls a neighbour that is not shipping. That is why C2 and C3 are separate criteria rather
-  than one: the existing coupling measurement — <code>explainer-delivery.md</code> <strong>0</strong>
-  project references, <code>explain-topic</code> and <code>explain-findings</code> <strong>1</strong>
-  each, <code>brief/SKILL.md</code> <strong>9</strong> — only ever measured C2.</p>
+  <span class="lbl">The expected main killer is C3 — and both halves of the “known shape” were wrong</span>
+  <p>A component can be <strong>perfectly project-independent in its prose and still unusable</strong>,
+  because it calls a neighbour that is not shipping. That is why C2 and C3 are separate criteria. But
+  the example this spec gave for it did not survive review.</p>
+
+  <p><strong>What was claimed, and what is actually there.</strong> The claim was that
+  <code>brief/SKILL.md</code>'s ground-truth list <em>“invokes <code>scripts/check-*</code>”</em>. That
+  literal appears in the file <strong>zero</strong> times. What the list holds is <strong>nine
+  repo-specific items</strong>: 4 bare guard names, 4 document paths, 1 tool name.</p>
+  <p class="note">⚠ And <strong>5 of those 9 are neither paths nor file invocations</strong>, so the
+  scan as originally specified could not see them — it would have scored at most 4 of 9 on the single
+  component the method elects to calibrate against.</p>
+
+  <p><strong>Worse: “the problem is concentrated in one file” is false.</strong>
+  <code>explainer-delivery.md</code> scores <strong>0</strong> on the vocabulary measurement — and
+  carries <strong>three repo-relative <code>python3 scripts/…</code> invocations</strong> resolved
+  from wherever the caller happens to be standing. It is the contract <em>all four</em> page-producing
+  skills route through, so in a stranger's repository those resolve to nothing, or to an unrelated
+  neighbour's <code>scripts/</code>. <strong>That is a C3 and C4 blocker for every component of the
+  suite</strong>, and it lives in the file this spec previously presented as the good news.</p>
+  <p class="note">The old measurement — <code>explainer-delivery.md</code> <strong>0</strong>,
+  <code>explain-topic</code> and <code>explain-findings</code> <strong>1</strong> each,
+  <code>brief/SKILL.md</code> <strong>9</strong> — only ever measured C2. “Concentrated in one file”
+  is a C3 conclusion, and a C2 measurement cannot support it.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">D5 · Your decision, now settled — verdict and evidence are two axes</span>
+  <p>You chose this after finding the contradiction below. It is a <strong>decision of record</strong>
+  now, not a recommendation: the three verdicts stay, and every verdict carries an
+  <strong>evidence grade</strong> beside it.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Verdict (unchanged)</th><th>×</th><th>Evidence grade (new)</th></tr>
+    <tr><td rowspan="4"><span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span> <span class="pill no">DON'T-SHIP</span></td><td rowspan="4">×</td><td><code>measured</code> — the experiment exercised it, and the scenario is named</td></tr>
+    <tr><td><code>inherited</code> — a library, via named entry-point scenarios</td></tr>
+    <tr><td><code>argued</code> — C1–C3 plus reasoning; no experiment reached it</td></tr>
+    <tr><td><code>none</code> — nothing was established</td></tr>
+  </table>
+  </div>
+  <p><strong>What it changes.</strong> <code>SHIP / argued</code> is the honest label for efforts (1)
+  and (2), which get no install experiment. <code>NEEDS-WORK</code> goes back to meaning <em>a named
+  defect</em> — so a component merely unreached by the experiment is <code>argued</code>, and
+  <strong>files no backlog row</strong>. That removes the phantom rows the old rule manufactured.</p>
+  <p class="note">⚠ <strong>Its falsifier, stated now.</strong> If the inventory ever gets read and
+  acted on as though <code>argued</code> meant <code>measured</code>, this scheme has failed and the
+  fallback is the stricter rule — require <code>measured</code> or <code>inherited</code> for
+  <code>SHIP</code>. That is why the grade must render <em>beside</em> the verdict, never in a
+  footnote.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">What rounds 1 and 2 added to the method — none of this was in the spec you first saw</span>
+  <p>Two adversarial rounds changed how this milestone intends to work, not just its wording. If you
+  read the original page, these are the parts that are new.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>What was wrong</th><th>What the method now requires</th></tr>
+    <tr>
+      <td>The scan would report <em>“could not work out this component's files”</em> — but a set that resolves <strong>successfully and short</strong> scored clean. Reproduced: the folder the spec named holds git symlinks, and a directory walk skips them, so it found <strong>nothing</strong>.</td>
+      <td>Resolve symlinks; compare the resolved set to a declared set <strong>member-for-member</strong>, not by size; and carry three mutations — empty, substituted, and omitted-with-a-matching-count.</td>
+    </tr>
+    <tr>
+      <td>Nothing produced the <em>declared</em> set in the first place, so the scan would have had to infer it — the exact thing the rule warns against.</td>
+      <td>A <strong>shipping-set declaration</strong> is now a deliverable, derived independently of the scan and validated against the installed layout. An oracle written from the output it checks is not an oracle.</td>
+    </tr>
+    <tr>
+      <td>Two detectors looked only for project words and file invocations — blind to bare guard names, to skills that <em>instruct you to load another skill</em>, and to ordinary Python imports of packages a stranger lacks.</td>
+      <td>Six detectors, and a <strong>mention</strong> is reported separately from a <strong>dependency</strong>. Fixtures are exempted by behaviour, not by location.</td>
+    </tr>
+    <tr>
+      <td>The install test could pass using <em>your</em> machine — one of the folders involved is a shortcut back into this repository.</td>
+      <td>A declared <strong>baseline</strong>: fresh <code>HOME</code>, no inherited server or page corpus, and a named capture mechanism that <strong>states what it cannot see</strong>.</td>
+    </tr>
+    <tr>
+      <td>Pass meant <em>“a page appeared and you could ask it a question”</em> — satisfied by an empty page, and also by a page full of wrong facts.</td>
+      <td>A <strong>seeded</strong> repository with known facts, so <em>correctly empty</em> is distinguishable from <em>broken</em>; plus one useful operation, one recovery scenario, and a coverage matrix bounding what was actually exercised.</td>
+    </tr>
+    <tr>
+      <td>Nothing established that <em>this</em> suite can be packaged at all — only that somebody else's marketplace exists.</td>
+      <td>A <strong>packaging spike runs first</strong>: one skill, one script, installed from a throwaway marketplace and invoked from elsewhere. If it fails, the whole method is unachievable and that is worth knowing on day one.</td>
+    </tr>
+  </table>
+  </div>
+  <p class="note">⚠ <strong>Also new, and nobody had looked at it:</strong> whether the memory corpus
+  can be <em>redistributed</em> at all — private content, credentials, rights. Round 2 flagged that
+  neither review had evaluated it. It is an unexamined release criterion, not a claim that anything
+  sensitive is in there.</p>
 </div>
 
 <p>Verdicts are <span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span>
@@ -506,7 +590,9 @@ assess it”</em>.</p>
   spec are the same gap:</strong> the document has no way to say <em>“judged, but without the hard
   evidence”</em>.</p>
 
-  <p><strong>My recommendation: do not add a value to the verdict axis — split the axes.</strong>
+  <p class="note">✅ <strong>You chose this, and it is now D5 — a decision of record above.</strong> The reasoning is kept here because it is how the decision was reached, and because the trade-off at the end of this box is the thing that would make it the wrong call.</p>
+
+<p><strong>My recommendation: do not add a value to the verdict axis — split the axes.</strong>
   Keep three verdicts, always decisive, and record the strength of the evidence separately:</p>
 
   <div class="scroll">

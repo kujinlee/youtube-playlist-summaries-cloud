@@ -72,7 +72,33 @@ below are a dated measurement, not a live number.
 a hook, or one named data corpus. A mutation manifest is part of the unit it tests and is not counted
 separately. An unmerged branch is work in progress, not a shippable unit, and is **not** counted.
 
-Applying it: **17 + 3 + 4 = 24.**
+⛔ **AND THE RULE IS NOT ENOUGH ON ITS OWN — ROUND 2 FOUND IT NAMES ONE WORD FOR TWO THINGS
+(r2 CODEX 5, High).** §5 declares a shipping set *per publishable unit*, while verdicts are
+*per component*, and nothing said how supporting files attach. Two layers, stated separately:
+
+| Layer | What it is | What it gets |
+|---|---|---|
+| **evaluation component** | the unit a verdict is recorded against | a verdict + an evidence grade (§4b) |
+| **installable package** | the unit a stranger installs, which may contain several components | a shipping-set declaration (§5, §7 item 2) |
+
+⛔ **EVERY SUPPORTING ARTIFACT MAPS TO A COMPONENT, TO A PACKAGE, OR TO A WRITTEN EXCLUSION.** Round
+2 found real omissions that the counting rule permitted because it had no attachment rule: **the four
+regen hooks are components while the generators they invoke are not** —
+`scripts/gen-backlog-page.py` (**3,390 lines**) and `scripts/gen-features-page.py` (**711 lines**),
+both verified as invoked by those hooks. Recall's hook likewise needs the plan-transition mechanism
+and its hook registration, neither inventoried nor excluded.
+
+⚠ **The derivation order is therefore: map first, then count.** Round 2's own verdict on the
+arithmetic is the point — *"explicitly enumerating the named rows reproduces 17, 3, 4 and 24, but
+that proves the arithmetic, not exhaustive membership."* **The total is not evidence of completeness**,
+and this spec has now twice reached a reproducing total over an incomplete set.
+
+⚠ Round 2 also ruled on two candidates that do *not* need their own component: the recall prompt is
+embedded in `recall-llm.py`, and its cache is generated state. Fixtures and callers still need an
+explicit disposition.
+
+Applying the rule to the rows as named: **17 + 3 + 4 = 24.** ⚠ Pending the mapping above, treat 24
+as a **lower bound**, not a derived total.
 
 - **Effort (3) = 17** — 4 skills + 3 shared contracts + 6 Python files + 4 regen hooks.
 - **Effort (2) = 3** — the sharded `mutation-sweep` job, `scripts/check-plan-code.py`, and the
@@ -105,9 +131,27 @@ paragraph's first version — and the refutation is the more useful finding.**
 nine**: the four page-producing skills, the shared delivery contract, `brief-compose.py`,
 `explainer-serve.py`, `page_chrome.py`, `page_markup.py`.
 
-- **Same set, today: 6,525 lines — a 1.81x undercount.**
-- **Same set, at the commit that introduced the figure (`100cf498`, 2026-09-07): 3,737 lines.**
-  3,599 against 3,737 is **accurate within 3.7% when written.**
+⟳ **CORRECTED AGAIN 2026-10-16 by round 2 (CODEX 9), which found round 1's own history wrong.**
+Round 1 said `100cf498` *"introduced the figure"* and that it was *"accurate when written"*. The
+figure was introduced four days earlier, and there are **three** stages, not two:
+
+| Stage | Commit | The same nine files measured | Verdict |
+|---|---|---|---|
+| **originally measured** | `cacbac17`, 2026-09-03 | **3,599** | **exactly right** |
+| **republished into the index** | `100cf498`, 2026-09-07 | 3,737 | already **3.7% stale** |
+| today | `HEAD` | **6,525** | **1.81x** low |
+
+⛔ **SO THERE ARE TWO FAILURE MODES HERE, AND THE SECOND IS THE ONE WORTH CARRYING.** The count
+decayed (3,599 → 6,525, 1.75x growth). But it also **arrived in `portable-practices.md` already
+stale**, because it was *copied from an earlier measurement into a fresh-looking declaration without
+being re-measured*. A republished figure inherits staleness **and loses the fact that it is
+inherited** — the new document reads as a new measurement. That is a sharper rule than *date your
+counts*: ⭐ **a count copied from elsewhere must carry the commit it was measured at, not the commit
+it was written into.**
+
+- The first version of this paragraph compared 3,599 against **10,977** — a set of its own
+  construction that adds `gen-dashboard.py` and `gen-goals-page.py` (**4,798 lines, 46% of the
+  Python total**), neither of which is among the nine. That is a **3.05x cross-corpus ratio**.
 - The first version of this paragraph compared 3,599 against **10,977** — a set of its own
   construction that adds `gen-dashboard.py` and `gen-goals-page.py` (**4,798 lines, 46% of the
   Python total**), neither of which is among the nine. That is a **3.05x cross-corpus ratio**.
@@ -210,13 +254,34 @@ how a non-path reference is recognised.
 | Role | What a stranger does with it | How C4 is assessed |
 |---|---|---|
 | `entry-point` | invokes it directly | per component, by the install experiment |
-| `library` | never invokes it; it is a dependency of an entry-point | **inherited** from the entry-points that import it |
+| `library` | never invokes it; it is a dependency of an entry-point | **inherited** — but only under the rules below |
 | `data` | supplies content (e.g. the memory corpus) | not applicable; C4 is recorded as `n/a` |
 
-⚠ **Without the role, the no-"unknown" rule manufactured defects.** `page_chrome.py` cannot be
-assessed for C4 per component, so the old text forced `NEEDS-WORK` with defect *"no way to assess
-it"*, and §7 item 5 turns every `NEEDS-WORK` into a backlog row — **a filed defect for a file that
-has none.** A `library` whose entry-points pass C4 inherits the pass.
+⚠ **A component may hold BOTH `entry-point` and `library`** — a module that is executable *and*
+imported is not a third role, it carries two, and is assessed as an entry-point while also supplying
+inherited evidence. Round 2 found the single-role table could not express this (CODEX 3).
+
+⛔ **INHERITANCE NEEDS AGGREGATION, COVERAGE AND PROVENANCE RULES, AND ROUND 1'S VERSION HAD NONE
+(r2 CODEX 3, High, INTRODUCED BY ROUND 1'S FIX).** *"Inherits from the entry-points that import it"*
+is undefined the moment there is more than one, and silently wrong when there are none:
+
+| Situation | Rule |
+|---|---|
+| imported by entry-points that **all** pass | inherits the pass, grade `inherited` |
+| imported by a **mix** of passing and failing entry-points | **inherits the FAILURE.** A library implicated in any entry-point's failure is not carried by the others |
+| imported by **no** entry-point | **no inheritance is possible** — grade `none`. ⚠ An orphan library is also a scope question: ask why it is shipping at all |
+| part of an **import cycle** | graded by the entry-points at the cycle's boundary; a cycle with no entry-point outside it is `none` |
+
+⛔ **AND AN INHERITED PASS MUST NAME THE SCENARIO THAT EXERCISED IT.** The failure round 2
+constructed: an entry-point passes through one branch of a library while *an unexercised branch of
+the same library* causes a different entry-point's failure — so the library "inherits a pass" from a
+run that never touched the code at fault. **An `inherited` grade therefore records which successful
+scenario exercised the component**, and a library no scenario exercised is `none`, not `inherited`.
+⚠ **Without that, `inherited` launders exactly the component most likely to be at fault.**
+
+⚠ **Why the role exists at all.** `page_chrome.py` cannot be assessed for C4 per component, so the
+original text forced `NEEDS-WORK` with defect *"no way to assess it"*, and §7 turns every
+`NEEDS-WORK` into a backlog row — **a filed defect for a file that has none.**
 
 **C3 is still expected to be the main killer — but the known shape was mis-stated, and the real one
 is worse.** ⟳ **CORRECTED 2026-10-16 (r1 CLAUDE H3, H5; r1 CODEX 4):**
@@ -243,14 +308,54 @@ that cannot be assessed is `NEEDS-WORK` whose named defect is *"no way to assess
 now bites only where assessment is genuinely impossible**, because the role table above removes the
 case where it was firing on `library` components by construction.
 
-⛔ **OPEN QUESTION FOR THE OWNER — NOT DECIDED HERE (r1 CODEX 5, r1 CLAUDE B2).** May a component be
-recorded `SHIP` on C1–C3 alone, with C4 untested? Efforts (1) and (2) get no install experiment at
-all (§6's bound), so under the current text their components can reach `SHIP` with **no** C4
-evidence, while D1 sets a *"full support bar"*. The two coherent answers are: **(a)** `SHIP` requires
-demonstrated C4, so efforts (1) and (2) cap at `NEEDS-WORK` until they get their own experiment; or
-**(b)** a second grade — `SHIP (untested support)` — is introduced and D1's bar is explicitly relaxed
-for it. ⚠ **This changes what the milestone PROMISES, not how it is reached, so it is the owner's
-call and is deliberately left open.**
+## 4b. D5 — the verdict and the strength of its evidence are TWO axes
+
+⭐ **SETTLED 2026-10-16 BY THE OWNER, who found the contradiction by reading the walkthrough page and
+asked whether a fourth verdict (`CANNOT-ASSESS`) was the answer. Recorded as a decision of record;
+do not re-open.**
+
+**The contradiction they found.** §4 forbids a verdict of "unknown" and then defines a bucket that
+*is* unknown under another name — and because §7 files a `docs/backlog.md` row per `NEEDS-WORK`, a
+component with no defect generated a filed defect.
+
+**Two different things were being called unknown, and only one of them is work:**
+
+| Which unknown | What it really is | Is `NEEDS-WORK` right? |
+|---|---|---|
+| *"we have not assessed it yet"* | a temporary state of **our process**; it goes away by doing work | **Yes** — and this is the shrug the three-verdict rule exists to stop |
+| *"this cannot be assessed by this method"* | a permanent property of the component **paired with** the method | **No** — it blames the component for a limit of the test |
+
+⛔ **THE DECISION: THE VERDICT AXIS IS UNCHANGED, AND EVERY VERDICT CARRIES AN EVIDENCE GRADE.**
+A fourth verdict was considered and **rejected** for two reasons: it re-opens the escape hatch the
+three-verdict rule closes, and it still cannot separate *"fit to publish, and we proved it"* from
+*"fit to publish, and we argued it"* — which is the distinction that actually matters here, because
+§6's bound means two of the three efforts can only ever be argued.
+
+| Verdict (unchanged) | × | Evidence grade (new) |
+|---|---|---|
+| `SHIP` · `NEEDS-WORK` · `DON'T-SHIP` | × | `measured` — the install experiment exercised it, and the scenario is named |
+| | | `inherited` — a `library`, passing via named entry-point scenarios (§4's rules) |
+| | | `argued` — C1–C3 plus reasoning; no experiment reached it |
+| | | `none` — nothing was established |
+
+**Consequences, stated so they can be checked:**
+
+- **Every component in the inventory carries both fields.** A verdict without a grade is an
+  incomplete row, and deliverable 5 is not done until every row has one.
+- **`SHIP` + `argued` is permitted, and is the honest label for efforts (1) and (2)** under §6's
+  bound. It is *not* equivalent to `SHIP` + `measured`, and the inventory must not present them in a
+  way that reads as equivalent.
+- **`NEEDS-WORK` is now reserved for a named defect**, including *"no way to assess it"* where that
+  is genuinely true after the role rules are applied. A component that is simply unreached by the
+  experiment is `argued`, not `NEEDS-WORK`, and **files no backlog row**.
+- **`DON'T-SHIP` + `argued` is also permitted** — a component can be ruled out on reasoning.
+
+⚠ **THE COST, RECORDED RATHER THAN DISCOVERED LATER.** Two fields must be read together, and
+`SHIP / argued` can be mis-skimmed as plain approval by a reader who scans only the verdict column.
+**That is this decision's falsifier:** if the inventory is read and acted on as though `argued`
+meant `measured`, the two-axis scheme has failed and the stricter alternative — requiring
+`measured` or `inherited` for `SHIP` — is the fallback. The inventory must therefore render the
+grade **beside** the verdict, never in a footnote or a separate table.
 
 ---
 
@@ -276,10 +381,28 @@ manifest, a caller, and no fail-open handler.
    successfully and never sees this form.
 
 ⛔ **THE SCANNED REGION IS STATED, because the choice alone flips a verdict (r1 CLAUDE H4).**
-Self-test fixtures and comments are **excluded** from detector 1 and **included** in detectors 2, 4
-and 5. Rationale: `page_markup.py`'s only project vocabulary is a fixture string, so including
-fixtures reports a C2 violation on the suite's most portable file — whereas a *dependency* named in a
-comment or fixture is still a dependency a stranger's run can hit.
+
+⟳ **ROUND 1'S VERSION OF THIS RULE WAS WRONG IN BOTH DIRECTIONS AND IS REPLACED (r2 CODEX 6, High).**
+It excluded fixtures from detector 1 wholesale and included them in the dependency detectors
+wholesale, which confuses **a mention** with **a dependency**:
+
+- a portable renderer fixture containing the literal `TaskList` does **not** require that tool;
+- a historical comment naming a guard is **not** an invocation;
+- but a self-test that genuinely contacts a project service, or needs project credentials, **is** a
+  real C2 violation that a location-based exclusion hides.
+
+**So the rule is behavioural, not positional:**
+
+1. **A match is a MENTION CANDIDATE until something makes it a dependency** — an import, an
+   invocation, a documented prerequisite, or a runtime configuration read. Mention candidates are
+   **reported separately** from dependency findings and never alone decide a verdict.
+2. ⭐ **Detector 6 — runtime prerequisites (added by r2 CODEX 6).** A generic Python import of an
+   undeclared installed package is *none* of project vocabulary, an external file invocation, a bare
+   guard name, or a prose-required skill — **so none of detectors 1–5 looks at it**, and it is
+   exactly what breaks a stranger's run first. Detector 6 covers imports, required executables, and
+   environment/configuration reads.
+3. **Fixtures are exempted by BEHAVIOUR**: a fixture literal that is never resolved, imported or
+   invoked is a mention; a fixture that performs a project-dependent action is a dependency.
 
 ⛔ **THE SHIPPING SET IS DECLARED PER PUBLISHABLE UNIT, NOT PER COMPONENT (r1 CLAUDE H5).** Read per
 component, `explainer-delivery.md` scores dirty because `brief-compose.py` is "outside its set", even
@@ -305,8 +428,20 @@ score, not CANNOT RUN.
 - **assert a non-zero expected file count per component** and FAIL when the resolved set is empty or
   smaller than declared — *a zero over a resolvable-but-empty set is indistinguishable from a clean
   component*;
-- **carry a mutation that empties one component's set** and dies via the case that asserts the
-  non-zero count, so the companion rule is covered rather than merely written.
+- ⭐ **compare IDENTITIES, not cardinality (r2 CODEX 4, High — round 1's fix did NOT close this).**
+  A count check passes on a substitution: declare `coupled.py`, resolve `safe.py`, and
+  `len({"safe.py"}) == len({"coupled.py"})` is true. **So the resolved set must equal the declared
+  set member-for-member**, not merely in size;
+- ⭐ **derive the declaration INDEPENDENTLY of the scan, and validate it.** Round 2's second
+  counterexample is worse than the first: omit a dependency, then write the expected count *from the
+  already-truncated scan* — and every added check passes, because the oracle and the thing it checks
+  have the same author. **§7 item 2 therefore names who derives the declaration and what validates
+  it against the installed layout and the dependency closure** — an oracle written from the output
+  it is meant to check is not an oracle;
+- **carry three mutations**, each dying via the case it names: one that **empties** a component's
+  set, one that **substitutes** a member while preserving cardinality, and one that **omits** a
+  dependency and writes the count to match. ⚠ The empty-set mutation alone cannot expose
+  substitution — round 1 required only that one.
 
 ⚠ **This spec's own component table now names `.agents/skills/shared/` (the real directory) rather
 than the symlink path**, so the measured failure above cannot be reached from §3 as written.
@@ -348,12 +483,44 @@ directory … run /explain-diff once first."*
 - a **fresh `HOME`**, with its own `.claude/` config and plugin cache — not the author's;
 - **no inherited server**: the server is started by the experiment, from the installed package;
 - **no inherited explainer corpus** — in particular `~/explainers/` must not resolve into this repo;
-- an **explicit record of every resource the run touched**, so an inherited dependency is visible
-  afterwards rather than inferred.
+- ⭐ **a DECLARED BASELINE, because a fresh `HOME` is not isolation (r2 CODEX 7, High — round 1's fix
+  was incomplete).** `HOME` does not govern `PATH`, the Python interpreter and its installed
+  packages, `git` configuration, environment variables, `$TMPDIR` contents, or network access. A
+  run can succeed on a repository-specific executable still on `PATH`. **The baseline names what a
+  stranger is ASSUMED to have** — interpreter version, package set, available commands, network
+  policy — and every deviation from it is recorded as a prerequisite;
+- ⭐ **a capture MECHANISM, and its stated limits.** Round 1 required *"a record of every resource
+  the run touched"* with nothing to produce it — **an exhaustive-observation requirement with no
+  implementation is not evidence of isolation, it is an aspiration.** So: name the mechanism
+  (process/filesystem tracing, or an allow-listed environment), and **state what it cannot see**.
+  ⚠ An unobservable access must be declared unobservable rather than counted as absent.
 
 **Pass condition, stated so it can fail — and it asserts CONTENT, not mechanism (r1 CLAUDE B2,
-Blocking).** A page is **produced and served**, the reader can ask a question inside it, **and the
-page's ground-truth results are non-empty for every item the skill's step 1 enumerates.**
+Blocking).**
+
+⟳ **ROUND 1'S "NON-EMPTY" TEST IS REPLACED — IT FAILED IN BOTH DIRECTIONS (r2 CODEX 2, High,
+INTRODUCED BY ROUND 1'S FIX).** Non-emptiness is not correctness: a page carrying an **incorrect
+commit, a fabricated roadmap status and unrelated guard output passes it**. And it produces false
+refusals, because **emptiness is sometimes the right answer** — `git status --short` legitimately
+returns nothing in a clean checkout (round 2 measured 0 bytes in its own), and the skill explicitly
+permits reporting an empty result.
+
+**So the experiment runs against a SEEDED stranger repository with KNOWN facts**, and the pass
+condition is:
+
+1. the page is **produced and served**, and the reader can ask a question inside it;
+2. each ground-truth item's result **matches the seeded repository's known fact** — including
+   *legitimately empty* where that is the known fact. ⛔ The distinction that must be preserved is
+   **"correctly empty" versus "returned nothing because the capability is missing"**, and only a
+   seeded expectation can tell those apart;
+3. ⭐ **one identified USEFUL operation completes through the installed paths (r2 CODEX 8, High).** A
+   script that prints `--help` and then cannot locate its packaged resources satisfies "it ran" and
+   establishes nothing;
+4. ⭐ **one documented RECOVERY scenario succeeds**, because C4 says *"recover from failure without
+   the author"* and no part of the original method tested recovery at all;
+5. ⭐ **an entry-point COVERAGE MATRIX is recorded** — which entry-points were exercised and which
+   were not. **Conclusions are bounded to the exercised ones**; an unexercised entry-point is
+   `argued`, never `measured` (§4b).
 
 ⛔ **WHY THE MECHANISM-ONLY VERSION COULD NOT FAIL.** In a repo with no `scripts/check-*`, all nine
 of `brief`'s ground-truth items return nothing. The skill explicitly says to *report* that rather
