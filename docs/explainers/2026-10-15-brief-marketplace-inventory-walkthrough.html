@@ -233,7 +233,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">823</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">864</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -828,6 +828,48 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   <p>The counter is sharp, though: it means the two efforts you have spent the <em>most</em> recent
   worry on get the <em>weakest</em> evidence, and their verdicts will be mine rather than measured.
   If that is not acceptable, the fix is one experiment each, and it roughly doubles the milestone.</p>
+
+  <div class="box warn">
+    <span class="lbl">Your question, answered — “how to find a repo for experiments? we may try a public repo that uses AI and harness”</span>
+
+    <p><strong>Finding one costs nothing — there are two on your machine already</strong>, both
+    carrying a <code>LICENSE</code>, both real third-party harness repos installed as marketplaces:
+    <code>Yeachan-Heo/oh-my-claudecode</code> and <code>openai/codex-plugin-cc</code>.</p>
+
+    <p><strong>But a real repo answers a different question than a built one, and the spec now uses
+    both.</strong> This is the same two-layer shape the method already uses elsewhere.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Tier</th><th>What it is</th><th>What only it can answer</th></tr>
+      <tr><td><strong>A</strong></td><td>a throwaway repo <em>we</em> build, with <strong>known facts</strong></td><td><em>is the result correct?</em> — only known facts make <em>correctly empty</em> distinguishable from <em>the capability is missing</em></td></tr>
+      <tr><td><strong>B</strong></td><td>a real third-party repo, cloned</td><td><em>is our seeding wrong?</em> — it is the falsifier for tier A, just as tier A is the falsifier for the scan</td></tr>
+    </table>
+    </div>
+    <p>⛔ <strong>Neither replaces the other.</strong> We cannot seed known facts into someone else's
+    repository, so a tier-B failure is not diagnosable on its own — but tier B is where assumptions
+    tier A accidentally satisfies show up. That is the same relationship this project has already
+    paid for between a mock and a live call: 2,808 green tests, then a 500 on the first real press.</p>
+
+    <p><strong>And measuring those two repos today — before anything is built — already found two
+    things:</strong></p>
+    <div class="scroll">
+    <table>
+      <tr><th>Measured now</th><th>What it means</th></tr>
+      <tr><td><strong>Neither has any</strong> of the four document paths the ground-truth list looks for, and neither has a <code>.claude/</code> directory</td><td>the hollow page is the <em>expected</em> outcome in a real repo, not an edge case</td></tr>
+      <tr><td>⛔ <strong>Both have a <code>scripts/</code> directory</strong></td><td>the three CWD-relative <code>python3 scripts/…</code> invocations resolve to <strong>their</strong> scripts, not ours — so the coupling does not fail loudly, it <strong>silently runs the wrong neighbour's file.</strong> That is worse than a missing file</td></tr>
+    </table>
+    </div>
+
+    <p class="note">⚠ <strong>One constraint, so it is not discovered late:</strong> both are
+    <strong>shallow clones</strong> (one commit each), so every ground-truth item that reasons over
+    git history is unsatisfiable there for a reason that has nothing to do with portability. A tier-B
+    run needs a full clone, and a failure under a shallow one is <strong>not evidence about the
+    suite.</strong></p>
+    <p class="note">Selection criteria, so the choice is not ad hoc: a permissive licence, a full
+    clone, a harness layout of its own, and <strong>no write of any kind back to it</strong> — the
+    run works on a local clone and pushes nothing, which also keeps the licence question (C5) separate
+    from the portability one.</p>
+  </div>
 </div>
 
 <div class="q">
@@ -905,7 +947,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:03 · 2bca9fe5 · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:08 · bcd8780f · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

@@ -674,8 +674,49 @@ would have been recorded for the component §4 elects as the expected main kille
 Producing a file that cannot be served is also not a pass — serving is the half that carries the Ask
 channel, and `file://` loses it by design.
 
+⭐ **TWO TIERS, AND THEY ANSWER DIFFERENT QUESTIONS (asked by the owner from the page, 2026-10-16:
+*“how to find a repo for experiments? we may try a public repo that uses AI and harness”*).**
+
+| Tier | What it is | What only it can answer |
+|---|---|---|
+| **A — the seeded throwaway** | a repository we build, with **known facts** | *is the result CORRECT?* — only a seeded repo makes *correctly empty* distinguishable from *the capability is missing*, which is the pass condition above |
+| **B — a real third-party repo** | someone else's harness repo, cloned | *is our seeding WRONG?* — it is the falsifier for tier A, exactly as tier A is the falsifier for the scan (§5) |
+
+⛔ **NEITHER REPLACES THE OTHER, AND THE ORDER MATTERS.** Tier A is the oracle and cannot be
+dropped: we cannot seed known facts into someone else's repository, so a tier-B failure is not
+diagnosable on its own. Tier B is where assumptions tier A accidentally satisfies show up — the same
+relationship this project has already measured between a mock and a live call (2,808 green tests,
+then a 500 on first live press).
+
+⭐ **FINDING A TIER-B REPO COSTS NOTHING — TWO ARE ALREADY ON THIS MACHINE**, both carrying a
+`LICENSE`, both real third-party harness repos installed as marketplaces:
+`Yeachan-Heo/oh-my-claudecode` and `openai/codex-plugin-cc`.
+
+⚠ **AND MEASURING THEM TODAY, BEFORE ANYTHING IS BUILT, ALREADY YIELDS TWO FINDINGS:**
+
+1. **Neither has ANY of the four document paths `brief`'s ground-truth list looks for**
+   (`docs/backlog.md`, `docs/roadmap-to-launch.md`, `docs/reviews/`, `docs/superpowers/`), and
+   neither has a `.claude/` directory. So the hollow-page failure (§6's pass condition) is the
+   *expected* outcome in a real repo, not an edge case.
+2. ⛔ **BOTH HAVE A `scripts/` DIRECTORY.** `explainer-delivery.md`'s three CWD-relative
+   `python3 scripts/…` invocations therefore resolve to **their** `scripts/`, not to ours — so the
+   coupling does not fail loudly, it **silently runs the wrong neighbour's file**. That is strictly
+   worse than a missing file, and it is the case `hardcode-only-what-fails-loudly` names.
+
+⚠ **A tier-B CONSTRAINT, stated so it is not discovered late:** both are **shallow clones (1
+commit)**, so every ground-truth item that reasons over git history is unsatisfiable there for a
+reason that has nothing to do with portability. A tier-B run needs a full clone, and a failure under
+a shallow one is **not evidence about the suite**.
+
+**Tier-B selection criteria, so the choice is not ad hoc:** a permissive licence; a full (not
+shallow) clone; an AI-harness layout of its own; and **no write of any kind back to it** — the
+experiment runs against a local clone and pushes nothing, which also keeps the licence question
+(C5) separate from the portability one.
+
 **What is recorded:** every failure, its cause, and whether the scan predicted it. The experiment's
-output is two lists — defects in the suite, and defects in the scan.
+output is two lists — defects in the suite, and defects in the scan. ⚠ For a tier-B run, a third:
+**resources it reached that belong to the host repo rather than the package**, which is the
+wrong-neighbour case above.
 
 ⚠ **Bound, stated rather than hidden:** the experiment covers the comprehensibility suite only. It
 says nothing about efforts (1) and (2), whose verdicts therefore rest on C1–C3 plus argument, and

@@ -124,6 +124,14 @@ LIVE: list[dict] = [
         "sites": [SPEC],
     },
     {
+        "id": "experiment-two-tiers",
+        "token": "falsifier for tier A",
+        "why": ("asked by the owner from the page 2026-10-16: a real third-party repo is the "
+                "falsifier for the seeded throwaway, not a replacement for it. Registered at both "
+                "sites in the same commit that adds it"),
+        "sites": [SPEC, PAGE],
+    },
+    {
         "id": "d6-harvest-axis",
         "token": "harvest",
         "why": ("D6, settled by the owner 2026-10-16 from the page: a DON'T-SHIP component can "
