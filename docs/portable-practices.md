@@ -10,7 +10,7 @@ the documents that make it reproducible somewhere else. This file is the second 
 > me. One of the main deliverables of this project is the comprehensibility suite."* And: *"I had
 > plan to publish the comprehensibility suite to marketplace. So that it should be general."*
 >
-> **The suite is 9 files / 3,599 lines** — the four page-producing skills (`explain-diff`, `brief`,
+> **The suite is ~11,000 lines** (⟳ 2026-10-15: this said *9 files / 3,599 lines* for five weeks and undercounted its own subject by roughly 3x — the Python machinery alone is **10,373 lines across six files** (`brief-compose` 1,780, `explainer-serve` 2,907, `page_chrome` 450, `page_markup` 438, `gen-dashboard` 3,546, `gen-goals-page` 1,252), before 604 lines of skills. Re-derived by enumeration during the marketplace inventory; the old figure is the first evidence that an inventory was needed rather than a recollection.) — the four page-producing skills (`explain-diff`, `brief`,
 > `explain-findings`, `explain-topic`), the shared delivery contract, `brief-compose.py`,
 > `explainer-serve.py`, `page_chrome.py`, `page_markup.py` — plus the four hook-regenerated pages
 > (`regen-backlog-page.sh`, `regen-dashboard.sh`, `regen-goals-page.sh`, `regen-features-page.sh`).
@@ -25,11 +25,14 @@ the documents that make it reproducible somewhere else. This file is the second 
 > one file, which `brief`'s own *Known gaps* section already confesses.
 >
 > ⛔ **WHAT IS STILL NOT DECLARED, stated so the gap is not read as closed.** `docs/anchors.md`
-> registers 10 anchors and exactly one touches comprehension — `status-visibility`, scoped to *"a
+> registered 10 anchors when this was written and registers **13** today (⟳ 2026-10-15; a **14th**, `harness-ships-elsewhere`, is allocated on the unmerged marketplace-inventory branch and is deliberately not counted here — r1 M4 caught this file claiming it already); at the time exactly one touched comprehension — `status-visibility`, scoped to *"a
 > person who was AWAY"*. That covers `brief` and the four hook-regenerated pages. It does **not**
 > cover `explain-diff`, `explain-topic` or `explain-findings`, which serve a human who is PRESENT
-> and trying to understand a change, a concept, or a triage decision. **A second anchor is owed and
-> is deliberately NOT allocated here:** `check-anchors.py` R4 fails an anchor that no document
+> and trying to understand a change, a concept, or a triage decision. **⟳ 2026-10-15 — THAT SECOND ANCHOR NOW EXISTS: `explanation-on-demand`, covering `explain-diff`,
+> `explain-topic` and `explain-findings` — the present-tense reader. It was NOT discharged by widening
+> `status-visibility`, which is exactly what the warning below forbade. The paragraph stays because its
+> reasoning is why the name waited for a claiming document.** ~~A second anchor is owed and
+> is deliberately NOT allocated here:~~ `check-anchors.py` R4 fails an anchor that no document
 > claims, and the document that would claim it is backlog #89's design pass, which is not written.
 > Allocating the name now would trade an invisible gap for a red gate. The name lands **with** that
 > spec. ⚠ Do not close this by widening `status-visibility` instead — one anchor covering two

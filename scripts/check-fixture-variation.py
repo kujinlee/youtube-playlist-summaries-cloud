@@ -496,6 +496,24 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # refused it until it was, which is the third time in two days it has caught a new file
     # arriving unmeasured. DERIVED by running `analyse()`, not transcribed. It reports NO
     # findings: all six parameters are genuinely varied by the suite.
+    # ⟳ 2026-10-15, backlog #49. `read` is varied by two cases that differ ONLY in the injected
+    # reader at one identical citation — this guard refused the suite until they existed.
+    # ⟳ 2026-10-15 — 3 KEYS BECAME 23 when that guard's `violations` stopped taking diff text.
+    # ⟳⟳ 2026-10-16, backlog #291 — 23 BECOME 25, and FOUR ARE RETIRED WITH THEIR SUBJECTS:
+    # `added_lines.diff_text` and `violations.doc_lines` (the guard no longer parses a diff or
+    # indexes a document's lines), and `findings_for.fetch_file_diff` / `main.fetch_file_diff` (the
+    # per-file diff is gone; both images come from `git cat-file`). Six arrive with the new core:
+    # `added_citations.pre`/`.post`, `blob.ref_path`/`.root`, `findings_for.fetch_blob`,
+    # `main.fetch_blob`. ⚠ This guard REFUSED the stale `main.fetch_file_diff` exemption as DEAD in
+    # the same run, which is its own rule about exemptions working on its own population.
+    'check-doc-citations.py': (
+        'added_citations.post', 'added_citations.pre', 'blob.ref_path', 'blob.root',
+        'changed_files.base', 'changed_files.root', 'findings_for.base',
+        'findings_for.fetch_blob', 'findings_for.path', 'findings_for.read', 'findings_for.root',
+        'findings_for.source', 'findings_for.tracked', 'in_scope.path', 'main.argv',
+        'main.fetch_blob', 'main.fetch_changed', 'main.fetch_tracked', 'main.make_reader',
+        'main.root', 'tracked_files.root', 'violations.added', 'violations.path',
+        'violations.read', 'violations.tracked',),
     'check-closing-table.py': (
         'closing_acts_of.records',
         'coalesce_injected.make',
@@ -912,6 +930,51 @@ EXEMPT: dict[str, str] = {
     "check-ratchet-contract.py:widened_debt_drift.examined": "same table; the NOT-EXAMINED clause "
                          "is the one that stopped an empty corpus reading as paid debt, and its "
                          "mutation dies via the case it names",
+    # ⟳ 2026-10-15 — SIX `check-doc-citations.py:main.*` ROWS. ADR-0014 injection has ONE driver
+    # in that suite (`drive()`), by design: a second `main(...)` call site would be a second copy
+    # of the same four-step sequence, which `check-vocabulary-collisions.py` describes as this
+    # repository's most-measured defect. The VALUES vary per case — `drive` takes `argv`, `root`,
+    # `doc_readable` and `diff_override` and the cases pass different ones — and the call SITE is
+    # one expression, which is what this scan compares.
+    # ⛔⛔ CORRECTED 2026-10-15, SAME DAY, BY THE ROUND-4 REVIEW (M4). THE FIRST VERSION OF THESE
+    # ROWS NAMED A CASE THAT DOES NOT REDDEN, IN THREE OF THE SIX — written hours after quoting
+    # this table's own rule that an exemption resting on something untrue is worse than none. All
+    # four stated COUNTS reproduced; three of the named CASES were false. Each row below was
+    # re-performed (insert the module default immediately after `args = parser.parse_args(argv)`,
+    # run the suite, read the `[FAIL]` names) and now names a case measured to redden.
+    # ⚠ AND ONE RECIPE WAS ITSELF UNRUNNABLE, which is the dangerous half: substituting
+    # `parse_args([])` removes `--self-test`, so `main()` runs the real check instead of the suite
+    # and yields rc=2 with ZERO red cases — indistinguishable from "this parameter is not
+    # load-bearing". The runnable variant is recorded in its row.
+    "check-doc-citations.py:main.argv": "one driver by design. ⚠ RECIPE: substitute "
+                         "`parse_args([a for a in argv if a == '--self-test'])` — a bare "
+                         "`parse_args([])` makes main() run the real check and yields rc=2 with "
+                         "ZERO red cases. Measured: 2 red, '--base reaches the fetchers rather "
+                         "than a hardcoded default' and '--root reaches the fetchers as the "
+                         "resolved path it names'",
+    "check-doc-citations.py:main.root": "one driver by design. ⚠ RECIPE: `root = ROOT` AFTER the "
+                         "`--root` override, not before — before it, only 1 case reddens because "
+                         "the other tests the flag rather than the parameter. Measured after: 2 "
+                         "red, both '--root reaches the fetchers as the resolved path it names' "
+                         "and '...and without --root it is the root main() was handed'",
+    "check-doc-citations.py:main.fetch_changed": "one driver by design; measured — substituting "
+                         "`changed_files` reddens 7 cases, including 'main() returns 0 over a "
+                         "clean world'",
+    "check-doc-citations.py:main.fetch_tracked": "one driver by design; measured — substituting "
+                         "`tracked_files` reddens 7 cases, including 'main() returns 1 when a "
+                         "citation has drifted'",
+    "check-doc-citations.py:main.make_reader": "one driver by design; measured — substituting "
+                         "`_reader` reddens 6 cases, including 'main() returns 0 over a clean "
+                         "world'. ⛔ NOT the CANNOT RUN cases, which an earlier version of this "
+                         "row claimed: neither CAN redden, because both reach rc=2 before the "
+                         "injected reader matters — the hunk-header case raises inside "
+                         "`added_lines`, and the unreadable-document case raises because the real "
+                         "`_reader` also returns None for a path that does not exist",
+    "check-doc-citations.py:main.fetch_blob": "one driver by design; measured 2026-10-16 — "
+                         "substituting `blob` reddens 6 cases, including 'main() returns 1 when a "
+                         "citation has drifted'. ⟳ REPLACES the dead `main.fetch_file_diff` row: "
+                         "#291 deleted that parameter with the diff parsing it served, and this "
+                         "guard refused the stale exemption, which is its own rule working",
     "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
                          "between its call sites is `name`, which is the parameter that "
                          "selects the suite. A second directory would test the tempfile "

@@ -252,8 +252,12 @@ ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
         # `GITHUB_BASE_REF` is set only on a pull_request event. ⚠ Its `--self-test` runs
         # UNCONDITIONALLY in the same workflow, so the guard still has one witness on every push —
         # a guard whose every caller is conditional has none.
-        (3, "the three pull-request-only steps: the two this script invokes itself, plus the "
-            "reference-namespace gate, which cannot run without a base ref"),
+        # ⟳⟳ 2026-10-15, backlog #49: 3 -> 4. `check-doc-citations.py` is PR-only for the same
+        # reason as its neighbour — its subject is what this branch ADDED, so it needs a base
+        # ref. Its `--self-test` is unconditional too, so it keeps a witness on every push.
+        (4, "the four pull-request-only steps: the two this script invokes itself, plus the "
+            "reference-namespace and doc-citations gates, neither of which can run without a "
+            "base ref"),
     ("ci.yml", "BODY: ${{ github.event.pull_request.body }}"):
         (2, "the env those two steps read their waiver from"),
     ("schema-gates.yml", "pull_request:"):
@@ -689,10 +693,10 @@ def _self_test() -> int:
     check("the `${{ }}` wrapper form is recognised",
           pr_only_steps("      - name: x\n        if: ${{ github.event_name == 'pull_request' }}\n        run: y\n"), ["x"])
     # ⚠ The REAL workflow, not a fixture: the derivation must agree with what CI actually gates.
-    check("the derivation finds exactly the two steps ci.yml gates today",
+    check("the derivation finds exactly the FOUR steps ci.yml gates today",
           sorted(pr_only_steps(WORKFLOW.read_text())) if WORKFLOW.is_file() else [],
           ["check-review-recorded (PR only)", "dashboard entry ratchet",
-           "reference namespaces are qualified"])
+           "doc citations resolve", "reference namespaces are qualified"])
 
     check("the real workflow has pull-request-only steps — an empty answer here is CANNOT RUN",
           len(pr_only_steps(WORKFLOW.read_text())) > 0 if WORKFLOW.is_file() else True, True)

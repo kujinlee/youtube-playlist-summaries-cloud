@@ -1,0 +1,483 @@
+[
+  {
+    "name": "⛔ the ambiguity branch is removed, so two matching files report as 'no tracked file' — it still fires, but the reader is told the wrong reason",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if len(suffix_matches) > 1:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "the ambiguous message says how many matched"
+    ]
+  },
+  {
+    "name": "the reviews exclusion is dropped, so ~96.7% of the corpus (~26,350 of ~27,250 citations) comes into scope",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        and not path.startswith(EXCLUDED_PREFIX)\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "docs/reviews/ is out of scope"
+    ]
+  },
+  {
+    "name": "the .md restriction is dropped, so generated explainer pages are judged as living documents",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        and path.endswith(\".md\")\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "a generated .html page is out of scope"
+    ]
+  },
+  {
+    "name": "⛔ r1 H1 REGRESSION: `git ls-files` becomes the existence oracle again, so a real, readable but UNTRACKED file reports unresolvable — reproduced live against `.claude/skills/shared/explainer-delivery.md`, where this project's harness lives",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    lines = read(path)\n    if lines is not None:\n        return lines, \"exact\"\n",
+        "    lines = read(path) if path in tracked else None\n    if lines is not None:\n        return lines, \"exact\"\n"
+      ]
+    ],
+    "expect": [
+      "a readable file that is NOT in the tracked list still resolves"
+    ]
+  },
+  {
+    "name": "⛔ the GIT-error CANNOT RUN returns 0 instead of 2, so an unreachable base ref reads as a clean pass",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    read = make_reader(root)",
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 0\n\n    read = make_reader(root)"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 — CANNOT RUN — when git cannot be reached, never 0"
+    ]
+  },
+  {
+    "name": "⛔ the READ-error CANNOT RUN returns 0 — r2-codex found this handler had no witness at all, so the mutant survived 40/40",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    if found:",
+        "        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 0\n\n    if found:"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 when a cited file exists but cannot be READ"
+    ]
+  },
+  {
+    "name": "the scope filter is dropped, so files git changed outside docs/ are diffed and judged",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        scoped = [(p, s) for p, s in fetch_changed(args.base, root) if in_scope(p)]\n",
+        "        scoped = list(fetch_changed(args.base, root))\n"
+      ]
+    ],
+    "expect": [
+      "...and an out-of-scope changed file is never diffed at all"
+    ]
+  },
+  {
+    "name": "⛔ `-z` is dropped from the file listing — r3 High: every safety property rests on that one flag, and removing it silently disables the whole guard (scoped=[] and rc=0 over a repo full of bad citations) while failing ZERO cases",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"--name-status\", \"-z\", \"-M\"",
+        "\"--name-status\", \"-M\""
+      ]
+    ],
+    "expect": [
+      "⛔ changed_files() splits on NUL — the one flag every safety property rests on"
+    ]
+  },
+  {
+    "name": "⛔ r3-codex MEDIUM: the rename source is dropped from the pathspec, so a PURE RENAME reports every citation in the moved document as newly added",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    pre_ref = f\"{base}:{source}\" if pair else f\"{base}:{path}\"\n",
+        "    pre_ref = f\"{base}:{path}\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a pure rename of a document with a BAD citation adds nothing"
+    ]
+  },
+  {
+    "name": "⛔ r4 L3 — the suffix match loses its leading slash, so it matches MID-SEGMENT and a citation of `c/ensure.ts` resolves to `lib/html-doc/ensure.ts`, a different file",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    suffix_matches = [f for f in tracked if f.endswith(\"/\" + path)]\n",
+        "    suffix_matches = [f for f in tracked if f.endswith(path)]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a suffix must match at a path SEGMENT boundary, not mid-segment"
+    ]
+  },
+  {
+    "name": "⛔ r4 L3 — `CITE` loses the word boundary after the line number, so `lib/a.ts:12abc` becomes a citation of line 12",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\\.(?:ts|tsx|js|mjs|cjs|py|sh|sql|yml|yaml|json|toml|css|scss|md))`?:(\\d+)\\b\"",
+        "\\.(?:ts|tsx|js|mjs|cjs|py|sh|sql|yml|yaml|json|toml|css|scss|md))`?:(\\d+)\""
+      ]
+    ],
+    "expect": [
+      "⛔ a line number glued to more text is not a citation"
+    ]
+  },
+  {
+    "name": "⛔ r4 M6 — the empty-tree refusal is removed, so `tracked_files` returns an empty list and the guard passes over a tree it cannot see — the SECOND of that function's two raises, and the one its own case had never reached",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if not files:\n        raise RuntimeError(\"git ls-files returned nothing — refusing to pass over an empty tree\")\n",
+        "    if not files:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ an EMPTY repository reaches the empty-tree refusal, not the git-failure raise"
+    ]
+  },
+  {
+    "name": "⛔ r4 L1 — the rename pair is reported (source, destination) instead of (destination, source), which a COUNT cannot see: the prior case asserted a number both orientations produce",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            out.append((fields[i + 2], fields[i + 1]))   # (destination, source)\n",
+        "            out.append((fields[i + 1], fields[i + 2]))   # (destination, source)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ changed_files reports (destination, source), not the reverse"
+    ]
+  },
+  {
+    "name": "⛔ r4 L3 — the reader tests `exists()` instead of `is_file()`, so a DIRECTORY reaches `read_text` and raises out of the reader; adjacent to H3's symlink route",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not target.is_file():\n",
+        "        if not target.exists():\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the reader answers None for a DIRECTORY rather than raising out of itself"
+    ]
+  },
+  {
+    "name": "⛔ the blank-line clause is removed, so a citation into an empty line passes — the shape SIX of the six measured firings had, and the `:66` instance row 49 names",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not lines[raw_line - 1].strip():\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "a blank cited line fires"
+    ]
+  },
+  {
+    "name": "the upper bound goes off by one (`>` becomes `>=`), so the LAST line of a file reads as out of range — the attributable form; deleting the bound outright raises IndexError",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if raw_line < 1 or raw_line > last_line:\n",
+        "        if raw_line < 1 or raw_line >= last_line:\n"
+      ]
+    ],
+    "expect": [
+      "line 3 (last line) is in range"
+    ]
+  },
+  {
+    "name": "⛔ the CITED file's upper bound goes off by one the OTHER way, so a citation of the line immediately past the end passes: a file that lost its last line is the commonest drift there is",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        last_line = len(lines)\n",
+        "        last_line = len(lines) + 1\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the line immediately past the end fires, not only one far past it"
+    ]
+  },
+  {
+    "name": "⛔ #291 — `citations()` returns a SET instead of a multiset, so writing a citation a second time is invisible: the count that makes 'gained' mean what it says is gone",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        out[key] = out.get(key, 0) + 1\n",
+        "        out[key] = 1\n"
+      ]
+    ],
+    "expect": [
+      "a citation written a SECOND time is gained, so counts matter and not membership"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the difference is taken the WRONG WAY ROUND, so a REMOVED citation is examined and a gained one is not: the guard would audit history and ignore new work",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    pre_counts, post_counts = citations(pre), citations(post)\n",
+        "    pre_counts, post_counts = citations(post), citations(pre)\n"
+      ]
+    ],
+    "expect": [
+      "a citation REMOVED is not gained"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the subtraction is dropped, so EVERY citation in the document is examined on every change: the living-corpus rate (12.4%) instead of the per-commit rate (0.23)",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        for _ in range(n - pre_counts.get(key, 0)):\n",
+        "        for _ in range(n):\n"
+      ]
+    ],
+    "expect": [
+      "a citation merely MOVED within the document is not gained"
+    ]
+  },
+  {
+    "name": "⛔ #291 — an unresolvable REF returns None like a missing path, so one mistyped `--base` makes every pre-image empty, every citation read as gained, and the guard fire on the whole corpus",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            if ok.returncode != 0:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing pre-image is None while a broken ref or root is CANNOT RUN — never confused"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the NUL refusal in `blob` is removed, so a document git does not treat as text has its citations matched against mojibake",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if \"\\x00\" in r.stdout:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing pre-image is None while a broken ref or root is CANNOT RUN — never confused"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the post-image is read from the BASE instead of the index, so a document's citations are compared with themselves and nothing is ever gained",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    post = fetch_blob(f\":{path}\", root)\n",
+        "    post = fetch_blob(pre_ref, root)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the guard reads the INDEX, so an unstaged edit is invisible and a staged one fires"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the pre-image of a PROMOTED document is taken from its out-of-scope source, so a document moved into docs/ reports as unchanged: lines no run has examined, and none ever will",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    pair = source is not None and in_scope(source)\n",
+        "    pair = source is not None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — the CITED file is split with Python's line rule (`splitlines()`), which breaks on seven characters git does not, so a citation resolves to the WRONG line of the file it names. ⟳ RESTORED: retired during #291 because its anchor had moved, while the property had only changed SIDES",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        lines = raw.split(\"\\n\")\n",
+        "        lines = raw.splitlines()\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed or lone CR in the CITED file does not shift its line numbering"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — the CITED file is read with `read_text()`, whose universal newlines translate a lone `\\r` before any split can help. ⟳ RESTORED for the same reason as its sibling",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        raw = target.read_bytes().decode(\"utf-8\", errors=\"replace\")\n",
+        "        raw = target.read_text(encoding=\"utf-8\", errors=\"replace\")\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed or lone CR in the CITED file does not shift its line numbering"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — `_reader`'s NUL refusal is removed, so a CITED file git does not treat as text has its lines counted through mojibake. ⟳ RESTORED: #291 moved the DOCUMENT's NUL check into `blob`, and retiring this one with it confused two separate readers",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if \"\\x00\" in raw:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed or lone CR in the CITED file does not shift its line numbering"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — main()'s FIRST exception arm stops catching OSError, so git being unreachable as a PROCESS escapes as a traceback instead of CANNOT RUN. main() has two arms and only the second was witnessed",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    except (RuntimeError, OSError) as exc:\n",
+        "    except (RuntimeError,) as exc:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 when the file list itself raises OSError, never 0"
+    ]
+  },
+  {
+    "name": "⛔ r5, FOUND WHILE CONFIRMING H1 AND NOT IN IT — main()'s second arm stops catching ValueError, so a line number too large for `int()` escapes as a traceback. That clause is live and was unwitnessed",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    except (RuntimeError, OSError, ValueError) as exc:\n",
+        "    except (RuntimeError, OSError) as exc:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 on a line number too large to parse, never a traceback"
+    ]
+  },
+  {
+    "name": "⛔ r5 H2 — the unmerged check is removed, so a conflicted document (index stages 1/2/3, nothing at stage 0) reads as DELETED and its drifted citations pass",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if ref_path.startswith(\":\"):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a conflicted document is CANNOT RUN, and the same content resolved still fires"
+    ]
+  },
+  {
+    "name": "⛔ r5 M1 — the phantom trailing element is kept, so every file measures one line too many: the out-of-range message overstates length and a citation of `:N+1` is reported as a blank line instead of outside the file",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if lines and lines[-1] == \"\":\n            lines.pop()\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the real reader counts git's lines, and :N+1 is outside the file, not blank"
+    ]
+  },
+  {
+    "name": "⛔ r5 M6 — the containment test is removed, so a citation of `../outside.ts` resolves against a file ABOVE the repository root: the verdict then depends on a file no reader of the repo can see",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            if not target.resolve().is_relative_to(root.resolve()):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a citation escaping the repository root does not resolve, while in-root ones behave"
+    ]
+  },
+  {
+    "name": "⛔ r5 M2 — `-M` is dropped from the file listing, so under a developer's own `diff.renames=false` a pure rename arrives as delete-plus-add and every citation in the moved document reads as gained",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"diff\", \"--cached\", \"--no-color\", \"--name-status\", \"-z\", \"-M\", base]",
+        "\"diff\", \"--cached\", \"--no-color\", \"--name-status\", \"-z\", base]"
+      ]
+    ],
+    "expect": [
+      "⛔ a rename keeps old citations silent with detection OFF; only the new one fires"
+    ]
+  },
+  {
+    "name": "⛔ r5 M3 — the deleted-document clause is removed, so a document gone from the index reaches `added_citations` with None and raises TypeError instead of being silent",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if post is None:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a DELETED document gains nothing — even a legacy UTF-16 one — while an edit still fires"
+    ]
+  },
+  {
+    "name": "⛔ r5-codex H1 — git's NUL-delimited path stream is read with `text=True`, so Python's universal newlines translate a CR inside a FILENAME into a newline: the blob lookup asks for a path that does not exist and the staged document reads as DELETED",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    fields = [f for f in r.stdout.decode(\"utf-8\", \"replace\").split(\"\\0\") if f]\n",
+        "    fields = [f for f in r.stdout.decode(\"utf-8\", \"replace\").replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\").split(\"\\0\") if f]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a carriage return in a document's FILENAME does not lose the document"
+    ]
+  },
+  {
+    "name": "⛔ r5-codex H2 — a symlink refusal is reinstated inside `_reader`, so an ordinary CITED code symlink is refused: the false refusal that shipped once as r4-codex M2, whose entry was then retired on the wrong assumption that the directory mutation covered it",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not target.is_file():\n            return None\n",
+        "        if target.is_symlink():\n            raise RuntimeError(f\"{path} is a symlink\")\n        if not target.is_file():\n            return None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a citation through a valid in-root symlink resolves, exactly as the direct path does"
+    ]
+  },
+  {
+    "name": "⛔ r5-codex M1 — the PRE-image is read before the post-image is checked, so deleting a legacy UTF-16 document hits the pre-image's NUL refusal and an ordinary staged deletion returns rc=2",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    post = fetch_blob(f\":{path}\", root)\n    if post is None:\n        return []\n    pre = fetch_blob(pre_ref, root)\n",
+        "    pre = fetch_blob(pre_ref, root)\n    post = fetch_blob(f\":{path}\", root)\n    if post is None:\n        return []\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a DELETED document gains nothing — even a legacy UTF-16 one — while an edit still fires"
+    ]
+  }
+]

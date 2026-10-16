@@ -166,6 +166,18 @@ POPULATION: frozenset[str] = frozenset({
     "codex-review.py",              # ⟳ 2026-09-04, task #222: docs/plugins.md claimed 35
                                     # while the suite ran 51. Now declared AND externally observed.
     "check-plan-task-order.py",
+    "check-doc-citations.py",        # ⟳ 2026-10-16, r5 M7. Its declaration had said
+                                    # "--self-test runs N cases" since the day it was written —
+                                    # no `#`, so `count_drift`'s canonical form did not match, so
+                                    # `declares()` was False and the file was never in population.
+                                    # Its declared count was therefore NEVER verified while being
+                                    # rewritten four times in one day (41 -> 58 -> 74 -> 64 -> 72),
+                                    # and 64 was committed against a suite running 67.
+                                    # ⚠ The guard's own rule — "a script declares but is unpinned
+                                    # -> FAIL" — could not fire, because the near-miss declaration
+                                    # meant it did not count as declaring at all. A detector that
+                                    # recognises only the canonical form is silent, not loud, about
+                                    # the near-miss; that is the gap this row closes.
     "check-review-rounds.py",
     "check-review-decision.py",
     "check-review-recorded.py",      # ⟳ 2026-09-14, r11 Medium. It had a `--self-test`, declared no

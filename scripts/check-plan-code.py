@@ -1441,6 +1441,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15: the reference-namespace guard arrives with a manifest rather than
     # manifest DEBT. `check-ratchet-contract` offered `MANIFEST_BASELINE = 1`, which would
     # have ACCEPTED the debt; six entries take it to 0 instead.
+    # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
+    # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
+    # injected reader each have a case that names them.
+    "scripts/check-doc-citations.py": 37,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -3390,6 +3394,7 @@ def _self_test() -> int:
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
+                                      "scripts/check-doc-citations.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
                                       # debt (MANIFEST_BASELINE 21 -> 20). This list is a LIVE
@@ -4986,6 +4991,9 @@ def _self_test() -> int:
     # `_cites`. It bound 0 times at HEAD, so `--mutate .` read NOT MEASURED and the ratchet was
     # void from that commit until this one. Retargeted, not re-counted: the entry still exists.
     # ⚠ 1413 is the GUARD'S OWN FIGURE, read from `got 1413 want 1411`.
+    # ⟳ 2026-10-15, backlog #49: 1419 -> 1426. ⚠ 1426 is the GUARD'S OWN FIGURE, read from its
+    # `got 1426 want 1419` — the manifest existed on disk before this literal moved, which is the
+    # only order in which the number is evidence rather than an intention.
     # ⟳ 2026-10-15, REBASED ONTO #372: 1413 -> 1419. The reference-namespace guard arrives with
     # SIX entries rather than manifest debt. ⛔ THIS BRANCH AND #372 DEVELOPED IN PARALLEL FROM
     # 1408 and each declared its own sum — #372 landed 1413, this branch had written 1414 — so the
@@ -4994,7 +5002,110 @@ def _self_test() -> int:
     # newer literal is how a manifest silently stops matching its own dict.
     # ⚠ 1419 is the GUARD'S OWN FIGURE, read from `got 1419 want 0` against a deliberately wrong
     # sentinel — not arithmetic and not memory, which is how this line has drifted before.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1419)
+    # ⟳ 2026-10-15, backlog #49 ROUND 4 (the redesign): 1432 -> 1439, and `check-doc-citations.py`
+    # goes 13 -> 20. ONE entry RETIRED WITH ITS SUBJECT — the `+`-marker filter it mutated
+    # (`if not in_hunk or not line.startswith("+")`) no longer exists, because content is no longer
+    # read out of the diff at all — and EIGHT added against the code that replaced it: the
+    # unparsable-hunk-header raise, the two range arithmetic clauses, the substring-versus-position
+    # test that is the redesign's whole structural claim, the out-of-range raise, the unreadable-
+    # document raise, the empty-added-set short circuit, and main()'s ValueError arm.
+    # ⚠ 1439 is the GUARD'S OWN FIGURE, read from `got 1439 want 0` against the wrong sentinel.
+    # ⟳ 2026-10-15, backlog #49 ROUND 4 FOLD: 1439 -> 1452, `check-doc-citations.py` 20 -> 33. The
+    # round-4 Claude half returned 3 High / 7 Medium / 3 Low, and thirteen entries answer them: the
+    # line-splitting oracle (H1), the binary/hunkless refusal (H2), the symlink refusal (H3), the
+    # promotion-by-rename pairing (M1), the hunk-header suffix (M2), `--unified=0` (M3), the
+    # empty-tree refusal (M6), both directions of the cited-file bound (M7 plus the pre-existing
+    # `>=` entry, now on SEPARATE anchors), rename orientation (L1), the suffix segment boundary
+    # and `CITE`'s word boundary (L3), the reader's non-regular-file clause (L3), and the
+    # coordinator's own `--no-ext-diff` fail-open.
+    # ⚠ TWO CLAUSES WERE SPLIT ONTO SEPARATE LINES so each could carry an entry — `pair_source`
+    # from `paths`, and `last_line` from its comparison. A manifest anchor can be occupied once,
+    # and both halves of each pair are separately load-bearing; written on one line, one of the two
+    # would have gone unmeasured. The harness refused the collision rather than letting it pass.
+    # ⚠ 1452 is the GUARD'S OWN FIGURE, read from `got 1452 want 0` against the wrong sentinel.
+    # ⟳ 2026-10-15, backlog #49 ROUND 4 CODEX FOLD: 1452 -> 1458, `check-doc-citations.py` 33 -> 39.
+    # ⛔ THREE OF THAT HALF'S FIVE FINDINGS WERE REGRESSIONS THE PREVIOUS FOLD SHIPPED, all three in
+    # the FALSE-REFUSAL direction backlog #56 measured as fatal: a deletion-only edit returned rc=2
+    # (the refusal keyed on an empty added set rather than on whether a hunk header was seen),
+    # `color.ui=always` returned rc=2, and the symlink refusal sat in the shared reader where it
+    # also rejected an ordinary CITED code symlink. Six entries: those three, the universal-newline
+    # half of the line-rule fix that the form-feed witness passed over, and the two remaining seam
+    # routes (a textconv driver that masks the cited line; `working-tree-encoding`).
+    # ⚠ THREE MORE CLAUSES WERE SPLIT ONTO SEPARATE LINES for the same reason as last time —
+    # `hunkless` from its refusal, `raw` from its split, and five whole-line git-invocation anchors
+    # replaced by MINIMAL ones, because adding a flag to those lines has now orphaned anchors FIVE
+    # times.
+    # ⚠ 1458 is the GUARD'S OWN FIGURE, read from `got 1458 want 0` against the wrong sentinel.
+    # ⟳⟳ 2026-10-16, backlog #291 — THE SUM FALLS, 1458 -> 1437, and `check-doc-citations.py` goes
+    # 39 -> 18. This is the SANCTIONED kind of fall and the second one this file has recorded (the
+    # first was retiring plan mode): TWENTY-ONE entries are RETIRED WITH THEIR SUBJECTS, because the
+    # subjects no longer exist. The guard stopped comparing LINE NUMBERS across the diff/document
+    # boundary and now compares citation STRINGS between two blobs git itself supplies, so the hunk
+    # grammar, the `--unified=0` dependency, the allow-list and no-content refusals, the symlink
+    # refusal, the line-splitting rule, the `--no-ext-diff`/`--no-color` flags on a per-file diff,
+    # and the nine witnesses built to exercise them are all gone with it.
+    # ⛔ WHY THE SUBJECT WENT: five routes were found through that boundary — Python's line rule
+    # against git's, a document git calls binary, a symlink, a `textconv` driver and
+    # `working-tree-encoding` — three of them AFTER the redesign meant to close the class, and the
+    # patches for them shipped three FALSE REFUSALS, one of which refused ordinary deletion commits.
+    # The owner chose the rebuild over a sixth patch on 2026-10-16.
+    # ⚠ A FALL IS NOT A LICENCE: the 18 that remain all bind and all kill via the case each names,
+    # and the new clauses get their own entries in the same slice rather than later.
+    # ⟳ SAME SLICE, after the new clauses got their entries: 1437 -> 1443, that file 18 -> 24.
+    # SEVEN added for the rebuilt core (the multiset, the direction of the difference, the
+    # subtraction itself, the ref-versus-missing-path distinction, the NUL refusal, the index as the
+    # post-image, and the promoted-document pre-image) and ONE retired as SUPERSEDED rather than
+    # orphaned — r4 M1's pathspec mutation measured the same clause the promoted-document entry now
+    # measures, and two entries on one clause is not coverage.
+    # ⟳ 2026-10-16, ROUND 5's CLAUDE HALF: 1443 -> 1448, that file 24 -> 29. ⛔ FIVE ENTRIES ARE
+    # RESTORED, NOT ADDED, and the reason is the most useful thing this slice learned. I retired
+    # them during #291 by asking "does this anchor still bind?" — a mechanical question — and
+    # treated a dead anchor as a dead SUBJECT. That holds when code is deleted and fails when code
+    # MOVES, which is what a rebuild does. The properties had only changed SIDES: #291 stopped
+    # comparing line numbers across the DOCUMENT boundary, but a citation still names a line in a
+    # CITED FILE that `_reader` still numbers, so `split("\n")` versus `splitlines()`,
+    # `read_bytes().decode()` versus `read_text()`, and that reader's NUL refusal were all still
+    # load-bearing. Measured: each left the suite at 67/67 while turning rc=1 into rc=0.
+    # ⚠ main() HAS TWO EXCEPTION ARMS and the review named one. Measured separately, the FIRST
+    # arm's OSError and the SECOND arm's ValueError were both unwitnessed — the fifth entry was
+    # found while confirming the finding, not by it, and its clause is live because `int()` raises
+    # ValueError on an absurd line number.
+    # ⛔ AND THE RETIREMENT ARITHMETIC IN THE #291 ENTRY ABOVE IS WRONG BY TWO IN BOTH DIRECTIONS,
+    # which round 5 caught (M8): it was 24 retired and 9 added, not 22 and 7. The error CANCELS, so
+    # every total in that note is right and the composition is not — which is exactly how a wrong
+    # number survives a check that only re-adds the totals.
+    # ⟳ SAME ROUND, after H2 and M1 got their entries: 1448 -> 1450, that file 29 -> 31. The
+    # unmerged-path refusal (a conflicted document read as DELETED and passed) and the phantom
+    # trailing element (every file measured one line too many, and `:N+1` reported as a blank line
+    # rather than outside the file).
+    # ⚠ 1450 is the GUARD'S OWN FIGURE, read from its own `got 1450 want 1448`, which is how this
+    # pin is supposed to move — the guard says the number and the literal follows it.
+    # ⟳ SAME ROUND, the remaining findings: 1450 -> 1453, that file 31 -> 34. A citation escaping the
+    # REPOSITORY ROOT (`../outside.ts:2` resolved above the root and fired, so the verdict depended
+    # on a file no reader of the repo can see); `-M` under a developer's own `diff.renames=false`,
+    # which every other fixture could not express because they null the git config; and the
+    # deleted-document clause, which raised TypeError when removed and had no case.
+    # ⚠ TWO FINDINGS DELIBERATELY HAVE NO ENTRY, recorded rather than faked: `blob`'s `cat-file -p`
+    # handler is unreachable once `-e` has answered (a case would test `subprocess`, not this rule),
+    # and `--base` naming a TIP rather than a merge base is a pre-existing reading now written into
+    # the stated limits.
+    # ⟳ 2026-10-16, ROUND 5's CODEX HALF: 1453 -> 1456, that file 34 -> 37. Three of its four
+    # findings were defects the two Claude folds had shipped: a CR inside a FILENAME translated by
+    # `text=True` so the document read as DELETED (a real fail-open, and the same mistake was
+    # sitting unnoticed in `tracked_files`, which used `ls-files` with no `-z` at all); a SIXTH live
+    # retirement — accepting an ordinary cited code symlink, which I had assumed the directory
+    # mutation covered and which survived at 75/75; and the pre-image being read before the
+    # post-image, so deleting a legacy UTF-16 document returned CANNOT RUN on an ordinary staged
+    # deletion.
+    # ⛔ AND ITS FOURTH FINDING IS ABOUT THE DISCIPLINE ITSELF. Two of my new witnesses carried a
+    # control that could not discriminate: a BLANK-line citation produces one finding whether the
+    # reader reads the blank line or refuses the file, so a reader returning None for every path
+    # satisfied a witness whose comment said in those words that it could not. A control is only
+    # adjacent when the degenerate implementation gives a DIFFERENT ANSWER — so a control is now a
+    # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
+    # degenerate substitutions now redden 5 and 13 cases respectively.
+    # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1456)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
