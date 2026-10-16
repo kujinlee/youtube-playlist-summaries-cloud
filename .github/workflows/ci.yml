@@ -560,8 +560,13 @@ jobs:
       # backlog #49. A `path:line` that has drifted sends a reader into a different function, and
       # nothing about the wrong number looks wrong — EIGHT were wrong in one document, found by two
       # independent sweeps that each missed what the other caught. PR-scoped for the same reason as
-      # the guard above: the living corpus fires 175 times on 838 pathed citations (20.9%), almost
-      # all of it historical, while ADDED lines fire 6 times over 40 commits (0.15/commit).
+      # the guard above: the living corpus fires 111 times on 895 pathed citations (12.4%), almost
+      # all of it historical, while NEWLY CITED text fires 9 times over 40 commits (0.23/commit).
+      # ⟳ 2026-10-16: those figures were 175/838 (20.9%) and 6/40 (0.15) — the FIRST generation,
+      # filed as wrong by round 1's Claude half, quoted by round 2's Codex half, and carried
+      # unchanged through four rounds that re-measured everything else. Round 5 found them still
+      # here. ⚠ And the rule itself changed: #291 compares citation STRINGS between two blobs git
+      # supplies, so the unit is "newly cited in this document", not "on an added line".
       - name: doc citations resolve
         if: github.event_name == 'pull_request'
         run: python3 scripts/check-doc-citations.py --base "origin/$GITHUB_BASE_REF"

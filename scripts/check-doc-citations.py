@@ -119,6 +119,21 @@ and they are decidable without one.
 
 WHAT IT IS BLIND TO, STATED RATHER THAN DISCOVERED LATER
 --------------------------------------------------------
+  * ⚠ **A `clean` FILTER WOULD BREAK "one oracle" (r5 L8).** `git cat-file` returns what git
+    STORES, so a `clean` filter that rewrites content on the way in means the stored blob is not
+    what the author wrote. Bounded: a filter lives in `.git/config` or is set up by hand, so unlike
+    `.gitattributes` it is not committable by one author into everyone's clone — which is what made
+    the `textconv` and `working-tree-encoding` routes worth closing and makes this worth stating.
+  * ⚠ **A CITATION DIFFERING ONLY IN CASE RESOLVES on a case-insensitive filesystem (r5 L10).**
+    `lib/A.ts:1` finds `lib/a.ts` on APFS and would not on Linux, so the guard is QUIETER on a Mac
+    than in CI. The direction is safe — CI is the strict one — but the asymmetry is real.
+  * ⚠ **`--base` NAMES A TIP, NOT A MERGE BASE (r5 M5).** Given `--base origin/master`, a document
+    is compared with that document AT THE TIP. If master has since DELETED a citation this branch
+    still carries, the branch is charged for it — the citation is absent from the pre-image and
+    present in the post-image, which is what "gained" means. A merge-base comparison would not
+    charge it. Pre-existing, not introduced by #291, and not reachable in CI, where the branch is
+    rebased or the base is its own ancestor. Recorded because the next reader will hit it locally
+    before they hit it anywhere else.
   * **A SYMLINKED DOCUMENT contributes only its LINK TEXT, by construction.** `docs/link.md ->
     ../notes/target.md` is a blob holding the string `../notes/target.md`, so it carries no
     citation, and the citations in the target are out of scope. Measured 2026-10-16 in isolation —
@@ -156,16 +171,18 @@ WHAT IT IS BLIND TO, STATED RATHER THAN DISCOVERED LATER
 
 FAILS IF
 --------
-  * an added line in a scoped file cites a path that resolves to no tracked file, or to more than
+  * a citation NEWLY PRESENT in a scoped document resolves to no tracked file, or to more than
     one by suffix;
   * the cited line number is outside the resolved file;
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 70 cases. Most are over DOCUMENTS this file builds with an injected
-               resolver, so the rule needs no repository; the hunk-header reader is exercised on
-               diff texts, and four cases build a throwaway git repository because the properties
-               they witness (NUL splitting, literal pathspecs, rename pairing) are git's.
+  --self-test  # 75 cases. Most are over DOCUMENTS this file builds with an injected
+               resolver, so the rule needs no repository. ⟳ #291: there is no hunk-header reader
+               and no diff text in this suite at all; the cases that build a throwaway git
+               repository do so because the properties they witness are GIT's — NUL splitting, the
+               rename pair's orientation, the index as the post-image, an unmerged path, a
+               conflicted merge, `diff.renames=false`, and the blob answers.
 """
 from __future__ import annotations
 
@@ -365,6 +382,11 @@ def blob(ref_path: str, root: pathlib.Path) -> "str | None":
         return None
     r = subprocess.run(["git", "-C", str(root), "cat-file", "-p", ref_path],
                        capture_output=True, text=True)
+    # ⚠ r5 M4, STATED RATHER THAN GIVEN A FAKE CASE: this handler has NO witness, and I could not
+    # construct one. `-e` has just answered that the object exists, so `-p` failing means the
+    # repository changed or broke between two subprocesses. It is belt-and-braces for a race, not a
+    # reachable branch, and a case that forced it would be testing `subprocess` rather than this
+    # rule. Recorded as an unwitnessed clause instead of pretending otherwise.
     if r.returncode != 0:
         raise RuntimeError(f"git cat-file -p {ref_path} failed: {r.stderr.strip()[:200]}")
     # ⛔ NUL means the document itself is not text git would diff as text. Matching citations
@@ -414,10 +436,15 @@ def changed_files(base: str, root: pathlib.Path) -> tuple[tuple[str, "str | None
     This is the half that makes header parsing unnecessary. Raises on a git failure.
     """
     r = subprocess.run(
-        # ⛔ `--no-color` on BOTH invocations — r4-codex M3. With `color.ui=always` git decorates its
-        # output, and the allow-list then sees `\x1b[1mdiff --git …` as a line it does not
-        # understand: an ordinary citation patch became CANNOT RUN. The name-status call is read for
-        # its NUL-delimited paths, which decoration would corrupt in a quieter way.
+        # ⚠ `--no-color` and `--literal-pathspecs` BOTH PROTECT NOTHING MEASURABLE HERE, and that is
+        # recorded rather than hidden (r5 L2, L3). Measured 2026-10-16 with `color.ui=always` and a
+        # glob-shaped filename: the output of `--name-status -z` is byte-identical with and without
+        # either flag, because git does not decorate it and this invocation carries no pathspec.
+        # Their consumers were the per-file diff and its allow-list, both deleted by #291.
+        # ⛔ THEY STAY, and the reason is the cost of being WRONG in each direction: asserting "git
+        # never colourises this" from one version and one configuration is the overreach that has
+        # already cost this file several rounds, and if it is wrong the failure is a CANNOT RUN on
+        # every run. A flag that does nothing costs nothing.
         ["git", "-C", str(root), "--literal-pathspecs",
          "diff", "--cached", "--no-color", "--name-status", "-z", "-M", base],
         capture_output=True, text=True,
@@ -461,14 +488,21 @@ def _reader(root: pathlib.Path):
     `resolve`, which reports precisely why the path did not resolve."""
     def read(path: str) -> "list[str] | None":
         target = root / path
+        # ⛔ r5 M6 — A CITATION MAY NOT ESCAPE THE REPOSITORY ROOT. Measured: `../outside.ts:2`
+        # resolved against a file one directory ABOVE the root and fired on it, so the verdict
+        # depended on a file no reader of this repository can see — and on another machine the same
+        # citation resolves to something else or to nothing. `resolve()` collapses `..` before the
+        # containment test, because a string test on the path would miss `a/../../b`.
+        try:
+            if not target.resolve().is_relative_to(root.resolve()):
+                return None
+        except OSError:
+            return None
         # ⛔ r4 H3 — A SYMLINK IS NOT THE DOCUMENT GIT DIFFED. For `docs/link.md -> target.md` git's
-        # hunk header describes the LINK TEXT (one line, `target.md`), while `is_file()` follows the
+        # hunk header described the LINK TEXT (one line, `target.md`), while `is_file()` followed the
         # link, so `doc_lines` was the TARGET's lines: `added` was `(1,)`, the guard examined
         # `"line1"`, and a drifted citation on line 4 of the resolved document was never read —
         # for a brand-new scoped path whose every line is new. Measured rc=0.
-        # ⚠ `is_symlink()` BEFORE `is_file()`, because `is_file()` follows the link and answers
-        # True. The adjacent survivor the reviewer's sweep found was `is_file -> exists`: nothing
-        # in the suite distinguished a non-regular file at all.
         if not target.is_file():
             return None
         # ⛔ `split("\n")`, NEVER `splitlines()` — r4 H1, a FAIL-OPEN AND a false positive from one
@@ -480,8 +514,6 @@ def _reader(root: pathlib.Path):
         # last year's stale citation (rc=1) — which breaks the ADDED-LINES-ONLY contract the whole
         # scope argument rests on. Four tracked documents already disagree with git's line count,
         # and the producer of U+2028 here is this project's own review agents.
-        # ⚠ The trailing phantom element `split("\n")` leaves on a newline-terminated file is never
-        # read: `violations` indexes only members of `added`, which git numbers.
         # ⛔ `read_bytes().decode(...)`, NEVER `read_text(...)` — r4-codex H2, AND THIS IS THE SECOND
         # HALF OF A FIX I SHIPPED INCOMPLETE. `split("\n")` alone was not enough: `read_text` applies
         # UNIVERSAL NEWLINES, so a lone `\r` had already become `\n` before any split could see it.
@@ -506,7 +538,18 @@ def _reader(root: pathlib.Path):
             raise RuntimeError(
                 f"{path} holds NUL bytes once decoded as UTF-8, so these are not the bytes git "
                 f"diffed — a re-encoding attribute such as working-tree-encoding is in play")
-        return raw.split("\n")
+        lines = raw.split("\n")
+        # ⛔ r5 M1 — DROP THE PHANTOM. `split("\n")` leaves a trailing "" on every newline-terminated
+        # file, so a 3-line file measured 4: the out-of-range message overstated EVERY file's length
+        # by one, and a citation of `:4` landed on the phantom and was reported as "a blank line"
+        # rather than "outside the file".
+        # ⚠ A COMMENT I WROTE SAID THIS PHANTOM "is never read: `violations` indexes only members of
+        # `added`, which git numbers". That was TRUE of the old design and was invalidated by #291 in
+        # the same commit that kept it — `added` now carries line numbers an AUTHOR wrote, and an
+        # author can write N+1. A caveat survives the design it was true of.
+        if lines and lines[-1] == "":
+            lines.pop()
+        return lines
     return read
 
 
@@ -724,7 +767,7 @@ def _rename_orientation_witness() -> "tuple[str, str]":
 
 
 
-def _blob_witness() -> "tuple[object, object, object, object]":
+def _blob_witness() -> "tuple[object, object, object, object, object]":
     """How `blob()` answers four questions git can be asked about a path.
 
     `(pre_absent, post_present, nul_refused, bad_ref_raises, bad_root_raises)` ->
@@ -928,8 +971,146 @@ def _unmerged_witness() -> "tuple[object, int]":
     return tuple(out)
 
 
+def _real_reader_bounds_witness() -> "tuple[int, str, int]":
+    """`_reader`'s own line count and message, over a REAL file rather than an injected world.
+
+    `(3, "outside the file (3 lines)", 3)` — the count for a newline-terminated 3-line file, the
+    message a citation of `:4` produces, and the count for the same content with NO final newline.
+
+    ⛔ r5 M1, and the reason the existing boundary cases could not see it: they run over an injected
+    `read` returning a plain list, which has no trailing phantom. `split("\n")` leaves one on every
+    newline-terminated file, so the real reader measured 4 lines where git measures 3 — every
+    out-of-range message overstated length by one, and `:4` landed on the phantom and was reported
+    as A BLANK LINE rather than outside the file. A fixture that cannot reproduce production is not
+    a witness for production.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "lib").mkdir()
+        (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+        (root / "lib" / "b.ts").write_text("one\n\nthree", encoding="utf-8")
+        read = _reader(root)
+        found = violations("docs/x.md", (("lib/a.ts", 4),), ("lib/a.ts",), read)
+        msg = found[0].split("` ", 1)[1] if found else "(silent)"
+        return (len(read("lib/a.ts")), msg, len(read("lib/b.ts")))
+
+
+def _escaping_citation_witness() -> "tuple[object, int]":
+    """(a citation escaping the repo root, the same content INSIDE it) -> `(None, 1)`.
+
+    ⛔ r5 M6. `_reader` resolved `../outside.ts` against a file above the root and the guard fired
+    on it, so the verdict depended on a file nobody reading the repository can see. The first
+    element is the reader's answer for the escaping path — None, meaning "no such file here", which
+    `resolve` then reports as unresolvable rather than silently passing.
+    ⚠ The second element is the control: identical bytes at an in-root path must still fire, so
+    "refuses everything" cannot satisfy this.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        base = pathlib.Path(tmp)
+        (base / "repo" / "lib").mkdir(parents=True)
+        (base / "outside.ts").write_text("one\n\nthree\n", encoding="utf-8")
+        (base / "repo" / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+        read = _reader(base / "repo")
+        inside = violations("docs/x.md", (("lib/a.ts", 2),), ("lib/a.ts",), read)
+        return (read("../outside.ts"), len(inside))
+
+
+def _rename_config_witness() -> "tuple[int, int]":
+    """A pure rename adds nothing, with `diff.renames` set FALSE and set TRUE -> `(0, 0)`.
+
+    ⛔ r5 M2. `-M` on both invocations is what makes this hold: with rename detection off, git
+    reports a rename as a DELETE plus an ADD, the destination arrives with no source, its pre-image
+    is its own path (absent from the base), and every citation in the moved document reads as newly
+    gained. Measured before: six findings for a document that only moved.
+    ⚠ Every other fixture in this suite NULLS the git configuration, which is why this property was
+    unwitnessable — `diff.renames=false` is a setting a developer may genuinely have, and no fixture
+    could express it.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for renames in ("false", "true"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+            (root / "docs" / "old.md").write_text("old `lib/a.ts:2` here\n" + "padding\n" * 8,
+                                                  encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            run("config", "diff.renames", renames)
+            run("mv", "docs/old.md", "docs/new.md")
+            run("add", "-A")
+            found = 0
+            for path, source in changed_files("HEAD", root):
+                if in_scope(path):
+                    found += len(findings_for(path, source, "HEAD", root,
+                                              tracked_files(root), _reader(root), blob))
+            out.append(found)
+    return tuple(out)
+
+
+def _deleted_document_witness() -> "tuple[int, int]":
+    """(a scoped document DELETED, the same document edited to add a bad citation) -> `(0, 1)`.
+
+    ⛔ r5 M3. A document removed from the index has no post-image, so it can gain nothing — and
+    that clause had no case: removing it produced an uncaught TypeError rather than a finding.
+    Deletion is the exact family r4-codex's M1 regressed, which is why it gets a case rather than
+    an argument.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for delete_it in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+            (root / "docs" / "x.md").write_text("intro\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            if delete_it:
+                (root / "docs" / "x.md").unlink()
+            else:
+                (root / "docs" / "x.md").write_text("intro\nsee `lib/a.ts:2`\n", encoding="utf-8")
+            run("add", "-A")
+            found = 0
+            for path, source in changed_files("HEAD", root):
+                if in_scope(path):
+                    found += len(findings_for(path, source, "HEAD", root,
+                                              tracked_files(root), _reader(root), blob))
+            out.append(found)
+    return tuple(out)
+
+
 def self_test() -> int:
-    """70 cases. The count is declared in the module docstring and verified by running this."""
+    """75 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -964,9 +1145,6 @@ def self_test() -> int:
     }
     tracked = tuple(world)
     read = lambda p: world.get(p)  # noqa: E731
-    def body(*added: str) -> str:
-        """A unified diff adding these lines — for driving `main()`, which still sees a diff."""
-        return f"@@ -0,0 +1,{len(added)} @@\n" + "\n".join(f"+{a}" for a in added)
 
     # ⛔ NO FIXTURE HELPER FOR `violations` ARGUMENTS, AND THAT IS DELIBERATE. A `doc()` helper
     # splatted at the call site (`violations(path, *doc("…"), tracked, read)`) was written here
@@ -1067,6 +1245,20 @@ def self_test() -> int:
     # the NUL refusal. Measured before this case existed: `splitlines()` and `read_text()` each gave
     # (0, 1, 0, 1) — a fail-open with a green suite.
     # ⛔ r5 H2 — a THIRD git answer that was collapsing into one of the two `blob` distinguishes.
+    # ⛔ r5 M1 — the REAL reader, because the injected one has no trailing phantom and so cannot
+    # reproduce the defect. Third element: a file with no final newline must be unaffected.
+    # ⛔ r5 M2 — `-M` under a developer's own `diff.renames=false`; every other fixture here nulls
+    # the git config, which is exactly why this was unwitnessable.
+    case("⛔ a pure rename adds nothing even with rename detection switched OFF",
+         lambda: _rename_config_witness() == (0, 0))
+    # ⛔ r5 M3 — the deleted-document clause had no case: removing it raised TypeError.
+    case("⛔ a DELETED document gains nothing, while an edited one still fires",
+         lambda: _deleted_document_witness() == (0, 1))
+    # ⛔ r5 M6 — a citation may not resolve outside the repository.
+    case("⛔ a citation escaping the repository root does not resolve, while an in-root one fires",
+         lambda: _escaping_citation_witness() == (None, 1))
+    case("⛔ the real reader counts git's lines, and :N+1 is outside the file, not blank",
+         lambda: _real_reader_bounds_witness() == (3, "is outside the file (3 lines)", 3))
     case("⛔ a conflicted document is CANNOT RUN, and the same content resolved still fires",
          lambda: _unmerged_witness() == ("CANNOT RUN", 1))
     case("⛔ a form feed or lone CR in the CITED file does not shift its line numbering",

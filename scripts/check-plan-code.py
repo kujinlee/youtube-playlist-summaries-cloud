@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 29,
+    "scripts/check-doc-citations.py": 34,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5074,8 +5074,23 @@ def _self_test() -> int:
     # which round 5 caught (M8): it was 24 retired and 9 added, not 22 and 7. The error CANCELS, so
     # every total in that note is right and the composition is not — which is exactly how a wrong
     # number survives a check that only re-adds the totals.
-    # ⚠ 1448 is the GUARD'S OWN FIGURE, read from `got 1448 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1448)
+    # ⟳ SAME ROUND, after H2 and M1 got their entries: 1448 -> 1450, that file 29 -> 31. The
+    # unmerged-path refusal (a conflicted document read as DELETED and passed) and the phantom
+    # trailing element (every file measured one line too many, and `:N+1` reported as a blank line
+    # rather than outside the file).
+    # ⚠ 1450 is the GUARD'S OWN FIGURE, read from its own `got 1450 want 1448`, which is how this
+    # pin is supposed to move — the guard says the number and the literal follows it.
+    # ⟳ SAME ROUND, the remaining findings: 1450 -> 1453, that file 31 -> 34. A citation escaping the
+    # REPOSITORY ROOT (`../outside.ts:2` resolved above the root and fired, so the verdict depended
+    # on a file no reader of the repo can see); `-M` under a developer's own `diff.renames=false`,
+    # which every other fixture could not express because they null the git config; and the
+    # deleted-document clause, which raised TypeError when removed and had no case.
+    # ⚠ TWO FINDINGS DELIBERATELY HAVE NO ENTRY, recorded rather than faked: `blob`'s `cat-file -p`
+    # handler is unreachable once `-e` has answered (a case would test `subprocess`, not this rule),
+    # and `--base` naming a TIP rather than a merge base is a pre-existing reading now written into
+    # the stated limits.
+    # ⚠ 1453 is the GUARD'S OWN FIGURE, read from `got 1453 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1453)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

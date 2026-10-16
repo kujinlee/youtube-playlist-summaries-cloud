@@ -316,8 +316,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "        return raw.split(\"\\n\")\n",
-        "        return raw.splitlines()\n"
+        "        lines = raw.split(\"\\n\")\n",
+        "        lines = raw.splitlines()\n"
       ]
     ],
     "expect": [
@@ -387,6 +387,58 @@
     ],
     "expect": [
       "⛔ a conflicted document is CANNOT RUN, and the same content resolved still fires"
+    ]
+  },
+  {
+    "name": "⛔ r5 M1 — the phantom trailing element is kept, so every file measures one line too many: the out-of-range message overstates length and a citation of `:N+1` is reported as a blank line instead of outside the file",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if lines and lines[-1] == \"\":\n            lines.pop()\n",
+        "        pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the real reader counts git's lines, and :N+1 is outside the file, not blank"
+    ]
+  },
+  {
+    "name": "⛔ r5 M6 — the containment test is removed, so a citation of `../outside.ts` resolves against a file ABOVE the repository root: the verdict then depends on a file no reader of the repo can see",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            if not target.resolve().is_relative_to(root.resolve()):\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a citation escaping the repository root does not resolve, while an in-root one fires"
+    ]
+  },
+  {
+    "name": "⛔ r5 M2 — `-M` is dropped from the file listing, so under a developer's own `diff.renames=false` a pure rename arrives as delete-plus-add and every citation in the moved document reads as gained",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"diff\", \"--cached\", \"--no-color\", \"--name-status\", \"-z\", \"-M\", base]",
+        "\"diff\", \"--cached\", \"--no-color\", \"--name-status\", \"-z\", base]"
+      ]
+    ],
+    "expect": [
+      "⛔ a pure rename adds nothing even with rename detection switched OFF"
+    ]
+  },
+  {
+    "name": "⛔ r5 M3 — the deleted-document clause is removed, so a document gone from the index reaches `added_citations` with None and raises TypeError instead of being silent",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if post is None:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a DELETED document gains nothing, while an edited one still fires"
     ]
   }
 ]
