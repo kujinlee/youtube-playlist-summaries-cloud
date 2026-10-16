@@ -233,7 +233,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">864</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">894</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -870,6 +870,43 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     run works on a local clone and pushes nothing, which also keeps the licence question (C5) separate
     from the portability one.</p>
   </div>
+
+  <div class="box warn">
+    <span class="lbl">Your follow-up, answered — “use another path name than scripts? Or make the path configurable?”</span>
+
+    <p><strong>Neither, and the measurement is what settles it.</strong> There is already a mechanism:
+    <code>${CLAUDE_PLUGIN_ROOT}</code>, which the harness substitutes. The official
+    <code>openai/codex-plugin-cc</code> plugin uses it inside its own <code>hooks.json</code>, and
+    <code>oh-my-claudecode</code> uses it throughout.</p>
+
+    <p>⛔ <strong>And both of those plugins keep their directory named <code>scripts/</code>.</strong>
+    That is the evidence that decides your question: <strong>the collision is not caused by the name.</strong>
+    It is caused by the path being resolved against <em>the caller's working directory</em> instead of
+    against the package.</p>
+
+    <div class="scroll">
+    <table>
+      <tr><th>Option</th><th>What it does to the measured failure</th><th>Verdict</th></tr>
+      <tr><td>a unique name, e.g. <code>comprehensibility_scripts/</code></td><td>turns a <strong>silent wrong-neighbour run</strong> into a <strong>loud missing-file error</strong></td><td>a real improvement — but <strong>not a fix</strong>, it is still relative to the caller</td></tr>
+      <tr><td>a user-configurable path</td><td>moves the failure to setup time, and adds a config file to ship, document and get wrong</td><td><span class="pill no">rejected</span> more surface, same class</td></tr>
+      <tr><td>⭐ <code>${CLAUDE_PLUGIN_ROOT}/scripts/…</code></td><td>the package resolves <strong>its own</strong> location; the working directory stops mattering</td><td><span class="pill yes">the fix</span> no new name, no configuration, already the convention</td></tr>
+    </table>
+    </div>
+
+    <p class="note">⚠ Measured: <strong>our suite uses <code>${CLAUDE_PLUGIN_ROOT}</code> nowhere.</strong>
+    All three invocations are relative to the caller, which is precisely why a stranger's
+    <code>scripts/</code> can answer instead.</p>
+
+    <p><strong>What this changes about the milestone.</strong> Fixing it stays out of scope — this PR
+    repairs nothing, deliberately — but the inventory must now record the defect <em>with its known
+    fix</em>. <em>“C3 blocker, remedy unknown”</em> and <em>“C3 blocker, one-line remedy already
+    conventional”</em> are different answers for someone deciding what to do next.</p>
+
+    <p class="note">⭐ <strong>And it is the first concrete entry for the harvest axis you added:</strong>
+    <em>a shipped package resolves its own files from its own location, never from the caller's working
+    directory — and a path merely renamed to be unusual still fails, it just fails loudly instead of
+    silently.</em> That travels to any packaging ecosystem, which is what D6 is for.</p>
+  </div>
 </div>
 
 <div class="q">
@@ -947,7 +984,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:08 · bcd8780f · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:18 · e4249da9 · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

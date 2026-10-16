@@ -338,6 +338,36 @@ is worse.** ⟳ **CORRECTED 2026-10-16 (r1 CLAUDE H3, H5; r1 CODEX 4):**
   `docs/superpowers/`) and 1 tool name (`TaskList`)**. ⛔ **Five of those nine are neither paths nor
   file invocations, so they are invisible to both of §5's original detectors** — the scan would have
   scored at most 4 of 9 on the component D4 elects to calibrate against.
+⭐ **AND THE FIX FOR IT IS ALREADY KNOWN, WHICH CHANGES THIS MILESTONE'S OUTLOOK (asked by the owner
+from the page, 2026-10-16: *“is it possible to use other path name than scripts… Or pathname for
+scripts can be configurable by user?”*).**
+
+**Neither renaming nor configuring is the answer, and the measurement says why.**
+`${CLAUDE_PLUGIN_ROOT}` already exists and is substituted by the harness — the official
+`openai/codex-plugin-cc` plugin uses it inside its `hooks.json`, and `Yeachan-Heo/oh-my-claudecode`
+uses it throughout. ⛔ **AND BOTH OF THOSE PLUGINS KEEP THEIR DIRECTORY NAMED `scripts/`**, which is
+the evidence that settles it: **the collision is not caused by the NAME, it is caused by the path
+being resolved against the CALLER'S working directory instead of against the package.**
+
+| Option | What it does to the measured failure | Verdict |
+|---|---|---|
+| a unique name (`comprehensibility_scripts/`) | turns a **silent wrong-neighbour run** into a **loud missing-file error** | a real improvement, but **not a fix** — still CWD-relative |
+| a user-configurable path | moves the failure to setup time, and adds a config file to ship, document and get wrong | **rejected** — more surface, same class |
+| ⭐ **`${CLAUDE_PLUGIN_ROOT}/scripts/…`** | the package resolves **its own** location; the CWD stops mattering | ⭐ **the fix.** No new name, no user configuration, already the ecosystem convention |
+
+⚠ **Measured: our suite uses `${CLAUDE_PLUGIN_ROOT}` NOWHERE.** Every one of the three invocations is
+CWD-relative, which is exactly why a stranger's `scripts/` can answer instead.
+
+⛔ **FIXING IT REMAINS OUT OF SCOPE (§7 repairs nothing, by D2 and the owner's option A) — but the
+inventory must now record the defect WITH its known fix**, because *“C3 blocker, remedy unknown”* and
+*“C3 blocker, one-line remedy already conventional”* are different verdicts for a reader deciding
+what to do next.
+
+⭐ **AND THIS IS THE FIRST CONCRETE `harvest: practice` ENTRY (D6, §4c):** *a shipped package resolves
+its own files from its own location, never from the caller's working directory — and a path that is
+merely renamed to be unusual still fails, it just fails loudly instead of silently.* That travels to
+any packaging ecosystem, which is what D6 exists to capture.
+
 - ⛔ **AND "the problem is concentrated in one file" IS FALSE (r1 CLAUDE H5).**
   `.agents/skills/shared/explainer-delivery.md` scores **0** under the vocabulary detector — and
   carries **three repo-relative `python3 scripts/...` invocations** resolved from the caller's CWD.

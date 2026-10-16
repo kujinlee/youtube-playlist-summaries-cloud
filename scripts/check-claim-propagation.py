@@ -124,6 +124,14 @@ LIVE: list[dict] = [
         "sites": [SPEC],
     },
     {
+        "id": "plugin-root-self-location",
+        "token": "CLAUDE_PLUGIN_ROOT",
+        "why": ("asked by the owner from the page 2026-10-16: the collision is not the directory "
+                "NAME, it is CWD-relative resolution. Both installed third-party plugins keep "
+                "scripts/ and use this variable. Registered at both sites in the same commit"),
+        "sites": [SPEC, PAGE],
+    },
+    {
         "id": "experiment-two-tiers",
         "token": "falsifier for tier A",
         "why": ("asked by the owner from the page 2026-10-16: a real third-party repo is the "
