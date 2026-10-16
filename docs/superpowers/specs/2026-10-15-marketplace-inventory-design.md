@@ -257,12 +257,35 @@ paragraph. Two sub-questions with different answers:
 
 | What | The question | Who answers it |
 |---|---|---|
-| the **code** | under what licence is it published? | ⛔ **the owner** — this is a choice, not a finding |
+| the **code** | under what licence is it published? | ✅ **ANSWERED 2026-10-16: MIT** — see below |
 | the **corpus** (effort (1)'s 157 memory files) | does it contain private content, credentials, or third-party material we may not redistribute? | a **content review**, which nobody has done |
+
+⭐ **D7 — THE CODE HALF IS SETTLED: MIT. Decided 2026-10-16 by the owner.** Chosen over Apache-2.0
+and over deferring. ⚠ The comparables were measured, not guessed: `Yeachan-Heo/oh-my-claudecode` ships
+**MIT** and `openai/codex-plugin-cc` ships **Apache-2.0**, so either would have met a stranger on
+familiar terms; MIT is the shorter and is the convention for tooling this size.
+
+⛔ **AND THE LICENCE BELONGS ON THE MARKETPLACE REPO, NOT ON THIS ONE — THIS IS NOT A TECHNICALITY.**
+This repository is **public** and holds the product beside the harness: `app/`, `lib/`,
+`components/`, `worker/`, `supabase/` — **262 files** of a working application. A `LICENSE` at this
+root would place **all of it** under MIT, which is a far larger decision than the one asked and was
+never put. So:
+
+- the **published harness package** is MIT, and the `LICENSE` lands on the marketplace repo whose
+  creation §10 defers;
+- **this repository stays as it is** — public, unlicensed, all rights reserved — until someone
+  decides that separately;
+- ⚠ **the copyright holder is not yet named.** No author is declared anywhere (`package.json` has no
+  author field, the only `Copyright` line in the tree belongs to a vendored dependency, and the git
+  identity is the placeholder `t <t@example.com>`). The GitHub account is `kujinlee`. **A legal name
+  or entity is a one-line decision the owner still owns**, and inventing one would be worse than
+  leaving it visible.
 
 ⚠ **Bound, stated rather than hidden:** no installed marketplace on this machine requires licence
 metadata, so this is not a mechanical blocker to *installing* — it is a blocker to *publishing*,
-which is what D1 commits to. ⛔ **And a component cannot be `SHIP` with C5 unanswered**, because
+which is what D1 commits to. ⚠ **And it never blocked this milestone**: the spec can be approved, the
+scan built and the inventory produced without it, because §10 defers publication. An earlier
+framing of this as blocking now was wrong. ⛔ **And a component cannot be `SHIP` with C5 unanswered**, because
 unlike C4 there is no weaker-but-honest grade: *"we may not have the right to publish this"* is not
 an evidence strength, it is a veto. C5 therefore grades `measured` or blocks.
 

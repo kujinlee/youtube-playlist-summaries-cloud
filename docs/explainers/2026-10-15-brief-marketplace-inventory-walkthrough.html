@@ -233,7 +233,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">894</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">917</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -589,6 +589,33 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
   <em>publishing</em>, which is what the public-stranger decision commits to. And unlike the support
   criterion there is no weaker-but-honest grade: <em>"we may not have the right to publish this"</em>
   is not an evidence strength, it is a veto. ⛔ <strong>So C5 either passes on evidence or blocks.</strong></p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">✅ D7 — you chose MIT, and here is what it does and does not cover</span>
+  <p><strong>The code half of C5 is settled: MIT.</strong> The comparables were measured rather than
+  guessed — <code>oh-my-claudecode</code> ships <strong>MIT</strong> and
+  <code>openai/codex-plugin-cc</code> ships <strong>Apache-2.0</strong>, so either would have met a
+  stranger on familiar terms. MIT is the shorter, and the convention for tooling this size.</p>
+
+  <p>⛔ <strong>But the licence goes on the marketplace repo, not on this one, and that is not a
+  technicality.</strong> This repository is <strong>public</strong> and holds the product beside the
+  harness — <code>app/</code>, <code>lib/</code>, <code>components/</code>, <code>worker/</code>,
+  <code>supabase/</code>, <strong>262 files</strong> of a working application. A
+  <code>LICENSE</code> at this root would put <em>all of that</em> under MIT, which is a far larger
+  decision than the one you were asked, and which nobody has put to you.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>What</th><th>State</th></tr>
+    <tr><td>the published harness package</td><td><strong>MIT</strong> — the <code>LICENSE</code> lands on the marketplace repo, whose creation is deferred</td></tr>
+    <tr><td>this repository</td><td><strong>unchanged</strong> — public, unlicensed, all rights reserved, until decided separately</td></tr>
+    <tr><td>the copyright holder</td><td>⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
+  </table>
+  </div>
+  <p class="note">⚠ <strong>And a correction.</strong> This was described to you as blocking the
+  milestone. It was not: the spec can be approved, the scan built and the inventory produced without
+  it, because publication is deferred out of this milestone. The earlier framing overstated the
+  urgency.</p>
 </div>
 
 <div class="box warn">
@@ -984,7 +1011,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:18 · e4249da9 · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:26 · 99667119 · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

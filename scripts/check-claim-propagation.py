@@ -124,6 +124,14 @@ LIVE: list[dict] = [
         "sites": [SPEC],
     },
     {
+        "id": "d7-licence-mit",
+        "token": "MIT",
+        "why": ("D7, decided by the owner 2026-10-16. ⚠ The licence belongs on the MARKETPLACE "
+                "repo: this repository is public and holds 262 product files beside the harness, "
+                "so a root LICENSE would relicense the product. Registered at both sites"),
+        "sites": [SPEC, PAGE],
+    },
+    {
         "id": "plugin-root-self-location",
         "token": "CLAUDE_PLUGIN_ROOT",
         "why": ("asked by the owner from the page 2026-10-16: the collision is not the directory "
