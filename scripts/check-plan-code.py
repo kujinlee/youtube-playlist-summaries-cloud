@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 13,
+    "scripts/check-doc-citations.py": 20,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5002,7 +5002,15 @@ def _self_test() -> int:
     # newer literal is how a manifest silently stops matching its own dict.
     # ⚠ 1419 is the GUARD'S OWN FIGURE, read from `got 1419 want 0` against a deliberately wrong
     # sentinel — not arithmetic and not memory, which is how this line has drifted before.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1432)
+    # ⟳ 2026-10-15, backlog #49 ROUND 4 (the redesign): 1432 -> 1439, and `check-doc-citations.py`
+    # goes 13 -> 20. ONE entry RETIRED WITH ITS SUBJECT — the `+`-marker filter it mutated
+    # (`if not in_hunk or not line.startswith("+")`) no longer exists, because content is no longer
+    # read out of the diff at all — and EIGHT added against the code that replaced it: the
+    # unparsable-hunk-header raise, the two range arithmetic clauses, the substring-versus-position
+    # test that is the redesign's whole structural claim, the out-of-range raise, the unreadable-
+    # document raise, the empty-added-set short circuit, and main()'s ValueError arm.
+    # ⚠ 1439 is the GUARD'S OWN FIGURE, read from `got 1439 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1439)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -31,6 +31,15 @@ how they drifted the first time.
 
     measured 2026-10-15 against this module, over `docs/**/*.md` and the last 40 commits of
     origin/master, by importing `CITE`, `in_scope`, `resolve` and `violations` directly.
+    ⟳ RE-TAKEN 2026-10-15 after the r4 redesign, the same way. Every figure reproduced — four
+    exactly and the fifth within the corpus's own movement — which is the first time these numbers
+    have survived a change to the rule, because the half they depend on (`CITE` and `resolve`) is
+    the half the redesign did not touch.
+    ⛔ AND THE HISTORICAL FIGURE NOW NEEDS ITS OWN READER. `violations` takes the document, not the
+    diff, so a retrospective run cannot read content out of a historical patch any more. It is
+    re-derived by injecting a `git show <commit>:<path>` reader — no checkout — and the result is
+    EXACT: 10 firings over 40 commits, the same four commits as before. That the injected reader
+    makes this possible at all is the clearest evidence the redesign kept its measurability.
 
 ⚠ **THE CORPUS FIGURES CANNOT BE EXACT, AND THE REASON IS STRUCTURAL rather than fixable.** The
 backlog row and dashboard entry that quote these same numbers live *inside* `docs/`, so every commit
@@ -40,13 +49,14 @@ reviews dominate the corpus by an order of magnitude, and that the living-corpus
 high for a blocking gate — which is what the scope decision actually rests on. The PR-window
 figure does NOT have this property and reproduces exactly.
 
-  (1) `docs/reviews/` IS EXCLUDED — **~26,350 of ~27,250** citations under `docs/`, **96.7%**.
+  (1) `docs/reviews/` IS EXCLUDED — **26,375 of 27,270** citations under `docs/`, **96.7%**
+      (re-measured 2026-10-15; the ratio is stable, the absolute counts move every commit).
       Reviews are point-in-time artifacts; they deliberately carry no anchor header and nobody
       navigates *to* a goal through them.
   (2) `*.md` ONLY, which is row 49's own wording. Generated explainer pages under
       `docs/explainers/*.html` are dated snapshots of the same kind.
-  (3) ADDED LINES ONLY. Over the living corpus the rule fires **~111 times on ~895 pathed
-      citations (12.4%)** — overwhelmingly historical: ADR-0007 citing `schema/*.sql` files that M4 promoted
+  (3) ADDED LINES ONLY. Over the living corpus the rule fires **111 times on 895 pathed
+      citations (12.4%)** — reproduced exactly after the r4 redesign — overwhelmingly historical: ADR-0007 citing `schema/*.sql` files that M4 promoted
       into migrations, and 2026-06 specs citing files that have since shrunk.
 
 Over the last 40 commits: **10 firings, 0.25 per commit** (`check-reference-namespace` shipped at
@@ -85,13 +95,26 @@ and they are decidable without one.
 WHAT IT IS BLIND TO, STATED RATHER THAN DISCOVERED LATER
 --------------------------------------------------------
   * **RANGES.** `file.ts:10-20` is read as a citation of line 10; the end of the range is never
-    checked. 372 of 897 living citations carry a range (r1 L1), so this is the larger half of the
-    corpus by count, and a range whose END has drifted passes silently.
-  * **FENCED CODE BLOCKS are invisible BY CONSTRUCTION.** The diff is read at `--unified=0`, which
-    carries no context lines, so there is no way to know whether an added line sits inside a fence.
-    A document quoting example output containing `path.ts:12` fires. Measured latent rate: 40 of 896
-    (4.5%) — none in the 40-commit window, which is why it is recorded rather than worked around.
-    Fixing it means reading the file rather than the diff, which is a different guard.
+    checked. **369 of 895** living citations carry a range (41.2%; r1 L1 measured 372 of 897), so
+    this is the larger half of the corpus by count, and a range whose END has drifted passes
+    silently. ⚠ Re-derive this by walking `CITE.finditer` and testing whether each match is
+    followed by `-<digit>`, NEVER with a range regex of your own: an independent one written while
+    re-taking these figures returned **858 of 895 (95.9%)**, and the warning above says why — a
+    copy of this grammar is how these numbers drifted the first time.
+  * **FENCED CODE BLOCKS are not exempted — and as of the r4 redesign that is a CHOICE, not a
+    constraint.** A document quoting example output containing `path.ts:12` fires. Measured latent
+    rate 2026-10-15: **41 of 879 (4.7%)** over fence-BALANCED living documents, which is the
+    population the original 40-of-896 figure used; over ALL living documents it is **56 of 895
+    (6.3%)**, the difference being two documents with an odd number of fences. ⚠ The qualifier is
+    not decoration — reading that 6.3% as drift from 4.5% was a method error made while re-taking
+    these numbers, and caught only by measuring both. None in the 40-commit window either way.
+    ⟳ The reason recorded here until 2026-10-15 was *"the diff is read at `--unified=0`, which
+    carries no context lines, so there is no way to know whether an added line sits inside a
+    fence — fixing it means reading the file rather than the diff, which is a different guard."*
+    **The r4 redesign reads the file.** `violations()` now receives the whole document, so a fence
+    scan is reachable right here. It is deliberately not implemented: it changes what the gate
+    ASSERTS, and r4 was authorised as a redesign, not a scope change. Filed, with the measurement
+    above as its argument. ⛔ Do not re-derive the old reason — it is no longer true of this code.
 
 FAILS IF
 --------
@@ -101,8 +124,10 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 41 cases over diff texts this file builds, with an injected resolver, so the
-               rule is exercised with no repository present.
+  --self-test  runs 58 cases. Most are over DOCUMENTS this file builds with an injected
+               resolver, so the rule needs no repository; the hunk-header reader is exercised on
+               diff texts, and four cases build a throwaway git repository because the properties
+               they witness (NUL splitting, literal pathspecs, rename pairing) are git's.
 """
 from __future__ import annotations
 
@@ -170,34 +195,73 @@ def resolve(path: str, tracked: tuple[str, ...], read):
     return None, "no such file, and no tracked file ends with it"
 
 
-def violations(path: str, diff_text: str, tracked: tuple[str, ...], read) -> list[str]:
-    """Findings over ONE file's unified diff. PURE — no git, no filesystem.
+# ⛔ THE ONLY THING READ OUT OF A DIFF. Every content line in a unified diff carries a one-character
+# prefix (`+`, `-`, or a space), so NO content line can begin at column 0 with `@@`. That makes
+# header-versus-content a question of POSITION, which git guarantees, rather than a guess from a
+# PREFIX, which it does not — and the prefix guess is what produced a High in all three rounds
+# (`+++` the header against `+` plus an added line beginning `++` are the same four characters).
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
-    THE PATH IS GIVEN, NEVER PARSED, AND THAT IS THE WHOLE POINT. Three consecutive rounds produced
-    a header-parsing defect, each introduced by the previous round's fix: a C-quoted non-ASCII path
-    judged the file under the PREVIOUS scope (r1-codex); the `---` boundary added to fix that also
-    matched `----`, which is a REMOVED markdown rule (r2); decoding C-quotes strictly, to make an
-    unreachable branch reachable, then rejected the literal UTF-8 git emits under
-    `core.quotePath=false` and skipped the file entirely (r2-codex). All three were FAIL-OPEN.
 
-    That is this project's THRASHING signal, and its rule is to ask whether a redesign removes the
-    class rather than fix a fourth instance. It does: `git diff --name-only -z` emits paths
-    NUL-delimited and never quoted, so the caller knows each path exactly and hands it in. There is
-    no header to misparse and no scope to leak.
+def added_lines(diff_text: str) -> tuple[int, ...]:
+    """The post-image line numbers this diff ADDS. PURE — no git, no filesystem, no content.
+
+    ⛔ RAISES ValueError on a line that begins `@@` and does not parse, and the caller turns that
+    into CANNOT RUN. Returning `()` there would read as "nothing to check" — the same fail-open
+    direction as the three header defects this function exists to make impossible. Named as the new
+    risk in the round-3 coordinator document BEFORE this was written, and case 1 of the suite.
+
+    `@@ -a,b +c,d @@` adds c .. c+d-1. An omitted count means 1 (git's own default); `d == 0` is a
+    pure deletion hunk and adds nothing, so `c` must NOT be included.
+    """
+    out: list[int] = []
+    for line in diff_text.splitlines():
+        if not line.startswith("@@"):
+            continue
+        m = HUNK.match(line)
+        if m is None:
+            raise ValueError(f"unparsable hunk header: {line[:80]!r}")
+        start = int(m.group(1))
+        # ⚠ TWO PROPERTIES SHARE THIS LINE AND A MANIFEST ANCHOR CAN BE OCCUPIED ONCE. The entry
+        # on it is `max(1, …)`, measured to redden exactly the two deletion-hunk cases. The
+        # OMITTED-count property ("an OMITTED count means one line, not zero" — a single-line
+        # addition is the commonest shape there is, so defaulting to 0 would skip almost
+        # everything) is falsified by `0 if m.group(2) is None`, measured 2026-10-15 to redden 6
+        # cases including its own. Stated here because the manifest cannot carry both.
+        count = 1 if m.group(2) is None else int(m.group(2))
+        out.extend(range(start, start + count))
+    return tuple(out)
+
+
+def violations(path: str, added: tuple[int, ...], doc_lines: list[str],
+               tracked: tuple[str, ...], read) -> list[str]:
+    """Findings over ONE document. PURE — no git, no filesystem, AND NO DIFF TEXT.
+
+    THE PATH IS GIVEN AND SO IS THE CONTENT. Neither is parsed out of a diff, and that is the whole
+    point. Four consecutive rounds produced a defect in code that read one or the other out of diff
+    text, each introduced by the previous round's fix:
+
+      * a C-quoted non-ASCII path judged the file under the PREVIOUS scope (r1-codex HIGH);
+      * the `---` boundary added to fix that also matched `----`, a REMOVED markdown rule (r2 HIGH);
+      * decoding C-quotes strictly then rejected the literal UTF-8 git emits under
+        `core.quotePath=false` and skipped the file entirely (r2-codex HIGH);
+      * `startswith("+++")` discarded an added markdown line beginning `++` (r3-codex HIGH).
+
+    All four were FAIL-OPEN. The first three were answered by taking the path from
+    `git diff --name-status -z`; the fourth is answered here, by taking the content from the
+    DOCUMENT. `added` carries post-image line numbers from `added_lines()`, which reads only `@@`
+    headers; `doc_lines` is the document itself, through the same reader the resolver uses.
+
+    ⛔ A line number past the end of the document is CANNOT RUN, not a skip: git said that line was
+    added and the document disagrees, so the two sources are not describing the same tree.
     """
     found: list[str] = []
-    in_hunk = False
-    for line in diff_text.splitlines():
-        # ⛔ r3-codex HIGH: `startswith("+++")` is NOT a header test. An added markdown line that
-        # begins `++` is emitted as `+++ ...` and was silently discarded — a fail-open, and the
-        # case that claimed to witness header handling ENDORSED it. Headers live before the first
-        # `@@`; content lives inside hunks. Structure decides, not a prefix.
-        if line.startswith("@@"):
-            in_hunk = True
-            continue
-        if not in_hunk or not line.startswith("+"):
-            continue
-        for match in CITE.finditer(line[1:]):
+    for n in added:
+        if n < 1 or n > len(doc_lines):
+            raise RuntimeError(
+                f"{path}: git reports line {n} as added and the document has {len(doc_lines)} "
+                f"lines — the diff and the file are not the same tree")
+        for match in CITE.finditer(doc_lines[n - 1]):
             cited, raw_line = match.group(1), int(match.group(2))
             lines, how = resolve(cited, tracked, read)
             if lines is None:
@@ -210,6 +274,28 @@ def violations(path: str, diff_text: str, tracked: tuple[str, ...], read) -> lis
                 found.append(f"{path}: `{cited}:{raw_line}` is a blank line — "
                              f"a reader following it lands on nothing")
     return found
+
+
+def findings_for(path: str, source: "str | None", base: str, root: pathlib.Path,
+                 tracked: tuple[str, ...], read, fetch_file_diff) -> list[str]:
+    """One document: diff it, take the added line numbers, read the document, apply the rule.
+
+    ONE orchestrator, called by `main()` and by both repository witnesses. A second copy of this
+    sequence is how `check-vocabulary-collisions.py` describes this repository's most-measured
+    defect — seventeen instances of one rule implemented twice and drifting.
+
+    ⛔ A document with added lines that cannot be READ raises rather than returning no findings:
+    git says the file has new content and the filesystem says there is no file, and "no findings"
+    would report that disagreement as a pass.
+    """
+    added = added_lines(fetch_file_diff(base, root, path, source))
+    if not added:
+        return []
+    doc_lines = read(path)
+    if doc_lines is None:
+        raise RuntimeError(
+            f"{path}: git reports {len(added)} added line(s) and the document cannot be read")
+    return violations(path, added, doc_lines, tracked, read)
 
 
 def changed_files(base: str, root: pathlib.Path) -> tuple[tuple[str, "str | None"], ...]:
@@ -316,8 +402,8 @@ def _pathspec_witness() -> int:
         (root / "docs" / "i.md").write_text("`lib/a.ts:777`\n", encoding="utf-8")
         (root / "docs" / "[id].md").write_text("`lib/a.ts:888`\n", encoding="utf-8")
         run("add", "-A")
-        return len(violations("docs/[id].md", file_diff("HEAD", root, "docs/[id].md"),
-                              tracked_files(root), _reader(root)))
+        return len(findings_for("docs/[id].md", None, "HEAD", root,
+                                tracked_files(root), _reader(root), file_diff))
 
 
 def _rename_witness() -> int:
@@ -348,11 +434,15 @@ def _rename_witness() -> int:
         (root / "docs" / "old.md").write_text("`lib/a.ts:777` and padding\n" * 6, encoding="utf-8")
         run("add", "-A"); run("commit", "-qm", "base")
         run("mv", "docs/old.md", "docs/new.md")
+        # COMMITTED, and diffed against its parent, so the base is a real second value rather than
+        # the `HEAD` every other call site passes (check-fixture-variation.py), and so the fixture
+        # is the shape a rename actually arrives in.
+        run("commit", "-qm", "rename")
         found = 0
-        for path, source in changed_files("HEAD", root):
+        for path, source in changed_files("HEAD~1", root):
             if in_scope(path):
-                found += len(violations(path, file_diff("HEAD", root, path, source),
-                                        tracked_files(root), _reader(root)))
+                found += len(findings_for(path, source, "HEAD~1", root,
+                                          tracked_files(root), _reader(root), file_diff))
         return found
 
 
@@ -400,11 +490,26 @@ def _nul_witness() -> int:
 
 
 def self_test() -> int:
-    """41 cases. The count is declared in the module docstring and verified by running this."""
+    """58 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
+        """⛔ `got` IS A THUNK, AND THAT IS STRUCTURAL RATHER THAN STYLE.
+
+        A mutation that makes the subject RAISE used to kill the whole run: the harness counts
+        `[FAIL]` lines (`parse_fail_names`) and a traceback produces none, so such a mutation
+        scored ZERO red cases and read as a SURVIVOR — or worse, as coverage. MEASURED 2026-10-15
+        over this file: a mechanical sweep of 88 condition-and-operator mutants produced **19 that
+        crashed the suite**, among them forcing `len(suffix_matches) == 1` true (IndexError) and
+        dropping the hunk-header position test (ValueError). Evaluating here turns every one of
+        them into a red case carrying the name of the property it broke.
+        """
         nonlocal passed, failed
+        if callable(got):
+            try:
+                got = got()
+            except BaseException as exc:            # noqa: BLE001 - REPORTED as the case's value
+                got = exc
         if got == want:
             passed += 1
         else:
@@ -421,138 +526,257 @@ def self_test() -> int:
     tracked = tuple(world)
     read = lambda p: world.get(p)  # noqa: E731
     def body(*added: str) -> str:
-        # a real hunk header, because `violations` identifies content by hunk structure now and a
-        # fixture without one would assert over a diff git never produces (r3-codex High).
-        return "@@ -0,0 +1 @@\n" + "\n".join(f"+{a}" for a in added)
+        """A unified diff adding these lines — for driving `main()`, which still sees a diff."""
+        return f"@@ -0,0 +1,{len(added)} @@\n" + "\n".join(f"+{a}" for a in added)
+
+    # ⛔ NO FIXTURE HELPER FOR `violations` ARGUMENTS, AND THAT IS DELIBERATE. A `doc()` helper
+    # splatted at the call site (`violations(path, *doc("…"), tracked, read)`) was written here
+    # first and made 23 call sites INVISIBLE to `check-fixture-variation.py`: `analyse()` matches
+    # positional arguments by index and abandons that matching when a site contains a `*starred`
+    # argument (its r10 L2 clause). The tidy helper reduced what a guard could audit, so every
+    # case states its added set and its document outright.
 
     def first(f: list[str]) -> str:
         # r1 M2: never index [0] — a mutation that empties this must FAIL a case, not crash the suite.
         return f[0] if f else ""
 
+    def _try(fn):
+        """The value, or the EXCEPTION INSTANCE if it raised.
+
+        ⛔ A case that raises kills the suite and reports NOTHING — the runner counts `[FAIL]`
+        lines and a traceback produces none, so a mutation that genuinely broke the parser would
+        score "0 cases red". The two CANNOT RUN properties are asserted through this, never with a
+        bare call.
+        """
+        try:
+            return fn()
+        except Exception as exc:                   # noqa: BLE001 - returned, not swallowed
+            return exc
+
     case("a blank cited line fires",
-         len(violations("docs/x.md", body("see `lib/a.ts:2`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["see `lib/a.ts:2`"], tracked, read)) == 1)
     case("the blank message names the reader's experience",
-         "lands on nothing" in first(violations("docs/x.md", body("`lib/a.ts:2`"), tracked, read)))
+         lambda: "lands on nothing" in first(violations("docs/x.md", (1,), ["`lib/a.ts:2`"], tracked, read)))
     case("a line past EOF fires",
-         len(violations("docs/x.md", body("`lib/a.ts:99`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`lib/a.ts:99`"], tracked, read)) == 1)
     case("the out-of-range message states the file length",
-         "3 lines" in first(violations("docs/x.md", body("`lib/a.ts:99`"), tracked, read)))
+         lambda: "3 lines" in first(violations("docs/x.md", (1,), ["`lib/a.ts:99`"], tracked, read)))
     case("an unresolvable path fires",
-         len(violations("docs/x.md", body("`lib/gone.ts:1`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`lib/gone.ts:1`"], tracked, read)) == 1)
     case("a populated cited line is silent",
-         violations("docs/x.md", body("`lib/a.ts:1`"), tracked, read) == [])
+         lambda: violations("docs/x.md", (1,), ["`lib/a.ts:1`"], tracked, read) == [])
     case("line 3 (last line) is in range",
-         violations("docs/x.md", body("`lib/a.ts:3`"), tracked, read) == [])
+         lambda: violations("docs/x.md", (1,), ["`lib/a.ts:3`"], tracked, read) == [])
     case("a line number of 0 fires rather than reading the last line",
-         len(violations("docs/x.md", body("`lib/a.ts:0`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`lib/a.ts:0`"], tracked, read)) == 1)
 
     case("a readable file that is NOT in the tracked list still resolves",
-         violations("docs/x.md", body("`lib/a.ts:1`"), (), read) == [])
+         lambda: violations("docs/x.md", (1,), ["`lib/a.ts:1`"], (), read) == [])
     case("...and the same path with a blank cited line still fires, so it is not passing blindly",
-         len(violations("docs/x.md", body("`lib/a.ts:2`"), (), read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`lib/a.ts:2`"], (), read)) == 1)
 
     case("a unique multi-segment suffix resolves and is silent",
-         violations("docs/x.md", body("`html-doc/ensure.ts:1`"),
+         lambda: violations("docs/x.md", (1,), ["`html-doc/ensure.ts:1`"],
                     ("lib/html-doc/ensure.ts",), read) == [])
     case("an AMBIGUOUS suffix FIRES rather than being skipped",
-         len(violations("docs/x.md", body("`html-doc/ensure.ts:1`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`html-doc/ensure.ts:1`"], tracked, read)) == 1)
     case("the ambiguous message says how many matched",
-         "ambiguous: 2" in first(violations("docs/x.md", body("`html-doc/ensure.ts:1`"),
+         lambda: "ambiguous: 2" in first(violations("docs/x.md", (1,), ["`html-doc/ensure.ts:1`"],
                                             tracked, read)))
     case("a suffix match still range-checks",
-         len(violations("docs/x.md", body("`html-doc/ensure.ts:99`"),
+         lambda: len(violations("docs/x.md", (1,), ["`html-doc/ensure.ts:99`"],
                         ("lib/html-doc/ensure.ts",), read)) == 1)
 
     # scope is a predicate the caller applies to git's own NUL-delimited file list, so a scope leak
     # is impossible by construction and these assert the predicate directly.
-    case("docs/reviews/ is out of scope", in_scope("docs/reviews/r.md"), False)
-    case("a generated .html page is out of scope", in_scope("docs/explainers/p.html"), False)
-    case("a non-docs path is out of scope", in_scope("scripts/x.md"), False)
-    case("a docs/ root .md IS in scope", in_scope("docs/backlog.md"), True)
-    case("a nested docs .md IS in scope", in_scope("docs/adr/0001-x.md"), True)
+    case("docs/reviews/ is out of scope", lambda: in_scope("docs/reviews/r.md"), False)
+    case("a generated .html page is out of scope", lambda: in_scope("docs/explainers/p.html"), False)
+    case("a non-docs path is out of scope", lambda: in_scope("scripts/x.md"), False)
+    case("a docs/ root .md IS in scope", lambda: in_scope("docs/backlog.md"), True)
+    case("a nested docs .md IS in scope", lambda: in_scope("docs/adr/0001-x.md"), True)
     # ⛔ r3 HIGH, AND IT IS THE FOURTH AMBIENT CASE THIS GUARD HAS PRODUCED. The case that stood
     # here was named "git hands it over unquoted via -z" and called `in_scope` on a Python string —
     # it never touched git, so deleting `-z` failed ZERO cases while silently disabling the whole
     # guard (`split("\0")` returns one newline-joined blob, `in_scope` rejects it, `scoped=[]`,
     # rc=0 over a repo full of bad citations). Every safety property rests on that one flag, so the
     # witness has to RUN git. This case builds a repository to do it.
+    # ⚠ THESE THREE RAISE ON THE CANNOT RUN INVARIANTS, and `case` reports that as the case's own
+    # value rather than a dead run — the reason it takes a thunk. MEASURED 2026-10-15: the
+    # candidate mutation `range(start, start + count + 1)` made `_pathspec_witness` raise, and the
+    # run reported ZERO red cases while the guard was broken. No `_try` is needed here; `_try` is
+    # for the cases that ASSERT a raise, which is a different question from surviving one.
     case("⛔ changed_files() splits on NUL — the one flag every safety property rests on",
-         _nul_witness() == 2)
+         lambda: _nul_witness() == 2)
     # ⛔ r3-codex MEDIUM, and it corrects a claim I made in a commit message: `_nul_witness()`
     # never calls `file_diff`, so it could NOT catch a dropped `--literal-pathspecs`. It has an
     # isolating witness after all, and here it is.
     case("⛔ a glob-shaped document name does not over-match its neighbours",
-         _pathspec_witness() == 1)
+         lambda: _pathspec_witness() == 1)
     # ⛔ r3-codex MEDIUM: a PURE RENAME must add nothing. Without the source path in the pathspec
     # git cannot match the halves, and every citation in the moved document reports as newly
     # added — which contradicts the added-lines-only contract the whole scope argument rests on.
     case("⛔ a pure rename of a document with a BAD citation adds nothing",
-         _rename_witness() == 0)
+         lambda: _rename_witness() == 0)
 
-    case("a REMOVED line is not examined",
-         violations("docs/x.md", "-see `lib/a.ts:2`", tracked, read) == [])
-    case("a context line is not examined",
-         violations("docs/x.md", " see `lib/a.ts:2`", tracked, read) == [])
-    # ⛔ r3-codex HIGH: the case that stood here asserted a `+++` line is never content — which
-    # ENDORSED the defect, because an added markdown line beginning `++` is emitted exactly that
-    # way. These two pin the real rule: headers are what appears BEFORE the first hunk.
-    case("a +++ line BEFORE any hunk is a header, not content",
-         violations("docs/x.md", "+++ b/docs/x.md", tracked, read) == [])
-    case("⛔ added content beginning `++` IS examined — the diff marker makes it `+++`",
-         len(violations("docs/x.md", "@@ -0,0 +1 @@\n+++ `lib/a.ts:99`", tracked, read)) == 1)
-    case("a line outside any hunk is never content, even with a leading +",
-         violations("docs/x.md", "+`lib/a.ts:99`", tracked, read) == [])
-    case("a removed `---` horizontal rule is inert, not a boundary",
-         len(violations("docs/x.md", "----\n" + body("`lib/a.ts:99`"), tracked, read)) == 1)
+    # ── what `added_lines` reads, and what it REFUSES ──────────────────────────────────────────
+    # ⛔ THE SIX CASES BELOW REPLACE A MARKER PARSER AND THE TWO AMBIENT CASES THAT GUARDED IT.
+    # Measured 2026-10-15, before this redesign: deleting the marker filter outright left the suite
+    # at 41/41 green, because the two cases that named it ("a REMOVED line is not examined", "a
+    # context line is not examined") handed `violations` a fixture with NO hunk header, so the
+    # filter was never reached. Ambient cases six and seven on this one file. The property is now
+    # structural — a line that is not in `added` is not read — and case "a line NOT in the added
+    # set is never examined" below is falsifiable: widen the set and it reddens.
+    case("a count of 3 yields exactly those three lines",
+         lambda: added_lines("@@ -1,0 +2,3 @@") == (2, 3, 4))
+    case("an OMITTED count means one line, not zero",
+         lambda: added_lines("@@ -1 +2 @@") == (2,))
+    case("a pure DELETION hunk (+c,0) adds nothing",
+         lambda: added_lines("@@ -5,2 +7,0 @@") == ())
+    case("several hunks accumulate",
+         lambda: added_lines("@@ -1,0 +2 @@\n@@ -9,0 +10,2 @@") == (2, 10, 11))
+    # ⛔ THE SUCCESSOR OF r3-codex's HIGH, and the reason this shape cannot repeat it. Every content
+    # line in a unified diff carries a one-character prefix, so an added line beginning `@@` arrives
+    # as `+@@` and can never be mistaken for a header at column 0. The old shape had to tell `+++`
+    # from `+` plus `++`, which are the same four characters.
+    case("⛔ an added line beginning `@@` is content, never a header",
+         lambda: added_lines("@@ -1,0 +2 @@\n+@@ -9,0 +99 @@") == (2,))
+    case("a `---` line, removed rule or file header alike, is simply not a hunk header",
+         lambda: added_lines("----\n--- a/docs/x.md\n+++ b/docs/x.md\n@@ -1,0 +2 @@") == (2,))
+    # ⛔ THE ONE NEW FAIL-OPEN, NAMED IN THE ROUND DOCUMENT BEFORE THIS CODE EXISTED. Returning ()
+    # for a header it did not understand would read as "nothing to check" — the direction all four
+    # header defects failed in. It raises, and main() turns that into CANNOT RUN.
+    case("⛔ a line that begins @@ and does not parse RAISES, it does not yield nothing",
+         lambda: isinstance(_try(lambda: added_lines("@@ garbled @@")), ValueError))
+
+    # ── and what `violations` examines, now that content comes from the document ───────────────
+    case("⛔ a line NOT in the added set is never examined",
+         lambda: violations("docs/x.md", (1,), ["ok", "`lib/a.ts:99`"], tracked, read) == [])
+    case("...and the very same document DOES fire when that line is added",
+         lambda: len(violations("docs/x.md", (1, 2), ["ok", "`lib/a.ts:99`"], tracked, read)) == 1)
+    case("a document line beginning `++` is examined like any other",
+         lambda: len(violations("docs/x.md", (1,), ["++ `lib/a.ts:99`"], tracked, read)) == 1)
+    case("⛔ an added line past the document's end RAISES — the diff and the file disagree",
+         lambda: isinstance(_try(lambda: violations("docs/x.md", (3,), ["only one line"], tracked, read)),
+                    RuntimeError))
 
     case("backticks are optional",
-         len(violations("docs/x.md", body("see lib/a.ts:2 here"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["see lib/a.ts:2 here"], tracked, read)) == 1)
     case("a [param] path segment parses",
-         len(violations("docs/x.md", body("`app/[id]/r.ts:1`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`app/[id]/r.ts:1`"], tracked, read)) == 1)
     case("two citations on one line are both examined",
-         len(violations("docs/x.md", body("`lib/a.ts:2` and `lib/a.ts:99`"), tracked, read)) == 2)
+         lambda: len(violations("docs/x.md", (1,), ["`lib/a.ts:2` and `lib/a.ts:99`"], tracked, read)) == 2)
     case("a bare filename with no directory is NOT a citation",
-         violations("docs/x.md", body("`a.ts:2`"), tracked, read) == [])
+         lambda: violations("docs/x.md", (1,), ["`a.ts:2`"], tracked, read) == [])
     case("a docs/*.md target can itself be cited",
-         violations("docs/x.md", body("`docs/notes.md:1`"), tracked, read) == [])
+         lambda: violations("docs/x.md", (1,), ["`docs/notes.md:1`"], tracked, read) == [])
     case("...and a BAD markdown target fires, so the form is really examined",
-         len(violations("docs/x.md", body("`docs/notes.md:9`"), tracked, read)) == 1)
+         lambda: len(violations("docs/x.md", (1,), ["`docs/notes.md:9`"], tracked, read)) == 1)
     case("a URL is not a citation, so its port cannot become a path",
-         violations("docs/x.md", body("http://localhost:3000/lib/a.ts:2"), tracked, read) == [])
+         lambda: violations("docs/x.md", (1,), ["http://localhost:3000/lib/a.ts:2"], tracked, read) == [])
     case("a citation wrapped in prose parentheses does not capture the bracket",
-         violations("docs/x.md", body("(lib/a.ts:1)"), tracked, read) == [])
+         lambda: violations("docs/x.md", (1,), ["(lib/a.ts:1)"], tracked, read) == [])
 
     # --- main() is DRIVEN over a constructed world (ADR-0014), to every exit code ---------------
     import contextlib
     import io
 
-    def drive(changed, diff_text, reader, git_ok: bool = True) -> int:
-        def fetch_changed(_b, _r):
+    seen: dict = {}
+
+    def drive(changed, lines, reader, git_ok: bool = True, argv=None,
+              root=pathlib.Path("/nonexistent"), doc_readable: bool = True,
+              diff_override=None) -> int:
+        """`main()` over a constructed world, to every exit code (ADR-0014).
+
+        ⛔ THE DIFF AND THE DOCUMENT ARE BUILT FROM ONE SOURCE, `lines`, so they cannot disagree.
+        The previous fixture passed a diff text and a reader that knew nothing about the document,
+        which was harmless while content came out of the diff and is a contradiction now.
+
+        `seen` records the base and root the parameters actually carried, because
+        `check-fixture-variation.py` is right that a parameter passed one constant value is
+        indistinguishable from a literal — and on this file it had ELEVEN such findings.
+        """
+        def fetch_changed(base, r):
+            seen["base"], seen["root"] = base, r
             if not git_ok:
                 raise RuntimeError("git diff --name-status origin/nope failed: unknown revision")
             return tuple((c, None) for c in changed)
+
+        def make_reader(_r):
+            def read_one(path):
+                if path in changed:
+                    return list(lines) if doc_readable else None
+                return reader(path)
+            return read_one
+
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return main([], root=pathlib.Path("/nonexistent"),
+            return main(argv if argv is not None else [], root=root,
                         fetch_changed=fetch_changed,
-                        fetch_file_diff=lambda _b, _r, _p, _s=None: diff_text,
+                        fetch_file_diff=lambda _b, _r, _p, _s=None: (
+                            body(*lines) if diff_override is None else diff_override),
                         fetch_tracked=lambda _r: tracked,
-                        make_reader=lambda _r: reader)
+                        make_reader=make_reader)
 
     def raises(_p):
         raise PermissionError("fixture is unreadable")
 
     case("main() returns 0 over a clean world",
-         drive(("docs/x.md",), body("`lib/a.ts:1`"), read) == 0)
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read) == 0)
     case("main() returns 1 when a citation has drifted",
-         drive(("docs/x.md",), body("`lib/a.ts:2`"), read) == 1)
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:2`",), read) == 1)
     case("⛔ main() returns 2 — CANNOT RUN — when git cannot be reached, never 0",
-         drive((), "", read, git_ok=False) == 2)
+         lambda: drive((), (), read, git_ok=False) == 2)
     # ⛔ r2-codex Medium: this handler had NO witness — replacing its `return 2` with `return 0`
     # left 40/40 green. An existing-but-unreadable cited file is CANNOT RUN, never a finding.
     case("⛔ main() returns 2 when a cited file exists but cannot be READ",
-         drive(("docs/x.md",), body("`lib/a.ts:1`"), raises) == 2)
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), raises) == 2)
     case("...and an out-of-scope changed file is never diffed at all",
-         drive(("scripts/x.md",), body("`lib/a.ts:2`"), read) == 0)
+         lambda: drive(("scripts/x.md",), ("`lib/a.ts:2`",), read) == 0)
+
+    # ── the parameters this suite had been passing ONE value, each now varied by a case that
+    # ── asserts a real property rather than a cosmetically different argument (11 findings,
+    # ── check-fixture-variation.py; an exemption resting on nothing is worse than none)
+    case("the finding names the DOCUMENT it was handed, not a path baked into the rule",
+         lambda: "docs/adr/0001-x.md:" in first(
+             violations("docs/adr/0001-x.md", (1,), ["`lib/a.ts:2`"], tracked, read)))
+    case("⛔ the injected reader IS the existence oracle — nothing resolves without it",
+         lambda: len(violations("docs/x.md", (1,), ["`lib/a.ts:1`"], tracked, lambda _p: None)) == 1)
+    case("⛔ changed_files on a path that is no repository is CANNOT RUN, not an empty change set",
+         lambda: isinstance(_try(lambda: changed_files("HEAD", pathlib.Path("/nonexistent"))),
+                    RuntimeError))
+    case("⛔ tracked_files on a path that is no repository RAISES rather than passing over nothing",
+         lambda: isinstance(_try(lambda: tracked_files(pathlib.Path("/nonexistent"))), RuntimeError))
+    case("findings_for RAISES when git adds lines to a document that cannot be read",
+         lambda: isinstance(_try(lambda: findings_for(
+             "docs/y.md", None, "HEAD~2", pathlib.Path("/not-a-repo"), (),
+             lambda _p: None,
+             lambda _b, _r, _p, _s=None: "@@ -0,0 +1 @@\n+`lib/a.ts:1`")), RuntimeError))
+    case("...and a deletion-only diff reads the document NOT AT ALL, so it cannot raise",
+         lambda: _try(lambda: findings_for(
+             "docs/z.md", "docs/y.md", "HEAD~3", pathlib.Path("/nor-this"), ("lib/a.ts",),
+             lambda _p: (_ for _ in ()).throw(AssertionError("the document must not be read")),
+             lambda _b, _r, _p, _s=None: "@@ -5,2 +7,0 @@")) == [])
+
+    # ⛔ THE TWO CANNOT RUN PATHS THE REDESIGN CREATES, driven to rc=2 through main() rather than
+    # asserted on the pure function alone — a raise that main() swallowed would be a fail-open.
+    case("⛔ main() returns 2 when a hunk header does not parse, never 0",
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read,
+                       diff_override="@@ garbled @@") == 2)
+    case("⛔ main() returns 2 when git adds lines to a document that cannot be read",
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read, doc_readable=False) == 2)
+    # ⛔ check-fixture-variation.py, 11 findings on this file: a parameter every call site passes
+    # the same value is indistinguishable from a literal. These two read back what was carried.
+    case("--base reaches the fetchers rather than a hardcoded default",
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read,
+               argv=["--base", "HEAD~1"]) == 0 and seen["base"] == "HEAD~1")
+    case("...and the default base is origin/master, not whatever ran last",
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read) == 0 and seen["base"] == "origin/master")
+    case("--root reaches the fetchers as the resolved path it names",
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read,
+               argv=["--root", "/tmp"]) == 0 and seen["root"] == pathlib.Path("/tmp").resolve())
+    case("...and without --root it is the root main() was handed",
+         lambda: drive(("docs/x.md",), ("`lib/a.ts:1`",), read,
+               root=pathlib.Path("/elsewhere")) == 0
+         and seen["root"] == pathlib.Path("/elsewhere"))
 
     print(f"{passed}/{passed + failed} passed")
     return 1 if failed else 0
@@ -596,10 +820,9 @@ def main(
     found: list[str] = []
     try:
         for scoped_path, scoped_source in scoped:
-            found += violations(scoped_path,
-                                fetch_file_diff(args.base, root, scoped_path, scoped_source),
-                                tracked, read)
-    except (RuntimeError, OSError) as exc:
+            found += findings_for(scoped_path, scoped_source, args.base, root,
+                                  tracked, read, fetch_file_diff)
+    except (RuntimeError, OSError, ValueError) as exc:
         print(f"CANNOT RUN — {exc}\n  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
         return 2
 

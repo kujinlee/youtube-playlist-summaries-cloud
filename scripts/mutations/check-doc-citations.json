@@ -130,19 +130,6 @@
     ]
   },
   {
-    "name": "⛔ r3-codex HIGH: `startswith(\"+++\")` returns as a content test, so an added markdown line beginning `++` is discarded as a header — a fail-open the previous case ENDORSED",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        if not in_hunk or not line.startswith(\"+\"):\n",
-        "        if not in_hunk or not line.startswith(\"+\") or line.startswith(\"+++\"):\n"
-      ]
-    ],
-    "expect": [
-      "⛔ added content beginning `++` IS examined — the diff marker makes it `+++`"
-    ]
-  },
-  {
     "name": "⛔ r3-codex MEDIUM: the rename source is dropped from the pathspec, so a PURE RENAME reports every citation in the moved document as newly added",
     "file": "scripts/check-doc-citations.py",
     "edits": [
@@ -166,6 +153,112 @@
     ],
     "expect": [
       "⛔ a glob-shaped document name does not over-match its neighbours"
+    ]
+  },
+  {
+    "name": "⛔ `added_lines` swallows an unparsable hunk header and returns () — the FAIL-OPEN this redesign was named for, in its new home: no added lines reads as nothing to check",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            raise ValueError(f\"unparsable hunk header: {line[:80]!r}\")\n",
+        "            continue\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a line that begins @@ and does not parse RAISES, it does not yield nothing"
+    ]
+  },
+  {
+    "name": "⛔ the hunk header is found by SUBSTRING rather than by POSITION, which is the whole structural claim of the redesign — an added line beginning `@@` then reaches the parser",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not line.startswith(\"@@\"):\n",
+        "        if \"@@\" not in line:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ an added line beginning `@@` is content, never a header"
+    ]
+  },
+  {
+    "name": "a line number past the end of the document is SKIPPED instead of raising, so a diff and a worktree that disagree are reported as a clean pass",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            raise RuntimeError(\n                f\"{path}: git reports line {n} as added and the document has {len(doc_lines)} \"\n                f\"lines — the diff and the file are not the same tree\")\n",
+        "            continue\n"
+      ]
+    ],
+    "expect": [
+      "⛔ an added line past the document's end RAISES — the diff and the file disagree"
+    ]
+  },
+  {
+    "name": "a document with added lines that cannot be read yields no findings instead of raising — git says there is new content, the filesystem says there is no file, and this passes",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        raise RuntimeError(\n            f\"{path}: git reports {len(added)} added line(s) and the document cannot be read\")\n",
+        "        return []\n"
+      ]
+    ],
+    "expect": [
+      "findings_for RAISES when git adds lines to a document that cannot be read"
+    ]
+  },
+  {
+    "name": "the empty-added-set short circuit is removed, so a deletion-only or rename-only change reads the whole document and reports its existing citations as new",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if not added:\n        return []\n",
+        "    if False:\n        return []\n"
+      ]
+    ],
+    "expect": [
+      "...and a deletion-only diff reads the document NOT AT ALL, so it cannot raise"
+    ]
+  },
+  {
+    "name": "⛔ main() stops catching ValueError, so an unparsable hunk header escapes as a traceback instead of CANNOT RUN — rc would be neither 0, 1 nor 2",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    except (RuntimeError, OSError, ValueError) as exc:\n        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    if found:",
+        "    except (RuntimeError, OSError) as exc:\n        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    if found:"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 when a hunk header does not parse, never 0"
+    ]
+  },
+  {
+    "name": "⛔ only the FIRST line of every multi-line hunk is examined (`min(count, 1)`), so a paragraph of new citations is checked once and the rest ride in unread",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        out.extend(range(start, start + count))\n",
+        "        out.extend(range(start, start + min(count, 1)))\n"
+      ]
+    ],
+    "expect": [
+      "a count of 3 yields exactly those three lines",
+      "several hunks accumulate"
+    ]
+  },
+  {
+    "name": "a pure DELETION hunk (`+c,0`) is read as adding line c, so removing text makes the guard examine a line the author never touched — measured to redden exactly its two cases",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        count = 1 if m.group(2) is None else int(m.group(2))\n",
+        "        count = max(1, 1 if m.group(2) is None else int(m.group(2)))\n"
+      ]
+    ],
+    "expect": [
+      "a pure DELETION hunk (+c,0) adds nothing",
+      "...and a deletion-only diff reads the document NOT AT ALL, so it cannot raise"
     ]
   }
 ]

@@ -498,7 +498,19 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # findings: all six parameters are genuinely varied by the suite.
     # ⟳ 2026-10-15, backlog #49. `read` is varied by two cases that differ ONLY in the injected
     # reader at one identical citation — this guard refused the suite until they existed.
-    'check-doc-citations.py': ('violations.diff_text', 'violations.read', 'violations.tracked'),
+    # ⟳ 2026-10-15 — 3 KEYS BECOME 23, and `violations.diff_text` is RETIRED WITH ITS SUBJECT.
+    # The r4 redesign of that guard deleted the parameter: `violations` no longer receives diff
+    # text at all, because reading content out of a diff produced a fail-open High in four
+    # consecutive rounds. It is not a narrowing — the function now takes `added` and `doc_lines`,
+    # both pinned below, and the suite's call sites went from 3 visible to 26 once a `*doc(...)`
+    # splat helper was removed (a starred argument makes a call site invisible to `analyse`).
+    'check-doc-citations.py': (
+        'added_lines.diff_text', 'changed_files.base', 'changed_files.root', 'findings_for.base',
+        'findings_for.fetch_file_diff', 'findings_for.path', 'findings_for.read',
+        'findings_for.root', 'findings_for.source', 'findings_for.tracked', 'in_scope.path',
+        'main.argv', 'main.fetch_changed', 'main.fetch_file_diff', 'main.fetch_tracked',
+        'main.make_reader', 'main.root', 'tracked_files.root', 'violations.added',
+        'violations.doc_lines', 'violations.path', 'violations.read', 'violations.tracked',),
     'check-closing-table.py': (
         'closing_acts_of.records',
         'coalesce_injected.make',
@@ -915,6 +927,32 @@ EXEMPT: dict[str, str] = {
     "check-ratchet-contract.py:widened_debt_drift.examined": "same table; the NOT-EXAMINED clause "
                          "is the one that stopped an empty corpus reading as paid debt, and its "
                          "mutation dies via the case it names",
+    # ⟳ 2026-10-15 — SIX `check-doc-citations.py:main.*` ROWS. ADR-0014 injection has ONE driver
+    # in that suite (`drive()`), by design: a second `main(...)` call site would be a second copy
+    # of the same four-step sequence, which `check-vocabulary-collisions.py` describes as this
+    # repository's most-measured defect. The VALUES vary per case — `drive` takes `argv`, `root`,
+    # `doc_readable` and `diff_override` and the cases pass different ones — and the call SITE is
+    # one expression, which is what this scan compares.
+    # ⚠ NOT TAKEN ON TRUST. Each was MEASURED load-bearing on 2026-10-15 by substituting the
+    # module-level default for the injected parameter inside `main()` and running the suite; the
+    # case that reddens is named in each row. None survived.
+    "check-doc-citations.py:main.argv": "one driver by design; measured — `parse_args(argv)` -> "
+                         "`parse_args([])` reddens '--base reaches the fetchers rather than a "
+                         "hardcoded default' and the --root case",
+    "check-doc-citations.py:main.root": "one driver by design; measured — passing `ROOT` instead "
+                         "reddens '--root reaches the fetchers as the resolved path it names' and "
+                         "'...and without --root it is the root main() was handed'",
+    "check-doc-citations.py:main.fetch_changed": "one driver by design; measured — substituting "
+                         "`changed_files` reddens 7 cases, including 'main() returns 0 over a "
+                         "clean world'",
+    "check-doc-citations.py:main.fetch_tracked": "one driver by design; measured — substituting "
+                         "`tracked_files` reddens 7 cases, including 'main() returns 1 when a "
+                         "citation has drifted'",
+    "check-doc-citations.py:main.make_reader": "one driver by design; measured — substituting "
+                         "`_reader` reddens 6 cases, including both CANNOT RUN cases",
+    "check-doc-citations.py:main.fetch_file_diff": "one driver by design; measured — substituting "
+                         "`file_diff` reddens 6 cases, including 'main() returns 2 when a hunk "
+                         "header does not parse, never 0'",
     "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
                          "between its call sites is `name`, which is the parameter that "
                          "selects the suite. A second directory would test the tempfile "

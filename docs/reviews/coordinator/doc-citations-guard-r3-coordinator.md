@@ -91,3 +91,96 @@ fail-open class *and* the stated false-positive class.
 header would yield no added line numbers, which reads as *"nothing to check"* — the same failure
 direction as the three header defects. It must be CANNOT RUN, and its falsifier is the first case
 written, not the last.
+
+---
+
+# The design, written before the code (step 2 of the redesign)
+
+## The structural property the shape rests on
+
+**In a unified diff every content line carries a one-character prefix — `+`, `-`, or a space. So no
+content line can begin at column 0 with `@@`.** Header-versus-content becomes a question of
+POSITION, which git guarantees, instead of a guess from a PREFIX, which it does not.
+
+That is the thing the old shape could never have. It had to distinguish `+++` (a file header) from
+`+` plus `++` (an added line beginning `++`), and those are the same four characters. Three
+generations of one defect came out of that ambiguity — r1-codex High, r2 High + r2-codex High, and
+r3-codex High — each fixed, each replaced.
+
+## The shape
+
+```
+changed_files(base, root)            -> ((path, source|None), ...)      UNCHANGED: --name-status -z -M
+file_diff(base, root, path, source)  -> that file's unified diff         UNCHANGED, but only @@ is read
+added_lines(diff_text)               -> (line_number, ...)              NEW. PURE. Reads ONLY @@ headers.
+                                                                        RAISES on a header it cannot parse.
+violations(path, added, doc_lines, tracked, read) -> findings            PURE. NO DIFF TEXT AT ALL.
+```
+
+`main()` then reads each scoped document's own lines through the *same* injected reader the resolver
+uses, and examines `doc_lines[n-1]` for each `n` in `added`.
+
+## What this deletes, and what it makes reachable
+
+| Gone | Because |
+|---|---|
+| `line.startswith("+")` / `line[1:]` | content no longer comes from the diff |
+| the `in_hunk` state machine | `@@` is read for its numbers, not as a mode switch |
+| the `++`/`---`/`\ No newline` classes | there is no body parser left to confuse |
+| two ambient cases (below) | the property they named becomes checkable |
+
+⭐ **And it makes r1 L2 reachable.** That finding (fenced code blocks, 40 of 896 living citations,
+4.5%) was DECLINED with the reason *"Fixing it means reading the file rather than the diff, which is
+a different guard."* This reshaping reads the file, so the fence exemption becomes available here.
+**It is deliberately NOT implemented in this round** — it changes what the gate asserts, and the
+owner authorised a redesign, not a scope change. Filed instead, with this paragraph as its argument.
+
+## ⛔ The one new fail-open, named before it exists
+
+`added_lines` returning `()` for a header it did not understand reads as *"nothing to check"* — the
+same failure direction as all three header defects. **It raises, and `main()` turns that into
+CANNOT RUN (rc=2).** Its falsifier is case 1, not case 41.
+
+A second invariant falls out of reading the document rather than the diff: if git says line `N` was
+added and the document has fewer than `N` lines, the two sources disagree and the guard cannot
+proceed. That is CANNOT RUN too, never a skip.
+
+## The falsifiers, each flipped before it is trusted
+
+Every case below names a property, and each one was accepted only after the thing it names was
+flipped in the implementation and the case was observed to redden — the method the five previous
+ambient cases on this file cost.
+
+| # | Property | Flip that must redden it |
+|---|---|---|
+| 1 | a malformed `@@` header is CANNOT RUN | `except ValueError: return ()` |
+| 2 | `@@ -1,0 +2,3 @@` yields exactly 2,3,4 | any off-by-one in the range |
+| 3 | `@@ -1 +2 @@` (count omitted) yields 2 | default the count to 0 |
+| 4 | `+c,0` (a pure deletion hunk) yields nothing | include `c` anyway |
+| 5 | several hunks accumulate | return after the first |
+| 6 | **an added line beginning `@@` is content, not a header** | test the line after stripping its prefix |
+| 7 | a line NOT in the added set is not examined | examine every line of the document |
+| 8 | a citation that exists only in the PRE-image is invisible | read the pre-image instead |
+| 9 | a pure rename adds nothing | drop `source` from the pathspec |
+| 10 | a glob-shaped document name does not over-match | drop `--literal-pathspecs` |
+| 11 | `changed_files` splits on NUL | drop `-z` |
+| 12 | an added line past the document's end is CANNOT RUN | skip it silently |
+
+Case 7 is the one that replaces the two ambient cases. **Measured 2026-10-15, before the redesign:
+deleting the marker filter outright (`if not in_hunk or not line.startswith("+")` →
+`if not in_hunk`) left the suite at 41/41 green.** The two cases that claimed to witness it —
+*"a REMOVED line is not examined"* and *"a context line is not examined"* — pass fixtures with no
+`@@` line at all, so `in_hunk` is `False` and the filter is never reached. Ambient cases six and
+seven on one file.
+
+## ⛔ And the branch is RED in CI, which three rounds did not notice
+
+`check-fixture-variation.py` — a guard `ci.yml` runs — returns **11 findings, every one against
+`scripts/check-doc-citations.py`**, a file that does not exist on `origin/master`. `changed_files`,
+`file_diff`, `tracked_files` and all six `main()` parameters are each passed ONE constant value by
+the whole suite, so no case can tell them from a literal.
+
+Round 2's Blocking was *"the branch is RED against its own gate."* This is the same defect one guard
+over, and its cause is `docs/CLAUDE.md` rule 1 verbatim: **a SUBSET of the document guards was run.**
+Every "N guards green" recorded on this branch was true of the guards that were run. The sweep that
+found it is the full `python3 scripts/check-*` list taken from `ci.yml`, not from memory.
