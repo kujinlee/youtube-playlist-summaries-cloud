@@ -35,11 +35,18 @@ how they drifted the first time.
     exactly and the fifth within the corpus's own movement — which is the first time these numbers
     have survived a change to the rule, because the half they depend on (`CITE` and `resolve`) is
     the half the redesign did not touch.
-    ⛔ AND THE HISTORICAL FIGURE NOW NEEDS ITS OWN READER. `violations` takes the document, not the
-    diff, so a retrospective run cannot read content out of a historical patch any more. It is
-    re-derived by injecting a `git show <commit>:<path>` reader — no checkout — and the result is
-    EXACT: 10 firings over 40 commits, the same four commits as before. That the injected reader
-    makes this possible at all is the clearest evidence the redesign kept its measurability.
+    ⛔ AND THE HISTORICAL FIGURE NEEDS TWO INJECTIONS, NOT ONE. `violations` takes the document,
+    not the diff, so a retrospective run cannot read content out of a historical patch any more.
+    ⟳ r4 L2 CORRECTED THIS PARAGRAPH, which recorded the method as *"injecting a
+    `git show <commit>:<path>` reader — no checkout"*. That recipe does NOT reproduce its own
+    number: measured, it gives **6 firings across 2 commits and 78 RuntimeErrors**, because
+    `file_diff` and `changed_files` take a single `base` and always diff it against the WORKTREE —
+    they cannot express a commit-to-parent diff at all. The second injection is mandatory: a
+    two-ref diff AND the blob reader. With both, the figure is EXACT — 10 firings over 40 commits,
+    the same four commits — and reproduces under `rev-list -n 40`, `--no-merges` and
+    `--first-parent` alike. ⚠ A recipe that under-reports by 4 while converting most of the corpus
+    to CANNOT RUN is worse than no recipe, because the next reader trusts it and sees a smaller
+    number.
 
 ⚠ **THE CORPUS FIGURES CANNOT BE EXACT, AND THE REASON IS STRUCTURAL rather than fixable.** The
 backlog row and dashboard entry that quote these same numbers live *inside* `docs/`, so every commit
@@ -124,7 +131,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 58 cases. Most are over DOCUMENTS this file builds with an injected
+  --self-test  runs 74 cases. Most are over DOCUMENTS this file builds with an injected
                resolver, so the rule needs no repository; the hunk-header reader is exercised on
                diff texts, and four cases build a throwaway git repository because the properties
                they witness (NUL splitting, literal pathspecs, rename pairing) are git's.
@@ -203,6 +210,17 @@ def resolve(path: str, tracked: tuple[str, ...], read):
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
+# Lines a unified diff emits that carry NO content. Measured 2026-10-15 against git by building
+# each shape: a pure rename emits `similarity index` + `rename from/to`, a mode change emits
+# `old mode` + `new mode`, and BOTH legitimately have no `@@` at all. Everything outside this list
+# in a hunkless diff is output this function does not understand — see `added_lines`.
+NO_CONTENT_LINE = (
+    "diff --git", "index ", "old mode ", "new mode ", "similarity index ",
+    "dissimilarity index ", "rename from ", "rename to ", "copy from ", "copy to ",
+    "new file mode ", "deleted file mode ", "--- ", "+++ ", "\\ No newline",
+)
+
+
 def added_lines(diff_text: str) -> tuple[int, ...]:
     """The post-image line numbers this diff ADDS. PURE — no git, no filesystem, no content.
 
@@ -215,8 +233,21 @@ def added_lines(diff_text: str) -> tuple[int, ...]:
     pure deletion hunk and adds nothing, so `c` must NOT be included.
     """
     out: list[int] = []
+    unexplained: list[str] = []
     for line in diff_text.splitlines():
         if not line.startswith("@@"):
+            # ⛔ r4 H2 — A HUNKLESS DIFF OF A CHANGED FILE IS CANNOT RUN, NOT AN EMPTY CHANGE SET.
+            # `git diff` reports `Binary files a/docs/x.md and b/docs/x.md differ` — with no `@@` at
+            # all — for a document holding a single NUL byte, AND for a plain-ASCII document under a
+            # one-line `docs/** -diff` in `.gitattributes` that anybody can commit. The caller's
+            # `if not added: return []` then read that as nothing to check: rc=0 over a drifted
+            # citation, with `docs/** text` as the adjacent control giving rc=1 on the same bytes.
+            # ⚠ ALLOW-LIST, NOT A BLACKLIST OF `Binary files`: two no-hunk shapes are LEGITIMATE
+            # (a pure rename, a mode change) and were measured, so anything OUTSIDE the measured
+            # set is refused rather than anything inside a guessed set. An output shape nobody has
+            # seen yet fails CLOSED.
+            if line and not line.startswith(NO_CONTENT_LINE):
+                unexplained.append(line)
             continue
         m = HUNK.match(line)
         if m is None:
@@ -230,6 +261,10 @@ def added_lines(diff_text: str) -> tuple[int, ...]:
         # cases including its own. Stated here because the manifest cannot carry both.
         count = 1 if m.group(2) is None else int(m.group(2))
         out.extend(range(start, start + count))
+    if not out and unexplained:
+        raise ValueError(
+            f"a diff with no hunk headers and {len(unexplained)} line(s) this rule does not "
+            f"understand: {unexplained[0][:80]!r}")
     return tuple(out)
 
 
@@ -267,7 +302,11 @@ def violations(path: str, added: tuple[int, ...], doc_lines: list[str],
             if lines is None:
                 found.append(f"{path}: `{cited}:{raw_line}` does not resolve — {how}")
                 continue
-            if raw_line < 1 or raw_line > len(lines):
+            # ⚠ `last_line` is NAMED so the two drift directions have separate anchors: widening
+            # it hides a file that LOST its last line (r4 M7), and tightening the comparison below
+            # to `>=` rejects a file's genuine last line. Both are real, both need an entry.
+            last_line = len(lines)
+            if raw_line < 1 or raw_line > last_line:
                 found.append(f"{path}: `{cited}:{raw_line}` is outside the file ({len(lines)} lines)")
                 continue
             if not lines[raw_line - 1].strip():
@@ -337,9 +376,31 @@ def file_diff(base: str, root: pathlib.Path, path: str, source: "str | None" = N
     Passing `source` alongside the destination lets git match the halves of a rename, so a moved
     document's existing citations are context rather than additions (r3-codex Medium).
     """
-    paths = [path] if source is None else [path, source]
+    # ⛔ r4 M1 — THE SOURCE IS PAIRED ONLY IF IT WAS ITSELF IN SCOPE. Pairing the halves of a
+    # rename makes a moved document add nothing (r3-codex CM1), which is right when an earlier run
+    # already checked those lines. It is WRONG when the pre-image was never scoped — measured,
+    # `docs/reviews/old.md`, `scripts/notes.md` and `docs/notes.txt` each promoted to a scoped
+    # `.md` carried a blank-line citation and all three passed rc=0. Those lines had been seen by
+    # no run and, being "not added" forever after, never would be. Dropping the source for an
+    # out-of-scope pre-image makes git treat the destination as wholly new, which it is to this
+    # guard. ⚠ This is fix-induced from round 3, which is the thrashing pattern continuing.
+    # ⚠ TWO DECISIONS, TWO LINES, DELIBERATELY. They are separately load-bearing and a mutation
+    # anchor can be occupied once: `pair_source` decides WHETHER an out-of-scope pre-image counts
+    # as the same document (r4 M1), and `paths` decides whether a paired source is handed to git at
+    # all (r3-codex CM1). Written on one line, only one of the two could carry a manifest entry.
+    pair_source = source if source is not None and in_scope(source) else None
+    paths = [path] if pair_source is None else [path, pair_source]
+    # ⛔ `--no-ext-diff` — A FAIL-OPEN FOUND BY THE COORDINATOR AFTER THE r4 REDESIGN, and the
+    # FIFTH in this family. `diff.external` or `GIT_EXTERNAL_DIFF` replaces git's output WHOLESALE;
+    # the replacement need not contain a single `@@`, so `added_lines` returned `()` and the run
+    # printed "doc citations OK" over a drifted citation. Measured as a PAIR against the same
+    # fixtures: without the flag rc=0, with it rc=1.
+    # ⭐ A `textconv` driver, which rewrites the diff's CONTENT, does NOT break this shape at all —
+    # measured rc=1 — because content comes from the document now. That is the honest statement of
+    # what the redesign achieved: the content half of the class is closed by construction, and the
+    # output-PROVENANCE half needed this flag.
     r = subprocess.run(["git", "-C", str(root), "--literal-pathspecs",
-                        "diff", "--unified=0", "-M", base, "--", *paths],
+                        "diff", "--no-ext-diff", "--unified=0", "-M", base, "--", *paths],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"git diff for {path} failed: {r.stderr.strip()[:200]}")
@@ -365,9 +426,32 @@ def _reader(root: pathlib.Path):
     `resolve`, which reports precisely why the path did not resolve."""
     def read(path: str) -> "list[str] | None":
         target = root / path
+        # ⛔ r4 H3 — A SYMLINK IS NOT THE DOCUMENT GIT DIFFED. For `docs/link.md -> target.md` git's
+        # hunk header describes the LINK TEXT (one line, `target.md`), while `is_file()` follows the
+        # link, so `doc_lines` was the TARGET's lines: `added` was `(1,)`, the guard examined
+        # `"line1"`, and a drifted citation on line 4 of the resolved document was never read —
+        # for a brand-new scoped path whose every line is new. Measured rc=0.
+        # ⚠ `is_symlink()` BEFORE `is_file()`, because `is_file()` follows the link and answers
+        # True. The adjacent survivor the reviewer's sweep found was `is_file -> exists`: nothing
+        # in the suite distinguished a non-regular file at all.
+        if target.is_symlink():
+            raise RuntimeError(
+                f"{path} is a symlink; git diffs the link text and this would read its target, "
+                f"so the two would not describe the same document")
         if not target.is_file():
             return None
-        return target.read_text(encoding="utf-8", errors="replace").splitlines()
+        # ⛔ `split("\n")`, NEVER `splitlines()` — r4 H1, a FAIL-OPEN AND a false positive from one
+        # line. Python's `str.splitlines()` breaks on `\v \f \x1c \x1d \x1e \x85 U+2028 U+2029`
+        # and a lone `\r`; git ends a line only at `\n`. One of those characters anywhere in a
+        # document shifts every later line number by one, so `doc_lines[n - 1]` is NOT the line git
+        # said was added. Measured BOTH directions: a form feed let a drifted citation pass
+        # (rc=0 against an adjacent control's rc=1), and a U+2028 made an innocent append inherit
+        # last year's stale citation (rc=1) — which breaks the ADDED-LINES-ONLY contract the whole
+        # scope argument rests on. Four tracked documents already disagree with git's line count,
+        # and the producer of U+2028 here is this project's own review agents.
+        # ⚠ The trailing phantom element `split("\n")` leaves on a newline-terminated file is never
+        # read: `violations` indexes only members of `added`, which git numbers.
+        return target.read_text(encoding="utf-8", errors="replace").split("\n")
     return read
 
 
@@ -489,8 +573,358 @@ def _nul_witness() -> int:
         return len([p for p, _src in changed_files("HEAD", root) if in_scope(p)])
 
 
+def _line_rule_witness() -> "tuple[int, int]":
+    """(findings with a form feed, findings without it). (1, 1) is the answer — they must AGREE.
+
+    ⛔ r4 H1. git ends a line at `\n` and nothing else; Python's `splitlines()` also breaks on
+    `\v \f \x1c \x1d \x1e \x85 U+2028 U+2029` and a lone `\r`. Under `splitlines()` the form-feed
+    document returned (0, 1): the SAME citation on the SAME added line was found in the control and
+    missed in the fixture, because every later line number was shifted by one.
+
+    The control is ADJACENT by construction — one character differs, a form feed against a space —
+    so this cannot pass for an ambient reason. The pair is the assertion; either number alone is
+    satisfied by a guard that does nothing.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for first_line in ("intro\x0cmore", "intro more"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            # line 2 is BLANK, so a citation of it is a finding
+            (root / "lib" / "a.ts").write_text("const a = 1\n\nexport default a\n", encoding="utf-8")
+            (root / "docs" / "x.md").write_text(first_line + "\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            (root / "docs" / "x.md").write_text(
+                first_line + "\nsee `lib/a.ts:2` here\n", encoding="utf-8")
+            run("add", "-A")
+            out.append(len(findings_for("docs/x.md", None, "HEAD", root,
+                                        tracked_files(root), _reader(root), file_diff)))
+    return tuple(out)
+
+
+def _binary_witness() -> "tuple[str, str, int]":
+    """How the guard treats a scoped document git calls BINARY, three ways.
+
+    Returns `(nul_route, attribute_route, control_findings)`:
+      * `nul_route`        — a document holding one NUL byte            -> "CANNOT RUN"
+      * `attribute_route`  — plain ASCII under `docs/** -diff`          -> "CANNOT RUN"
+      * `control_findings` — the SAME bytes under `docs/** text`        -> 1
+
+    ⛔ r4 H2. `git diff` emits `Binary files … differ` and NO `@@` for both routes, so
+    `added_lines` returned `()` and `findings_for`'s `if not added: return []` read it as nothing
+    to check — rc=0 over a drifted citation. The attribute route needs no unusual content at all,
+    only a line anybody can commit, which is what makes it realistic rather than exotic.
+
+    ⚠ THE CONTROL IS THE THIRD ELEMENT, and it is adjacent: identical document bytes, one
+    `.gitattributes` word different. Without it, "CANNOT RUN" twice is also what a guard that
+    refuses everything would return.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    results = []
+    for attrs, body in (
+            (None, b"see `lib/a.ts:2` here\nbin\x00ary\n"),     # NUL route
+            ("docs/** -diff\n", b"see `lib/a.ts:2` here\n"),      # attribute route
+            ("docs/** text\n", b"see `lib/a.ts:2` here\n")):      # the adjacent CONTROL
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("const a = 1\n\nexport default a\n", encoding="utf-8")
+            (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+            if attrs:
+                (root / ".gitattributes").write_text(attrs, encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            (root / "docs" / "b.md").write_bytes(body)
+            run("add", "-A")
+            try:
+                results.append(len(findings_for("docs/b.md", None, "HEAD", root,
+                                                tracked_files(root), _reader(root), file_diff)))
+            except (ValueError, RuntimeError):
+                results.append("CANNOT RUN")
+    return tuple(results)
+
+
+def _symlink_witness() -> "tuple[str, int]":
+    """(what a SYMLINKED scoped document does, what a REGULAR one with the same content does).
+
+    `("CANNOT RUN", 1)` is the answer. ⛔ r4 H3: git's hunk header describes the link TEXT, one
+    line long, while a reader that follows the link numbers the target's lines — two oracles, one
+    of them silently describing a different object. Measured rc=0 before this refusal existed.
+
+    ⚠ The second element is the ADJACENT control: the same citation in a regular file must still
+    fire, so "refuses everything" cannot satisfy this case.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for as_symlink in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("const a = 1\n\nexport default a\n", encoding="utf-8")
+            (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            body = "line1\nline2\nline3\nsee `lib/a.ts:2` here\n"
+            if as_symlink:
+                (root / "docs" / "target.md").write_text(body, encoding="utf-8")
+                (root / "docs" / "link.md").symlink_to("target.md")
+                path = "docs/link.md"
+            else:
+                (root / "docs" / "link.md").write_text(body, encoding="utf-8")
+                path = "docs/link.md"
+            run("add", "-A")
+            try:
+                out.append(len(findings_for(path, None, "HEAD", root,
+                                            tracked_files(root), _reader(root), file_diff)))
+            except (ValueError, RuntimeError):
+                out.append("CANNOT RUN")
+    return tuple(out)
+
+
+def _promotion_witness() -> "tuple[int, int, int, int]":
+    """Findings when a document ENTERS scope by rename, three ways, plus the in-scope control.
+
+    `(1, 1, 1, 0)` is the answer:
+      * `docs/reviews/old.md -> docs/promoted.md`  — the exclusion made the source unscoped
+      * `scripts/notes.md    -> docs/notes.md`     — the `docs/` prefix did
+      * `docs/notes.txt      -> docs/notes.md`     — the `.md` test did
+      * `docs/old.md         -> docs/new.md`       — CONTROL: both in scope, so 0 is correct
+
+    ⛔ r4 M1, and the fourth element is what makes this a finding rather than a contract
+    restatement: for the control an earlier run DID examine those lines, so adding nothing is
+    right. For the first three `in_scope(source)` is False, so no run ever saw them.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for src_path, dest in (("docs/reviews/old.md", "docs/promoted.md"),
+                           ("scripts/notes.md", "docs/notes.md"),
+                           ("docs/notes.txt", "docs/notes.md"),
+                           ("docs/old.md", "docs/new.md")):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("const a = 1\n\nexport default a\n", encoding="utf-8")
+            (root / src_path).parent.mkdir(parents=True, exist_ok=True)
+            (root / "docs").mkdir(exist_ok=True)
+            # padding so git scores it a rename rather than add+delete
+            (root / src_path).write_text("see `lib/a.ts:2` here\n" + "padding\n" * 8,
+                                         encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            run("mv", src_path, dest)
+            run("commit", "-qm", "promote")
+            found = 0
+            for path, source in changed_files("HEAD~1", root):
+                if in_scope(path):
+                    found += len(findings_for(path, source, "HEAD~1", root,
+                                              tracked_files(root), _reader(root), file_diff))
+            out.append(found)
+    return tuple(out)
+
+
+def _empty_tree_witness() -> str:
+    """Which of `tracked_files`' TWO raises a freshly initialised repository reaches.
+
+    `"empty tree"` is the answer. ⛔ r4 M6: that function raises twice — once when git fails, once
+    when `ls-files` returns nothing — and the case claiming the second ("RAISES rather than passing
+    over nothing") used `/nonexistent`, which reaches the FIRST. Deleting the empty-tree refusal
+    left the suite at 58/58. This fixture is a real repository with no files in it, which is the
+    only input that distinguishes them.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
+    with tempfile.TemporaryDirectory() as tmp:
+        r = subprocess.run(["git", "-C", tmp, "init", "-q", "--template="],
+                           capture_output=True, text=True, env=env)
+        if r.returncode != 0:
+            raise RuntimeError(f"fixture setup failed: {r.stderr.strip()[:160]}")
+        try:
+            tracked_files(pathlib.Path(tmp))
+        except RuntimeError as exc:
+            return "empty tree" if "empty tree" in str(exc) else f"other: {exc}"
+    return "no raise at all"
+
+
+def _rename_orientation_witness() -> "tuple[str, str]":
+    """`changed_files` must report (DESTINATION, source) and not the reverse.
+
+    ⛔ r4 L1: swapping the two left the suite at 58/58, because the rename case asserts a COUNT
+    that both orientations produce and both paths were in scope. A count cannot see an ordering;
+    this reads the pair directly.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+
+        def run(*args: str) -> None:
+            r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                               capture_output=True, text=True, env=env)
+            if r.returncode != 0:
+                raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                   f"{r.stderr.strip()[:160]}")
+
+        run("init", "-q", "--template=")
+        (root / "docs").mkdir()
+        (root / "docs" / "old.md").write_text("padding\n" * 9, encoding="utf-8")
+        run("add", "-A"); run("commit", "-qm", "base")
+        run("mv", "docs/old.md", "docs/new.md")
+        run("commit", "-qm", "rename")
+        entries = changed_files("HEAD~1", root)
+        path, source = entries[0]
+        return (path, source or "")
+
+
+def _unified_zero_witness() -> "tuple[int, int]":
+    """(findings for an innocent append, findings when the appended line itself cites badly).
+
+    `(0, 1)` is the answer. ⛔ r4 M3, AND MY OWN TENTH AMBIENT CASE ON THIS FILE. The first case
+    written for this finding asserted `added_lines("@@ -2,3 +2,4 @@ ctx1") == (2, 3, 4, 5)` — pure
+    arithmetic over a literal, which CANNOT notice that `--unified=0` was dropped from `file_diff`,
+    because the pure function never sees the flag. Measured: the mutation survived at 72/72.
+
+    At the default `-U3` a one-line append emits `@@ -2,3 +2,4 @@`, whose `+c,d` range spans the
+    three CONTEXT lines, so `added` picks up a citation three lines above the edit that the author
+    never touched — the added-lines-only contract broken by a second route (H1's direction 2 is the
+    first). With the flag, only line 5 is added and the stale citation on line 2 is invisible.
+
+    ⚠ The second element is the control: the same repository with the citation ON the appended line
+    must fire, so "finds nothing" cannot satisfy this case.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for appended in ("a harmless new sentence", "and see `lib/a.ts:2` too"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("const a = 1\n\nexport default a\n", encoding="utf-8")
+            # the STALE citation is on line 2, three lines above where the append lands
+            base_doc = "intro\nold `lib/a.ts:2` from last year\nmiddle\ntail\n"
+            (root / "docs" / "x.md").write_text(base_doc, encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            (root / "docs" / "x.md").write_text(base_doc + appended + "\n", encoding="utf-8")
+            run("add", "-A")
+            out.append(len(findings_for("docs/x.md", None, "HEAD", root,
+                                        tracked_files(root), _reader(root), file_diff)))
+    return tuple(out)
+
+
+def _ext_diff_witness() -> int:
+    """Findings when an EXTERNAL DIFF DRIVER is configured. One is the answer.
+
+    ⛔ `git diff` output can be replaced WHOLESALE by `diff.external` or `GIT_EXTERNAL_DIFF`. The
+    replacement need not contain a single `@@` line, so `added_lines()` returns `()`,
+    `findings_for` short-circuits on `if not added`, and the run prints "doc citations OK" over a
+    document whose citation does not resolve. MEASURED 2026-10-15 before `--no-ext-diff` was added:
+    rc=0 with the driver set, rc=1 without it — a FAIL-OPEN, and the fifth in this family.
+
+    ⚠ `changed_files()` is NOT affected: `--name-status` output is not produced by a diff driver,
+    which is why the failure appeared as "no added lines" and not as "no changed files".
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+
+        def run(*args: str) -> None:
+            r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                               capture_output=True, text=True, env=env)
+            if r.returncode != 0:
+                raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                   f"{r.stderr.strip()[:160]}")
+
+        run("init", "-q", "--template=")
+        (root / "docs").mkdir(); (root / "lib").mkdir()
+        (root / "lib" / "a.ts").write_text("one line\n", encoding="utf-8")
+        (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+        run("add", "-A"); run("commit", "-qm", "base")
+        run("config", "diff.external", "/bin/echo")
+        (root / "docs" / "bad.md").write_text("see `lib/a.ts:999`\n", encoding="utf-8")
+        run("add", "-A")
+        return len(findings_for("docs/bad.md", None, "HEAD", root,
+                                tracked_files(root), _reader(root), file_diff))
+
+
 def self_test() -> int:
-    """58 cases. The count is declared in the module docstring and verified by running this."""
+    """74 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -617,6 +1051,42 @@ def self_test() -> int:
     # added — which contradicts the added-lines-only contract the whole scope argument rests on.
     case("⛔ a pure rename of a document with a BAD citation adds nothing",
          lambda: _rename_witness() == 0)
+    # ⛔ r4 H1 — the reader and git must agree on what a LINE is. The pair is the assertion: the
+    # fixture and its one-character-different control must return the SAME count. Under
+    # `splitlines()` this returned (0, 1) — missed in the fixture, found in the control.
+    case("⛔ a form feed does not shift the document's line numbering away from git's",
+         lambda: _line_rule_witness() == (1, 1))
+    # ⛔ r4 H2 — a scoped document git calls BINARY must not pass silently. Both routes refuse, and
+    # the third element is the ADJACENT control: same bytes, `docs/** text` instead of `-diff`.
+    case("⛔ a document git reports as binary is CANNOT RUN, and the same bytes still fire",
+         lambda: _binary_witness() == ("CANNOT RUN", "CANNOT RUN", 1))
+    # ⛔ r4 H3 — the third route into the two-oracle seam. The control is the same content in a
+    # REGULAR file, which must still fire.
+    case("⛔ a symlinked document is refused, not read through to its target",
+         lambda: _symlink_witness() == ("CANNOT RUN", 1))
+    # ⛔ r4 M1 — a document PROMOTED into scope has never been checked, so it is not "unchanged".
+    # The fourth element is the in-scope control, where adding nothing remains correct.
+    case("⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not",
+         lambda: _promotion_witness() == (1, 1, 1, 0))
+    # ⛔ r4 M6 — the empty-tree refusal is a SECOND raise in `tracked_files`, and the case that
+    # named it reached the first one instead. Only a real repository with no files tells them apart.
+    case("⛔ an EMPTY repository reaches the empty-tree refusal, not the git-failure raise",
+         lambda: _empty_tree_witness() == "empty tree")
+    # ⛔ r4 L1 — a COUNT cannot see an ordering: swapping destination and source left the suite
+    # green. This reads the pair.
+    case("⛔ changed_files reports (destination, source), not the reverse",
+         lambda: _rename_orientation_witness() == ("docs/new.md", "docs/old.md"))
+    # ⛔ THE FIFTH FAIL-OPEN IN THIS FAMILY, found by the coordinator AFTER the r4 redesign and not
+    # removed by it: git's output can be REPLACED WHOLESALE by a configured driver, and output with
+    # no `@@` reads as "nothing was added". `--no-ext-diff` is what makes this 1.
+    case("⛔ a configured external diff driver cannot silence the guard",
+         lambda: _ext_diff_witness() == 1)
+    # ⛔ r4 L3, adjacent to H3 — nothing distinguished the reader's treatment of a non-regular
+    # path. A directory must read as None (becoming a finding), never raise out of the reader.
+    case("⛔ the reader answers None for a DIRECTORY rather than raising out of itself",
+         lambda: _reader(pathlib.Path("."))("docs") is None)
+    case("...and still reads a regular file, so it is not answering None to everything",
+         lambda: isinstance(_reader(pathlib.Path("."))("scripts/check-doc-citations.py"), list))
 
     # ── what `added_lines` reads, and what it REFUSES ──────────────────────────────────────────
     # ⛔ THE SIX CASES BELOW REPLACE A MARKER PARSER AND THE TWO AMBIENT CASES THAT GUARDED IT.
@@ -659,6 +1129,39 @@ def self_test() -> int:
          lambda: isinstance(_try(lambda: violations("docs/x.md", (3,), ["only one line"], tracked, read)),
                     RuntimeError))
 
+    # ── r4 L3: clauses the reviewer's 53-mutant sweep found SURVIVING the whole suite. Each is
+    # ── correct in the shipped code and was defended by nothing, so a later edit removes it
+    # ── silently. Every case below was accepted only after its own falsifier was measured.
+    # ⛔ r4 M2 — `.match`, not `.fullmatch`, is what lets REAL output parse: git appends the
+    # enclosing function's text to nearly every hunk header. Pinning the pattern's end left the
+    # suite completely green.
+    case("⛔ a hunk header carrying git's function-context suffix still parses",
+         lambda: added_lines("@@ -1,0 +2,2 @@ ## Some heading") == (2, 3))
+    # ⛔ r4 M3 — `--unified=0` is load-bearing and had ZERO cases. ⚠ THE FIRST CASE WRITTEN HERE WAS
+    # AMBIENT, MY TENTH ON THIS FILE: it asserted `added_lines("@@ -2,3 +2,4 @@ ctx1")`, pure
+    # arithmetic over a literal, which cannot see a flag the pure function never receives — the
+    # mutation survived at 72/72. The arithmetic assertion is KEPT below, because it is a true
+    # property worth pinning; what it is not is a witness for the flag.
+    case("a -U3-shaped header's range does cover four lines, as arithmetic",
+         lambda: added_lines("@@ -2,3 +2,4 @@ ctx1") == (2, 3, 4, 5))
+    case("⛔ ...and `--unified=0` keeps a stale citation three lines above an append out of scope",
+         lambda: _unified_zero_witness() == (0, 1))
+    # ⛔ r4 M7 — the out-of-range boundary was tested only 96 lines past the end. `:4` over a
+    # 3-line file is the single commonest drift there is: a file that lost its last line. Negatives
+    # have to be ADJACENT to be falsifiable.
+    case("⛔ the line immediately past the end fires, not only one far past it",
+         lambda: len(violations("docs/x.md", (1,), ["`lib/a.ts:4`"], tracked, read)) == 1)
+    case("...and the last line itself does not, so the boundary is pinned from both sides",
+         lambda: violations("docs/x.md", (1,), ["`lib/a.ts:3`"], tracked, read) == [])
+    # ⛔ r4 L3 — the suffix match's SEGMENT BOUNDARY had no case: without the leading slash,
+    # `c/ensure.ts` would resolve to `lib/html-doc/ensure.ts`, which is a different file.
+    case("⛔ a suffix must match at a path SEGMENT boundary, not mid-segment",
+         lambda: len(violations("docs/x.md", (1,), ["`c/ensure.ts:1`"],
+                                ("lib/html-doc/ensure.ts",), read)) == 1)
+    # ⛔ r4 L3 — `CITE`'s trailing `\b` had no case: without it `lib/a.ts:12abc` becomes a
+    # citation of line 12.
+    case("⛔ a line number glued to more text is not a citation",
+         lambda: violations("docs/x.md", (1,), ["`lib/a.ts:2abc`"], tracked, read) == [])
     case("backticks are optional",
          lambda: len(violations("docs/x.md", (1,), ["see lib/a.ts:2 here"], tracked, read)) == 1)
     case("a [param] path segment parses",

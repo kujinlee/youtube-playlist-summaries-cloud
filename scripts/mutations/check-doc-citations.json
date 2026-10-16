@@ -17,8 +17,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "            if raw_line < 1 or raw_line > len(lines):\n",
-        "            if raw_line < 1 or raw_line >= len(lines):\n"
+        "            if raw_line < 1 or raw_line > last_line:\n",
+        "            if raw_line < 1 or raw_line >= last_line:\n"
       ]
     ],
     "expect": [
@@ -134,7 +134,7 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "    paths = [path] if source is None else [path, source]\n",
+        "    paths = [path] if pair_source is None else [path, pair_source]\n",
         "    paths = [path]\n"
       ]
     ],
@@ -147,8 +147,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "    paths = [path] if source is None else [path, source]\n    r = subprocess.run([\"git\", \"-C\", str(root), \"--literal-pathspecs\",\n                        \"diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],",
-        "    paths = [path] if source is None else [path, source]\n    r = subprocess.run([\"git\", \"-C\", str(root),\n                        \"diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],"
+        "    r = subprocess.run([\"git\", \"-C\", str(root), \"--literal-pathspecs\",\n                        \"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n",
+        "    r = subprocess.run([\"git\", \"-C\", str(root),\n                        \"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n"
       ]
     ],
     "expect": [
@@ -259,6 +259,175 @@
     "expect": [
       "a pure DELETION hunk (+c,0) adds nothing",
       "...and a deletion-only diff reads the document NOT AT ALL, so it cannot raise"
+    ]
+  },
+  {
+    "name": "⛔ r4 H1 — the document is read with Python's line rule (`splitlines()`) instead of git's, so any of seven characters shifts every later line number and `doc_lines[n-1]` is not the line git numbered. A FAIL-OPEN and a false positive from one call",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        return target.read_text(encoding=\"utf-8\", errors=\"replace\").split(\"\\n\")\n",
+        "        return target.read_text(encoding=\"utf-8\", errors=\"replace\").splitlines()\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed does not shift the document's line numbering away from git's"
+    ]
+  },
+  {
+    "name": "⛔ r4 H2 — the refusal on a hunkless diff carrying unexplained lines is removed, so a scoped document git calls BINARY (one NUL byte, or a one-line `docs/** -diff` anybody can commit) reports OK over a drifted citation",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if not out and unexplained:\n",
+        "    if False and unexplained:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a document git reports as binary is CANNOT RUN, and the same bytes still fire"
+    ]
+  },
+  {
+    "name": "⛔ r4 H3 — the symlink refusal is removed, so for `docs/link.md -> target.md` git numbers the link text and the reader numbers the target: a drifted citation in the resolved document is never read, for a brand-new scoped path",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if target.is_symlink():\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a symlinked document is refused, not read through to its target"
+    ]
+  },
+  {
+    "name": "⛔ r4 M1 — the rename source is paired even when it was NEVER in scope, so a document promoted into docs/ from docs/reviews/, from scripts/, or from a .txt reports as unchanged: lines no run has ever examined, and none ever will",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    pair_source = source if source is not None and in_scope(source) else None\n",
+        "    pair_source = source\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not"
+    ]
+  },
+  {
+    "name": "⛔ r4 M2 — the hunk-header pattern is pinned at its end (`$`), so the function-context text git appends to nearly every real hunk stops parsing and the guard sees no added lines",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "HUNK = re.compile(r\"^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,(\\d+))? @@\")\n",
+        "HUNK = re.compile(r\"^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,(\\d+))? @@$\")\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a hunk header carrying git's function-context suffix still parses"
+    ]
+  },
+  {
+    "name": "⛔ r4 M3 — `--unified=0` is dropped, so at the default -U3 the hunk range spans CONTEXT lines and a citation three lines above an edit is blamed on it: the added-lines-only contract broken by a second route",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths]",
+        "\"diff\", \"--no-ext-diff\", \"-M\", base, \"--\", *paths]"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and `--unified=0` keeps a stale citation three lines above an append out of scope"
+    ]
+  },
+  {
+    "name": "⛔ r4 M7 — the CITED file's upper bound goes off by one, so a citation of the line immediately past the end passes: a file that lost its last line is the commonest drift there is",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            last_line = len(lines)\n",
+        "            last_line = len(lines) + 1\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the line immediately past the end fires, not only one far past it"
+    ]
+  },
+  {
+    "name": "⛔ r4 L3 — the suffix match loses its leading slash, so it matches MID-SEGMENT and a citation of `c/ensure.ts` resolves to `lib/html-doc/ensure.ts`, a different file",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    suffix_matches = [f for f in tracked if f.endswith(\"/\" + path)]\n",
+        "    suffix_matches = [f for f in tracked if f.endswith(path)]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a suffix must match at a path SEGMENT boundary, not mid-segment"
+    ]
+  },
+  {
+    "name": "⛔ r4 L3 — `CITE` loses the word boundary after the line number, so `lib/a.ts:12abc` becomes a citation of line 12",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\\.(?:ts|tsx|js|mjs|cjs|py|sh|sql|yml|yaml|json|toml|css|scss|md))`?:(\\d+)\\b\"",
+        "\\.(?:ts|tsx|js|mjs|cjs|py|sh|sql|yml|yaml|json|toml|css|scss|md))`?:(\\d+)\""
+      ]
+    ],
+    "expect": [
+      "⛔ a line number glued to more text is not a citation"
+    ]
+  },
+  {
+    "name": "⛔ r4 M6 — the empty-tree refusal is removed, so `tracked_files` returns an empty list and the guard passes over a tree it cannot see — the SECOND of that function's two raises, and the one its own case had never reached",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if not files:\n        raise RuntimeError(\"git ls-files returned nothing — refusing to pass over an empty tree\")\n",
+        "    if not files:\n        pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ an EMPTY repository reaches the empty-tree refusal, not the git-failure raise"
+    ]
+  },
+  {
+    "name": "⛔ r4 L1 — the rename pair is reported (source, destination) instead of (destination, source), which a COUNT cannot see: the prior case asserted a number both orientations produce",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            out.append((fields[i + 2], fields[i + 1]))   # (destination, source)\n",
+        "            out.append((fields[i + 1], fields[i + 2]))   # (destination, source)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ changed_files reports (destination, source), not the reverse"
+    ]
+  },
+  {
+    "name": "⛔ r4 L3 — the reader tests `exists()` instead of `is_file()`, so a DIRECTORY reaches `read_text` and raises out of the reader; adjacent to H3's symlink route",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not target.is_file():\n",
+        "        if not target.exists():\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the reader answers None for a DIRECTORY rather than raising out of itself"
+    ]
+  },
+  {
+    "name": "⛔ r4, the coordinator's own High — `--no-ext-diff` is dropped, so `diff.external` or `GIT_EXTERNAL_DIFF` replaces git's output wholesale, no `@@` appears, and the guard reports OK over a drifted citation. The FIFTH fail-open in this family, and the one the redesign did not remove",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n",
+        "\"diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a configured external diff driver cannot silence the guard"
     ]
   }
 ]

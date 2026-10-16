@@ -933,15 +933,27 @@ EXEMPT: dict[str, str] = {
     # repository's most-measured defect. The VALUES vary per case — `drive` takes `argv`, `root`,
     # `doc_readable` and `diff_override` and the cases pass different ones — and the call SITE is
     # one expression, which is what this scan compares.
-    # ⚠ NOT TAKEN ON TRUST. Each was MEASURED load-bearing on 2026-10-15 by substituting the
-    # module-level default for the injected parameter inside `main()` and running the suite; the
-    # case that reddens is named in each row. None survived.
-    "check-doc-citations.py:main.argv": "one driver by design; measured — `parse_args(argv)` -> "
-                         "`parse_args([])` reddens '--base reaches the fetchers rather than a "
-                         "hardcoded default' and the --root case",
-    "check-doc-citations.py:main.root": "one driver by design; measured — passing `ROOT` instead "
-                         "reddens '--root reaches the fetchers as the resolved path it names' and "
-                         "'...and without --root it is the root main() was handed'",
+    # ⛔⛔ CORRECTED 2026-10-15, SAME DAY, BY THE ROUND-4 REVIEW (M4). THE FIRST VERSION OF THESE
+    # ROWS NAMED A CASE THAT DOES NOT REDDEN, IN THREE OF THE SIX — written hours after quoting
+    # this table's own rule that an exemption resting on something untrue is worse than none. All
+    # four stated COUNTS reproduced; three of the named CASES were false. Each row below was
+    # re-performed (insert the module default immediately after `args = parser.parse_args(argv)`,
+    # run the suite, read the `[FAIL]` names) and now names a case measured to redden.
+    # ⚠ AND ONE RECIPE WAS ITSELF UNRUNNABLE, which is the dangerous half: substituting
+    # `parse_args([])` removes `--self-test`, so `main()` runs the real check instead of the suite
+    # and yields rc=2 with ZERO red cases — indistinguishable from "this parameter is not
+    # load-bearing". The runnable variant is recorded in its row.
+    "check-doc-citations.py:main.argv": "one driver by design. ⚠ RECIPE: substitute "
+                         "`parse_args([a for a in argv if a == '--self-test'])` — a bare "
+                         "`parse_args([])` makes main() run the real check and yields rc=2 with "
+                         "ZERO red cases. Measured: 2 red, '--base reaches the fetchers rather "
+                         "than a hardcoded default' and '--root reaches the fetchers as the "
+                         "resolved path it names'",
+    "check-doc-citations.py:main.root": "one driver by design. ⚠ RECIPE: `root = ROOT` AFTER the "
+                         "`--root` override, not before — before it, only 1 case reddens because "
+                         "the other tests the flag rather than the parameter. Measured after: 2 "
+                         "red, both '--root reaches the fetchers as the resolved path it names' "
+                         "and '...and without --root it is the root main() was handed'",
     "check-doc-citations.py:main.fetch_changed": "one driver by design; measured — substituting "
                          "`changed_files` reddens 7 cases, including 'main() returns 0 over a "
                          "clean world'",
@@ -949,10 +961,18 @@ EXEMPT: dict[str, str] = {
                          "`tracked_files` reddens 7 cases, including 'main() returns 1 when a "
                          "citation has drifted'",
     "check-doc-citations.py:main.make_reader": "one driver by design; measured — substituting "
-                         "`_reader` reddens 6 cases, including both CANNOT RUN cases",
+                         "`_reader` reddens 6 cases, including 'main() returns 0 over a clean "
+                         "world'. ⛔ NOT the CANNOT RUN cases, which an earlier version of this "
+                         "row claimed: neither CAN redden, because both reach rc=2 before the "
+                         "injected reader matters — the hunk-header case raises inside "
+                         "`added_lines`, and the unreadable-document case raises because the real "
+                         "`_reader` also returns None for a path that does not exist",
     "check-doc-citations.py:main.fetch_file_diff": "one driver by design; measured — substituting "
-                         "`file_diff` reddens 6 cases, including 'main() returns 2 when a hunk "
-                         "header does not parse, never 0'",
+                         "`file_diff` reddens 6 cases, including 'main() returns 1 when a citation "
+                         "has drifted'. ⛔ NOT 'main() returns 2 when a hunk header does not "
+                         "parse', which an earlier version of this row claimed: the real "
+                         "`file_diff` fails against the fixture's /nonexistent root, which is ALSO "
+                         "rc=2, so that case passes for a different reason than the one it names",
     "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
                          "between its call sites is `name`, which is the parameter that "
                          "selects the suite. A second directory would test the tempfile "

@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 20,
+    "scripts/check-doc-citations.py": 33,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5010,7 +5010,20 @@ def _self_test() -> int:
     # test that is the redesign's whole structural claim, the out-of-range raise, the unreadable-
     # document raise, the empty-added-set short circuit, and main()'s ValueError arm.
     # ⚠ 1439 is the GUARD'S OWN FIGURE, read from `got 1439 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1439)
+    # ⟳ 2026-10-15, backlog #49 ROUND 4 FOLD: 1439 -> 1452, `check-doc-citations.py` 20 -> 33. The
+    # round-4 Claude half returned 3 High / 7 Medium / 3 Low, and thirteen entries answer them: the
+    # line-splitting oracle (H1), the binary/hunkless refusal (H2), the symlink refusal (H3), the
+    # promotion-by-rename pairing (M1), the hunk-header suffix (M2), `--unified=0` (M3), the
+    # empty-tree refusal (M6), both directions of the cited-file bound (M7 plus the pre-existing
+    # `>=` entry, now on SEPARATE anchors), rename orientation (L1), the suffix segment boundary
+    # and `CITE`'s word boundary (L3), the reader's non-regular-file clause (L3), and the
+    # coordinator's own `--no-ext-diff` fail-open.
+    # ⚠ TWO CLAUSES WERE SPLIT ONTO SEPARATE LINES so each could carry an entry — `pair_source`
+    # from `paths`, and `last_line` from its comparison. A manifest anchor can be occupied once,
+    # and both halves of each pair are separately load-bearing; written on one line, one of the two
+    # would have gone unmeasured. The harness refused the collision rather than letting it pass.
+    # ⚠ 1452 is the GUARD'S OWN FIGURE, read from `got 1452 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1452)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
