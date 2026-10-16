@@ -259,8 +259,14 @@ li::marker{color:var(--fg3)}
 publish but let's take inventory and establish a milestone.”</em></p>
 
 <p>The spec turns that into one question asked of every component: <strong>could someone who has never
-seen this repository install it and use it?</strong> Three efforts, <strong>24 components</strong>,
-four criteria, three permitted verdicts.</p>
+seen this repository install it and use it?</strong> Three efforts, <strong>at least 24
+components</strong>, four criteria, and three verdicts — each now carrying an evidence grade, which
+is your D5 decision.</p>
+<p class="note">⚠ <strong>“At least” is doing real work there.</strong> 24 reproduces as arithmetic and
+round 2 showed it is not a complete membership — whole artifacts were never assigned to any
+component, including the two generators the regeneration hooks actually invoke. <strong>Twice now this spec
+has reached a total that reproduced over an incomplete set</strong>, so the number is treated as a floor
+until the mapping step runs.</p>
 
 <div class="box acc">
   <span class="lbl">Why this has never been answered before</span>
@@ -716,9 +722,13 @@ assess it”</em>.</p>
 
 <div class="box warn">
   <span class="lbl">2 · The spec was written with an invented number</span>
-  <p>It said <em>“~13 components”</em>. The derived figure is <strong>24</strong>. Nothing depended on
+  <p>It said <em>“~13 components”</em>. The derived figure was <strong>24</strong>. Nothing depended on
   13 — that is the point: a number with no provenance walked straight into a design document whose own
   risk table names that exact drift.</p>
+  <p class="note">⟳ <strong>And the sequel is worse than the original.</strong> 24 was then corrected
+  twice more — round 1 found its <em>membership</em> wrong (it counted two unmerged branches and
+  omitted the matcher that ships), and round 2 found artifacts the counting rule never assigned at
+  all. It is now a <strong>lower bound</strong>. A figure being derived did not make it complete.</p>
   <p class="note">Caught by the spec's self-review and recorded in its §9b rather than quietly fixed. It
   is evidence <em>for</em> the mechanical scan in §5 of the spec, not against it.</p>
 </div>
@@ -820,7 +830,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 14:50 · 8a19f4ce · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 14:57 · bea19c78 · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

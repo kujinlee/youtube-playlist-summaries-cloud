@@ -56,9 +56,10 @@ instrument for a surface*: six review rounds produced roughly seven edge cases, 
 over 5,287 inputs produced 456 fires and surfaced two real defects. ⚠ **Those are unlike units — edge
 cases against inputs-and-fires — and the comparison is offered as an order-of-magnitude contrast, not
 a ratio** (r1 CLAUDE M4; the first wording read as 7-versus-5,287 and invited a false 750x).
-*"Can a stranger use this?"* is a surface question over **24 components** (17 + 3 + 4 — the counting
-rule and the per-effort enumeration are in §3, derived 2026-10-15). Judgement alone will miss things,
-and the misses are precisely the ones a stranger meets first.
+*"Can a stranger use this?"* is a surface question over **at least 24 components** (17 + 3 + 4 — the
+counting rule, the per-effort enumeration and the mapping step that makes 24 a **lower bound rather
+than a total** are all in §3). Judgement alone will miss things, and the misses are precisely the ones
+a stranger meets first.
 
 ---
 
@@ -106,10 +107,13 @@ as a **lower bound**, not a derived total.
 - **Effort (1) = 4** — `scripts/recall-llm.py`, `scripts/check-surface-recall.py`,
   `.claude/hooks/surface-recall.sh`, and the memory corpus.
 
-⚠ **The TOTAL is unchanged at 24 and its MEMBERSHIP is not.** Round 1 found effort (1)'s list was
-counting two unmerged branches and omitting the matcher that actually ships (see Effort (1) below),
-so a total that reproduced was standing over a wrong set — which is this repository's most-measured
-failure shape, reached here by arithmetic that happened to agree.
+⚠ **THE ARITHMETIC IS UNCHANGED AT 24 AND THE MEMBERSHIP IS NOT — and after round 2, 24 is a floor
+rather than a total.** Round 1 found effort (1)'s list was counting two unmerged branches and
+omitting the matcher that actually ships (see Effort (1) below), so a figure that reproduced was
+standing over a wrong set. Round 2 then found whole artifacts the counting rule never assigned at
+all. **Twice now this spec has reached a reproducing total over an incomplete set** — which is this
+repository's most-measured failure shape, reached here by arithmetic that happened to agree. ⛔ So the
+number is not evidence of completeness, and §3's mapping step is what would make it one.
 
 ### Effort (3) — comprehensibility
 
@@ -564,8 +568,10 @@ and is a candidate follow-up if either survives.
 5. **The inventory** — every component of all three efforts with its **role**, its `SHIP` /
    `NEEDS-WORK` / `DON'T-SHIP` verdict, and its evidence. ⚠ Components whose C4 rests on argument
    rather than the experiment are labelled as such (§6's bound).
-6. A roadmap milestone, and a `docs/backlog.md` row per `NEEDS-WORK` component. ⚠ A `library`
-   component that inherits a C4 pass does **not** generate a row (§4).
+6. A roadmap milestone, and a `docs/backlog.md` row per `NEEDS-WORK` component — **and only those**.
+   ⚠ Under D5 (§4b) `NEEDS-WORK` means *a named defect*, so neither a `library` that inherits a C4
+   pass nor a component the experiment simply never reached (`argued`) generates a row. **A row means
+   a defect someone can act on**, which is what the original rule produced phantom entries against.
 7. `docs/anchors.md` — `harness-ships-elsewhere` registered, claimed by this document. **Closes row 290.**
 8. Corrections to `portable-practices.md`'s three stale claims (§3 above) — **the line-count one
    recorded as a decayed dated count, not as a recalled figure** (r1 CLAUDE H1).
