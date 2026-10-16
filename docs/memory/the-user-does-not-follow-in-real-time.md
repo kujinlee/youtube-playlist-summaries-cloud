@@ -196,3 +196,34 @@ Monitor emits on its own schedule; my job is to arm it once and read the events.
 Related: [[the-user-does-not-follow-in-real-time]] (the user does NOT follow in real time — which is exactly
 why silence reads as stalled), [[how-to-shape-a-message-to-me]], [[never-close-with-a-promise]].
 
+
+## ⭐⭐ FOURTH LAPSE, 2026-10-15 — and the ON-TRIAL sub-step marker was never once used
+
+The user interrupted mid-turn: *"you stop emitting banner and it is hard for me to follow what you
+are doing"*. Fourth recorded lapse (2026-09-04, 2026-09-11, 2026-09-23, this one).
+
+**Where it broke.** A 7-step plan was armed and bannered correctly at every heading. Then **step 4
+("prove each case can fail") grew into nine separate pieces of work** — close an 11-finding
+`check-fixture-variation` red, un-splat 23 call sites, convert 58 cases to thunks, retire one
+mutation and add eight, read the declared sum off the guard, run a scoped sweep, run an 88-mutant
+ambient sweep, re-measure five figures, reproduce a new fail-open — over roughly **40 tool calls**
+with no marker between them. Exactly the 2026-09-23 cause, repeated.
+
+⛔ **THE SHARPER LESSON: the `▸ n.m` marker was recorded as ON TRIAL on 2026-09-23 and I used it
+ZERO times in this session.** So the trial never ran, and a rule that is never exercised cannot be
+promoted or refuted — it just sits here reading like a decision. **A mechanism recorded as "on
+trial" needs a trigger, not a note.** The trigger that would have fired: *a step's second distinct
+work item is a sub-step marker*, checked when starting the item rather than when noticing the gap.
+
+**Also skipped, and it is in this same file:** no `Monitor` was armed for two background jobs (a
+review subagent and a 20-minute sweep). The *"arm a Monitor for anything over ~2 minutes"* section
+above was not applied, and the user's complaint arrived during exactly that silence. Waiting lines
+appeared in SOME messages, which is the failure the section describes: inconsistent, so silence and
+a stall still look alike.
+
+**How to apply, concretely:**
+- When a step produces its **second** distinct deliverable, emit `▸ <n>.<m> — <what landed> ·
+  <measured fact>` before starting the next one. Do not wait for the step to end.
+- Arm the `Monitor` at the moment the background job is dispatched, in the same message.
+- A banner is owed for a step that is PAUSED too — `⏸ PAUSED on <what>` with the waiting line —
+  because from the user's side a pause and a stall are the same thing.
