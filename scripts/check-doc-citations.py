@@ -131,7 +131,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 74 cases. Most are over DOCUMENTS this file builds with an injected
+  --self-test  runs 79 cases. Most are over DOCUMENTS this file builds with an injected
                resolver, so the rule needs no repository; the hunk-header reader is exercised on
                diff texts, and four cases build a throwaway git repository because the properties
                they witness (NUL splitting, literal pathspecs, rename pairing) are git's.
@@ -234,6 +234,7 @@ def added_lines(diff_text: str) -> tuple[int, ...]:
     """
     out: list[int] = []
     unexplained: list[str] = []
+    saw_hunk = False
     for line in diff_text.splitlines():
         if not line.startswith("@@"):
             # ⛔ r4 H2 — A HUNKLESS DIFF OF A CHANGED FILE IS CANNOT RUN, NOT AN EMPTY CHANGE SET.
@@ -249,6 +250,7 @@ def added_lines(diff_text: str) -> tuple[int, ...]:
             if line and not line.startswith(NO_CONTENT_LINE):
                 unexplained.append(line)
             continue
+        saw_hunk = True
         m = HUNK.match(line)
         if m is None:
             raise ValueError(f"unparsable hunk header: {line[:80]!r}")
@@ -261,7 +263,20 @@ def added_lines(diff_text: str) -> tuple[int, ...]:
         # cases including its own. Stated here because the manifest cannot carry both.
         count = 1 if m.group(2) is None else int(m.group(2))
         out.extend(range(start, start + count))
-    if not out and unexplained:
+    # ⛔ `saw_hunk`, NOT `not out` — r4-codex M1, AND IT WAS LIVE BREAKAGE I SHIPPED. The first
+    # version of this refusal tested `if not out and unexplained`, which equates "this diff added
+    # nothing" with "this diff had no headers". A DELETION-ONLY edit has a real header (`@@ -2 +1,0
+    # @@ keep`) and adds nothing, so every removed line became "output this rule does not
+    # understand" and an ordinary commit returned rc=2. Measured: deleting one line from a scoped
+    # document refused, and the historical replay collected 672 such lines.
+    # ⚠ That is the FALSE-REFUSAL direction, which backlog #56 measured as fatal — a gate that
+    # red-lines normal work gets switched off, and then guards nothing at all. A fail-open costs a
+    # missed defect; this costs the whole gate.
+    # ⚠ TWO DECISIONS, TWO LINES, so each can carry a manifest entry: WHAT COUNTS AS HUNKLESS
+    # (r4-codex M1 — `not saw_hunk`, never `not out`, because a deletion hunk has a header and adds
+    # nothing) and WHETHER AN UNEXPLAINED HUNKLESS DIFF IS REFUSED AT ALL (r4 H2).
+    hunkless = not saw_hunk
+    if hunkless and unexplained:
         raise ValueError(
             f"a diff with no hunk headers and {len(unexplained)} line(s) this rule does not "
             f"understand: {unexplained[0][:80]!r}")
@@ -315,6 +330,29 @@ def violations(path: str, added: tuple[int, ...], doc_lines: list[str],
     return found
 
 
+def shows_no_content(diff_text: str) -> bool:
+    """True when a diff reports a BLOB change and then shows no hunks at all. PURE.
+
+    ⛔ r4-codex H1, the fourth route into the seam. A `textconv` driver converts both sides before
+    git compares them, so a driver that masks the cited line makes git see IDENTICAL documents and
+    emit headers only — measured, three lines, every one of them legitimately in `NO_CONTENT_LINE`:
+
+        diff --git a/docs/x.md b/docs/x.md
+        new file mode 100644
+        index 0000000..dd27a5c
+
+    So the H2 allow-list passed it and `added_lines` returned `()`. The discriminator is the `index`
+    line: a MODE-only change emits none, and a 100%-similar rename emits none, but a blob that
+    changed and produced no hunks means the diff showed this rule nothing.
+
+    ⚠ An EMPTY file's addition also has an index line and no hunks, legitimately — so the caller
+    pairs this with "the document is non-empty" rather than refusing on this alone.
+    """
+    lines = diff_text.splitlines()
+    return (not any(l.startswith("@@") for l in lines)
+            and any(l.startswith("index ") for l in lines))
+
+
 def findings_for(path: str, source: "str | None", base: str, root: pathlib.Path,
                  tracked: tuple[str, ...], read, fetch_file_diff) -> list[str]:
     """One document: diff it, take the added line numbers, read the document, apply the rule.
@@ -327,9 +365,34 @@ def findings_for(path: str, source: "str | None", base: str, root: pathlib.Path,
     git says the file has new content and the filesystem says there is no file, and "no findings"
     would report that disagreement as a pass.
     """
-    added = added_lines(fetch_file_diff(base, root, path, source))
+    diff_text = fetch_file_diff(base, root, path, source)
+    added = added_lines(diff_text)
     if not added:
+        # ⛔ r4-codex H1 — "no added lines" has TWO causes and only one is benign. A deletion-only
+        # edit genuinely adds nothing (and `shows_no_content` is False for it, because it HAS a
+        # hunk header, so the document is not even read here — which the deletion-only case
+        # asserts). A blob that changed and produced no hunks means the diff showed nothing, and
+        # that is CANNOT RUN whenever the document actually has content.
+        if shows_no_content(diff_text):
+            quiet = read(path)
+            if quiet is not None and any(line.strip() for line in quiet):
+                raise RuntimeError(
+                    f"{path}: git reports a content change and emitted no hunks at all, while the "
+                    f"document has {sum(1 for l in quiet if l.strip())} non-blank line(s) — the "
+                    f"diff is not describing this document")
         return []
+    # ⛔ THE SYMLINK REFUSAL BELONGS HERE, TO THE DOCUMENT, NOT IN THE SHARED READER — r4-codex M2.
+    # r4 H3 is real: for `docs/link.md -> target.md` git's hunk header numbers the LINK TEXT while a
+    # reader that follows the link numbers the TARGET, so the two oracles describe different objects.
+    # But `read` ALSO resolves CITED paths, and I put the refusal inside it, so citing a perfectly
+    # ordinary code symlink (`lib/link.ts:1`) became CANNOT RUN — git is numbering the DOCUMENT
+    # there, and following the cited link introduces no disagreement whatever. A refusal applied
+    # beyond the condition it was introduced to defend is the false-refusal direction again, which
+    # is the third one I shipped in this fold.
+    if (root / path).is_symlink():
+        raise RuntimeError(
+            f"{path} is a symlink; git diffs the link text and this would read its target, "
+            f"so the two would not describe the same document")
     doc_lines = read(path)
     if doc_lines is None:
         raise RuntimeError(
@@ -348,8 +411,12 @@ def changed_files(base: str, root: pathlib.Path) -> tuple[tuple[str, "str | None
     This is the half that makes header parsing unnecessary. Raises on a git failure.
     """
     r = subprocess.run(
+        # ⛔ `--no-color` on BOTH invocations — r4-codex M3. With `color.ui=always` git decorates its
+        # output, and the allow-list then sees `\x1b[1mdiff --git …` as a line it does not
+        # understand: an ordinary citation patch became CANNOT RUN. The name-status call is read for
+        # its NUL-delimited paths, which decoration would corrupt in a quieter way.
         ["git", "-C", str(root), "--literal-pathspecs",
-         "diff", "--name-status", "-z", "-M", base],
+         "diff", "--no-color", "--name-status", "-z", "-M", base],
         capture_output=True, text=True,
     )
     if r.returncode != 0:
@@ -395,12 +462,18 @@ def file_diff(base: str, root: pathlib.Path, path: str, source: "str | None" = N
     # the replacement need not contain a single `@@`, so `added_lines` returned `()` and the run
     # printed "doc citations OK" over a drifted citation. Measured as a PAIR against the same
     # fixtures: without the flag rc=0, with it rc=1.
-    # ⭐ A `textconv` driver, which rewrites the diff's CONTENT, does NOT break this shape at all —
-    # measured rc=1 — because content comes from the document now. That is the honest statement of
-    # what the redesign achieved: the content half of the class is closed by construction, and the
-    # output-PROVENANCE half needed this flag.
+    # ⛔⛔ THE SENTENCE THAT STOOD HERE WAS FALSE, AND r4-codex SAID SO IN THOSE WORDS. It claimed a
+    # `textconv` driver "does NOT break this shape at all … because content comes from the document
+    # now". Measured: a textconv driver that DELETES the cited line makes git compare identical
+    # converted documents and emit no hunks at all, rc=0 — see `shows_no_content`. The driver I
+    # first tested (`/bin/echo`, which empties the output) and the one the Claude half described
+    # (which still yields a real diff) were both the easy cases.
+    # ⚠ AND I HAD ALREADY "CORRECTED" THIS CLAIM ONCE, in the wrong direction, by adopting the
+    # explanation that textconv emits a real `@@` line. It does — sometimes. The class is defined
+    # by WHAT THE DIFF SHOWS, not by what produced it, which is why the refusal lives at the exit.
     r = subprocess.run(["git", "-C", str(root), "--literal-pathspecs",
-                        "diff", "--no-ext-diff", "--unified=0", "-M", base, "--", *paths],
+                        "diff", "--no-ext-diff", "--no-color", "--unified=0", "-M", base,
+                        "--", *paths],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"git diff for {path} failed: {r.stderr.strip()[:200]}")
@@ -434,10 +507,6 @@ def _reader(root: pathlib.Path):
         # ⚠ `is_symlink()` BEFORE `is_file()`, because `is_file()` follows the link and answers
         # True. The adjacent survivor the reviewer's sweep found was `is_file -> exists`: nothing
         # in the suite distinguished a non-regular file at all.
-        if target.is_symlink():
-            raise RuntimeError(
-                f"{path} is a symlink; git diffs the link text and this would read its target, "
-                f"so the two would not describe the same document")
         if not target.is_file():
             return None
         # ⛔ `split("\n")`, NEVER `splitlines()` — r4 H1, a FAIL-OPEN AND a false positive from one
@@ -451,7 +520,31 @@ def _reader(root: pathlib.Path):
         # and the producer of U+2028 here is this project's own review agents.
         # ⚠ The trailing phantom element `split("\n")` leaves on a newline-terminated file is never
         # read: `violations` indexes only members of `added`, which git numbers.
-        return target.read_text(encoding="utf-8", errors="replace").split("\n")
+        # ⛔ `read_bytes().decode(...)`, NEVER `read_text(...)` — r4-codex H2, AND THIS IS THE SECOND
+        # HALF OF A FIX I SHIPPED INCOMPLETE. `split("\n")` alone was not enough: `read_text` applies
+        # UNIVERSAL NEWLINES, so a lone `\r` had already become `\n` before any split could see it.
+        # Measured on `b"intro\rmore\ntail\n"` — `read_text().split("\n")` gives 3 lines,
+        # `read_bytes().decode().split("\n")` gives 2, and git sees 2.
+        # ⚠ The form-feed witness PASSED throughout, which is the lesson: it certified the half of
+        # the fix I had thought about. A witness narrower than the class it defends is a witness
+        # that says a partial fix is complete.
+        # ⚠ TWO STATEMENTS, because the fix has TWO INDEPENDENT HALVES and each needs its own
+        # mutation anchor: HOW THE BYTES ARE OBTAINED (`read_bytes().decode`, never `read_text`,
+        # whose universal newlines translate a lone `\r` first — r4-codex H2) and HOW THEY ARE
+        # SPLIT (`split("\n")`, never `splitlines()`, which breaks on seven more characters — r4 H1).
+        raw = target.read_bytes().decode("utf-8", errors="replace")
+        # ⛔ r4-codex H1, the FIFTH route — `working-tree-encoding=UTF-16`. git stores UTF-8
+        # internally, so it emits `@@ -1,0 +2 @@` and the citation as ordinary UTF-8 text; the
+        # WORKTREE bytes are UTF-16, and decoding them as UTF-8 leaves interleaved NULs that no
+        # citation can match. Measured rc=0 against a plain-UTF-8 control's rc=1.
+        # ⚠ A NUL in the decoded text means these bytes are not the text git diffed. Refuse rather
+        # than match against mojibake — and note a NUL cannot appear in a document git treats as
+        # text, so this cannot fire on an ordinary file.
+        if "\x00" in raw:
+            raise RuntimeError(
+                f"{path} holds NUL bytes once decoded as UTF-8, so these are not the bytes git "
+                f"diffed — a re-encoding attribute such as working-tree-encoding is in play")
+        return raw.split("\n")
     return read
 
 
@@ -573,8 +666,13 @@ def _nul_witness() -> int:
         return len([p for p, _src in changed_files("HEAD", root) if in_scope(p)])
 
 
-def _line_rule_witness() -> "tuple[int, int]":
-    """(findings with a form feed, findings without it). (1, 1) is the answer — they must AGREE.
+def _line_rule_witness() -> "tuple[int, int, int, int]":
+    """Four documents: form feed, its control, lone CR, its control. `(1, 1, 1, 1)` — ALL AGREE.
+
+    ⟳ r4-codex H2 WIDENED THIS FROM TWO ELEMENTS TO FOUR. With only the form feed it returned
+    (1, 1) and passed while a lone `\r` still fail-opened, because `split("\n")` fixed the split
+    and `read_text`'s universal-newline translation happened BEFORE it. A witness narrower than
+    its class certifies a partial fix.
 
     ⛔ r4 H1. git ends a line at `\n` and nothing else; Python's `splitlines()` also breaks on
     `\v \f \x1c \x1d \x1e \x85 U+2028 U+2029` and a lone `\r`. Under `splitlines()` the form-feed
@@ -592,7 +690,7 @@ def _line_rule_witness() -> "tuple[int, int]":
            "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
            "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
     out = []
-    for first_line in ("intro\x0cmore", "intro more"):
+    for first_line in ("intro\x0cmore", "intro more", "intro\rmore", "intro-more"):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
 
@@ -673,9 +771,12 @@ def _binary_witness() -> "tuple[str, str, int]":
 
 
 def _symlink_witness() -> "tuple[str, int]":
-    """(what a SYMLINKED scoped document does, what a REGULAR one with the same content does).
+    """(symlinked DOCUMENT, regular document, symlinked CITED code path).
 
-    `("CANNOT RUN", 1)` is the answer. ⛔ r4 H3: git's hunk header describes the link TEXT, one
+    `("CANNOT RUN", 1, 1)` is the answer, and the THIRD element is r4-codex M2: putting this
+    refusal in the shared reader made an ordinary cited code symlink CANNOT RUN too, which is a
+    false refusal — git numbers the document there, so following the cited link disagrees with
+    nothing. ⛔ r4 H3: git's hunk header describes the link TEXT, one
     line long, while a reader that follows the link numbers the target's lines — two oracles, one
     of them silently describing a different object. Measured rc=0 before this refusal existed.
 
@@ -689,7 +790,7 @@ def _symlink_witness() -> "tuple[str, int]":
            "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
            "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
     out = []
-    for as_symlink in (True, False):
+    for as_symlink in (True, False, "cited"):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
 
@@ -706,13 +807,19 @@ def _symlink_witness() -> "tuple[str, int]":
             (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
             run("add", "-A"); run("commit", "-qm", "base")
             body = "line1\nline2\nline3\nsee `lib/a.ts:2` here\n"
-            if as_symlink:
+            path = "docs/link.md"
+            if as_symlink == "cited":
+                # ⛔ r4-codex M2: the CITED path is the symlink and the DOCUMENT is regular. git is
+                # numbering the document, so following the link introduces no disagreement — this
+                # must FIRE (the cited line is blank), never refuse.
+                (root / "lib" / "link.ts").symlink_to("a.ts")
+                (root / "docs" / "link.md").write_text("see `lib/link.ts:2` here\n",
+                                                       encoding="utf-8")
+            elif as_symlink:
                 (root / "docs" / "target.md").write_text(body, encoding="utf-8")
                 (root / "docs" / "link.md").symlink_to("target.md")
-                path = "docs/link.md"
             else:
                 (root / "docs" / "link.md").write_text(body, encoding="utf-8")
-                path = "docs/link.md"
             run("add", "-A")
             try:
                 out.append(len(findings_for(path, None, "HEAD", root,
@@ -923,8 +1030,151 @@ def _ext_diff_witness() -> int:
                                 tracked_files(root), _reader(root), file_diff))
 
 
+def _deletion_witness() -> "tuple[object, int]":
+    """(a deletion-only edit, the same edit that also ADDS a bad citation) -> `(0, 1)`.
+
+    ⛔ r4-codex M1, and this was LIVE BREAKAGE. A real deletion patch carries a real hunk header
+    (`@@ -2 +1,0 @@ keep`) and adds nothing, so a refusal keyed on "the added set is empty" treated
+    every REMOVED line as output it did not understand and returned rc=2 on an ordinary commit.
+    ⚠ The existing `added_lines("@@ -5,2 +7,0 @@")` cases could not see it: a bare header string
+    carries no `-removed` lines, so nothing reached the refusal. This builds the patch git emits.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for after in ("keep\n", "keep\nsee `lib/a.ts:2` here\n"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+            (root / "docs" / "x.md").write_text("keep\nremove\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            (root / "docs" / "x.md").write_text(after, encoding="utf-8")
+            run("add", "-A")
+            try:
+                out.append(len(findings_for("docs/x.md", None, "HEAD", root,
+                                            tracked_files(root), _reader(root), file_diff)))
+            except (ValueError, RuntimeError) as exc:
+                out.append(f"CANNOT RUN: {str(exc)[:40]}")
+    return tuple(out)
+
+
+def _color_witness() -> "tuple[int, int]":
+    """(findings with `color.ui=always`, findings without it) -> `(1, 1)` — they must AGREE.
+
+    ⛔ r4-codex M3. Decorated output makes the allow-list see `\x1b[1mdiff --git …` as a line it does
+    not understand, so an ordinary citation patch became CANNOT RUN. Same false-refusal direction as
+    M1, out of the same allow-list, by a setting a developer may have on globally.
+    ⚠ The pair is the assertion: one number alone is satisfied by a guard that refuses nothing.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for coloured in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+            (root / "docs" / "x.md").write_text("intro\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            if coloured:
+                run("config", "color.ui", "always")
+            (root / "docs" / "x.md").write_text("intro\nsee `lib/a.ts:2` here\n", encoding="utf-8")
+            run("add", "-A")
+            try:
+                out.append(len(findings_for("docs/x.md", None, "HEAD", root,
+                                            tracked_files(root), _reader(root), file_diff)))
+            except (ValueError, RuntimeError) as exc:
+                out.append(f"CANNOT RUN: {str(exc)[:30]}")
+    return tuple(out)
+
+
+def _encoding_witness() -> "tuple[object, object, int, int]":
+    """Four worlds: textconv masking the citation, working-tree-encoding, and two controls.
+
+    `("CANNOT RUN", "CANNOT RUN", 0, 1)` is the answer — the third is an EMPTY new document (which
+    legitimately has an index line and no hunks) and the fourth a plain UTF-8 document.
+
+    ⛔ r4-codex H1, routes four and five into the diff/document seam. Both returned rc=0 before the
+    `shows_no_content` and NUL refusals existed, and both are reachable from a tracked
+    `.gitattributes` that any author can commit.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for world in ("textconv", "encoding", "empty", "plain"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+            (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+            if world == "textconv":
+                (root / ".gitattributes").write_text("docs/x.md diff=mask\n", encoding="utf-8")
+            elif world == "encoding":
+                (root / ".gitattributes").write_text(
+                    "docs/x.md working-tree-encoding=UTF-16LE\n", encoding="utf-8")
+                (root / "docs" / "x.md").write_bytes("intro\n".encode("utf-16-le"))
+            run("add", "-A"); run("commit", "-qm", "base")
+            if world == "textconv":
+                run("config", "diff.mask.textconv", "sed '/lib\\/a.ts/d'")
+                (root / "docs" / "x.md").write_text("see `lib/a.ts:2` here\n", encoding="utf-8")
+            elif world == "encoding":
+                (root / "docs" / "x.md").write_bytes(
+                    "intro\nsee `lib/a.ts:2` here\n".encode("utf-16-le"))
+            elif world == "empty":
+                (root / "docs" / "x.md").write_text("", encoding="utf-8")
+            else:
+                (root / "docs" / "x.md").write_text("see `lib/a.ts:2` here\n", encoding="utf-8")
+            run("add", "-A")
+            try:
+                out.append(len(findings_for("docs/x.md", None, "HEAD", root,
+                                            tracked_files(root), _reader(root), file_diff)))
+            except (ValueError, RuntimeError):
+                out.append("CANNOT RUN")
+    return tuple(out)
+
+
 def self_test() -> int:
-    """74 cases. The count is declared in the module docstring and verified by running this."""
+    """79 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -1054,16 +1304,38 @@ def self_test() -> int:
     # ⛔ r4 H1 — the reader and git must agree on what a LINE is. The pair is the assertion: the
     # fixture and its one-character-different control must return the SAME count. Under
     # `splitlines()` this returned (0, 1) — missed in the fixture, found in the control.
-    case("⛔ a form feed does not shift the document's line numbering away from git's",
-         lambda: _line_rule_witness() == (1, 1))
+    case("⛔ neither a form feed NOR a lone CR shifts the line numbering away from git's",
+         lambda: _line_rule_witness() == (1, 1, 1, 1))
     # ⛔ r4 H2 — a scoped document git calls BINARY must not pass silently. Both routes refuse, and
     # the third element is the ADJACENT control: same bytes, `docs/** text` instead of `-diff`.
     case("⛔ a document git reports as binary is CANNOT RUN, and the same bytes still fire",
          lambda: _binary_witness() == ("CANNOT RUN", "CANNOT RUN", 1))
+    # ⛔ THE ALLOW-LIST REFUSAL NEEDS ITS OWN CASE, and the sweep is what proved that. Once
+    # `shows_no_content` arrived, the BINARY routes were caught by it first — so the mutation that
+    # disables this clause SURVIVED at 77/77 while the clause still protected something: a hunkless
+    # diff with no `index` line at all, which `shows_no_content` cannot see by construction. That is
+    # the shape a replaced diff (`diff.external`) produces when `--no-ext-diff` is absent.
+    case("⛔ a hunkless diff carrying a line this rule does not understand RAISES",
+         lambda: isinstance(
+             _try(lambda: added_lines("diff --git a/docs/x.md b/docs/x.md\n?? unexpected\n")),
+             ValueError))
+    case("...while the same diff WITH a hunk header parses, so the refusal is not blanket",
+         lambda: added_lines("diff --git a/docs/x.md b/docs/x.md\n@@ -1,0 +2 @@\n+x") == (2,))
+    # ⛔ r4-codex M1 — THE FALSE-REFUSAL DIRECTION, and it was live. A real deletion patch must be
+    # silent, not CANNOT RUN; the second element is the control, the same edit adding a bad citation.
+    case("⛔ a deletion-only edit is silent, not CANNOT RUN",
+         lambda: _deletion_witness() == (0, 1))
+    # ⛔ r4-codex M3 — git's own decoration must not read as output the rule cannot parse.
+    case("⛔ forced git colour does not turn an ordinary patch into CANNOT RUN",
+         lambda: _color_witness() == (1, 1))
+    # ⛔ r4-codex H1 — routes four and five, both from a committable `.gitattributes`. Elements 3
+    # and 4 are the controls that keep this from being satisfied by a guard that refuses everything.
+    case("⛔ a re-encoding or masking attribute is CANNOT RUN, while empty and plain still behave",
+         lambda: _encoding_witness() == ("CANNOT RUN", "CANNOT RUN", 0, 1))
     # ⛔ r4 H3 — the third route into the two-oracle seam. The control is the same content in a
     # REGULAR file, which must still fire.
-    case("⛔ a symlinked document is refused, not read through to its target",
-         lambda: _symlink_witness() == ("CANNOT RUN", 1))
+    case("⛔ a symlinked DOCUMENT is refused; a regular one and a cited code symlink are not",
+         lambda: _symlink_witness() == ("CANNOT RUN", 1, 1))
     # ⛔ r4 M1 — a document PROMOTED into scope has never been checked, so it is not "unchanged".
     # The fourth element is the in-scope control, where adding nothing remains correct.
     case("⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not",

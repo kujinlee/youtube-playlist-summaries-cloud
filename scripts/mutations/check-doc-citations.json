@@ -121,8 +121,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "\"diff\", \"--name-status\", \"-z\", \"-M\", base",
-        "\"diff\", \"--name-status\", \"-M\", base"
+        "\"--name-status\", \"-z\", \"-M\"",
+        "\"--name-status\", \"-M\""
       ]
     ],
     "expect": [
@@ -147,8 +147,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "    r = subprocess.run([\"git\", \"-C\", str(root), \"--literal-pathspecs\",\n                        \"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n",
-        "    r = subprocess.run([\"git\", \"-C\", str(root),\n                        \"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n"
+        "str(root), \"--literal-pathspecs\",\n                        \"diff\"",
+        "str(root),\n                        \"diff\""
       ]
     ],
     "expect": [
@@ -212,8 +212,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "    if not added:\n        return []\n",
-        "    if False:\n        return []\n"
+        "    if not added:\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
@@ -262,29 +262,29 @@
     ]
   },
   {
-    "name": "⛔ r4 H1 — the document is read with Python's line rule (`splitlines()`) instead of git's, so any of seven characters shifts every later line number and `doc_lines[n-1]` is not the line git numbered. A FAIL-OPEN and a false positive from one call",
+    "name": "⛔ r4 H1 — the document is split with Python's line rule (`splitlines()`), which breaks on seven characters git does not, so every later line number shifts and `doc_lines[n-1]` is not the line git numbered",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "        return target.read_text(encoding=\"utf-8\", errors=\"replace\").split(\"\\n\")\n",
-        "        return target.read_text(encoding=\"utf-8\", errors=\"replace\").splitlines()\n"
+        "        return raw.split(\"\\n\")\n",
+        "        return raw.splitlines()\n"
       ]
     ],
     "expect": [
-      "⛔ a form feed does not shift the document's line numbering away from git's"
+      "⛔ neither a form feed NOR a lone CR shifts the line numbering away from git's"
     ]
   },
   {
-    "name": "⛔ r4 H2 — the refusal on a hunkless diff carrying unexplained lines is removed, so a scoped document git calls BINARY (one NUL byte, or a one-line `docs/** -diff` anybody can commit) reports OK over a drifted citation",
+    "name": "⛔ r4 H2 — the allow-list refusal on a hunkless diff is removed. ⟳ r4-codex: the BINARY routes it was filed for are now caught by `shows_no_content` first, so this clause owns exactly one shape — a hunkless diff with NO `index` line, which is what a replaced diff produces when `--no-ext-diff` is absent. The sweep found it surviving",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "    if not out and unexplained:\n",
+        "    if hunkless and unexplained:\n",
         "    if False and unexplained:\n"
       ]
     ],
     "expect": [
-      "⛔ a document git reports as binary is CANNOT RUN, and the same bytes still fire"
+      "⛔ a hunkless diff carrying a line this rule does not understand RAISES"
     ]
   },
   {
@@ -292,12 +292,12 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "        if target.is_symlink():\n",
-        "        if False:\n"
+        "    if (root / path).is_symlink():\n",
+        "    if False:\n"
       ]
     ],
     "expect": [
-      "⛔ a symlinked document is refused, not read through to its target"
+      "⛔ a symlinked DOCUMENT is refused; a regular one and a cited code symlink are not"
     ]
   },
   {
@@ -331,8 +331,8 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "\"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths]",
-        "\"diff\", \"--no-ext-diff\", \"-M\", base, \"--\", *paths]"
+        "\"--no-color\", \"--unified=0\", \"-M\"",
+        "\"--no-color\", \"-M\""
       ]
     ],
     "expect": [
@@ -422,12 +422,90 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "\"diff\", \"--no-ext-diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n",
-        "\"diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],\n"
+        "\"--no-ext-diff\", \"--no-color\"",
+        "\"--no-color\""
       ]
     ],
     "expect": [
       "⛔ a configured external diff driver cannot silence the guard"
+    ]
+  },
+  {
+    "name": "⛔ r4-codex M1 — the hunkless refusal keys on an empty ADDED SET instead of on whether a hunk header was SEEN, so a deletion-only edit (a real header that adds nothing) returns rc=2 and the gate red-lines ordinary commits — the false-refusal direction backlog #56 measured as fatal",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    hunkless = not saw_hunk\n",
+        "    hunkless = not out\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a deletion-only edit is silent, not CANNOT RUN"
+    ]
+  },
+  {
+    "name": "⛔ r4-codex M3 — `--no-color` is dropped from the per-file diff, so with `color.ui=always` the allow-list sees git's ANSI decoration as output it does not understand and an ordinary citation patch returns rc=2",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "\"--no-ext-diff\", \"--no-color\", \"--unified=0\"",
+        "\"--no-ext-diff\", \"--unified=0\""
+      ]
+    ],
+    "expect": [
+      "⛔ forced git colour does not turn an ordinary patch into CANNOT RUN"
+    ]
+  },
+  {
+    "name": "⛔ r4-codex M2 — the symlink refusal is moved back into the shared reader, where it also rejects an ordinary CITED code symlink: git numbers the document there, so following the cited link disagrees with nothing and the refusal is false",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not target.is_file():\n            return None\n",
+        "        if target.is_symlink():\n            raise RuntimeError(f\"{path} is a symlink\")\n        if not target.is_file():\n            return None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a symlinked DOCUMENT is refused; a regular one and a cited code symlink are not"
+    ]
+  },
+  {
+    "name": "⛔ r4-codex H2 — the document is read with `read_text()`, whose UNIVERSAL NEWLINES translate a lone `\\r` to `\\n` before any split can help, so git counts two lines where the reader counts three. This is the half of the H1 fix I shipped missing, and the form-feed witness passed over it",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        raw = target.read_bytes().decode(\"utf-8\", errors=\"replace\")\n",
+        "        raw = target.read_text(encoding=\"utf-8\", errors=\"replace\")\n"
+      ]
+    ],
+    "expect": [
+      "⛔ neither a form feed NOR a lone CR shifts the line numbering away from git's"
+    ]
+  },
+  {
+    "name": "⛔ r4-codex H1 route 4 — the no-content refusal is removed, so a `textconv` driver that masks the cited line makes git emit headers only (every one of them in the allow-list) and the guard reports OK over a drifted citation",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if shows_no_content(diff_text):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a re-encoding or masking attribute is CANNOT RUN, while empty and plain still behave"
+    ]
+  },
+  {
+    "name": "⛔ r4-codex H1 route 5 — the NUL refusal is removed, so `working-tree-encoding=UTF-16` leaves the reader matching citations against mojibake while git's hunk numbers are correct",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if \"\\x00\" in raw:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a re-encoding or masking attribute is CANNOT RUN, while empty and plain still behave"
     ]
   }
 ]

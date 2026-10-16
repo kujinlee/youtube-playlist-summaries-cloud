@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 33,
+    "scripts/check-doc-citations.py": 39,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5023,7 +5023,20 @@ def _self_test() -> int:
     # and both halves of each pair are separately load-bearing; written on one line, one of the two
     # would have gone unmeasured. The harness refused the collision rather than letting it pass.
     # ⚠ 1452 is the GUARD'S OWN FIGURE, read from `got 1452 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1452)
+    # ⟳ 2026-10-15, backlog #49 ROUND 4 CODEX FOLD: 1452 -> 1458, `check-doc-citations.py` 33 -> 39.
+    # ⛔ THREE OF THAT HALF'S FIVE FINDINGS WERE REGRESSIONS THE PREVIOUS FOLD SHIPPED, all three in
+    # the FALSE-REFUSAL direction backlog #56 measured as fatal: a deletion-only edit returned rc=2
+    # (the refusal keyed on an empty added set rather than on whether a hunk header was seen),
+    # `color.ui=always` returned rc=2, and the symlink refusal sat in the shared reader where it
+    # also rejected an ordinary CITED code symlink. Six entries: those three, the universal-newline
+    # half of the line-rule fix that the form-feed witness passed over, and the two remaining seam
+    # routes (a textconv driver that masks the cited line; `working-tree-encoding`).
+    # ⚠ THREE MORE CLAUSES WERE SPLIT ONTO SEPARATE LINES for the same reason as last time —
+    # `hunkless` from its refusal, `raw` from its split, and five whole-line git-invocation anchors
+    # replaced by MINIMAL ones, because adding a flag to those lines has now orphaned anchors FIVE
+    # times.
+    # ⚠ 1458 is the GUARD'S OWN FIGURE, read from `got 1458 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1458)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
