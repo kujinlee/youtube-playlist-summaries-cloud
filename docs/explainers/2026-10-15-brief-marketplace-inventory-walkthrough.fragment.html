@@ -462,6 +462,81 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 a component that cannot be assessed is <code>NEEDS-WORK</code> whose named defect is <em>“no way to
 assess it”</em>.</p>
 
+<div class="box warn">
+  <span class="lbl">Your question, answered — “this is a contradiction. what is reasonable answer? adding CANNOT-ASSESS?”</span>
+
+  <p><strong>Yes, it is a real contradiction, and you found it in one read.</strong> The rule bans
+  “unknown” and then defines a bucket that <em>is</em> unknown wearing a different label. It does not
+  remove the state; it renames it — and renaming it <code>NEEDS-WORK</code> costs something real,
+  because §7 turns every <code>NEEDS-WORK</code> into a backlog row. <strong>So a component with no
+  defect generates a filed defect.</strong> The round-1 review hit exactly that with
+  <code>page_chrome.py</code>: zero project vocabulary, a self-test, one shipping-only import — and no
+  command-line interface at all, so a stranger never invokes it directly.</p>
+
+  <p><strong>But I would not add a fourth verdict, and here is the distinction that decides it.</strong>
+  Two different things are being called “unknown”:</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Which unknown</th><th>What it really is</th><th>Is <code>NEEDS-WORK</code> right?</th></tr>
+    <tr>
+      <td><strong>“We have not assessed it yet”</strong></td>
+      <td>A temporary state of <em>our process</em>. It goes away by doing work.</td>
+      <td><strong>Yes.</strong> “No way to assess it” genuinely is work to be done, and this is the shrug the original rule was built to stop.</td>
+    </tr>
+    <tr>
+      <td><strong>“This cannot be assessed by this method”</strong></td>
+      <td>A permanent property of the component <em>paired with</em> the method. No amount of work changes it.</td>
+      <td><strong>No.</strong> Filing it as a defect blames the component for a limit of the test.</td>
+    </tr>
+  </table>
+  </div>
+
+  <p><strong>What the round-1 fold already did to the narrow case.</strong> Every component now
+  carries a <strong>role</strong> — <code>entry-point</code>, <code>library</code> or
+  <code>data</code> — and a <code>library</code> <em>inherits</em> its support verdict from the
+  entry-points that import it. <code>page_chrome.py</code> is a library, so it is no longer
+  unassessable and no longer generates a phantom row. <strong>That removes most of the population
+  your question is about.</strong></p>
+
+  <p><strong>What is left is the part I deliberately did not decide for you.</strong> After the role
+  fix, the only components that still cannot be assessed for support are entry-points the install
+  experiment never reaches — which is <em>all of</em> efforts (1) and (2), because §6's experiment
+  covers the comprehensibility suite only. <strong>So your question and the one open question in this
+  spec are the same gap:</strong> the document has no way to say <em>“judged, but without the hard
+  evidence”</em>.</p>
+
+  <p><strong>My recommendation: do not add a value to the verdict axis — split the axes.</strong>
+  Keep three verdicts, always decisive, and record the strength of the evidence separately:</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Verdict (unchanged)</th><th>×</th><th>Evidence grade (new)</th></tr>
+    <tr><td rowspan="4"><code>SHIP</code> · <code>NEEDS-WORK</code> · <code>DON'T-SHIP</code></td><td rowspan="4">×</td><td><code>measured</code> — the install experiment ran on it</td></tr>
+    <tr><td><code>inherited</code> — a library, passing via its entry-points</td></tr>
+    <tr><td><code>argued</code> — C1–C3 plus reasoning, no experiment</td></tr>
+    <tr><td><code>none</code> — nothing was established</td></tr>
+  </table>
+  </div>
+
+  <p><strong>Why this beats <code>CANNOT-ASSESS</code>, in two points.</strong> First, a fourth
+  verdict re-opens the escape hatch the three-verdict rule exists to close — “unknown” becomes
+  available again, as a verdict, which is what you were being protected from. Second, and more
+  important: <code>CANNOT-ASSESS</code> still cannot tell <em>“fit to publish, and we proved it”</em>
+  from <em>“fit to publish, and we argued it”</em>. <strong>That second distinction is the actual risk
+  in this milestone</strong>, because two of the three efforts can only ever be argued. One mechanism
+  answers both questions; a fourth verdict answers neither.</p>
+
+  <p class="note">⚠ <strong>The honest cost, because this is a trade and not a free win.</strong>
+  Every component now needs two fields read together, and <code>SHIP / argued</code> can be
+  mis-skimmed as plain approval by someone who reads only the verdict column — which is a genuine
+  way for this to fail. If that worries you more than the labelling does, the cleaner answer is the
+  stricter one: <strong>require <code>measured</code> or <code>inherited</code> evidence for
+  <code>SHIP</code></strong>, which caps efforts (1) and (2) at <code>NEEDS-WORK</code> until they get
+  their own experiment. That is a real option, not a straw man, and it is the other half of the
+  question waiting for you.</p>
+</div>
+
 <hr class="hr">
 
 <h2><span class="n">5</span>Where this plan is weakest</h2>
