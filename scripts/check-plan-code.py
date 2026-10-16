@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 24,
+    "scripts/check-doc-citations.py": 29,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5057,8 +5057,25 @@ def _self_test() -> int:
     # post-image, and the promoted-document pre-image) and ONE retired as SUPERSEDED rather than
     # orphaned — r4 M1's pathspec mutation measured the same clause the promoted-document entry now
     # measures, and two entries on one clause is not coverage.
-    # ⚠ 1443 is the GUARD'S OWN FIGURE, read from `got 1443 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1443)
+    # ⟳ 2026-10-16, ROUND 5's CLAUDE HALF: 1443 -> 1448, that file 24 -> 29. ⛔ FIVE ENTRIES ARE
+    # RESTORED, NOT ADDED, and the reason is the most useful thing this slice learned. I retired
+    # them during #291 by asking "does this anchor still bind?" — a mechanical question — and
+    # treated a dead anchor as a dead SUBJECT. That holds when code is deleted and fails when code
+    # MOVES, which is what a rebuild does. The properties had only changed SIDES: #291 stopped
+    # comparing line numbers across the DOCUMENT boundary, but a citation still names a line in a
+    # CITED FILE that `_reader` still numbers, so `split("\n")` versus `splitlines()`,
+    # `read_bytes().decode()` versus `read_text()`, and that reader's NUL refusal were all still
+    # load-bearing. Measured: each left the suite at 67/67 while turning rc=1 into rc=0.
+    # ⚠ main() HAS TWO EXCEPTION ARMS and the review named one. Measured separately, the FIRST
+    # arm's OSError and the SECOND arm's ValueError were both unwitnessed — the fifth entry was
+    # found while confirming the finding, not by it, and its clause is live because `int()` raises
+    # ValueError on an absurd line number.
+    # ⛔ AND THE RETIREMENT ARITHMETIC IN THE #291 ENTRY ABOVE IS WRONG BY TWO IN BOTH DIRECTIONS,
+    # which round 5 caught (M8): it was 24 retired and 9 added, not 22 and 7. The error CANCELS, so
+    # every total in that note is right and the composition is not — which is exactly how a wrong
+    # number survives a check that only re-adds the totals.
+    # ⚠ 1448 is the GUARD'S OWN FIGURE, read from `got 1448 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1448)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

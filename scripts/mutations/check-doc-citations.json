@@ -310,5 +310,83 @@
     "expect": [
       "⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not"
     ]
+  },
+  {
+    "name": "⛔ r5 H1 — the CITED file is split with Python's line rule (`splitlines()`), which breaks on seven characters git does not, so a citation resolves to the WRONG line of the file it names. ⟳ RESTORED: retired during #291 because its anchor had moved, while the property had only changed SIDES",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        return raw.split(\"\\n\")\n",
+        "        return raw.splitlines()\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed or lone CR in the CITED file does not shift its line numbering"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — the CITED file is read with `read_text()`, whose universal newlines translate a lone `\\r` before any split can help. ⟳ RESTORED for the same reason as its sibling",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        raw = target.read_bytes().decode(\"utf-8\", errors=\"replace\")\n",
+        "        raw = target.read_text(encoding=\"utf-8\", errors=\"replace\")\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed or lone CR in the CITED file does not shift its line numbering"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — `_reader`'s NUL refusal is removed, so a CITED file git does not treat as text has its lines counted through mojibake. ⟳ RESTORED: #291 moved the DOCUMENT's NUL check into `blob`, and retiring this one with it confused two separate readers",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if \"\\x00\" in raw:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a form feed or lone CR in the CITED file does not shift its line numbering"
+    ]
+  },
+  {
+    "name": "⛔ r5 H1 — main()'s FIRST exception arm stops catching OSError, so git being unreachable as a PROCESS escapes as a traceback instead of CANNOT RUN. main() has two arms and only the second was witnessed",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    except (RuntimeError, OSError) as exc:\n",
+        "    except (RuntimeError,) as exc:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 when the file list itself raises OSError, never 0"
+    ]
+  },
+  {
+    "name": "⛔ r5, FOUND WHILE CONFIRMING H1 AND NOT IN IT — main()'s second arm stops catching ValueError, so a line number too large for `int()` escapes as a traceback. That clause is live and was unwitnessed",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    except (RuntimeError, OSError, ValueError) as exc:\n",
+        "    except (RuntimeError, OSError) as exc:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ main() returns 2 on a line number too large to parse, never a traceback"
+    ]
+  },
+  {
+    "name": "⛔ r5 H2 — the unmerged check is removed, so a conflicted document (index stages 1/2/3, nothing at stage 0) reads as DELETED and its drifted citations pass",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if ref_path.startswith(\":\"):\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a conflicted document is CANNOT RUN, and the same content resolved still fires"
+    ]
   }
 ]

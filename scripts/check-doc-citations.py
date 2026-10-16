@@ -162,7 +162,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 64 cases. Most are over DOCUMENTS this file builds with an injected
+  --self-test  runs 70 cases. Most are over DOCUMENTS this file builds with an injected
                resolver, so the rule needs no repository; the hunk-header reader is exercised on
                diff texts, and four cases build a throwaway git repository because the properties
                they witness (NUL splitting, literal pathspecs, rename pairing) are git's.
@@ -339,6 +339,22 @@ def blob(ref_path: str, root: pathlib.Path) -> "str | None":
         # ⚠ The first version relied on `changed_files` having validated the base first. That was
         # TRUE of the pipeline and still wrong to depend on — the witness called `blob` directly and
         # got None for `nosuchref:…`, which is how this was found.
+        # ⛔ r5 H2 — A PATH THAT IS UNMERGED IS NOT A PATH THAT IS GONE. During a conflicted merge
+        # the index holds stages 1/2/3 and nothing at stage 0, so `:path` does not resolve and this
+        # returned None — which the caller reads as "the document was deleted" and passes. Measured:
+        # rc=0 over a conflicted scoped document carrying a drifted citation, against rc=1 for the
+        # same bytes one `git add` later. A THIRD answer collapsing into one of the two this
+        # function already distinguishes.
+        # ⚠ Both git answers are rc=128 with different prose, so the question is asked STRUCTURALLY:
+        # `ls-files -u` lists unmerged entries and prints nothing when there are none.
+        if ref_path.startswith(":"):
+            unmerged = subprocess.run(
+                ["git", "-C", str(root), "ls-files", "-u", "--", ref_path[1:]],
+                capture_output=True, text=True)
+            if unmerged.returncode == 0 and unmerged.stdout.strip():
+                raise RuntimeError(
+                    f"{ref_path[1:]} is UNMERGED — the index holds conflict stages and nothing at "
+                    f"stage 0, so its citations cannot be compared. Resolve the conflict first")
         ref = ref_path.split(":", 1)[0]
         if ref:
             ok = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", ref],
@@ -808,8 +824,112 @@ def _staged_witness() -> "tuple[int, int]":
     return tuple(out)
 
 
+def _cited_file_line_rule_witness() -> "tuple[int, int, int, int, object]":
+    """The CITED file's line numbering must follow git's rule, not Python's.
+
+    `(ff, ff_control, cr, cr_control, nul)` -> `(1, 1, 1, 1, "CANNOT RUN")`.
+
+    ⛔ r5 H1, AND THE REASON FOUR ENTRIES WERE WRONGLY RETIRED. #291 stopped comparing line numbers
+    across the DOCUMENT boundary, so I retired the entries that defended `_reader`'s split rule —
+    checking whether each ANCHOR still bound, when the question was whether each PROPERTY still
+    existed. They differ exactly where code moves. The property survives on the other half of the
+    comparison: a citation names a line IN A CITED FILE, and `_reader` numbers that file. A form
+    feed or a lone `\r` in `lib/a.ts` shifts its numbering, so `:2` resolves to the wrong line and
+    a blank line reads as populated. Measured: `splitlines()` and `read_text()` each returned
+    (0, 1, 0, 1) — missed in the fixture, found in the control, which is a FAIL-OPEN.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    # line 2 of the cited file must be BLANK for the citation to be a finding. With Python's rule
+    # the separator splits line 1 in two, so the blank moves to line 3 and `:2` reads as populated.
+    for cited_bytes in (b"a\x0cb\n\nthree\n", b"a-b\n\nthree\n",
+                        b"a\rb\n\nthree\n", b"a_b\n\nthree\n", b"a\x00b\n\nthree\n"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_bytes(cited_bytes)
+            (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            (root / "docs" / "x.md").write_text("see `lib/a.ts:2` here\n", encoding="utf-8")
+            run("add", "-A")
+            try:
+                out.append(len(findings_for("docs/x.md", None, "HEAD", root,
+                                            tracked_files(root), _reader(root), blob)))
+            except (RuntimeError, OSError, ValueError):
+                out.append("CANNOT RUN")
+    return tuple(out)
+
+
+def _unmerged_witness() -> "tuple[object, int]":
+    """(a conflicted scoped document, the same content resolved and staged) -> `("CANNOT RUN", 1)`.
+
+    ⛔ r5 H2. A conflicted merge leaves the index holding stages 1/2/3 and nothing at stage 0, so
+    `:path` does not resolve — and that read as "the document was deleted", which passes. Measured
+    rc=0 before this refusal, against rc=1 for the same bytes one `git add` later. The pair is the
+    assertion: the second element proves the refusal is not simply refusing everything.
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for resolve_it in (False, True):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str, check: bool = True):
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if check and r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+                return r
+
+            run("init", "-q", "--template=", "-b", "main")
+            (root / "docs").mkdir(); (root / "lib").mkdir()
+            (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+            (root / "docs" / "x.md").write_text("base\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            run("checkout", "-q", "-b", "side")
+            (root / "docs" / "x.md").write_text("side `lib/a.ts:2`\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "side")
+            run("checkout", "-q", "main")
+            (root / "docs" / "x.md").write_text("main text\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "main")
+            run("merge", "side", check=False)
+            if resolve_it:
+                (root / "docs" / "x.md").write_text("resolved `lib/a.ts:2`\n", encoding="utf-8")
+                run("add", "-A")
+            try:
+                found = 0
+                for path, source in changed_files("HEAD", root):
+                    if in_scope(path):
+                        found += len(findings_for(path, source, "HEAD", root,
+                                                  tracked_files(root), _reader(root), blob))
+                out.append(found)
+            except (RuntimeError, OSError, ValueError):
+                out.append("CANNOT RUN")
+    return tuple(out)
+
+
 def self_test() -> int:
-    """64 cases. The count is declared in the module docstring and verified by running this."""
+    """70 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -942,6 +1062,15 @@ def self_test() -> int:
     # ⛔ r4 L1 — a COUNT cannot see an ordering: swapping destination and source left the suite
     # green. This reads the pair.
     # ── #291: what git is asked, and what its answers mean ─────────────────────────────────────
+    # ⛔ r5 H1 — the CITED file's numbering, which four retired entries used to defend. The pairs are
+    # the assertion: each fixture and its one-character control must AGREE, and the fifth element is
+    # the NUL refusal. Measured before this case existed: `splitlines()` and `read_text()` each gave
+    # (0, 1, 0, 1) — a fail-open with a green suite.
+    # ⛔ r5 H2 — a THIRD git answer that was collapsing into one of the two `blob` distinguishes.
+    case("⛔ a conflicted document is CANNOT RUN, and the same content resolved still fires",
+         lambda: _unmerged_witness() == ("CANNOT RUN", 1))
+    case("⛔ a form feed or lone CR in the CITED file does not shift its line numbering",
+         lambda: _cited_file_line_rule_witness() == (1, 1, 1, 1, "CANNOT RUN"))
     case("⛔ a missing pre-image is None while a broken ref or root is CANNOT RUN — never confused",
          lambda: _blob_witness() == (None, "see `lib/a.ts:2` here\n",
                                      "CANNOT RUN", "CANNOT RUN", "CANNOT RUN"))
@@ -1051,7 +1180,8 @@ def self_test() -> int:
     seen: dict = {}
 
     def drive(changed, pre, post, reader, git_ok: bool = True, argv=None,
-              root=pathlib.Path("/nonexistent"), blob_fails: bool = False) -> int:
+              root=pathlib.Path("/nonexistent"), blob_fails: bool = False,
+              oserror_on_list: bool = False) -> int:
         """`main()` over a constructed world, to every exit code (ADR-0014).
 
         ⟳ #291: the world is now BLOBS, not a diff — `pre` and `post` are the document's text
@@ -1062,6 +1192,9 @@ def self_test() -> int:
             seen["base"], seen["root"] = base, r
             if not git_ok:
                 raise RuntimeError("git diff --name-status origin/nope failed: unknown revision")
+            if oserror_on_list:
+                # the FIRST arm's OSError: git is unreachable as a process, not as a repository
+                raise OSError("[Errno 2] No such file or directory: 'git'")
             return tuple((c, None) for c in changed)
 
         def fetch_blob(ref_path, r):
@@ -1115,6 +1248,14 @@ def self_test() -> int:
     # "git adds lines to a document that cannot be read". There is no hunk header to misparse and no
     # document read from the filesystem. What replaces them is the ONE remaining CANNOT RUN: git
     # itself failing, which must never read as "this document gained no citations".
+    # ⛔ r5 H1 — main() has TWO exception arms and the review named one. Measured separately: the
+    # FIRST arm's OSError and the SECOND arm's ValueError were both unwitnessed, and the ValueError
+    # clause is live — `int()` on an absurd line number raises it (the review's own L9).
+    case("⛔ main() returns 2 when the file list itself raises OSError, never 0",
+         lambda: drive(("docs/x.md",), "", "`lib/a.ts:2`", read, oserror_on_list=True) == 2)
+    case("⛔ main() returns 2 on a line number too large to parse, never a traceback",
+         lambda: drive(("docs/x.md",), "", "`lib/a.ts:" + "9" * 4400 + "`", read) == 2)
+
     case("⛔ main() returns 2 when reading a blob fails, never 0",
          lambda: drive(("docs/x.md",), "", "`lib/a.ts:2`", read, blob_fails=True) == 2)
     # ⛔ check-fixture-variation.py, 11 findings on this file: a parameter every call site passes
