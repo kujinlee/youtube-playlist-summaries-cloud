@@ -227,3 +227,35 @@ a stall still look alike.
 - Arm the `Monitor` at the moment the background job is dispatched, in the same message.
 - A banner is owed for a step that is PAUSED too — `⏸ PAUSED on <what>` with the waiting line —
   because from the user's side a pause and a stall are the same thing.
+
+## ⏱ EVERY BANNER CARRIES A TIMESTAMP — asked 2026-10-16, and the REASON sets the format
+
+The owner: *"can we add timestamp for each banners. this is to gauge cadence of development"*.
+
+⛔ **THE FORMAT IS `[mm-dd hh:mm]`, PREPENDED. It changed twice inside twenty minutes, so take it
+from here and do not re-derive it:**
+
+```
+## ▶ [10-16 06:40] STEP 4 of 7 — Re-measure the firing rate
+▸ [10-16 06:52] 4.2 — the living corpus re-measured
+```
+
+- Square brackets, prepended, `mm-dd hh:mm`. No timezone, no seconds, no `·` separator.
+- The DATE is part of it: a session that crosses midnight makes a bare `hh:mm` ambiguous.
+- Sub-step markers take it too.
+
+⚠ **The history, because the lesson is not the format.** I first prepended it with a `·` separator
+and a timezone, reasoning it should be scannable down the left edge. They asked for it APPENDED in
+parentheses. Twenty minutes later: *"changed mind. prepend the timestamp. format [mm-dd hh:mm]"*.
+Three states in one hour on one cosmetic detail — so **state the current format and stop arguing for
+a version of it**, and when a presentation detail changes again, change it without re-explaining the
+previous one. My paragraph defending why prepending suited MY scanning was the wrong kind of
+content for a preference that is theirs to set.  exactly what a single step-start time hides.
+- ⏳ waiting lines ALREADY require a timestamp with the START, not just a duration
+  ([[waiting-lines-carry-a-timestamp]]) — this extends the same rule to every banner.
+
+⚠ **Chat-level only, by choice.** `scripts/begin-plan.py --tick` does NOT stamp a time into the plan
+file, so the durable cadence record does not exist yet. Offered rather than built: that script is
+mutation-covered and guarded, so stamping each tick is a change with its own gates, and the stated
+purpose — gauging cadence while reading — is served by the banner. If they ask for the persistent
+version, it is a real slice, not a one-liner.

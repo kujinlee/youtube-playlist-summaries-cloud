@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 39,
+    "scripts/check-doc-citations.py": 24,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5036,7 +5036,29 @@ def _self_test() -> int:
     # replaced by MINIMAL ones, because adding a flag to those lines has now orphaned anchors FIVE
     # times.
     # ⚠ 1458 is the GUARD'S OWN FIGURE, read from `got 1458 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1458)
+    # ⟳⟳ 2026-10-16, backlog #291 — THE SUM FALLS, 1458 -> 1437, and `check-doc-citations.py` goes
+    # 39 -> 18. This is the SANCTIONED kind of fall and the second one this file has recorded (the
+    # first was retiring plan mode): TWENTY-ONE entries are RETIRED WITH THEIR SUBJECTS, because the
+    # subjects no longer exist. The guard stopped comparing LINE NUMBERS across the diff/document
+    # boundary and now compares citation STRINGS between two blobs git itself supplies, so the hunk
+    # grammar, the `--unified=0` dependency, the allow-list and no-content refusals, the symlink
+    # refusal, the line-splitting rule, the `--no-ext-diff`/`--no-color` flags on a per-file diff,
+    # and the nine witnesses built to exercise them are all gone with it.
+    # ⛔ WHY THE SUBJECT WENT: five routes were found through that boundary — Python's line rule
+    # against git's, a document git calls binary, a symlink, a `textconv` driver and
+    # `working-tree-encoding` — three of them AFTER the redesign meant to close the class, and the
+    # patches for them shipped three FALSE REFUSALS, one of which refused ordinary deletion commits.
+    # The owner chose the rebuild over a sixth patch on 2026-10-16.
+    # ⚠ A FALL IS NOT A LICENCE: the 18 that remain all bind and all kill via the case each names,
+    # and the new clauses get their own entries in the same slice rather than later.
+    # ⟳ SAME SLICE, after the new clauses got their entries: 1437 -> 1443, that file 18 -> 24.
+    # SEVEN added for the rebuilt core (the multiset, the direction of the difference, the
+    # subtraction itself, the ref-versus-missing-path distinction, the NUL refusal, the index as the
+    # post-image, and the promoted-document pre-image) and ONE retired as SUPERSEDED rather than
+    # orphaned — r4 M1's pathspec mutation measured the same clause the promoted-document entry now
+    # measures, and two entries on one clause is not coverage.
+    # ⚠ 1443 is the GUARD'S OWN FIGURE, read from `got 1443 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1443)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

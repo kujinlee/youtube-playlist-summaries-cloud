@@ -498,19 +498,22 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # findings: all six parameters are genuinely varied by the suite.
     # ⟳ 2026-10-15, backlog #49. `read` is varied by two cases that differ ONLY in the injected
     # reader at one identical citation — this guard refused the suite until they existed.
-    # ⟳ 2026-10-15 — 3 KEYS BECOME 23, and `violations.diff_text` is RETIRED WITH ITS SUBJECT.
-    # The r4 redesign of that guard deleted the parameter: `violations` no longer receives diff
-    # text at all, because reading content out of a diff produced a fail-open High in four
-    # consecutive rounds. It is not a narrowing — the function now takes `added` and `doc_lines`,
-    # both pinned below, and the suite's call sites went from 3 visible to 26 once a `*doc(...)`
-    # splat helper was removed (a starred argument makes a call site invisible to `analyse`).
+    # ⟳ 2026-10-15 — 3 KEYS BECAME 23 when that guard's `violations` stopped taking diff text.
+    # ⟳⟳ 2026-10-16, backlog #291 — 23 BECOME 25, and FOUR ARE RETIRED WITH THEIR SUBJECTS:
+    # `added_lines.diff_text` and `violations.doc_lines` (the guard no longer parses a diff or
+    # indexes a document's lines), and `findings_for.fetch_file_diff` / `main.fetch_file_diff` (the
+    # per-file diff is gone; both images come from `git cat-file`). Six arrive with the new core:
+    # `added_citations.pre`/`.post`, `blob.ref_path`/`.root`, `findings_for.fetch_blob`,
+    # `main.fetch_blob`. ⚠ This guard REFUSED the stale `main.fetch_file_diff` exemption as DEAD in
+    # the same run, which is its own rule about exemptions working on its own population.
     'check-doc-citations.py': (
-        'added_lines.diff_text', 'changed_files.base', 'changed_files.root', 'findings_for.base',
-        'findings_for.fetch_file_diff', 'findings_for.path', 'findings_for.read',
-        'findings_for.root', 'findings_for.source', 'findings_for.tracked', 'in_scope.path',
-        'main.argv', 'main.fetch_changed', 'main.fetch_file_diff', 'main.fetch_tracked',
-        'main.make_reader', 'main.root', 'tracked_files.root', 'violations.added',
-        'violations.doc_lines', 'violations.path', 'violations.read', 'violations.tracked',),
+        'added_citations.post', 'added_citations.pre', 'blob.ref_path', 'blob.root',
+        'changed_files.base', 'changed_files.root', 'findings_for.base',
+        'findings_for.fetch_blob', 'findings_for.path', 'findings_for.read', 'findings_for.root',
+        'findings_for.source', 'findings_for.tracked', 'in_scope.path', 'main.argv',
+        'main.fetch_blob', 'main.fetch_changed', 'main.fetch_tracked', 'main.make_reader',
+        'main.root', 'tracked_files.root', 'violations.added', 'violations.path',
+        'violations.read', 'violations.tracked',),
     'check-closing-table.py': (
         'closing_acts_of.records',
         'coalesce_injected.make',
@@ -967,12 +970,11 @@ EXEMPT: dict[str, str] = {
                          "injected reader matters — the hunk-header case raises inside "
                          "`added_lines`, and the unreadable-document case raises because the real "
                          "`_reader` also returns None for a path that does not exist",
-    "check-doc-citations.py:main.fetch_file_diff": "one driver by design; measured — substituting "
-                         "`file_diff` reddens 6 cases, including 'main() returns 1 when a citation "
-                         "has drifted'. ⛔ NOT 'main() returns 2 when a hunk header does not "
-                         "parse', which an earlier version of this row claimed: the real "
-                         "`file_diff` fails against the fixture's /nonexistent root, which is ALSO "
-                         "rc=2, so that case passes for a different reason than the one it names",
+    "check-doc-citations.py:main.fetch_blob": "one driver by design; measured 2026-10-16 — "
+                         "substituting `blob` reddens 6 cases, including 'main() returns 1 when a "
+                         "citation has drifted'. ⟳ REPLACES the dead `main.fetch_file_diff` row: "
+                         "#291 deleted that parameter with the diff parsing it served, and this "
+                         "guard refused the stale exemption, which is its own rule working",
     "check-plan-code.py:run_suite_parts.d": "the staging directory is the fixture's own temp dir; what varies "
                          "between its call sites is `name`, which is the parameter that "
                          "selects the suite. A second directory would test the tempfile "

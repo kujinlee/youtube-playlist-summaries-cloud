@@ -1,31 +1,5 @@
 [
   {
-    "name": "⛔ the blank-line clause is removed, so a citation into an empty line passes — the shape SIX of the six measured firings had, and the `:66` instance row 49 names",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "            if not lines[raw_line - 1].strip():\n",
-        "            if False:\n"
-      ]
-    ],
-    "expect": [
-      "a blank cited line fires"
-    ]
-  },
-  {
-    "name": "the upper bound goes off by one (`>` becomes `>=`), so the LAST line of a file reads as out of range — the attributable form; deleting the bound outright raises IndexError, which is red but names no case",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "            if raw_line < 1 or raw_line > last_line:\n",
-        "            if raw_line < 1 or raw_line >= last_line:\n"
-      ]
-    ],
-    "expect": [
-      "line 3 (last line) is in range"
-    ]
-  },
-  {
     "name": "⛔ the ambiguity branch is removed, so two matching files report as 'no tracked file' — it still fires, but the reader is told the wrong reason",
     "file": "scripts/check-doc-citations.py",
     "edits": [
@@ -134,222 +108,12 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "    paths = [path] if pair_source is None else [path, pair_source]\n",
-        "    paths = [path]\n"
+        "    pre_ref = f\"{base}:{source}\" if pair else f\"{base}:{path}\"\n",
+        "    pre_ref = f\"{base}:{path}\"\n"
       ]
     ],
     "expect": [
       "⛔ a pure rename of a document with a BAD citation adds nothing"
-    ]
-  },
-  {
-    "name": "⛔ r3-codex MEDIUM: `--literal-pathspecs` is dropped from the per-file diff, so a glob-shaped document name over-matches and reports a neighbour's citations under the wrong name",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "str(root), \"--literal-pathspecs\",\n                        \"diff\"",
-        "str(root),\n                        \"diff\""
-      ]
-    ],
-    "expect": [
-      "⛔ a glob-shaped document name does not over-match its neighbours"
-    ]
-  },
-  {
-    "name": "⛔ `added_lines` swallows an unparsable hunk header and returns () — the FAIL-OPEN this redesign was named for, in its new home: no added lines reads as nothing to check",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "            raise ValueError(f\"unparsable hunk header: {line[:80]!r}\")\n",
-        "            continue\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a line that begins @@ and does not parse RAISES, it does not yield nothing"
-    ]
-  },
-  {
-    "name": "⛔ the hunk header is found by SUBSTRING rather than by POSITION, which is the whole structural claim of the redesign — an added line beginning `@@` then reaches the parser",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        if not line.startswith(\"@@\"):\n",
-        "        if \"@@\" not in line:\n"
-      ]
-    ],
-    "expect": [
-      "⛔ an added line beginning `@@` is content, never a header"
-    ]
-  },
-  {
-    "name": "a line number past the end of the document is SKIPPED instead of raising, so a diff and a worktree that disagree are reported as a clean pass",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "            raise RuntimeError(\n                f\"{path}: git reports line {n} as added and the document has {len(doc_lines)} \"\n                f\"lines — the diff and the file are not the same tree\")\n",
-        "            continue\n"
-      ]
-    ],
-    "expect": [
-      "⛔ an added line past the document's end RAISES — the diff and the file disagree"
-    ]
-  },
-  {
-    "name": "a document with added lines that cannot be read yields no findings instead of raising — git says there is new content, the filesystem says there is no file, and this passes",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        raise RuntimeError(\n            f\"{path}: git reports {len(added)} added line(s) and the document cannot be read\")\n",
-        "        return []\n"
-      ]
-    ],
-    "expect": [
-      "findings_for RAISES when git adds lines to a document that cannot be read"
-    ]
-  },
-  {
-    "name": "the empty-added-set short circuit is removed, so a deletion-only or rename-only change reads the whole document and reports its existing citations as new",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "    if not added:\n",
-        "    if False:\n"
-      ]
-    ],
-    "expect": [
-      "...and a deletion-only diff reads the document NOT AT ALL, so it cannot raise"
-    ]
-  },
-  {
-    "name": "⛔ main() stops catching ValueError, so an unparsable hunk header escapes as a traceback instead of CANNOT RUN — rc would be neither 0, 1 nor 2",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "    except (RuntimeError, OSError, ValueError) as exc:\n        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    if found:",
-        "    except (RuntimeError, OSError) as exc:\n        print(f\"CANNOT RUN — {exc}\\n  Treat this as NOT RUN, never as a pass.\", file=sys.stderr)\n        return 2\n\n    if found:"
-      ]
-    ],
-    "expect": [
-      "⛔ main() returns 2 when a hunk header does not parse, never 0"
-    ]
-  },
-  {
-    "name": "⛔ only the FIRST line of every multi-line hunk is examined (`min(count, 1)`), so a paragraph of new citations is checked once and the rest ride in unread",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        out.extend(range(start, start + count))\n",
-        "        out.extend(range(start, start + min(count, 1)))\n"
-      ]
-    ],
-    "expect": [
-      "a count of 3 yields exactly those three lines",
-      "several hunks accumulate"
-    ]
-  },
-  {
-    "name": "a pure DELETION hunk (`+c,0`) is read as adding line c, so removing text makes the guard examine a line the author never touched — measured to redden exactly its two cases",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        count = 1 if m.group(2) is None else int(m.group(2))\n",
-        "        count = max(1, 1 if m.group(2) is None else int(m.group(2)))\n"
-      ]
-    ],
-    "expect": [
-      "a pure DELETION hunk (+c,0) adds nothing",
-      "...and a deletion-only diff reads the document NOT AT ALL, so it cannot raise"
-    ]
-  },
-  {
-    "name": "⛔ r4 H1 — the document is split with Python's line rule (`splitlines()`), which breaks on seven characters git does not, so every later line number shifts and `doc_lines[n-1]` is not the line git numbered",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        return raw.split(\"\\n\")\n",
-        "        return raw.splitlines()\n"
-      ]
-    ],
-    "expect": [
-      "⛔ neither a form feed NOR a lone CR shifts the line numbering away from git's"
-    ]
-  },
-  {
-    "name": "⛔ r4 H2 — the allow-list refusal on a hunkless diff is removed. ⟳ r4-codex: the BINARY routes it was filed for are now caught by `shows_no_content` first, so this clause owns exactly one shape — a hunkless diff with NO `index` line, which is what a replaced diff produces when `--no-ext-diff` is absent. The sweep found it surviving",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "    if hunkless and unexplained:\n",
-        "    if False and unexplained:\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a hunkless diff carrying a line this rule does not understand RAISES"
-    ]
-  },
-  {
-    "name": "⛔ r4 H3 — the symlink refusal is removed, so for `docs/link.md -> target.md` git numbers the link text and the reader numbers the target: a drifted citation in the resolved document is never read, for a brand-new scoped path",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "    if (root / path).is_symlink():\n",
-        "    if False:\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a symlinked DOCUMENT is refused; a regular one and a cited code symlink are not"
-    ]
-  },
-  {
-    "name": "⛔ r4 M1 — the rename source is paired even when it was NEVER in scope, so a document promoted into docs/ from docs/reviews/, from scripts/, or from a .txt reports as unchanged: lines no run has ever examined, and none ever will",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "    pair_source = source if source is not None and in_scope(source) else None\n",
-        "    pair_source = source\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not"
-    ]
-  },
-  {
-    "name": "⛔ r4 M2 — the hunk-header pattern is pinned at its end (`$`), so the function-context text git appends to nearly every real hunk stops parsing and the guard sees no added lines",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "HUNK = re.compile(r\"^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,(\\d+))? @@\")\n",
-        "HUNK = re.compile(r\"^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,(\\d+))? @@$\")\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a hunk header carrying git's function-context suffix still parses"
-    ]
-  },
-  {
-    "name": "⛔ r4 M3 — `--unified=0` is dropped, so at the default -U3 the hunk range spans CONTEXT lines and a citation three lines above an edit is blamed on it: the added-lines-only contract broken by a second route",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "\"--no-color\", \"--unified=0\", \"-M\"",
-        "\"--no-color\", \"-M\""
-      ]
-    ],
-    "expect": [
-      "⛔ ...and `--unified=0` keeps a stale citation three lines above an append out of scope"
-    ]
-  },
-  {
-    "name": "⛔ r4 M7 — the CITED file's upper bound goes off by one, so a citation of the line immediately past the end passes: a file that lost its last line is the commonest drift there is",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "            last_line = len(lines)\n",
-        "            last_line = len(lines) + 1\n"
-      ]
-    ],
-    "expect": [
-      "⛔ the line immediately past the end fires, not only one far past it"
     ]
   },
   {
@@ -418,94 +182,133 @@
     ]
   },
   {
-    "name": "⛔ r4, the coordinator's own High — `--no-ext-diff` is dropped, so `diff.external` or `GIT_EXTERNAL_DIFF` replaces git's output wholesale, no `@@` appears, and the guard reports OK over a drifted citation. The FIFTH fail-open in this family, and the one the redesign did not remove",
+    "name": "⛔ the blank-line clause is removed, so a citation into an empty line passes — the shape SIX of the six measured firings had, and the `:66` instance row 49 names",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "\"--no-ext-diff\", \"--no-color\"",
-        "\"--no-color\""
-      ]
-    ],
-    "expect": [
-      "⛔ a configured external diff driver cannot silence the guard"
-    ]
-  },
-  {
-    "name": "⛔ r4-codex M1 — the hunkless refusal keys on an empty ADDED SET instead of on whether a hunk header was SEEN, so a deletion-only edit (a real header that adds nothing) returns rc=2 and the gate red-lines ordinary commits — the false-refusal direction backlog #56 measured as fatal",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "    hunkless = not saw_hunk\n",
-        "    hunkless = not out\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a deletion-only edit is silent, not CANNOT RUN"
-    ]
-  },
-  {
-    "name": "⛔ r4-codex M3 — `--no-color` is dropped from the per-file diff, so with `color.ui=always` the allow-list sees git's ANSI decoration as output it does not understand and an ordinary citation patch returns rc=2",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "\"--no-ext-diff\", \"--no-color\", \"--unified=0\"",
-        "\"--no-ext-diff\", \"--unified=0\""
-      ]
-    ],
-    "expect": [
-      "⛔ forced git colour does not turn an ordinary patch into CANNOT RUN"
-    ]
-  },
-  {
-    "name": "⛔ r4-codex M2 — the symlink refusal is moved back into the shared reader, where it also rejects an ordinary CITED code symlink: git numbers the document there, so following the cited link disagrees with nothing and the refusal is false",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        if not target.is_file():\n            return None\n",
-        "        if target.is_symlink():\n            raise RuntimeError(f\"{path} is a symlink\")\n        if not target.is_file():\n            return None\n"
-      ]
-    ],
-    "expect": [
-      "⛔ a symlinked DOCUMENT is refused; a regular one and a cited code symlink are not"
-    ]
-  },
-  {
-    "name": "⛔ r4-codex H2 — the document is read with `read_text()`, whose UNIVERSAL NEWLINES translate a lone `\\r` to `\\n` before any split can help, so git counts two lines where the reader counts three. This is the half of the H1 fix I shipped missing, and the form-feed witness passed over it",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        raw = target.read_bytes().decode(\"utf-8\", errors=\"replace\")\n",
-        "        raw = target.read_text(encoding=\"utf-8\", errors=\"replace\")\n"
-      ]
-    ],
-    "expect": [
-      "⛔ neither a form feed NOR a lone CR shifts the line numbering away from git's"
-    ]
-  },
-  {
-    "name": "⛔ r4-codex H1 route 4 — the no-content refusal is removed, so a `textconv` driver that masks the cited line makes git emit headers only (every one of them in the allow-list) and the guard reports OK over a drifted citation",
-    "file": "scripts/check-doc-citations.py",
-    "edits": [
-      [
-        "        if shows_no_content(diff_text):\n",
+        "        if not lines[raw_line - 1].strip():\n",
         "        if False:\n"
       ]
     ],
     "expect": [
-      "⛔ a re-encoding or masking attribute is CANNOT RUN, while empty and plain still behave"
+      "a blank cited line fires"
     ]
   },
   {
-    "name": "⛔ r4-codex H1 route 5 — the NUL refusal is removed, so `working-tree-encoding=UTF-16` leaves the reader matching citations against mojibake while git's hunk numbers are correct",
+    "name": "the upper bound goes off by one (`>` becomes `>=`), so the LAST line of a file reads as out of range — the attributable form; deleting the bound outright raises IndexError",
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "        if \"\\x00\" in raw:\n",
-        "        if False:\n"
+        "        if raw_line < 1 or raw_line > last_line:\n",
+        "        if raw_line < 1 or raw_line >= last_line:\n"
       ]
     ],
     "expect": [
-      "⛔ a re-encoding or masking attribute is CANNOT RUN, while empty and plain still behave"
+      "line 3 (last line) is in range"
+    ]
+  },
+  {
+    "name": "⛔ the CITED file's upper bound goes off by one the OTHER way, so a citation of the line immediately past the end passes: a file that lost its last line is the commonest drift there is",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        last_line = len(lines)\n",
+        "        last_line = len(lines) + 1\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the line immediately past the end fires, not only one far past it"
+    ]
+  },
+  {
+    "name": "⛔ #291 — `citations()` returns a SET instead of a multiset, so writing a citation a second time is invisible: the count that makes 'gained' mean what it says is gone",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        out[key] = out.get(key, 0) + 1\n",
+        "        out[key] = 1\n"
+      ]
+    ],
+    "expect": [
+      "a citation written a SECOND time is gained, so counts matter and not membership"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the difference is taken the WRONG WAY ROUND, so a REMOVED citation is examined and a gained one is not: the guard would audit history and ignore new work",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    pre_counts, post_counts = citations(pre), citations(post)\n",
+        "    pre_counts, post_counts = citations(post), citations(pre)\n"
+      ]
+    ],
+    "expect": [
+      "a citation REMOVED is not gained"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the subtraction is dropped, so EVERY citation in the document is examined on every change: the living-corpus rate (12.4%) instead of the per-commit rate (0.23)",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        for _ in range(n - pre_counts.get(key, 0)):\n",
+        "        for _ in range(n):\n"
+      ]
+    ],
+    "expect": [
+      "a citation merely MOVED within the document is not gained"
+    ]
+  },
+  {
+    "name": "⛔ #291 — an unresolvable REF returns None like a missing path, so one mistyped `--base` makes every pre-image empty, every citation read as gained, and the guard fire on the whole corpus",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "            if ok.returncode != 0:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing pre-image is None while a broken ref or root is CANNOT RUN — never confused"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the NUL refusal in `blob` is removed, so a document git does not treat as text has its citations matched against mojibake",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    if \"\\x00\" in r.stdout:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a missing pre-image is None while a broken ref or root is CANNOT RUN — never confused"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the post-image is read from the BASE instead of the index, so a document's citations are compared with themselves and nothing is ever gained",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    post = fetch_blob(f\":{path}\", root)\n",
+        "    post = fetch_blob(pre_ref, root)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ the guard reads the INDEX, so an unstaged edit is invisible and a staged one fires"
+    ]
+  },
+  {
+    "name": "⛔ #291 — the pre-image of a PROMOTED document is taken from its out-of-scope source, so a document moved into docs/ reports as unchanged: lines no run has examined, and none ever will",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    pair = source is not None and in_scope(source)\n",
+        "    pair = source is not None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a rename from an out-of-scope source IS examined; an in-scope rename still is not"
     ]
   }
 ]
