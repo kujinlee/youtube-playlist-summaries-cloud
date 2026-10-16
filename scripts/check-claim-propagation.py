@@ -124,6 +124,14 @@ LIVE: list[dict] = [
         "sites": [SPEC],
     },
     {
+        "id": "d6-harvest-axis",
+        "token": "harvest",
+        "why": ("D6, settled by the owner 2026-10-16 from the page: a DON'T-SHIP component can "
+                "still yield a transferable practice. Registered at both sites in the same commit "
+                "that adds it, which is the discipline C5 had to learn the hard way"),
+        "sites": [SPEC, PAGE],
+    },
+    {
         "id": "c5-redistributable",
         "token": "Redistributable",
         "why": ("r2 CLAUDE M10: added to the spec and NOT the page — the propagation mechanism "

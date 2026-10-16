@@ -356,6 +356,53 @@ that cannot be assessed is `NEEDS-WORK` whose named defect is *"no way to assess
 now bites only where assessment is genuinely impossible**, because the role table above removes the
 case where it was firing on `library` components by construction.
 
+## 4c. D6 — a component that cannot SHIP can still be HARVESTED, and the two are independent
+
+⭐ **SETTLED 2026-10-16 BY THE OWNER, reading the walkthrough.** Their words, against the page's own
+line *"it is a technique, not a tool, and techniques travel as prose"*:
+
+> *"effort (2) may not be applicable for other repos with different harness set-up. However, some
+> idea may be transferable such as partial mutation (if mutation is widely used method for robust
+> codebase), mechanical inspection before paying expensive gates such as CI, another round of reviews
+> etc, sharding CI process etc. These ideas may be transferred in prose as optional ideas.
+> **We just harvest as much as transferable.**"*
+
+⛔ **SO `DON'T-SHIP` IS NOT THE END OF A COMPONENT'S VALUE, AND THE INVENTORY MUST NOT TREAT IT AS
+ONE.** Every component carries a third field, independent of its verdict and its evidence grade:
+
+| Field | Values | What it records |
+|---|---|---|
+| **harvest** | `practice` · `none` | whether the component yields a transferable *practice* even where no code travels |
+
+**Why this is a real addition rather than a softening.** The verdict axis asks *can a stranger
+install and run this?* The harvest axis asks a different question — *is there something here a
+stranger could DO, in their own repo, with their own tools?* A component can answer no to the first
+and yes to the second, and the original three verdicts had nowhere to put that answer.
+
+⭐ **Effort (2) is the worked example, and it is why this was raised.** Its machinery is this
+repository's CI wiring and almost certainly `DON'T-SHIP` as code. The practices behind it are not
+repo-specific:
+
+- **partial / scoped mutation** rather than a whole-suite sweep — transferable wherever mutation
+  testing is already used;
+- **mechanical inspection before paying an expensive gate** — run the cheap local check before
+  spending a CI cycle or a review round;
+- **sharding an expensive gate** so its wall-clock stops scaling with its subject;
+- ⚠ and the one this milestone itself demonstrates: **a guard beats a convention wherever the
+  convention has already failed once.**
+
+⚠ **THE BOUND, so the harvest axis cannot become a way to call everything a success.** `harvest:
+practice` requires **a named entry written into `docs/portable-practices.md`**, with the measurement
+that earned it. A practice asserted but not written is `harvest: none`. ⛔ **And a harvest NEVER
+upgrades a verdict** — a `DON'T-SHIP / harvest: practice` component is still not shipping, and the
+inventory must not present the harvest in a way that reads as partial approval. That is the same
+mis-skim risk D5 records, and it has the same answer: render the fields together.
+
+**§7 gains a deliverable for it** (item 9b), and D2's *"a battle-tested harness and reproducible
+framework for NEW projects"* is what it serves — prose was always that deliverable's medium.
+
+---
+
 ## 4b. D5 — the verdict and the strength of its evidence are TWO axes
 
 ⭐ **SETTLED 2026-10-16 BY THE OWNER, who found the contradiction by reading the walkthrough page and
@@ -679,6 +726,11 @@ and is a candidate follow-up if either survives.
    recorded as a decayed dated count, not as a recalled figure** (r1 CLAUDE H1).
 9. The scoring rubric as a `portable-practices.md` entry — a reusable publishability test is itself a
    D2 contribution, and this milestone is the measurement that earns it.
+9b. ⭐ **THE HARVEST (D6, §4c)** — for every component, a `harvest` field, and for every
+   `harvest: practice` a **named entry in `docs/portable-practices.md`** carrying the measurement
+   that earned it. ⚠ A practice asserted without an entry is `harvest: none`, and a harvest never
+   upgrades a verdict. This is the deliverable that makes a `DON'T-SHIP` component still worth
+   having evaluated.
 10. A dashboard entry.
 
 **What PR 1 explicitly does NOT do:** publish anything, create the **published** marketplace repo, or

@@ -156,7 +156,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">771</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">823</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -763,6 +763,36 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   making effort (3) installable instead. <strong>You have better information than I do about whether
   the sharding idea is worth anything to someone else</strong> — it is a technique, not a tool, and
   techniques travel as prose.</p>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this, and it became D6 — the harvest axis</span>
+    <p><strong>Your answer was better than the question.</strong> You said effort (2) probably does
+    not apply to a repo with a different harness, <em>but</em> several of its ideas travel anyway —
+    partial mutation where mutation testing is already used, mechanical inspection before paying an
+    expensive gate, sharding an expensive gate — and <em>“we just harvest as much as
+    transferable.”</em></p>
+    <p><strong>That is a third field, not a softer verdict.</strong> The ship verdict asks <em>can a
+    stranger install and run this?</em> The harvest asks something different: <em>is there something
+    here a stranger could DO, with their own tools?</em> A component can answer no to the first and
+    yes to the second, and the original three verdicts had nowhere to put that.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Field</th><th>Values</th><th>Question it answers</th></tr>
+      <tr><td><strong>verdict</strong></td><td><span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span> <span class="pill no">DON'T-SHIP</span></td><td>can a stranger install and run it?</td></tr>
+      <tr><td><strong>evidence</strong> (D5)</td><td><code>measured</code> · <code>inherited</code> · <code>argued</code> · <code>none</code></td><td>how strong is what we know?</td></tr>
+      <tr><td><strong>harvest</strong> (D6)</td><td><code>practice</code> · <code>none</code></td><td>does a transferable practice come out of it?</td></tr>
+    </table>
+    </div>
+    <p class="note">⚠ <strong>Two bounds, so the harvest cannot become a way to call everything a
+    success.</strong> <code>harvest: practice</code> requires <strong>a named entry actually written
+    into <code>portable-practices.md</code></strong> with the measurement that earned it — a practice
+    asserted but not written is <code>none</code>. And ⛔ <strong>a harvest never upgrades a
+    verdict</strong>: <code>DON'T-SHIP / harvest: practice</code> is still not shipping, and the
+    inventory must not present it as partial approval.</p>
+    <p class="note">So the answer to this section's question is <strong>yes, evaluate effort (2)</strong>
+    — but for the harvest, not for the shipping. That is a cheaper and better-defined reason than
+    <em>“I expect <code>DON'T-SHIP</code> but might be wrong.”</em></p>
+  </div>
 </div>
 
 <div class="q">
