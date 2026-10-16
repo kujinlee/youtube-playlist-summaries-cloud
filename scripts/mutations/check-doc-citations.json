@@ -108,7 +108,7 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "        scoped = [f for f in fetch_changed(args.base, root) if in_scope(f)]\n",
+        "        scoped = [(p, s) for p, s in fetch_changed(args.base, root) if in_scope(p)]\n",
         "        scoped = list(fetch_changed(args.base, root))\n"
       ]
     ],
@@ -121,12 +121,51 @@
     "file": "scripts/check-doc-citations.py",
     "edits": [
       [
-        "\"diff\", \"--name-only\", \"-z\", base",
-        "\"diff\", \"--name-only\", base"
+        "\"diff\", \"--name-status\", \"-z\", \"-M\", base",
+        "\"diff\", \"--name-status\", \"-M\", base"
       ]
     ],
     "expect": [
       "⛔ changed_files() splits on NUL — the one flag every safety property rests on"
+    ]
+  },
+  {
+    "name": "⛔ r3-codex HIGH: `startswith(\"+++\")` returns as a content test, so an added markdown line beginning `++` is discarded as a header — a fail-open the previous case ENDORSED",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not in_hunk or not line.startswith(\"+\"):\n",
+        "        if not in_hunk or not line.startswith(\"+\") or line.startswith(\"+++\"):\n"
+      ]
+    ],
+    "expect": [
+      "⛔ added content beginning `++` IS examined — the diff marker makes it `+++`"
+    ]
+  },
+  {
+    "name": "⛔ r3-codex MEDIUM: the rename source is dropped from the pathspec, so a PURE RENAME reports every citation in the moved document as newly added",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    paths = [path] if source is None else [path, source]\n",
+        "    paths = [path]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a pure rename of a document with a BAD citation adds nothing"
+    ]
+  },
+  {
+    "name": "⛔ r3-codex MEDIUM: `--literal-pathspecs` is dropped from the per-file diff, so a glob-shaped document name over-matches and reports a neighbour's citations under the wrong name",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    paths = [path] if source is None else [path, source]\n    r = subprocess.run([\"git\", \"-C\", str(root), \"--literal-pathspecs\",\n                        \"diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],",
+        "    paths = [path] if source is None else [path, source]\n    r = subprocess.run([\"git\", \"-C\", str(root),\n                        \"diff\", \"--unified=0\", \"-M\", base, \"--\", *paths],"
+      ]
+    ],
+    "expect": [
+      "⛔ a glob-shaped document name does not over-match its neighbours"
     ]
   }
 ]

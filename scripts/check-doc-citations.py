@@ -101,12 +101,13 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  runs 37 cases over diff texts this file builds, with an injected resolver, so the
+  --self-test  runs 41 cases over diff texts this file builds, with an injected resolver, so the
                rule is exercised with no repository present.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
 import subprocess
@@ -185,8 +186,16 @@ def violations(path: str, diff_text: str, tracked: tuple[str, ...], read) -> lis
     no header to misparse and no scope to leak.
     """
     found: list[str] = []
+    in_hunk = False
     for line in diff_text.splitlines():
-        if not line.startswith("+") or line.startswith("+++"):
+        # ⛔ r3-codex HIGH: `startswith("+++")` is NOT a header test. An added markdown line that
+        # begins `++` is emitted as `+++ ...` and was silently discarded — a fail-open, and the
+        # case that claimed to witness header handling ENDORSED it. Headers live before the first
+        # `@@`; content lives inside hunks. Structure decides, not a prefix.
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk or not line.startswith("+"):
             continue
         for match in CITE.finditer(line[1:]):
             cited, raw_line = match.group(1), int(match.group(2))
@@ -203,25 +212,48 @@ def violations(path: str, diff_text: str, tracked: tuple[str, ...], read) -> lis
     return found
 
 
-def changed_files(base: str, root: pathlib.Path) -> tuple[str, ...]:
-    """Paths changed against `base`, NUL-delimited so git never quotes or escapes them.
+def changed_files(base: str, root: pathlib.Path) -> tuple[tuple[str, "str | None"], ...]:
+    """(path, source) for each change against `base`. NUL-delimited, so git never quotes.
+
+    `source` is the pre-rename path when git detected one, else None. ⛔ r3-codex: without it a
+    pure rename reports every citation in the moved document as NEWLY ADDED, because the per-file
+    pathspec excluded the source and git could not match the halves — which contradicts the
+    added-lines-only contract this guard rests on.
 
     This is the half that makes header parsing unnecessary. Raises on a git failure.
     """
-    r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "-z", base],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        ["git", "-C", str(root), "--literal-pathspecs",
+         "diff", "--name-status", "-z", "-M", base],
+        capture_output=True, text=True,
+    )
     if r.returncode != 0:
-        raise RuntimeError(f"git diff --name-only {base} failed: {r.stderr.strip()[:200]}")
-    return tuple(f for f in r.stdout.split("\0") if f)
+        raise RuntimeError(f"git diff --name-status {base} failed: {r.stderr.strip()[:200]}")
+    fields = [f for f in r.stdout.split("\0") if f]
+    out: list[tuple[str, "str | None"]] = []
+    i = 0
+    while i < len(fields):
+        status = fields[i]
+        if status[0] in ("R", "C") and i + 2 < len(fields):
+            out.append((fields[i + 2], fields[i + 1]))   # (destination, source)
+            i += 3
+        elif i + 1 < len(fields):
+            out.append((fields[i + 1], None))
+            i += 2
+        else:
+            break
+    return tuple(out)
 
 
-def file_diff(base: str, root: pathlib.Path, path: str) -> str:
-    """One file's unified diff against `base`. Raises on a git failure."""
-    # ⛔ r3 Medium: `--literal-pathspecs`. A pathspec honours `*`, `?` and `[...]` EVEN AFTER `--`,
-    # so a document named `docs/[id].md` also pulled in `docs/i.md` and reported that file's
-    # citations under the wrong name, twice. This repo uses the `[id]` convention elsewhere.
+def file_diff(base: str, root: pathlib.Path, path: str, source: "str | None" = None) -> str:
+    """One file's unified diff against `base`. Raises on a git failure.
+
+    Passing `source` alongside the destination lets git match the halves of a rename, so a moved
+    document's existing citations are context rather than additions (r3-codex Medium).
+    """
+    paths = [path] if source is None else [path, source]
     r = subprocess.run(["git", "-C", str(root), "--literal-pathspecs",
-                        "diff", "--unified=0", base, "--", path],
+                        "diff", "--unified=0", "-M", base, "--", *paths],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"git diff for {path} failed: {r.stderr.strip()[:200]}")
@@ -253,21 +285,110 @@ def _reader(root: pathlib.Path):
     return read
 
 
+def _pathspec_witness() -> int:
+    """Findings for one glob-shaped document name. One is the answer ONLY with literal pathspecs.
+
+    `docs/[id].md` is a valid filename and a valid glob. Without `--literal-pathspecs` the per-file
+    diff also matches `docs/i.md` and reports that file's citations under the wrong name, so this
+    returns 2 (r3-codex Medium).
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+
+        def run(*args: str) -> None:
+            r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                               capture_output=True, text=True, env=env)
+            if r.returncode != 0:
+                raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                   f"{r.stderr.strip()[:160]}")
+
+        run("init", "-q", "--template=")
+        (root / "docs").mkdir(); (root / "lib").mkdir()
+        (root / "lib" / "a.ts").write_text("one line\n", encoding="utf-8")
+        (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+        run("add", "-A"); run("commit", "-qm", "base")
+        (root / "docs" / "i.md").write_text("`lib/a.ts:777`\n", encoding="utf-8")
+        (root / "docs" / "[id].md").write_text("`lib/a.ts:888`\n", encoding="utf-8")
+        run("add", "-A")
+        return len(violations("docs/[id].md", file_diff("HEAD", root, "docs/[id].md"),
+                              tracked_files(root), _reader(root)))
+
+
+def _rename_witness() -> int:
+    """Findings when a document carrying an ALREADY-BAD citation is purely renamed.
+
+    Zero is the answer: a rename adds nothing. Without the source path in the pathspec git cannot
+    pair the halves and reports the whole file as additions (r3-codex Medium).
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+
+        def run(*args: str) -> None:
+            r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                               capture_output=True, text=True, env=env)
+            if r.returncode != 0:
+                raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                   f"{r.stderr.strip()[:160]}")
+
+        run("init", "-q", "--template=")
+        (root / "docs").mkdir(); (root / "lib").mkdir()
+        (root / "lib" / "a.ts").write_text("one line\n", encoding="utf-8")
+        (root / "docs" / "old.md").write_text("`lib/a.ts:777` and padding\n" * 6, encoding="utf-8")
+        run("add", "-A"); run("commit", "-qm", "base")
+        run("mv", "docs/old.md", "docs/new.md")
+        found = 0
+        for path, source in changed_files("HEAD", root):
+            if in_scope(path):
+                found += len(violations(path, file_diff("HEAD", root, path, source),
+                                        tracked_files(root), _reader(root)))
+        return found
+
+
 def _nul_witness() -> int:
     """Build a throwaway repo with two changed docs and count what `changed_files` returns.
 
-    Two is the answer ONLY if the NUL split works. Without `-z`, git joins the names with newlines
-    and `split("\0")` yields a single blob — which `in_scope` then rejects, emptying the scoped
-    list and silently disabling the guard. That is why this witness runs git rather than asserting
-    a predicate over a Python string (r3 High).
+    Two is the answer ONLY if the NUL split works: without `-z`, git joins the names with newlines
+    and `split("\0")` yields one blob, which `in_scope` rejects — emptying the scoped list and
+    silently disabling the guard (r3 High).
+
+    ⛔ r3-codex: the fixture is ISOLATED from ambient git state and every setup command is checked.
+    The first version inherited the caller's configuration, so an ordinary `commit.gpgsign=true`
+    made the commit fail, left no HEAD, and surfaced as a misleading traceback about file listing.
     """
     import tempfile
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": "/nonexistent",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_AUTHOR_NAME": "selftest", "GIT_AUTHOR_EMAIL": "selftest@example.com",
+        "GIT_COMMITTER_NAME": "selftest", "GIT_COMMITTER_EMAIL": "selftest@example.com",
+    }
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
-        run = lambda *a: subprocess.run(["git", "-C", tmp, *a], capture_output=True, text=True)
-        run("init", "-q")
-        run("config", "user.email", "selftest@example.com")
-        run("config", "user.name", "selftest")
+
+        def run(*args: str) -> None:
+            r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                               capture_output=True, text=True, env=env)
+            if r.returncode != 0:
+                raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                   f"{r.stderr.strip()[:160]}")
+
+        run("init", "-q", "--template=")
         (root / "docs").mkdir()
         (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
         run("add", "-A")
@@ -275,11 +396,11 @@ def _nul_witness() -> int:
         (root / "docs" / "one.md").write_text("one\n", encoding="utf-8")
         (root / "docs" / "two.md").write_text("two\n", encoding="utf-8")
         run("add", "-A")
-        return len([f for f in changed_files("HEAD", root) if in_scope(f)])
+        return len([p for p, _src in changed_files("HEAD", root) if in_scope(p)])
 
 
 def self_test() -> int:
-    """37 cases. The count is declared in the module docstring and verified by running this."""
+    """41 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -300,7 +421,9 @@ def self_test() -> int:
     tracked = tuple(world)
     read = lambda p: world.get(p)  # noqa: E731
     def body(*added: str) -> str:
-        return "\n".join(f"+{a}" for a in added)
+        # a real hunk header, because `violations` identifies content by hunk structure now and a
+        # fixture without one would assert over a diff git never produces (r3-codex High).
+        return "@@ -0,0 +1 @@\n" + "\n".join(f"+{a}" for a in added)
 
     def first(f: list[str]) -> str:
         # r1 M2: never index [0] — a mutation that empties this must FAIL a case, not crash the suite.
@@ -355,13 +478,30 @@ def self_test() -> int:
     # witness has to RUN git. This case builds a repository to do it.
     case("⛔ changed_files() splits on NUL — the one flag every safety property rests on",
          _nul_witness() == 2)
+    # ⛔ r3-codex MEDIUM, and it corrects a claim I made in a commit message: `_nul_witness()`
+    # never calls `file_diff`, so it could NOT catch a dropped `--literal-pathspecs`. It has an
+    # isolating witness after all, and here it is.
+    case("⛔ a glob-shaped document name does not over-match its neighbours",
+         _pathspec_witness() == 1)
+    # ⛔ r3-codex MEDIUM: a PURE RENAME must add nothing. Without the source path in the pathspec
+    # git cannot match the halves, and every citation in the moved document reports as newly
+    # added — which contradicts the added-lines-only contract the whole scope argument rests on.
+    case("⛔ a pure rename of a document with a BAD citation adds nothing",
+         _rename_witness() == 0)
 
     case("a REMOVED line is not examined",
          violations("docs/x.md", "-see `lib/a.ts:2`", tracked, read) == [])
     case("a context line is not examined",
          violations("docs/x.md", " see `lib/a.ts:2`", tracked, read) == [])
-    case("a +++ header inside the body is never read as content",
-         violations("docs/x.md", "+++ b/lib/a.ts:2", tracked, read) == [])
+    # ⛔ r3-codex HIGH: the case that stood here asserted a `+++` line is never content — which
+    # ENDORSED the defect, because an added markdown line beginning `++` is emitted exactly that
+    # way. These two pin the real rule: headers are what appears BEFORE the first hunk.
+    case("a +++ line BEFORE any hunk is a header, not content",
+         violations("docs/x.md", "+++ b/docs/x.md", tracked, read) == [])
+    case("⛔ added content beginning `++` IS examined — the diff marker makes it `+++`",
+         len(violations("docs/x.md", "@@ -0,0 +1 @@\n+++ `lib/a.ts:99`", tracked, read)) == 1)
+    case("a line outside any hunk is never content, even with a leading +",
+         violations("docs/x.md", "+`lib/a.ts:99`", tracked, read) == [])
     case("a removed `---` horizontal rule is inert, not a boundary",
          len(violations("docs/x.md", "----\n" + body("`lib/a.ts:99`"), tracked, read)) == 1)
 
@@ -389,12 +529,12 @@ def self_test() -> int:
     def drive(changed, diff_text, reader, git_ok: bool = True) -> int:
         def fetch_changed(_b, _r):
             if not git_ok:
-                raise RuntimeError("git diff --name-only origin/nope failed: unknown revision")
-            return changed
+                raise RuntimeError("git diff --name-status origin/nope failed: unknown revision")
+            return tuple((c, None) for c in changed)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return main([], root=pathlib.Path("/nonexistent"),
                         fetch_changed=fetch_changed,
-                        fetch_file_diff=lambda _b, _r, _p: diff_text,
+                        fetch_file_diff=lambda _b, _r, _p, _s=None: diff_text,
                         fetch_tracked=lambda _r: tracked,
                         make_reader=lambda _r: reader)
 
@@ -446,7 +586,7 @@ def main(
         return self_test()
 
     try:
-        scoped = [f for f in fetch_changed(args.base, root) if in_scope(f)]
+        scoped = [(p, s) for p, s in fetch_changed(args.base, root) if in_scope(p)]
         tracked = fetch_tracked(root)
     except (RuntimeError, OSError) as exc:
         print(f"CANNOT RUN — {exc}\n  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
@@ -455,9 +595,10 @@ def main(
     read = make_reader(root)
     found: list[str] = []
     try:
-        for scoped_path in scoped:
+        for scoped_path, scoped_source in scoped:
             found += violations(scoped_path,
-                                fetch_file_diff(args.base, root, scoped_path), tracked, read)
+                                fetch_file_diff(args.base, root, scoped_path, scoped_source),
+                                tracked, read)
     except (RuntimeError, OSError) as exc:
         print(f"CANNOT RUN — {exc}\n  Treat this as NOT RUN, never as a pass.", file=sys.stderr)
         return 2
