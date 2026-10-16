@@ -177,7 +177,7 @@ FAILS IF
   * the cited line is blank or whitespace-only;
   * `git` cannot be run, or the base ref does not resolve — which is CANNOT RUN (rc=2), never a pass.
 
-  --self-test  # 75 cases. Most are over DOCUMENTS this file builds with an injected
+  --self-test  # 78 cases. Most are over DOCUMENTS this file builds with an injected
                resolver, so the rule needs no repository. ⟳ #291: there is no hunk-header reader
                and no diff text in this suite at all; the cases that build a throwaway git
                repository do so because the properties they witness are GIT's — NUL splitting, the
@@ -414,11 +414,15 @@ def findings_for(path: str, source: "str | None", base: str, root: pathlib.Path,
     # (r4 M1, now a choice rather than an accident); `pre_ref` decides WHICH path is read.
     pair = source is not None and in_scope(source)
     pre_ref = f"{base}:{source}" if pair else f"{base}:{path}"
-    pre = fetch_blob(pre_ref, root)
+    # ⛔ THE POST-IMAGE FIRST — r5-codex M1. Reading the pre-image first meant an ordinary STAGED
+    # DELETION of a legacy UTF-16 document hit the PRE-image's NUL refusal and returned CANNOT RUN,
+    # when the answer is simply that a deleted document can gain nothing. Measured: rc=2 on a
+    # deletion, against rc=0 for the same deletion of a plain-text document. A document that is
+    # gone needs no pre-image read at all, so the order is not a style choice.
     post = fetch_blob(f":{path}", root)
     if post is None:
-        # deleted from the index: it has no citations to gain
         return []
+    pre = fetch_blob(pre_ref, root)
     added = added_citations(pre or "", post)
     if not added:
         return []
@@ -447,11 +451,20 @@ def changed_files(base: str, root: pathlib.Path) -> tuple[tuple[str, "str | None
         # every run. A flag that does nothing costs nothing.
         ["git", "-C", str(root), "--literal-pathspecs",
          "diff", "--cached", "--no-color", "--name-status", "-z", "-M", base],
-        capture_output=True, text=True,
+        capture_output=True,
     )
     if r.returncode != 0:
-        raise RuntimeError(f"git diff --name-status {base} failed: {r.stderr.strip()[:200]}")
-    fields = [f for f in r.stdout.split("\0") if f]
+        raise RuntimeError(f"git diff --name-status {base} failed: "
+                           f"{r.stderr.decode('utf-8', 'replace').strip()[:200]}")
+    # ⛔ BYTES, NEVER `text=True`, ON A STREAM THAT CARRIES PATHS — r5-codex H1. Python's universal
+    # newlines translate a `\r` INSIDE A FILENAME into `\n`, so `docs/a\rb.md` arrived as
+    # `docs/a\nb.md`, the blob lookup asked git for a path that does not exist, the answer was None,
+    # and the staged document read as DELETED: rc=0 over a drifted citation. Measured, with the
+    # newline-named control firing correctly at rc=1.
+    # ⚠ This is NOT round 4's carriage returns in document CONTENT. That seam was about two oracles
+    # disagreeing; this is one oracle being asked about the wrong object, and `-z` cannot help
+    # because the corruption happens after git has written the stream.
+    fields = [f for f in r.stdout.decode("utf-8", "replace").split("\0") if f]
     out: list[tuple[str, "str | None"]] = []
     i = 0
     while i < len(fields):
@@ -471,12 +484,18 @@ def changed_files(base: str, root: pathlib.Path) -> tuple[tuple[str, "str | None
 
 def tracked_files(root: pathlib.Path) -> tuple[str, ...]:
     """Every tracked path. Raises on a git failure — an empty list would pass about nothing."""
+    # ⛔ `-z` AND BYTES, for the same reason as `changed_files` — r5-codex H1, found there and fixed
+    # here too because this list is matched against citation SUFFIXES. Without `-z` git C-quotes an
+    # unusual name (`"docs/a\rb.md"`), and splitting on a newline breaks on a name containing one;
+    # with `text=True` a CR in a name became a newline and split it in two. Neither corruption is
+    # visible in the result — it shows up as a citation that silently fails to resolve.
     result = subprocess.run(
-        ["git", "-C", str(root), "ls-files"], capture_output=True, text=True,
+        ["git", "-C", str(root), "ls-files", "-z"], capture_output=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git ls-files failed: {result.stderr.strip()[:200]}")
-    files = tuple(f for f in result.stdout.split("\n") if f)
+        raise RuntimeError(f"git ls-files failed: "
+                           f"{result.stderr.decode('utf-8', 'replace').strip()[:200]}")
+    files = tuple(f for f in result.stdout.decode("utf-8", "replace").split("\0") if f)
     if not files:
         raise RuntimeError("git ls-files returned nothing — refusing to pass over an empty tree")
     return files
@@ -997,14 +1016,17 @@ def _real_reader_bounds_witness() -> "tuple[int, str, int]":
 
 
 def _escaping_citation_witness() -> "tuple[object, int]":
-    """(a citation escaping the repo root, the same content INSIDE it) -> `(None, 1)`.
+    """(escaping the repo root, a VALID in-root citation, a BAD in-root citation) -> `(None, 0, 1)`.
 
     ⛔ r5 M6. `_reader` resolved `../outside.ts` against a file above the root and the guard fired
     on it, so the verdict depended on a file nobody reading the repository can see. The first
     element is the reader's answer for the escaping path — None, meaning "no such file here", which
     `resolve` then reports as unresolvable rather than silently passing.
-    ⚠ The second element is the control: identical bytes at an in-root path must still fire, so
-    "refuses everything" cannot satisfy this.
+    ⚠ THE SECOND AND THIRD ELEMENTS ARE THE CONTROL PAIR, and the first version of this witness got
+    it wrong (r5-codex M2): it used only a blank-line citation, which fires whether the reader reads
+    the blank line or refuses the file, so a reader returning None for everything satisfied it. A
+    VALID citation must answer 0 and a BAD one must answer 1 — together they pin that the reader
+    reads and the rule runs.
     """
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
@@ -1013,12 +1035,18 @@ def _escaping_citation_witness() -> "tuple[object, int]":
         (base / "outside.ts").write_text("one\n\nthree\n", encoding="utf-8")
         (base / "repo" / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
         read = _reader(base / "repo")
-        inside = violations("docs/x.md", (("lib/a.ts", 2),), ("lib/a.ts",), read)
-        return (read("../outside.ts"), len(inside))
+        # ⛔ r5-codex M2: THE CONTROL MUST BE A VALID CITATION. The first version used a BLANK-line
+        # citation, which produces one finding whether the reader reads the blank line or refuses
+        # the file entirely — so a reader returning None for EVERY path satisfied it, and the
+        # comment claiming otherwise was false. A populated line answers 0 only when the reader
+        # actually read it; the bad one answers 1 only when the rule actually ran.
+        good = violations("docs/x.md", (("lib/a.ts", 1),), ("lib/a.ts",), read)
+        bad = violations("docs/x.md", (("lib/a.ts", 2),), ("lib/a.ts",), read)
+        return (read("../outside.ts"), len(good), len(bad))
 
 
 def _rename_config_witness() -> "tuple[int, int]":
-    """A pure rename adds nothing, with `diff.renames` set FALSE and set TRUE -> `(0, 0)`.
+    """A renamed document's OLD citations stay silent while a NEW one fires, both ways -> `(1, 1)`.
 
     ⛔ r5 M2. `-M` on both invocations is what makes this hold: with rename detection off, git
     reports a rename as a DELETE plus an ADD, the destination arrives with no source, its pre-image
@@ -1054,6 +1082,13 @@ def _rename_config_witness() -> "tuple[int, int]":
             run("add", "-A"); run("commit", "-qm", "base")
             run("config", "diff.renames", renames)
             run("mv", "docs/old.md", "docs/new.md")
+            # ⛔ r5-codex M2: AND A GENUINELY NEW BAD CITATION, so the answer is 1 and not 0. With
+            # two pure renames the witness read (0, 0), which a `findings_for` returning `[]`
+            # satisfies — it established that nothing fires, not that the pipeline still examines
+            # what a document gained.
+            (root / "docs" / "new.md").write_text(
+                "old `lib/a.ts:2` here\n" + "padding\n" * 8 + "and NEW `lib/gone.ts:1`\n",
+                encoding="utf-8")
             run("add", "-A")
             found = 0
             for path, source in changed_files("HEAD", root):
@@ -1065,12 +1100,16 @@ def _rename_config_witness() -> "tuple[int, int]":
 
 
 def _deleted_document_witness() -> "tuple[int, int]":
-    """(a scoped document DELETED, the same document edited to add a bad citation) -> `(0, 1)`.
+    """Deletion of a plain document, an edit to it, and deletion of a legacy UTF-16 one -> `(0, 1, 0)`.
 
     ⛔ r5 M3. A document removed from the index has no post-image, so it can gain nothing — and
     that clause had no case: removing it produced an uncaught TypeError rather than a finding.
     Deletion is the exact family r4-codex's M1 regressed, which is why it gets a case rather than
     an argument.
+    ⛔ THE THIRD ELEMENT IS r5-codex M1: `findings_for` read the PRE-image first, so deleting a
+    legacy UTF-16 document hit that image's NUL refusal and returned CANNOT RUN on an ordinary
+    staged deletion. A document that is gone needs no pre-image read at all. ⚠ The original witness
+    supplied only a readable text pre-image, which is exactly why it could not see this.
     """
     import tempfile
     env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
@@ -1079,7 +1118,7 @@ def _deleted_document_witness() -> "tuple[int, int]":
            "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
            "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
     out = []
-    for delete_it in (True, False):
+    for delete_it, utf16 in ((True, False), (False, False), (True, True)):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
 
@@ -1093,7 +1132,10 @@ def _deleted_document_witness() -> "tuple[int, int]":
             run("init", "-q", "--template=")
             (root / "docs").mkdir(); (root / "lib").mkdir()
             (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
-            (root / "docs" / "x.md").write_text("intro\n", encoding="utf-8")
+            body = "intro\n"
+            (root / "docs" / "x.md").write_bytes(
+                body.encode("utf-16-le") if utf16 else body.encode("utf-8"))
+            (root / "docs" / "keep.md").write_text("keep\n", encoding="utf-8")
             run("add", "-A"); run("commit", "-qm", "base")
             if delete_it:
                 (root / "docs" / "x.md").unlink()
@@ -1109,8 +1151,78 @@ def _deleted_document_witness() -> "tuple[int, int]":
     return tuple(out)
 
 
+def _path_bytes_witness() -> "tuple[int, int, int, int]":
+    """One finding for each of four document FILENAMES -> `(1, 1, 1, 1)`.
+
+    `plain.md`, `a\rb.md`, `a\r\nb.md`, `a\nb.md` — each newly citing a path that does not resolve.
+
+    ⛔ r5-codex H1. `changed_files` read git's NUL-delimited path stream with `text=True`, so
+    Python's universal newlines translated a `\r` INSIDE A FILENAME into `\n`: `docs/a\rb.md`
+    arrived as `docs/a\nb.md`, the blob lookup asked for a path that does not exist, the answer was
+    None, and the staged document read as DELETED. Measured (1, 0, 0, 1) before the fix — the
+    newline-named control fired while both carriage-return names passed.
+    ⚠ The CONTROL here is the pair that always worked: a plain name and a newline-only name. A
+    witness with only odd names cannot tell "handles odd names" from "handles nothing".
+    """
+    import tempfile
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": "/nonexistent",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+           "GIT_AUTHOR_NAME": "s", "GIT_AUTHOR_EMAIL": "s@e.com",
+           "GIT_COMMITTER_NAME": "s", "GIT_COMMITTER_EMAIL": "s@e.com"}
+    out = []
+    for name in ("plain.md", "a\rb.md", "a\r\nb.md", "a\nb.md"):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+
+            def run(*args: str) -> None:
+                r = subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false", *args],
+                                   capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise RuntimeError(f"fixture setup failed: git {' '.join(args)} -> "
+                                       f"{r.stderr.strip()[:160]}")
+
+            run("init", "-q", "--template=")
+            (root / "docs").mkdir()
+            (root / "docs" / "seed.md").write_text("seed\n", encoding="utf-8")
+            run("add", "-A"); run("commit", "-qm", "base")
+            (root / "docs" / name).write_text("see `lib/missing.ts:2` here\n", encoding="utf-8")
+            run("add", "-A")
+            found = 0
+            for path, source in changed_files("HEAD", root):
+                if in_scope(path):
+                    found += len(findings_for(path, source, "HEAD", root,
+                                              tracked_files(root), _reader(root), blob))
+            out.append(found)
+    return tuple(out)
+
+
+def _cited_symlink_witness() -> "tuple[int, int]":
+    """(a citation through a valid in-root symlink, the same through a regular path) -> `(0, 0)`.
+
+    ⛔ r5-codex H2, THE SIXTH LIVE RETIREMENT. `lib/link.ts -> a.ts` and `lib/link.ts:1` names a
+    POPULATED line, so the answer is silence — and a refusal would be a false one. Codex reinstated
+    the retired r4-codex M2 mutation (an `is_symlink()` raise inside `_reader`) and the suite stayed
+    at 75/75: the shipped behaviour was right and nothing measured it.
+    ⚠ I had assumed the directory-reader mutation covered this. It does not: refusing a DIRECTORY
+    and accepting a SYMLINK are different properties of the same `if`, and only one had a case.
+    ⚠ The second element is the control — the identical citation through the real path — so "resolves
+    nothing" cannot satisfy this pair.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "lib").mkdir()
+        (root / "lib" / "a.ts").write_text("one\n\nthree\n", encoding="utf-8")
+        (root / "lib" / "link.ts").symlink_to("a.ts")
+        read = _reader(root)
+        through_link = violations("docs/x.md", (("lib/link.ts", 1),), ("lib/link.ts", "lib/a.ts"), read)
+        direct = violations("docs/x.md", (("lib/a.ts", 1),), ("lib/a.ts",), read)
+        return (len(through_link), len(direct))
+
+
 def self_test() -> int:
-    """75 cases. The count is declared in the module docstring and verified by running this."""
+    """78 cases. The count is declared in the module docstring and verified by running this."""
     passed = failed = 0
 
     def case(name: str, got, want=True) -> None:
@@ -1244,19 +1356,32 @@ def self_test() -> int:
     # the assertion: each fixture and its one-character control must AGREE, and the fifth element is
     # the NUL refusal. Measured before this case existed: `splitlines()` and `read_text()` each gave
     # (0, 1, 0, 1) — a fail-open with a green suite.
+    # ⛔ r5-codex H1 — a CR inside a FILENAME, which `text=True` rewrote before the blob lookup saw
+    # it. The plain and newline-only names are the controls: they always worked.
+    case("⛔ a carriage return in a document's FILENAME does not lose the document",
+         lambda: _path_bytes_witness() == (1, 1, 1, 1))
     # ⛔ r5 H2 — a THIRD git answer that was collapsing into one of the two `blob` distinguishes.
     # ⛔ r5 M1 — the REAL reader, because the injected one has no trailing phantom and so cannot
     # reproduce the defect. Third element: a file with no final newline must be unaffected.
     # ⛔ r5 M2 — `-M` under a developer's own `diff.renames=false`; every other fixture here nulls
     # the git config, which is exactly why this was unwitnessable.
-    case("⛔ a pure rename adds nothing even with rename detection switched OFF",
-         lambda: _rename_config_witness() == (0, 0))
+    # ⚠ ONE STRING LITERAL, not a continuation: a case name split across lines is read as only its
+    # FIRST fragment by anything that greps `case("…")` — including the manifest validation that
+    # caught this — so a split name silently breaks the join between an entry and its case.
+    case("⛔ a rename keeps old citations silent with detection OFF; only the new one fires",
+         lambda: _rename_config_witness() == (1, 1))
     # ⛔ r5 M3 — the deleted-document clause had no case: removing it raised TypeError.
-    case("⛔ a DELETED document gains nothing, while an edited one still fires",
-         lambda: _deleted_document_witness() == (0, 1))
+    case("⛔ a DELETED document gains nothing — even a legacy UTF-16 one — while an edit still fires",
+         lambda: _deleted_document_witness() == (0, 1, 0))
+    # ⛔ r5-codex H2 — an ordinary cited code symlink must RESOLVE, not be refused. A refusal here
+    # was shipped once (r4-codex M2) and its entry was then retired, leaving the property unmeasured.
+    case("⛔ a citation through a valid in-root symlink resolves, exactly as the direct path does",
+         lambda: _cited_symlink_witness() == (0, 0))
+    case("...and the same symlink with a BLANK cited line still fires, so it is really being read",
+         lambda: len(violations("docs/x.md", (("lib/a.ts", 2),), ("lib/a.ts",), read)) == 1)
     # ⛔ r5 M6 — a citation may not resolve outside the repository.
-    case("⛔ a citation escaping the repository root does not resolve, while an in-root one fires",
-         lambda: _escaping_citation_witness() == (None, 1))
+    case("⛔ a citation escaping the repository root does not resolve, while in-root ones behave",
+         lambda: _escaping_citation_witness() == (None, 0, 1))
     case("⛔ the real reader counts git's lines, and :N+1 is outside the file, not blank",
          lambda: _real_reader_bounds_witness() == (3, "is outside the file (3 lines)", 3))
     case("⛔ a conflicted document is CANNOT RUN, and the same content resolved still fires",

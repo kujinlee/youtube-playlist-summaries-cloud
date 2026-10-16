@@ -412,7 +412,7 @@
       ]
     ],
     "expect": [
-      "⛔ a citation escaping the repository root does not resolve, while an in-root one fires"
+      "⛔ a citation escaping the repository root does not resolve, while in-root ones behave"
     ]
   },
   {
@@ -425,7 +425,7 @@
       ]
     ],
     "expect": [
-      "⛔ a pure rename adds nothing even with rename detection switched OFF"
+      "⛔ a rename keeps old citations silent with detection OFF; only the new one fires"
     ]
   },
   {
@@ -438,7 +438,46 @@
       ]
     ],
     "expect": [
-      "⛔ a DELETED document gains nothing, while an edited one still fires"
+      "⛔ a DELETED document gains nothing — even a legacy UTF-16 one — while an edit still fires"
+    ]
+  },
+  {
+    "name": "⛔ r5-codex H1 — git's NUL-delimited path stream is read with `text=True`, so Python's universal newlines translate a CR inside a FILENAME into a newline: the blob lookup asks for a path that does not exist and the staged document reads as DELETED",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    fields = [f for f in r.stdout.decode(\"utf-8\", \"replace\").split(\"\\0\") if f]\n",
+        "    fields = [f for f in r.stdout.decode(\"utf-8\", \"replace\").replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\").split(\"\\0\") if f]\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a carriage return in a document's FILENAME does not lose the document"
+    ]
+  },
+  {
+    "name": "⛔ r5-codex H2 — a symlink refusal is reinstated inside `_reader`, so an ordinary CITED code symlink is refused: the false refusal that shipped once as r4-codex M2, whose entry was then retired on the wrong assumption that the directory mutation covered it",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "        if not target.is_file():\n            return None\n",
+        "        if target.is_symlink():\n            raise RuntimeError(f\"{path} is a symlink\")\n        if not target.is_file():\n            return None\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a citation through a valid in-root symlink resolves, exactly as the direct path does"
+    ]
+  },
+  {
+    "name": "⛔ r5-codex M1 — the PRE-image is read before the post-image is checked, so deleting a legacy UTF-16 document hits the pre-image's NUL refusal and an ordinary staged deletion returns rc=2",
+    "file": "scripts/check-doc-citations.py",
+    "edits": [
+      [
+        "    post = fetch_blob(f\":{path}\", root)\n    if post is None:\n        return []\n    pre = fetch_blob(pre_ref, root)\n",
+        "    pre = fetch_blob(pre_ref, root)\n    post = fetch_blob(f\":{path}\", root)\n    if post is None:\n        return []\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a DELETED document gains nothing — even a legacy UTF-16 one — while an edit still fires"
     ]
   }
 ]

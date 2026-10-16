@@ -1444,7 +1444,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-15, backlog #49. Seven entries rather than manifest debt; the blank-line,
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
-    "scripts/check-doc-citations.py": 34,
+    "scripts/check-doc-citations.py": 37,
     "scripts/check-reference-namespace.py": 6,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
@@ -5089,8 +5089,23 @@ def _self_test() -> int:
     # handler is unreachable once `-e` has answered (a case would test `subprocess`, not this rule),
     # and `--base` naming a TIP rather than a merge base is a pre-existing reading now written into
     # the stated limits.
-    # ⚠ 1453 is the GUARD'S OWN FIGURE, read from `got 1453 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1453)
+    # ⟳ 2026-10-16, ROUND 5's CODEX HALF: 1453 -> 1456, that file 34 -> 37. Three of its four
+    # findings were defects the two Claude folds had shipped: a CR inside a FILENAME translated by
+    # `text=True` so the document read as DELETED (a real fail-open, and the same mistake was
+    # sitting unnoticed in `tracked_files`, which used `ls-files` with no `-z` at all); a SIXTH live
+    # retirement — accepting an ordinary cited code symlink, which I had assumed the directory
+    # mutation covered and which survived at 75/75; and the pre-image being read before the
+    # post-image, so deleting a legacy UTF-16 document returned CANNOT RUN on an ordinary staged
+    # deletion.
+    # ⛔ AND ITS FOURTH FINDING IS ABOUT THE DISCIPLINE ITSELF. Two of my new witnesses carried a
+    # control that could not discriminate: a BLANK-line citation produces one finding whether the
+    # reader reads the blank line or refuses the file, so a reader returning None for every path
+    # satisfied a witness whose comment said in those words that it could not. A control is only
+    # adjacent when the degenerate implementation gives a DIFFERENT ANSWER — so a control is now a
+    # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
+    # degenerate substitutions now redden 5 and 13 cases respectively.
+    # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1456)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
