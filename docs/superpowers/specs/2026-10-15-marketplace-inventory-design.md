@@ -578,7 +578,7 @@ framework for NEW projects"* is what it serves — prose was always that deliver
 
 ---
 
-## 4d. D9 — the support bar C4 is graded against, decided before the inventory and not after
+## 4d. D9 — the support bar the owner commits to, decided before the inventory and not after
 
 ⭐ **D9 — BEST-EFFORT, VERSIONED. Decided 2026-10-16 by the owner**, by selection card, after they
 answered *yes* to the prior question *does "publishable" need a support policy decided first?*

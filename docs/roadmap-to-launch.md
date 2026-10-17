@@ -2354,7 +2354,7 @@ skill and not the hook, so the hook's refusal printed a claim and its withdrawal
       retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
       human's call, so neither is taken here.
 
-### Marketplace inventory — anchor `harness-ships-elsewhere` — 🔴 ARMED BY THRASHING 2026-10-16, FOUR CANDIDATES AWAITING THE OWNER
+### Marketplace inventory — anchor `harness-ships-elsewhere` — 🟡 CANDIDATE 1 CHOSEN AND IMPLEMENTED 2026-10-17 (ADR-0015); NOT CONVERGED, ONE REVIEW ROUND DEFERRED BY THE OWNER
 
 Phase 6 review: `docs/reviews/architecture-review-2026-10-16-claim-propagation.md`. Four adversarial
 rounds on PR #376; round 4 had **8 of 9 findings introduced by round 3's own fix** with Blocking flat
@@ -2368,42 +2368,51 @@ retraction is kept beside the reasoning it replaces.
 - [x] **Rounds 1–4, both halves each**, filed under `docs/reviews/{codex,claude,coordinator}/`;
       `check-review-rounds.py` reports 0 silent gaps.
 - [x] **All of rounds 1–3 folded, and round 4's three Blockings and three Highs.**
-- [x] **`scripts/check-claim-propagation.py`** — 96 self-test cases, 32 mutations, 32 killed and
-      attributed over a green control; declared sum 1419 → 1488, every figure read off the guard's
-      own refusal.
 - [x] **Two owner decisions taken live through the walkthrough page** — D8 (a correction lands with
       the work that found it) and D9 (support bar: best-effort, versioned).
-- [ ] ⭐ **THE REVIEW'S DECIDING FINDING: this exact review ran two days earlier under the same
-      trigger, and its redesign landed.** *One canonical source per mechanism* (2026-10-14) collapsed
-      two mechanisms to one file each **with every live site citing rather than restating**, and left
-      *"a mechanism missing from `CANONS` is unprotected"* as #282 / #288. This document pair is that
-      instance, and `check-claim-propagation.py` implements the **opposite** remedy — it requires the
-      claim at every site, so it makes the copies mandatory and then audits them. Backlog **#298**.
-- [ ] **Three claims are drifted between spec and page RIGHT NOW with the guard green** — including
-      one the spec's own §4d heading asserts and its §623 withdraws. Backlog **#297**, recorded as
-      evidence and deliberately not fixed, because fixing the instance in hand is the behaviour the
-      thrashing gate fired on.
-- [ ] **A HUMAN DECISION IS WAITING, and it is a real fork:** candidates 1 and 3 disagree about how
-      much a reader-facing page may restate. `check-canonical-source.py` already exempts surfaces
-      that are *"a record, not a rule a reader follows"*, so the question is narrow and decidable —
-      **is the walkthrough such a surface?** Backlog **#298**.
+- [x] ⭐ **THE REVIEW'S DECIDING FINDING, NOW ACTED ON: this exact review ran two days earlier under
+      the same trigger, and its redesign had landed.** *One canonical source per mechanism*
+      (2026-10-14) collapsed two mechanisms to one file each **with every live site citing rather
+      than restating**, and left *"a mechanism missing from `CANONS` is unprotected"* as #282 / #288.
+      This document pair was that instance, and `check-claim-propagation.py` implemented the
+      **opposite** remedy. **ADR-0015 reverses that**: the spec is now a registered canon, the
+      walkthrough a declared citing site, and the guard's copy-policing half is deleted. #298 closed.
+- [x] **The owner chose candidate 1 by selection card (2026-10-17)**, answering the fork candidates
+      1 and 3 opened about how much a reader-facing page may restate. ⭐ **The answer drawn, and it is
+      narrower than the question:** the line is by **decision SYMBOL**, not by semantic category — a
+      page paraphrases without limit and cites the symbols it would otherwise reprint. So *is the
+      walkthrough a record or a rule?* never had to be answered; it became a **citing site**, the
+      category `docs/process-rationale.md` already occupies. Candidate 2 rode along.
+- [x] **Backlog #297's three drifted claims are FIXED**, and the reason they had survived is the
+      finding worth keeping: **the deleted `LIVE` registry made the correct fix illegal.**
+      `d5-ship-plus-argued` and `d8-corrections-land-here` were registered at `[SPEC, PAGE]`, so the
+      gate REQUIRED each token at both sites — deleting a drifted recital from the page would have
+      turned it RED. The guard was enforcing the duplication that was drifting. ⚠ One of the three
+      was partly misreported as filed: ① was spec-INTERNAL only; the page already carried the
+      corrected *D9 does not grade C4*. ③ was worse than filed — the page said *Both* and *either*
+      over a list of three.
+- [x] **`scripts/check-canonical-source.py` widened to `*.html`** (part of #282). Measured before:
+      1,937 files in the population, **0** HTML, so the canon's own citing sites were invisible to
+      it. Now carries a case, a CONTROL and a mutation that redden when `SEARCHED` is reverted.
+- [x] **`scripts/check-claim-propagation.py` reduced to its derived-figures half** — 1,459 → 828
+      lines, **41** self-test cases (was 96), **15** mutations, **15 killed and attributed over a
+      green control with 0 survivors**, measured by a scoped `--mutate .` run. Declared sum
+      1488 → 1472: a ratchet **FALL**, permitted because 19 entries are **retired with their
+      subject**; ⚠ **4 were RETARGETED rather than retired**, because their anchors broke while the
+      rules they measure survived, and retiring those would have dropped live coverage silently.
 - [ ] **The owner's own item, unchanged:** the C5 content review of effort (1)'s 157 memory files,
       now **deliverable 11**; until it lands the corpus cannot be graded `SHIP`.
-- [ ] **NOT CONVERGED, and CI IS RED FOR A TRUE REASON — `check-review-recorded` is the only
-      failing step, and it is right.** Pushed as `21b4a5e0`; schema-gates **passed** (15 gates on a
-      container-built DB). What no review has seen: **`2e79f464`** (round 4's Claude fold — the void
-      separator class fix, two withdrawn "unmutatable" claims, four new mutations), **`21b4a5e0`**
-      (the architecture review, backlog rows and roadmap) and **`fcd1a205`** (two memory lessons).
-      ⛔ **THE ESCAPE HATCH IS DELIBERATELY NOT USED.** The gate offers `NO-REVIEW: <reason>` in the
-      PR body; using it would read as *cleared to merge* on a branch that is parked on an owner
-      decision (#298) which may **replace the very guard** the unreviewed commits change. A red that
-      accurately says *this code is unreviewed* is the correct state, and switching a true gate off
-      is a failure this repo has measured. **Two ways to clear it, both the owner's call:** a round-5
-      Codex pass against the current tree, or `NO-REVIEW:` with the gap named — the precedent being
-      backlog #292, where the owner chose the second and the gap was filed by name.
-- [ ] **Merging is the human gate**, and the branch should not merge while #298 is open: candidate 1
-      sheds the copy-policing half of `check-claim-propagation.py`, so merging first would land code
-      a chosen candidate may delete.
+- [ ] **NOT CONVERGED. One review round is DEFERRED, by the owner's decision of 2026-10-17** —
+      `check-review-recorded` is the only failing step and it is right. ⛔ **THE ESCAPE HATCH IS
+      STILL DELIBERATELY NOT USED:** `NO-REVIEW:` would read as *cleared to merge*. The owner chose
+      to **wait and review the settled tree once**, rather than pay for a round over code candidate 1
+      was about to delete — which it did: the copy-policing half the unreviewed commits changed is
+      now gone. **WORK:** one round, both halves, over the tree as it now stands.
+- [ ] **Merging is the human gate.** #298 is closed, so the earlier reason not to merge is spent;
+      the remaining reasons are the deferred review round above and the owner's C5 item.
+- [ ] **Residue that candidate 1 could not dissolve, and the split is a fact about it** (#296): M5
+      dissolved with the deleted matcher, M4 partly; **M1, M6, M7 are defects in the SPEC'S CONTENT**
+      and M3 is candidate 4's territory. Candidate 1 was a mechanism fix; content is row #295's pass.
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all

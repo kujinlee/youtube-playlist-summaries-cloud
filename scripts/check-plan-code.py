@@ -629,7 +629,19 @@ EXPECTED_MUTATIONS = {
     # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
     # updating the site the finding named. A convention had already failed at it twice in two
     # rounds, which is why this is a guard and not a checklist.
-    "scripts/check-claim-propagation.py": 32,
+    # ⟳ 2026-10-17, ADR-0015: 32 -> 15. ⛔ THIS IS A RATCHET FALL, which is permitted ONLY when
+    # the entries are RETIRED WITH THEIR SUBJECT, and that is what these are: the prose-matching
+    # half of the guard is deleted, so 19 anchors name code that no longer exists. Precedent and
+    # shape are `retire-plan-mode` (44 -> 23, declared sum 392 -> 371), where 20 anchors stopped
+    # resolving because the code they named was gone.
+    # ⚠ FOUR WERE RETARGETED RATHER THAN RETIRED, and checking that was the point: their anchors
+    # broke while the RULES they measure survived — the empty-registry refusal (its condition went
+    # from a three-way disjunction to one), the `wanted |= …DERIVED…` line (now the FIRST
+    # assignment, so the witness is stronger), the `audited_sites` witness (its token half retired,
+    # its DERIVED half kept) and the self-closing-not-pushed rule in `_Carriers`. Retiring those
+    # four would have dropped live coverage silently, which is this repo's recorded failure mode
+    # for exactly this operation.
+    "scripts/check-claim-propagation.py": 15,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
@@ -5143,7 +5155,10 @@ def _self_test() -> int:
     # Read off `got 1489 want 1488`. ⚠ This is a RISE and needs no permission; the FALL that
     # ADR-0015 also implies — shedding `check-claim-propagation`'s copy-policing half — is recorded
     # separately at that file's entry, because a fall is the thing that needs a stated reason.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1489)
+    # ⟳ 2026-10-17, ADR-0015: 1489 -> 1472. Seventeen net — `check-claim-propagation` falls
+    # 32 -> 15 (19 retired with their subject, 4 retargeted) and `check-canonical-source` rose
+    # 5 -> 6 earlier in the same branch. Read off the guard's own figure.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1472)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

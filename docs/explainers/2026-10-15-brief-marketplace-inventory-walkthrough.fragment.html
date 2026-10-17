@@ -715,8 +715,12 @@ question was asked against it.</p>
 
   <p class="note">⚠ <strong>The honest cost, because this is a trade and not a free win.</strong>
   Every component now needs two fields read together, and <code>SHIP / argued</code> can be
-  mis-skimmed as plain approval by someone who reads only the verdict column — which is a genuine
-  way for this to fail. If that worries you more than the labelling does, the cleaner answer is the
+  mis-skimmed as plain approval by someone who reads only the verdict column. ⟳ <strong>That risk
+  is real, but it is NOT the scheme&rsquo;s falsifier</strong> — nothing can observe how a document
+  was read, so a test shaped that way could never fire. The checkable form is stated once, in
+  &sect;4c of the spec, and this page cites it rather than restating it (ADR-0015): a recital can
+  drift from its source, a citation cannot. If the mis-skim worries you more than the labelling
+  does, the cleaner answer is the
   stricter one: <strong>require <code>measured</code> or <code>inherited</code> evidence for
   <code>SHIP</code></strong>, which caps efforts (1) and (2) at <code>NEEDS-WORK</code> until they get
   their own experiment. That is a real option, not a straw man, and it is the other half of the
@@ -947,11 +951,11 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     nine files’ own is <strong>1.82×</strong>; <em>“concentrated in one file”</em>, already
     measured false; and the replacement headline’s own corpus, which omits the shared contracts it
     names in the same breath.</p>
-    <p><strong>And the counter was real, so it is not simply accepted.</strong> Both are docs-only
-    repairs depending on nothing else in PR 1 — so they go in as its <strong>first commit</strong>
-    and can be merged alone if the rest parks.</p>
+    <p><strong>And the counter was real, so it is not simply accepted.</strong> All three are
+    docs-only repairs depending on nothing else in PR 1 — so they go in as its <strong>first
+    commit</strong> and can be merged alone if the rest parks.</p>
     <p class="note">⚠ <strong>What makes that bound fail, stated so it can be checked:</strong>
-    PR 1 open with either correction not yet committed. If that is ever observed, the stall risk you
+    PR 1 open with any of the three corrections not yet committed. If that is ever observed, the stall risk you
     accepted has gone live and the corrections should be split into their own PR.</p>
   </div>
 </div>

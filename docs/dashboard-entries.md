@@ -15427,3 +15427,61 @@ that a line was "unmutatable", both refuted.
 Phase 6: `docs/reviews/architecture-review-2026-10-16-claim-propagation.md`. Backlog rows 293–298.
 Roadmap section added under anchor `harness-ships-elsewhere`. NOT CONVERGED; PR #376 open,
 20 commits ahead, `--force-with-lease` required after the rebase.
+
+## 2026-10-17
+You picked the first of the four options the architecture review put to you, and it is built.
+
+The short version: the walkthrough page and the spec it explains had been saying the same rules in
+their own separate words, and the two kept drifting apart. Four rounds of review tried to keep them
+in step by hand. The decision you took says they should not both state the rules at all — the spec
+owns them, the page explains freely and links to them for the exact wording. A link cannot go stale
+the way a copy can.
+
+Two things turned up while building it that are worth your time.
+
+**The option as written would not have worked, and it would have looked like it did.** The mechanism
+it reuses checks that a page *links* to the spec. It does not check that the page *agrees* with it.
+Your walkthrough already had that link, so the new check would have gone green on its first run
+while the page still contradicted the spec in three places. The real fix was deleting the duplicated
+sentences, not adding the check — the check only stops *new* ones appearing. That is now written into
+the decision record instead of being left for someone to discover.
+
+**The old guard had been making the correct fix impossible.** It required each registered rule to
+appear in *both* the spec and the page. So deleting a stale sentence from the page — the right thing
+to do — would have turned the build red. It was insisting on the duplication that was going wrong.
+That explains why four rounds kept rewording instead of deleting.
+
+The three contradictions are fixed. One of them was partly misdescribed when it was filed: the page
+was actually already right, and the fault was inside the spec, which contradicted itself 43 lines
+apart. Another was worse than filed — the page listed three corrections and then called them "both"
+and "either" in the next two sentences.
+
+**Waiting on you:** two things, unchanged. The content review of the 157 memory files is yours and
+nothing can grade the memory corpus until it happens. And one round of review is still owed on this
+branch — you chose to wait for the work to settle rather than pay for a round over code that was
+about to be deleted, which is what happened. The branch should not merge until that round runs.
+<!--tech-->
+ADR-0015 (`docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md`), anchor
+`harness-ships-elsewhere`. Closes backlog #298 and #297; narrows #282, #293, #296.
+
+`scripts/check-canonical-source.py`: `SEARCHED` gains `*.html` (part of #282 — measured before the
+widening, the population was 1,937 files with **0** HTML, so the new canon's two citing sites were
+both invisible to it). New `CANONS` entry `marketplace-inventory`, tokens chosen as distinctive
+multi-word forms because the bare symbols are unusable in a substring oracle — `D1` occurs in 121
+files and the explainer CSS carries `#c5c1b9` 232 times. 25 → 27 cases, one a CONTROL; one mutation,
+run and killed via the case it names. ⭐ It caught `CONTEXT.md` and the ADR itself on the day it
+landed; both are declared citing sites rather than merely fixed.
+
+`scripts/check-claim-propagation.py`: 1,459 → 828 lines. `RETIRED`, `LIVE`, the retirement-marker
+vocabulary and the whole prose matcher are deleted; `_Blocks` → `_Carriers` (rename checked against
+all 60 manifests first: 0 anchors). 96 → 41 cases; 32 → 15 mutations, **15 killed, 15 attributed,
+0 survivors** over a green control and re-control via a scoped `--mutate .`. Declared sum
+1488 → 1472 — a ratchet FALL, permitted because 19 entries are retired WITH their subject; **4 were
+retargeted, not retired**, because their anchors broke while their rules survived.
+
+`CONTEXT.md` gains canon / recital / decision symbol / citing site (candidate 2 of the review).
+`.agents/skills/shared/explainer-delivery.md`'s what-it-does table corrected — the token half of its
+claim is gone, so the recompose gap it describes is now *wider*, not narrower.
+
+Filename kept though it is now wider than its content: 23 files cite it, 8 of them merged review
+documents. Same decision and reason as `block-default-branch-push.sh`.

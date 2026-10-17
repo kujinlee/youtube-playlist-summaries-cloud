@@ -144,8 +144,10 @@ The fragment is a `<title>`, one `<style>…</style>`, then body markup — no `
 >
 > | What it does | What it does NOT do |
 > |---|---|
-> | requires every **registered** token and **registered derived figure** to be present and correct at **both** the fragment and the composed page | compose the fragment and compare the result against the committed page |
-> | so a drift that touches a registered claim or figure is refused — which is how the author's own reflow was caught within the hour | notice a drift that touches nothing registered, which is most edits |
+> | requires every **registered derived figure** to be present and correct at **both** the fragment and the composed page | compose the fragment and compare the result against the committed page |
+> | so a drift that touches a registered figure is refused — which is how the author's own stale `spec-lines` was caught again on 2026-10-17 | notice a drift that touches nothing registered, which is most edits |
+>
+> ⟳ ⛔ **NARROWER STILL SINCE 2026-10-17 (ADR-0015), AND THE ROW ABOVE IS THE CORRECTED ONE.** It used to say *"every registered **token** and registered derived figure"*. The TOKEN half is **deleted** — `check-claim-propagation.py` no longer reads prose at all, because the repository had already decided the opposite remedy (`check-canonical-source.py` refuses the second copy) and because three claims were measured drifted while the token half was GREEN over all three (`docs/backlog.md` row 297). So the gap this paragraph protects is **wider** than it was, not narrower, and the hand-run falsifier below is now the only check on a skipped recompose that touches no registered figure.
 >
 > ⛔ **SO THE PARAGRAPH ABOVE IS THE PROTECTION, FOR EVERY PAGE INCLUDING THAT ONE** — the guard
 > narrows the gap for one dated document pair (`docs/backlog.md` row 293) and closes it for nobody.

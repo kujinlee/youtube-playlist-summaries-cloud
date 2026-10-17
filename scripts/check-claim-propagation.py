@@ -1,53 +1,58 @@
 #!/usr/bin/env python3
-"""Refuse a document set where one rule is stated in several places and the fold updated only some.
+"""Refuse a page whose DERIVED figure disagrees with the producer that computes it.
 
-    python3 scripts/check-claim-propagation.py --self-test # 96 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 41 cases against synthetic trees
 
-WHY THIS EXISTS
----------------
-Measured on `marketplace-inventory`, 2026-10-16. Two adversarial rounds produced 18 then 31
-findings, and **18 of the second round's were introduced by the first round's own fix.** Round 2's
-Claude half isolated one mechanism behind thirteen of fourteen:
+⛔ THE FILENAME IS NOW WIDER THAN THE CONTENT, AND IT IS KEPT DELIBERATELY. This script once
+checked three things; ADR-0015 superseded two of them and only the derived-figure half remains.
+The name is retained because **23 files cite it, 8 of them MERGED review documents** — frozen
+testimony that cannot be rewritten — plus `ci.yml`, `CONTEXT.md` and the spec. Same decision, and
+the same reason, as `.claude/hooks/block-default-branch-push.sh`, whose filename is narrower than
+its content for exactly this reason. ⚠ A reader who remembers the old three-part contract must
+read the bound below, not the name.
 
-    a rule is stated in more than one place, and the fold updates the site the finding named.
+WHAT IT CHECKS
+--------------
+**A DERIVED figure agrees with its source.** The page carries `data-derived="spec-lines"`; its text
+must equal the spec's real line count. Measured: the page said *"213-line spec"* for a 669-line
+spec, having been recomposed four times without the figure being re-derived — and it has caught
+that count moving FOUR times since, most recently on 2026-10-17 when adding a canon marker to the
+spec made it 1,137 lines while both pages still said 1,136.
 
-Per finding, the site updated against the site that was not: the spec against the page (four
-separate contradictions in one artifact pair); `§5` which *asserts* who derives the shipping-set
-declaration against `§7 item 2` which was supposed to *contain* it; `§6` which *requires* an
-isolation baseline against `§7` which produces nothing; `§4`'s aggregation row against `§4b`'s
-completeness rule. Round 1's Blocking B3 — *"§5 requires a declared set; nothing in §7 produces
-one"* — then **recurred one round later in the same pair of sections**, which is the datum that
-armed the architecture review.
+⭐ THIS HALF HAS NO EQUIVALENT ANYWHERE ELSE, which is why ADR-0015 kept it while shedding the
+rest. No canon marker, no citation rule and no amount of prose discipline notices a number drifting
+by one.
 
-⛔ **THE REMEDY IS NOT A CONVENTION, BECAUSE A CONVENTION IS WHAT FAILED.** The coordinator wrote the
-mechanism against itself after round 2 — *"I folded the spec thoroughly and the page partially"* —
-and then did it again in the very next round. A fold checklist that must be remembered competes with
-the same recall that produced the defect. This guard is the mechanical half.
+WHAT WAS REMOVED, AND WHY — because a reader must not assume it is still covered
+--------------------------------------------------------------------------------
+⟳ 2026-10-17, ADR-0015 (architecture review `claim-propagation`, backlog #298). Two checks are
+GONE: *a RETIRED claim is not re-asserted*, and *a LIVE claim reaches every site that must state
+it*. Both policed the same rule stated in two PROSE copies, via a hand-kept token registry.
 
-WHAT IT CHECKS, AND WHAT IT CANNOT
-----------------------------------
-1. **A RETIRED claim is not re-asserted.** When a fold retires a rule, the rule's distinctive token
-   goes in `RETIRED` below. The token may then appear *only inside a marked retirement block* — a
-   block that also says it is a correction. An unmarked occurrence is an assertion of a rule the
-   document has replaced, which is what the human would read and approve.
+**They were removed because the repository had already decided the opposite remedy and this guard
+was built anyway.** `check-canonical-source.py` — *"a mechanism described in more than one place
+drifts. This refuses the second copy"* — landed 2026-10-14 for this same defect class. This file
+required *every site to agree*; that one *refuses the second copy*. Opposite architectures for one
+concern, which is `a second implementation of one rule drifts` — this repository's most-measured
+defect, 17 recorded instances — applied to its own guards.
 
-2. **A LIVE claim reaches every site that must state it.** When a rule must be stated at several
-   sites, `LIVE` records the token and those sites. A token present at some and absent at others is
-   the exact defect above: `§5` asserting what `§7` does not contain.
+⛔ AND THE PROSE HALF WAS MEASURED FAILING AT THE MOMENT OF THE DECISION: **three claims were
+drifted between the spec and the page while this guard was GREEN over all three** (backlog #297).
+A check green over the drift it exists to catch is worse than none, because it creates a belief
+that something is covered. The 65 self-test cases rounds 3 and 4 added — chasing `<em>`, a
+whitespace text node and a `<br>` — were all artefacts of matching a phrase across two prose
+copies, and are retired WITH their subject.
 
-3. **A DERIVED figure agrees with its source.** The page carries `data-derived="spec-lines"`; its
-   text must equal the spec's real line count. Measured: the page said *"213-line spec"* for a
-   669-line spec, having been recomposed four times without the figure being re-derived.
+⚠ WHAT NOW PROTECTS PROSE AGREEMENT, STATED PLAINLY: **review, and nothing else.** The canon
+mechanism proves a page CITES the spec; it cannot prove the page AGREES with it — `audit()` there
+is `hit and not _cites(...)`, so a citing site may restate and contradict. ADR-0015 accepts that
+deliberately. The remedy for an existing restatement is to delete the recital and keep the
+citation: a citation cannot drift, a recital can.
 
-⚠ **WHAT IT CANNOT DO, stated rather than discovered.** It cannot tell that two sentences *mean* the
-same thing — only that a declared token is present or absent. A rule restated in words no token
-matches is invisible to it. So this guard shrinks the class; it does not close it, and
-`REGISTRY_IS_INCOMPLETE` below says so in the code rather than only in prose.
-
-⛔ **AND IT IS NOT A SPELL-CHECKER FOR PROSE ABOUT THE RULES.** Every one of these documents quotes
-its own retired claims deliberately, to record what changed — that is the house style and it is why
-the marked-block exemption exists rather than a blanket ban. `check-plan-file-tags.py` paid for this
-lesson first: a bare substring test broke thirteen documents that merely *discussed* a tag.
+⛔ AND IT IS NOT A SPELL-CHECKER FOR PROSE ABOUT THE RULES — the lesson that outlives the deleted
+half. Every one of these documents quotes its own retired claims deliberately, to record what
+changed. `check-plan-file-tags.py` paid for this first: a bare substring test broke thirteen
+documents that merely *discussed* a tag.
 """
 
 from __future__ import annotations
@@ -68,151 +73,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SPEC = "docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md"
 PAGE = "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.fragment.html"
 PAGE_HTML = "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.html"
-
-# A retired claim: its token must appear only inside a marked retirement block.
-RETIRED: list[dict] = [
-    {
-        "id": "inheritance-unqualified",
-        "token": "inherits its support verdict from the",
-        "why": "r2 refuted it: undefined for >1 importer, silently wrong for none; §4 now has five rules",
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "figure-origin-misattributed",
-        "token": "the commit that wrote the figure",
-        "why": "r2 CODEX 9: cacbac17 measured it; 100cf498 republished it already 3.7% stale",
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "d5-undecided",
-        "token": "deliberately did not decide for you",
-        "why": "the owner settled it 2026-10-16; it is D5, a decision of record",
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "spec-length-213",
-        "token": "213-line spec",
-        "why": "r2 CLAUDE B2: the spec is not 213 lines and the figure is now derived",
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "criteria-mechanically-countable",
-        "token": "mechanically countable",
-        "why": "r1 CLAUDE H4 / r1 CODEX 4: counting gives the wrong answer in both directions",
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "falsifier-any-blocker",
-        "token": "any blocker the install experiment hits",
-        "why": "r1 CLAUDE B2: the failure that matters is a degraded result, not a blocker",
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "licence-blocks-the-milestone",
-        "token": "blocks this milestone",
-        "why": ("the owner caught this overstatement on 2026-10-16: a missing licence blocks "
-                "PUBLISHING, which §10 defers, and never blocked the milestone. ⚠ Registered "
-                "2026-10-16 by r3 CODEX M5, which observed that D7 registers the LIVE claim "
-                "(MIT) and left the retired one unguarded — so the corrected overstatement "
-                "could be re-asserted with the gate green. It is absent from both documents "
-                "today; this entry keeps it that way"),
-        "sites": [SPEC, PAGE],
-    },
-]
-
-# A live claim: its token must be present at EVERY site listed.
-LIVE: list[dict] = [
-    {
-        "id": "shipping-set-deriver",
-        "token": "never reads the scan's output",
-        "why": "§5 asserts §7 item 2 names the deriver; r2 CLAUDE H1 found it named neither",
-        "sites": [SPEC],
-    },
-    {
-        "id": "isolation-baseline-producer",
-        "token": "ISOLATION BASELINE",
-        "why": "§6 requires a baseline; r2 CLAUDE H2 found nothing in §7 produced one",
-        "sites": [SPEC],
-    },
-    {
-        "id": "d7-licence-mit",
-        "token": "MIT",
-        "why": ("D7, decided by the owner 2026-10-16. ⚠ The licence belongs on the MARKETPLACE "
-                "repo: this repository is public and holds 262 product files beside the harness, "
-                "so a root LICENSE would relicense the product. Registered at both sites"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "d5-ship-plus-argued",
-        "token": "the honest label for efforts (1)",
-        "why": ("D5's PERMISSION, settled by the owner 2026-10-16: `SHIP` + `argued` is allowed "
-                "and is the honest label for the two efforts no experiment reaches. ⚠ Registered "
-                "2026-10-16 by r3 CLAUDE H1, which found §9c still telling the approver this was "
-                "an OPEN QUESTION in §4 while the page already said it was decided — the page "
-                "folded, the spec not, and no token registered, so the gate was green over the "
-                "disagreement"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "d8-corrections-land-here",
-        "token": "first commit",
-        "why": ("D8, asked from the page and decided by the owner 2026-10-16: the three stale "
-                "portable-practices corrections stay in PR 1. The registered token is the BOUND "
-                "that answers the counter, not the decision — docs-only repairs go in as PR 1's "
-                "first commit so a stall cannot hold them"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "d9-support-bar-falsifier",
-        "token": "no version tag",
-        "why": ("D9, decided by the owner 2026-10-16 by selection card: best-effort, versioned. "
-                "⚠ The token is the FALSIFIER, because under best-effort support the tag and the "
-                "changelog are the whole promise — a bar whose failing observation is dropped from "
-                "either site stops being a gate. ⟳ This entry used to warn that the phrase must "
-                "stay on ONE LINE, because the match was a raw substring. It no longer has to: "
-                "`flat()` normalises whitespace, after that warning was ignored by the author "
-                "within the hour"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "plugin-root-self-location",
-        "token": "CLAUDE_PLUGIN_ROOT",
-        "why": ("asked by the owner from the page 2026-10-16: the collision is not the directory "
-                "NAME, it is CWD-relative resolution. Both installed third-party plugins keep "
-                "scripts/ and use this variable. Registered at both sites in the same commit"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "experiment-two-tiers",
-        "token": "falsifier for tier A",
-        "why": ("asked by the owner from the page 2026-10-16: a real third-party repo is the "
-                "falsifier for the seeded throwaway, not a replacement for it. Registered at both "
-                "sites in the same commit that adds it"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "d6-harvest-axis",
-        "token": "harvest",
-        "why": ("D6, settled by the owner 2026-10-16 from the page: a DON'T-SHIP component can "
-                "still yield a transferable practice. Registered at both sites in the same commit "
-                "that adds it, which is the discipline C5 had to learn the hard way"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "c5-redistributable",
-        "token": "Redistributable",
-        "why": ("r2 CLAUDE M10: added to the spec and NOT the page — the propagation mechanism "
-                "recurring a third time, caught by executing the page. Registered at both sites "
-                "so the next fold cannot drop one"),
-        "sites": [SPEC, PAGE],
-    },
-    {
-        "id": "inheritance-attribution-test",
-        "token": "ATTRIBUTED TO CODE IN THAT LIBRARY",
-        "why": "r2 CLAUDE H5: without it, page_chrome.py inherits a credential failure it never touches",
-        "sites": [SPEC],
-    },
-]
 
 def audited_sites(sites: list[str]) -> list[str]:
     """Expand a registration to the paths that must actually agree.
@@ -256,119 +116,47 @@ DERIVED: list[dict] = [
     },
 ]
 
-# ⟳⛔ AND THE SAME CLAIM ABOUT `wanted |= {… DERIVED pages …}` IS ALSO WITHDRAWN (r4 CLAUDE H2) —
-# THE SECOND "UNMUTATABLE" BOUND IN THIS COMMENT BLOCK TO FALL, IN TWO ROUNDS. It said the line was
-# "load-bearing and unmutatable for the same structural reason", on the evidence that DELETING it
-# crashes with `FileNotFoundError`. True, and not the question: a one-token edit leaves the suite
-# **88/88 green** while changing behaviour, which the reviewer witnessed (`CannotRun` where the
-# unmutated code raises, versus `FileNotFoundError`). The entry is in the manifest.
-#
-# ⛔ SO THE RULE, WRITTEN TWICE BECAUSE I BROKE IT TWICE: "no mutation is possible" is a claim about
-# EVERY possible edit. One probe cannot establish it, a crash under one form says nothing about
-# another, and the honest form is *I witnessed this form crash* — which is a sentence about me, not
-# about the code.
-#
-# ⟳⛔ THE ABSENT-PATH CHECK DOES HAVE A MUTATION NOW, AND THE PARAGRAPH THAT SAID IT COULD NOT IS
-# THE MORE USEFUL RECORD (r4 CODEX H3). I wrote: *every way to disable the check leaves the code
-# below reading a file that is not there, so the mutation dies as `FileNotFoundError` instead of
-# failing the case it names.* **I had witnessed exactly ONE disabling form** — `if absent_paths:`
-# → `if False:` — and generalised from it to *every*.
-#
-# The reviewer produced a second form in one line:
-#
-#     if absent_paths:
-#         return [], []
-#
-# Measured: **rc=1, four named failures, zero tracebacks.** A clean early return disables the
-# refusal without ever reaching the read. The entry is in the manifest.
-#
-# ⭐ THE TRANSFERABLE PART IS NOT THE MUTATION, IT IS THE SHAPE OF THE MISTAKE: a bound enumerates
-# what was WITNESSED, and "no mutation is possible" is a claim about every possible edit, which one
-# probe cannot establish. ⚠ The same reasoning appears below for `wanted |= {… DERIVED pages …}`
-# and is now stated as what it is: one crashing form was witnessed, and no form was proved absent.
-#
-# ⛔ Stated in the code, not only in the docstring: this registry is a floor, not a closure, and
-# r3 CLAUDE M8 pointed out that only ONE of the two directions had ever been written down.
-#   FALSE NEGATIVE — a rule restated in words no token above matches is invisible to this guard.
-#   FALSE POSITIVE — a registered token can be satisfied by text that is not the rule. `token_hits`
-#     closes the crudest form (a 3-character token matching inside `COMMIT`), but a token is still
-#     a PHRASE and not a meaning: prose that happens to contain the phrase satisfies it.
-REGISTRY_IS_INCOMPLETE = True
 
-# A block counts as a marked retirement when it carries one of these.
-#
-# ⛔ NARROWED 2026-10-16 BY r3's CLAUDE HALF (B1), WHICH MEASURED THE OPPOSITE OF WHAT THE COMMENT
-# HERE USED TO CLAIM. It said the exemption "cannot be satisfied by ordinary prose that happens to
-# mention the rule" — and four of the eleven members were ordinary English: `previously`,
-# `no longer`, `corrected`/`Corrected`, `retired`. Measured against the REAL tree: appending
-#
-#     A library inherits its support verdict from the entry-points; the mix rule is
-#     no longer in doubt.
-#
-# to the spec re-asserted a RETIRED rule in the present tense and the gate stayed silent, because
-# `no longer` was in this tuple. ⚠ The author's own block-level widening (r3 CODEX H4) made it
-# worse: a marker anywhere in the block now exempts the whole block, so one incidental "previously"
-# covered every assertion beside it.
-#
-# ⭐ SO THE VOCABULARY IS NOW DELIBERATE MARKS ONLY — the project's correction glyph and three
-# ALL-CAPS words nobody writes by accident mid-sentence. Measured after narrowing: suite 45/45 and
-# the real tree rc=0 with an identical note set, so nothing in either document relied on a weak
-# member. ⚠ A correction written WITHOUT one of these is now refused — that is the point: an
-# exemption should cost a deliberate mark, and `⟳` is already in every correction note in this
-# repository.
-RETIREMENT_MARKERS = (
-    "⟳",  # ⟳ — this project's correction glyph
-    "SUPERSEDED",
-    "CORRECTED",
-    "RETIRED",
-)
+class _Carriers(html.parser.HTMLParser):
+    """Collect the `data-derived` values a page declares, and how many elements declare each.
 
+    ⟳ 2026-10-17 (ADR-0015): WAS `_Blocks`, and it collected two unrelated things — these
+    carriers, and per-block prose text with the class of every enclosing element, for matching a
+    registered phrase across two prose copies. That second job is GONE: the canon mechanism in
+    `check-canonical-source.py` replaces it, so the `BLOCK` set, the `blocks`/`nodes` lists and
+    the class accumulation are deleted rather than left unreferenced. The rename is the honest
+    fix — the old name described the deleted half — and it is safe by this repository's own
+    stated rule: the symbol occurred THREE times in this file and in ZERO mutation anchors across
+    all 60 manifests, checked before renaming rather than after.
 
-class _Blocks(html.parser.HTMLParser):
-    """Collect (text, attrs-of-enclosing-chain) for each HTML text node.
-
-    A retired token inside an element whose class mentions `note`, or inside any element whose
-    own text carries a retirement marker, is a quotation. Anything else is an assertion.
+    ⚠ WHAT THE DELETION COST, stated rather than discovered: rounds 3 and 4 spent 65 cases on
+    that prose matcher — inline markup splitting a phrase per text node, a whitespace-only node
+    being deleted, and a void element separating words while emitting none. Those cases are
+    retired WITH their subject. The three lessons that still bind are the ones below, because
+    they are about the ELEMENT STACK, which the carrier chain needs.
     """
 
     # Void elements never get an end tag, so they must not be pushed onto the stack —
     # otherwise one <br> inside a carrier leaves the carrier open for the rest of the document.
+    # ⭐ THIS IS A CARRIER RULE, NOT A PROSE RULE, which is why it survives the deletion: the
+    # mutation that pushes void elements reddens `derived: a void element carrying the attribute
+    # captures nothing`.
     VOID = frozenset(
         "area base br col embed hr img input link meta param source track wbr".split()
-    )
-
-    # ⛔ TEXT IS ACCUMULATED PER BLOCK, NOT PER TEXT NODE (r3 CODEX H4). Matching per node means
-    # ordinary inline markup HIDES a registered claim: measured, "<p>A library inherits its
-    # support verdict from the entry-points.</p>" scored (asserted=1, quoted=0) while the same
-    # sentence with <em>support verdict</em> scored (0, 0) — identical to a reader, invisible to
-    # the guard. Blocks are the unit the markdown path already uses, so the two now agree.
-    BLOCK = frozenset(
-        "p div li td th tr table h1 h2 h3 h4 h5 h6 section article blockquote pre "
-        "ul ol dl dt dd header footer main aside figure figcaption".split()
     )
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.stack: list[tuple[str, dict]] = []
-        # (text, classes-seen) per block, in document order. `classes` is the union over every
-        # element open at any moment this block emitted text — so `<span class="note">` inside a
-        # plain <p> still exempts, which per-node matching got right and a block's own attributes
-        # alone would lose. Measured: the page carries 7 such spans.
-        self.blocks: list[dict] = []
-        self.nodes: list[tuple[str, list[tuple[str, dict]]]] = []
         # key -> accumulated text, taken ONLY from nodes whose open-element chain still contains
         # the carrying element.
         #
-        # ⛔ THE COMMENT HERE USED TO SAY "keyed first-wins so a later stray cannot overwrite",
-        # AND THE CODE DID NEITHER (r3 CLAUDE M7). `setdefault` then `+=` is CONCATENATION:
-        # measured, two carriers for `spec-lines` reading 669 and 99999 produced `'66999999'`, and
-        # a nested carrier produced `'105959'`. A later stray did not fail to overwrite — it
-        # appended. No case pinned it either, so true last-wins would also have passed.
-        #
-        # ⭐ CONCATENATION IS KEPT, because it is what makes `<strong …>1,<em>118</em></strong>`
-        # read as one value — and the case the old comment was worried about is now REFUSED
-        # outright instead: `carriers` counts carrier OPENINGS per key, and audit() rejects a key
-        # carried more than once. Two carriers for one key is a page defect, not a merge problem.
+        # ⭐ CONCATENATION IS DELIBERATE, because it is what makes
+        # `<strong …>1,<em>118</em></strong>` read as one value. The case the old comment worried
+        # about — a second carrier for one key silently appending rather than overwriting — is
+        # REFUSED outright instead: `carriers` counts carrier OPENINGS per key, and audit()
+        # rejects a key carried more than once. Two carriers for one key is a page defect, not a
+        # merge problem.
         self.derived: dict[str, str] = {}
         self.carriers: dict[str, int] = {}
 
@@ -376,27 +164,13 @@ class _Blocks(html.parser.HTMLParser):
         a = {k: (v if v is not None else "") for k, v in attrs}
         if a.get("data-derived"):
             self.carriers[a["data-derived"]] = self.carriers.get(a["data-derived"], 0) + 1
-        # ⛔ A VOID ELEMENT SEPARATES WORDS WITHOUT EMITTING ANY TEXT (r4 CLAUDE H1, the THIRD
-        # instance of this one class in this matcher). r3 CODEX H4 was markup splitting a phrase
-        # per text node; r4 CODEX H1 was a whitespace node being deleted; this is a separator that
-        # emits nothing at all, so `support<br>verdict` joined and the phrase vanished. `<br>` is
-        # live in the page three times. Each earlier fix covered the spelling its finding named —
-        # so this one is keyed on the VOID SET, which covers `<br>`, `<img>`, `<hr>`, `<wbr>` and
-        # the rest in one rule rather than on the tag that was reported.
-        if tag.lower() in self.VOID and self.blocks:
-            self.blocks[-1]["text"] += " "
-        if tag.lower() in self.BLOCK:
-            self.blocks.append({"text": "", "classes": "", "depth": len(self.stack)})
         if tag.lower() not in self.VOID:
             self.stack.append((tag, a))
 
     def handle_startendtag(self, tag, attrs):  # noqa: D102
         # A self-closing element has no children, so it can carry no derived TEXT — but it is
         # still a declared carrier, and the closure rule must see it (r4 CODEX H2). It is
-        # deliberately NOT pushed onto the stack. ⚠ It DOES separate words — see the VOID branch
-        # in `handle_starttag` — because `<br/>` and `<br>` must behave identically.
-        if self.blocks:
-            self.blocks[-1]["text"] += " "
+        # deliberately NOT pushed onto the stack.
         a = {k: (v if v is not None else "") for k, v in attrs}
         if a.get("data-derived"):
             self.carriers[a["data-derived"]] = self.carriers.get(a["data-derived"], 0) + 1
@@ -410,23 +184,12 @@ class _Blocks(html.parser.HTMLParser):
         # no match: an end tag with no open partner. Ignore it rather than corrupting the stack.
 
     def handle_data(self, data):  # noqa: D102
+        # ⚠ Whitespace-only text contributes NOTHING to a derived value, because every value is
+        # accumulated stripped. It used to contribute a separating space, which existed only for
+        # the deleted prose matcher — returning early here is equivalent for carriers, not a
+        # narrowing of behaviour.
         if not data.strip():
-            # ⛔ WHITESPACE-ONLY TEXT STILL SEPARATES WORDS (r4 CODEX H1). Returning outright
-            # DELETED the space, so `<em>support</em> <em>verdict</em>` accumulated as
-            # "supportverdict" and a registered phrase went missing from a block that renders it
-            # identically to a reader. Measured: (1, 0) unformatted, (0, 0) with the two spans.
-            # ⚠ It contributes a SPACE and NOT its classes — which is what keeps r3's blank-span
-            # case true: a `<span class="note">   </span>` must not exempt the block around it.
-            if self.blocks:
-                self.blocks[-1]["text"] += " "
             return
-        self.nodes.append((data, list(self.stack)))
-        if not self.blocks:
-            # text outside any block element is its own block
-            self.blocks.append({"text": "", "classes": "", "depth": 0})
-        blk = self.blocks[-1]
-        blk["text"] += data
-        blk["classes"] += " " + " ".join(a.get("class", "") for _, a in self.stack)
         for _, a in self.stack:
             key = a.get("data-derived")
             if key:
@@ -434,109 +197,15 @@ class _Blocks(html.parser.HTMLParser):
                 self.derived[key] += data.strip()
 
 
-def _markdown_blocks(text: str) -> list[str]:
-    """Blank-line-delimited blocks. A table is one block, so a row inherits its header's marker."""
-    return [b for b in re.split(r"\n\s*\n", text) if b.strip()]
-
-
-def flat(s: str) -> str:
-    """Collapse every run of whitespace to one space.
-
-    ⛔ WHY MATCHING IS WHITESPACE-INSENSITIVE. A registered token is a phrase, and a phrase gets
-    broken by reflowing a paragraph — which is editing, not a change of meaning. Measured twice in
-    one session on 2026-10-16: `'no version tag'` went missing from the page because the sentence
-    wrapped between `with` and `no`, and `'first commit'` went missing from the spec the same way
-    an hour later. Both times the guard was right that the token was absent and wrong about what
-    that meant. ⚠ This is the same defect as r3 CODEX H4 one layer down: there, inline markup split
-    the phrase; here, a newline did. A claim that disappears when someone rewraps a line is not a
-    claim this guard can hold anyone to.
-    """
-    return " ".join(s.split())
-
-
-def token_hits(haystack: str, token: str) -> int:
-    """Count occurrences of `token` in `haystack`, respecting WORD BOUNDARIES.
-
-    ⛔ WHY NOT A RAW SUBSTRING (r3 CLAUDE M8, the unnamed half of this guard's own bound). The
-    registry's stated limit is the false-NEGATIVE direction — *a rule restated in words no token
-    matches is invisible.* The opposite direction was unnamed and live: `d7-licence-mit`'s token is
-    the three characters `MIT`, so an uppercase `COMMIT`, `SUBMIT` or `LIMIT` anywhere in either
-    document would have satisfied D7's registration **vacuously**. `first commit` and `harvest` are
-    generic the same way.
-
-    ⚠ Not live when it was found, and that was checked rather than assumed: a scan for
-    `[A-Za-z]{0,8}MIT[A-Za-z]{0,8}` over both documents returned only bare `MIT`. The fix is here
-    because *not live today* is not a property of the guard.
-
-    A boundary is required only at an end that IS a word character, so a token that legitimately
-    begins or ends with punctuation still matches.
-    """
-    pre = r"\b" if token[:1].isalnum() or token[:1] == "_" else ""
-    post = r"\b" if token[-1:].isalnum() or token[-1:] == "_" else ""
-    return len(re.findall(pre + re.escape(token) + post, haystack))
-
-
-def _html_occurrences(text: str, token: str) -> tuple[int, int]:
-    """Return (asserted, quoted) counts for `token` in an HTML fragment.
-
-    ⚠ A block, not a text node, is the unit — see `_Blocks.BLOCK`. A retirement marker ANYWHERE
-    in a block exempts the whole block, which is a wider exemption than per-node matching gave and
-    is the price of not being defeated by an `<em>`: the alternative is a claim that disappears
-    when someone bolds two words of it, and that was the measured failure.
-
-    ⛔ THIS IS **NOT** PARITY WITH `_markdown_occurrences`, AND THE DOCSTRING USED TO SAY IT WAS
-    (r3 CLAUDE M6). The two differ exactly where correction TABLES live, because the block
-    boundaries differ: `_markdown_blocks` treats a whole table as ONE block, so *a row inherits
-    its header's marker*, while `BLOCK` contains `table`, `tr`, `td` and `th`, so every cell is
-    its own block. Measured on the same content in both languages:
-
-        HTML     <table><tr><th>⟳ corrected</th></tr><tr><td>…token…</td></tr></table>  -> (1, 0)
-        Markdown | ⟳ corrected |\n| …token… |                                           -> (0, 1)
-
-    **The HTML behaviour is the stricter and the better one** — a marker in a header should not
-    exempt every row beneath it — so the divergence is kept and named here rather than smoothed
-    over. Both documents carry correction tables, so this is a live difference, not a hypothetical.
-    """
-    p = _Blocks()
-    p.feed(text)
-    asserted = quoted = 0
-    needle = flat(token)
-    for blk in p.blocks:
-        data = flat(blk["text"])
-        hits = token_hits(data, needle)
-        if not hits:
-            continue
-        if "note" in blk["classes"] or any(m in data for m in RETIREMENT_MARKERS):
-            quoted += hits
-        else:
-            asserted += hits
-    return asserted, quoted
-
-
-def _markdown_occurrences(text: str, token: str) -> tuple[int, int]:
-    asserted = quoted = 0
-    needle = flat(token)
-    for raw in _markdown_blocks(text):
-        block = flat(raw)
-        hits = token_hits(block, needle)
-        if not hits:
-            continue
-        if any(m in block for m in RETIREMENT_MARKERS):
-            quoted += hits
-        else:
-            asserted += hits
-    return asserted, quoted
-
-
 def _derived_values(text: str) -> dict[str, str]:
-    p = _Blocks()
+    p = _Carriers()
     p.feed(text)
     return dict(p.derived)
 
 
 def _derived_carrier_counts(text: str) -> dict[str, int]:
     """How many elements carry each `data-derived` key. More than one is a page defect (M7)."""
-    p = _Blocks()
+    p = _Carriers()
     p.feed(text)
     return dict(p.carriers)
 
@@ -547,27 +216,27 @@ def _tree_spec_lines(spec_text: str) -> int:
     return len(spec_text.splitlines())
 
 
-def _is_html(path: str) -> bool:
-    return path.endswith((".html", ".htm"))
-
-
 def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
     """Return (problems, notes). A problem fails the gate; a note is reported and does not."""
     problems: list[str] = []
     notes: list[str] = []
 
-    wanted = {s for c in RETIRED + LIVE for s in audited_sites(c["sites"])}
-    wanted |= {p for d in DERIVED for p in audited_sites([d["page"]])}
+    wanted = {p for d in DERIVED for p in audited_sites([d["page"]])}
     wanted |= {d["source"] for d in DERIVED}
-    # ⛔ AN EMPTY REGISTRY IS CANNOT RUN (r3 CLAUDE M5.2). With every list empty, `wanted` is
-    # empty, `absent_paths` is empty, nothing raises, and the success line reads "0 retired, 0
-    # live, 0 derived" — a zero over nothing, which this repository has already paid for once and
-    # written down in `check-plan-file-tags.py`: *an empty corpus is CANNOT RUN, because a zero
-    # over nothing is not a finding.* This guard had no such assertion.
-    if not (RETIRED or LIVE or DERIVED):
+    # ⛔ AN EMPTY REGISTRY IS CANNOT RUN (r3 CLAUDE M5.2). With `DERIVED` empty, `wanted` is
+    # empty, `absent_paths` is empty, nothing raises, and the success line reads "0 derived" — a
+    # zero over nothing, which this repository has already paid for once and written down in
+    # `check-plan-file-tags.py`: *an empty corpus is CANNOT RUN, because a zero over nothing is
+    # not a finding.* This guard had no such assertion.
+    # ⟳ 2026-10-17 (ADR-0015): the condition was `not (RETIRED or LIVE or DERIVED)`, a DISJUNCTION
+    # over three registries. With two of them gone it is not enough to delete their names — a
+    # disjunction over the survivors alone is the same rule, but a reader could reasonably have
+    # written `if not DERIVED and not <nothing>` and left an always-false guard. Stated because
+    # the near-miss is invisible once the other two names are gone.
+    if not DERIVED:
         raise CannotRun(
-            "the registry is EMPTY — no retired claim, no live claim and no derived figure is "
-            "registered, so a clean result here would be a zero over nothing"
+            "the registry is EMPTY — no derived figure is registered, so a clean result here "
+            "would be a zero over nothing"
         )
 
     absent_paths = sorted(s for s in wanted if not (root / s).is_file())
@@ -597,57 +266,6 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
         if rel not in cache:
             cache[rel] = (root / rel).read_text(encoding="utf-8")
         return cache[rel]
-
-    # 1 — retired claims must not be asserted
-    for claim in RETIRED:
-        for site in audited_sites(claim["sites"]):
-            text = read(site)
-            fn = _html_occurrences if _is_html(site) else _markdown_occurrences
-            asserted, quoted = fn(text, claim["token"])
-            if asserted:
-                problems.append(
-                    f"RETIRED claim re-asserted: {claim['id']} — {asserted} unmarked "
-                    f"occurrence(s) of {claim['token']!r} in {site}\n"
-                    f"      why it was retired: {claim['why']}\n"
-                    f"      fix: delete it, or put it in a block that marks it as a correction "
-                    f"(one of {', '.join(RETIREMENT_MARKERS[:4])}…)"
-                )
-            elif quoted:
-                notes.append(
-                    f"{claim['id']}: {quoted} marked quotation(s) in {site} — allowed"
-                )
-
-    # 2 — live claims must reach every declared site
-    for claim in LIVE:
-        # ⛔ AN EMPTY SITE LIST IS UNAUDITABLE, NOT SATISFIED (r3 CLAUDE M5.1). Both arms below
-        # are `if absent and …`, and an empty `sites` makes `absent` empty, so neither fired and
-        # the entry was silently unchecked — measured by appending a claim whose token is in no
-        # document anywhere and getting `problems: []`. The registry is hand-edited and removing a
-        # site is exactly how a list empties.
-        if not claim["sites"]:
-            problems.append(
-                f"LIVE claim registers NO sites: {claim['id']} — a claim with an empty site list "
-                f"can never fail, so it is a registration that does nothing\n"
-                f"      give it at least one site, or delete it: {claim['why']}"
-            )
-            continue
-        # No `missing` filter: every registered path is proved present above, or we raised.
-        sites = audited_sites(claim["sites"])
-        absent = [s for s in sites if not token_hits(flat(read(s)), flat(claim["token"]))]
-        auditable = sites
-        if absent and len(absent) < len(auditable):
-            problems.append(
-                f"LIVE claim reached only some of its sites: {claim['id']} — "
-                f"{claim['token']!r} is absent from {', '.join(absent)} but present elsewhere\n"
-                f"      why it must be at every site: {claim['why']}"
-            )
-        elif absent and len(absent) == len(auditable):
-            problems.append(
-                f"LIVE claim absent from ALL its sites: {claim['id']} — {claim['token']!r} "
-                f"found nowhere in {', '.join(auditable)}\n"
-                f"      either the claim was removed and this registry is stale, or the fold "
-                f"never landed: {claim['why']}"
-            )
 
     # 3 — derived figures must agree with their source
     # ⛔ CLOSURE: EVERY `data-derived` KEY IN AN AUDITED PAGE MUST BE REGISTERED (r3 CLAUDE M4).
@@ -748,123 +366,6 @@ def _self_test() -> int:
         if got != want:
             failures.append(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
-    # ── the block/occurrence primitives, both languages, both directions
-    md_assert = "A library inherits its support verdict from the entry-points.\n"
-    md_quoted = "⟳ SUPERSEDED: it said a library inherits its support verdict from the x.\n"
-    tok = "inherits its support verdict from the"
-    case("md: bare assertion counts as asserted", _markdown_occurrences(md_assert, tok), (1, 0))
-    case("md: marked block counts as quoted", _markdown_occurrences(md_quoted, tok), (0, 1))
-    # ONLY the glyph marks this one, so removing the glyph from the vocabulary must bite.
-    case(
-        "md: the correction glyph alone marks a retirement",
-        _markdown_occurrences("\u27f3 it said a library " + tok + " x\n", tok),
-        (0, 1),
-    )
-    case("md: absent token is neither", _markdown_occurrences("nothing here\n", tok), (0, 0))
-    # ⛔ WORD BOUNDARIES (r3 CLAUDE M8). `d7-licence-mit`'s token is three characters, so without
-    # them an uppercase COMMIT/SUBMIT/LIMIT satisfied D7's registration vacuously. The negatives
-    # here are ADJACENT — real words that contain the token — not absurd ones, which is the whole
-    # point: a must-fire-only test cannot fail.
-    case("boundary: a short token does NOT match inside a word",
-         token_hits("THE COMMIT AND THE SUBMIT AND THE LIMIT", "MIT"), 0)
-    case("boundary: …and still matches standing alone",
-         token_hits("published under MIT, which is short", "MIT"), 1)
-    # ⚠ THE FIRST VERSION OF THIS CASE DID NOT DISCRIMINATE — "the firster commits here" scores 0
-    # with boundaries AND 0 as a raw substring, so the sweep reported its `expect` matching no red
-    # case. The negative has to be a real word CONTAINING the token's last word: "first commitment"
-    # is 1 raw and 0 with boundaries. Adjacent, not absurd.
-    case("boundary: a multi-word token does not match inside a longer trailing word",
-         token_hits("as its first commitment here", "first commit"), 0)
-    case("boundary: …and the same phrase standing alone still matches",
-         token_hits("its first commit lands", "first commit"), 1)
-    case("boundary: a token ending in punctuation is not boundary-gated at that end",
-         token_hits("see docs/foo.md and nothing else", "docs/foo.md"), 1)
-    case("boundary: counting is per occurrence, not per block",
-         token_hits("MIT and MIT and COMMIT", "MIT"), 2)
-    # ⛔ THE FAIL-OPEN r3's CLAUDE HALF MEASURED (B1): four ordinary English words exempted a
-    # re-asserted retired rule. Each block below asserts the retired token beside one of those
-    # words and MUST now count as an assertion. Re-adding any of them to RETIREMENT_MARKERS turns
-    # the matching case back to (0, 1), which is this fix's falsifier — one case per word, so the
-    # failure names which word came back.
-    for _word in ("previously", "no longer", "retired", "corrected"):
-        case(
-            f"html: ordinary prose containing {_word!r} does NOT exempt an assertion",
-            _html_occurrences(f"<p>a library {tok} entry-points, {_word} debated</p>", tok),
-            (1, 0),
-        )
-    case(
-        "md: ordinary prose containing 'no longer' does NOT exempt an assertion",
-        _markdown_occurrences(f"a library {tok} entry-points. This is no longer in dispute.\n", tok),
-        (1, 0),
-    )
-    # ⚠ and the deliberate marks must still work, or the narrowing has traded one defect for another
-    for _mark in ("\u27f3", "SUPERSEDED", "CORRECTED", "RETIRED"):
-        case(
-            f"html: the deliberate mark {_mark!r} still exempts",
-            _html_occurrences(f"<p>{_mark} a library {tok} entry-points</p>", tok),
-            (0, 1),
-        )
-    # ⛔ THE WRAP TRAP, WHICH COST THE AUTHOR TWICE IN ONE SESSION. Both fixtures below say the
-    # same sentence; the second has a newline inside the phrase, which is what rewrapping a
-    # paragraph does. Before `flat()` the second scored (0, 0) — the guard reported a claim
-    # missing because a line had been reflowed.
-    wrapped_md = "it said a library inherits its support\nverdict from the entry-points\n"
-    case("md: a token split by a LINE BREAK is still found",
-         _markdown_occurrences(wrapped_md, tok), (1, 0))
-    case("html: a token split by a LINE BREAK is still found",
-         _html_occurrences("<p>a library inherits its support\nverdict from the x</p>", tok),
-         (1, 0))
-
-    case(
-        "md: marker in a DIFFERENT block does not exempt",
-        _markdown_occurrences("⟳ corrected elsewhere\n\n" + md_assert, tok),
-        (1, 0),
-    )
-    case(
-        "md: two assertions in one block are both counted",
-        _markdown_occurrences(md_assert.strip() + " " + md_assert, tok),
-        (2, 0),
-    )
-    html_assert = "<p>a library inherits its support verdict from the entry-points</p>"
-    html_note = '<p class="note">it said a library inherits its support verdict from the x</p>'
-    # ⛔ EXACTLY ONE MARKER, AND THAT IS THE POINT. The first version read
-    # "…from the x, refuted" — and `refuted` is itself in RETIREMENT_MARKERS, so the fixture was
-    # marked TWICE and could not notice losing one. Measured: the mutation that empties `⟳` from
-    # the vocabulary left this case GREEN, so the manifest entry naming it matched no red case.
-    # A fixture that satisfies a rule two ways cannot be a falsifier for either.
-    html_marked = "<p>⟳ a library inherits its support verdict from the x</p>"
-    case("html: bare <p> is an assertion", _html_occurrences(html_assert, tok), (1, 0))
-    case("html: class=note is a quotation", _html_occurrences(html_note, tok), (0, 1))
-    case("html: inline marker is a quotation", _html_occurrences(html_marked, tok), (0, 1))
-    # ⛔ THE SHAPE THAT HID A REGISTERED CLAIM (r3 CODEX H4). Both strings below render the same
-    # words to a reader; the second once scored (0, 0) because matching was per text node and
-    # `<em>` split the token in two. The pair is the falsifier: make matching per-node again and
-    # the second case fails while the first still passes, which is what makes it diagnostic.
-    html_split = "<p>a library inherits its <em>support verdict</em> from the entry-points</p>"
-    case("html: a bare assertion is asserted", _html_occurrences(html_assert, tok), (1, 0))
-    case(
-        "html: the SAME words split by inline markup are still asserted",
-        _html_occurrences(html_split, tok),
-        (1, 0),
-    )
-    # ⚠ and the fix must not cost the inline-class exemption: the page carries 7 of these, so a
-    # block-level rule that only read the block's OWN attributes would re-break them.
-    case(
-        "html: a note class on an INLINE span still exempts",
-        _html_occurrences('<p>x <span class="note">' + tok + "</span></p>", tok),
-        (0, 1),
-    )
-    case(
-        "html: nested inside a note ancestor is a quotation",
-        _html_occurrences('<div class="note"><span><em>' + tok + "</em></span></div>", tok),
-        (0, 1),
-    )
-    case(
-        "html: sibling note does not exempt an assertion",
-        _html_occurrences('<p class="note">x</p>' + html_assert, tok),
-        (1, 0),
-    )
-
     # ── derived-figure extraction
     case(
         "derived: reads the attribute's text",
@@ -917,8 +418,11 @@ def _self_test() -> int:
                                    encoding="utf-8")
         return d
 
-    live_tokens = "\n\n".join(c["token"] for c in LIVE)
-    clean_spec = live_tokens + "\n"
+    # ⟳ 2026-10-17 (ADR-0015): this was the concatenation of every LIVE token, because a clean
+    # tree had to satisfy the prose registry at the same time. With that registry gone the spec's
+    # CONTENT is irrelevant to this guard — only its LINE COUNT is read, by `line-count-of`. So
+    # the fixture now says what it is instead of deriving it from a table that no longer exists.
+    clean_spec = "\n".join(f"spec line {i}" for i in range(1, 24)) + "\n"
 
     def page_for(spec_text: str) -> str:
         """Build the page from the spec it describes, so the fixture cannot drift from its own
@@ -931,7 +435,6 @@ def _self_test() -> int:
         guard shipped that way in its own first commit (`2bca9fe5`) while its round document
         claimed a green control. Derived from `LIVE`, never listed, so a new page-site claim cannot
         reintroduce it."""
-        page_tokens = "\n".join(c["token"] for c in LIVE if PAGE in c["sites"])
         # ⛔ EVERY REGISTERED CARRIER, derived from `DERIVED` rather than listed — the closure rule
         # (r3 CLAUDE M4) refuses an unregistered carrier, and a fixture that emits only one would
         # fail the moment a second was registered. Which is exactly what happened when `spec-path`
@@ -945,66 +448,16 @@ def _self_test() -> int:
             else:  # an unknown rule is the UNKNOWN-compute case's business, not the fixture's
                 val = ""
             carriers.append(f'<strong data-derived="{d["key"]}">{val}</strong>')
-        return "\n".join(carriers) + f'\n<p>{page_tokens}</p>\n' 
+        return "\n".join(carriers) + "\n"
 
     probs, _ = audit(tree(clean_spec, page_for(clean_spec)))
     case("audit: a clean tree has no problems", probs, [])
 
-    asserted_spec = clean_spec + "\n" + md_assert
-    probs, _ = audit(tree(asserted_spec, page_for(asserted_spec)))
-    case(
-        "audit: a re-asserted retired claim is a problem",
-        any("RETIRED claim re-asserted" in p for p in probs),
-        True,
-    )
-    case(
-        "audit: and that is its ONLY problem (the fixture does not drift)",
-        len(probs),
-        1,
-    )
-
-    quoted_spec = clean_spec + "\n" + md_quoted
-    probs, _ = audit(tree(quoted_spec, page_for(quoted_spec)))
-    case("audit: a marked quotation is not a problem", probs, [])
-
-    # ⚠ THIS CASE'S NAME ONCE OVERSOLD IT, AND THAT MATTERED (r3 CODEX H2). It drops `LIVE[0]`,
-    # which is registered at the SPEC ALONE, so what it exercises is ABSENT-EVERYWHERE — the
-    # `== len(auditable)` arm. It says nothing about partial propagation, which is the whole
-    # reason this guard exists. Measured: replacing the partial arm with `if False:` left the
-    # suite 34/34 GREEN. The two arms need two cases, and the pair below is that coverage.
-    one_short = "\n\n".join(c["token"] for c in LIVE[1:]) + "\n"
-    probs, _ = audit(tree(one_short, page_for(one_short)))
-    case(
-        "audit: a LIVE claim absent from all its sites is a problem",
-        any("LIVE claim absent from ALL" in p for p in probs),
-        True,
-    )
-
-    # ⛔ THE CENTRAL BEHAVIOUR, PINNED AT LAST: present at one required site, absent at another.
-    # The subject is DERIVED — the first claim registered at both sites — so a registry edit
-    # cannot leave this case testing nothing. The spec keeps the token (clean_spec holds every
-    # live token), and only the page loses it, which is exactly a fold that updated one site.
-    both_sited = next(c for c in LIVE if PAGE in c["sites"] and SPEC in c["sites"])
-    page_minus = page_for(clean_spec).replace(both_sited["token"], "__FOLD_NEVER_REACHED_HERE__")
-    assert both_sited["token"] not in page_minus, "fixture failed to remove the token"
-    assert both_sited["token"] in clean_spec, "fixture lost the token from the spec too"
-    probs, _ = audit(tree(clean_spec, page_minus))
-    case(
-        "audit: a LIVE claim at the spec and NOT the page is a problem",
-        any("reached only some of its sites" in p for p in probs),
-        True,
-    )
-    case(
-        "audit: and it is reported as PARTIAL, not as absent everywhere",
-        any("absent from ALL" in p for p in probs),
-        False,
-    )
-    case(
-        "audit: and the problem NAMES the site the fold missed",
-        any(PAGE in p and "reached only some" in p for p in probs),
-        True,
-    )
-
+    # ⟳ 2026-10-17 (ADR-0015): the retired-claim, marked-quotation and LIVE-propagation cases
+    # stood here — including the pair that finally pinned PARTIAL propagation after r3 CODEX H2
+    # showed the single case was testing the absent-everywhere arm instead. They are retired
+    # WITH their subject: the behaviour they covered is gone, not merely untested. What now
+    # protects a page that contradicts the spec is review, and nothing else (ADR-0015).
     probs, _ = audit(tree(clean_spec, '<strong data-derived="spec-lines">99999</strong>'))
     case(
         "audit: a derived figure disagreeing with its source is a problem",
@@ -1056,24 +509,10 @@ def _self_test() -> int:
             False,
         )
 
-    # ⛔ THE SERVED PAGE IS AUDITED TOO (r3 CODEX H3). Without `audited_sites`, a token in the
-    # fragment and missing from the composed `.html` is invisible — and that is not hypothetical:
-    # the author committed exactly that drift on 2026-10-16, a reflow folded into the fragment
-    # with no recompose. These two cases fail if `audited_sites` ever stops expanding `PAGE`.
-    served_minus = page_for(clean_spec).replace(
-        both_sited["token"], "__NEVER_RECOMPOSED__"
-    )
-    probs, _ = audit(tree(clean_spec, page_for(clean_spec), served_minus))
-    case(
-        "audit: a token in the fragment and NOT the served page is a problem",
-        any("reached only some of its sites" in p for p in probs),
-        True,
-    )
-    case(
-        "audit: and the problem names the SERVED page, not the fragment",
-        any(PAGE_HTML in p for p in probs),
-        True,
-    )
+    # ⛔ THE SERVED PAGE IS AUDITED TOO (r3 CODEX H3) — and after ADR-0015 only its DERIVED half
+    # remains. The token half of this concern is retired with the prose registry; what is left is
+    # the figure, which is composed into the served page the same way. This still fails if
+    # `audited_sites` ever stops expanding `PAGE`, which was the finding's actual subject.
     # and the derived figure, which is composed into the served page the same way
     probs, _ = audit(
         tree(clean_spec, page_for(clean_spec),
@@ -1085,21 +524,11 @@ def _self_test() -> int:
         True,
     )
 
-    # ⛔ H1 (r4 CLAUDE) — A VOID ELEMENT SEPARATES WORDS WHILE EMITTING NO TEXT. Third instance of
-    # one class in this matcher, so the case is a LOOP over the separators rather than the one that
-    # was reported: `<br>` was live in the page three times, and `<img>`/`<hr>`/`<wbr>`/`<br/>`
-    # behave identically to a reader.
-    for _sep in ("<br>", "<br/>", '<img src="x">', "<hr>", "<wbr>"):
-        case(f"html: a phrase separated by {_sep} is still asserted",
-             _html_occurrences(
-                 f"<p>A library inherits its support{_sep}verdict from the entry-points.</p>", tok),
-             (1, 0))
-    case("html: …and a void element between two inline elements too",
-         _html_occurrences(
-             "<p>A library inherits its <em>support</em><br><em>verdict</em> from the "
-             "entry-points.</p>", tok),
-         (1, 0))
-
+    # ⟳ 2026-10-17 (ADR-0015): r4 H1's void-separator LOOP stood here — five separators, written
+    # as a loop rather than the one reported because it was the THIRD instance of its class in
+    # the prose matcher. Retired with that matcher. ⭐ The VOID set it keyed on SURVIVES in
+    # `_Carriers`, where it does a different job (keeping a carrier from being left open), and
+    # it still has a mutation and a case there.
     # ⛔ H2 (r4 CLAUDE) — THE TWO `wanted |= {… DERIVED …}` LINES, EACH WITH A WITNESS. Both
     # survived at 88/88: one dropped `audited_sites` (so the composed page never enters `wanted`),
     # the other dropped the source entirely. ⚠ The assertion is on the EXCEPTION TYPE, because the
@@ -1115,9 +544,8 @@ def _self_test() -> int:
         except Exception as exc:        # noqa: BLE001 — the TYPE is the measurement
             return type(exc).__name__
 
-    _saved_pre = (RETIRED[:], LIVE[:], DERIVED[:])
+    _saved_pre = DERIVED[:]
     try:
-        RETIRED[:], LIVE[:] = [], []
         DERIVED[:] = [{"key": "spec-lines", "page": PAGE, "compute": "line-count-of",
                        "source": SPEC, "why": "self-test fixture"}]
         # the FRAGMENT exists; the COMPOSED page does not, and only DERIVED reaches it
@@ -1136,7 +564,7 @@ def _self_test() -> int:
         case("audit: an absent SOURCE reached only through DERIVED is CannotRun",
              _audit_outcome(d2), "CannotRun")
     finally:
-        RETIRED[:], LIVE[:], DERIVED[:] = _saved_pre
+        DERIVED[:] = _saved_pre
 
     # ⛔ M7 — TWO CARRIERS FOR ONE KEY IS A PAGE DEFECT, and the values concatenate rather than
     # either winning. The old comment claimed first-wins; measured, 669 and 99999 gave '66999999'.
@@ -1166,46 +594,15 @@ def _self_test() -> int:
         True,
     )
 
-    # ⛔ M6 — THE TWO MATCHERS DIVERGE ON TABLES, DELIBERATELY. HTML is stricter: a marker in a
-    # header does not exempt the rows beneath it. Pinned so the divergence cannot be "fixed" by
-    # accident, in either direction.
-    _tbl_html = "<table><tr><th>⟳ corrected</th></tr><tr><td>a library " + tok + " x</td></tr></table>"
-    _tbl_md = "| ⟳ corrected |\n| a library " + tok + " x |\n"
-    case("table: HTML does NOT let a header marker exempt a body row",
-         _html_occurrences(_tbl_html, tok), (1, 0))
-    case("table: markdown DOES — one block, so the row inherits the header",
-         _markdown_occurrences(_tbl_md, tok), (0, 1))
+    # ⟳ 2026-10-17 (ADR-0015): the prose-matcher cases stood here — the HTML/markdown table
+    # divergence, the whitespace-only span's class, the self-closing swallow, and r4 CODEX H1's
+    # inline-element pair. All retired WITH their subject. ⭐ The one case in this region that
+    # SURVIVES is the self-closing CARRIER below: it reads `_derived_values`, not the matcher,
+    # and it is still named by a mutation.
 
-    # ⛔ L3 — three mutants the suite did not notice. Each gets the case it was missing.
-    # ⚠ MY FIRST VERSION OF THIS CASE DID NOT DISCRIMINATE, and the probe that said so is the
-    # reason it is written this way. `<p>   </p><p>…token…</p>` passes with or without the guard,
-    # because a whitespace block simply never contains the token. The difference only shows when a
-    # whitespace-only element CARRIES A CLASS inside an asserting block: without the guard its
-    # `class="note"` is accumulated into the block and the assertion silently becomes a quotation.
-    # Measured: (1, 0) with the guard, (0, 1) without.
-    case("parser: a whitespace-only span's class does not exempt the block around it",
-         _html_occurrences('<p>a library ' + tok + ' x<span class="note">   </span></p>', tok),
-         (1, 0))
     case("parser: a self-closing carrier holds no text",
          _derived_values('<strong data-derived="spec-lines"/>771 after it'), {})
-    case("parser: a self-closing tag does not swallow what follows it",
-         _html_occurrences("<p><br/>a library " + tok + " x</p>", tok), (1, 0))
 
-    # ⛔ H1 (r4 CODEX) — WHITESPACE BETWEEN INLINE ELEMENTS SEPARATES WORDS. Both forms below
-    # render the same sentence; the second scored (0, 0) because the standalone space between
-    # `</em>` and `<em>` was dropped, joining "supportverdict". This is the SECOND gap of the same
-    # kind in the same matcher: r3 CODEX H4 was markup splitting a phrase, this is markup
-    # DELETING the space inside one.
-    case("html: a phrase split across two inline elements is still asserted",
-         _html_occurrences(
-             "<p>A library inherits its <em>support</em> <em>verdict</em> from the "
-             "entry-points.</p>", tok),
-         (1, 0))
-    case("html: …and three of them, to show the fix is not one-space-deep",
-         _html_occurrences(
-             "<p>A library <em>inherits</em> <em>its</em> <em>support</em> verdict from the "
-             "entry-points.</p>", tok),
-         (1, 0))
 
     # ⛔ H2 (r4 CODEX) — A CARRIER WITH NO TEXT IS STILL A CARRIER. All four spellings below
     # passed the closure rule, because it read extracted VALUES and a key is only acquired while
@@ -1268,36 +665,14 @@ def _self_test() -> int:
     # ⛔ THE THREE FAIL-OPENS r3's CLAUDE HALF MEASURED BY IMPORT-AND-CALL (M5). Each needs the
     # module globals swapped, because each is a property of the REGISTRY rather than of a document,
     # and a fixture tree cannot express "the registry is empty".
-    _saved = (RETIRED[:], LIVE[:], DERIVED[:])
+    _saved = DERIVED[:]
 
     def _restore():
-        RETIRED[:], LIVE[:], DERIVED[:] = _saved
-
-    try:
-        # 1 — a claim registering no sites can never fail, so it must be refused outright
-        LIVE.append({
-            "id": "ghost-no-sites",
-            "token": "THIS PHRASE IS IN NO DOCUMENT ANYWHERE",
-            "why": "self-test fixture",
-            "sites": [],
-        })
-        probs, _ = audit(tree(clean_spec, page_for(clean_spec)))
-        case(
-            "audit: a LIVE claim with an EMPTY site list is a problem",
-            any("registers NO sites" in p for p in probs),
-            True,
-        )
-        case(
-            "audit: and the empty-site problem names the claim",
-            any("ghost-no-sites" in p for p in probs),
-            True,
-        )
-    finally:
-        _restore()
+        DERIVED[:] = _saved
 
     try:
         # 2 — an empty registry over any tree is CANNOT RUN, not "0 of everything checked"
-        RETIRED[:], LIVE[:], DERIVED[:] = [], [], []
+        DERIVED[:] = []
         audit(tree("x\n", "<p>y</p>"))
         case("audit: an EMPTY REGISTRY raises CannotRun", "no raise", "CannotRun")
     except CannotRun as exc:
@@ -1311,12 +686,11 @@ def _self_test() -> int:
         _restore()
 
     try:
-        # ⛔ L3's third mutant: `wanted` must include the DERIVED pages, not rely on a claim
-        # happening to register them. Both `wanted |= {… DERIVED …}` lines are redundant for
-        # today's registry — SPEC, PAGE and PAGE_HTML all arrive via RETIRED/LIVE — so deleting
-        # them left the suite green. This case makes them load-bearing: a DERIVED entry whose
-        # page NO claim registers must still be reached, and its absence must still be CannotRun.
-        RETIRED[:], LIVE[:] = [], []
+        # ⛔ L3's third mutant: `wanted` must include the DERIVED pages. When this was written
+        # the two `wanted |= {… DERIVED …}` lines were redundant, because SPEC, PAGE and
+        # PAGE_HTML all arrived via the prose registry too — so deleting them left the suite
+        # green. ⟳ 2026-10-17 (ADR-0015): that registry is GONE, so those two lines are now the
+        # ONLY way any path enters `wanted`, and this case is load-bearing by construction.
         DERIVED[:] = [{
             "key": "spec-lines",
             "page": PAGE,
@@ -1360,11 +734,8 @@ def _self_test() -> int:
     # ⚠ and the restore must actually have happened, or every case after this point is measuring
     # a mutilated registry — the shape of defect this file exists to catch, inside its own suite.
     case("self-test: the registry was restored after the swaps",
-         (len(RETIRED), len(LIVE), len(DERIVED)),
-         (len(_saved[0]), len(_saved[1]), len(_saved[2])))
+         len(DERIVED), len(_saved))
 
-    # the registry must admit its own incompleteness
-    case("registry declares itself incomplete", REGISTRY_IS_INCOMPLETE, True)
 
     # ── main() is DRIVEN from here, not merely defined (ADR-0014). `check-main-drivable.py`
     # refuses a guard whose entry point no case reaches: an exit path nothing exercises is
@@ -1434,23 +805,27 @@ def main(argv: list[str] | None = None) -> int:
         for p in problems:
             print(f"  ✗ {p}")
         print(
-            "\nOne rule, one place. Where a rule must be stated twice, every site is updated "
-            "together or this gate refuses the pair."
+            "\nA derived figure names a producer. Where a page states a number its source "
+            "computes, the two agree or this gate refuses the pair."
         )
         return 1
 
     print(
-        f"claim propagation OK — {len(RETIRED)} retired claim(s) not re-asserted, "
-        f"{len(LIVE)} live claim(s) at every declared site, "
-        f"{len(DERIVED)} derived figure(s) agree with their source"
+        f"derived figures OK — {len(DERIVED)} figure(s) agree with their source"
     )
-    if REGISTRY_IS_INCOMPLETE:
-        print(
-            "  ⚠ this registry is a floor, not a closure, and it is porous in BOTH "
-            "directions: a rule restated in words no registered token matches is invisible to "
-            "this guard, and a registered token is a phrase rather than a meaning — prose that "
-            "merely contains the phrase satisfies it"
-        )
+    # ⛔ THE BOUND IS NARROWER THAN IT WAS, AND SAYING SO IS THE POINT (ADR-0015). This guard
+    # used to claim two more things — that no RETIRED claim was re-asserted and that every LIVE
+    # claim reached every site. Both are GONE, superseded by `check-canonical-source.py`'s canon
+    # mechanism, and a reader who remembers the old line must not read this one as still covering
+    # them. ⚠ What replaces them is NOT equivalent: the canon guard proves a page CITES the spec,
+    # never that it AGREES with it. Agreement between a canon and its citing sites is now enforced
+    # by review and by nothing else — ADR-0015 accepts that deliberately, and backlog #297's three
+    # live drifted claims are the measured price.
+    print(
+        "  ⚠ this gate no longer checks prose at all: it compares a page's DERIVED figures with "
+        "the producer that computes them. Whether the page's words agree with the spec's words is "
+        "ADR-0015's subject and is enforced by review, not here"
+    )
     return 0
 
 

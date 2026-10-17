@@ -1,98 +1,5 @@
 [
   {
-    "name": "markdown treats every occurrence as a quotation, so a re-asserted retired rule survives",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        if any(m in block for m in RETIREMENT_MARKERS):",
-        "        if True:"
-      ]
-    ],
-    "expect": [
-      "md: bare assertion counts as asserted"
-    ]
-  },
-  {
-    "name": "the retirement-marker vocabulary is emptied, so every deliberate correction note reads as a fresh assertion",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    \"⟳\",  # ⟳ — this project's correction glyph",
-        "    \"__NEVER_APPEARS__\","
-      ]
-    ],
-    "expect": [
-      "md: the correction glyph alone marks a retirement",
-      "html: inline marker is a quotation"
-    ]
-  },
-  {
-    "name": "the whole markdown file becomes ONE block, so a marker anywhere exempts an assertion anywhere",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    return [b for b in re.split(r\"\\n\\s*\\n\", text) if b.strip()]",
-        "    return [text] if text.strip() else []"
-      ]
-    ],
-    "expect": [
-      "md: marker in a DIFFERENT block does not exempt"
-    ]
-  },
-  {
-    "name": "HTML treats every occurrence as a quotation, so the page may assert a retired rule",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        if \"note\" in blk[\"classes\"] or any(m in data for m in RETIREMENT_MARKERS):",
-        "        if True:"
-      ]
-    ],
-    "expect": [
-      "html: bare <p> is an assertion"
-    ]
-  },
-  {
-    "name": "the enclosing-element classes are discarded, so a note ancestor no longer exempts a quotation",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        blk[\"classes\"] += \" \" + \" \".join(a.get(\"class\", \"\") for _, a in self.stack)",
-        "        blk[\"classes\"] += \"\""
-      ]
-    ],
-    "expect": [
-      "html: class=note is a quotation",
-      "html: nested inside a note ancestor is a quotation"
-    ]
-  },
-  {
-    "name": "a re-asserted retired claim is no longer reported",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "            if asserted:",
-        "            if False:"
-      ]
-    ],
-    "expect": [
-      "audit: a re-asserted retired claim is a problem"
-    ]
-  },
-  {
-    "name": "a live claim missing from every site is no longer reported, so a fold that never landed passes",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        elif absent and len(absent) == len(auditable):",
-        "        elif False:"
-      ]
-    ],
-    "expect": [
-      "audit: a LIVE claim absent from all its sites is a problem"
-    ]
-  },
-  {
     "name": "a derived figure disagreeing with its source is accepted, which is backlog B2 reinstated",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
@@ -132,21 +39,7 @@
     ]
   },
   {
-    "name": "partial propagation is no longer reported, so a fold that updated one site of two passes",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        if absent and len(absent) < len(auditable):",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "audit: a LIVE claim at the spec and NOT the page is a problem",
-      "audit: and the problem NAMES the site the fold missed"
-    ]
-  },
-  {
-    "name": "the served page stops being an audited site, so the fragment can disagree with what a reader opens",
+    "name": "the served page stops being an audited site, so the fragment can disagree with what a reader opens ⟳ RETARGETED 2026-10-17 (ADR-0015): its token witness is retired with the prose registry; the DERIVED witness survives and is what it now names",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
@@ -155,76 +48,7 @@
       ]
     ],
     "expect": [
-      "audit: a token in the fragment and NOT the served page is a problem",
       "audit: a derived figure wrong ONLY in the served page is a problem"
-    ]
-  },
-  {
-    "name": "HTML matching returns to one text node at a time, so inline markup hides a registered claim",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    for blk in p.blocks:\n        data = flat(blk[\"text\"])",
-        "    for data, _chain in p.nodes:\n        blk = {\"classes\": \" \".join(a.get(\"class\", \"\") for _, a in _chain)}\n        data = flat(data)"
-      ]
-    ],
-    "expect": [
-      "html: the SAME words split by inline markup are still asserted"
-    ]
-  },
-  {
-    "name": "whitespace normalisation is dropped, so rewrapping a paragraph makes a registered claim vanish",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    return \" \".join(s.split())",
-        "    return s"
-      ]
-    ],
-    "expect": [
-      "md: a token split by a LINE BREAK is still found",
-      "html: a token split by a LINE BREAK is still found"
-    ]
-  },
-  {
-    "name": "an ordinary English word returns to the retirement vocabulary, so incidental prose exempts a re-asserted retired rule",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    \"RETIRED\",\n)",
-        "    \"RETIRED\",\n    \"no longer\",\n)"
-      ]
-    ],
-    "expect": [
-      "html: ordinary prose containing 'no longer' does NOT exempt an assertion",
-      "md: ordinary prose containing 'no longer' does NOT exempt an assertion"
-    ]
-  },
-  {
-    "name": "a registry entry with no sites is silently unchecked, so a registration that can never fail passes",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        if not claim[\"sites\"]:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "audit: a LIVE claim with an EMPTY site list is a problem",
-      "audit: and the empty-site problem names the claim"
-    ]
-  },
-  {
-    "name": "an empty registry reports zero of everything instead of CANNOT RUN, which is a zero over nothing",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    if not (RETIRED or LIVE or DERIVED):",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "audit: an EMPTY REGISTRY raises CannotRun"
     ]
   },
   {
@@ -268,21 +92,6 @@
     ]
   },
   {
-    "name": "word boundaries are dropped, so a three-character token matches inside COMMIT",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    pre = r\"\\b\" if token[:1].isalnum() or token[:1] == \"_\" else \"\"\n    post = r\"\\b\" if token[-1:].isalnum() or token[-1:] == \"_\" else \"\"",
-        "    pre = \"\"\n    post = \"\""
-      ]
-    ],
-    "expect": [
-      "boundary: a short token does NOT match inside a word",
-      "boundary: a multi-word token does not match inside a longer trailing word",
-      "boundary: counting is per occurrence, not per block"
-    ]
-  },
-  {
     "name": "a key carried by two elements is accepted, so a run-together value passes as a figure",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
@@ -296,25 +105,12 @@
     ]
   },
   {
-    "name": "the whitespace branch falls through, so a blank span's class exempts the assertion beside it",
+    "name": "a self-closing tag is pushed onto the stack, so it swallows the rest of the document ⟳ RETARGETED 2026-10-17 (ADR-0015): the prose lines its anchor bound to are deleted; the RULE it measures is unchanged, so it is retargeted rather than retired",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "        if not data.strip():",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "parser: a whitespace-only span's class does not exempt the block around it"
-    ]
-  },
-  {
-    "name": "a self-closing tag is pushed onto the stack, so it swallows the rest of the document",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "        if self.blocks:\n            self.blocks[-1][\"text\"] += \" \"\n        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1",
-        "        if self.blocks:\n            self.blocks[-1][\"text\"] += \" \"\n        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1\n        self.handle_starttag(tag, attrs)"
+        "        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1\n\n    def handle_endtag",
+        "        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1\n        self.stack.append((tag, a))\n\n    def handle_endtag"
       ]
     ],
     "expect": [
@@ -332,20 +128,6 @@
     ],
     "expect": [
       "audit: ONE absent registered path raises CannotRun"
-    ]
-  },
-  {
-    "name": "whitespace between inline elements is deleted rather than kept, joining two words into one",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "                self.blocks[-1][\"text\"] += \" \"",
-        "                pass"
-      ]
-    ],
-    "expect": [
-      "html: a phrase split across two inline elements is still asserted",
-      "html: …and three of them, to show the fix is not one-space-deep"
     ]
   },
   {
@@ -375,19 +157,6 @@
     ]
   },
   {
-    "name": "the composed page stops entering the audited path set, so its absence crashes instead of refusing",
-    "file": "scripts/check-claim-propagation.py",
-    "edits": [
-      [
-        "    wanted |= {p for d in DERIVED for p in audited_sites([d[\"page\"]])}",
-        "    wanted |= {d[\"page\"] for d in DERIVED}"
-      ]
-    ],
-    "expect": [
-      "audit: an absent COMPOSED page reached only through DERIVED is CannotRun"
-    ]
-  },
-  {
     "name": "a derived figure's source stops entering the audited path set, so its absence crashes instead of refusing",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
@@ -401,33 +170,29 @@
     ]
   },
   {
-    "name": "a void element stops separating words, so a phrase broken by a line break vanishes",
+    "name": "an empty registry reports zero of everything instead of CANNOT RUN, which is a zero over nothing ⟳ RETARGETED 2026-10-17 (ADR-0015): the condition was a DISJUNCTION over three registries and is now one — the rule it measures is unchanged, so it is retargeted rather than retired",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "        if tag.lower() in self.VOID and self.blocks:",
-        "        if False:"
+        "    if not DERIVED:",
+        "    if False:"
       ]
     ],
     "expect": [
-      "html: a phrase separated by <br> is still asserted",
-      "html: a phrase separated by <img src=\"x\"> is still asserted",
-      "html: a phrase separated by <hr> is still asserted",
-      "html: a phrase separated by <wbr> is still asserted",
-      "html: …and a void element between two inline elements too"
+      "audit: an EMPTY REGISTRY raises CannotRun"
     ]
   },
   {
-    "name": "a self-closing void element stops separating words, so <br/> and <br> disagree",
+    "name": "the composed page stops entering the audited path set, so its absence crashes instead of refusing ⟳ RETARGETED 2026-10-17 (ADR-0015): this line was `wanted |=` while the prose registry seeded `wanted` first; it is now the FIRST assignment, which makes the witness stronger rather than weaker — nothing else puts a path in the set",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "        # in `handle_starttag` — because `<br/>` and `<br>` must behave identically.\n        if self.blocks:\n            self.blocks[-1][\"text\"] += \" \"",
-        "        # in `handle_starttag` — because `<br/>` and `<br>` must behave identically."
+        "    wanted = {p for d in DERIVED for p in audited_sites([d[\"page\"]])}",
+        "    wanted = {d[\"page\"] for d in DERIVED}"
       ]
     ],
     "expect": [
-      "html: a phrase separated by <br/> is still asserted"
+      "audit: an absent COMPOSED page reached only through DERIVED is CannotRun"
     ]
   }
 ]
