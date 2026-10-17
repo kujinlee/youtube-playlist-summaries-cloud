@@ -96,11 +96,12 @@ FAILS IF
   * a declared citing site does not cite the canonical path;
   * any non-exempt file RESTATES a mechanism (carries its tokens) without citing its canon.
 
-  --self-test  runs 28 cases over synthetic trees, including that each failure mode is DETECTED.
+  --self-test  runs 29 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
 import contextlib
 import io
+import os
 import re
 import sys
 import tempfile
@@ -269,6 +270,29 @@ MARKER = "<!-- canon: {} -->"
 # the five below — `tests/`, `lib/`, `.github/`. Widening to those is backlog #282's subject; what
 # this fixes is the entry point, which is the one no reader can avoid.
 ROOT_GLOBS = ("*.md",)
+
+
+def root_level_cites(canons: list[dict]) -> list[str]:
+    """Declared citing sites that name a REPO-ROOT file, which `HARNESS_TREE` does not stage.
+
+    ⛔ A declared citing site must EXIST (`audit()` reports *"declared a citing site but does not
+    exist"*), and `check-plan-code.py`'s `HARNESS_TREE` stages `scripts`, `supabase`, `docs`,
+    `node_modules/typescript`, `.claude/hooks`, `.github/workflows` and `.agents/skills` — **no
+    repo-root files**. Declaring one therefore reddens this guard's own CONTROL inside the staged
+    tree and turns every mutation shard into NOT MEASURED. Measured live in CI 2026-10-17: 6 of 8.
+
+    ⚠ IT NORMALISES, and that is the whole point (r5 CLAUDE H2). The first version tested
+    `"/" not in c`, which pinned the SPELLING: `"./CONTEXT.md"` passed 28/28 while the staged tree
+    still went red. The consumer is `root / cite_rel`, under which `CONTEXT.md` and `./CONTEXT.md`
+    resolve IDENTICALLY, so they must be treated identically here.
+
+    ⭐ EXTRACTED so the live-table case and the fixture case share ONE predicate. Keeping it inline
+    meant the only assertion ran over the LIVE table — where no entry uses a `./` spelling — so
+    reverting the normalisation changed nothing and the mutation guarding it SURVIVED. A rule with
+    one caller and no adversarial input is a rule with no falsifier.
+    """
+    return sorted(c for canon in canons for c in canon["cites"]
+                  if "/" not in os.path.normpath(c))
 
 
 def _cites(body: str, cite_token: str, canon_abs: Path, citing_abs: Path,
@@ -532,8 +556,25 @@ def self_test() -> int:
         # CONTROL and reports NOT MEASURED for every shard rather than failing visibly here.
         # ⚠ The assertion is on the LIVE table, not a fixture, because the defect was a real
         # entry: a fixture would have passed while `CANONS` carried `"CONTEXT.md"`.
+        # ⟳⟳ 2026-10-17, r5 CLAUDE H2: the predicate was `"/" not in c`, which pinned the SPELLING
+        # and not the class. Measured: `"./CONTEXT.md"` passed 28/28 while the staged-tree run still
+        # went red with the exact failure this case exists to prevent — the one that put 6 of 8
+        # shards into NOT MEASURED. The consumer is `root / cite_rel`, under which `CONTEXT.md` and
+        # `./CONTEXT.md` resolve IDENTICALLY, so the two spellings must be treated identically here.
+        # `normpath` collapses both and leaves a genuine `docs/adr/x.md` alone (verified).
         case("CANONS: no declared citing site is a repo-root file (HARNESS_TREE stages none)",
-             sorted(c for canon in CANONS for c in canon["cites"] if "/" not in c), [])
+             root_level_cites(CANONS), [])
+        # ⭐ AND THE PREDICATE ITSELF, AGAINST INPUT IT MUST REFUSE. The case above runs over the
+        # LIVE table, which is right — a fixture would have passed while `CANONS` really carried
+        # `"CONTEXT.md"`. But it is ALSO why the live case alone cannot pin the normalisation: no
+        # declared entry uses a `./` spelling, so removing `normpath` changes nothing there and the
+        # mutation survived. These three spellings all resolve to the repo root and must all be
+        # caught; `docs/adr/x.md` must NOT be, or the rule would refuse every legitimate site.
+        _spellings = [{"cites": ["CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md",
+                                 "docs/adr/x.md"]}]
+        case("root_level_cites catches every spelling that resolves to the repo root",
+             root_level_cites(_spellings),
+             ["./CONTEXT.md", "CONTEXT.md", "docs/../CONTEXT.md"])
         # CONTROL — the walk must not reach deeper than the root's own files, or it would start
         # auditing node_modules and every untracked tree.
         r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})

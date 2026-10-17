@@ -89,5 +89,18 @@
     "expect": [
       "CANONS: no declared citing site is a repo-root file (HARNESS_TREE stages none)"
     ]
+  },
+  {
+    "name": "the repo-root predicate stops NORMALISING the path, so `./CONTEXT.md` slips past the case written to prevent exactly that (r5 CLAUDE H2 — it passed 28/28 while the staged tree went red)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "                  if \"/\" not in os.path.normpath(c))",
+        "                  if \"/\" not in c)"
+      ]
+    ],
+    "expect": [
+      "root_level_cites catches every spelling that resolves to the repo root"
+    ]
   }
 ]

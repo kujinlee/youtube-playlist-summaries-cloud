@@ -209,7 +209,7 @@
     ]
   },
   {
-    "name": "the VOID vocabulary shrinks to the one member an existing witness proved, so every other void carrier swallows what follows it (r5 CODEX M3)",
+    "name": "the VOID vocabulary shrinks to the one member an existing witness proved, so every other void carrier swallows what follows it (r5 CODEX M3) ⟳ EXPECT EXTENDED 2026-10-17 (r5 CLAUDE H1): it now also names the IDENTITY case, because the independent literal is what makes a vocabulary change visible at all — a second entry on this same anchor was refused by the harness as measuring nothing new, which is correct",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
@@ -218,7 +218,9 @@
       ]
     ],
     "expect": [
-      "derived: a <br> carrier captures nothing that follows it"
+      "derived: the VOID vocabulary is exactly the 14 HTML void elements",
+      "derived: a <br> carrier captures nothing that follows it",
+      "derived: a <area> carrier captures nothing that follows it"
     ]
   },
   {

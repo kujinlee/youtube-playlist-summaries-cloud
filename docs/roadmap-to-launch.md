@@ -2401,12 +2401,19 @@ retraction is kept beside the reasoning it replaces.
 - [x] **`scripts/check-canonical-source.py` widened to `*.html`** (part of #282). Measured before:
       1,937 files in the population, **0** HTML, so the canon's own citing sites were invisible to
       it. Now carries a case, a CONTROL and a mutation that redden when `SEARCHED` is reverted.
-- [x] **`scripts/check-claim-propagation.py` reduced to its derived-figures half** — 1,459 → 828
-      lines, **41** self-test cases (was 96), **15** mutations, **15 killed and attributed over a
-      green control with 0 survivors**, measured by a scoped `--mutate .` run. Declared sum
-      1488 → 1472: a ratchet **FALL**, permitted because **17** entries are **retired with their
-      subject** (⟳ r5 CODEX Low: this said 19, which was the intermediate count before two were
-      restored as retargets — 32 before, 15 after, 32 − 17 = 15, derived by diffing the manifest); ⚠ **4 were RETARGETED rather than retired**, because their anchors broke while the
+- [x] **`scripts/check-claim-propagation.py` reduced to its derived-figures half** — 1,459 → 880
+      lines, **58** self-test cases (was 96), **18** mutations for this file and **8** for
+      `check-canonical-source`, **26 killed and attributed over green controls with 0
+      survivors**, reproduced independently by round 5's Claude half. Declared sum 1488 → **1477**:
+      a ratchet **FALL**, permitted because **17** entries are **retired with their subject**
+      (32 before, 15 after, 32 − 17 = 15, derived by diffing the manifest — ⟳ r5 CODEX Low: this
+      said 19, the intermediate count before two were restored as retargets).
+      ⟳⟳ **r5 CLAUDE M2: the fold corrected the 19 in this sentence and left FOUR superseded
+      numbers beside it** — 41, 15, 15 and 1472 — which is *a fix inside a heredoc is not a class
+      fix* applied to a sentence. ⚠ **Nothing mechanical owns these:** `check-selftest-counts.py`
+      verifies each script's OWN docstring and is green, so a roadmap figure has no producer. They
+      are derived here by reading the files rather than retyped, and that is the only protection
+      this bullet has; ⚠ **4 were RETARGETED rather than retired**, because their anchors broke while the
       rules they measure survived, and retiring those would have dropped live coverage silently.
 - [ ] **The owner's own item, unchanged:** the C5 content review of effort (1)'s 157 memory files,
       now **deliverable 11**; until it lands the corpus cannot be graded `SHIP`.

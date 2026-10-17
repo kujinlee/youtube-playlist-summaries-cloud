@@ -15540,3 +15540,56 @@ mutation; `check-canonical-source` 6 → 7.
 
 Verified: 49/49, 28/28, 178/178; scoped `--mutate .` over BOTH changed manifests — 25 mutations,
 25 killed, 25 attributed, 0 survivors, controls and re-controls green.
+
+## 2026-10-17
+Second correction, and the last one today: the review's other half found four more problems, all
+fixed. Two of them were in code I wrote an hour earlier to fix the first round of problems.
+
+The one worth your time: **there was a fourth stale claim on the page, and it is a different kind
+from the three.** Both pages said the thing being measured is "11,624 lines, 647 shared contracts"
+as though it were true now. The spec gives the same two numbers but says which commit they were
+measured at, and then says plainly that they are already out of date. They are: it is 665 and 11,642
+today. The page has been dated to match.
+
+Why that one matters more than the others: my explanation for missing the first two was that my
+search couldn't see past HTML formatting. That explanation is true and it would not have found this
+one — the number sits in plain text. What was actually missing was checking the whole class rather
+than the three items I was handed. That is a filed piece of work (a pass over every figure in both
+documents), and this is the evidence that it is the real fix rather than the one-at-a-time repairs.
+
+The other three: a test I wrote claiming to cover fourteen cases covered six; a check I wrote to
+prevent a specific build failure could still be bypassed by writing the same filename slightly
+differently; and I corrected one number in a sentence and left four stale ones beside it.
+
+I also checked one claim the reviewer made and it was wrong — it said a check reports a failure but
+reports success to the build. It does not; every failure path returns a failure. I nearly filed that
+as work on the reviewer's word.
+
+**Waiting on you:** the content review of the 157 memory files, and merging. Both halves of the
+review round have now run, so the branch is no longer waiting on me for that.
+<!--tech-->
+Round 5 Claude half: `docs/reviews/claude/marketplace-inventory-r5-claude.md` — 4 High, 3 Medium,
+1 Low, no Blocking. Fold addendum in
+`docs/reviews/coordinator/marketplace-inventory-r5-coordinator.md`. `check-review-rounds.py` now
+reports 0 silent gaps for round 5.
+
+H1 the void loop was a hardcoded 6-tuple over a 14-member set (8 unpinned, all 8 droppable at
+49/49 green) — fixed with an independent literal + identity case; ⛔ the obvious fix (loop over
+`VOID`) is UNSOUND, measured: 57/57 → 56/56 with nothing failing. H2 the root-file predicate keyed
+on `"/" not in c`, so `./CONTEXT.md` passed 28/28 while the staged tree went red — predicate
+extracted, normalised, exercised by a fixture over three spellings. H3 the fourth drift, above.
+H4 the spec's `(660 at HEAD)` was wrong by 3 when typed (663 at `2e79f464`), by 5 now — removed, not
+re-measured. M1 `ci.yml` step renamed off a deleted check. M2 four stale numbers in one roadmap
+bullet, now all derived by reading the files. M3 ADR-0015's "0 files outside the governed pair" was
+false at its own commit → "0 non-citing files"; it tripped the ADR's own falsifier. L1 a comment
+naming an `int()` that does not exist.
+
+⭐ Two caught while folding, by applying the review's lesson rather than assuming: my H2 mutation was
+UNFALSIFIABLE (no live `cites` entry uses a `./` spelling, so reverting normpath changed nothing and
+it would have survived), and the harness refused my new VOID mutation as reusing an existing anchor —
+"measures nothing new", correctly; the existing entry's EXPECT list was extended instead.
+
+Verified: 58/58, 29/29, 178/178; scoped `--mutate .` over both changed manifests — 26 mutations,
+26 killed, 26 attributed, 0 survivors, controls and re-controls green. Declared sum 1477.
+Refuted: the reviewer's out-of-scope note that `check-test-counts.py` exits 0 on cannot-run — all
+five cannot-run shapes exit 1; the only `return 0` paths are the success path and the self-test.

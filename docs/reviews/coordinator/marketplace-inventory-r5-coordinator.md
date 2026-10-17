@@ -112,3 +112,103 @@ these; what produced them is one verification method I used twice and have now r
 standing question for round 6 is whether the Claude half, reviewing these fixes, finds a third
 instance of the same false-closure shape — and if it does, the subject is my verification, not the
 design.
+
+---
+
+# ⟳ ADDENDUM — the Claude half ran, and it corrected this document
+
+**`docs/reviews/claude/marketplace-inventory-r5-claude.md` — NOT CONVERGED, 4 High, 3 Medium, 1 Low.**
+
+It confirmed the two Codex Highs are genuinely closed (re-verified tag-stripped on both pages, both
+new citations resolving), and independently reproduced every count and the whole sweep. Then it found
+that **my repair pinned instances, not classes** — in two cases inside the code I had just written.
+
+## ⛔ The correction to THIS document's gate reasoning, which I got wrong three ways
+
+I wrote *"continued thrashing with new ground"* and then argued the architecture review should not
+re-arm. **The conclusion holds; my reasoning for it had three holes, and inventing a thrashing
+argument is this branch's recorded failure (`2e79f464`).**
+
+1. **I applied the test to the two Highs only.** `review-method.md:541` says *per finding across the
+   round*. Done properly: **5 of 8 findings are fix-induced**, not 0.
+2. **I contradicted myself four paragraphs apart** — *"gaps **I introduced** by reducing `_Blocks` to
+   `_Carriers`"* under M3, then *"M3 is genuinely new ground"* in the verdict. The first sentence is
+   the thrashing definition verbatim.
+3. ⛔ **I never quoted `:197`, which is the actual test** — *"Can a redesign remove it? If a different
+   shape would dissolve the finding, it is a mechanism defect."* That is the test the repo's own
+   measurement says to use *instead of* the symptom list, and it is what carries the verdict I wanted.
+
+**The right record:** fix-induced in 5 of 8, **and not thrashing anyway**, because every finding is
+branch-coverage or a stale cross-reference and no reshaping removes any of them. Four are the third
+outcome `:214` names — *"a decision changed and some sentences still state the old one"* — whose
+remedy is to **grep for every place that stated the old one**, which is ADR-0015's exact situation
+one commit after landing. *"False closure, not thrashing"* describes H1/H2's **history** correctly
+and was the wrong frame for the **gate**.
+
+## What the Claude half found, and what I did
+
+| # | Finding | Folded |
+|---|---|---|
+| **H1** | The void case's comment claimed it pinned *"THE WHOLE VOID VOCABULARY, NOT ONE MEMBER"*; the loop was a hardcoded 6-tuple over a 14-member set, and dropping all 8 unpinned members was **49/49 green** | independent literal + **identity case**; verified `area` removal reddens **two** cases |
+| **H2** | The `CANONS` root-file case keyed on `"/" not in c`, so `"./CONTEXT.md"` passed **28/28** while the staged tree still went red with the exact CI failure it was written to prevent | predicate **extracted** and normalised; fixture case over three spellings |
+| **H3** | A **fourth** #297-class drift: both pages assert `11,624 lines / 647 shared contracts` undated, where the spec dates them and says they are false at HEAD. Measured **665 / 11,642** | both figures dated and the drift named on the page |
+| **H4** | The spec's `(660 at HEAD)` was wrong by 3 when typed (663 at `2e79f464`) and by 5 now, and reinstated the `HEAD` label round 4 retired 27 lines below | parenthetical **removed**, not re-measured |
+| **M1** | `ci.yml` named the step *"a retired claim is not re-asserted"* — one of the two halves ADR-0015 deleted — and that name is what a reader sees on a red required check | renamed to its actual subject; the stale comment block corrected |
+| **M2** | I corrected `19 → 17` in a roadmap sentence and left **four** superseded numbers beside it | all five now **derived by reading the files**, with the absence of any mechanical owner stated |
+| **M3** | ADR-0015's *"0 files outside the governed pair"* was false at its own commit — and tripped one of the ADR's own four falsifiers | restated as **0 non-citing files**, which is what the guard establishes |
+| **L1** | The strip case's justification named an `int()` that does not exist in either compare path | comment corrected to what the case actually pins, including that the branch has no reachable caller today |
+
+⭐ **AND I CAUGHT ONE OF MY OWN WHILE FOLDING, by applying the review's lesson rather than assuming:**
+the mutation I added for H2 was **unfalsifiable** — no declared `cites` entry uses a `./` spelling,
+so reverting `normpath` changed nothing over the live table and the mutation would have SURVIVED.
+That is why the predicate is now extracted and exercised by a fixture. ⚠ The harness then caught a
+second one: my new VOID mutation reused an existing anchor and was refused as *"measures nothing
+new"* — correct, so the existing entry's EXPECT list was extended instead.
+
+## ⛔ The root cause, which I had at the wrong level
+
+I wrote *"a regex on `[^<>]` cannot cross a tag boundary"*. **That is a true account of one
+instrument and the wrong level for the method.** H3 has no markup around `647` — tag-stripping finds
+nothing there. H1 and H2 repeat the same shape with a **hand-written predicate** in place of the
+regex. The real cause:
+
+> **I verify a fix against the instance a reviewer named, using a predicate I author for that
+> instance, and I do not run that predicate against a case I expect to fail.**
+
+The remedy is already in this repository, twice: `after-fixing-search-for-the-class`, and
+`a-case-can-pass-for-an-ambient-reason`'s rule — **"flip what the case names, check it reddens"** —
+which, applied to H1 and H2 before committing, would have caught both in under a minute. It is now
+applied to every case this fold adds.
+
+⭐ **The mechanism worth keeping, which H1 produced by accident:** the *obvious* class fix — deriving
+the loop from `VOID` — is **unsound**, because a fixture that derives from its own subject SHRINKS
+instead of reddening (57/57 → 56/56, nothing failing). A class fix needs an independent copy **plus
+an identity assertion**. That is the one place in this codebase where a second copy is correct, and
+it belongs beside `a-second-implementation-of-one-rule-drifts`.
+
+## ⟳ One of the Claude half's claims is REFUTED, and it is the one I nearly filed on its word
+
+Its *"Note, out of scope"* says `scripts/check-test-counts.py` prints *"FAIL (cannot run)"* and
+**exits 0**, contradicting the spine's *"'Cannot run' is a FAILURE, never a pass."* That would be a
+real violation, so I was about to file it as a backlog row.
+
+**It is false. Measured — every cannot-run shape exits 1:**
+
+| input | rc | first line |
+|---|---|---|
+| no results file at the default path | **1** | `FAIL (cannot run): no jest results at …` |
+| `--results` pointing at a missing file | **1** | `FAIL (cannot run): no jest results at …` |
+| empty file | **1** | `FAIL (cannot run): could not read/parse …` |
+| invalid JSON | **1** | `FAIL (cannot run): could not read/parse …` |
+| valid JSON, wrong keys | **1** | `FAIL (cannot run): the jest results file has no numeric `startTime`…` |
+
+`grep -n 'return 0\|sys.exit(0)'` finds exactly two: `:255`, the success path, and `:375`, the
+self-test's tally. There is no rc=0 cannot-run path.
+
+⭐ **Kept rather than deleted, because the lesson is the one this whole round is about.** The half
+that caught four of my false claims made one of its own, in the only section it labelled
+out-of-scope and therefore did not execute — and its own review states it ran everything else. A
+reviewer's unexecuted aside is an assertion like any other
+(`docs/memory/quote-the-code-dont-characterise-it.md`), and filing a backlog row on it would have
+put a false claim into the tracker under a reviewer's authority. **8 of 9 of its claims verified; I
+checked the ninth and it did not.**

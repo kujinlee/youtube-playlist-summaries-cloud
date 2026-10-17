@@ -121,7 +121,7 @@ number is not evidence of completeness, and §3's mapping step is what would mak
 | Component | Lines |
 |---|---|
 | `explain-diff` / `brief` / `explain-findings` / `explain-topic` (SKILL.md) | 158 / 195 / 156 / 95 |
-| `.agents/skills/shared/` — `explainer-delivery.md`, `corpus-search.md`, `handoff-path.md` | **363 / 73 / 211** at `a4f6d4b5` (660 at `HEAD`; see §3's dated row) |
+| `.agents/skills/shared/` — `explainer-delivery.md`, `corpus-search.md`, `handoff-path.md` | **363 / 73 / 211** at `a4f6d4b5` (⟳ r5 CLAUDE H4: a parenthetical here read **660 at `HEAD`** — wrong by 3 at the commit that typed it (663 at `2e79f464`) and by 5 now (665), and it reinstated the `HEAD` label this section retired 27 lines below. Removed rather than corrected: a dated figure is the only form that stays true, which is this section's own rule) |
 | `scripts/brief-compose.py` | 1,780 |
 | `scripts/explainer-serve.py` | 2,907 |
 | `scripts/page_chrome.py` / `scripts/page_markup.py` | 450 / 438 |

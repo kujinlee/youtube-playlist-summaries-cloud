@@ -71,7 +71,19 @@ Three consequences of drawing it there:
    and `#c4ab72` 120 times — a substring oracle over two-character symbols fires on hex colours.
    The tokens are therefore distinctive multi-word forms (`DON'T-SHIP`, `harvest: practice`,
    `SHIP /`, `BEST-EFFORT, VERSIONED`, `harvest: none`, `C4 is STRUCK`), each measured to occur in
-   the spec and in **0** files outside the governed pair once the propagation registry is shed.
+   the spec and in **0 NON-CITING files** — which is what the guard establishes, and is not the
+   same claim as *0 files*.
+
+   ⟳ ⛔ **THIS SENTENCE SAID "0 files outside the governed pair" AND THAT WAS FALSE AT THIS ADR'S
+   OWN COMMIT (r5 CLAUDE M3).** Measured: each token occurs in 2–5 further files — `CONTEXT.md`
+   (which cites), `scripts/check-canonical-source.py` (the registry that *declares* the tokens),
+   this ADR itself, and `docs/reviews/**` (exempt, but files nonetheless). ⭐ **The mechanism was
+   never wrong** — the guard is green because every one of those sites cites the canon, which is the
+   design working exactly as described below. The defect was the sentence: `0` was an inference
+   stated as a measurement, in the decision of record, which is this repository's
+   `an-inference-stated-as-measured` shape. ⚠ **And it tripped one of this ADR's own four
+   falsifiers** (*"the token set stops being distinctive … the measurement in Decision (3) must be
+   re-run rather than assumed"*), which is the falsifier doing its job one commit after landing.
 
 ## Rejected alternatives
 

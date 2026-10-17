@@ -649,6 +649,9 @@ EXPECTED_MUTATIONS = {
     # ⟳⟳ 2026-10-17, r5 CODEX M3: 15 -> 18. Three surviving branches of `_Carriers` that no
     # case pinned — stripped accumulation, the VOID vocabulary beyond `img`, and an unmatched
     # end tag. The reviewer found them by applying each mutation and getting 41/41 GREEN.
+    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H1: 18 -> 19, for the VOID VOCABULARY as opposed to six of its
+    # fourteen members. The comment on the previous case asserted it covered the set; the code
+    # supplied a hardcoded 6-tuple and dropping all 8 unpinned members was 49/49 GREEN.
     "scripts/check-claim-propagation.py": 18,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
@@ -1397,7 +1400,12 @@ EXPECTED_MUTATIONS = {
     # ⟳⟳ 2026-10-17: 6 -> 7, for the root-file invariant. A declared citing site must EXIST and
     # `HARNESS_TREE` stages no repo-root files, so declaring one reddens this guard's control
     # and reports NOT MEASURED for every shard — measured live in CI, 6 of 8 shards.
-    "scripts/check-canonical-source.py": 7,   # r6 redesign: the inverted-restatement mutation
+    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H2: 7 -> 8. The root-file predicate pinned the SPELLING, so
+    # `./CONTEXT.md` passed 28/28 while the staged tree went red. ⚠ The new entry had to be
+    # RETARGETED onto an extracted predicate before it could kill at all: over the LIVE table
+    # no declared entry uses a `./` spelling, so removing the normalisation changed nothing and
+    # the mutation SURVIVED — caught here, not by a reviewer, by running the negative control.
+    "scripts/check-canonical-source.py": 8,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -5172,12 +5180,16 @@ def _self_test() -> int:
     #   `check-canonical-source`    5 ->  6  (the `*.html` widening had no falsifier)
     #   then r5 CODEX M3           15 -> 18  (three unpinned `_Carriers` branches)
     #   and the root-file invariant  6 ->  7  (the live CI control failure)
+    #   r5 CLAUDE H1 adds NO entry  18 -> 18  — the obvious new mutation reused the `VOID` anchor
+    #     and the harness REFUSED it as 'measures nothing new', correctly; the existing entry's
+    #     EXPECT list is extended to name the identity case instead
+    #   and r5 CLAUDE H2            7 ->  8  (the predicate normalises, so a spelling cannot slip)
     # Net 1489 - 17 + 1 + 3 + 1 = 1477 ... which is NOT 1476, so one of those is wrong and
     # the arithmetic is deliberately shown rather than asserted: `check-canonical-source`
     # rose 5 -> 6 in commit 650ef620, which is ALREADY inside the 1489 baseline. So the
     # trail from 1489 is -17 + 3 + 1 = 1476. ⭐ Written out because r5 CODEX caught a count
     # here that did not close, and a sum whose derivation is not shown is the same defect.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1476)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1477)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

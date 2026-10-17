@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a page whose DERIVED figure disagrees with the producer that computes it.
 
-    python3 scripts/check-claim-propagation.py --self-test # 49 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 58 cases against synthetic trees
 
 ⛔ THE FILENAME IS NOW WIDER THAN THE CONTENT, AND IT IS KEPT DELIBERATELY. This script once
 checked three things; ADR-0015 superseded two of them and only the derived-figure half remains.
@@ -640,17 +640,43 @@ def _self_test() -> int:
     # keep paying for. Each case below is paired with a mutation in the manifest.
 
     # 1 — values accumulate STRIPPED. Mutating `data.strip()` to `data` left the suite green while
-    # every padded carrier silently gained surrounding whitespace, which `int()` then rejects as a
-    # figure mismatch rather than as the parsing defect it is.
+    # every padded carrier silently gained surrounding whitespace.
+    # ⟳ ⛔ THE JUSTIFICATION HERE NAMED A MECHANISM THAT DOES NOT EXIST (r5 CLAUDE L1). It said
+    # `int()` would reject the padded value; there is no `int()` in either compare path — one is
+    # `re.sub(r"[^0-9]", "", claimed_raw)` and the other `claimed_raw.strip() != actual`, and BOTH
+    # neutralise padding. Measured on the real pages with a green control: the mutation produces
+    # byte-identical values and the same verdict. ⭐ So the case is sound and stays, but what it
+    # pins is narrower and must be said accurately: `_derived_values` returns STRIPPED text, and the
+    # compare paths must not be the only thing standing between padding and a figure. On today's
+    # pages this branch has no reachable caller; it becomes reachable for a page whose value is
+    # split across nodes with internal whitespace, where the mutated code yields a FALSE POSITIVE.
     case("derived: a carrier's value is accumulated STRIPPED, so padding never enters it",
          _derived_values('<strong data-derived="k">  1137\n  </strong>'),
          {"k": "1137"})
 
-    # 2 — ⭐ THE WHOLE VOID VOCABULARY, NOT ONE MEMBER. Reducing `VOID` to `{"img"}` left the suite
-    # green: the existing witness only ever proved `img`. This is the same mistake the DELETED
-    # prose matcher made three times (each fix covered the spelling its finding named), so the case
-    # is a LOOP over the set rather than a member of it.
-    for _v in ("br", "hr", "wbr", "col", "input", "img"):
+    # 2 — ⭐ THE WHOLE VOID VOCABULARY. ⟳⟳ 2026-10-17, r5 CLAUDE H1: THE COMMENT HERE CLAIMED THIS
+    # AND THE CODE DID NOT DO IT. The loop was a hardcoded 6-tuple while `VOID` has 14, so eight
+    # members — `area base embed link meta param source track` — were unpinned, and dropping ALL
+    # EIGHT left the suite 49/49 GREEN. Each was a live defect: a `<link data-derived="k">` carrier
+    # is pushed onto the stack and swallows the rest of the document into its value. ⛔ The comment
+    # asserting coverage while the code supplied six spellings is the SAME false-claim shape the
+    # deleted prose matcher kept producing — a second copy of the vocabulary, which is what the
+    # old comment said it was avoiding.
+    #
+    # ⛔⛔ AND THE OBVIOUS FIX IS UNSOUND — MEASURED, because it is what a fold reaches for.
+    # Looping over `_Carriers.VOID` itself makes the fixture derive from its own subject, so a
+    # mutation to `VOID` SHRINKS THE CASE LIST instead of reddening: removing `area` took the suite
+    # from 57/57 to **56/56 passed**, with nothing failing. That is this repo's
+    # `a-case-can-pass-for-an-ambient-reason` and `a-sever-substitutes-todays-value` shape.
+    #
+    # ⭐ SO THE SECOND COPY BELOW IS DELIBERATE AND IS THE ONE PLACE IT IS CORRECT: an independent
+    # literal, plus an IDENTITY case asserting the two agree. A divergence then reddens the identity
+    # case (the vocabulary changed) AND the member case (the behaviour changed) — two witnesses,
+    # where deriving the loop gives none.
+    _VOID_EXPECTED = "area base br col embed hr img input link meta param source track wbr".split()
+    case("derived: the VOID vocabulary is exactly the 14 HTML void elements",
+         sorted(_Carriers.VOID), sorted(_VOID_EXPECTED))
+    for _v in _VOID_EXPECTED:
         case(f"derived: a <{_v}> carrier captures nothing that follows it",
              _derived_values(f'<p><{_v} data-derived="k">771 after it</p>'),
              {})

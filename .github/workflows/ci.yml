@@ -307,9 +307,21 @@ jobs:
       # round later in the same pair of sections, which is what armed the architecture review.
       # The coordinator had already written the mechanism against itself after round 2 and then
       # reproduced it in the very next round, so a checklist competing with recall is not the
-      # remedy. ⚠ It is a FLOOR, not a closure: a rule restated in words no registered token
-      # matches is invisible to it, and it says so in its own output.
-      - name: One rule, one place — a retired claim is not re-asserted
+      # remedy.
+      #
+      # ⟳⛔ 2026-10-17, ADR-0015 — EVERYTHING ABOVE IS HISTORY, AND THE STEP NO LONGER DOES IT.
+      # The two prose checks (*a retired claim is not re-asserted*, *a live claim reaches every
+      # declared site*) are DELETED; `check-canonical-source.py` now owns that concern with the
+      # opposite remedy — it refuses the second copy rather than requiring every copy to agree.
+      # What this step checks is ONE thing: a page's DERIVED figure agrees with the producer that
+      # computes it. ⚠ The history is kept because it is why the derived half exists; the old step
+      # NAME is not, because the name is what a reader sees on a red required check.
+      # ⚠⚠ The rename was found by round 5's Claude half, not by the fold that deleted the checks —
+      # which had corrected `CONTEXT.md` and `explainer-delivery.md` and not swept the workflow.
+      # The note nine lines below (*"that wording was this guard's own defect … corrected at all
+      # three sites it stood at"*) is this repository paying for a wrong name on this same guard
+      # for the second time.
+      - name: A page's derived figure agrees with its producer
         run: python3 scripts/check-claim-propagation.py
 
       - name: claim-propagation self-test
