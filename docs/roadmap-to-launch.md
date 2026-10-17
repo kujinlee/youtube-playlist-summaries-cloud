@@ -2389,8 +2389,21 @@ retraction is kept beside the reasoning it replaces.
       **is the walkthrough such a surface?** Backlog **#298**.
 - [ ] **The owner's own item, unchanged:** the C5 content review of effort (1)'s 157 memory files,
       now **deliverable 11**; until it lands the corpus cannot be graded `SHIP`.
-- [ ] **NOT CONVERGED, and no PR beyond the one already open (#376).** 20 commits local,
-      `--force-with-lease` needed after the rebase. Merging is the human gate.
+- [ ] **NOT CONVERGED, and CI IS RED FOR A TRUE REASON — `check-review-recorded` is the only
+      failing step, and it is right.** Pushed as `21b4a5e0`; schema-gates **passed** (15 gates on a
+      container-built DB). What no review has seen: **`2e79f464`** (round 4's Claude fold — the void
+      separator class fix, two withdrawn "unmutatable" claims, four new mutations), **`21b4a5e0`**
+      (the architecture review, backlog rows and roadmap) and **`fcd1a205`** (two memory lessons).
+      ⛔ **THE ESCAPE HATCH IS DELIBERATELY NOT USED.** The gate offers `NO-REVIEW: <reason>` in the
+      PR body; using it would read as *cleared to merge* on a branch that is parked on an owner
+      decision (#298) which may **replace the very guard** the unreviewed commits change. A red that
+      accurately says *this code is unreviewed* is the correct state, and switching a true gate off
+      is a failure this repo has measured. **Two ways to clear it, both the owner's call:** a round-5
+      Codex pass against the current tree, or `NO-REVIEW:` with the gap named — the precedent being
+      backlog #292, where the owner chose the second and the gap was filed by name.
+- [ ] **Merging is the human gate**, and the branch should not merge while #298 is open: candidate 1
+      sheds the copy-policing half of `check-claim-propagation.py`, so merging first would land code
+      a chosen candidate may delete.
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
