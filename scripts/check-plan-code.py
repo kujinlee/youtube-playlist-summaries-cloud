@@ -629,7 +629,7 @@ EXPECTED_MUTATIONS = {
     # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
     # updating the site the finding named. A convention had already failed at it twice in two
     # rounds, which is why this is a guard and not a checklist.
-    "scripts/check-claim-propagation.py": 14,
+    "scripts/check-claim-propagation.py": 15,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
@@ -5120,12 +5120,12 @@ def _self_test() -> int:
     # the guard's own refusal rather than added by hand — the same conflict backlog measured on
     # PR #365 (1361 declared against an 1178 master). ⚠ 1466 was the GUARD'S OWN FIGURE, read
     # from `got 1466 want 0` against a deliberately wrong sentinel.
-    # ⟳ 2026-10-16: 1466 → 1470. `check-claim-propagation` gains FOUR entries — three for round
-    # 3's High findings (partial propagation, the served page as an audited site, block-level HTML
-    # matching) and a fourth for whitespace normalisation, added after the wrap trap bit the author
-    # twice in one session. 1470 is likewise the guard's own figure, read off its
-    # `got 1470 want 1469` refusal rather than added by hand.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1470)
+    # ⟳ 2026-10-16: 1466 → 1471. `check-claim-propagation` gains FIVE entries across both halves
+    # of round 3 — partial propagation, the served page as an audited site, block-level HTML
+    # matching, whitespace normalisation (after the wrap trap bit the author twice in one session),
+    # and the retirement vocabulary admitting an ordinary English word. Each figure was read off the
+    # guard's own refusal — the last from `got 1471 want 1470` — rather than added by hand.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1471)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

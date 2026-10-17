@@ -614,6 +614,14 @@ manifest, a caller, and no fail-open handler.
    `artifact-design`, which appears nowhere in §3's component table. A file-invocation scan finishes
    successfully and never sees this form.
 
+6. ⭐ **runtime prerequisites (added by r2 CODEX 6)** — imports of undeclared installed packages,
+   required executables, and environment/configuration reads. ⟳ **THIS ITEM WAS MISSING FROM THIS
+   LIST (r3 CLAUDE H3):** the list printed **1, 2, 3, 4, 5, 7** while detector 6 was defined 58
+   lines below as *another* list's item 2, so §5 could not enumerate its own subject and item 7's
+   *"all six above"* was false — five were above. ⚠ The full statement, including the
+   mention-candidate rule that keeps it from repeating detector 1's positional defect, stays at its
+   original site below and is **not restated here**; this item exists so the enumeration is complete.
+
 7. ⭐ **inbound registration dependencies (added by r2 CLAUDE H6).** ⛔ **All six detectors above
    look OUTWARD from a component — what it reaches.** None asks the opposite question: *does this
    component need an entry in host configuration, a hook registration, a `PATH` entry, or a plugin
@@ -659,7 +667,8 @@ wholesale, which confuses **a mention** with **a dependency**:
    without it (r2 CLAUDE M7)** — i.e. there is no default, or the default leads to an error path. A
    read with a working default is a **mention candidate**, not a dependency. Without that rule
    detector 6 repeats the positional-matching defect detector 1 was just repaired for.
-2. ⭐ **Detector 6 — runtime prerequisites (added by r2 CODEX 6).** A generic Python import of an
+2. ⭐ **Detector 6 — runtime prerequisites (added by r2 CODEX 6).** ⟳ Enumerated as **item 6 of the
+   detector list above** since r3 CLAUDE H3; this is its full statement. A generic Python import of an
    undeclared installed package is *none* of project vocabulary, an external file invocation, a bare
    guard name, or a prose-required skill — **so none of detectors 1–5 looks at it**, and it is
    exactly what breaks a stranger's run first. Detector 6 covers imports, required executables, and
@@ -910,6 +919,18 @@ and is a candidate follow-up if either survives.
    the condition §5 warns about, with no gate on the inference.
 3. `scripts/check-publishability.py` + `--self-test` + mutation manifest + CI registration,
    **including the empty-set mutation §5 requires.**
+3b. ⭐ **THE EXPERIMENT'S OWN ARTIFACTS — ADDED 2026-10-16 BY r3 CLAUDE H2, WHICH FOUND THREE OF
+   THEM REQUIRED BY §6 AND PRODUCED BY NOTHING.** Item 4 is the experiment's *record*, i.e. its
+   output; it does not build the things the run needs. ⛔ **This is the shape item 0b exists because
+   of** — *§6 required a baseline and nothing produced one* — and by the spec's own standard these
+   were instances three, four and five of it:
+
+   | Required by | The artifact |
+   |---|---|
+   | §6 (*"a SEEDED stranger repository with KNOWN facts"*) | **the seeded repository**, built here, so *correctly empty* is distinguishable from *broken* |
+   | §6 (*"neither replaces the other, and the order matters"*) | **the tier-B run** against a real third-party clone — ⚠ §10 defers only *an install experiment for efforts (1) and (2)*, never this one |
+   | §6 | **the entry-point coverage matrix**, bounding what the run actually exercised |
+
 4. The install-experiment record: failures found, which the scan predicted, and — ⟳ **CORRECTED by
    r3 CODEX M6** — **the resource record the capture mechanism of §6 can actually produce, together
    with what that mechanism cannot see.** The earlier wording demanded *"every resource the run
@@ -938,12 +959,16 @@ and is a candidate follow-up if either survives.
    because *"the inventory found three stale claims"* was itself a stale claim. ⚠ D8 is a rule about
    **placement**, so it is unaffected by which corrections are outstanding; only the list changes.
 
-   **What D8 actually delivers, both still present in the index today and both measured:**
+   **What D8 actually delivers — all three still present in the index today, all three measured.**
+   ⚠ This read *"both"* until r3 CLAUDE H4 pointed out that §3 diagnoses a third defect **thirteen
+   lines above** the sentence that sends the reader here, and the list it sends them to did not
+   carry it. The incompleteness that made B2 necessary, one layer in:
 
    | The index says | Why it is wrong | Measured against |
    |---|---|---|
    | the old figure *"undercounted its own subject by roughly 3x"* | **3x is a CROSS-SET ratio.** The subject of `3,599` was the **nine** enumerated files, which are **6,525** today — **1.81x**. The ~11,000 is a **different and larger set** (17 components), and §3 forbids comparing the two without saying so | §3's own three-stage table |
    | *"The problem is concentrated in one file"* | already **measured false** — `explainer-delivery.md` scores **0** on the vocabulary detector and still carries three CWD-relative invocations, so the C3 defect is in the file presented as the good news | §4 (r1 CLAUDE H5) |
+   | ⟳ the replacement headline *"~11,000 lines"* and its *"10,373 across six files"* | **the corpus disagrees with the enumeration in its own sentence** — ADDED by r3 CLAUDE H4, which found this list incomplete the same way §3's list was. `1780+2907+450+438+3546+1252 = 10,373`, `+604 = 10,977`: a set that **omits the three shared contracts** (`wc -l` → `346 + 73 + 211 = 630`), one of which that very sentence names, while **including the two generators' 4,798 lines**, which the enumeration lists only as four shell hooks. The spec's own full-set figure is **11,607** (§3) | §3, thirteen lines above the pointer that sends the reader here |
 
    ⚠ **Both are one-line repairs, and the second is a C3 conclusion a C2 measurement cannot support**
    — which is the same confusion §4 records, appearing once more in the index.
@@ -962,6 +987,24 @@ and is a candidate follow-up if either survives.
    upgrades a verdict. This is the deliverable that makes a `DON'T-SHIP` component still worth
    having evaluated.
 10. A dashboard entry.
+11. ⛔ **THE C5 CONTENT REVIEW OF EFFORT (1)'s 157 MEMORY FILES — THE OWNER'S, AND A DELIVERABLE
+   RATHER THAN A GAP (r3 CLAUDE H2).** Do those files hold private content, credentials, or
+   third-party material that may not be redistributed? ⚠ **This cannot be delegated**: the judgement
+   about what is private is the owner's, and nobody else can make it.
+
+   ⛔ **AND IT WAS QUIETLY MAKING DELIVERABLE 5 IMPOSSIBLE, WHICH IS WHY IT IS LISTED RATHER THAN
+   ASSUMED.** C5 is a **veto** (§4): a component cannot be `SHIP` with C5 unanswered, it grades
+   `measured` or blocks. §4's role table grades a `data` component against **C1–C3 and C5**. §4
+   also calls C5 *"not yet answerable"*. So the memory corpus could not be graded at all, while
+   deliverable 5 promised *every* component a verdict and §4b said it *"is not done until every row
+   has one"*. **Three rules that cannot all hold.**
+
+   ⭐ **RESOLVED BY DECLARING THE INCOMPLETENESS INSTEAD OF HIDING IT:** the corpus's row carries
+   **`C5: unanswered — blocked on the content review`**, which satisfies §4b's completeness rule the
+   way a *struck* C4 does — by being a stated disposition rather than a missing cell. It is **not**
+   a verdict, and ⛔ **the corpus cannot be `SHIP` until the review lands.** The observation that
+   makes this fail: an inventory row for the corpus carrying a `SHIP` verdict while item 11 is
+   outstanding.
 
 **What PR 1 explicitly does NOT do:** publish anything, create the **published** marketplace repo, or
 fix any coupling — including `brief/SKILL.md`'s **nine repo-specific ground-truth items** (4 bare
@@ -1045,9 +1088,25 @@ failure is **a dated count decaying**. See §3 and §8.
 2026-10-05; `346` appears nowhere in the repo, and a prior review half had already filed it as a
 defect), and *"15 document guards"*, a denominator that exists nowhere.
 
-⛔ **ONE FINDING IS DELIBERATELY NOT FOLDED** — whether `SHIP` may be recorded without demonstrated
-C4 evidence. It changes what this milestone promises rather than how it is reached, so it is the
-owner's decision and is stated as an open question in §4.
+⟳ **AND THE ONE FINDING THIS SECTION SAID WAS NOT FOLDED HAS SINCE BEEN DECIDED — CORRECTED
+2026-10-16 BY ROUND 3's CLAUDE HALF (H1).** This paragraph read: *"whether `SHIP` may be recorded
+without demonstrated C4 evidence … is the owner's decision and is stated as an open question in §4."*
+
+⛔ **BOTH HALVES WERE WRONG BY THE TIME ANYONE COULD READ THEM.** There was no open question in §4 —
+the phrase appeared **once in this document, in this paragraph, pointing at nothing** — and the
+decision had already been taken: **D5 (§4b) permits `SHIP` + `argued`**, where `argued` is *C1–C3
+plus reasoning, no experiment reached it*, which is exactly *`SHIP` without demonstrated C4
+evidence*. §4b's own header says *settled by the owner; do not re-open*.
+
+⚠ **AND THE PAGE ALREADY SAID SO** — *"you have since decided it, as D5 above"* — so the page was
+folded and this section was not. **That is this branch's measured failure mechanism appearing inside
+the very round that built a guard for it**, and the guard was green over the disagreement because no
+token was registered for this claim. It is now registered (`d5-ship-plus-argued`).
+
+⛔ **WHY IT MATTERED MORE THAN A STALE SENTENCE:** this was the last substantive paragraph before
+§10, so a reader walking the spec to approve it was told at the very end that a promise-changing
+decision still awaited them — and would either hunt for something that does not exist or re-open a
+decision of record.
 
 ## 10. Out of scope, named so the gap is not read as closed
 

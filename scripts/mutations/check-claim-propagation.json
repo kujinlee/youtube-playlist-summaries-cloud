@@ -185,5 +185,19 @@
       "md: a token split by a LINE BREAK is still found",
       "html: a token split by a LINE BREAK is still found"
     ]
+  },
+  {
+    "name": "an ordinary English word returns to the retirement vocabulary, so incidental prose exempts a re-asserted retired rule",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    \"RETIRED\",\n)",
+        "    \"RETIRED\",\n    \"no longer\",\n)"
+      ]
+    ],
+    "expect": [
+      "html: ordinary prose containing 'no longer' does NOT exempt an assertion",
+      "md: ordinary prose containing 'no longer' does NOT exempt an assertion"
+    ]
   }
 ]

@@ -233,7 +233,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">1059</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">1118</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -459,10 +459,13 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   deliverable you decided the placement of was already discharged, and <em>“the inventory found
   three stale claims”</em> was itself a stale claim. It is recorded rather than quietly repaired.</p>
   <p class="note">⚠ <strong>Your decision is unaffected</strong> — D8 is a rule about <em>where</em> a
-  correction lands, not about which ones are outstanding. Two real index defects remain and are what
-  it now delivers: the <em>“roughly 3x”</em> undercount (a <strong>cross-set</strong> ratio — the
-  nine files’ own ratio is <strong>1.81×</strong>), and <em>“the problem is concentrated in one
-  file”</em>, which this page already measures as false.</p>
+  correction lands, not about which ones are outstanding. ⟳ <strong>Three</strong> real index
+  defects remain and are what it now delivers: the <em>“roughly 3x”</em> undercount (a
+  <strong>cross-set</strong> ratio — the nine files’ own ratio is <strong>1.81×</strong>);
+  <em>“the problem is concentrated in one file”</em>, which this page already measures as false;
+  and — found by round 3 — the <strong>replacement headline itself</strong>, whose
+  <code>10,373 across six files</code> omits the three shared contracts (630 lines) that the same
+  sentence names, while including the two generators’ 4,798 lines that it lists only as hooks.</p>
 </div>
 
 <div class="box warn">
@@ -600,7 +603,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <table>
     <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
     <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
-    <tr><td>the <strong>corpus</strong> — effort (1)'s 157 memory files</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong>, which nobody has done</td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s 157 memory files</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
@@ -1014,9 +1017,11 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     reason the recommendation gave: <strong>the inventory is what discovers them.</strong></p>
     <p>⛔ <strong>Round 3 then found the three claims had already been fixed</strong> — in
     <code>b200f2cf</code>, merged today (see section 3). Your decision stands, because it is about
-    <em>placement</em>; what changed is the list. <strong>Two real index defects remain:</strong> the
-    <em>“roughly 3x”</em> undercount, which is a cross-set ratio where the nine files’ own is
-    <strong>1.81×</strong>, and <em>“concentrated in one file”</em>, already measured false.</p>
+    <em>placement</em>; what changed is the list. ⟳ <strong>Three real index defects remain</strong>
+    (round 3 added the third): the <em>“roughly 3x”</em> undercount, a cross-set ratio where the
+    nine files’ own is <strong>1.81×</strong>; <em>“concentrated in one file”</em>, already
+    measured false; and the replacement headline’s own corpus, which omits the shared contracts it
+    names in the same breath.</p>
     <p><strong>And the counter was real, so it is not simply accepted.</strong> Both are docs-only
     repairs depending on nothing else in PR 1 — so they go in as its <strong>first commit</strong>
     and can be merged alone if the rest parks.</p>
@@ -1114,7 +1119,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 19:00 · b200f2cf · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 19:36 · b200f2cf · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

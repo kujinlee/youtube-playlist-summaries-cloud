@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a document set where one rule is stated in several places and the fold updated only some.
 
-    python3 scripts/check-claim-propagation.py --self-test # 45 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 54 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
@@ -143,6 +143,17 @@ LIVE: list[dict] = [
         "sites": [SPEC, PAGE],
     },
     {
+        "id": "d5-ship-plus-argued",
+        "token": "the honest label for efforts (1)",
+        "why": ("D5's PERMISSION, settled by the owner 2026-10-16: `SHIP` + `argued` is allowed "
+                "and is the honest label for the two efforts no experiment reaches. ⚠ Registered "
+                "2026-10-16 by r3 CLAUDE H1, which found §9c still telling the approver this was "
+                "an OPEN QUESTION in §4 while the page already said it was decided — the page "
+                "folded, the spec not, and no token registered, so the gate was green over the "
+                "disagreement"),
+        "sites": [SPEC, PAGE],
+    },
+    {
         "id": "d8-corrections-land-here",
         "token": "first commit",
         "why": ("D8, asked from the page and decided by the owner 2026-10-16: the three stale "
@@ -247,21 +258,32 @@ DERIVED: list[dict] = [
 # A rule restated in words no token above matches is invisible to this guard.
 REGISTRY_IS_INCOMPLETE = True
 
-# A block counts as a marked retirement when it carries one of these. Deliberately narrow:
-# each is a token this project already uses to mark a correction, so the exemption cannot be
-# satisfied by ordinary prose that happens to mention the rule.
+# A block counts as a marked retirement when it carries one of these.
+#
+# ⛔ NARROWED 2026-10-16 BY r3's CLAUDE HALF (B1), WHICH MEASURED THE OPPOSITE OF WHAT THE COMMENT
+# HERE USED TO CLAIM. It said the exemption "cannot be satisfied by ordinary prose that happens to
+# mention the rule" — and four of the eleven members were ordinary English: `previously`,
+# `no longer`, `corrected`/`Corrected`, `retired`. Measured against the REAL tree: appending
+#
+#     A library inherits its support verdict from the entry-points; the mix rule is
+#     no longer in doubt.
+#
+# to the spec re-asserted a RETIRED rule in the present tense and the gate stayed silent, because
+# `no longer` was in this tuple. ⚠ The author's own block-level widening (r3 CODEX H4) made it
+# worse: a marker anywhere in the block now exempts the whole block, so one incidental "previously"
+# covered every assertion beside it.
+#
+# ⭐ SO THE VOCABULARY IS NOW DELIBERATE MARKS ONLY — the project's correction glyph and three
+# ALL-CAPS words nobody writes by accident mid-sentence. Measured after narrowing: suite 45/45 and
+# the real tree rc=0 with an identical note set, so nothing in either document relied on a weak
+# member. ⚠ A correction written WITHOUT one of these is now refused — that is the point: an
+# exemption should cost a deliberate mark, and `⟳` is already in every correction note in this
+# repository.
 RETIREMENT_MARKERS = (
     "⟳",  # ⟳ — this project's correction glyph
     "SUPERSEDED",
-    "superseded",
-    "previously",
-    "refuted",
     "CORRECTED",
-    "Corrected",
-    "corrected",
-    "retired",
     "RETIRED",
-    "no longer",
 )
 
 
@@ -556,6 +578,29 @@ def _self_test() -> int:
         (0, 1),
     )
     case("md: absent token is neither", _markdown_occurrences("nothing here\n", tok), (0, 0))
+    # ⛔ THE FAIL-OPEN r3's CLAUDE HALF MEASURED (B1): four ordinary English words exempted a
+    # re-asserted retired rule. Each block below asserts the retired token beside one of those
+    # words and MUST now count as an assertion. Re-adding any of them to RETIREMENT_MARKERS turns
+    # the matching case back to (0, 1), which is this fix's falsifier — one case per word, so the
+    # failure names which word came back.
+    for _word in ("previously", "no longer", "retired", "corrected"):
+        case(
+            f"html: ordinary prose containing {_word!r} does NOT exempt an assertion",
+            _html_occurrences(f"<p>a library {tok} entry-points, {_word} debated</p>", tok),
+            (1, 0),
+        )
+    case(
+        "md: ordinary prose containing 'no longer' does NOT exempt an assertion",
+        _markdown_occurrences(f"a library {tok} entry-points. This is no longer in dispute.\n", tok),
+        (1, 0),
+    )
+    # ⚠ and the deliberate marks must still work, or the narrowing has traded one defect for another
+    for _mark in ("\u27f3", "SUPERSEDED", "CORRECTED", "RETIRED"):
+        case(
+            f"html: the deliberate mark {_mark!r} still exempts",
+            _html_occurrences(f"<p>{_mark} a library {tok} entry-points</p>", tok),
+            (0, 1),
+        )
     # ⛔ THE WRAP TRAP, WHICH COST THE AUTHOR TWICE IN ONE SESSION. Both fixtures below say the
     # same sentence; the second has a newline inside the phrase, which is what rewrapping a
     # paragraph does. Before `flat()` the second scored (0, 0) — the guard reported a claim
