@@ -233,7 +233,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">917</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">973</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -265,8 +265,12 @@ publish but let's take inventory and establish a milestone.”</em></p>
 
 <p>The spec turns that into one question asked of every component: <strong>could someone who has never
 seen this repository install it and use it?</strong> Three efforts, <strong>at least 24
-components</strong>, four criteria, and three verdicts — each now carrying an evidence grade, which
-is your D5 decision.</p>
+components</strong>, <strong>five</strong> criteria, and three verdicts — each now carrying an
+evidence grade and a harvest field, which are your D5 and D6 decisions.</p>
+<p class="note">⚠ <strong>Five, not four.</strong> This line said <em>four</em> until round 2 added
+<strong>C5 — Redistributable</strong>, and the heading of section 4 said it too: the count lived in two
+places and the new criterion reached neither. It is the same propagation defect as 13 of round 2’s
+14 self-inflicted findings, which is why a guard now refuses it.</p>
 <p class="note">⚠ <strong>“At least” is doing real work there.</strong> 24 reproduces as arithmetic and
 round 2 showed it is not a complete membership — whole artifacts were never assigned to any
 component, including the two generators the regeneration hooks actually invoke. <strong>Twice now this spec
@@ -532,7 +536,7 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 
 <hr class="hr">
 
-<h2><span class="n">4</span>The four criteria, and the one that cannot be counted</h2>
+<h2><span class="n">4</span>The five criteria, and the two that cannot be counted</h2>
 
 <div class="scroll">
 <table>
@@ -540,7 +544,7 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
 <tr><td><strong>C1</strong></td><td><strong>Measured</strong> — it works, with evidence</td><td>existing self-tests and manifests</td></tr>
 <tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
 <tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
-<tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for</td></tr>
+<tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for, graded against <strong>D9</strong>’s support bar (§4d)</td></tr>
 <tr><td><strong>C5</strong></td><td>⭐ <strong>Redistributable</strong> — we are permitted to publish it, and it holds nothing that must not be published</td><td><span class="pill no">not answerable yet</span> — and two of its halves are yours</td></tr>
 </table>
 </div>
@@ -986,6 +990,18 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   a correction separated from its evidence tends not to land.</p>
   <p>The counter: it mixes a factual repair into a decision document, and if the milestone stalls, three
   known-wrong sentences stay published while it does.</p>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this, and it became D8 — with the counter bounded</span>
+    <p><em>“yes, fix in here.”</em> So the three corrections stay inside PR 1, for the reason the
+    recommendation gave: <strong>the inventory is what discovered them.</strong></p>
+    <p><strong>But the counter was real, so it is not simply accepted.</strong> All three are
+    docs-only factual repairs that depend on nothing else in PR 1 — so they go in as its
+    <strong>first commit</strong> and can be merged alone if the rest parks.</p>
+    <p class="note">⚠ <strong>What makes that bound fail, stated so it can be checked:</strong>
+    PR 1 open with any of the three corrections not yet committed. If that is ever observed, the
+    stall risk you accepted has gone live and the corrections should be split into their own PR.</p>
+  </div>
 </div>
 
 <div class="q">
@@ -997,6 +1013,61 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
   shippable against a stated support commitment, and “we will work that out later” is how an
   open-source burden gets acquired by accident. But this is genuinely your call: you are the one who
   would carry it.</p>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this twice, and it became D9 — best-effort, versioned</span>
+    <p>First <em>yes</em>, the policy is decided before the inventory runs. Then <strong>option A</strong>:
+    <strong>semver tags, a <code>CHANGELOG</code>, a major bump for a breaking change, and issues read
+    with no response time promised.</strong></p>
+    <p class="note">⚠ <strong>One distinction first, because conflating these is a defect this
+    review keeps catching.</strong> D1’s “full support bar” is about the <em>artifact</em>:
+    criterion C4, a stranger can install it, use it and recover from failure <em>without the author</em>.
+    A support <em>policy</em> is about your <em>ongoing obligation</em> after publishing. They are
+    different commitments, and every option below keeps C4 at full strength.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>&nbsp;</th><th>Policy</th><th>What you owe</th><th>Trade-off</th></tr>
+      <tr>
+        <td><strong>A</strong></td>
+        <td><strong>Best-effort, versioned</strong><br><span class="pill yes">✅ Your choice</span></td>
+        <td>semver tags + a <code>CHANGELOG</code>; a breaking change gets a major bump; issues are
+        read, with <strong>no response time promised</strong></td>
+        <td>Strangers get the one thing they actually need — to know whether an upgrade will break
+        them — and you promise no labour. Costs a tag and a changelog line per release</td>
+      </tr>
+      <tr>
+        <td><strong>B</strong></td>
+        <td><strong>No support, dated snapshots</strong><br><span class="pill no">not chosen</span></td>
+        <td>a README line: no issues, no support, no compatibility promise; tagged by date</td>
+        <td>Cheapest and fully honest, and C4 still holds. But a stranger cannot tell a bugfix from a
+        rewrite, so in practice they pin one commit and never upgrade</td>
+      </tr>
+      <tr>
+        <td><strong>C</strong></td>
+        <td><strong>Supported, with a stated window</strong><br><span class="pill no">not chosen</span></td>
+        <td>everything in A, plus a deprecation policy and a <strong>response-time commitment</strong>
+        on issues</td>
+        <td>The only level that makes the suite feel maintained to an outsider — and the one that
+        acquires a real recurring obligation, from strangers, on their schedule</td>
+      </tr>
+      <tr>
+        <td><strong>D</strong></td>
+        <td><strong>I have a question about these</strong></td>
+        <td>—</td>
+        <td>Still open at any time — ask on this page and D9 changes shape, the way D5, D6 and D8 did</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note">⚠ <strong>It went in as a gate, not a sentence of intent.</strong> §4d of the
+    spec states the bar, C4 is graded against it, and a component cannot be <code>SHIP</code> while
+    the published package contradicts it. <strong>What makes D9 fail:</strong> a release with no
+    version tag, or a tag with no <code>CHANGELOG</code> entry. Under best-effort support those two
+    <em>are</em> the whole promise — so breaking one is not falling short of an aspiration.</p>
+    <p class="note">⚠ <strong>And one bound, so this does not become an unmeetable deliverable:</strong>
+    the tag and the changelog belong to the <strong>published</strong> marketplace repo, which §10
+    still defers. <strong>PR 1 owes the stated bar and nothing more</strong> — it produces no
+    release, no tag and no <code>CHANGELOG</code>.</p>
+  </div>
 </div>
 
 <div class="box ok">
@@ -1011,7 +1082,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 16:26 · 99667119 · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-16 18:21 · b200f2cf · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

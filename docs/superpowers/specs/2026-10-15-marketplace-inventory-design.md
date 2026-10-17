@@ -187,7 +187,8 @@ companion that B3 forced (see §5).
 
 ⚠ Two further claims in that same block are stale and must be corrected with it: it says the registry
 *"registers 10 anchors"* (it held **13** before this spec, and **14** after it, since this document allocates one) and that *"a second anchor is owed"* for the present-tense
-reader (`explanation-on-demand` now exists).
+reader (`explanation-on-demand` now exists). **Where all three corrections land, and the decision
+that put them there, is D8 (§7 item 8); this section does not restate it.**
 
 ### Effort (2) — development velocity
 
@@ -247,7 +248,7 @@ Criteria 1 and 2 are `docs/portable-practices.md`'s existing filters. D1's publi
 | **C1** | **Measured** — it works, with evidence, not a confident belief | existing self-tests and manifests |
 | **C2** | **Project-independent** — runs with no Supabase, no Gemini, no Fly | counting is **evidence, not a verdict** — see below |
 | **C3** | **Self-contained** — does not depend on parts of this repo that are not shipping | counting is **evidence, not a verdict** — see below |
-| **C4** | **Supportable** — a stranger can install it, use it, and recover from failure without the author | ⛔ **not countable** — this is what the install experiment is for |
+| **C4** | **Supportable** — a stranger can install it, use it, and recover from failure without the author | ⛔ **not countable** — this is what the install experiment is for, graded against **D9**'s stated support bar (§4d) |
 | **C5** | ⭐ **Redistributable** — we are permitted to publish it, and it contains nothing that must not be published | ⛔ **not countable, and NOT YET ANSWERABLE** — see below |
 
 ⭐ **C5 IS NEW, AND NOBODY HAD ASKED IT (r2 CLAUDE M10).** D1 commits to *"public strangers, full
@@ -514,6 +515,48 @@ Both are mechanically decidable from the inventory itself, and the stricter alte
 `measured` or `inherited` for `SHIP` — remains the fallback if they fire.
 
 ---
+
+## 4d. D9 — the support bar C4 is graded against, decided before the inventory and not after
+
+⭐ **D9 — BEST-EFFORT, VERSIONED. Decided 2026-10-16 by the owner**, by selection card, after they
+answered *yes* to the prior question *does "publishable" need a support policy decided first?*
+
+| What the published package owes | What it does NOT owe |
+|---|---|
+| **semver tags** — a version a stranger can pin | a response time on issues |
+| a **`CHANGELOG`** entry per release | a deprecation schedule |
+| **a breaking change gets a major bump** | any commitment to fix what is reported |
+| issues are **read** | a commitment to answer them |
+
+⛔ **WHY THIS QUESTION WAS NOT ALREADY ANSWERED BY D1, AND WHY CONFLATING THEM IS THE DEFECT TO
+AVOID.** D1's *"full support bar"* is a claim about the **artifact**: criterion C4, a stranger can
+install it, use it and recover from failure **without the author**. D9 is a claim about the
+**owner's ongoing obligation after publishing**. They are different commitments, and the spec
+asserted the first while pricing none of the second — which is how an open-source burden gets
+acquired by accident. ⚠ **D9 does not weaken C4**: the artifact bar is unchanged, and under
+best-effort support C4 matters *more*, because documentation is the only channel a stranger has.
+
+⭐ **THE REJECTED OPTIONS ARE RECORDED, because the reason one was rejected is the useful part.**
+
+- **No support, dated snapshots** — cheapest and fully honest, and C4 would still hold. Rejected
+  because a stranger cannot distinguish a bugfix from a rewrite, so in practice they pin one commit
+  and never upgrade: the package becomes a snapshot rather than a thing with a life.
+- **Supported, with a stated response window** — the only level that reads as maintained. Rejected
+  because it acquires a recurring obligation from strangers on their schedule, and a missed window is
+  a broken promise rather than an unmet hope.
+
+⛔ **D9 IS A GATE, NOT A SENTENCE OF INTENT, SO IT NAMES WHAT MAKES IT FAIL.** A component cannot be
+`SHIP` while the published package contradicts the stated policy. **The failing observation: a
+release of the published package carrying no version tag, or a version tag with no `CHANGELOG`
+entry.** Either one is checkable by looking at the release, and under A they are the *whole* of what
+was promised — so breaking them is not a shortfall against an aspiration, it is the only promise
+there was.
+
+⚠ **Bound, stated rather than hidden:** the tag-and-changelog mechanics belong to the **published**
+marketplace repository, whose creation §10 defers. **So D9 constrains publication, and PR 1 delivers
+only the stated bar itself** — this spec's §4d, and C4 graded against it. ⛔ **PR 1 does not produce
+a `CHANGELOG`, a tag, or a release**, and reading it as doing so would make an unmeetable deliverable
+out of a decision.
 
 ## 5. The scan — `scripts/check-publishability.py`
 
@@ -818,6 +861,15 @@ and is a candidate follow-up if either survives.
 7. `docs/anchors.md` — `harness-ships-elsewhere` registered, claimed by this document. **Closes row 290.**
 8. Corrections to `portable-practices.md`'s three stale claims (§3 above) — **the line-count one
    recorded as a decayed dated count, not as a recalled figure** (r1 CLAUDE H1).
+   ⭐ **D8 — THEY LAND IN THIS PR, NOT IN A SEPARATE ONE. Decided 2026-10-16 by the owner**, asked
+   through the walkthrough page: *"yes, fix in here."* The reason is that **the inventory is what
+   discovered them**, and a correction separated from the evidence that found it tends not to land.
+   ⛔ **THE COUNTER WAS REAL, SO IT IS BOUNDED RATHER THAN WAVED THROUGH.** The objection: if this
+   milestone stalls, three known-wrong sentences stay published for exactly as long as it does. All
+   three are **docs-only factual repairs that depend on nothing else in PR 1**, so they go in as its
+   **first commit** and are mergeable alone. **The observation that makes this bound FAIL: PR 1 is
+   open and any of the three corrections is not yet committed.** At that point the stall risk the
+   owner accepted is live and the corrections should be split out into their own PR.
 9. The scoring rubric as a `portable-practices.md` entry — a reusable publishability test is itself a
    D2 contribution, and this milestone is the measurement that earns it.
 9b. ⭐ **THE HARVEST (D6, §4c)** — for every component, a `harvest` field, and for every
@@ -846,7 +898,7 @@ specifically to keep evaluation independent of repair.
 | A count is taken over the wrong set, and reproduces | §3's counting rule fixes membership before arithmetic; §5 asserts a non-zero expected file count per component. ⚠ This spec reached a correct total over a wrong set twice in round 1 |
 | Efforts (1) and (2) get weaker verdicts than (3) | Stated as a bound in §6 rather than hidden; their verdicts are explicitly labelled argument-based |
 | The milestone becomes "publish everything" by momentum | `DON'T-SHIP` is a first-class verdict; a component that fails C1–C4 is recorded as such, and that is a successful outcome of this work |
-| ~11,000 lines is too much to assess per line | Assessment is per component against four criteria, not per line |
+| ~11,000 lines is too much to assess per line | Assessment is per component against five criteria (§4), not per line |
 
 ## 9. Falsifiers
 
@@ -860,6 +912,9 @@ specifically to keep evaluation independent of repair.
   that **this artifact** can travel it (r1 CLAUDE M5, r1 CODEX 10).
 - **For this spec:** if the install experiment cannot be made to run at all, D4 is unachievable and the
   method must be re-decided with the owner rather than silently downgraded to paper scoring.
+- **For D9's support bar (§4d):** a release of the published package with no version tag, or a tag
+  with no `CHANGELOG` entry — under best-effort support those two are the entire promise, so either
+  one falsifies the policy rather than merely falling short of it.
 
 ## 9b. What the spec self-review caught in this document
 
@@ -914,4 +969,5 @@ Official-marketplace submission (D3); creating the **published** marketplace rep
 the throwaway local marketplace §6 and §7 item 0 require, which is a different artifact (r1 CLAUDE
 H2, r1 CODEX 7); fixing any coupling; building Q0; merging the two recall branches
 (`c5-recall-matcher`, `backlog-117-parser-substrate`); and an install experiment for efforts (1) and
-(2).
+(2). ⚠ **And the release mechanics D9 (§4d) requires — the version tag and the `CHANGELOG` — land
+with that deferred repository, not with PR 1**; what PR 1 owes is the stated bar, nothing more.

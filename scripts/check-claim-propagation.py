@@ -132,6 +132,25 @@ LIVE: list[dict] = [
         "sites": [SPEC, PAGE],
     },
     {
+        "id": "d8-corrections-land-here",
+        "token": "first commit",
+        "why": ("D8, asked from the page and decided by the owner 2026-10-16: the three stale "
+                "portable-practices corrections stay in PR 1. The registered token is the BOUND "
+                "that answers the counter, not the decision — docs-only repairs go in as PR 1's "
+                "first commit so a stall cannot hold them"),
+        "sites": [SPEC, PAGE],
+    },
+    {
+        "id": "d9-support-bar-falsifier",
+        "token": "no version tag",
+        "why": ("D9, decided by the owner 2026-10-16 by selection card: best-effort, versioned. "
+                "⚠ The token is the FALSIFIER, because under best-effort support the tag and the "
+                "changelog are the whole promise — a bar whose failing observation is dropped from "
+                "either site stops being a gate. ⚠ It must stay on ONE LINE at both sites: this "
+                "guard tests a raw substring, and the page's first wording wrapped mid-phrase"),
+        "sites": [SPEC, PAGE],
+    },
+    {
         "id": "plugin-root-self-location",
         "token": "CLAUDE_PLUGIN_ROOT",
         "why": ("asked by the owner from the page 2026-10-16: the collision is not the directory "
@@ -446,7 +465,12 @@ def _self_test() -> int:
     )
     html_assert = "<p>a library inherits its support verdict from the entry-points</p>"
     html_note = '<p class="note">it said a library inherits its support verdict from the x</p>'
-    html_marked = "<p>⟳ a library inherits its support verdict from the x, refuted</p>"
+    # ⛔ EXACTLY ONE MARKER, AND THAT IS THE POINT. The first version read
+    # "…from the x, refuted" — and `refuted` is itself in RETIREMENT_MARKERS, so the fixture was
+    # marked TWICE and could not notice losing one. Measured: the mutation that empties `⟳` from
+    # the vocabulary left this case GREEN, so the manifest entry naming it matched no red case.
+    # A fixture that satisfies a rule two ways cannot be a falsifier for either.
+    html_marked = "<p>⟳ a library inherits its support verdict from the x</p>"
     case("html: bare <p> is an assertion", _html_occurrences(html_assert, tok), (1, 0))
     case("html: class=note is a quotation", _html_occurrences(html_note, tok), (0, 1))
     case("html: inline marker is a quotation", _html_occurrences(html_marked, tok), (0, 1))
@@ -516,8 +540,17 @@ def _self_test() -> int:
     def page_for(spec_text: str) -> str:
         """Build the page from the spec it describes, so the fixture cannot drift from its own
         subject. Round 2's B2 was exactly a page whose figure no longer matched its spec, and a
-        fixture that hard-codes the number reproduces that defect inside the test."""
-        return f'<strong data-derived="spec-lines">{_tree_spec_lines(spec_text)}</strong>'
+        fixture that hard-codes the number reproduces that defect inside the test.
+
+        ⛔ AND IT CARRIES EVERY PAGE-SITE LIVE TOKEN, which the first version did not — so the
+        "clean tree" it built was clean only for claims registered at the SPEC alone. The moment a
+        claim was registered `[SPEC, PAGE]` the clean-tree case went red by construction, and the
+        guard shipped that way in its own first commit (`2bca9fe5`) while its round document
+        claimed a green control. Derived from `LIVE`, never listed, so a new page-site claim cannot
+        reintroduce it."""
+        page_tokens = "\n".join(c["token"] for c in LIVE if PAGE in c["sites"])
+        return (f'<strong data-derived="spec-lines">{_tree_spec_lines(spec_text)}</strong>\n'
+                f'<p>{page_tokens}</p>\n')
 
     probs, _ = audit(tree(clean_spec, page_for(clean_spec)))
     case("audit: a clean tree has no problems", probs, [])
