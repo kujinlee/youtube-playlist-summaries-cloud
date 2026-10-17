@@ -296,12 +296,12 @@
     ]
   },
   {
-    "name": "whitespace-only text opens a block, so a blank span's class exempts the assertion beside it",
+    "name": "the whitespace branch falls through, so a blank span's class exempts the assertion beside it",
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "        if not data.strip():\n            return",
-        "        if False:\n            return"
+        "        if not data.strip():",
+        "        if False:"
       ]
     ],
     "expect": [
@@ -313,12 +313,65 @@
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "    def handle_startendtag(self, tag, attrs):  # noqa: D102\n        pass  # self-closing: no children, so it can carry no derived text",
-        "    def handle_startendtag(self, tag, attrs):  # noqa: D102\n        self.handle_starttag(tag, attrs)"
+        "        # deliberately NOT pushed onto the stack.\n        a = {k: (v if v is not None else \"\") for k, v in attrs}",
+        "        # deliberately NOT pushed onto the stack.\n        self.handle_starttag(tag, attrs)\n        a = {k: (v if v is not None else \"\") for k, v in attrs}"
       ]
     ],
     "expect": [
       "parser: a self-closing carrier holds no text"
+    ]
+  },
+  {
+    "name": "the absent-path refusal returns a clean result instead, which is the fail-open r3 closed",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    if absent_paths:\n        all_gone = len(absent_paths) == len(wanted)",
+        "    if absent_paths:\n        return [], []\n        all_gone = len(absent_paths) == len(wanted)"
+      ]
+    ],
+    "expect": [
+      "audit: ONE absent registered path raises CannotRun"
+    ]
+  },
+  {
+    "name": "whitespace between inline elements is deleted rather than kept, joining two words into one",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "                self.blocks[-1][\"text\"] += \" \"",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "html: a phrase split across two inline elements is still asserted",
+      "html: …and three of them, to show the fix is not one-space-deep"
+    ]
+  },
+  {
+    "name": "the closure rule reads extracted values again, so a textless carrier is invisible to it",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        for key in _derived_carrier_counts(read(page)):\n            if key not in registered_keys:",
+        "        for key in _derived_values(read(page)).keys():\n            if key not in registered_keys:"
+      ]
+    ],
+    "expect": [
+      "audit: a TEXTLESS unregistered carrier is a problem"
+    ]
+  },
+  {
+    "name": "the tolerant unwind pops one element instead of everything inside it, so a mis-nested close leaks text",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "                del self.stack[i:]",
+        "                self.stack.pop(i)"
+      ]
+    ],
+    "expect": [
+      "parser: a mis-nested close unwinds everything inside it"
     ]
   }
 ]

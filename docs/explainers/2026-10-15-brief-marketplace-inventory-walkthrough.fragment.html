@@ -156,7 +156,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">1091</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">1128</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -320,11 +320,11 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 <strong>17</strong> comprehensibility, <strong>3</strong> velocity, <strong>4</strong> recall.</p>
 
 <div class="box bad">
-  <span class="lbl">The index figure has decayed — it is 1.81× low against its own file set</span>
+  <span class="lbl">The index figure has decayed — at <code>a4f6d4b5</code> it is 1.82× low against its own file set</span>
   <p>⟳ <strong>Tense corrected by round 3 — the index no longer says this.</strong>
   <code>docs/portable-practices.md</code> <em>did</em> describe the suite as
   <strong>“9 files / 3,599 lines”</strong> from <strong>2026-09-07</strong>, enumerating those nine.
-  Those same nine files total <strong>6,525 lines</strong> today — and the index’s headline now reads
+  Those same nine files total <strong>6,542 lines</strong> at <code>a4f6d4b5</code> — and the index’s headline now reads
   <strong>“~11,000 lines”</strong>, with the old figure kept as a dated correction inside it. The
   decay below is still the finding; stating it in the present tense was not.</p>
   <p>Nothing broke because of this. It is quoted in the one document whose job is to describe what
@@ -332,8 +332,8 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   and enumerated, and was <strong>exactly right on the day it was measured</strong>
   (<code>cacbac17</code>, 3,599 vs 3,599) — then <em>already 3.7% stale on the day it was
   republished</em> into the index four days later. Its subject then
-  grew <strong>1.75×</strong> against the value measured when it was republished (3,737 → 6,525) —
-  and is <strong>1.81×</strong> against the 3,599 the index printed until <code>b200f2cf</code>. So this is an argument for
+  grew <strong>1.75×</strong> against the value measured when it was republished (3,737 → 6,542) —
+  and is <strong>1.82×</strong> against the 3,599 the index printed until <code>b200f2cf</code>. So this is an argument for
   <strong>re-deriving dated counts</strong>, not an argument
   about recollection. See the refutation below.</p>
 </div>
@@ -341,19 +341,19 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 <div class="chart">
   <div class="row">
     <span class="nm">index claims</span>
-    <span class="track" role="img" aria-label="The portable-practices index claims its nine enumerated files total 3,599 lines. Those same nine files measure 6,525 lines today, so the claim is about 55 percent of the current size — a 1.81 times undercount.">
+    <span class="track" role="img" aria-label="The portable-practices index claims its nine enumerated files total 3,599 lines. Those same nine files measure 6,542 lines at commit a4f6d4b5, so the claim is about 55 percent of that size — a 1.82 times undercount.">
       <span class="fill claim" style="width:55.2%"></span>
     </span>
     <span class="val">3,599</span>
   </div>
   <div class="row">
     <span class="nm">same nine, today</span>
-    <span class="track" role="img" aria-label="The same nine enumerated files measure 6,525 lines today.">
+    <span class="track" role="img" aria-label="The same nine enumerated files measure 6,542 lines at commit a4f6d4b5.">
       <span class="fill real" style="width:100%"></span>
     </span>
-    <span class="val">6,525</span>
+    <span class="val">6,542</span>
   </div>
-  <p class="scale"><span>0</span><span>6,525 lines</span></p>
+  <p class="scale"><span>0</span><span>6,542 lines</span></p>
   <p class="prov"><strong>Same set on both bars</strong> — the nine files
   <code>portable-practices.md</code> itself enumerates: the four page-producing skills, the shared
   delivery contract, <code>brief-compose</code>, <code>explainer-serve</code>,
@@ -365,10 +365,10 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   read as 3.05×, and its screen-reader label asserted “about one third of the real size”. Round 1
   caught it.</p>
   <p class="prov"><strong>Scope sizing, a different and larger set:</strong> effort (3)'s 17
-  components total <strong>11,607 lines</strong> — 10,373 Python (<code>brief-compose</code> 1,780 ·
+  components total <strong>11,624 lines</strong> — 10,373 Python (<code>brief-compose</code> 1,780 ·
   <code>explainer-serve</code> 2,907 · <code>page_chrome</code> 450 · <code>page_markup</code> 438 ·
-  <code>gen-dashboard</code> 3,546 · <code>gen-goals-page</code> 1,252) + 604 skills + 630 shared
-  contracts. <span class="note">The earlier total of 10,977 omitted the 630 lines of shared contracts
+  <code>gen-dashboard</code> 3,546 · <code>gen-goals-page</code> 1,252) + 604 skills + 647 shared
+  contracts. <span class="note">The earlier total of 10,977 omitted the 647 lines of shared contracts
   that the component table itself lists (round 1, M3).</span></p>
 </div>
 
@@ -384,10 +384,10 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <p class="note">⚠ <strong>Your decision is unaffected</strong> — D8 is a rule about <em>where</em> a
   correction lands, not about which ones are outstanding. ⟳ <strong>Three</strong> real index
   defects remain and are what it now delivers: the <em>“roughly 3x”</em> undercount (a
-  <strong>cross-set</strong> ratio — the nine files’ own ratio is <strong>1.81×</strong>);
+  <strong>cross-set</strong> ratio — the nine files’ own ratio is <strong>1.82×</strong>);
   <em>“the problem is concentrated in one file”</em>, which this page already measures as false;
   and — found by round 3 — the <strong>replacement headline itself</strong>, whose
-  <code>10,373 across six files</code> omits the three shared contracts (630 lines) that the same
+  <code>10,373 across six files</code> omits the three shared contracts (647 lines) that the same
   sentence names, while including the two generators’ 4,798 lines that it lists only as hooks.</p>
 </div>
 
@@ -403,7 +403,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
     <tr><th>Comparison</th><th>Ratio</th></tr>
     <tr><td>Same nine files, at the commit that <strong>republished</strong> the figure into the index (<code>100cf498</code>, 2026-09-07): 3,599 vs 3,737</td><td>already <strong>3.7% stale</strong> (138/3737)</td></tr>
     <tr><td>Same nine files, at the commit that <strong>originally measured</strong> it (<code>cacbac17</code>, 2026-09-03): 3,599 vs 3,599</td><td><strong>exactly right</strong></td></tr>
-    <tr><td>Same nine files, today: 3,599 vs 6,525</td><td><strong>1.81× low</strong></td></tr>
+    <tr><td>Same nine files, today: 3,599 vs 6,542</td><td><strong>1.82× low</strong></td></tr>
     <tr><td>As this page first stated it: 3,599 vs 10,977</td><td>3.05× — <em>different sets</em></td></tr>
   </table>
   </div>
@@ -411,7 +411,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   derived, enumerated, dated and <em>correct when written</em> — <code>portable-practices.md:17</code>
   says <em>“Enumerated in <code>docs/backlog.md</code> row 89, not recalled”</em>, and row 89 contains
   the enumeration. Its subject then grew <strong>1.75×</strong> against the republication value and
-  <strong>1.81×</strong> against the printed figure. <strong>The failure is a dated count decaying, not a
+  <strong>1.82×</strong> against the printed figure. <strong>The failure is a dated count decaying, not a
   count invented</strong> — so the lesson this spec drew from it, and the risk row it wired that
   lesson into, were both aimed at the wrong failure.</p>
   <p class="note">⚠ And this section was itself a correct measurement over the wrong corpus, inside
@@ -746,8 +746,10 @@ question was asked against it.</p>
   twice more — round 1 found its <em>membership</em> wrong (it counted two unmerged branches and
   omitted the matcher that ships), and round 2 found artifacts the counting rule never assigned at
   all. It is now a <strong>lower bound</strong>. A figure being derived did not make it complete.</p>
-  <p class="note">Caught by the spec's self-review and recorded in its §9b rather than quietly fixed. It
-  is evidence <em>for</em> the mechanical scan in §5 of the spec, not against it.</p>
+  <p class="note">Caught by the spec's self-review and recorded rather than quietly fixed — ⟳ in
+  <code>docs/reviews/coordinator/marketplace-inventory-r3-coordinator.md</code> since round 3 moved
+  the spec's §9b there; this note still pointed at the old location until round 4 (CODEX L1). It is
+  evidence <em>for</em> the mechanical scan in §5 of the spec, not against it.</p>
 </div>
 
 <div class="box warn">
@@ -942,7 +944,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     <code>b200f2cf</code>, merged today (see section 3). Your decision stands, because it is about
     <em>placement</em>; what changed is the list. ⟳ <strong>Three real index defects remain</strong>
     (round 3 added the third): the <em>“roughly 3x”</em> undercount, a cross-set ratio where the
-    nine files’ own is <strong>1.81×</strong>; <em>“concentrated in one file”</em>, already
+    nine files’ own is <strong>1.82×</strong>; <em>“concentrated in one file”</em>, already
     measured false; and the replacement headline’s own corpus, which omits the shared contracts it
     names in the same breath.</p>
     <p><strong>And the counter was real, so it is not simply accepted.</strong> Both are docs-only

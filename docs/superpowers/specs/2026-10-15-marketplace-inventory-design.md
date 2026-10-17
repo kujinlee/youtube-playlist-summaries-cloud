@@ -127,8 +127,8 @@ number is not evidence of completeness, and §3's mapping step is what would mak
 | `scripts/gen-dashboard.py` / `scripts/gen-goals-page.py` | 3,546 / 1,252 |
 | `.claude/hooks/regen-{backlog-page,dashboard,features-page,goals-page}.sh` | — |
 
-⛔ **A FINDING BEFORE THE WORK STARTS: the D2 index figure has DECAYED, and it is 1.81x low
-against its own file set.** ⟳ **CORRECTED 2026-10-16 by round 1 (CLAUDE H1), which refuted this
+⛔ **A FINDING BEFORE THE WORK STARTS: the D2 index figure has DECAYED, and at `a4f6d4b5` it is
+1.82x low against its own file set.** ⟳ **CORRECTED 2026-10-16 by round 1 (CLAUDE H1), which refuted this
 paragraph's first version — and the refutation is the more useful finding.**
 
 ⟳ **TENSE CORRECTED 2026-10-16 BY ROUND 3 (CODEX B2): THE INDEX NO LONGER SAYS THIS.** It *said*
@@ -145,12 +145,41 @@ figure was introduced four days earlier, and there are **three** stages, not two
 |---|---|---|---|
 | **originally measured** | `cacbac17`, 2026-09-03 | **3,599** | **exactly right** |
 | **republished into the index** | `100cf498`, 2026-09-07 | 3,737 | already **3.7% stale** |
-| today | `HEAD` | **6,525** | **1.81x** low |
+| **re-measured** | `a4f6d4b5`, 2026-10-16 | **6,542** | **1.82x** low |
+
+⛔ **THE THIRD ROW IS DATED, AND IT USED TO SAY `today` / `HEAD` — CORRECTED 2026-10-16 BY ROUND 4
+(CODEX B1), WHICH CAUGHT THE FOLD INVALIDATING ITS OWN MEASUREMENT.** It read *today · HEAD ·
+6,525 · 1.81x*. ⭐ **The nine files include `explainer-delivery.md`, and the commit two before this
+one added 17 lines to it** — the recompose obligation r3 CLAUDE M9 asked for. So `6,525` became
+`6,542` and `1.81x` became `1.82x` **because of this branch's own work**, between one commit and the
+next.
+
+⚠ **THIS IS THE THIRD TIME A COUNT IN THIS SECTION HAS DECAYED, AND THE FIRST TIME THE CAUSE WAS
+THIS DOCUMENT.** It is structural, not careless: *the spec measures a corpus that contains a file
+the spec's own branch edits.* A label reading `today` is therefore false the moment anything ships,
+and a dated row is the only form that stays true — which is **this section's own rule**, applied to
+itself at last: *a count copied from elsewhere must carry the commit it was measured at.*
+
+⭐ **AND THE DATED FORM WAS TESTED BY ACCIDENT, IN THE SAME FOLD, WITHIN MINUTES.** Correcting a
+false enforcement claim in `explainer-delivery.md` (r4 CODEX B2) added **13 more lines** to that same
+counted file. At `HEAD` the shared contracts are therefore no longer 647 and the nine files no longer
+6,542 — **and not one figure in this section became wrong**, because every one of them names
+`a4f6d4b5` and is still true of `a4f6d4b5`. ⛔ **That is this section's own argument demonstrating
+itself twice in one afternoon:** the undated label broke on the first edit after it was written, and
+the dated row survived the second.
+
+⛔ **AND A MECHANICAL GUARD WAS CONSIDERED AND REJECTED, WITH THE REASON.** `check-claim-propagation.py`
+already refuses a stale *derived* figure and has caught the spec's own line count three times. To do
+the same for this one it would need the **nine-file enumeration**, which lives in prose here — so the
+guard would hold a second copy of the list, which is precisely the defect it exists to prevent
+(`one-rule-one-place`). A dated row needs no second copy. ⚠ What that leaves uncovered, stated
+rather than hidden: nothing refuses a *new* undated count in this section.
 
 ⛔ **SO THERE ARE TWO FAILURE MODES HERE, AND THE SECOND IS THE ONE WORTH CARRYING.** The count
 decayed. ⚠ **TWO DIFFERENT RATIOS LIVE HERE AND ROUND 1 PAIRED THE WRONG ONE WITH THIS ARROW
-(r2 CLAUDE M1):** `3,599 → 6,525` is **1.81x** (the gap against what the index SAYS), while
-`3,737 → 6,525` is **1.75x** (the growth of the SUBJECT since it was measured). The whole point of
+(r2 CLAUDE M1):** `3,599 → 6,542` is **1.82x** (the gap against what the index SAYS), while
+`3,737 → 6,542` is **1.75x** (the growth of the SUBJECT since it was measured) — both at
+`a4f6d4b5`, and both re-derived rather than adjusted. The whole point of
 the three-stage history is that those are different numbers, so the arrow now carries the right one.
 ⚠ And `3.7%` is `138/3737` — **the denominator is the value at republication**, stated because an
 unlabelled percentage is the same defect one level down. But the figure also **arrived in
@@ -172,8 +201,8 @@ it was written into.**
 ⛔ **SO THE DIAGNOSIS CHANGES, AND THAT MATTERS MORE THAN THE NUMBER.** The figure was **derived,
 enumerated, dated and correct** (`portable-practices.md:17` says *"Enumerated in `docs/backlog.md`
 row 89, not recalled"*, and row 89 contains the enumeration). It was not written from recall. Its
-subject then grew **1.75x against the value measured at republication** (3,737 → 6,525); it is
-**1.81x** against the figure the index still prints. **The failure mode is a dated count decaying,
+subject then grew **1.75x against the value measured at republication** (3,737 → 6,542, at
+`a4f6d4b5`); it is **1.82x** against the figure the index still prints. **The failure mode is a dated count decaying,
 not a count invented** — and
 §3's own banner already handles decay. **Correcting it is in scope for this milestone**, and the
 correction must record *that* reason.
@@ -183,8 +212,9 @@ finding whose entire purpose was to shame that defect. It is left on the record 
 rewritten, because it is the best available evidence for why §5's CANNOT-RUN rule needs the
 companion that B3 forced (see §5).
 
-**The total, for scope sizing only:** 10,373 Python + 604 skills + 630 shared contracts =
-**11,607 lines** across the 17 components of effort (3). ⚠ That is a different and larger set than
+**The total, for scope sizing only, measured at `a4f6d4b5`:** 10,373 Python + 604 skills + **647**
+shared contracts = **11,624 lines** across the 17 components of effort (3). ⟳ Said `630` and
+`11,607` until r4 CODEX B1 — the same 17 lines, the same cause as the row above. ⚠ That is a different and larger set than
 `portable-practices.md`'s nine, and the two must not be compared without saying so.
 
 ⟳ **AND THE OTHER TWO ARE ALSO ALREADY FIXED (r3 CODEX B2).** The index said *"registers 10
@@ -334,6 +364,7 @@ is undefined the moment there is more than one, and silently wrong when there ar
 | imported only by entry-points that are themselves `argued` | the library is **`argued`** — not `inherited` (there is no measured scenario to inherit) and not `none` (something was established) |
 | imported by **no** entry-point | **no inheritance is possible** — grade `none`. ⚠ An orphan library is also a scope question: ask why it is shipping at all |
 | imported by entry-points that **all** fail | ⟳ **ADDED BY r3 CODEX M3 — the table covered every population but this one.** Apply the same attribution test: a failure **attributed to code in this library** makes it a measured failing component, graded `measured` with that defect named. A failure attributed elsewhere leaves it with **no measured scenario at all** — grade `none`. ⟳ **THE `argued` BRANCH THIS ROW FIRST CARRIED WAS UNREACHABLE AND IS DELETED (r3 CLAUDE M2).** It read *"`argued` if its importers were argued"*; an importer that FAILED the experiment was by definition exercised, while `argued` is defined as *no experiment reached it*, so no importer can be both and every instance fell through to `none` anyway. ⛔ **Do NOT read `inherited` here** either: it is defined through a *successful* named scenario, so applying it literally to an all-failing population returns `none` and discards measured fault evidence |
+| imported by a mix of **measured-passing** and **CANNOT RUN** importers | ⟳ **ADDED BY r4 CODEX M1, which is the second population this table has been missing and the first one the previous fix CREATED.** The CANNOT RUN row below makes such an importer `argued`, and the mixed row above resolves only *passing vs failing* — so a library imported by one measured pass and one unrunnable entry-point matched **no row at all**. **The rule: a measured scenario that reached the library is enough.** It is `inherited`, on the strength of the importer that ran; the unrunnable importer contributes nothing in either direction, and the inventory records that it could not run. ⚠ Symmetrically, **measured-FAILING plus CANNOT RUN** is graded by the attribution test alone — the failure counts if it is attributed to code in this library, and the unrunnable importer again contributes nothing |
 | an importer the experiment **CANNOT RUN** against | ⟳ **CLASSIFIED BY r3 CLAUDE M2, which found the spec silent and two of its rules pulling opposite ways.** The spine says *"Cannot run is a FAILURE, never a pass"*, which puts it in the failing population; §5 says an unexercised entry-point is `argued`, which puts it outside. **The rule: CANNOT RUN is NOT a failure of the component** — it is a failure to measure, so the importer is `argued` and contributes no failure to inherit, **and the inventory records the reason it could not run.** A component may not be graded `measured` on a run that did not happen |
 | part of an **import cycle** | graded by the entry-points at the cycle's boundary; a cycle with no entry-point outside it is `none` |
 
@@ -990,18 +1021,24 @@ and is a candidate follow-up if either survives.
 
    | The index says | Why it is wrong | Measured against |
    |---|---|---|
-   | the old figure *"undercounted its own subject by roughly 3x"* | **3x is a CROSS-SET ratio.** The subject of `3,599` was the **nine** enumerated files, which are **6,525** today — **1.81x**. The ~11,000 is a **different and larger set** (17 components), and §3 forbids comparing the two without saying so | §3's own three-stage table |
+   | the old figure *"undercounted its own subject by roughly 3x"* | **3x is a CROSS-SET ratio.** The subject of `3,599` was the **nine** enumerated files, which are **6,542** at `a4f6d4b5` — **1.82x**. The ~11,000 is a **different and larger set** (17 components), and §3 forbids comparing the two without saying so | §3's own three-stage table |
    | *"The problem is concentrated in one file"* | already **measured false** — `explainer-delivery.md` scores **0** on the vocabulary detector and still carries three CWD-relative invocations, so the C3 defect is in the file presented as the good news | §4 (r1 CLAUDE H5) |
-   | ⟳ the replacement headline *"~11,000 lines"* and its *"10,373 across six files"* | **the corpus disagrees with the enumeration in its own sentence** — ADDED by r3 CLAUDE H4, which found this list incomplete the same way §3's list was. `1780+2907+450+438+3546+1252 = 10,373`, `+604 = 10,977`: a set that **omits the three shared contracts** (`wc -l` → `346 + 73 + 211 = 630`), one of which that very sentence names, while **including the two generators' 4,798 lines**, which the enumeration lists only as four shell hooks. The spec's own full-set figure is **11,607** (§3) | §3, thirteen lines above the pointer that sends the reader here |
+   | ⟳ the replacement headline *"~11,000 lines"* and its *"10,373 across six files"* | **the corpus disagrees with the enumeration in its own sentence** — ADDED by r3 CLAUDE H4, which found this list incomplete the same way §3's list was. `1780+2907+450+438+3546+1252 = 10,373`, `+604 = 10,977`: a set that **omits the three shared contracts** (`wc -l` at `a4f6d4b5` → `363 + 73 + 211 = 647`), one of which that very sentence names, while **including the two generators' 4,798 lines**, which the enumeration lists only as four shell hooks. The spec's own full-set figure is **11,624** (§3) | §3, thirteen lines above the pointer that sends the reader here |
 
-   ⚠ **Both are one-line repairs, and the second is a C3 conclusion a C2 measurement cannot support**
-   — which is the same confusion §4 records, appearing once more in the index.
+   ⚠ **ALL THREE are one-line repairs, and the second is a C3 conclusion a C2 measurement cannot
+   support** — which is the same confusion §4 records, appearing once more in the index. ⟳ This said
+   *"Both"* until r4 CODEX M3: the third correction was added to the table above and **never reached
+   the acceptance condition below it**, so a change fixing only the first two would have satisfied
+   the bound while leaving the defect the table had just named. **The propagation defect, inside the
+   replacement for the propagation defect** — and the fourth round running in which this one
+   mechanism has produced the findings.
 
    ⛔ **THE COUNTER THE OWNER WEIGHED WAS REAL, SO THE BOUND STANDS, AGAINST THE NEW LIST.** The
    objection: if this milestone stalls, known-wrong sentences stay published for as long as it does.
-   Both repairs are **docs-only and depend on nothing else in PR 1**, so they go in as
-   its **first commit** and are mergeable alone. **The observation that makes this bound FAIL: PR 1 open with
-   either correction not yet committed.** At that point the stall risk the owner accepted is live
+   **All three repairs are docs-only and depend on nothing else in PR 1**, so they go in as
+   its **first commit** and are mergeable alone. **The observation that makes this bound FAIL: PR 1
+   open with ANY OF THE THREE corrections not yet committed** (⟳ r4 CODEX M3 — this read *either*,
+   over a list of three). At that point the stall risk the owner accepted is live
    and the corrections should be split into their own PR.
 9. The scoring rubric as a `portable-practices.md` entry — a reusable publishability test is itself a
    D2 contribution, and this milestone is the measurement that earns it.
@@ -1049,7 +1086,7 @@ specifically to keep evaluation independent of repair.
 | A count is taken over the wrong set, and reproduces | §3's counting rule fixes membership before arithmetic; §5 asserts a non-zero expected file count per component. ⚠ This spec reached a correct total over a wrong set twice in round 1 |
 | Efforts (1) and (2) get weaker verdicts than (3) | Stated as a bound in §6 rather than hidden; their verdicts are explicitly labelled argument-based |
 | The milestone becomes "publish everything" by momentum | `DON'T-SHIP` is a first-class verdict; a component that fails C1–C4 is recorded as such, and that is a successful outcome of this work |
-| **11,607 lines** — the 17 components of effort (3), per §3's derivation — is too much to assess per line | Assessment is per component against five criteria (§4), not per line. ⟳ This row said *"~11,000"* until r3 CLAUDE M1: the same subject carried two figures 5.2% apart, and §3's own closing warning — *that is a different and larger set, and the two must not be compared without saying so* — is exactly what this row was then doing silently |
+| **11,624 lines** — the 17 components of effort (3), per §3's derivation at `a4f6d4b5` — is too much to assess per line | Assessment is per component against five criteria (§4), not per line. ⟳ This row said *"~11,000"* until r3 CLAUDE M1: the same subject carried two figures 5.2% apart, and §3's own closing warning — *that is a different and larger set, and the two must not be compared without saying so* — is exactly what this row was then doing silently |
 
 ## 9. Falsifiers
 

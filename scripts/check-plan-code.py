@@ -629,7 +629,7 @@ EXPECTED_MUTATIONS = {
     # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
     # updating the site the finding named. A convention had already failed at it twice in two
     # rounds, which is why this is a guard and not a checklist.
-    "scripts/check-claim-propagation.py": 24,
+    "scripts/check-claim-propagation.py": 28,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
@@ -5128,8 +5128,12 @@ def _self_test() -> int:
     # key, a whitespace-only class leak, and a pushed self-closing tag. ⚠ TWO of its behaviours have
     # NO entry and the reason is written in that file beside each: both crash as FileNotFoundError
     # when disabled, so a mutation would forge a `[FAIL]` instead of failing its case. Every figure
-    # here was read off the guard's own refusal — the last from `got 1480 want 1471`.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1480)
+    # here was read off the guard's own refusal — the last from `got 1484 want 1480` for the last of them.
+    # ⟳⟳ 2026-10-16, round 4: 1480 → 1484. Four more for CODEX's round — the absent-path refusal
+    # returning a clean result (whose entry r3 claimed could not exist, and r4 refuted in one line),
+    # whitespace between inline elements being deleted, the closure rule reading values instead of
+    # carrier openings, and the tolerant unwind popping one element instead of the subtree.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1484)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

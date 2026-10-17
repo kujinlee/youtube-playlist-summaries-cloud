@@ -132,10 +132,23 @@ The fragment is a `<title>`, one `<style>…</style>`, then body markup — no `
 > page while sitting intact in the fragment. Nothing was wrong for the reader either time; the
 > derived artifact had simply stopped deriving.
 >
-> **`scripts/check-claim-propagation.py` refuses this for the `2026-10-15-marketplace-inventory-*`
-> pair** — it audits the fragment *and* the composed page, deriving the second from the first
-> rather than listing it. That guard's subject is one dated document pair (`docs/backlog.md` row
-> 293), so **every other page in this repository is protected by this paragraph and nothing else.**
+> ⟳ ⛔ **WHAT THE GUARD ACTUALLY DOES — CORRECTED 2026-10-16 BY ROUND 4 (CODEX B2), WHICH REFUTED
+> THE SENTENCE THAT STOOD HERE.** It said `scripts/check-claim-propagation.py` *"refuses this"* and
+> *"enforces"* recomposition. **It does not, and the reviewer showed it in one line:** append an
+> unregistered sentence to the fragment, leave the composed page alone, and the audit returns
+> `problems: []`. Reproduced here over a **green control** — because the first attempt returned
+> `rc=1` for an unrelated stale figure, which would have read as the claim being true.
+>
+> | What it does | What it does NOT do |
+> |---|---|
+> | requires every **registered** token and **registered derived figure** to be present and correct at **both** the fragment and the composed page | compose the fragment and compare the result against the committed page |
+> | so a drift that touches a registered claim or figure is refused — which is how the author's own reflow was caught within the hour | notice a drift that touches nothing registered, which is most edits |
+>
+> ⛔ **SO THE PARAGRAPH ABOVE IS THE PROTECTION, FOR EVERY PAGE INCLUDING THAT ONE** — the guard
+> narrows the gap for one dated document pair (`docs/backlog.md` row 293) and closes it for nobody.
+> **The falsifier, stated so it can be run by hand:** re-compose a committed fragment and diff the
+> result against the committed `.html`; any difference means a recompose was skipped. Nothing does
+> that automatically, and claiming otherwise is what this correction is for.
 
 `brief-compose.py` lifts the tray — 13 CSS rules, the markup, ~6 KB of JS — **verbatim from an
 existing explainer**. Never hand-copy it. It took four rounds of shipped defects to get right

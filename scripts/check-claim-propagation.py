@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a document set where one rule is stated in several places and the fold updated only some.
 
-    python3 scripts/check-claim-propagation.py --self-test # 80 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 88 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
@@ -264,14 +264,24 @@ DERIVED: list[dict] = [
 # ⚠ Both probes that established this counted `[FAIL]` lines at first and therefore could not see
 # a crash at all. The second probe read the exit code and the traceback, and disagreed.
 #
-# ⚠ WHY THE ABSENT-PATH CHECK (r3 CODEX H1) CARRIES NO MUTATION ENTRY, STATED RATHER THAN HIDDEN.
-# Three of round 3's four High findings got one; this one cannot have a usable one. Every way to
-# disable the check leaves the code below reading a file that is not there, so the mutation dies as
-# `FileNotFoundError` instead of failing the case it names — *a crash forging a `[FAIL]`*, which
-# this file has already paid for once. Measured: `if absent_paths:` → `if False:` ends the suite in
-# a traceback, and the named case never prints. ⭐ That is a property of the fix, not a gap in it —
-# the check cannot be removed without the guard failing loudly — and the falsifier is the pair of
-# self-test cases above, which do fail if absence is ever noted-and-skipped again.
+# ⟳⛔ THE ABSENT-PATH CHECK DOES HAVE A MUTATION NOW, AND THE PARAGRAPH THAT SAID IT COULD NOT IS
+# THE MORE USEFUL RECORD (r4 CODEX H3). I wrote: *every way to disable the check leaves the code
+# below reading a file that is not there, so the mutation dies as `FileNotFoundError` instead of
+# failing the case it names.* **I had witnessed exactly ONE disabling form** — `if absent_paths:`
+# → `if False:` — and generalised from it to *every*.
+#
+# The reviewer produced a second form in one line:
+#
+#     if absent_paths:
+#         return [], []
+#
+# Measured: **rc=1, four named failures, zero tracebacks.** A clean early return disables the
+# refusal without ever reaching the read. The entry is in the manifest.
+#
+# ⭐ THE TRANSFERABLE PART IS NOT THE MUTATION, IT IS THE SHAPE OF THE MISTAKE: a bound enumerates
+# what was WITNESSED, and "no mutation is possible" is a claim about every possible edit, which one
+# probe cannot establish. ⚠ The same reasoning appears below for `wanted |= {… DERIVED pages …}`
+# and is now stated as what it is: one crashing form was witnessed, and no form was proved absent.
 #
 # ⛔ Stated in the code, not only in the docstring: this registry is a floor, not a closure, and
 # r3 CLAUDE M8 pointed out that only ONE of the two directions had ever been written down.
@@ -368,7 +378,12 @@ class _Blocks(html.parser.HTMLParser):
             self.stack.append((tag, a))
 
     def handle_startendtag(self, tag, attrs):  # noqa: D102
-        pass  # self-closing: no children, so it can carry no derived text
+        # A self-closing element has no children, so it can carry no derived TEXT — but it is
+        # still a declared carrier, and the closure rule must see it (r4 CODEX H2). It is
+        # deliberately NOT pushed onto the stack.
+        a = {k: (v if v is not None else "") for k, v in attrs}
+        if a.get("data-derived"):
+            self.carriers[a["data-derived"]] = self.carriers.get(a["data-derived"], 0) + 1
 
     def handle_endtag(self, tag):  # noqa: D102
         # close the most recent matching element, tolerating unclosed inline tags
@@ -380,6 +395,14 @@ class _Blocks(html.parser.HTMLParser):
 
     def handle_data(self, data):  # noqa: D102
         if not data.strip():
+            # ⛔ WHITESPACE-ONLY TEXT STILL SEPARATES WORDS (r4 CODEX H1). Returning outright
+            # DELETED the space, so `<em>support</em> <em>verdict</em>` accumulated as
+            # "supportverdict" and a registered phrase went missing from a block that renders it
+            # identically to a reader. Measured: (1, 0) unformatted, (0, 0) with the two spans.
+            # ⚠ It contributes a SPACE and NOT its classes — which is what keeps r3's blank-span
+            # case true: a `<span class="note">   </span>` must not exempt the block around it.
+            if self.blocks:
+                self.blocks[-1]["text"] += " "
             return
         self.nodes.append((data, list(self.stack)))
         if not self.blocks:
@@ -626,7 +649,13 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
                     f"      their text is CONCATENATED, so the value is a run-together string "
                     f"rather than either figure — carry each key exactly once"
                 )
-        for key in _derived_values(read(page)).keys():
+        # ⛔ OPENINGS, NOT VALUES (r4 CODEX H2). This loop read `_derived_values()`, which only
+        # acquires a key while processing TEXT — so every textless carrier passed:
+        # `<span data-derived="unknown"></span>`, its self-closing spelling, `<img data-derived=…>`
+        # and `<input data-derived="unknown" value="999">`, the last of which can DISPLAY a value
+        # while being invisible to this rule. Measured: all four appended to the real pages,
+        # `problems: []`.
+        for key in _derived_carrier_counts(read(page)):
             if key not in registered_keys:
                 problems.append(
                     f"UNREGISTERED derived carrier: {page} declares "
@@ -1092,6 +1121,51 @@ def _self_test() -> int:
          _derived_values('<strong data-derived="spec-lines"/>771 after it'), {})
     case("parser: a self-closing tag does not swallow what follows it",
          _html_occurrences("<p><br/>a library " + tok + " x</p>", tok), (1, 0))
+
+    # ⛔ H1 (r4 CODEX) — WHITESPACE BETWEEN INLINE ELEMENTS SEPARATES WORDS. Both forms below
+    # render the same sentence; the second scored (0, 0) because the standalone space between
+    # `</em>` and `<em>` was dropped, joining "supportverdict". This is the SECOND gap of the same
+    # kind in the same matcher: r3 CODEX H4 was markup splitting a phrase, this is markup
+    # DELETING the space inside one.
+    case("html: a phrase split across two inline elements is still asserted",
+         _html_occurrences(
+             "<p>A library inherits its <em>support</em> <em>verdict</em> from the "
+             "entry-points.</p>", tok),
+         (1, 0))
+    case("html: …and three of them, to show the fix is not one-space-deep",
+         _html_occurrences(
+             "<p>A library <em>inherits</em> <em>its</em> <em>support</em> verdict from the "
+             "entry-points.</p>", tok),
+         (1, 0))
+
+    # ⛔ H2 (r4 CODEX) — A CARRIER WITH NO TEXT IS STILL A CARRIER. All four spellings below
+    # passed the closure rule, because it read extracted VALUES and a key is only acquired while
+    # processing text. The `<input>` is the sharp one: it can DISPLAY a value to a reader while
+    # being invisible to the check.
+    for _spelling in (
+        '<span data-derived="unknown"></span>',
+        '<span data-derived="unknown"/>',
+        '<img data-derived="unknown" src="x">',
+        '<input data-derived="unknown" value="999">',
+    ):
+        case(f"derived: a textless carrier is still counted — {_spelling[:34]}",
+             _derived_carrier_counts(_spelling), {"unknown": 1})
+    probs, _ = audit(tree(
+        clean_spec,
+        page_for(clean_spec) + '<input data-derived="unknown" value="999">\n',
+    ))
+    case(
+        "audit: a TEXTLESS unregistered carrier is a problem",
+        any("UNREGISTERED derived carrier" in p for p in probs),
+        True,
+    )
+
+    # ⛔ M2 (r4 CODEX) — THE TOLERANT UNWIND WAS BEHAVIOURALLY UNPINNED. Replacing
+    # `del self.stack[i:]` with `self.stack.pop(i)` left 80/80 green; this is the reviewer's own
+    # witness, which distinguishes them. Mis-nested inline tags are what the tolerance is FOR.
+    case("parser: a mis-nested close unwinds everything inside it",
+         _derived_values('<p><span><b data-derived="k">1</span>2</b></p>'),
+         {"k": "1"})
 
     # ⛔ THE CLOSURE RULE (r3 CLAUDE M4): a `data-derived` carrier no entry checks is a problem,
     # not something to ignore. Measured before the fix with a deliberately wrong path at both page
