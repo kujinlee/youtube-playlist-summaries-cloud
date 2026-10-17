@@ -120,6 +120,23 @@ python3 scripts/brief-compose.py --content <fragment.html> --slug <slug> --title
 
 The fragment is a `<title>`, one `<style>…</style>`, then body markup — no `<html>`/`<head>`/`<body>`.
 
+> ### ⛔ EDIT THE FRAGMENT, THEN RECOMPOSE — IN THE SAME COMMIT. The composed `.html` is DERIVED.
+>
+> **Added 2026-10-16 by round 3 of `marketplace-inventory` (CLAUDE M9), because a guard now
+> enforces it on at least one page and this contract did not say so.** A fragment edit that is not
+> followed by `brief-compose.py` leaves a committed `.html` that is **not** the composition of its
+> committed fragment — the reader opens the stale one.
+>
+> ⚠ **Measured the same day, by the author of that guard, twice within the hour:** a reflow landed
+> in a fragment with no recompose, and a phrase the guard registered went missing from the served
+> page while sitting intact in the fragment. Nothing was wrong for the reader either time; the
+> derived artifact had simply stopped deriving.
+>
+> **`scripts/check-claim-propagation.py` refuses this for the `2026-10-15-marketplace-inventory-*`
+> pair** — it audits the fragment *and* the composed page, deriving the second from the first
+> rather than listing it. That guard's subject is one dated document pair (`docs/backlog.md` row
+> 293), so **every other page in this repository is protected by this paragraph and nothing else.**
+
 `brief-compose.py` lifts the tray — 13 CSS rules, the markup, ~6 KB of JS — **verbatim from an
 existing explainer**. Never hand-copy it. It took four rounds of shipped defects to get right
 (`explainer-serve.py`'s docstring records them), and hand-copying working code between documents is
