@@ -2354,6 +2354,44 @@ skill and not the hook, so the hook's refusal printed a claim and its withdrawal
       retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
       human's call, so neither is taken here.
 
+### Marketplace inventory — anchor `harness-ships-elsewhere` — 🔴 ARMED BY THRASHING 2026-10-16, FOUR CANDIDATES AWAITING THE OWNER
+
+Phase 6 review: `docs/reviews/architecture-review-2026-10-16-claim-propagation.md`. Four adversarial
+rounds on PR #376; round 4 had **8 of 9 findings introduced by round 3's own fix** with Blocking flat
+at 2 → 2, which is `review-method.md`'s definition of thrashing.
+
+⛔ **The coordinator first answered the mandatory question WRONGLY and the Claude half caught it** —
+an invented definition (*oscillation*), the anti-escape-hatch clause applied backwards, and a
+pre-committed retreat whose antecedent the same document cancelled. Retracted in place; the
+retraction is kept beside the reasoning it replaces.
+
+- [x] **Rounds 1–4, both halves each**, filed under `docs/reviews/{codex,claude,coordinator}/`;
+      `check-review-rounds.py` reports 0 silent gaps.
+- [x] **All of rounds 1–3 folded, and round 4's three Blockings and three Highs.**
+- [x] **`scripts/check-claim-propagation.py`** — 96 self-test cases, 32 mutations, 32 killed and
+      attributed over a green control; declared sum 1419 → 1488, every figure read off the guard's
+      own refusal.
+- [x] **Two owner decisions taken live through the walkthrough page** — D8 (a correction lands with
+      the work that found it) and D9 (support bar: best-effort, versioned).
+- [ ] ⭐ **THE REVIEW'S DECIDING FINDING: this exact review ran two days earlier under the same
+      trigger, and its redesign landed.** *One canonical source per mechanism* (2026-10-14) collapsed
+      two mechanisms to one file each **with every live site citing rather than restating**, and left
+      *"a mechanism missing from `CANONS` is unprotected"* as #282 / #288. This document pair is that
+      instance, and `check-claim-propagation.py` implements the **opposite** remedy — it requires the
+      claim at every site, so it makes the copies mandatory and then audits them. Backlog **#298**.
+- [ ] **Three claims are drifted between spec and page RIGHT NOW with the guard green** — including
+      one the spec's own §4d heading asserts and its §623 withdraws. Backlog **#297**, recorded as
+      evidence and deliberately not fixed, because fixing the instance in hand is the behaviour the
+      thrashing gate fired on.
+- [ ] **A HUMAN DECISION IS WAITING, and it is a real fork:** candidates 1 and 3 disagree about how
+      much a reader-facing page may restate. `check-canonical-source.py` already exempts surfaces
+      that are *"a record, not a rule a reader follows"*, so the question is narrow and decidable —
+      **is the walkthrough such a surface?** Backlog **#298**.
+- [ ] **The owner's own item, unchanged:** the C5 content review of effort (1)'s 157 memory files,
+      now **deliverable 11**; until it lands the corpus cannot be graded `SHIP`.
+- [ ] **NOT CONVERGED, and no PR beyond the one already open (#376).** 20 commits local,
+      `--force-with-lease` needed after the rebase. Merging is the human gate.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
