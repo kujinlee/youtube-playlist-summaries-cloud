@@ -561,7 +561,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 <tr><td><strong>C1</strong></td><td><strong>Measured</strong> — it works, with evidence</td><td>existing self-tests and manifests</td></tr>
 <tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
 <tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
-<tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for, graded against <strong>D9</strong>’s support bar (§4d)</td></tr>
+<tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for. ⛔ <strong>Not graded by D9</strong>: the spec withdraws that predicate and shows the two varying independently (§4d)</td></tr>
 <tr><td><strong>C5</strong></td><td>⭐ <strong>Redistributable</strong> — we are permitted to publish it, and it holds nothing that must not be published</td><td><span class="pill no">not answerable yet</span> — and two of its halves are yours</td></tr>
 </table>
 </div>
@@ -658,11 +658,15 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   and (2), which get no install experiment. <code>NEEDS-WORK</code> goes back to meaning <em>a named
   defect</em> — so a component merely unreached by the experiment is <code>argued</code>, and
   <strong>files no backlog row</strong>. That removes the phantom rows the old rule manufactured.</p>
-  <p class="note">⚠ <strong>Its falsifier, stated now.</strong> If the inventory ever gets read and
-  acted on as though <code>argued</code> meant <code>measured</code>, this scheme has failed and the
-  fallback is the stricter rule — require <code>measured</code> or <code>inherited</code> for
-  <code>SHIP</code>. That is why the grade must render <em>beside</em> the verdict, never in a
-  footnote.</p>
+  <p class="note">⚠ <strong>Its falsifier lives in the spec, &sect;4b, and this page does not
+  restate it</strong> (ADR-0015: a recital drifts, a citation cannot). ⟳ <strong>This paragraph used
+  to state one in its own words</strong> — that the scheme fails if the inventory is <em>read and
+  acted on</em> as though <code>argued</code> meant <code>measured</code> — and the spec
+  <strong>withdrew exactly that</strong>, because nothing can observe how a document was read, so
+  the test could never fire. The replacement is mechanically decidable from the inventory itself.
+  The fallback if it ever does fire is unchanged: require <code>measured</code> or
+  <code>inherited</code> for <code>SHIP</code>. And it is why the grade renders <em>beside</em> the
+  verdict rather than in a footnote.</p>
 </div>
 
 <div class="box warn">
@@ -795,7 +799,7 @@ question was asked against it.</p>
   mis-skimmed as plain approval by someone who reads only the verdict column. ⟳ <strong>That risk
   is real, but it is NOT the scheme&rsquo;s falsifier</strong> — nothing can observe how a document
   was read, so a test shaped that way could never fire. The checkable form is stated once, in
-  &sect;4c of the spec, and this page cites it rather than restating it (ADR-0015): a recital can
+  &sect;4b of the spec, and this page cites it rather than restating it (ADR-0015): a recital can
   drift from its source, a citation cannot. If the mis-skim worries you more than the labelling
   does, the cleaner answer is the
   stricter one: <strong>require <code>measured</code> or <code>inherited</code> evidence for
@@ -1125,7 +1129,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-17 08:58 · 650ef620 · uncommitted changes</time></span></div>
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-17 09:18 · b0b425d5 · uncommitted changes</time></span></div>
 
 <div id="tray"><div class="in">
   <div id="qt"></div>

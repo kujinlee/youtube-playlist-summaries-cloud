@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a page whose DERIVED figure disagrees with the producer that computes it.
 
-    python3 scripts/check-claim-propagation.py --self-test # 41 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 49 cases against synthetic trees
 
 ⛔ THE FILENAME IS NOW WIDER THAN THE CONTENT, AND IT IS KEPT DELIBERATELY. This script once
 checked three things; ADR-0015 superseded two of them and only the derived-figure half remains.
@@ -632,6 +632,35 @@ def _self_test() -> int:
     case("parser: a mis-nested close unwinds everything inside it",
          _derived_values('<p><span><b data-derived="k">1</span>2</b></p>'),
          {"k": "1"})
+
+    # ⛔ THREE SURVIVING BEHAVIOURS THAT NO CASE PINNED — r5 CODEX M3, found by applying three
+    # independent mutations to temporary copies and getting 41/41 GREEN on each. They are gaps in
+    # MY reduction of this class, not pre-existing: shrinking `_Blocks` to `_Carriers` left these
+    # three branches live and uncovered, which is the shape ADR-0014 and this file's own history
+    # keep paying for. Each case below is paired with a mutation in the manifest.
+
+    # 1 — values accumulate STRIPPED. Mutating `data.strip()` to `data` left the suite green while
+    # every padded carrier silently gained surrounding whitespace, which `int()` then rejects as a
+    # figure mismatch rather than as the parsing defect it is.
+    case("derived: a carrier's value is accumulated STRIPPED, so padding never enters it",
+         _derived_values('<strong data-derived="k">  1137\n  </strong>'),
+         {"k": "1137"})
+
+    # 2 — ⭐ THE WHOLE VOID VOCABULARY, NOT ONE MEMBER. Reducing `VOID` to `{"img"}` left the suite
+    # green: the existing witness only ever proved `img`. This is the same mistake the DELETED
+    # prose matcher made three times (each fix covered the spelling its finding named), so the case
+    # is a LOOP over the set rather than a member of it.
+    for _v in ("br", "hr", "wbr", "col", "input", "img"):
+        case(f"derived: a <{_v}> carrier captures nothing that follows it",
+             _derived_values(f'<p><{_v} data-derived="k">771 after it</p>'),
+             {})
+
+    # 3 — an UNMATCHED end tag is IGNORED, never treated as closing the carrier. Clearing the stack
+    # there left the suite green while text after a stray close vanished from the value — and a
+    # stray close is exactly what hand-edited HTML produces.
+    case("derived: an unmatched end tag is ignored, not treated as closing the carrier",
+         _derived_values('<p data-derived="k">1</unmatched>2</p>'),
+         {"k": "12"})
 
     # ⛔ THE CLOSURE RULE (r3 CLAUDE M4): a `data-derived` carrier no entry checks is a problem,
     # not something to ignore. Measured before the fix with a deliberately wrong path at both page

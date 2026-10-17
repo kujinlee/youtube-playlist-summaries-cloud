@@ -51,11 +51,33 @@ not covered" looks like.** Two of the four results were wrong, in OPPOSITE direc
 | probe | counting `[FAIL]` said | reading rc + traceback said |
 |---|---|---|
 | whitespace guard removed | 0 red → "uncovered" | `rc=0`, no traceback, **79/79 green — genuinely uncovered** |
-| `wanted \|= {DERIVED pages}` deleted | 0 red → "uncovered" | `rc=1`, **1 traceback, `FileNotFoundError`** — covered *structurally*, and unmutatable |
+| `wanted \|= {DERIVED pages}` deleted | 0 red → "uncovered" | `rc=1`, **1 traceback, `FileNotFoundError`** — covered *structurally* |
 
-So the same number meant "no case exists" once and "the mutation is impossible" once, and nothing in
-the output distinguished them. ⚠ **The second one I would have 'fixed' by writing a case for a line
-that cannot be disabled without crashing** — work against a defect that was not there.
+So the same number meant "no case exists" once and "the probe crashed" once, and nothing in the
+output distinguished them.
+
+⟳ ⛔ **AND THE SECOND ROW ONCE ENDED "and unmutatable", WHICH WAS FALSE — REFUTED 2026-10-17 BY
+ROUND 5's CODEX HALF, AND THE REPOSITORY'S OWN MANIFEST NOW PROVES IT.** The claim was reached from
+**one mutation shape**: DELETING the line, which crashes. A **substitution** — weakening it to
+`wanted |= {d["page"] for d in DERIVED}`, keeping the line but dropping the `audited_sites`
+expansion — produces a clean, attributed failure with no traceback:
+
+```text
+[FAIL] audit: an absent COMPOSED page reached only through DERIVED is CannotRun:
+       got 'FileNotFoundError' want 'CannotRun'
+```
+
+That exact mutation is now a live manifest entry and it is KILLED. ⚠ The original text also said I
+would have written "a case for a line that cannot be disabled without crashing — work against a
+defect that was not there"; the defect WAS there, and declining to cover it would have been the
+error.
+
+⭐ **THE LESSON THE OVERREACH TEACHES, which is sharper than the one it damaged: "unmutatable" is a
+claim about EVERY mutation of a line, and I reached it from one.** Deletion is the crudest shape.
+Before concluding a line cannot be mutated, weaken it — substitute a narrower expression, flip an
+operator, drop one operand — because a line that crashes when removed will usually fail cleanly when
+merely made wrong. See [[cannot-die-may-mean-a-second-clause]], which is this same error in the
+other direction.
 
 ⭐ **THE FIX IS THE SAME SHAPE AS THE RULE ABOVE, TURNED ON MY OWN TOOL: read the EXIT CODE and ask
 whether a traceback appeared, not just what the child printed.** The probe that works is four

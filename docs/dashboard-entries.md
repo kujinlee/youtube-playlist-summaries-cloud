@@ -15485,3 +15485,58 @@ claim is gone, so the recompose gap it describes is now *wider*, not narrower.
 
 Filename kept though it is now wider than its content: 23 files cite it, 8 of them merged review
 documents. Same decision and reason as `block-default-branch-push.sh`.
+
+## 2026-10-17 [needs-you]
+Correction to this morning's entry: when I told you the three contradictions were fixed, two of them
+were not. The review round found them within the hour and they are fixed now — but you were given a
+wrong answer in between, so here is what happened.
+
+I checked my own fix with a text search that could not see across an HTML tag. The page said "graded
+against **D9**" with the D9 in bold, and my search stopped at the bold tag — so it showed me "graded
+against" with nothing after it, and I read that as a different sentence about something else. The
+second one I fixed in the wrong place entirely: I edited a nearby paragraph and left the actual stale
+sentence sitting where it was, then pointed the reader at the wrong section of the spec.
+
+What makes this worth your attention rather than just embarrassing: **that is the exact failure the
+check I deleted this morning existed to catch** — a phrase hidden behind inline formatting. I
+reproduced it by hand, in the same session, while checking a fix about it. Every check in the fold
+now strips the formatting out before searching, and the two sentences are verified gone from the page
+a reader actually opens.
+
+The review also found three places where the parser I shrank still had live behaviour that no test
+covered, an old memory note making a claim its own evidence disproves, and an arithmetic error in my
+count of what was removed. All four are fixed, and the counts are now worked out from the files
+rather than typed in.
+
+**Waiting on you:** unchanged, plus one. The content review of the 157 memory files is still yours.
+Merging is still yours. And the second half of this review round — a Claude pass over the fixes just
+described — is running; it exists precisely to check work like this, and it should land before you
+merge.
+<!--tech-->
+Round 5 Codex half: `docs/reviews/codex/marketplace-inventory-r5-codex.md` (`gate_ran: true`,
+`gpt-6.1-sol`). Fold: `docs/reviews/coordinator/marketplace-inventory-r5-coordinator.md`.
+NOT CONVERGED — 2 High, 2 Medium, 1 Low, no Blocking, all five folded.
+
+H1/H2 were a FALSE CLOSURE of backlog #297, not thrashing: the defects were the originals the
+architecture review filed as evidence, which my corrective pass claimed to fix. Root cause is one
+verification method — a regex on `[^<>]`, which cannot cross a tag boundary. Replaced with
+tag-stripped matching throughout.
+
+M3: three surviving `_Carriers` branches unpinned (stripped accumulation, the VOID vocabulary beyond
+`img`, an unmatched end tag) — found by the reviewer applying each mutation and getting 41/41 green.
++8 cases (49), +3 mutations (18). The void case loops over the vocabulary rather than naming a
+member, because the deleted matcher made that mistake three times.
+
+M4: `a-harness-cannot-read-a-cause-from-a-childs-text.md`'s "unmutatable" claim withdrawn — a
+substitution fails cleanly where deletion crashed, and that mutation is live and killed.
+
+Low: retired count 19 → 17, now derived by diffing against `8a583f7c^`; the declared-sum comment
+shows `1489 − 17 + 3 + 1 = 1476` instead of asserting a net.
+
+Found by CI, not by either half: `CONTEXT.md` declared a citing site while `HARNESS_TREE` stages no
+repo-root files → red control → **6 of 8 shards NOT MEASURED**. My local run had been scoped to one
+manifest, so this guard's suite never ran. Fixed with an invariant case over the live table plus a
+mutation; `check-canonical-source` 6 → 7.
+
+Verified: 49/49, 28/28, 178/178; scoped `--mutate .` over BOTH changed manifests — 25 mutations,
+25 killed, 25 attributed, 0 survivors, controls and re-controls green.

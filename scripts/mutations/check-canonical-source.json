@@ -76,5 +76,18 @@
     "expect": [
       "a restatement in an HTML page is detected"
     ]
+  },
+  {
+    "name": "a repo-root file is declared a citing site, which HARNESS_TREE does not stage — so this guard's own CONTROL goes red and every mutation shard reports NOT MEASURED (the live CI failure of 2026-10-17)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "            \"docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md\",",
+        "            \"docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md\",\n            \"CONTEXT.md\","
+      ]
+    ],
+    "expect": [
+      "CANONS: no declared citing site is a repo-root file (HARNESS_TREE stages none)"
+    ]
   }
 ]

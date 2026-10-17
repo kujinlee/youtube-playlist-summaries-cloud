@@ -2383,7 +2383,14 @@ retraction is kept beside the reasoning it replaces.
       page paraphrases without limit and cites the symbols it would otherwise reprint. So *is the
       walkthrough a record or a rule?* never had to be answered; it became a **citing site**, the
       category `docs/process-rationale.md` already occupies. Candidate 2 rode along.
-- [x] **Backlog #297's three drifted claims are FIXED**, and the reason they had survived is the
+- [x] **Backlog #297's three drifted claims are FIXED — but my FIRST closure of them was false,
+      and round 5's Codex half refuted it the same day.** Two of the three were still live in both
+      pages. ⛔ The mechanism is worth more than the fix: I verified with a regex whose `[^<>]`
+      class cannot cross a tag boundary, so `graded against <strong>D9</strong>` truncated before
+      the `D9` and read as an unrelated passage — **the exact defect class the prose matcher I had
+      just deleted existed to catch, reproduced by hand.** Verification now strips tags first. The
+      second fix had also landed on the wrong passage and cited §4c (D6) where D5's rule is §4b.
+      The reason they had survived at all is the
       finding worth keeping: **the deleted `LIVE` registry made the correct fix illegal.**
       `d5-ship-plus-argued` and `d8-corrections-land-here` were registered at `[SPEC, PAGE]`, so the
       gate REQUIRED each token at both sites — deleting a drifted recital from the page would have
@@ -2397,8 +2404,9 @@ retraction is kept beside the reasoning it replaces.
 - [x] **`scripts/check-claim-propagation.py` reduced to its derived-figures half** — 1,459 → 828
       lines, **41** self-test cases (was 96), **15** mutations, **15 killed and attributed over a
       green control with 0 survivors**, measured by a scoped `--mutate .` run. Declared sum
-      1488 → 1472: a ratchet **FALL**, permitted because 19 entries are **retired with their
-      subject**; ⚠ **4 were RETARGETED rather than retired**, because their anchors broke while the
+      1488 → 1472: a ratchet **FALL**, permitted because **17** entries are **retired with their
+      subject** (⟳ r5 CODEX Low: this said 19, which was the intermediate count before two were
+      restored as retargets — 32 before, 15 after, 32 − 17 = 15, derived by diffing the manifest); ⚠ **4 were RETARGETED rather than retired**, because their anchors broke while the
       rules they measure survived, and retiring those would have dropped live coverage silently.
 - [ ] **The owner's own item, unchanged:** the C5 content review of effort (1)'s 157 memory files,
       now **deliverable 11**; until it lands the corpus cannot be graded `SHIP`.

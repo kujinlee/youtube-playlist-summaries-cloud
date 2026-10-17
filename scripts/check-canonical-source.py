@@ -96,7 +96,7 @@ FAILS IF
   * a declared citing site does not cite the canonical path;
   * any non-exempt file RESTATES a mechanism (carries its tokens) without citing its canon.
 
-  --self-test  runs 27 cases over synthetic trees, including that each failure mode is DETECTED.
+  --self-test  runs 28 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
 import contextlib
@@ -192,8 +192,10 @@ CANONS: list[dict] = [
         # adding this entry are mutually reinforcing rather than independent.
         #
         # ⛔ WHAT THIS ENTRY DOES NOT DO, said here because believing otherwise rebuilds backlog
-        # #297 in a new guard: `audit()` is `hit and not _cites(...)`, so BOTH citing sites below
-        # already cite the spec and are therefore immune — and they were immune on the day this
+        # #297 in a new guard: `audit()` is `hit and not _cites(...)`, so EVERY citing site below
+        # already cites the spec and is therefore immune (⟳ r5 CODEX A2: this said BOTH while the
+        # list had grown past two; it is deliberately not a COUNT now, because a count in a
+        # comment beside the list it counts is the drift this whole branch is about) — and they were immune on the day this
         # entry was added, while carrying all 17 decision symbols and THREE claims measured as
         # drifted (#297). The enforcement here is PROSPECTIVE: a NEW site reprinting a symbol
         # without citing is refused. Agreement between canon and citing site is enforced by
@@ -209,12 +211,24 @@ CANONS: list[dict] = [
         "cites": [
             "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.fragment.html",
             "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.html",
-            # ⭐ THESE TWO WERE CAUGHT BY THIS ENTRY ON THE DAY IT WAS ADDED, which is the only
-            # live falsifier it has so far: both discuss the decision symbols legitimately (one
-            # defines the vocabulary, one records the decision) and neither cited the spec. They
-            # are DECLARED rather than merely fixed, so a future edit that drops the citation is
-            # refused instead of silently passing.
-            "CONTEXT.md",
+            # ⭐ CAUGHT BY THIS ENTRY ON THE DAY IT WAS ADDED, which is the only live falsifier it
+            # has so far: this ADR discusses the decision symbols legitimately and did not cite the
+            # spec. It is DECLARED rather than merely fixed, so a future edit that drops the
+            # citation is refused instead of silently passing.
+            #
+            # ⛔⛔ `CONTEXT.md` ALSO CARRIES THESE TOKENS AND IS DELIBERATELY *NOT* DECLARED HERE.
+            # A declared citing site must EXIST, and `check-plan-code.py`'s `HARNESS_TREE` stages
+            # `scripts`, `supabase`, `docs`, `node_modules/typescript`, `.claude/hooks`,
+            # `.github/workflows` and `.agents/skills` — **no repo-root files**. So declaring a
+            # root file here makes `audit()` report *"declared a citing site but does not exist"*
+            # inside the staged tree, which reddens this guard's CONTROL and turns every mutation
+            # shard into NOT MEASURED. MEASURED 2026-10-17 in CI: 6 of 8 shards failed that way,
+            # and a local run scoped to ONE manifest could not see it because this guard's suite
+            # never ran. ⭐ The tell was in the data: NO other `cites` entry in this table is a
+            # root file. Coverage is NOT lost — `ROOT_GLOBS` puts `CONTEXT.md` in the WALK, so a
+            # token there with no citation is still flagged; verified by deleting the citation and
+            # watching `restates marketplace-inventory` fire. The `cites` list only adds *"must
+            # keep citing even with no token present"*, which is vacuous.
             "docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md",
         ],
     },
@@ -511,6 +525,15 @@ def self_test() -> int:
                   {"docs/site.md": CITE, "docs/explainers/page.html": "MECHTOKEN " + CITE})
         case("CONTROL — an HTML page that cites the canon is clean",
              [x for x in r if "page.html" in x], [])
+
+        # ⛔ THE CLASS BEHIND A LIVE CI FAILURE (2026-10-17), pinned so it cannot come back. A
+        # declared citing site must exist, and the mutation harness stages `HARNESS_TREE`, which
+        # contains NO repo-root files — so a root-file `cites` entry reddens this guard's own
+        # CONTROL and reports NOT MEASURED for every shard rather than failing visibly here.
+        # ⚠ The assertion is on the LIVE table, not a fixture, because the defect was a real
+        # entry: a fixture would have passed while `CANONS` carried `"CONTEXT.md"`.
+        case("CANONS: no declared citing site is a repo-root file (HARNESS_TREE stages none)",
+             sorted(c for canon in CANONS for c in canon["cites"] if "/" not in c), [])
         # CONTROL — the walk must not reach deeper than the root's own files, or it would start
         # auditing node_modules and every untracked tree.
         r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})

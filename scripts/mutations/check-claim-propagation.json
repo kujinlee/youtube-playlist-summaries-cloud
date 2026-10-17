@@ -194,5 +194,44 @@
     "expect": [
       "audit: an absent COMPOSED page reached only through DERIVED is CannotRun"
     ]
+  },
+  {
+    "name": "a carrier's value stops being stripped, so padding enters the figure and a correct page reads as a mismatch (r5 CODEX M3)",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "                self.derived[key] += data.strip()",
+        "                self.derived[key] += data"
+      ]
+    ],
+    "expect": [
+      "derived: a carrier's value is accumulated STRIPPED, so padding never enters it"
+    ]
+  },
+  {
+    "name": "the VOID vocabulary shrinks to the one member an existing witness proved, so every other void carrier swallows what follows it (r5 CODEX M3)",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    VOID = frozenset(\n        \"area base br col embed hr img input link meta param source track wbr\".split()\n    )",
+        "    VOID = frozenset(\n        \"img\".split()\n    )"
+      ]
+    ],
+    "expect": [
+      "derived: a <br> carrier captures nothing that follows it"
+    ]
+  },
+  {
+    "name": "an unmatched end tag clears the stack instead of being ignored, so text after a stray close vanishes from the value (r5 CODEX M3)",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        # no match: an end tag with no open partner. Ignore it rather than corrupting the stack.",
+        "        del self.stack[:]"
+      ]
+    ],
+    "expect": [
+      "derived: an unmatched end tag is ignored, not treated as closing the carrier"
+    ]
   }
 ]
