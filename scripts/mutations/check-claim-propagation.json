@@ -97,8 +97,8 @@
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "        elif int(digits) != actual:",
-        "        elif False:"
+        "                elif digits != actual:",
+        "                elif False:"
       ]
     ],
     "expect": [
@@ -198,6 +198,127 @@
     "expect": [
       "html: ordinary prose containing 'no longer' does NOT exempt an assertion",
       "md: ordinary prose containing 'no longer' does NOT exempt an assertion"
+    ]
+  },
+  {
+    "name": "a registry entry with no sites is silently unchecked, so a registration that can never fail passes",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if not claim[\"sites\"]:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "audit: a LIVE claim with an EMPTY site list is a problem",
+      "audit: and the empty-site problem names the claim"
+    ]
+  },
+  {
+    "name": "an empty registry reports zero of everything instead of CANNOT RUN, which is a zero over nothing",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    if not (RETIRED or LIVE or DERIVED):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "audit: an EMPTY REGISTRY raises CannotRun"
+    ]
+  },
+  {
+    "name": "an unknown compute rule is accepted, so a future derived figure is silently line-counted",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            raise CannotRun(f\"unknown compute rule {spec['compute']!r}\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "audit: an UNKNOWN compute rule raises CannotRun"
+    ]
+  },
+  {
+    "name": "an unregistered data-derived carrier is ignored, so a page can carry a figure nothing checks",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            if key not in registered_keys:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "audit: an UNREGISTERED data-derived carrier is a problem",
+      "audit: and the problem names the key nothing checks"
+    ]
+  },
+  {
+    "name": "path-of falls back to digit comparison, so two different paths with no digits compare equal",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            elif claimed_raw.strip() != actual:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "audit: a path-of value disagreeing with its source is a problem"
+    ]
+  },
+  {
+    "name": "word boundaries are dropped, so a three-character token matches inside COMMIT",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    pre = r\"\\b\" if token[:1].isalnum() or token[:1] == \"_\" else \"\"\n    post = r\"\\b\" if token[-1:].isalnum() or token[-1:] == \"_\" else \"\"",
+        "    pre = \"\"\n    post = \"\""
+      ]
+    ],
+    "expect": [
+      "boundary: a short token does NOT match inside a word",
+      "boundary: a multi-word token does not match inside a longer trailing word",
+      "boundary: counting is per occurrence, not per block"
+    ]
+  },
+  {
+    "name": "a key carried by two elements is accepted, so a run-together value passes as a figure",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            if count > 1:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "audit: a key carried TWICE is a problem"
+    ]
+  },
+  {
+    "name": "whitespace-only text opens a block, so a blank span's class exempts the assertion beside it",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if not data.strip():\n            return",
+        "        if False:\n            return"
+      ]
+    ],
+    "expect": [
+      "parser: a whitespace-only span's class does not exempt the block around it"
+    ]
+  },
+  {
+    "name": "a self-closing tag is pushed onto the stack, so it swallows the rest of the document",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    def handle_startendtag(self, tag, attrs):  # noqa: D102\n        pass  # self-closing: no children, so it can carry no derived text",
+        "    def handle_startendtag(self, tag, attrs):  # noqa: D102\n        self.handle_starttag(tag, attrs)"
+      ]
+    ],
+    "expect": [
+      "parser: a self-closing carrier holds no text"
     ]
   }
 ]

@@ -333,7 +333,8 @@ is undefined the moment there is more than one, and silently wrong when there ar
 | imported by a **mix** of passing and failing entry-points | ⛔ **inherits the failure ONLY IF the failure is ATTRIBUTED TO CODE IN THAT LIBRARY** — the entry-point's failure trace reaches it. A failure attributed elsewhere (an absent credential, a missing host binary) leaves the library on the passing importers' evidence |
 | imported only by entry-points that are themselves `argued` | the library is **`argued`** — not `inherited` (there is no measured scenario to inherit) and not `none` (something was established) |
 | imported by **no** entry-point | **no inheritance is possible** — grade `none`. ⚠ An orphan library is also a scope question: ask why it is shipping at all |
-| imported by entry-points that **all** fail | ⟳ **ADDED BY r3 CODEX M3 — the table covered every population but this one.** Apply the same attribution test: a failure **attributed to code in this library** makes it a measured failing component, graded `measured` with that defect named. A failure attributed elsewhere leaves it with **no measured scenario at all** — `argued` if its importers were argued, otherwise `none`. ⛔ **Do NOT read `inherited` here:** `inherited` is defined through a *successful* named scenario, so applying it literally to an all-failing population returns `none` and discards measured fault evidence |
+| imported by entry-points that **all** fail | ⟳ **ADDED BY r3 CODEX M3 — the table covered every population but this one.** Apply the same attribution test: a failure **attributed to code in this library** makes it a measured failing component, graded `measured` with that defect named. A failure attributed elsewhere leaves it with **no measured scenario at all** — grade `none`. ⟳ **THE `argued` BRANCH THIS ROW FIRST CARRIED WAS UNREACHABLE AND IS DELETED (r3 CLAUDE M2).** It read *"`argued` if its importers were argued"*; an importer that FAILED the experiment was by definition exercised, while `argued` is defined as *no experiment reached it*, so no importer can be both and every instance fell through to `none` anyway. ⛔ **Do NOT read `inherited` here** either: it is defined through a *successful* named scenario, so applying it literally to an all-failing population returns `none` and discards measured fault evidence |
+| an importer the experiment **CANNOT RUN** against | ⟳ **CLASSIFIED BY r3 CLAUDE M2, which found the spec silent and two of its rules pulling opposite ways.** The spine says *"Cannot run is a FAILURE, never a pass"*, which puts it in the failing population; §5 says an unexercised entry-point is `argued`, which puts it outside. **The rule: CANNOT RUN is NOT a failure of the component** — it is a failure to measure, so the importer is `argued` and contributes no failure to inherit, **and the inventory records the reason it could not run.** A component may not be graded `measured` on a run that did not happen |
 | part of an **import cycle** | graded by the entry-points at the cycle's boundary; a cycle with no entry-point outside it is `none` |
 
 ⛔ **WHY THE IMPLICATION TEST IS LOAD-BEARING, MEASURED ON THE FILE THIS TABLE WAS ADDED TO RESCUE
@@ -389,6 +390,9 @@ being resolved against the CALLER'S working directory instead of against the pac
 | ⭐ **`${CLAUDE_PLUGIN_ROOT}/scripts/…`** | the package resolves **its own** location; the CWD stops mattering | ⭐ **the fix.** No new name, no user configuration, already the ecosystem convention |
 
 ⚠ **Measured: our suite uses `${CLAUDE_PLUGIN_ROOT}` NOWHERE.** Every one of the three invocations
+in `explainer-delivery.md` — ⟳ **three CALL SITES across TWO distinct filenames** (one
+`brief-compose.py`, two `explainer-serve.py`), qualified after r3 CLAUDE L2 found this `3` adjacent
+to a `4` with neither saying what it was over —
 is CWD-relative, so what answers them is whatever the caller's working directory holds — which in
 both repositories measured is **nothing, loudly** (§6, as corrected by r3).
 
@@ -408,7 +412,8 @@ ecosystem, which is what D6 exists to capture.
   `.agents/skills/shared/explainer-delivery.md` scores **0** under the vocabulary detector — and
   carries **three repo-relative `python3 scripts/...` invocations** resolved from the caller's CWD.
   It is the contract **all four** page-producing skills route through, so in a stranger's repo those
-  resolve to nothing — measured, 4 of 4, exit 2 (§6) — or, should a neighbour ever hold a file of
+  resolve to nothing — measured, **4 of 4 = the 2 distinct filenames × the 2 repositories**, exit 2
+  (§6) — or, should a neighbour ever hold a file of
   the same name, to that file. ⚠ Only the first of those two has been observed. That is a C3/C4 blocker for every
   component of effort (3), and it sits in the file this spec previously presented as the good news.
   The existing measurement is C2-only; "concentrated in one file" is a C3 conclusion that a C2
@@ -423,52 +428,9 @@ that cannot be assessed is `NEEDS-WORK` whose named defect is *"no way to assess
 now bites only where assessment is genuinely impossible**, because the role table above removes the
 case where it was firing on `library` components by construction.
 
-## 4c. D6 — a component that cannot SHIP can still be HARVESTED, and the two are independent
-
-⭐ **SETTLED 2026-10-16 BY THE OWNER, reading the walkthrough.** Their words, against the page's own
-line *"it is a technique, not a tool, and techniques travel as prose"*:
-
-> *"effort (2) may not be applicable for other repos with different harness set-up. However, some
-> idea may be transferable such as partial mutation (if mutation is widely used method for robust
-> codebase), mechanical inspection before paying expensive gates such as CI, another round of reviews
-> etc, sharding CI process etc. These ideas may be transferred in prose as optional ideas.
-> **We just harvest as much as transferable.**"*
-
-⛔ **SO `DON'T-SHIP` IS NOT THE END OF A COMPONENT'S VALUE, AND THE INVENTORY MUST NOT TREAT IT AS
-ONE.** Every component carries a third field, independent of its verdict and its evidence grade:
-
-| Field | Values | What it records |
-|---|---|---|
-| **harvest** | `practice` · `none` | whether the component yields a transferable *practice* even where no code travels |
-
-**Why this is a real addition rather than a softening.** The verdict axis asks *can a stranger
-install and run this?* The harvest axis asks a different question — *is there something here a
-stranger could DO, in their own repo, with their own tools?* A component can answer no to the first
-and yes to the second, and the original three verdicts had nowhere to put that answer.
-
-⭐ **Effort (2) is the worked example, and it is why this was raised.** Its machinery is this
-repository's CI wiring and almost certainly `DON'T-SHIP` as code. The practices behind it are not
-repo-specific:
-
-- **partial / scoped mutation** rather than a whole-suite sweep — transferable wherever mutation
-  testing is already used;
-- **mechanical inspection before paying an expensive gate** — run the cheap local check before
-  spending a CI cycle or a review round;
-- **sharding an expensive gate** so its wall-clock stops scaling with its subject;
-- ⚠ and the one this milestone itself demonstrates: **a guard beats a convention wherever the
-  convention has already failed once.**
-
-⚠ **THE BOUND, so the harvest axis cannot become a way to call everything a success.** `harvest:
-practice` requires **a named entry written into `docs/portable-practices.md`**, with the measurement
-that earned it. A practice asserted but not written is `harvest: none`. ⛔ **And a harvest NEVER
-upgrades a verdict** — a `DON'T-SHIP / harvest: practice` component is still not shipping, and the
-inventory must not present the harvest in a way that reads as partial approval. That is the same
-mis-skim risk D5 records, and it has the same answer: render the fields together.
-
-**§7 gains a deliverable for it** (item 9b), and D2's *"a battle-tested harness and reproducible
-framework for NEW projects"* is what it serves — prose was always that deliverable's medium.
-
----
+> ⟳ **§4b now precedes §4c (r3 CLAUDE L1).** They printed in the order 4c, 4b for three
+> rounds, so D6's harvest axis arrived before the D5 grades it sits beside. The section
+> NUMBERS are unchanged, because five review documents and the guard's registry cite them.
 
 ## 4b. D5 — the verdict and the strength of its evidence are TWO axes
 
@@ -526,6 +488,53 @@ The checkable form, which the same section already implies:
 
 Both are mechanically decidable from the inventory itself, and the stricter alternative — requiring
 `measured` or `inherited` for `SHIP` — remains the fallback if they fire.
+
+---
+
+## 4c. D6 — a component that cannot SHIP can still be HARVESTED, and the two are independent
+
+⭐ **SETTLED 2026-10-16 BY THE OWNER, reading the walkthrough.** Their words, against the page's own
+line *"it is a technique, not a tool, and techniques travel as prose"*:
+
+> *"effort (2) may not be applicable for other repos with different harness set-up. However, some
+> idea may be transferable such as partial mutation (if mutation is widely used method for robust
+> codebase), mechanical inspection before paying expensive gates such as CI, another round of reviews
+> etc, sharding CI process etc. These ideas may be transferred in prose as optional ideas.
+> **We just harvest as much as transferable.**"*
+
+⛔ **SO `DON'T-SHIP` IS NOT THE END OF A COMPONENT'S VALUE, AND THE INVENTORY MUST NOT TREAT IT AS
+ONE.** Every component carries a third field, independent of its verdict and its evidence grade:
+
+| Field | Values | What it records |
+|---|---|---|
+| **harvest** | `practice` · `none` | whether the component yields a transferable *practice* even where no code travels |
+
+**Why this is a real addition rather than a softening.** The verdict axis asks *can a stranger
+install and run this?* The harvest axis asks a different question — *is there something here a
+stranger could DO, in their own repo, with their own tools?* A component can answer no to the first
+and yes to the second, and the original three verdicts had nowhere to put that answer.
+
+⭐ **Effort (2) is the worked example, and it is why this was raised.** Its machinery is this
+repository's CI wiring and almost certainly `DON'T-SHIP` as code. The practices behind it are not
+repo-specific:
+
+- **partial / scoped mutation** rather than a whole-suite sweep — transferable wherever mutation
+  testing is already used;
+- **mechanical inspection before paying an expensive gate** — run the cheap local check before
+  spending a CI cycle or a review round;
+- **sharding an expensive gate** so its wall-clock stops scaling with its subject;
+- ⚠ and the one this milestone itself demonstrates: **a guard beats a convention wherever the
+  convention has already failed once.**
+
+⚠ **THE BOUND, so the harvest axis cannot become a way to call everything a success.** `harvest:
+practice` requires **a named entry written into `docs/portable-practices.md`**, with the measurement
+that earned it. A practice asserted but not written is `harvest: none`. ⛔ **And a harvest NEVER
+upgrades a verdict** — a `DON'T-SHIP / harvest: practice` component is still not shipping, and the
+inventory must not present the harvest in a way that reads as partial approval. That is the same
+mis-skim risk D5 records, and it has the same answer: render the fields together.
+
+**§7 gains a deliverable for it** (item 9b), and D2's *"a battle-tested harness and reproducible
+framework for NEW projects"* is what it serves — prose was always that deliverable's medium.
 
 ---
 
@@ -640,8 +649,23 @@ manifest, a caller, and no fail-open handler.
 
    ⛔ **So the predicate is: a component that requires a host registration in order to do anything
    must declare it** — and the detector decides *requires* from how it is reached in production, not
-   from whether any caller exists. A **test-only** invoker does not discharge it; a component whose
-   production caller is a person needs no registration and is not flagged.
+   from whether any caller exists. A **test-only** invoker does not discharge it.
+
+   ⟳ **AND THE EXEMPTION IS NOW AN OBSERVABLE ONE (r3 CLAUDE M3).** The first version exempted *"a
+   component whose production caller is a person"*, which §5 commits a **script** to deciding — and
+   nothing stated how a script recognises that. An undecidable exemption restates the false
+   positive instead of closing it. **The mechanical form: the component itself declares
+   `invoked-by: user` in its own documented interface** (a `--help`/usage block for a CLI, or the
+   skill's own front matter), and the detector checks for that **declaration**. So:
+
+   | What the scan sees | Verdict |
+   |---|---|
+   | no production invoker, no registration declared, no `invoked-by: user` | **`NEEDS-WORK`**, defect named |
+   | no production invoker, `invoked-by: user` declared | **exempt** — a person is the caller, and the component says so where a stranger reads it |
+   | a test-only invoker, nothing declared | **`NEEDS-WORK`** — a self-test is not a caller |
+
+   ⚠ **This moves work onto the components rather than onto the detector, deliberately:** a
+   declaration is checkable, an intention is not, and a stranger needs the declaration anyway.
 
 ⛔ **THE SCANNED REGION IS STATED, because the choice alone flips a verdict (r1 CLAUDE H4).**
 
@@ -1025,7 +1049,7 @@ specifically to keep evaluation independent of repair.
 | A count is taken over the wrong set, and reproduces | §3's counting rule fixes membership before arithmetic; §5 asserts a non-zero expected file count per component. ⚠ This spec reached a correct total over a wrong set twice in round 1 |
 | Efforts (1) and (2) get weaker verdicts than (3) | Stated as a bound in §6 rather than hidden; their verdicts are explicitly labelled argument-based |
 | The milestone becomes "publish everything" by momentum | `DON'T-SHIP` is a first-class verdict; a component that fails C1–C4 is recorded as such, and that is a successful outcome of this work |
-| ~11,000 lines is too much to assess per line | Assessment is per component against five criteria (§4), not per line |
+| **11,607 lines** — the 17 components of effort (3), per §3's derivation — is too much to assess per line | Assessment is per component against five criteria (§4), not per line. ⟳ This row said *"~11,000"* until r3 CLAUDE M1: the same subject carried two figures 5.2% apart, and §3's own closing warning — *that is a different and larger set, and the two must not be compared without saying so* — is exactly what this row was then doing silently |
 
 ## 9. Falsifiers
 
@@ -1045,68 +1069,17 @@ specifically to keep evaluation independent of repair.
   observations about a RELEASE, and PR 1 produces none**, so this falsifier becomes checkable at
   first publication and cannot fire inside this milestone.
 
-## 9b. What the spec self-review caught in this document
+## 9b / 9c. Provenance — moved out of this document
 
-Recorded rather than silently fixed, because this spec argues for derived numbers and was itself
-written with an invented one.
+⟳ **MOVED 2026-10-16 BY ROUND 3 (CLAUDE, the readability finding).** What the spec self-review
+caught in this document, and what round 1's dual review found, now live in
+[`docs/reviews/coordinator/marketplace-inventory-r3-coordinator.md`](../../reviews/coordinator/marketplace-inventory-r3-coordinator.md)
+— **verbatim, nothing deleted and nothing summarised.**
 
-- **"~13 components" was invented.** The derived figure is **24** (17 + 3 + 4). Nothing depended on
-  13; that is the point — a number with no provenance passed straight into a design document whose
-  §8 lists exactly this drift as a risk.
-- **"the strongest candidate" was ambiguous** in D4 while §6 named the comprehensibility suite
-  explicitly. D4 now names it too.
-
-## 9c. What round 1 caught — dual adversarial review, 2026-10-16
-
-Both halves returned **NOT CONVERGED**: Codex 4 Blocking / 6 High / 1 Medium, Claude 3 Blocking /
-6 High / 6 Medium / 2 Low. Full documents:
-`docs/reviews/codex/marketplace-inventory-r1-codex.md`,
-`docs/reviews/claude/marketplace-inventory-r1-claude.md`.
-
-⭐ **The four Blocking defects, and what each one was really about:**
-
-1. **The component list omitted the mechanism the evidence endorses.** `scripts/recall-llm.py`,
-   2,550 lines, on `master` — absent, while the lexical matcher the same paragraph rejects was the
-   only thing listed. §3's instruction was unexecutable against §3's own scope.
-2. **`CANNOT RUN` guarded the wrong failure.** It fires when a set cannot be resolved; the
-   dangerous case is a set that resolves **successfully and incompletely**. Reproduced against this
-   spec's own stated paths: a walk over `.claude/skills/shared/` finds nothing, because the entries
-   are git symlinks and `grep -r` does not follow them — a clean score over an empty set.
-3. **The experiment could pass by inheriting the author's machine.** `~/explainers/` is a symlink
-   into this repository, so the composer finds a usable page that a stranger has none of.
-4. **The pass condition could not fail in the way that matters.** All nine ground-truth items can
-   return nothing, a page still composes and serves, Ask still works — a hollow page scoring `SHIP`.
-
-⚠ **AND ROUND 1 REFUTED THIS DOCUMENT'S OWN HEADLINE FINDING**, which is the most useful thing it
-did. The *"3x undercount"* was a cross-corpus comparison; same-set the figure was **accurate within
-3.7% when written** and is **1.81x** low today. So the lesson drawn from it — *written from recall* —
-was wrong, and §8's risk row was mitigating a failure this case is not an instance of. The real
-failure is **a dated count decaying**. See §3 and §8.
-
-⚠ **Two numbers in the walkthrough page were produced by nothing** and are corrected with the spec:
-`346s` for the sharding result (`ci.yml` records `1758s → 353s`, measured on one machine
-2026-10-05; `346` appears nowhere in the repo, and a prior review half had already filed it as a
-defect), and *"15 document guards"*, a denominator that exists nowhere.
-
-⟳ **AND THE ONE FINDING THIS SECTION SAID WAS NOT FOLDED HAS SINCE BEEN DECIDED — CORRECTED
-2026-10-16 BY ROUND 3's CLAUDE HALF (H1).** This paragraph read: *"whether `SHIP` may be recorded
-without demonstrated C4 evidence … is the owner's decision and is stated as an open question in §4."*
-
-⛔ **BOTH HALVES WERE WRONG BY THE TIME ANYONE COULD READ THEM.** There was no open question in §4 —
-the phrase appeared **once in this document, in this paragraph, pointing at nothing** — and the
-decision had already been taken: **D5 (§4b) permits `SHIP` + `argued`**, where `argued` is *C1–C3
-plus reasoning, no experiment reached it*, which is exactly *`SHIP` without demonstrated C4
-evidence*. §4b's own header says *settled by the owner; do not re-open*.
-
-⚠ **AND THE PAGE ALREADY SAID SO** — *"you have since decided it, as D5 above"* — so the page was
-folded and this section was not. **That is this branch's measured failure mechanism appearing inside
-the very round that built a guard for it**, and the guard was green over the disagreement because no
-token was registered for this claim. It is now registered (`d5-ship-plus-argued`).
-
-⛔ **WHY IT MATTERED MORE THAN A STALE SENTENCE:** this was the last substantive paragraph before
-§10, so a reader walking the spec to approve it was told at the very end that a promise-changing
-decision still awaited them — and would either hunt for something that does not exist or re-open a
-decision of record.
+⛔ **WHY THEY MOVED RATHER THAN BEING CUT.** The attribution is why this spec is trustworthy, so it
+must not disappear; but it is written to *reviewers*, and this document's one job is to be approved
+by its owner. r3 measured the problem rather than asserting it: **166 of 1,059 lines — about one in
+six — opened with an emphasis glyph**, and the spec was reading in two registers at once.
 
 ## 10. Out of scope, named so the gap is not read as closed
 

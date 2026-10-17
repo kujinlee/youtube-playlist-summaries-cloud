@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a document set where one rule is stated in several places and the fold updated only some.
 
-    python3 scripts/check-claim-propagation.py --self-test # 54 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 80 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
@@ -237,6 +237,17 @@ def audited_sites(sites: list[str]) -> list[str]:
 # Derived figures: an element carrying data-derived="<key>" whose text must equal a computed value.
 DERIVED: list[dict] = [
     {
+        "key": "spec-path",
+        "page": PAGE,
+        "compute": "path-of",
+        "source": SPEC,
+        "why": ("r3 CLAUDE M4: the page declared TWO `data-derived` carriers and only `spec-lines` "
+                "was registered, so the path could be changed to "
+                "`docs/NOT/A/REAL/PATH-totally-wrong.md` at both sites with the gate green — while "
+                "the page told the reader this guard refuses a page whose *derived figures* "
+                "disagree. Registered, and the closure rule below makes the plural true"),
+    },
+    {
         "key": "spec-lines",
         "page": PAGE,
         "compute": "line-count-of",
@@ -245,6 +256,14 @@ DERIVED: list[dict] = [
     },
 ]
 
+# ⚠ AND THE SAME IS TRUE OF `wanted |= {… DERIVED pages …}` (r3 CLAUDE L3's third mutant).
+# Deleting it left the suite green until the DERIVED-only case above existed; with that case, the
+# deletion CRASHES — `FileNotFoundError`, because the page is then never checked for absence and
+# the derived loop reads it anyway. Measured: `rc=1`, one traceback, zero `[FAIL]` lines. So the
+# line is load-bearing and unmutatable for the same structural reason as the check below.
+# ⚠ Both probes that established this counted `[FAIL]` lines at first and therefore could not see
+# a crash at all. The second probe read the exit code and the traceback, and disagreed.
+#
 # ⚠ WHY THE ABSENT-PATH CHECK (r3 CODEX H1) CARRIES NO MUTATION ENTRY, STATED RATHER THAN HIDDEN.
 # Three of round 3's four High findings got one; this one cannot have a usable one. Every way to
 # disable the check leaves the code below reading a file that is not there, so the mutation dies as
@@ -254,8 +273,12 @@ DERIVED: list[dict] = [
 # the check cannot be removed without the guard failing loudly — and the falsifier is the pair of
 # self-test cases above, which do fail if absence is ever noted-and-skipped again.
 #
-# ⛔ Stated in the code, not only in the docstring: this registry is a floor, not a closure.
-# A rule restated in words no token above matches is invisible to this guard.
+# ⛔ Stated in the code, not only in the docstring: this registry is a floor, not a closure, and
+# r3 CLAUDE M8 pointed out that only ONE of the two directions had ever been written down.
+#   FALSE NEGATIVE — a rule restated in words no token above matches is invisible to this guard.
+#   FALSE POSITIVE — a registered token can be satisfied by text that is not the rule. `token_hits`
+#     closes the crudest form (a 3-character token matching inside `COMMIT`), but a token is still
+#     a PHRASE and not a meaning: prose that happens to contain the phrase satisfies it.
 REGISTRY_IS_INCOMPLETE = True
 
 # A block counts as a marked retirement when it carries one of these.
@@ -319,12 +342,26 @@ class _Blocks(html.parser.HTMLParser):
         # alone would lose. Measured: the page carries 7 such spans.
         self.blocks: list[dict] = []
         self.nodes: list[tuple[str, list[tuple[str, dict]]]] = []
-        # key -> accumulated text, taken ONLY from nodes whose open-element chain still
-        # contains the carrying element. Keyed first-wins so a later stray cannot overwrite.
+        # key -> accumulated text, taken ONLY from nodes whose open-element chain still contains
+        # the carrying element.
+        #
+        # ⛔ THE COMMENT HERE USED TO SAY "keyed first-wins so a later stray cannot overwrite",
+        # AND THE CODE DID NEITHER (r3 CLAUDE M7). `setdefault` then `+=` is CONCATENATION:
+        # measured, two carriers for `spec-lines` reading 669 and 99999 produced `'66999999'`, and
+        # a nested carrier produced `'105959'`. A later stray did not fail to overwrite — it
+        # appended. No case pinned it either, so true last-wins would also have passed.
+        #
+        # ⭐ CONCATENATION IS KEPT, because it is what makes `<strong …>1,<em>118</em></strong>`
+        # read as one value — and the case the old comment was worried about is now REFUSED
+        # outright instead: `carriers` counts carrier OPENINGS per key, and audit() rejects a key
+        # carried more than once. Two carriers for one key is a page defect, not a merge problem.
         self.derived: dict[str, str] = {}
+        self.carriers: dict[str, int] = {}
 
     def handle_starttag(self, tag, attrs):  # noqa: D102
         a = {k: (v if v is not None else "") for k, v in attrs}
+        if a.get("data-derived"):
+            self.carriers[a["data-derived"]] = self.carriers.get(a["data-derived"], 0) + 1
         if tag.lower() in self.BLOCK:
             self.blocks.append({"text": "", "classes": "", "depth": len(self.stack)})
         if tag.lower() not in self.VOID:
@@ -378,15 +415,48 @@ def flat(s: str) -> str:
     return " ".join(s.split())
 
 
+def token_hits(haystack: str, token: str) -> int:
+    """Count occurrences of `token` in `haystack`, respecting WORD BOUNDARIES.
+
+    ⛔ WHY NOT A RAW SUBSTRING (r3 CLAUDE M8, the unnamed half of this guard's own bound). The
+    registry's stated limit is the false-NEGATIVE direction — *a rule restated in words no token
+    matches is invisible.* The opposite direction was unnamed and live: `d7-licence-mit`'s token is
+    the three characters `MIT`, so an uppercase `COMMIT`, `SUBMIT` or `LIMIT` anywhere in either
+    document would have satisfied D7's registration **vacuously**. `first commit` and `harvest` are
+    generic the same way.
+
+    ⚠ Not live when it was found, and that was checked rather than assumed: a scan for
+    `[A-Za-z]{0,8}MIT[A-Za-z]{0,8}` over both documents returned only bare `MIT`. The fix is here
+    because *not live today* is not a property of the guard.
+
+    A boundary is required only at an end that IS a word character, so a token that legitimately
+    begins or ends with punctuation still matches.
+    """
+    pre = r"\b" if token[:1].isalnum() or token[:1] == "_" else ""
+    post = r"\b" if token[-1:].isalnum() or token[-1:] == "_" else ""
+    return len(re.findall(pre + re.escape(token) + post, haystack))
+
+
 def _html_occurrences(text: str, token: str) -> tuple[int, int]:
     """Return (asserted, quoted) counts for `token` in an HTML fragment.
 
-    ⚠ A block, not a text node, is the unit — see `_Blocks.BLOCK`. One consequence is stated
-    rather than left to be discovered: a retirement marker ANYWHERE in a block now exempts the
-    whole block, exactly as `_markdown_occurrences` has always behaved per markdown block. That
-    is a wider exemption than per-node matching gave, and it is the price of not being defeated
-    by an `<em>`. The blocks here are `<p>`-sized, and the alternative — a claim that disappears
-    when someone bolds two words of it — is the failure that was measured.
+    ⚠ A block, not a text node, is the unit — see `_Blocks.BLOCK`. A retirement marker ANYWHERE
+    in a block exempts the whole block, which is a wider exemption than per-node matching gave and
+    is the price of not being defeated by an `<em>`: the alternative is a claim that disappears
+    when someone bolds two words of it, and that was the measured failure.
+
+    ⛔ THIS IS **NOT** PARITY WITH `_markdown_occurrences`, AND THE DOCSTRING USED TO SAY IT WAS
+    (r3 CLAUDE M6). The two differ exactly where correction TABLES live, because the block
+    boundaries differ: `_markdown_blocks` treats a whole table as ONE block, so *a row inherits
+    its header's marker*, while `BLOCK` contains `table`, `tr`, `td` and `th`, so every cell is
+    its own block. Measured on the same content in both languages:
+
+        HTML     <table><tr><th>⟳ corrected</th></tr><tr><td>…token…</td></tr></table>  -> (1, 0)
+        Markdown | ⟳ corrected |\n| …token… |                                           -> (0, 1)
+
+    **The HTML behaviour is the stricter and the better one** — a marker in a header should not
+    exempt every row beneath it — so the divergence is kept and named here rather than smoothed
+    over. Both documents carry correction tables, so this is a live difference, not a hypothetical.
     """
     p = _Blocks()
     p.feed(text)
@@ -394,9 +464,9 @@ def _html_occurrences(text: str, token: str) -> tuple[int, int]:
     needle = flat(token)
     for blk in p.blocks:
         data = flat(blk["text"])
-        if needle not in data:
+        hits = token_hits(data, needle)
+        if not hits:
             continue
-        hits = data.count(needle)
         if "note" in blk["classes"] or any(m in data for m in RETIREMENT_MARKERS):
             quoted += hits
         else:
@@ -409,9 +479,9 @@ def _markdown_occurrences(text: str, token: str) -> tuple[int, int]:
     needle = flat(token)
     for raw in _markdown_blocks(text):
         block = flat(raw)
-        if needle not in block:
+        hits = token_hits(block, needle)
+        if not hits:
             continue
-        hits = block.count(needle)
         if any(m in block for m in RETIREMENT_MARKERS):
             quoted += hits
         else:
@@ -423,6 +493,13 @@ def _derived_values(text: str) -> dict[str, str]:
     p = _Blocks()
     p.feed(text)
     return dict(p.derived)
+
+
+def _derived_carrier_counts(text: str) -> dict[str, int]:
+    """How many elements carry each `data-derived` key. More than one is a page defect (M7)."""
+    p = _Blocks()
+    p.feed(text)
+    return dict(p.carriers)
 
 
 def _tree_spec_lines(spec_text: str) -> int:
@@ -443,6 +520,17 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
     wanted = {s for c in RETIRED + LIVE for s in audited_sites(c["sites"])}
     wanted |= {p for d in DERIVED for p in audited_sites([d["page"]])}
     wanted |= {d["source"] for d in DERIVED}
+    # ⛔ AN EMPTY REGISTRY IS CANNOT RUN (r3 CLAUDE M5.2). With every list empty, `wanted` is
+    # empty, `absent_paths` is empty, nothing raises, and the success line reads "0 retired, 0
+    # live, 0 derived" — a zero over nothing, which this repository has already paid for once and
+    # written down in `check-plan-file-tags.py`: *an empty corpus is CANNOT RUN, because a zero
+    # over nothing is not a finding.* This guard had no such assertion.
+    if not (RETIRED or LIVE or DERIVED):
+        raise CannotRun(
+            "the registry is EMPTY — no retired claim, no live claim and no derived figure is "
+            "registered, so a clean result here would be a zero over nothing"
+        )
+
     absent_paths = sorted(s for s in wanted if not (root / s).is_file())
 
     # ⛔ AN ABSENT REGISTERED PATH IS CANNOT RUN, NEVER A NOTE (r3 CODEX H1). The first version
@@ -492,9 +580,21 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
 
     # 2 — live claims must reach every declared site
     for claim in LIVE:
+        # ⛔ AN EMPTY SITE LIST IS UNAUDITABLE, NOT SATISFIED (r3 CLAUDE M5.1). Both arms below
+        # are `if absent and …`, and an empty `sites` makes `absent` empty, so neither fired and
+        # the entry was silently unchecked — measured by appending a claim whose token is in no
+        # document anywhere and getting `problems: []`. The registry is hand-edited and removing a
+        # site is exactly how a list empties.
+        if not claim["sites"]:
+            problems.append(
+                f"LIVE claim registers NO sites: {claim['id']} — a claim with an empty site list "
+                f"can never fail, so it is a registration that does nothing\n"
+                f"      give it at least one site, or delete it: {claim['why']}"
+            )
+            continue
         # No `missing` filter: every registered path is proved present above, or we raised.
         sites = audited_sites(claim["sites"])
-        absent = [s for s in sites if flat(claim["token"]) not in flat(read(s))]
+        absent = [s for s in sites if not token_hits(flat(read(s)), flat(claim["token"]))]
         auditable = sites
         if absent and len(absent) < len(auditable):
             problems.append(
@@ -511,13 +611,42 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
             )
 
     # 3 — derived figures must agree with their source
+    # ⛔ CLOSURE: EVERY `data-derived` KEY IN AN AUDITED PAGE MUST BE REGISTERED (r3 CLAUDE M4).
+    # The loop below looks up each REGISTERED key and ignores every key it does not know, so a page
+    # could carry a carrier nothing checks — measured, with a deliberately wrong path, `problems:
+    # []`. Without this rule `DERIVED` is a subset test, and the page's own sentence promising
+    # *figures* plural was an overstatement rather than a description.
+    registered_keys = {d["key"] for d in DERIVED}
+    for page in sorted({p for d in DERIVED for p in audited_sites([d["page"]])}):
+        for key, count in _derived_carrier_counts(read(page)).items():
+            if count > 1:
+                problems.append(
+                    f"DERIVED key carried {count} times: {page} has {count} elements with "
+                    f'data-derived="{key}"\n'
+                    f"      their text is CONCATENATED, so the value is a run-together string "
+                    f"rather than either figure — carry each key exactly once"
+                )
+        for key in _derived_values(read(page)).keys():
+            if key not in registered_keys:
+                problems.append(
+                    f"UNREGISTERED derived carrier: {page} declares "
+                    f'data-derived="{key}", which no DERIVED entry checks\n'
+                    f"      a carrier nothing checks reads as guarded and is not; register it or "
+                    f"remove the attribute"
+                )
+
     # ⚠ Each derived figure is checked in the fragment AND in the served page composed from it
     # (r3 CODEX H3). `page` is what every message names, so a failure says which of the two is
     # wrong — "the figure is stale" and "the page was never recomposed" are different repairs.
     for spec in DERIVED:
-        if spec["compute"] != "line-count-of":
+        if spec["compute"] == "line-count-of":
+            actual = str(len(read(spec["source"]).splitlines()))
+            compare = "digits"
+        elif spec["compute"] == "path-of":
+            actual = spec["source"]
+            compare = "exact"
+        else:
             raise CannotRun(f"unknown compute rule {spec['compute']!r}")
-        actual = len(read(spec["source"]).splitlines())
         for page in audited_sites([spec["page"]]):
             found = _derived_values(read(page))
             if spec["key"] not in found:
@@ -528,16 +657,25 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
                 )
                 continue
             claimed_raw = found[spec["key"]]
-            digits = re.sub(r"[^0-9]", "", claimed_raw)
-            if not digits:
+            if compare == "digits":
+                digits = re.sub(r"[^0-9]", "", claimed_raw)
+                if not digits:
+                    problems.append(
+                        f"DERIVED figure is not a number: {spec['key']} reads {claimed_raw!r} "
+                        f"in {page}"
+                    )
+                elif digits != actual:
+                    problems.append(
+                        f"DERIVED figure disagrees with its source: {spec['key']} says "
+                        f"{digits} in {page}, {spec['source']} has {actual} lines\n"
+                        f"      {spec['why']}"
+                    )
+            elif claimed_raw.strip() != actual:
+                # `path-of`: an EXACT string, because a path that is nearly right is wrong in the
+                # one way that matters — it sends the reader somewhere else.
                 problems.append(
-                    f"DERIVED figure is not a number: {spec['key']} reads {claimed_raw!r} "
-                    f"in {page}"
-                )
-            elif int(digits) != actual:
-                problems.append(
-                    f"DERIVED figure disagrees with its source: {spec['key']} says "
-                    f"{int(digits)} in {page}, {spec['source']} has {actual} lines\n"
+                    f"DERIVED value disagrees with its source: {spec['key']} says "
+                    f"{claimed_raw.strip()!r} in {page}, the registered source is {actual!r}\n"
                     f"      {spec['why']}"
                 )
 
@@ -578,6 +716,26 @@ def _self_test() -> int:
         (0, 1),
     )
     case("md: absent token is neither", _markdown_occurrences("nothing here\n", tok), (0, 0))
+    # ⛔ WORD BOUNDARIES (r3 CLAUDE M8). `d7-licence-mit`'s token is three characters, so without
+    # them an uppercase COMMIT/SUBMIT/LIMIT satisfied D7's registration vacuously. The negatives
+    # here are ADJACENT — real words that contain the token — not absurd ones, which is the whole
+    # point: a must-fire-only test cannot fail.
+    case("boundary: a short token does NOT match inside a word",
+         token_hits("THE COMMIT AND THE SUBMIT AND THE LIMIT", "MIT"), 0)
+    case("boundary: …and still matches standing alone",
+         token_hits("published under MIT, which is short", "MIT"), 1)
+    # ⚠ THE FIRST VERSION OF THIS CASE DID NOT DISCRIMINATE — "the firster commits here" scores 0
+    # with boundaries AND 0 as a raw substring, so the sweep reported its `expect` matching no red
+    # case. The negative has to be a real word CONTAINING the token's last word: "first commitment"
+    # is 1 raw and 0 with boundaries. Adjacent, not absurd.
+    case("boundary: a multi-word token does not match inside a longer trailing word",
+         token_hits("as its first commitment here", "first commit"), 0)
+    case("boundary: …and the same phrase standing alone still matches",
+         token_hits("its first commit lands", "first commit"), 1)
+    case("boundary: a token ending in punctuation is not boundary-gated at that end",
+         token_hits("see docs/foo.md and nothing else", "docs/foo.md"), 1)
+    case("boundary: counting is per occurrence, not per block",
+         token_hits("MIT and MIT and COMMIT", "MIT"), 2)
     # ⛔ THE FAIL-OPEN r3's CLAUDE HALF MEASURED (B1): four ordinary English words exempted a
     # re-asserted retired rule. Each block below asserts the retired token beside one of those
     # words and MUST now count as an assertion. Re-adding any of them to RETIREMENT_MARKERS turns
@@ -729,8 +887,20 @@ def _self_test() -> int:
         claimed a green control. Derived from `LIVE`, never listed, so a new page-site claim cannot
         reintroduce it."""
         page_tokens = "\n".join(c["token"] for c in LIVE if PAGE in c["sites"])
-        return (f'<strong data-derived="spec-lines">{_tree_spec_lines(spec_text)}</strong>\n'
-                f'<p>{page_tokens}</p>\n')
+        # ⛔ EVERY REGISTERED CARRIER, derived from `DERIVED` rather than listed — the closure rule
+        # (r3 CLAUDE M4) refuses an unregistered carrier, and a fixture that emits only one would
+        # fail the moment a second was registered. Which is exactly what happened when `spec-path`
+        # joined: five cases went red at once.
+        carriers = []
+        for d in DERIVED:
+            if d["compute"] == "line-count-of":
+                val = _tree_spec_lines(spec_text)
+            elif d["compute"] == "path-of":
+                val = d["source"]
+            else:  # an unknown rule is the UNKNOWN-compute case's business, not the fixture's
+                val = ""
+            carriers.append(f'<strong data-derived="{d["key"]}">{val}</strong>')
+        return "\n".join(carriers) + f'\n<p>{page_tokens}</p>\n' 
 
     probs, _ = audit(tree(clean_spec, page_for(clean_spec)))
     case("audit: a clean tree has no problems", probs, [])
@@ -870,6 +1040,186 @@ def _self_test() -> int:
         True,
     )
 
+    # ⛔ M7 — TWO CARRIERS FOR ONE KEY IS A PAGE DEFECT, and the values concatenate rather than
+    # either winning. The old comment claimed first-wins; measured, 669 and 99999 gave '66999999'.
+    case(
+        "derived: two carriers for one key are both seen",
+        _derived_carrier_counts(
+            '<strong data-derived="spec-lines">669</strong>'
+            '<p>x</p><strong data-derived="spec-lines">99999</strong>'
+        ),
+        {"spec-lines": 2},
+    )
+    case(
+        "derived: and their text CONCATENATES — the documented behaviour, not first-wins",
+        _derived_values(
+            '<strong data-derived="spec-lines">669</strong>'
+            '<p>x</p><strong data-derived="spec-lines">99999</strong>'
+        ),
+        {"spec-lines": "66999999"},
+    )
+    probs, _ = audit(tree(
+        clean_spec,
+        page_for(clean_spec) + '<strong data-derived="spec-lines">99999</strong>\n',
+    ))
+    case(
+        "audit: a key carried TWICE is a problem",
+        any("carried 2 times" in p for p in probs),
+        True,
+    )
+
+    # ⛔ M6 — THE TWO MATCHERS DIVERGE ON TABLES, DELIBERATELY. HTML is stricter: a marker in a
+    # header does not exempt the rows beneath it. Pinned so the divergence cannot be "fixed" by
+    # accident, in either direction.
+    _tbl_html = "<table><tr><th>⟳ corrected</th></tr><tr><td>a library " + tok + " x</td></tr></table>"
+    _tbl_md = "| ⟳ corrected |\n| a library " + tok + " x |\n"
+    case("table: HTML does NOT let a header marker exempt a body row",
+         _html_occurrences(_tbl_html, tok), (1, 0))
+    case("table: markdown DOES — one block, so the row inherits the header",
+         _markdown_occurrences(_tbl_md, tok), (0, 1))
+
+    # ⛔ L3 — three mutants the suite did not notice. Each gets the case it was missing.
+    # ⚠ MY FIRST VERSION OF THIS CASE DID NOT DISCRIMINATE, and the probe that said so is the
+    # reason it is written this way. `<p>   </p><p>…token…</p>` passes with or without the guard,
+    # because a whitespace block simply never contains the token. The difference only shows when a
+    # whitespace-only element CARRIES A CLASS inside an asserting block: without the guard its
+    # `class="note"` is accumulated into the block and the assertion silently becomes a quotation.
+    # Measured: (1, 0) with the guard, (0, 1) without.
+    case("parser: a whitespace-only span's class does not exempt the block around it",
+         _html_occurrences('<p>a library ' + tok + ' x<span class="note">   </span></p>', tok),
+         (1, 0))
+    case("parser: a self-closing carrier holds no text",
+         _derived_values('<strong data-derived="spec-lines"/>771 after it'), {})
+    case("parser: a self-closing tag does not swallow what follows it",
+         _html_occurrences("<p><br/>a library " + tok + " x</p>", tok), (1, 0))
+
+    # ⛔ THE CLOSURE RULE (r3 CLAUDE M4): a `data-derived` carrier no entry checks is a problem,
+    # not something to ignore. Measured before the fix with a deliberately wrong path at both page
+    # sites: `problems: []`.
+    probs, _ = audit(tree(
+        clean_spec,
+        page_for(clean_spec) + '<p data-derived="not-registered-anywhere">42</p>\n',
+    ))
+    case(
+        "audit: an UNREGISTERED data-derived carrier is a problem",
+        any("UNREGISTERED derived carrier" in p for p in probs),
+        True,
+    )
+    case(
+        "audit: and the problem names the key nothing checks",
+        any("not-registered-anywhere" in p for p in probs),
+        True,
+    )
+
+    # ⛔ AND `path-of` COMPARES EXACTLY, because a path that is nearly right sends the reader
+    # somewhere else. The digits rule would have called these equal — both have no digits.
+    _wrong_path = page_for(clean_spec).replace(SPEC, "docs/NOT/A/REAL/PATH.md")
+    assert SPEC not in _wrong_path, "fixture failed to replace the path"
+    probs, _ = audit(tree(clean_spec, _wrong_path))
+    case(
+        "audit: a path-of value disagreeing with its source is a problem",
+        any("DERIVED value disagrees" in p for p in probs),
+        True,
+    )
+
+    # ⛔ THE THREE FAIL-OPENS r3's CLAUDE HALF MEASURED BY IMPORT-AND-CALL (M5). Each needs the
+    # module globals swapped, because each is a property of the REGISTRY rather than of a document,
+    # and a fixture tree cannot express "the registry is empty".
+    _saved = (RETIRED[:], LIVE[:], DERIVED[:])
+
+    def _restore():
+        RETIRED[:], LIVE[:], DERIVED[:] = _saved
+
+    try:
+        # 1 — a claim registering no sites can never fail, so it must be refused outright
+        LIVE.append({
+            "id": "ghost-no-sites",
+            "token": "THIS PHRASE IS IN NO DOCUMENT ANYWHERE",
+            "why": "self-test fixture",
+            "sites": [],
+        })
+        probs, _ = audit(tree(clean_spec, page_for(clean_spec)))
+        case(
+            "audit: a LIVE claim with an EMPTY site list is a problem",
+            any("registers NO sites" in p for p in probs),
+            True,
+        )
+        case(
+            "audit: and the empty-site problem names the claim",
+            any("ghost-no-sites" in p for p in probs),
+            True,
+        )
+    finally:
+        _restore()
+
+    try:
+        # 2 — an empty registry over any tree is CANNOT RUN, not "0 of everything checked"
+        RETIRED[:], LIVE[:], DERIVED[:] = [], [], []
+        audit(tree("x\n", "<p>y</p>"))
+        case("audit: an EMPTY REGISTRY raises CannotRun", "no raise", "CannotRun")
+    except CannotRun as exc:
+        case("audit: an EMPTY REGISTRY raises CannotRun", "CannotRun", "CannotRun")
+        case(
+            "audit: and it says the registry is empty, not that a path is missing",
+            "registry is EMPTY" in str(exc),
+            True,
+        )
+    finally:
+        _restore()
+
+    try:
+        # ⛔ L3's third mutant: `wanted` must include the DERIVED pages, not rely on a claim
+        # happening to register them. Both `wanted |= {… DERIVED …}` lines are redundant for
+        # today's registry — SPEC, PAGE and PAGE_HTML all arrive via RETIRED/LIVE — so deleting
+        # them left the suite green. This case makes them load-bearing: a DERIVED entry whose
+        # page NO claim registers must still be reached, and its absence must still be CannotRun.
+        RETIRED[:], LIVE[:] = [], []
+        DERIVED[:] = [{
+            "key": "spec-lines",
+            "page": PAGE,
+            "compute": "line-count-of",
+            "source": SPEC,
+            "why": "self-test fixture: the only registration is a DERIVED one",
+        }]
+        d = pathlib.Path(tempfile.mkdtemp())
+        (d / SPEC).parent.mkdir(parents=True, exist_ok=True)
+        (d / SPEC).write_text("one\ntwo\n", encoding="utf-8")
+        audit(d)  # PAGE and PAGE_HTML are absent and registered ONLY through DERIVED
+        case("audit: a DERIVED-only page absence raises CannotRun", "no raise", "CannotRun")
+    except CannotRun as exc:
+        case("audit: a DERIVED-only page absence raises CannotRun", "CannotRun", "CannotRun")
+        case("audit: and it names the DERIVED page nothing else registers",
+             PAGE in str(exc), True)
+    finally:
+        _restore()
+
+    try:
+        # 3 — an unknown `compute` rule is refused, not silently line-counted
+        DERIVED[:] = [{
+            "key": "spec-lines",
+            "page": PAGE,
+            "compute": "weigh-it-in-kilograms",
+            "source": SPEC,
+            "why": "self-test fixture",
+        }]
+        audit(tree(clean_spec, page_for(clean_spec)))
+        case("audit: an UNKNOWN compute rule raises CannotRun", "no raise", "CannotRun")
+    except CannotRun as exc:
+        case("audit: an UNKNOWN compute rule raises CannotRun", "CannotRun", "CannotRun")
+        case(
+            "audit: and the refusal names the rule it does not know",
+            "weigh-it-in-kilograms" in str(exc),
+            True,
+        )
+    finally:
+        _restore()
+
+    # ⚠ and the restore must actually have happened, or every case after this point is measuring
+    # a mutilated registry — the shape of defect this file exists to catch, inside its own suite.
+    case("self-test: the registry was restored after the swaps",
+         (len(RETIRED), len(LIVE), len(DERIVED)),
+         (len(_saved[0]), len(_saved[1]), len(_saved[2])))
+
     # the registry must admit its own incompleteness
     case("registry declares itself incomplete", REGISTRY_IS_INCOMPLETE, True)
 
@@ -953,8 +1303,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if REGISTRY_IS_INCOMPLETE:
         print(
-            "  ⚠ this registry is a floor, not a closure: a rule restated in words no "
-            "registered token matches is invisible to this guard"
+            "  ⚠ this registry is a floor, not a closure, and it is porous in BOTH "
+            "directions: a rule restated in words no registered token matches is invisible to "
+            "this guard, and a registered token is a phrase rather than a meaning — prose that "
+            "merely contains the phrase satisfies it"
         )
     return 0
 
