@@ -122,8 +122,11 @@ The fragment is a `<title>`, one `<style>…</style>`, then body markup — no `
 
 > ### ⛔ EDIT THE FRAGMENT, THEN RECOMPOSE — IN THE SAME COMMIT. The composed `.html` is DERIVED.
 >
-> **Added 2026-10-16 by round 3 of `marketplace-inventory` (CLAUDE M9), because a guard now
-> enforces it on at least one page and this contract did not say so.** A fragment edit that is not
+> **Added 2026-10-16 by round 3 of `marketplace-inventory` (CLAUDE M9), because the composed page
+> is a derived artifact and this contract did not say so.** ⟳ This read *"because a guard now
+> **enforces** it on at least one page"* until round 4's Claude half pointed out that the sentence
+> survived, in bold, as this rule's justification — **eleven lines above the correction saying the
+> guard does not enforce it.** The rule stands on the derivation, which needs no guard to be true. A fragment edit that is not
 > followed by `brief-compose.py` leaves a committed `.html` that is **not** the composition of its
 > committed fragment — the reader opens the stale one.
 >

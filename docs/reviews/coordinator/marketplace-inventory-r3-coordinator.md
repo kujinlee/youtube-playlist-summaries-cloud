@@ -24,11 +24,23 @@ finding them wrong, and it is the reason both corrections were kept as written.
 
 ## Why this document now holds the spec's §9b and §9c
 
-**r3 CLAUDE answered the readability question with a measurement rather than an impression:** over
-1,059 lines, 67 round-citations on 56 lines, 20 `⟳`, 55 `⛔`, 55 `⚠`, 36 `⭐` — **166 lines, about
-one in six, opening with an emphasis glyph.** Its verdict was that the corrections have *not* become
-the document and that nothing load-bearing should be cut, but that the spec reads in two registers
-at once and **the second is addressed to reviewers rather than to the owner.**
+**r3 CLAUDE answered the readability question with a measurement** — and ⛔ **I REPEATED ONE OF ITS
+NUMBERS AS A MEASUREMENT WITHOUT CHECKING IT, which round 4's Claude half caught.** This paragraph
+said *"**166 lines**, about one in six, opening with an emphasis glyph"*. **166 is the sum of glyph
+CHARACTERS** — `20 + 55 + 55 + 36` — and no reading of *"opening with"* produces it. Re-derived at
+`a4f6d4b5`: **186 glyph characters, 98 lines opening with one, 179 lines containing one, 80
+round-citations**, over 1,091 lines.
+
+⛔ **AND THE FOLD MOVED THE MEASURE THE WRONG WAY, WHICH IS THE FINDING.** Between `a4f6d4b5` and
+`e3e6ed52` the spec went 1,091 → 1,128 lines, glyph characters **186 → 198**, and round-citations
+**80 → 86**. Moving §9b/§9c out removed 62 lines of provenance and the corrections added more than
+that back. **So the readability claim this document makes for its own change is not supported by the
+measure it cites.**
+
+⚠ The *verdict* r3 CLAUDE reached still stands and is independent of the arithmetic: nothing
+load-bearing should be cut, and the spec reads in two registers of which the second is addressed to
+reviewers. What does not stand is the figure, or the implication that moving two sections improved
+the density.
 
 So the two sections below moved here, verbatim. They are provenance — what the self-review caught,
 and what round 1 found — which a reviewer wants and an approver does not need in the document they

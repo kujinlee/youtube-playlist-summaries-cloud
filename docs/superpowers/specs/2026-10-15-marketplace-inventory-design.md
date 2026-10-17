@@ -120,7 +120,7 @@ number is not evidence of completeness, and §3's mapping step is what would mak
 | Component | Lines |
 |---|---|
 | `explain-diff` / `brief` / `explain-findings` / `explain-topic` (SKILL.md) | 158 / 195 / 156 / 95 |
-| `.agents/skills/shared/` — `explainer-delivery.md`, `corpus-search.md`, `handoff-path.md` | 346 / 73 / 211 |
+| `.agents/skills/shared/` — `explainer-delivery.md`, `corpus-search.md`, `handoff-path.md` | **363 / 73 / 211** at `a4f6d4b5` (660 at `HEAD`; see §3's dated row) |
 | `scripts/brief-compose.py` | 1,780 |
 | `scripts/explainer-serve.py` | 2,907 |
 | `scripts/page_chrome.py` / `scripts/page_markup.py` | 450 / 438 |
@@ -159,6 +159,14 @@ THIS DOCUMENT.** It is structural, not careless: *the spec measures a corpus tha
 the spec's own branch edits.* A label reading `today` is therefore false the moment anything ships,
 and a dated row is the only form that stays true — which is **this section's own rule**, applied to
 itself at last: *a count copied from elsewhere must carry the commit it was measured at.*
+
+⛔ **AND THE CLAIM THAT FOLLOWED THIS WAS ITSELF TOO BROAD — CORRECTED BY ROUND 4's CLAUDE HALF
+(B1).** It read *"not one figure in this section became wrong"*. **The component table seventeen
+lines above still carried `346 / 73 / 211`, undated** — addends that sum to the retired **630**, and
+which give the retired **6,525** when used for the nine-file total. So one figure in this section
+*had* stayed wrong, in the one place that looked like raw data rather than prose. The row is dated
+now. ⚠ The lesson is the reach of a fix, not the arithmetic: every number r4 CODEX B1 reported, and
+every number the Claude half re-derived, was correct.
 
 ⭐ **AND THE DATED FORM WAS TESTED BY ACCIDENT, IN THE SAME FOLD, WITHIN MINUTES.** Correcting a
 false enforcement claim in `explainer-delivery.md` (r4 CODEX B2) added **13 more lines** to that same

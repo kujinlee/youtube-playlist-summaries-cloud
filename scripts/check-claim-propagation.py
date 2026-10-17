@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a document set where one rule is stated in several places and the fold updated only some.
 
-    python3 scripts/check-claim-propagation.py --self-test # 88 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 96 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
@@ -256,13 +256,17 @@ DERIVED: list[dict] = [
     },
 ]
 
-# ⚠ AND THE SAME IS TRUE OF `wanted |= {… DERIVED pages …}` (r3 CLAUDE L3's third mutant).
-# Deleting it left the suite green until the DERIVED-only case above existed; with that case, the
-# deletion CRASHES — `FileNotFoundError`, because the page is then never checked for absence and
-# the derived loop reads it anyway. Measured: `rc=1`, one traceback, zero `[FAIL]` lines. So the
-# line is load-bearing and unmutatable for the same structural reason as the check below.
-# ⚠ Both probes that established this counted `[FAIL]` lines at first and therefore could not see
-# a crash at all. The second probe read the exit code and the traceback, and disagreed.
+# ⟳⛔ AND THE SAME CLAIM ABOUT `wanted |= {… DERIVED pages …}` IS ALSO WITHDRAWN (r4 CLAUDE H2) —
+# THE SECOND "UNMUTATABLE" BOUND IN THIS COMMENT BLOCK TO FALL, IN TWO ROUNDS. It said the line was
+# "load-bearing and unmutatable for the same structural reason", on the evidence that DELETING it
+# crashes with `FileNotFoundError`. True, and not the question: a one-token edit leaves the suite
+# **88/88 green** while changing behaviour, which the reviewer witnessed (`CannotRun` where the
+# unmutated code raises, versus `FileNotFoundError`). The entry is in the manifest.
+#
+# ⛔ SO THE RULE, WRITTEN TWICE BECAUSE I BROKE IT TWICE: "no mutation is possible" is a claim about
+# EVERY possible edit. One probe cannot establish it, a crash under one form says nothing about
+# another, and the honest form is *I witnessed this form crash* — which is a sentence about me, not
+# about the code.
 #
 # ⟳⛔ THE ABSENT-PATH CHECK DOES HAVE A MUTATION NOW, AND THE PARAGRAPH THAT SAID IT COULD NOT IS
 # THE MORE USEFUL RECORD (r4 CODEX H3). I wrote: *every way to disable the check leaves the code
@@ -372,6 +376,15 @@ class _Blocks(html.parser.HTMLParser):
         a = {k: (v if v is not None else "") for k, v in attrs}
         if a.get("data-derived"):
             self.carriers[a["data-derived"]] = self.carriers.get(a["data-derived"], 0) + 1
+        # ⛔ A VOID ELEMENT SEPARATES WORDS WITHOUT EMITTING ANY TEXT (r4 CLAUDE H1, the THIRD
+        # instance of this one class in this matcher). r3 CODEX H4 was markup splitting a phrase
+        # per text node; r4 CODEX H1 was a whitespace node being deleted; this is a separator that
+        # emits nothing at all, so `support<br>verdict` joined and the phrase vanished. `<br>` is
+        # live in the page three times. Each earlier fix covered the spelling its finding named —
+        # so this one is keyed on the VOID SET, which covers `<br>`, `<img>`, `<hr>`, `<wbr>` and
+        # the rest in one rule rather than on the tag that was reported.
+        if tag.lower() in self.VOID and self.blocks:
+            self.blocks[-1]["text"] += " "
         if tag.lower() in self.BLOCK:
             self.blocks.append({"text": "", "classes": "", "depth": len(self.stack)})
         if tag.lower() not in self.VOID:
@@ -380,7 +393,10 @@ class _Blocks(html.parser.HTMLParser):
     def handle_startendtag(self, tag, attrs):  # noqa: D102
         # A self-closing element has no children, so it can carry no derived TEXT — but it is
         # still a declared carrier, and the closure rule must see it (r4 CODEX H2). It is
-        # deliberately NOT pushed onto the stack.
+        # deliberately NOT pushed onto the stack. ⚠ It DOES separate words — see the VOID branch
+        # in `handle_starttag` — because `<br/>` and `<br>` must behave identically.
+        if self.blocks:
+            self.blocks[-1]["text"] += " "
         a = {k: (v if v is not None else "") for k, v in attrs}
         if a.get("data-derived"):
             self.carriers[a["data-derived"]] = self.carriers.get(a["data-derived"], 0) + 1
@@ -1068,6 +1084,59 @@ def _self_test() -> int:
         any("DERIVED figure disagrees" in p and PAGE_HTML in p for p in probs),
         True,
     )
+
+    # ⛔ H1 (r4 CLAUDE) — A VOID ELEMENT SEPARATES WORDS WHILE EMITTING NO TEXT. Third instance of
+    # one class in this matcher, so the case is a LOOP over the separators rather than the one that
+    # was reported: `<br>` was live in the page three times, and `<img>`/`<hr>`/`<wbr>`/`<br/>`
+    # behave identically to a reader.
+    for _sep in ("<br>", "<br/>", '<img src="x">', "<hr>", "<wbr>"):
+        case(f"html: a phrase separated by {_sep} is still asserted",
+             _html_occurrences(
+                 f"<p>A library inherits its support{_sep}verdict from the entry-points.</p>", tok),
+             (1, 0))
+    case("html: …and a void element between two inline elements too",
+         _html_occurrences(
+             "<p>A library inherits its <em>support</em><br><em>verdict</em> from the "
+             "entry-points.</p>", tok),
+         (1, 0))
+
+    # ⛔ H2 (r4 CLAUDE) — THE TWO `wanted |= {… DERIVED …}` LINES, EACH WITH A WITNESS. Both
+    # survived at 88/88: one dropped `audited_sites` (so the composed page never enters `wanted`),
+    # the other dropped the source entirely. ⚠ The assertion is on the EXCEPTION TYPE, because the
+    # mutants raise `FileNotFoundError` — and a case that let that propagate would end the suite in
+    # a traceback with no named failure, which is the crash-forging-a-`[FAIL]` shape this file has
+    # paid for twice.
+    def _audit_outcome(root):
+        try:
+            audit(root)
+            return "no raise"
+        except CannotRun:
+            return "CannotRun"
+        except Exception as exc:        # noqa: BLE001 — the TYPE is the measurement
+            return type(exc).__name__
+
+    _saved_pre = (RETIRED[:], LIVE[:], DERIVED[:])
+    try:
+        RETIRED[:], LIVE[:] = [], []
+        DERIVED[:] = [{"key": "spec-lines", "page": PAGE, "compute": "line-count-of",
+                       "source": SPEC, "why": "self-test fixture"}]
+        # the FRAGMENT exists; the COMPOSED page does not, and only DERIVED reaches it
+        d = pathlib.Path(tempfile.mkdtemp())
+        (d / SPEC).parent.mkdir(parents=True, exist_ok=True)
+        (d / PAGE).parent.mkdir(parents=True, exist_ok=True)
+        (d / SPEC).write_text("one\ntwo\n", encoding="utf-8")
+        (d / PAGE).write_text('<strong data-derived="spec-lines">2</strong>', encoding="utf-8")
+        case("audit: an absent COMPOSED page reached only through DERIVED is CannotRun",
+             _audit_outcome(d), "CannotRun")
+        # and symmetrically, an absent SOURCE registered only through DERIVED
+        d2 = pathlib.Path(tempfile.mkdtemp())
+        (d2 / PAGE).parent.mkdir(parents=True, exist_ok=True)
+        (d2 / PAGE).write_text('<strong data-derived="spec-lines">2</strong>', encoding="utf-8")
+        (d2 / PAGE_HTML).write_text('<strong data-derived="spec-lines">2</strong>', encoding="utf-8")
+        case("audit: an absent SOURCE reached only through DERIVED is CannotRun",
+             _audit_outcome(d2), "CannotRun")
+    finally:
+        RETIRED[:], LIVE[:], DERIVED[:] = _saved_pre
 
     # ⛔ M7 — TWO CARRIERS FOR ONE KEY IS A PAGE DEFECT, and the values concatenate rather than
     # either winning. The old comment claimed first-wins; measured, 669 and 99999 gave '66999999'.

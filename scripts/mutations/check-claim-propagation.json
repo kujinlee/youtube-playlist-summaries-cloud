@@ -313,8 +313,8 @@
     "file": "scripts/check-claim-propagation.py",
     "edits": [
       [
-        "        # deliberately NOT pushed onto the stack.\n        a = {k: (v if v is not None else \"\") for k, v in attrs}",
-        "        # deliberately NOT pushed onto the stack.\n        self.handle_starttag(tag, attrs)\n        a = {k: (v if v is not None else \"\") for k, v in attrs}"
+        "        if self.blocks:\n            self.blocks[-1][\"text\"] += \" \"\n        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1",
+        "        if self.blocks:\n            self.blocks[-1][\"text\"] += \" \"\n        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1\n        self.handle_starttag(tag, attrs)"
       ]
     ],
     "expect": [
@@ -372,6 +372,62 @@
     ],
     "expect": [
       "parser: a mis-nested close unwinds everything inside it"
+    ]
+  },
+  {
+    "name": "the composed page stops entering the audited path set, so its absence crashes instead of refusing",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    wanted |= {p for d in DERIVED for p in audited_sites([d[\"page\"]])}",
+        "    wanted |= {d[\"page\"] for d in DERIVED}"
+      ]
+    ],
+    "expect": [
+      "audit: an absent COMPOSED page reached only through DERIVED is CannotRun"
+    ]
+  },
+  {
+    "name": "a derived figure's source stops entering the audited path set, so its absence crashes instead of refusing",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    wanted |= {d[\"source\"] for d in DERIVED}",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "audit: an absent SOURCE reached only through DERIVED is CannotRun"
+    ]
+  },
+  {
+    "name": "a void element stops separating words, so a phrase broken by a line break vanishes",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if tag.lower() in self.VOID and self.blocks:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "html: a phrase separated by <br> is still asserted",
+      "html: a phrase separated by <img src=\"x\"> is still asserted",
+      "html: a phrase separated by <hr> is still asserted",
+      "html: a phrase separated by <wbr> is still asserted",
+      "html: …and a void element between two inline elements too"
+    ]
+  },
+  {
+    "name": "a self-closing void element stops separating words, so <br/> and <br> disagree",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        # in `handle_starttag` — because `<br/>` and `<br>` must behave identically.\n        if self.blocks:\n            self.blocks[-1][\"text\"] += \" \"",
+        "        # in `handle_starttag` — because `<br/>` and `<br>` must behave identically."
+      ]
+    ],
+    "expect": [
+      "html: a phrase separated by <br/> is still asserted"
     ]
   }
 ]
