@@ -324,6 +324,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         "main.argv",
         "main.root",
     ),
+    # ⟳ 2026-10-16: the claim-propagation guard arrives. Key set DERIVED by running this
+    # file's own `analyse()` against it, as the refusal message instructs — not guessed.
+    "check-claim-propagation.py": (
+        "audit.root",
+    ),
     "check-main-drivable.py": (
         # ⟳ 2026-10-03, THE SCOPED ARCHITECTURE REVIEW. `reads_the_live_world` and
         # `case_locals` are GONE, deliberately: the review measured that the rule

@@ -298,12 +298,49 @@ jobs:
       - name: Explainer delivery is described in ONE place
         run: python3 scripts/check-explainer-delivery.py
 
-      # ⛔ NOT a generalisation of the step above — that wording was this guard's own defect
+      # ⛔ ONE RULE, ONE PLACE — FOR DOCUMENTS, AND IT IS THE MECHANICAL HALF OF A CONVENTION
+      # THAT FAILED TWICE IN TWO ROUNDS. Measured on `marketplace-inventory`, 2026-10-16: two
+      # adversarial rounds produced 18 then 21 findings, and 14 of the second round's were
+      # introduced by the first's own fix. ONE mechanism was behind thirteen of them — a rule
+      # stated in several places, and the fold updating the site the finding named. Round 1's
+      # Blocking ("§5 requires a declared set; nothing in §7 produces one") then RECURRED one
+      # round later in the same pair of sections, which is what armed the architecture review.
+      # The coordinator had already written the mechanism against itself after round 2 and then
+      # reproduced it in the very next round, so a checklist competing with recall is not the
+      # remedy.
+      #
+      # ⟳⛔ 2026-10-17, ADR-0015 — EVERYTHING ABOVE IS HISTORY, AND THE STEP NO LONGER DOES IT.
+      # The two prose checks (*a retired claim is not re-asserted*, *a live claim reaches every
+      # declared site*) are DELETED; `check-canonical-source.py` now owns that concern with the
+      # opposite remedy — it refuses the second copy rather than requiring every copy to agree.
+      # What this step checks is ONE thing: a page's DERIVED figure agrees with the producer that
+      # computes it. ⚠ The history is kept because it is why the derived half exists; the old step
+      # NAME is not, because the name is what a reader sees on a red required check.
+      # ⚠⚠ The rename was found by round 5's Claude half, not by the fold that deleted the checks —
+      # which had corrected `CONTEXT.md` and `explainer-delivery.md` and not swept the workflow.
+      # The note nine lines below (*"that wording was this guard's own defect … corrected at all
+      # three sites it stood at"*) is this repository paying for a wrong name on this same guard
+      # for the second time.
+      - name: A page's derived figure agrees with its producer
+        run: python3 scripts/check-claim-propagation.py
+
+      - name: claim-propagation self-test
+        run: python3 scripts/check-claim-propagation.py --self-test
+
+      # ⛔ NOT a generalisation of `check-explainer-delivery.py` — that wording was this guard's
+      # own defect
+      # ⟳ r6 CLAUDE M6: this read *"the step above"*, which is now the claim-propagation step
+      # and is NOT what the sentence describes — the contrast is with the DELIVERY guard and its
+      # `PAGE_SKILLS` enumeration. A positional reference broke when a step was renamed between
+      # it and its subject: `a-positional-read-needs-a-verified-shape`, in prose.
       # (r6 CLAUDE H5) and is corrected at all three sites it stood at. Same PATTERN, two
       # guards, because what each forbids differs in KIND: that one forbids a RUNNABLE
       # PROCEDURE (oracle: a fenced code block, scoped to `.agents/skills/*/SKILL.md`) and
       # also asserts enumeration completeness over its `PAGE_SKILLS`; this one forbids a
-      # SYMBOL (oracle: a token substring over four directories and three extensions).
+      # SYMBOL (oracle: a token substring over four directories PLUS THE REPO ROOT and FOUR
+      # extensions — `*.md`,
+      # `*.py`, `*.sh` and `*.html`; ⟳ r6 CODEX: this said THREE, which ADR-0015's `*.html`
+      # widening made false the same day, in a comment the fold did not sweep).
       # Measured: in this guard's population `explainer-serve.py` carries 34 non-exempt
       # sites, so a token oracle there would fire on the scripts that call it.
       # Added after the handoff-path and corpus-search instructions drifted across SIX

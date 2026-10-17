@@ -1,0 +1,239 @@
+[
+  {
+    "name": "a derived figure disagreeing with its source is accepted, which is backlog B2 reinstated",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "                elif digits != actual:",
+        "                elif False:"
+      ]
+    ],
+    "expect": [
+      "audit: a derived figure disagreeing with its source is a problem"
+    ]
+  },
+  {
+    "name": "a page that declares no derived figure is assumed correct, which is the fail-open B2 would reinstate",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            found = _derived_values(read(page))",
+        "            found = _derived_values(read(page)) or {spec[\"key\"]: str(actual)}"
+      ]
+    ],
+    "expect": [
+      "audit: a missing derived element is a problem"
+    ]
+  },
+  {
+    "name": "void elements are pushed onto the stack, so one <br> inside a carrier swallows the rest of the page",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        if tag.lower() not in self.VOID:\n            self.stack.append((tag, a))",
+        "        self.stack.append((tag, a))"
+      ]
+    ],
+    "expect": [
+      "derived: a void element carrying the attribute captures nothing"
+    ]
+  },
+  {
+    "name": "the served page stops being an audited site, so the fragment can disagree with what a reader opens ⟳ RETARGETED 2026-10-17 (ADR-0015): its token witness is retired with the prose registry; the DERIVED witness survives and is what it now names",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    if PAGE in out and PAGE_HTML not in out:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "audit: a derived figure wrong ONLY in the served page is a problem"
+    ]
+  },
+  {
+    "name": "an unknown compute rule is accepted, so a future derived figure is silently line-counted",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            raise CannotRun(f\"unknown compute rule {spec['compute']!r}\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "audit: an UNKNOWN compute rule raises CannotRun"
+    ]
+  },
+  {
+    "name": "an unregistered data-derived carrier is ignored, so a page can carry a figure nothing checks",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            if key not in registered_keys:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "audit: an UNREGISTERED data-derived carrier is a problem",
+      "audit: and the problem names the key nothing checks"
+    ]
+  },
+  {
+    "name": "path-of falls back to digit comparison, so two different paths with no digits compare equal",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            elif claimed_raw.strip() != actual:",
+        "            elif False:"
+      ]
+    ],
+    "expect": [
+      "audit: a path-of value disagreeing with its source is a problem"
+    ]
+  },
+  {
+    "name": "a key carried by two elements is accepted, so a run-together value passes as a figure",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "            if count > 1:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "audit: a key carried TWICE is a problem"
+    ]
+  },
+  {
+    "name": "a self-closing tag is pushed onto the stack, so it swallows the rest of the document ⟳ RETARGETED 2026-10-17 (ADR-0015): the prose lines its anchor bound to are deleted; the RULE it measures is unchanged, so it is retargeted rather than retired",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1\n\n    def handle_endtag",
+        "        a = {k: (v if v is not None else \"\") for k, v in attrs}\n        if a.get(\"data-derived\"):\n            self.carriers[a[\"data-derived\"]] = self.carriers.get(a[\"data-derived\"], 0) + 1\n        self.stack.append((tag, a))\n\n    def handle_endtag"
+      ]
+    ],
+    "expect": [
+      "parser: a self-closing carrier holds no text"
+    ]
+  },
+  {
+    "name": "the absent-path refusal returns a clean result instead, which is the fail-open r3 closed",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    if absent_paths:\n        all_gone = len(absent_paths) == len(wanted)",
+        "    if absent_paths:\n        return [], []\n        all_gone = len(absent_paths) == len(wanted)"
+      ]
+    ],
+    "expect": [
+      "audit: ONE absent registered path raises CannotRun"
+    ]
+  },
+  {
+    "name": "the closure rule reads extracted values again, so a textless carrier is invisible to it",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        for key in _derived_carrier_counts(read(page)):\n            if key not in registered_keys:",
+        "        for key in _derived_values(read(page)).keys():\n            if key not in registered_keys:"
+      ]
+    ],
+    "expect": [
+      "audit: a TEXTLESS unregistered carrier is a problem"
+    ]
+  },
+  {
+    "name": "the tolerant unwind pops one element instead of everything inside it, so a mis-nested close leaks text",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "                del self.stack[i:]",
+        "                self.stack.pop(i)"
+      ]
+    ],
+    "expect": [
+      "parser: a mis-nested close unwinds everything inside it"
+    ]
+  },
+  {
+    "name": "a derived figure's source stops entering the audited path set, so its absence crashes instead of refusing",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    wanted |= {d[\"source\"] for d in DERIVED}",
+        "    pass"
+      ]
+    ],
+    "expect": [
+      "audit: an absent SOURCE reached only through DERIVED is CannotRun"
+    ]
+  },
+  {
+    "name": "an empty registry reports zero of everything instead of CANNOT RUN, which is a zero over nothing ⟳ RETARGETED 2026-10-17 (ADR-0015): the condition was a DISJUNCTION over three registries and is now one — the rule it measures is unchanged, so it is retargeted rather than retired",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    if not DERIVED:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "audit: an EMPTY REGISTRY raises CannotRun"
+    ]
+  },
+  {
+    "name": "the composed page stops entering the audited path set, so its absence crashes instead of refusing ⟳ RETARGETED 2026-10-17 (ADR-0015): this line was `wanted |=` while the prose registry seeded `wanted` first; it is now the FIRST assignment, which makes the witness stronger rather than weaker — nothing else puts a path in the set",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    wanted = {p for d in DERIVED for p in audited_sites([d[\"page\"]])}",
+        "    wanted = {d[\"page\"] for d in DERIVED}"
+      ]
+    ],
+    "expect": [
+      "audit: an absent COMPOSED page reached only through DERIVED is CannotRun"
+    ]
+  },
+  {
+    "name": "a carrier's value stops being stripped, so padding enters the figure and a correct page reads as a mismatch (r5 CODEX M3)",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "                self.derived[key] += data.strip()",
+        "                self.derived[key] += data"
+      ]
+    ],
+    "expect": [
+      "derived: a carrier's value is accumulated STRIPPED, so padding never enters it"
+    ]
+  },
+  {
+    "name": "the VOID vocabulary shrinks to the one member an existing witness proved, so every other void carrier swallows what follows it (r5 CODEX M3) ⟳ EXPECT EXTENDED 2026-10-17 (r5 CLAUDE H1): it now also names the IDENTITY case, because the independent literal is what makes a vocabulary change visible at all — a second entry on this same anchor was refused by the harness as measuring nothing new, which is correct",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "    VOID = frozenset(\n        \"area base br col embed hr img input link meta param source track wbr\".split()\n    )",
+        "    VOID = frozenset(\n        \"img\".split()\n    )"
+      ]
+    ],
+    "expect": [
+      "derived: the VOID vocabulary is exactly the 14 HTML void elements",
+      "derived: a <br> carrier captures nothing that follows it",
+      "derived: a <area> carrier captures nothing that follows it"
+    ]
+  },
+  {
+    "name": "an unmatched end tag clears the stack instead of being ignored, so text after a stray close vanishes from the value (r5 CODEX M3)",
+    "file": "scripts/check-claim-propagation.py",
+    "edits": [
+      [
+        "        # no match: an end tag with no open partner. Ignore it rather than corrupting the stack.",
+        "        del self.stack[:]"
+      ]
+    ],
+    "expect": [
+      "derived: an unmatched end tag is ignored, not treated as closing the carrier"
+    ]
+  }
+]

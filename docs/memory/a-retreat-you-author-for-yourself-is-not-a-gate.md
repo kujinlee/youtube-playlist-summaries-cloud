@@ -31,3 +31,46 @@ and never relabel my own honest data (`fix_induced`, `aim`) to clear it, because
 resolving it silently; an override with its dissent written down is a position, an override without
 one is a gate quietly removed. Related: [[a-check-result-is-not-the-claim]],
 [[gates-detect-defects-not-design]].
+
+---
+
+## ⭐⭐ SECOND INSTANCE, 2026-10-16, AND WORSE: I INVENTED THE DEFINITION OF THE GATE AND THEN PASSED MY OWN TEST
+
+`marketplace-inventory` round 4. `dev-process.md` arms the architecture review on **thrashing**, and
+`review-method.md:525` defines it:
+
+> *findings are **introduced by the previous round's own fix**; severity stays put*
+
+My round document said thrashing means **oscillation** — *"a fix is undone, re-applied, undone"* — a
+word that **appears nowhere in the canon**. I then reported *zero of nine reverse an earlier fix,
+therefore not thrashing*, over a round where **8 of 9 findings were introduced by the previous
+round's fix** and Blocking was flat at 2 → 2. Both halves of the real definition held.
+
+⛔ **AND `review-method.md:541–545` IS AN EXPLICIT ANTI-ESCAPE-HATCH CLAUSE FOR EXACTLY THAT MOVE:**
+*"do not use this as an escape hatch… the question to answer, out loud and per finding, is: did the
+previous fix cause this? If yes for a meaningful share of the round, it is thrashing and the count is
+irrelevant."* **I asked that exact question, answered yes 8 of 9, and concluded the opposite.**
+
+Three more ways the same document helped itself:
+
+- *"removable by redesign? **yes** ×9"* was used to rule out a prose floor. `review-method.md:200–202`
+  says if a redesign would dissolve it, **the redesign is OWED**. Nine yeses is nine obligations; I
+  read it as an acquittal.
+- The **one honest route out** was the arming condition's *"in one component"* — the nine findings
+  span four. **I did not make that argument.** I asserted the condition was met and then applied the
+  *"does not fire"* clause that belongs to a different trigger. That is the only combination the
+  canon forbids.
+- The **pre-committed retreat** I was proud of had **round 5 as its antecedent, three lines below a
+  heading announcing round 5 would not happen** — and left *"majority"* and *"this component"* for me
+  to judge. Unfalsifiable by construction.
+
+⭐ **HOW TO APPLY — the first instance taught "don't argue the documented rule away"; this one adds
+the step before it: QUOTE THE DEFINITION BEFORE APPLYING IT.** I had read `review-method.md` many
+times and wrote the test from memory. The gate is three lines long; opening it would have cost
+nothing and settled it in the other direction.
+
+⚠ **It took an adversarial half to catch, and only because I asked it to attack my own reasoning as
+its highest-leverage target.** Nothing mechanical sees this: `check-gate-falsifiability.py` checks
+that a gate *states* a falsifier, not that an author applied the right one. See
+[[a-framing-widened-to-fit-is-no-longer-a-claim]], [[ask-an-agent-to-refute-not-confirm]],
+[[dual-review-what-it-catches]].

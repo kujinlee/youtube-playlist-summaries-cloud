@@ -1,0 +1,1300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Could a stranger use any of this?</title>
+
+<style>
+:root{
+  --bg:#f7f5f1; --card:#fcfaf7; --raise:#f0ebe3; --pill:#e9e4db;
+  --fg:#42403a; --fg2:#605c55; --fg3:#716c63; --strong:#26241f;
+  --rule:#e2dcd2; --hair:#ece7de;
+  --h:#26241f;
+  --accent:#8a5a2b; --accent-bg:#f4ece2;
+  --verified:#3d6b4c; --verified-br:#c4d9ca; --verified-bg:#eff5f0;
+  --danger:#8f4444; --danger-br:#e2c8c8; --danger-bg:#f9f0ef;
+  --warn:#7c6426; --warn-br:#ded2a9; --warn-bg:#f8f2e2;
+  --code:#e9e4db; --code-fg:#4d4842;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ink:#42403a; --ink-soft:#605c55; --ink-faint:#716c63; --structure:#e2dcd2;
+  --good:#3d6b4c; --defect:#8f4444; --em:#26241f;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#8c8880; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#8c8880; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}}
+:root[data-theme="dark"]{
+  --bg:#191817; --card:#201f1d; --raise:#272523; --pill:#2b2926;
+  --fg:#c5c1b9; --fg2:#a4a099; --fg3:#8c8880; --strong:#eae6de;
+  --rule:#332f2b; --hair:#2a2825;
+  --h:#eae6de;
+  --accent:#cb9a68; --accent-bg:#26211c;
+  --verified:#8bb99b; --verified-br:#33503d; --verified-bg:#1b2220;
+  --danger:#c98f8f; --danger-br:#4e3232; --danger-bg:#241d1d;
+  --warn:#c4ab72; --warn-br:#4b4227; --warn-bg:#231f18;
+  --code:#2b2926; --code-fg:#c0bbb2;
+  --ink:#c5c1b9; --ink-soft:#a4a099; --ink-faint:#8c8880; --structure:#332f2b;
+  --good:#8bb99b; --defect:#c98f8f; --em:#eae6de;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.74 var(--sans);-webkit-font-smoothing:antialiased;letter-spacing:.002em}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 130px}
+
+h1{font-size:clamp(28px,4.4vw,38px);line-height:1.2;margin:0 0 12px;font-weight:450;
+   letter-spacing:-.017em;color:var(--h);text-wrap:balance}
+h2{font-size:26px;line-height:1.28;margin:60px 0 6px;font-weight:450;letter-spacing:-.012em;
+   color:var(--h);scroll-margin-top:16px;text-wrap:balance}
+h2 .n{color:var(--fg3);font-weight:400;font-variant-numeric:tabular-nums;margin-right:.5em}
+h3{font-size:18px;margin:32px 0 6px;font-weight:600;color:var(--h);letter-spacing:-.004em}
+h4{font-size:17px;font-weight:600;color:var(--h);margin:0 0 6px}
+h1 strong,h2 strong,h3 strong,h4 strong{color:inherit;font-weight:inherit}
+
+strong,b{font-weight:600;color:var(--strong)}
+em{font-style:italic;color:var(--fg2)}
+
+p{margin:14px 0}
+.lede{color:var(--fg2);font-size:17px;margin-top:9px}
+.sub{color:var(--fg3);font-size:15px;margin:0}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);
+   font-weight:600;margin:0 0 14px}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2.5px}
+header.top{padding-block:56px 28px;border-bottom:1px solid var(--rule);margin-bottom:34px}
+
+code{font:.865em/1.5 var(--mono);background:var(--pill);color:var(--code-fg);
+  padding:.2em .48em;border-radius:6px;letter-spacing:-.01em;white-space:nowrap}
+pre{background:var(--code);border:1px solid var(--hair);border-radius:9px;padding:15px 17px;
+  overflow-x:auto;white-space:pre;margin:18px 0}
+pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;display:block;
+  color:var(--code-fg);white-space:pre}
+
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:15.5px}
+.scroll{overflow-x:auto;margin:20px 0}.scroll table{margin:0}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);font-weight:600;
+  border-bottom:1px solid var(--rule)}
+td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+
+.card{background:var(--card);border:1px solid var(--hair);border-radius:11px;padding:18px 22px;margin:22px 0}
+.box{border-left:3px solid;border-radius:0 9px 9px 0;padding:15px 20px;margin:22px 0}
+.box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+.box.bad{border-color:var(--danger);background:var(--danger-bg)}
+.box.ok{border-color:var(--verified);background:var(--verified-bg)}
+.box.warn{border-color:var(--warn);background:var(--warn-bg)}
+.box.acc{border-color:var(--accent);background:var(--accent-bg)}
+.box .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  display:block;margin-bottom:7px}
+.bad .lbl{color:var(--danger)} .ok .lbl{color:var(--verified)}
+.warn .lbl{color:var(--warn)} .acc .lbl{color:var(--accent)}
+
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;
+  border:1px solid;letter-spacing:.02em;white-space:nowrap}
+.pill.no{color:var(--danger);border-color:var(--danger-br);background:var(--danger-bg)}
+.pill.yes{color:var(--verified);border-color:var(--verified-br);background:var(--verified-bg)}
+.pill.mid{color:var(--warn);border-color:var(--warn-br);background:var(--warn-bg)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0}
+@media (max-width:660px){.two{grid-template-columns:1fr}}
+ul,ol{padding-left:24px;margin:14px 0} li{margin:10px 0}
+li::marker{color:var(--fg3)}
+.note{color:var(--fg3);font-size:14.5px}
+.hr{height:1px;background:var(--rule);margin:52px 0;border:0}
+.q{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:17px 22px;margin:20px 0}
+.big{font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+
+/* the decision blocks — a verdict and its counter, as one object */
+.dec{background:var(--card);border:1px solid var(--hair);border-radius:11px;margin:20px 0;
+  overflow:hidden}
+.dec .hd{padding:14px 20px 12px;border-bottom:1px solid var(--hair)}
+.dec .hd .tag{font:600 11.5px/1 var(--mono);letter-spacing:.08em;color:var(--accent);
+  display:block;margin-bottom:6px}
+.dec .bd{padding:4px 20px 16px}
+.dec .against{border-top:1px dashed var(--rule);margin-top:14px;padding-top:12px}
+.dec .against .lbl{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  color:var(--danger);display:block;margin-bottom:6px}
+
+/* claimed-vs-measured bars */
+.chart{margin:24px 0 10px}
+.row{display:grid;grid-template-columns:132px 1fr 92px;gap:12px;align-items:center;margin:10px 0}
+.row .nm{font-size:14px;color:var(--fg2);text-align:right}
+.track{background:var(--raise);border:1px solid var(--hair);border-radius:5px;height:26px;
+  position:relative;overflow:hidden}
+.fill{display:block;height:100%;border-radius:4px 0 0 4px}
+.fill.claim{background:var(--danger);opacity:.55}
+.fill.real{background:var(--verified)}
+.row .val{font-variant-numeric:tabular-nums;font-weight:600;font-size:14.5px;color:var(--fg2)}
+.scale{display:flex;justify-content:space-between;font-size:12px;color:var(--fg3);
+  margin:6px 0 0;padding-left:144px;font-variant-numeric:tabular-nums}
+.prov{font-size:13.5px;color:var(--fg3);margin-top:10px}
+
+/* the how-to-ask block, static and correct with JS off */
+.howto{background:var(--raise);border:1px solid var(--hair);border-radius:11px;
+  padding:16px 20px;margin:26px 0}
+.howto .eyebrow{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  color:var(--fg2);display:block;margin-bottom:8px}
+.howto ol{margin:8px 0 0}
+.howto li{margin:7px 0;font-size:15px;color:var(--fg2)}
+.url{font:.9em var(--mono);background:var(--pill);color:var(--code-fg);padding:.15em .45em;
+  border-radius:5px}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="top">
+  <p class="kicker">Phase 1 spec · awaiting your gate</p>
+  <h1>Could a stranger use any of this?</h1>
+  <p class="sub">Spec <code>2026-10-15-marketplace-inventory-design.md</code> · branch <code>marketplace-inventory</code> at <code>e1cd5b8a</code> · PR <strong>376</strong> · anchor <code>harness-ships-elsewhere</code></p>
+  <p class="lede">You asked for an inventory of the three efforts and a milestone. This is the plan for
+  producing that, not the answer. <strong>It is the only human gate in this process</strong> — after it,
+  the plan and the build proceed without asking again. So the page is built to be argued with, not
+  approved: every decision below carries the strongest case <em>against</em> it.</p>
+</header>
+
+<div class="box warn">
+  <span class="lbl">Read this first — what state everything is in</span>
+  <p><strong>Nothing is implemented.</strong> What exists is a
+  <strong data-derived="spec-lines">1137</strong>-line spec, an allocated anchor, and a
+  feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
+  <p class="note">Branch <code>marketplace-inventory</code>, spec
+  <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
+  <span class="note">⚠ <strong>Two things this block got wrong, both now checked by a script rather
+  than written by hand.</strong> It said <em>“213-line spec”</em> while the spec was 669 lines — the
+  page was recomposed four times and this figure was never re-derived (round 2, B2). And it earlier
+  claimed <em>“15 document guards … 0 failing”</em> against a commit two behind the page, where “15”
+  was a denominator that exists nowhere (round 1, M6 and L1). Guard results are recorded in the
+  coordinator documents, not asserted here, because a guard result decays in minutes. The spec length
+  above carries <code>data-derived</code> and <code>scripts/check-claim-propagation.py</code> refuses
+  a page whose derived figures disagree with the spec.</span></p>
+</div>
+
+<div class="howto">
+  <span class="eyebrow">How to argue with this page</span>
+  <span id="modechip">● live — Send works</span>
+  <ol>
+    <li>This page lives at <span class="url">http://127.0.0.1:7391/latest</span> — that URL always points at the newest page.</li>
+    <li><strong>Select any text, or hover a heading, then press <em>ask</em></strong> → type → <strong>Send</strong>. Then say <strong>“read my questions”</strong> in the session. Your question arrives with the section and the passage you highlighted.</li>
+    <li>If the URL will not load, run <code>python3 scripts/explainer-serve.py</code> — safe to run twice. <strong>A reboot stops it</strong>, which is the one moment you will need this line.</li>
+    <li>A <code>file://</code> copy still reads fine. It only loses the <strong>Send</strong> button.</li>
+  </ol>
+</div>
+
+<h2><span class="n">1</span>What you asked, and what the spec turns it into</h2>
+
+<p>Your words: <em>“Now is the time to evaluate the efforts… Not all of them may not be suitable for
+publish but let's take inventory and establish a milestone.”</em></p>
+
+<p>The spec turns that into one question asked of every component: <strong>could someone who has never
+seen this repository install it and use it?</strong> Three efforts, <strong>at least 24
+components</strong>, <strong>five</strong> criteria, and three verdicts — each now carrying an
+evidence grade and a harvest field, which are your D5 and D6 decisions.</p>
+<p class="note">⚠ <strong>Five, not four.</strong> This line said <em>four</em> until round 2 added
+<strong>C5 — Redistributable</strong>, and the heading of section 4 said it too: the count lived in two
+places and the new criterion reached neither. It is the same propagation defect as 13 of round 2’s
+14 self-inflicted findings, which is why a guard now refuses it.</p>
+<p class="note">⚠ <strong>“At least” is doing real work there.</strong> 24 reproduces as arithmetic and
+round 2 showed it is not a complete membership — whole artifacts were never assigned to any
+component, including the two generators the regeneration hooks actually invoke. <strong>Twice now this spec
+has reached a total that reproduced over an incomplete set</strong>, so the number is treated as a floor
+until the mapping step runs.</p>
+
+<div class="box acc">
+  <span class="lbl">Why this has never been answered before</span>
+  <p>Each of the three efforts was justified on its own terms — fewer review rounds, cheaper sweeps,
+  pages you can follow. <strong>None was ever asked whether it travels.</strong> That question is
+  Deliverable 2's entire content, and it has been answered informally, for one file, once.</p>
+</div>
+
+<h2><span class="n">2</span>The four decisions — and the case against each</h2>
+
+<p>You took these by selection card today. The spec records them as settled, which is only safe if you
+have seen what each one rules out. <strong>Every one of them is still reversible right now.</strong></p>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D1 · AUDIENCE</span>
+    <strong>Public strangers, full support bar.</strong> Works in any repo, documented for a newcomer,
+    failure modes handled without you.
+  </div>
+  <div class="bd">
+    <p>This is the expensive one, and it changes the other three. Coupling stops being untidiness and
+    becomes a <strong>release blocker</strong>. It adds newcomer documentation, failure handling, and an
+    ongoing support burden for tools whose real user is you.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p>Most of effort (2) — CI sharding, a mutation harness wired to this repo's workflow — is
+      <em>unlikely to clear this bar at all</em>, so the bar may simply convert that effort into a
+      <code>DON'T-SHIP</code> you could have predicted for free. And the support burden is real work
+      that competes with the product, which has just had its first deploy in 52 days.</p>
+      <p><strong>What would make the softer option right:</strong> if you do not actually intend to tell
+      anyone about this, or if the support burden would stop the work rather than shape it. Then
+      “install it into my own next project” is the honest target, and the bar drops a long way.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D2 · DECOMPOSITION</span>
+    <strong>One evaluation across all three efforts</strong>, then a spec per publishable unit.
+  </div>
+  <div class="bd">
+    <p>One PR produces the inventory and the milestone; the publishing work comes after, per surviving
+    unit.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p>Effort (3) is the obvious candidate — it is already shaped like a plugin, and its coupling is
+      already measured and concentrated in one file. Evaluating (1) and (2) to the same depth may be
+      <strong>work spent confirming a foregone conclusion</strong>, which is the most expensive kind of
+      thoroughness.</p>
+      <p><strong>What would make going straight at (3) right:</strong> if you are already confident that
+      (1) and (2) are <code>DON'T-SHIP</code>. Then the spec should <em>say so now</em> and spend the
+      effort on making (3) genuinely installable instead. This is question 2 at the bottom.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D3 · ROUTE</span>
+    <strong>A self-published marketplace repo</strong>, installed with
+    <code>/plugin marketplace add &lt;repo&gt;</code>.
+  </div>
+  <div class="bd">
+    <p>Proven rather than theorised: <code>~/.claude/plugins/marketplaces/</code> on this machine holds
+    <code>omc</code>, a third-party self-published marketplace, beside the official one. A marketplace
+    is a git repo carrying <code>.claude-plugin/marketplace.json</code>.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p><strong>Discovery is nil.</strong> Nobody finds a self-published marketplace by browsing;
+      “published” here means “installable by anyone you tell”. If the point of publishing is that
+      people <em>encounter</em> it, this route does not deliver that.</p>
+      <p><strong>What would make the official list right:</strong> if discovery matters more to you than
+      controlling the ship date. The cost is an acceptance gate on an unknown timeline — which makes
+      “done” undefinable, and is why the spec rules it out as a <em>definition of done</em> rather than
+      as a destination. It stays available as a later, separate milestone.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="hd">
+    <span class="tag">D4 · METHOD</span>
+    <strong>A mechanical scan across all components, plus one real install experiment</strong> on the
+    comprehensibility suite, where the experiment calibrates the scan.
+  </div>
+  <div class="bd">
+    <p>The scan produces <strong>evidence, not verdicts</strong>. The install experiment is the
+    falsifier: <strong>a blocker <em>or a degraded result</em> it hits on a component the scan scored
+    clean is a scanner defect</strong>, fixed in the scan — not recorded as a footnote.</p>
+    <p class="note">⟳ Both halves of that sentence changed under review. “Counts what is countable”
+    was wrong because counting gives the wrong answer in both directions (see section 4). “Any
+    blocker” was wrong because the failure that matters here is not a blocker at all — the suite can
+    produce a <em>hollow page</em> and report success, which no blocker-keyed falsifier would catch.</p>
+    <div class="against">
+      <span class="lbl">The case against</span>
+      <p>The install experiment costs real time and will fail noisily several times before it tells you
+      anything. A scan alone would land the inventory far sooner.</p>
+      <p><strong>What would make scan-only right:</strong> if criterion C4 (supportable) does not really
+      matter. But that contradicts D1 — a public bar is <em>mostly</em> C4. The two decisions are
+      coupled: soften D1 and D4 becomes optional; keep D1 and D4 is the only thing that tests it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="box acc">
+  <span class="lbl">The interaction worth noticing</span>
+  <p>D1 and D4 hold each other up, and D1 and D2 pull against each other. The public bar is what makes
+  the install experiment necessary — and it is also what makes evaluating effort (2) likely to be a
+  formality. <strong>If you were to soften any one of these, soften D1 first</strong>, because the other
+  three mostly follow from it.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">3</span>The scope, and a result that arrived before the work did</h2>
+
+<p>Twenty-four components, derived from disk on <strong>2026-10-15</strong> rather than recalled —
+<strong>17</strong> comprehensibility, <strong>3</strong> velocity, <strong>4</strong> recall.</p>
+
+<div class="box bad">
+  <span class="lbl">The index figure has decayed — at <code>a4f6d4b5</code> it is 1.82× low against its own file set</span>
+  <p>⟳ <strong>Tense corrected by round 3 — the index no longer says this.</strong>
+  <code>docs/portable-practices.md</code> <em>did</em> describe the suite as
+  <strong>“9 files / 3,599 lines”</strong> from <strong>2026-09-07</strong>, enumerating those nine.
+  Those same nine files total <strong>6,542 lines</strong> at <code>a4f6d4b5</code> — and the index’s headline now reads
+  <strong>“~11,000 lines”</strong>, with the old figure kept as a dated correction inside it. The
+  decay below is still the finding; stating it in the present tense was not.</p>
+  <p>Nothing broke because of this. It is quoted in the one document whose job is to describe what
+  travels. <strong>But the reason matters, and round 1 corrected it:</strong> the figure was derived
+  and enumerated, and was <strong>exactly right on the day it was measured</strong>
+  (<code>cacbac17</code>, 3,599 vs 3,599) — then <em>already 3.7% stale on the day it was
+  republished</em> into the index four days later. Its subject then
+  grew <strong>1.75×</strong> against the value measured when it was republished (3,737 → 6,542) —
+  and is <strong>1.82×</strong> against the 3,599 the index printed until <code>b200f2cf</code>. So this is an argument for
+  <strong>re-deriving dated counts</strong>, not an argument
+  about recollection. See the refutation below.</p>
+</div>
+
+<div class="chart">
+  <div class="row">
+    <span class="nm">index claims</span>
+    <span class="track" role="img" aria-label="The portable-practices index claims its nine enumerated files total 3,599 lines. Those same nine files measure 6,542 lines at commit a4f6d4b5, so the claim is about 55 percent of that size — a 1.82 times undercount.">
+      <span class="fill claim" style="width:55.2%"></span>
+    </span>
+    <span class="val">3,599</span>
+  </div>
+  <div class="row">
+    <span class="nm">same nine, at <code>a4f6d4b5</code></span>
+    <span class="track" role="img" aria-label="The same nine enumerated files measure 6,542 lines at commit a4f6d4b5.">
+      <span class="fill real" style="width:100%"></span>
+    </span>
+    <span class="val">6,542</span>
+  </div>
+  <p class="scale"><span>0</span><span>6,542 lines at <code>a4f6d4b5</code></span></p>
+  <p class="prov"><strong>Same set on both bars</strong> — the nine files
+  <code>portable-practices.md</code> itself enumerates: the four page-producing skills, the shared
+  delivery contract, <code>brief-compose</code>, <code>explainer-serve</code>,
+  <code>page_chrome</code>, <code>page_markup</code>. Re-derived 2026-10-16
+  <span class="note">(volatile — these files change)</span>.</p>
+  <p class="prov">⚠ <strong>This chart previously compared 3,599 against 10,977</strong>, which added
+  <code>gen-dashboard</code> (3,546) and <code>gen-goals-page</code> (1,252) — <strong>4,798 lines,
+  46% of the Python total</strong> — neither of which is among the nine. That cross-corpus pairing
+  read as 3.05×, and its screen-reader label asserted “about one third of the real size”. Round 1
+  caught it.</p>
+  <p class="prov"><strong>Scope sizing, a different and larger set, measured at
+  <code>a4f6d4b5</code>:</strong> effort (3)'s 17 components totalled <strong>11,624 lines</strong>
+  at that commit — 10,373 Python (<code>brief-compose</code> 1,780 ·
+  <code>explainer-serve</code> 2,907 · <code>page_chrome</code> 450 · <code>page_markup</code> 438 ·
+  <code>gen-dashboard</code> 3,546 · <code>gen-goals-page</code> 1,252) + 604 skills + 647 shared
+  contracts. ⟳ <strong>Dated because these decay, which is the section's own subject</strong> — at
+  the time of writing the shared contracts are <strong>665</strong> and the total <strong>11,642</strong>; the spec's
+  &sect;3 says so of these very figures, and this page previously restated them as present-tense
+  fact (r5 CLAUDE H3). <span class="note">The earlier total of 10,977 omitted the 647 lines of shared contracts
+  that the component table itself lists (round 1, M3).</span></p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">⟳ Round 3: all three “stale claims” had already been fixed — by a PR that merged today</span>
+  <p>This section said two further claims in that block were stale: <em>“registers 10 anchors”</em>
+  and <em>“a second anchor is owed”</em>. The index now reports <strong>13</strong>, names the 14th as
+  allocated on this branch, and records that <code>explanation-on-demand</code> exists.</p>
+  <p>⛔ <strong>All three were corrected in <code>b200f2cf</code> — PR #377 — which merged to master
+  earlier today, and this branch has carried them since it rebased that afternoon.</strong> So the
+  deliverable you decided the placement of was already discharged, and <em>“the inventory found
+  three stale claims”</em> was itself a stale claim. It is recorded rather than quietly repaired.</p>
+  <p class="note">⚠ <strong>Your decision is unaffected</strong> — D8 is a rule about <em>where</em> a
+  correction lands, not about which ones are outstanding. ⟳ <strong>Three</strong> real index
+  defects remain and are what it now delivers: the <em>“roughly 3x”</em> undercount (a
+  <strong>cross-set</strong> ratio — the nine files’ own ratio is <strong>1.82×</strong>);
+  <em>“the problem is concentrated in one file”</em>, which this page already measures as false;
+  and — found by round 3 — the <strong>replacement headline itself</strong>, whose
+  <code>10,373 across six files</code> omits the three shared contracts (647 lines) that the same
+  sentence names, while including the two generators’ 4,798 lines that it lists only as hooks.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">⟳ Round 1 refuted this section's headline — and that is the most useful thing it did</span>
+  <p>The <strong>“3× undercount”</strong> above compared <code>portable-practices.md</code>'s
+  <strong>3,599</strong> against <strong>10,977</strong> — but 3,599 was never a count of those
+  files. That document <em>enumerates</em> its nine, and two of the six Python files in the larger
+  set (<code>gen-dashboard.py</code>, <code>gen-goals-page.py</code> — <strong>4,798 lines, 46% of
+  the Python total</strong>) are not among them. So the 3× was <strong>cross-corpus</strong>.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Comparison</th><th>Ratio</th></tr>
+    <tr><td>Same nine files, at the commit that <strong>republished</strong> the figure into the index (<code>100cf498</code>, 2026-09-07): 3,599 vs 3,737</td><td>already <strong>3.7% stale</strong> (138/3737)</td></tr>
+    <tr><td>Same nine files, at the commit that <strong>originally measured</strong> it (<code>cacbac17</code>, 2026-09-03): 3,599 vs 3,599</td><td><strong>exactly right</strong></td></tr>
+    <tr><td>Same nine files, today: 3,599 vs 6,542</td><td><strong>1.82× low</strong></td></tr>
+    <tr><td>As this page first stated it: 3,599 vs 10,977</td><td>3.05× — <em>different sets</em></td></tr>
+  </table>
+  </div>
+  <p><strong>So the diagnosis changes, which matters more than the number.</strong> The figure was
+  derived, enumerated, dated and <em>correct when written</em> — <code>portable-practices.md:17</code>
+  says <em>“Enumerated in <code>docs/backlog.md</code> row 89, not recalled”</em>, and row 89 contains
+  the enumeration. Its subject then grew <strong>1.75×</strong> against the republication value and
+  <strong>1.82×</strong> against the printed figure. <strong>The failure is a dated count decaying, not a
+  count invented</strong> — so the lesson this spec drew from it, and the risk row it wired that
+  lesson into, were both aimed at the wrong failure.</p>
+  <p class="note">⚠ And this section was itself a correct measurement over the wrong corpus, inside
+  the finding whose whole purpose was to shame that defect. It is left on the record rather than
+  quietly rewritten.</p>
+</div>
+
+<h3>What the other two efforts bring</h3>
+
+<div class="scroll">
+<table>
+<tr><th>Effort</th><th>Components</th><th>The fact that will drive its verdict</th></tr>
+<tr>
+  <td><strong>(2) velocity</strong></td>
+  <td>CI sharding (39 references in <code>ci.yml</code>), <code>check-plan-code.py</code>, three velocity documents</td>
+  <td>Sharding shipped and worked — the unsharded sweep was <strong>1,758s</strong>, and <strong>shard 1 of 8 measured 353s</strong> <span class="note">(one machine, 2026-10-05, <code>ci.yml:664-668</code>)</span>. But it is this repo's CI wiring. <strong>Q0 is designed in form and not built</strong>, and is one of two items the roadmap still reports open. <span class="note">⚠ This cell previously said <strong>346s</strong> — a number that appears nowhere in the repo, and which a prior review half had already filed as a defect. Round 1 caught it reinstated here.</span></td>
+</tr>
+<tr>
+  <td><strong>(1) recall</strong></td>
+  <td><code>recall-llm.py</code> (2,550 lines, <strong>on <code>master</code></strong>), <code>check-surface-recall.py</code>, its hook, and the memory corpus (<strong>159</strong> files at this commit, 157 on <code>master</code> — the spec's &sect;3 row names the producing command). <span class="note">Corrected by round 1 — the semantic matcher was missing and the two unmerged branches are not components.</span></td>
+  <td>⭐ The measurement <strong>inverted</strong>: lexical top-1 <strong>3/20</strong> (53/60 true negatives); meaning-matching <strong>20/20</strong> with <strong>0 false fires in 60</strong>. <span class="note">⚠ 20/20 is the validation brief; <strong>19/20</strong> is the re-measurement against the prompt that actually ships — two experiments, stated separately rather than spanned as “19–20”. 0-in-60 is a 95% upper bound of <strong>5.0%</strong>, not “no false positives”.</span></td>
+</tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">Your question, answered — “it was decided that matcher has to be semantic matcher. Please check past investigations”</span>
+  <p><strong>You are right, and the spec was wrong.</strong> The decision was made, the semantic
+  matcher was <em>built</em>, and it is <strong>on <code>master</code></strong> — but this spec's
+  component list named only the lexical matcher that the same paragraph rejects. The round-1
+  adversarial review found this independently and filed it as its first <strong>Blocking</strong>
+  defect. It is now fixed in the spec.</p>
+
+  <p class="note"><strong>What the past investigation actually decided</strong> (backlog #191,
+  2026-09-29 → 09-30): the corpus was re-keyed to <code>FIRES-WHEN:</code> situation triggers, a
+  lexical matcher was refuted, and a meaning-matcher over the <em>same strings</em> replaced it.
+  Verdict recorded there: <em>“Token overlap is DEAD — do not tune it, do not write a sixth
+  combiner.”</em> Then on 2026-09-30 it shipped as <code>scripts/recall-llm.py</code>.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>What I checked, today, by running it</th><th>Result</th></tr>
+    <tr><td><code>scripts/recall-llm.py</code> — is it real, and where?</td><td><strong>2,550 lines, on <code>master</code></strong> — not on an unmerged branch</td></tr>
+    <tr><td>Is it the matcher actually <em>wired</em>?</td><td>Yes — <code>.claude/hooks/surface-recall.sh:60</code> defaults <code>MATCHER</code> to it</td></tr>
+    <tr><td><code>--self-test</code></td><td><strong>201/201 cases passed</strong> (rc=0)</td></tr>
+    <tr><td>Mutation manifest</td><td><strong>96 entries</strong></td></tr>
+  </table>
+  </div>
+
+  <p class="note">⚠ Two figures I nearly repeated from the backlog's own prose were <strong>stale</strong>:
+  it says 128 self-test cases and 53 mutations. The file declares 201 and its manifest holds 96.
+  Derived here rather than quoted.</p>
+
+  <p><strong>What this changes in the spec.</strong> Effort (1)'s four components are now
+  <code>recall-llm.py</code> (the semantic matcher), <code>check-surface-recall.py</code> (the
+  lexical one and its guard), <code>surface-recall.sh</code> (the caller), and the memory corpus. The
+  two unmerged branches are no longer counted — they are work in progress, not shippable units.
+  <strong>The verdict for this effort must now say which of the three mechanisms it is about</strong>,
+  because “it cannot be the lexical matcher” was an unexecutable instruction against a component list
+  that contained nothing else.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">4</span>The five criteria, and the two that cannot be counted</h2>
+
+<div class="scroll">
+<table>
+<tr><th>#</th><th>Criterion</th><th>How it is decided</th></tr>
+<tr><td><strong>C1</strong></td><td><strong>Measured</strong> — it works, with evidence</td><td>existing self-tests and manifests</td></tr>
+<tr><td><strong>C2</strong></td><td><strong>Project-independent</strong> — no Supabase, no Gemini, no Fly</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
+<tr><td><strong>C3</strong></td><td><strong>Self-contained</strong> — no dependency on parts that are not shipping</td><td><span class="pill mid">counting is evidence, not a verdict</span></td></tr>
+<tr><td><strong>C4</strong></td><td><strong>Supportable</strong> — a stranger installs, uses, and recovers from failure without you</td><td><span class="pill no">not countable</span> — this is what the install experiment is for. ⛔ <strong>Not graded by D9</strong>: the spec withdraws that predicate and shows the two varying independently (§4d)</td></tr>
+<tr><td><strong>C5</strong></td><td>⭐ <strong>Redistributable</strong> — we are permitted to publish it, and it holds nothing that must not be published</td><td><span class="pill no">not answerable yet</span> — and two of its halves are yours</td></tr>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="lbl">The expected main killer is C3 — and both halves of the “known shape” were wrong</span>
+  <p>A component can be <strong>perfectly project-independent in its prose and still unusable</strong>,
+  because it calls a neighbour that is not shipping. That is why C2 and C3 are separate criteria. But
+  the example this spec gave for it did not survive review.</p>
+
+  <p><strong>What was claimed, and what is actually there.</strong> The claim was that
+  <code>brief/SKILL.md</code>'s ground-truth list <em>“invokes <code>scripts/check-*</code>”</em>. That
+  literal appears in the file <strong>zero</strong> times. What the list holds is <strong>nine
+  repo-specific items</strong>: 4 bare guard names, 4 document paths, 1 tool name.</p>
+  <p class="note">⚠ And <strong>5 of those 9 are neither paths nor file invocations</strong>, so the
+  scan as originally specified could not see them — it would have scored at most 4 of 9 on the single
+  component the method elects to calibrate against.</p>
+
+  <p><strong>Worse: “the problem is concentrated in one file” is false.</strong>
+  <code>explainer-delivery.md</code> scores <strong>0</strong> on the vocabulary measurement — and
+  carries <strong>three repo-relative <code>python3 scripts/…</code> invocations</strong> resolved
+  from wherever the caller happens to be standing. It is the contract <em>all four</em> page-producing
+  skills route through, so in a stranger's repository those resolve to nothing — measured, 4 of 4,
+  exit 2 — or, should a neighbour ever hold a file of the same name, to that file. ⚠ Only the first
+  of those two has been observed. <strong>That is a C3 and C4 blocker for every component of the
+  suite</strong>, and it lives in the file this spec previously presented as the good news.</p>
+  <p class="note">The old measurement — <code>explainer-delivery.md</code> <strong>0</strong>,
+  <code>explain-topic</code> and <code>explain-findings</code> <strong>1</strong> each,
+  <code>brief/SKILL.md</code> <strong>9</strong> — only ever measured C2. “Concentrated in one file”
+  is a C3 conclusion, and a C2 measurement cannot support it.</p>
+</div>
+
+<div class="box bad">
+  <span class="lbl">C5 is new, and nobody had asked it — two halves, and both need you</span>
+  <p>The decision to publish to <em>public strangers</em> means publishing, and publishing requires
+  permission. Measured: <strong>there is no <code>LICENSE</code> file in this repository</strong>, and
+  the spec mentioned licensing <strong>zero</strong> times before round 2 raised it.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
+    <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
+  </table>
+  </div>
+  <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
+  requires licence metadata, so this does not block <em>installing</em> — it blocks
+  <em>publishing</em>, which is what the public-stranger decision commits to. And unlike the support
+  criterion there is no weaker-but-honest grade: <em>"we may not have the right to publish this"</em>
+  is not an evidence strength, it is a veto. ⛔ <strong>So C5 either passes on evidence or blocks.</strong></p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">✅ D7 — you chose MIT, and here is what it does and does not cover</span>
+  <p><strong>The code half of C5 is settled: MIT.</strong> The comparables were measured rather than
+  guessed — <code>oh-my-claudecode</code> ships <strong>MIT</strong> and
+  <code>openai/codex-plugin-cc</code> ships <strong>Apache-2.0</strong>, so either would have met a
+  stranger on familiar terms. MIT is the shorter, and the convention for tooling this size.</p>
+
+  <p>⛔ <strong>But the licence goes on the marketplace repo, not on this one, and that is not a
+  technicality.</strong> This repository is <strong>public</strong> and holds the product beside the
+  harness — <code>app/</code>, <code>lib/</code>, <code>components/</code>, <code>worker/</code>,
+  <code>supabase/</code>, <strong>248 files</strong> of a working application — <code>git ls-tree -r --name-only HEAD -- app lib components worker supabase | wc -l</code>, named rather than dated so a reader can re-run it. ⟳ <strong>This read 262, which no definition of the set produces</strong>: tracked and filesystem counts agree at 248, and agree at <code>a4f6d4b5</code> and <code>2e79f464</code> too, so it was wrong when written rather than stale. Found by the corpus pass (backlog #295); it is the same invented-number defect this page records the spec committing with <em>&ldquo;~13 components&rdquo;</em>. A
+  <code>LICENSE</code> at this root would put <em>all of that</em> under MIT, which is a far larger
+  decision than the one you were asked, and which nobody has put to you.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>What</th><th>State</th></tr>
+    <tr><td>the published harness package</td><td><strong>MIT</strong> — the <code>LICENSE</code> lands on the marketplace repo, whose creation is deferred</td></tr>
+    <tr><td>this repository</td><td><strong>unchanged</strong> — public, unlicensed, all rights reserved, until decided separately</td></tr>
+    <tr><td>the copyright holder</td><td>⚠ <strong>not yet named.</strong> No author is declared anywhere, and the git identity is the placeholder <code>t &lt;t@example.com&gt;</code>. Your GitHub account is <code>kujinlee</code> — a legal name or entity is still yours to give, and inventing one would be worse than leaving it visible</td></tr>
+  </table>
+  </div>
+  <p class="note">⚠ <strong>And a correction.</strong> This was described to you as blocking the
+  milestone. It was not: the spec can be approved, the scan built and the inventory produced without
+  it, because publication is deferred out of this milestone. The earlier framing overstated the
+  urgency.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">D5 · Your decision, now settled — verdict and evidence are two axes</span>
+  <p>You chose this after finding the contradiction below. It is a <strong>decision of record</strong>
+  now, not a recommendation: the three verdicts stay, and every verdict carries an
+  <strong>evidence grade</strong> beside it.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Verdict (unchanged)</th><th>×</th><th>Evidence grade (new)</th></tr>
+    <tr><td rowspan="4"><span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span> <span class="pill no">DON'T-SHIP</span></td><td rowspan="4">×</td><td><code>measured</code> — the experiment exercised it, and the scenario is named</td></tr>
+    <tr><td><code>inherited</code> — a library, via named entry-point scenarios</td></tr>
+    <tr><td><code>argued</code> — C1–C3 plus reasoning; no experiment reached it</td></tr>
+    <tr><td><code>none</code> — nothing was established</td></tr>
+  </table>
+  </div>
+  <p><strong>What it changes.</strong> <code>SHIP / argued</code> is the honest label for efforts (1)
+  and (2), which get no install experiment. <code>NEEDS-WORK</code> goes back to meaning <em>a named
+  defect</em> — so a component merely unreached by the experiment is <code>argued</code>, and
+  <strong>files no backlog row</strong>. That removes the phantom rows the old rule manufactured.</p>
+  <p class="note">⚠ <strong>Its falsifier lives in the spec, &sect;4b, and this page does not
+  restate it</strong> (ADR-0015: a recital drifts, a citation cannot). ⟳ <strong>This paragraph used
+  to state one in its own words</strong> — that the scheme fails if the inventory is <em>read and
+  acted on</em> as though <code>argued</code> meant <code>measured</code> — and the spec
+  <strong>withdrew exactly that</strong>, because nothing can observe how a document was read, so
+  the test could never fire. The replacement is mechanically decidable from the inventory itself.
+  The fallback if it ever does fire is unchanged: require <code>measured</code> or
+  <code>inherited</code> for <code>SHIP</code>. And it is why the grade renders <em>beside</em> the
+  verdict rather than in a footnote.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">What rounds 1 and 2 added to the method — none of this was in the spec you first saw</span>
+  <p>Two adversarial rounds changed how this milestone intends to work, not just its wording. If you
+  read the original page, these are the parts that are new.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>What was wrong</th><th>What the method now requires</th></tr>
+    <tr>
+      <td>The scan would report <em>“could not work out this component's files”</em> — but a set that resolves <strong>successfully and short</strong> scored clean. Reproduced: the folder the spec named holds git symlinks, and a directory walk skips them, so it found <strong>nothing</strong>.</td>
+      <td>Resolve symlinks; compare the resolved set to a declared set <strong>member-for-member</strong>, not by size; and carry three mutations — empty, substituted, and omitted-with-a-matching-count.</td>
+    </tr>
+    <tr>
+      <td>Nothing produced the <em>declared</em> set in the first place, so the scan would have had to infer it — the exact thing the rule warns against.</td>
+      <td>A <strong>shipping-set declaration</strong> is now a deliverable, derived independently of the scan and validated against the installed layout. An oracle written from the output it checks is not an oracle.</td>
+    </tr>
+    <tr>
+      <td>Two detectors looked only for project words and file invocations — blind to bare guard names, to skills that <em>instruct you to load another skill</em>, and to ordinary Python imports of packages a stranger lacks.</td>
+      <td>⟳ <strong>Seven</strong> detectors — round 2 added inbound registration, and this cell said <em>six</em> until round 3 caught it. A <strong>mention</strong> is reported separately from a <strong>dependency</strong>, and fixtures are exempted by behaviour, not by location.</td>
+    </tr>
+    <tr>
+      <td>The install test could pass using <em>your</em> machine — one of the folders involved is a shortcut back into this repository.</td>
+      <td>A declared <strong>baseline</strong>: fresh <code>HOME</code>, no inherited server or page corpus, and a named capture mechanism that <strong>states what it cannot see</strong>.</td>
+    </tr>
+    <tr>
+      <td>Pass meant <em>“a page appeared and you could ask it a question”</em> — satisfied by an empty page, and also by a page full of wrong facts.</td>
+      <td>A <strong>seeded</strong> repository with known facts, so <em>correctly empty</em> is distinguishable from <em>broken</em>; plus one useful operation, a coverage matrix bounding what was exercised, and ⟳ recovery as a <strong>conditional</strong> — round 2 split it into <em>does anything document recovery?</em> (no, and that is itself a C4 finding) and a pass condition that applies only if something does. This cell said <em>one recovery scenario</em> flatly until round 3.</td>
+    </tr>
+    <tr>
+      <td>Nothing established that <em>this</em> suite can be packaged at all — only that somebody else's marketplace exists.</td>
+      <td>A <strong>packaging spike runs first</strong>: one skill, one script, installed from a throwaway marketplace and invoked from elsewhere. If it fails, the whole method is unachievable and that is worth knowing on day one.</td>
+    </tr>
+  </table>
+  </div>
+  <p class="note">⚠ <strong>Also new, and nobody had looked at it:</strong> whether the memory corpus
+  can be <em>redistributed</em> at all — private content, credentials, rights. Round 2 flagged that
+  neither review had evaluated it. It is an unexamined release criterion, not a claim that anything
+  sensitive is in there.</p>
+</div>
+
+<p>Verdicts are <span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span>
+<span class="pill no">DON'T-SHIP</span>, and nothing else. <strong>“Unknown” is not permitted</strong> —
+a component that cannot be assessed is <code>NEEDS-WORK</code> whose named defect is <em>“no way to
+assess it”</em>.</p>
+
+<p class="note">⚠ <strong>That was the rule you questioned, and D5 below narrows it — read them
+together.</strong> Under D5 a component the experiment merely never reached is
+<code>argued</code>, <strong>not</strong> <code>NEEDS-WORK</code>, and files no backlog row;
+<code>NEEDS-WORK</code> now means <em>a named defect</em>. The sentence above is kept because your
+question was asked against it.</p>
+
+<div class="box warn">
+  <span class="lbl">Your question, answered — “this is a contradiction. what is reasonable answer? adding CANNOT-ASSESS?”</span>
+
+  <p><strong>Yes, it is a real contradiction, and you found it in one read.</strong> The rule bans
+  “unknown” and then defines a bucket that <em>is</em> unknown wearing a different label. It does not
+  remove the state; it renames it — and renaming it <code>NEEDS-WORK</code> costs something real,
+  because §7 turns every <code>NEEDS-WORK</code> into a backlog row. <strong>So a component with no
+  defect generates a filed defect.</strong> The round-1 review hit exactly that with
+  <code>page_chrome.py</code>: zero project vocabulary, a self-test, one shipping-only import — and no
+  command-line interface at all, so a stranger never invokes it directly.</p>
+
+  <p><strong>But I would not add a fourth verdict, and here is the distinction that decides it.</strong>
+  Two different things are being called “unknown”:</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Which unknown</th><th>What it really is</th><th>Is <code>NEEDS-WORK</code> right?</th></tr>
+    <tr>
+      <td><strong>“We have not assessed it yet”</strong></td>
+      <td>A temporary state of <em>our process</em>. It goes away by doing work.</td>
+      <td><strong>Yes.</strong> “No way to assess it” genuinely is work to be done, and this is the shrug the original rule was built to stop.</td>
+    </tr>
+    <tr>
+      <td><strong>“This cannot be assessed by this method”</strong></td>
+      <td>A permanent property of the component <em>paired with</em> the method. No amount of work changes it.</td>
+      <td><strong>No.</strong> Filing it as a defect blames the component for a limit of the test.</td>
+    </tr>
+  </table>
+  </div>
+
+  <p><strong>What the round-1 fold did to the narrow case — and what round 2 then found wrong with
+  it.</strong> Every component now carries a <strong>role</strong>: <code>entry-point</code>,
+  <code>library</code> or <code>data</code>.</p>
+  <p class="note">⟳ <strong>SUPERSEDED, twice.</strong> Round 1's rule was that a <code>library</code>
+  <em>inherits its support verdict from the entry-points that import it</em>. Round 2 showed that is
+  undefined once there is more than one importer and silently wrong when there are none, so §4 now
+  carries five rules — aggregation, orphan, cycle, dual-role and provenance. ⛔ <strong>And round 2's
+  Claude half then showed the replacement fails on the very file this answer named.</strong>
+  <code>page_chrome.py</code> is imported by <strong>eleven</strong> files including
+  <code>gen-dashboard.py</code>, which invokes <code>gh</code>; under §6's fresh-<code>HOME</code>
+  isolation that entry-point fails for want of a credential, so "mixed inherits the failure" makes
+  <code>page_chrome.py</code> inherit a failure <em>caused by something it never touches</em> — the
+  phantom row D5 exists to remove, reinstated. A library now inherits a failure only when the
+  failure is <strong>attributed to code in that library</strong>.</p>
+
+  <p><strong>What was left at the time — and you have since decided it, as D5 above.</strong> After the role
+  fix, the only components that still cannot be assessed for support are entry-points the install
+  experiment never reaches — which is <em>all of</em> efforts (1) and (2), because §6's experiment
+  covers the comprehensibility suite only. <strong>So your question and the one open question in this
+  spec are the same gap:</strong> the document has no way to say <em>“judged, but without the hard
+  evidence”</em>.</p>
+
+  <p class="note">✅ <strong>You chose this, and it is now D5 — a decision of record above.</strong> The reasoning is kept here because it is how the decision was reached, and because the trade-off at the end of this box is the thing that would make it the wrong call.</p>
+
+<p><strong>My recommendation: do not add a value to the verdict axis — split the axes.</strong>
+  Keep three verdicts, always decisive, and record the strength of the evidence separately:</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Verdict (unchanged)</th><th>×</th><th>Evidence grade (new)</th></tr>
+    <tr><td rowspan="4"><code>SHIP</code> · <code>NEEDS-WORK</code> · <code>DON'T-SHIP</code></td><td rowspan="4">×</td><td><code>measured</code> — the install experiment ran on it</td></tr>
+    <tr><td><code>inherited</code> — a library, passing via its entry-points</td></tr>
+    <tr><td><code>argued</code> — C1–C3 plus reasoning, no experiment</td></tr>
+    <tr><td><code>none</code> — nothing was established</td></tr>
+  </table>
+  </div>
+
+  <p><strong>Why this beats <code>CANNOT-ASSESS</code>, in two points.</strong> First, a fourth
+  verdict re-opens the escape hatch the three-verdict rule exists to close — “unknown” becomes
+  available again, as a verdict, which is what you were being protected from. Second, and more
+  important: <code>CANNOT-ASSESS</code> still cannot tell <em>“fit to publish, and we proved it”</em>
+  from <em>“fit to publish, and we argued it”</em>. <strong>That second distinction is the actual risk
+  in this milestone</strong>, because two of the three efforts can only ever be argued. One mechanism
+  answers both questions; a fourth verdict answers neither.</p>
+
+  <p class="note">⚠ <strong>The honest cost, because this is a trade and not a free win.</strong>
+  Every component now needs two fields read together, and <code>SHIP / argued</code> can be
+  mis-skimmed as plain approval by someone who reads only the verdict column. ⟳ <strong>That risk
+  is real, but it is NOT the scheme&rsquo;s falsifier</strong> — nothing can observe how a document
+  was read, so a test shaped that way could never fire. The checkable form is stated once, in
+  &sect;4b of the spec, and this page cites it rather than restating it (ADR-0015): a recital can
+  drift from its source, a citation cannot. If the mis-skim worries you more than the labelling
+  does, the cleaner answer is the
+  stricter one: <strong>require <code>measured</code> or <code>inherited</code> evidence for
+  <code>SHIP</code></strong>, which caps efforts (1) and (2) at <code>NEEDS-WORK</code> until they get
+  their own experiment. That is a real option, not a straw man, and it is the other half of the
+  question waiting for you.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">5</span>Where this plan is weakest</h2>
+
+<p>Three things you should see rather than be protected from.</p>
+
+<div class="box warn">
+  <span class="lbl">1 · The install experiment covers effort (3) only</span>
+  <p>Efforts (1) and (2) get verdicts from C1–C3 <strong>plus argument</strong> — which is exactly the
+  judgement-based evaluation that D4 exists to avoid. The spec states this as a bound rather than
+  hiding it, and requires those verdicts be labelled as argument-based. <strong>It is still an
+  asymmetry, and it is question 1 below.</strong></p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">2 · The spec was written with an invented number</span>
+  <p>It said <em>“~13 components”</em>. The derived figure was <strong>24</strong>. Nothing depended on
+  13 — that is the point: a number with no provenance walked straight into a design document whose own
+  risk table names that exact drift.</p>
+  <p class="note">⟳ <strong>And the sequel is worse than the original.</strong> 24 was then corrected
+  twice more — round 1 found its <em>membership</em> wrong (it counted two unmerged branches and
+  omitted the matcher that ships), and round 2 found artifacts the counting rule never assigned at
+  all. It is now a <strong>lower bound</strong>. A figure being derived did not make it complete.</p>
+  <p class="note">Caught by the spec's self-review and recorded rather than quietly fixed — ⟳ in
+  <code>docs/reviews/coordinator/marketplace-inventory-r3-coordinator.md</code> since round 3 moved
+  the spec's §9b there; this note still pointed at the old location until round 4 (CODEX L1). It is
+  evidence <em>for</em> the mechanical scan in §5 of the spec, not against it.</p>
+</div>
+
+<div class="box warn">
+  <span class="lbl">3 · Nothing is installable at the end of this milestone</span>
+  <p>PR 1 produces no plugin, no <em>published</em> marketplace repo, and fixes <strong>no
+  coupling</strong> — not even <code>brief/SKILL.md</code>'s nine repo-specific ground-truth items,
+  nor the three CWD-relative <code>python3 scripts/…</code> invocations in the shared delivery
+  contract that round 1 found affect <em>all four</em> skills. Its entire output is a decision you can
+  trust, plus the scan that keeps it honest.</p>
+  <p>That was deliberate: fixing a component while also judging it is how this project has previously
+  manufactured a false green. <strong>If you expected something shippable from this milestone, say so
+  now</strong> — it is a different plan, not a tweak to this one.</p>
+</div>
+
+<hr class="hr">
+
+<h2><span class="n">6</span>Two gates improved the design while it was being written</h2>
+
+<p>Worth recording, because in both cases the machine's rule was better than mine.</p>
+
+<div class="two">
+  <div class="card">
+    <h4><code>check-anchors</code> R4</h4>
+    <p>Refuses a registry name that no document claims. That forced the anchor and its claiming
+    document to land <strong>in the same change</strong> — which is precisely what backlog row 290 said
+    was missing this morning when it recorded that registering the suite could not be a one-line edit.</p>
+  </div>
+  <div class="card">
+    <h4><code>check-features</code></h4>
+    <p>Refused the anchor on an <code>absent</code> node, with a sharper rule than I had: <strong>an
+    absent feature names no fragments, because it does not exist to carry them.</strong> So the anchor
+    sits on <code>process-harness</code> (built), and the absent child
+    <code>harness-installs-elsewhere</code> names only the gap.</p>
+  </div>
+</div>
+
+<p class="note">That split is the honest shape, and it is now in the feature map: the harness exists;
+its installability does not. <code>check-features</code> reports 27 nodes — 24 built, 3 declared absent
+— with 14 anchors and 21 backlog areas all claimed exactly once.</p>
+
+<hr class="hr">
+
+<h2><span class="n">7</span>Four things I would like you to weigh</h2>
+
+<div class="q">
+  <h4>1 · Is the lopsided evidence acceptable?</h4>
+  <p>Effort (3) gets a real install experiment. Efforts (1) and (2) get argument. <strong>My
+  recommendation: accept it</strong> — an install experiment for a CI harness and a memory matcher
+  would cost more than their likely verdicts are worth.</p>
+  <p>The counter is sharp, though: it means the two efforts you have spent the <em>most</em> recent
+  worry on get the <em>weakest</em> evidence, and their verdicts will be mine rather than measured.
+  If that is not acceptable, the fix is one experiment each, and it roughly doubles the milestone.</p>
+
+  <div class="box warn">
+    <span class="lbl">Your question, answered — “how to find a repo for experiments? we may try a public repo that uses AI and harness”</span>
+
+    <p><strong>Finding one costs nothing — there are two on your machine already</strong>, both
+    carrying a <code>LICENSE</code>, both real third-party harness repos installed as marketplaces:
+    <code>Yeachan-Heo/oh-my-claudecode</code> and <code>openai/codex-plugin-cc</code>.</p>
+
+    <p><strong>But a real repo answers a different question than a built one, and the spec now uses
+    both.</strong> This is the same two-layer shape the method already uses elsewhere.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Tier</th><th>What it is</th><th>What only it can answer</th></tr>
+      <tr><td><strong>A</strong></td><td>a throwaway repo <em>we</em> build, with <strong>known facts</strong></td><td><em>is the result correct?</em> — only known facts make <em>correctly empty</em> distinguishable from <em>the capability is missing</em></td></tr>
+      <tr><td><strong>B</strong></td><td>a real third-party repo, cloned</td><td><em>is our seeding wrong?</em> — it is the falsifier for tier A, just as tier A is the falsifier for the scan</td></tr>
+    </table>
+    </div>
+    <p>⛔ <strong>Neither replaces the other.</strong> We cannot seed known facts into someone else's
+    repository, so a tier-B failure is not diagnosable on its own — but tier B is where assumptions
+    tier A accidentally satisfies show up. That is the same relationship this project has already
+    paid for between a mock and a live call: 2,808 green tests, then a 500 on the first real press.</p>
+
+    <p><strong>And measuring those two repos today — before anything is built — already found two
+    things:</strong></p>
+    <div class="scroll">
+    <table>
+      <tr><th>Measured now</th><th>What it means</th></tr>
+      <tr><td><strong>Neither has any</strong> of the four document paths the ground-truth list looks for, and neither has a <code>.claude/</code> directory</td><td>the hollow page is the <em>expected</em> outcome in a real repo, not an edge case</td></tr>
+      <tr><td>⛔ <strong>Both have a <code>scripts/</code> directory — and neither has either FILE</strong></td><td>⟳ <strong>corrected by round 3.</strong> This said the invocations <em>silently run the wrong neighbour's file</em>. Re-measured from inside both clones: <strong>4 of 4 exit 2</strong>, <code>No such file or directory</code>. The failure is <strong>loud</strong>. A silent wrong run needs a collision at the <em>file</em> name, which neither repo has — so a possible failure class had been written down as a measured one</td></tr>
+    </table>
+    </div>
+
+    <p class="note">⚠ <strong>One constraint, so it is not discovered late:</strong> both are
+    <strong>shallow clones</strong> (one commit each), so every ground-truth item that reasons over
+    git history is unsatisfiable there for a reason that has nothing to do with portability. A tier-B
+    run needs a full clone, and a failure under a shallow one is <strong>not evidence about the
+    suite.</strong></p>
+    <p class="note">Selection criteria, so the choice is not ad hoc: a permissive licence, a full
+    clone, a harness layout of its own, and <strong>no write of any kind back to it</strong> — the
+    run works on a local clone and pushes nothing, which also keeps the licence question (C5) separate
+    from the portability one.</p>
+  </div>
+
+  <div class="box warn">
+    <span class="lbl">Your follow-up, answered — “use another path name than scripts? Or make the path configurable?”</span>
+
+    <p><strong>Neither, and the measurement is what settles it.</strong> There is already a mechanism:
+    <code>${CLAUDE_PLUGIN_ROOT}</code>, which the harness substitutes. The official
+    <code>openai/codex-plugin-cc</code> plugin uses it inside its own <code>hooks.json</code>, and
+    <code>oh-my-claudecode</code> uses it throughout.</p>
+
+    <p>⛔ <strong>And both of those plugins keep their directory named <code>scripts/</code>.</strong>
+    That is the evidence that decides your question: <strong>the collision is not caused by the name.</strong>
+    It is caused by the path being resolved against <em>the caller's working directory</em> instead of
+    against the package.</p>
+
+    <div class="scroll">
+    <table>
+      <tr><th>Option</th><th>What it does to the measured failure</th><th>Verdict</th></tr>
+      <tr><td>a unique name, e.g. <code>comprehensibility_scripts/</code></td><td>⟳ <strong>nothing that was measured</strong> — the failure is already loud in both repos. It would only matter against a <em>file</em>-name collision, and neither has one</td><td>an improvement against an <strong>unobserved</strong> case — and still <strong>not a fix</strong>, it is relative to the caller either way</td></tr>
+      <tr><td>a user-configurable path</td><td>moves the failure to setup time, and adds a config file to ship, document and get wrong</td><td><span class="pill no">rejected</span> more surface, same class</td></tr>
+      <tr><td>⭐ <code>${CLAUDE_PLUGIN_ROOT}/scripts/…</code></td><td>the package resolves <strong>its own</strong> location; the working directory stops mattering</td><td><span class="pill yes">the fix</span> no new name, no configuration, already the convention</td></tr>
+    </table>
+    </div>
+
+    <p class="note">⚠ Measured: <strong>our suite uses <code>${CLAUDE_PLUGIN_ROOT}</code> nowhere.</strong>
+    All three invocations are relative to the caller, which is precisely why a stranger's
+    <code>scripts/</code> can answer instead.</p>
+
+    <p><strong>What this changes about the milestone.</strong> Fixing it stays out of scope — this PR
+    repairs nothing, deliberately — but the inventory must now record the defect <em>with its known
+    fix</em>. <em>“C3 blocker, remedy unknown”</em> and <em>“C3 blocker, one-line remedy already
+    conventional”</em> are different answers for someone deciding what to do next.</p>
+
+    <p class="note">⭐ <strong>And it is the first concrete entry for the harvest axis you added:</strong>
+    <em>a shipped package resolves its own files from its own location, never from the caller's working
+    directory — and renaming the directory does not fix it, because the resolution is what is wrong,
+    not the name.</em> ⟳ The earlier second clause — <em>“it just fails loudly instead of
+    silently”</em> — is <strong>struck</strong>: it priced an outcome that had never been measured.
+    That travels to any packaging ecosystem, which is what D6 is for.</p>
+  </div>
+</div>
+
+<div class="q">
+  <h4>2 · Is effort (2) worth evaluating at all?</h4>
+  <p>CI sharding and the mutation harness are wired into this repository's workflow. Under D1's public
+  bar I expect most of it to come out <code>DON'T-SHIP</code>. <strong>My recommendation: evaluate it
+  anyway</strong>, because “I expect” is the kind of claim this project keeps finding wrong, and the
+  scan is cheap once written.</p>
+  <p>The counter: if the answer really is foregone, the spec should say so now and spend the effort on
+  making effort (3) installable instead. <strong>You have better information than I do about whether
+  the sharding idea is worth anything to someone else</strong> — it is a technique, not a tool, and
+  techniques travel as prose.</p>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this, and it became D6 — the harvest axis</span>
+    <p><strong>Your answer was better than the question.</strong> You said effort (2) probably does
+    not apply to a repo with a different harness, <em>but</em> several of its ideas travel anyway —
+    partial mutation where mutation testing is already used, mechanical inspection before paying an
+    expensive gate, sharding an expensive gate — and <em>“we just harvest as much as
+    transferable.”</em></p>
+    <p><strong>That is a third field, not a softer verdict.</strong> The ship verdict asks <em>can a
+    stranger install and run this?</em> The harvest asks something different: <em>is there something
+    here a stranger could DO, with their own tools?</em> A component can answer no to the first and
+    yes to the second, and the original three verdicts had nowhere to put that.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Field</th><th>Values</th><th>Question it answers</th></tr>
+      <tr><td><strong>verdict</strong></td><td><span class="pill yes">SHIP</span> <span class="pill mid">NEEDS-WORK</span> <span class="pill no">DON'T-SHIP</span></td><td>can a stranger install and run it?</td></tr>
+      <tr><td><strong>evidence</strong> (D5)</td><td><code>measured</code> · <code>inherited</code> · <code>argued</code> · <code>none</code></td><td>how strong is what we know?</td></tr>
+      <tr><td><strong>harvest</strong> (D6)</td><td><code>practice</code> · <code>none</code></td><td>does a transferable practice come out of it?</td></tr>
+    </table>
+    </div>
+    <p class="note">⚠ <strong>Two bounds, so the harvest cannot become a way to call everything a
+    success.</strong> <code>harvest: practice</code> requires <strong>a named entry actually written
+    into <code>portable-practices.md</code></strong> with the measurement that earned it — a practice
+    asserted but not written is <code>none</code>. And ⛔ <strong>a harvest never upgrades a
+    verdict</strong>: <code>DON'T-SHIP / harvest: practice</code> is still not shipping, and the
+    inventory must not present it as partial approval.</p>
+    <p class="note">So the answer to this section's question is <strong>yes, evaluate effort (2)</strong>
+    — but for the harvest, not for the shipping. That is a cheaper and better-defined reason than
+    <em>“I expect <code>DON'T-SHIP</code> but might be wrong.”</em></p>
+  </div>
+</div>
+
+<div class="q">
+  <h4>3 · Should the stale index claims be fixed here or separately?</h4>
+  <p>Three claims in <code>portable-practices.md</code> are wrong — the size, the anchor count, and an
+  owed anchor that now exists. The spec puts the corrections inside PR 1.
+  <strong>My recommendation: keep them here</strong>, because the inventory is what discovered them and
+  a correction separated from its evidence tends not to land.</p>
+  <p>The counter: it mixes a factual repair into a decision document, and if the milestone stalls, three
+  known-wrong sentences stay published while it does.</p>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this, and it became D8 — with the counter bounded</span>
+    <p><em>“yes, fix in here.”</em> So a correction lands with the work that found it, for the
+    reason the recommendation gave: <strong>the inventory is what discovers them.</strong></p>
+    <p>⛔ <strong>Round 3 then found the three claims had already been fixed</strong> — in
+    <code>b200f2cf</code>, merged today (see section 3). Your decision stands, because it is about
+    <em>placement</em>; what changed is the list. ⟳ <strong>Three real index defects remain</strong>
+    (round 3 added the third): the <em>“roughly 3x”</em> undercount, a cross-set ratio where the
+    nine files’ own is <strong>1.82×</strong>; <em>“concentrated in one file”</em>, already
+    measured false; and the replacement headline’s own corpus, which omits the shared contracts it
+    names in the same breath.</p>
+    <p><strong>And the counter was real, so it is not simply accepted.</strong> All three are
+    docs-only repairs depending on nothing else in PR 1 — so they go in as its <strong>first
+    commit</strong> and can be merged alone if the rest parks.</p>
+    <p class="note">⚠ <strong>What makes that bound fail, stated so it can be checked:</strong>
+    PR 1 open with any of the three corrections not yet committed. If that is ever observed, the stall risk you
+    accepted has gone live and the corrections should be split into their own PR.</p>
+  </div>
+</div>
+
+<div class="q">
+  <h4>4 · Does “publishable” need a support policy decided first?</h4>
+  <p>D1 commits to a public bar, which implies versioning, breaking-change handling, and answering
+  strangers' issues. <strong>The spec did not price any of that when this question was written</strong>
+  — ⟳ it now does, in §4d, which is D9 below — and the inventory would otherwise
+  happily mark things <code>SHIP</code> without it.</p>
+  <p><strong>My recommendation: decide it before the inventory, not after</strong> — a component is only
+  shippable against a stated support commitment, and “we will work that out later” is how an
+  open-source burden gets acquired by accident. But this is genuinely your call: you are the one who
+  would carry it.</p>
+
+  <div class="box warn">
+    <span class="lbl">✅ You answered this twice, and it became D9 — best-effort, versioned</span>
+    <p>First <em>yes</em>, the policy is decided before the inventory runs. Then <strong>option A</strong>:
+    <strong>semver tags, a <code>CHANGELOG</code>, a major bump for a breaking change, and issues read
+    with no response time promised.</strong></p>
+    <p class="note">⚠ <strong>One distinction first, because conflating these is a defect this
+    review keeps catching.</strong> D1’s “full support bar” is about the <em>artifact</em>:
+    criterion C4, a stranger can install it, use it and recover from failure <em>without the author</em>.
+    A support <em>policy</em> is about your <em>ongoing obligation</em> after publishing. They are
+    different commitments, and every option below keeps C4 at full strength.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>&nbsp;</th><th>Policy</th><th>What you owe</th><th>Trade-off</th></tr>
+      <tr>
+        <td><strong>A</strong></td>
+        <td><strong>Best-effort, versioned</strong><br><span class="pill yes">✅ Your choice</span></td>
+        <td>semver tags + a <code>CHANGELOG</code>; a breaking change gets a major bump; issues are
+        read, with <strong>no response time promised</strong></td>
+        <td>Strangers get the one thing they actually need — to know whether an upgrade will break
+        them — and you promise no labour. Costs a tag and a changelog line per release</td>
+      </tr>
+      <tr>
+        <td><strong>B</strong></td>
+        <td><strong>No support, dated snapshots</strong><br><span class="pill no">not chosen</span></td>
+        <td>a README line: no issues, no support, no compatibility promise; tagged by date</td>
+        <td>Cheapest and fully honest, and C4 still holds. But a stranger cannot tell a bugfix from a
+        rewrite, so in practice they pin one commit and never upgrade</td>
+      </tr>
+      <tr>
+        <td><strong>C</strong></td>
+        <td><strong>Supported, with a stated window</strong><br><span class="pill no">not chosen</span></td>
+        <td>everything in A, plus a deprecation policy and a <strong>response-time commitment</strong>
+        on issues</td>
+        <td>The only level that makes the suite feel maintained to an outsider — and the one that
+        acquires a real recurring obligation, from strangers, on their schedule</td>
+      </tr>
+      <tr>
+        <td><strong>D</strong></td>
+        <td><strong>I have a question about these</strong></td>
+        <td>—</td>
+        <td>Still open at any time — ask on this page and D9 changes shape, the way D5, D6 and D8 did</td>
+      </tr>
+    </table>
+    </div>
+    <p class="note">⚠ <strong>What makes D9 fail — and round 3 found the first version naming only
+    two of its three promises.</strong> A release with <strong>no version tag</strong>; a tag with
+    <strong>no <code>CHANGELOG</code> entry</strong>; or ⟳ <strong>a breaking change with no
+    major-version bump</strong>. The counterexample to the old pair is one line: <code>1.2.0</code>,
+    tagged, changelogged, and breaking.</p>
+    <p class="note">⛔ <strong>Two corrections to how this was first written up, both round 3.</strong>
+    ⟳ <strong>D9 does not grade C4</strong> — a package can have compliant versioning and tell a
+    stranger to “contact the author” (passes D9, fails C4), or recover perfectly with no tag
+    (passes C4, fails D9), so they vary independently. ⭐ What survives is the half worth asking:
+    <em>best-effort timing does not weaken C4</em> — it raises its importance, because the
+    documentation becomes the only channel a stranger has. And ⟳ <strong>D9 cannot be observed
+    inside PR 1 at all</strong>: all three failing observations are about a <em>release</em>, and
+    PR 1 produces none. It is a deferred publication requirement, checkable at first publication —
+    calling it a milestone gate was the same error in smaller type.</p>
+    <p class="note">⚠ <strong>And one bound, so this does not become an unmeetable deliverable:</strong>
+    the tag and the changelog belong to the <strong>published</strong> marketplace repo, which §10
+    still defers. <strong>PR 1 owes the stated bar and nothing more</strong> — it produces no
+    release, no tag and no <code>CHANGELOG</code>.</p>
+  </div>
+</div>
+
+<div class="box ok">
+  <span class="lbl">What happens after you decide</span>
+  <p><strong>Approve</strong> → I write the implementation plan, it gets dual review to convergence,
+  then it is built autonomously per the process. <strong>Push back</strong> → I fold your objection the
+  way I would fold a review finding, and we go again. <strong>Redirect</strong> → the spec parks and
+  the milestone changes shape.</p>
+  <p class="note">Either way, highlight anything on this page and press <strong>ask</strong>. That is
+  what it is for, and it is the only part of this process where disagreeing is cheap.</p>
+</div>
+
+</div>
+
+<div class="chrome"><span class="chrome-when">generated <time>2026-10-17 14:51 · 4d07ee59 · uncommitted changes</time></span></div>
+
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>

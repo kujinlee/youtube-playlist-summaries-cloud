@@ -416,7 +416,7 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
   decision lived only in a Draft spec and was misread by the very review that reads `docs/adr/`.
 - [x] **`scripts/check-docs.py`** — ADR index drift, dangling ADR refs, broken living-doc links;
   advisory list of spec decisions never promoted. Code→ADR references went 0 → 2.
-- [ ] **Triage the 21 spec docs** holding decision markers with no ADR (the advisory list).
+- [ ] **Triage the 22 spec docs** holding decision markers with no ADR (the advisory list).
       ⟳ **21 → 20 on 2026-08-24, and the mechanism is worth noting:** it dropped because ADR-0010's
       anchor headers gave one of those documents an `ADR:` line, so it is no longer untraceable.
       The header is doing the job the triage list exists to chase. `check-docs` derived the new
@@ -2353,6 +2353,81 @@ skill and not the hook, so the hook's refusal printed a claim and its withdrawal
       BLOCKED. Its two remedies — raise the budget in a reviewable PR diff, or prioritise and
       retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
       human's call, so neither is taken here.
+
+### Marketplace inventory — anchor `harness-ships-elsewhere` — 🟡 CANDIDATE 1 CHOSEN AND IMPLEMENTED 2026-10-17 (ADR-0015); NOT CONVERGED, ONE REVIEW ROUND DEFERRED BY THE OWNER
+
+Phase 6 review: `docs/reviews/architecture-review-2026-10-16-claim-propagation.md`. Four adversarial
+rounds on PR #376; round 4 had **8 of 9 findings introduced by round 3's own fix** with Blocking flat
+at 2 → 2, which is `review-method.md`'s definition of thrashing.
+
+⛔ **The coordinator first answered the mandatory question WRONGLY and the Claude half caught it** —
+an invented definition (*oscillation*), the anti-escape-hatch clause applied backwards, and a
+pre-committed retreat whose antecedent the same document cancelled. Retracted in place; the
+retraction is kept beside the reasoning it replaces.
+
+- [x] **Rounds 1–4, both halves each**, filed under `docs/reviews/{codex,claude,coordinator}/`;
+      `check-review-rounds.py` reports 0 silent gaps.
+- [x] **All of rounds 1–3 folded, and round 4's three Blockings and three Highs.**
+- [x] **Two owner decisions taken live through the walkthrough page** — D8 (a correction lands with
+      the work that found it) and D9 (support bar: best-effort, versioned).
+- [x] ⭐ **THE REVIEW'S DECIDING FINDING, NOW ACTED ON: this exact review ran two days earlier under
+      the same trigger, and its redesign had landed.** *One canonical source per mechanism*
+      (2026-10-14) collapsed two mechanisms to one file each **with every live site citing rather
+      than restating**, and left *"a mechanism missing from `CANONS` is unprotected"* as #282 / #288.
+      This document pair was that instance, and `check-claim-propagation.py` implemented the
+      **opposite** remedy. **ADR-0015 reverses that**: the spec is now a registered canon, the
+      walkthrough a declared citing site, and the guard's copy-policing half is deleted. #298 closed.
+- [x] **The owner chose candidate 1 by selection card (2026-10-17)**, answering the fork candidates
+      1 and 3 opened about how much a reader-facing page may restate. ⭐ **The answer drawn, and it is
+      narrower than the question:** the line is by **decision SYMBOL**, not by semantic category — a
+      page paraphrases without limit and cites the symbols it would otherwise reprint. So *is the
+      walkthrough a record or a rule?* never had to be answered; it became a **citing site**, the
+      category `docs/process-rationale.md` already occupies. Candidate 2 rode along.
+- [x] **Backlog #297's three drifted claims are FIXED — but my FIRST closure of them was false,
+      and round 5's Codex half refuted it the same day.** Two of the three were still live in both
+      pages. ⛔ The mechanism is worth more than the fix: I verified with a regex whose `[^<>]`
+      class cannot cross a tag boundary, so `graded against <strong>D9</strong>` truncated before
+      the `D9` and read as an unrelated passage — **the exact defect class the prose matcher I had
+      just deleted existed to catch, reproduced by hand.** Verification now strips tags first. The
+      second fix had also landed on the wrong passage and cited §4c (D6) where D5's rule is §4b.
+      The reason they had survived at all is the
+      finding worth keeping: **the deleted `LIVE` registry made the correct fix illegal.**
+      `d5-ship-plus-argued` and `d8-corrections-land-here` were registered at `[SPEC, PAGE]`, so the
+      gate REQUIRED each token at both sites — deleting a drifted recital from the page would have
+      turned it RED. The guard was enforcing the duplication that was drifting. ⚠ One of the three
+      was partly misreported as filed: ① was spec-INTERNAL only; the page already carried the
+      corrected *D9 does not grade C4*. ③ was worse than filed — the page said *Both* and *either*
+      over a list of three.
+- [x] **`scripts/check-canonical-source.py` widened to `*.html`** (part of #282). Measured before:
+      1,937 files in the population, **0** HTML, so the canon's own citing sites were invisible to
+      it. Now carries a case, a CONTROL and a mutation that redden when `SEARCHED` is reverted.
+- [x] **`scripts/check-claim-propagation.py` reduced to its derived-figures half** — 1,459 → 880
+      lines, **58** self-test cases (was 96), **18** mutations for this file and **8** for
+      `check-canonical-source`, **26 killed and attributed over green controls with 0
+      survivors**, reproduced independently by round 5's Claude half. Declared sum 1488 → **1477**:
+      a ratchet **FALL**, permitted because **17** entries are **retired with their subject**
+      (32 before, 15 after, 32 − 17 = 15, derived by diffing the manifest — ⟳ r5 CODEX Low: this
+      said 19, the intermediate count before two were restored as retargets).
+      ⟳⟳ **r5 CLAUDE M2: the fold corrected the 19 in this sentence and left FOUR superseded
+      numbers beside it** — 41, 15, 15 and 1472 — which is *a fix inside a heredoc is not a class
+      fix* applied to a sentence. ⚠ **Nothing mechanical owns these:** `check-selftest-counts.py`
+      verifies each script's OWN docstring and is green, so a roadmap figure has no producer. They
+      are derived here by reading the files rather than retyped, and that is the only protection
+      this bullet has; ⚠ **4 were RETARGETED rather than retired**, because their anchors broke while the
+      rules they measure survived, and retiring those would have dropped live coverage silently.
+- [ ] **The owner's own item, unchanged:** the C5 content review of effort (1)'s 157 memory files,
+      now **deliverable 11**; until it lands the corpus cannot be graded `SHIP`.
+- [ ] **NOT CONVERGED. One review round is DEFERRED, by the owner's decision of 2026-10-17** —
+      `check-review-recorded` is the only failing step and it is right. ⛔ **THE ESCAPE HATCH IS
+      STILL DELIBERATELY NOT USED:** `NO-REVIEW:` would read as *cleared to merge*. The owner chose
+      to **wait and review the settled tree once**, rather than pay for a round over code candidate 1
+      was about to delete — which it did: the copy-policing half the unreviewed commits changed is
+      now gone. **WORK:** one round, both halves, over the tree as it now stands.
+- [ ] **Merging is the human gate.** #298 is closed, so the earlier reason not to merge is spent;
+      the remaining reasons are the deferred review round above and the owner's C5 item.
+- [ ] **Residue that candidate 1 could not dissolve, and the split is a fact about it** (#296): M5
+      dissolved with the deleted matcher, M4 partly; **M1, M6, M7 are defects in the SPEC'S CONTENT**
+      and M3 is candidate 4's territory. Candidate 1 was a mechanism fix; content is row #295's pass.
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all

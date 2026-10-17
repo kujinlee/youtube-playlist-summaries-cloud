@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 13573 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "a3fbb1976da6e72df4f870dde4e70b9cf855618c",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/7dedb749-0329-4f9f-b967-200febb2bbbf/scratchpad/mkt-r1-prompt.md",
+  "reason": "13573 chars",
+  "refused": false,
+  "review": "marketplace-inventory-r1-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

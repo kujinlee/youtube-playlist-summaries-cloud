@@ -623,6 +623,41 @@ EXPECTED_MUTATIONS = {
     # read one. The counts ARE the evidence, so a line that has lost them records that something
     # happened while destroying what was measured — the recorded *a guard's own output is a
     # CONTRACT* shape, one layer in from the log-format defect this whole slice is about.
+    # ⟳ 2026-10-16: check-claim-propagation.py joins the manifest at 10, raising the declared
+    # sum by 10. It is the mechanical half of `one-rule-one-place` for documents, built after
+    # two adversarial rounds on `marketplace-inventory` produced 4 then 14 fix-induced findings
+    # with ONE mechanism behind thirteen of them: a rule stated in several places, and the fold
+    # updating the site the finding named. A convention had already failed at it twice in two
+    # rounds, which is why this is a guard and not a checklist.
+    # ⟳ 2026-10-17, ADR-0015: 32 -> 15. ⛔ THIS IS A RATCHET FALL, which is permitted ONLY when
+    # the entries are RETIRED WITH THEIR SUBJECT, and that is what these are: the prose-matching
+    # half of the guard is deleted, so the retired anchors name code that no longer exists.
+    # ⟳⟳ 2026-10-17, r5 CODEX Low: the count here said **19** and the arithmetic did not close —
+    # 32 - 19 is 13, not 15. The real figure is **17 retired**, and 19 was the INTERMEDIATE value
+    # from the first pass, before two entries were restored as retargets. ⭐ It is now DERIVED by
+    # diffing the manifest against `8a583f7c^` rather than retyped, which is the only form of this
+    # number that cannot drift: 32 before, 15 after, 4 retargeted, 32 - 17 = 15. Precedent and
+    # shape are `retire-plan-mode` (44 -> 23, declared sum 392 -> 371), where 20 anchors stopped
+    # resolving because the code they named was gone.
+    # ⚠ FOUR WERE RETARGETED RATHER THAN RETIRED, and checking that was the point: their anchors
+    # broke while the RULES they measure survived — the empty-registry refusal (its condition went
+    # from a three-way disjunction to one), the `wanted |= …DERIVED…` line (now the FIRST
+    # assignment, so the witness is stronger), the `audited_sites` witness (its token half retired,
+    # its DERIVED half kept) and the self-closing-not-pushed rule in `_Carriers`. Retiring those
+    # four would have dropped live coverage silently, which is this repo's recorded failure mode
+    # for exactly this operation.
+    # ⟳⟳ 2026-10-17, r5 CODEX M3: 15 -> 18. Three surviving branches of `_Carriers` that no
+    # case pinned — stripped accumulation, the VOID vocabulary beyond `img`, and an unmatched
+    # end tag. The reviewer found them by applying each mutation and getting 41/41 GREEN.
+    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H1 — THE VOID VOCABULARY, as opposed to six of its fourteen
+    # members. The comment on the previous case asserted it covered the set; the code supplied a
+    # hardcoded 6-tuple and dropping all 8 unpinned members was 49/49 GREEN.
+    # ⟳ r6 CODEX Low: THIS COMMENT SAID `18 -> 19` AND NO NINETEENTH MUTATION EXISTS. The fix
+    # EXTENDED an existing entry's `expect` list, because the harness refused a second entry on
+    # the same anchor as measuring nothing new — so the count did not move, and the arithmetic
+    # comment below correctly says `18 -> 18`. ⚠ The executable count is right; the audit trail
+    # was wrong, in the one number this round was asked to verify. Corrected, not raised.
+    "scripts/check-claim-propagation.py": 18,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
     # ⟳ 2026-09-22, the third warning class: 8 -> 22. THREE of the eight are not about the new
@@ -1367,7 +1402,30 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
-    "scripts/check-canonical-source.py": 5,   # r6 redesign: the inverted-restatement mutation
+    # ⟳⟳ 2026-10-17: 6 -> 7, for the root-file invariant. A declared citing site must EXIST and
+    # `HARNESS_TREE` stages no repo-root files, so declaring one reddens this guard's control
+    # and reports NOT MEASURED for every shard — measured live in CI, 6 of 8 shards.
+    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H2: 7 -> 8. The root-file predicate pinned the SPELLING, so
+    # `./CONTEXT.md` passed 28/28 while the staged tree went red. ⚠ The new entry had to be
+    # RETARGETED onto an extracted predicate before it could kill at all: over the LIVE table
+    # no declared entry uses a `./` spelling, so removing the normalisation changed nothing and
+    # the mutation SURVIVED — caught here, not by a reviewer, by running the negative control.
+    # ⟳⟳⟳⟳ 2026-10-17, r6 CODEX Medium: 8 -> 9. The root-file rule has TWO refusal arms —
+    # absolute/escaping, and root-level — and one mutation left the second unpinned. ⚠ Isolating
+    # the ABSOLUTE arm needed a NESTED absolute path as input: an absolute path to a root-level
+    # file is caught by the other arm anyway, so the first attempt had no witness and its negative
+    # control did not redden. Found by RUNNING the control, not by reading the code.
+    # ⟳⟳⟳⟳⟳ 2026-10-17, r6 CLAUDE M2+M3: 9 -> 11. The predicate was REDESIGNED from a filesystem
+    # test to a LEXICAL one (v4), because v3 both MISSED a parent roundtrip to a nested file —
+    # `resolve()` erases the `..` — and FALSELY REFUSED `node_modules/typescript/...`, which the
+    # harness stages, because that path is a symlink in a worktree and `resolve()` followed it out.
+    # ⛔ That made the verdict HOST-DEPENDENT. v4 has THREE arms and each needs its own witness,
+    # plus one for the STAGEABLE_PREFIXES duplicate, whose identity case is the only thing that
+    # makes the duplicate a ratchet rather than this repo's most-measured defect.
+    # ⟳ 2026-10-17, r6 fold: 11 -> 10. The ABSOLUTE arm was DEAD CODE and the harness proved it
+    # by refusing to let its mutation die — no staged prefix begins with `/`, so the prefix arm
+    # already caught every absolute path. The arm is deleted; the entry goes with its subject.
+    "scripts/check-canonical-source.py": 10,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -3392,6 +3450,7 @@ def _self_test() -> int:
                                       "scripts/check-canonical-source.py",
                                       "scripts/check-catalog-coverage.py",
                                       "scripts/check-ci-watched.py",
+                                      "scripts/check-claim-propagation.py",
                                       "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
                                       "scripts/check-doc-citations.py",
@@ -5105,7 +5164,54 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1456)
+    # ⟳ 2026-10-16, AFTER #377 MERGED: check-claim-propagation.py arrives with 10. The rise is
+    # exactly its manifest size — no existing entry moved. ⚠ THIS BRANCH FIRST DECLARED 1429,
+    # against the 1419 master it branched from; #377 then merged and took master to 1456, so the
+    # branch figure was stale by 27 before it was ever pushed. Rebased, re-derived, and read off
+    # the guard's own refusal rather than added by hand — the same conflict backlog measured on
+    # PR #365 (1361 declared against an 1178 master). ⚠ 1466 was the GUARD'S OWN FIGURE, read
+    # from `got 1466 want 0` against a deliberately wrong sentinel.
+    # ⟳ 2026-10-16: 1466 → 1480, across round 3's two halves and its Medium fold.
+    # `check-claim-propagation` goes 10 → 24 entries: partial propagation, the served page as an
+    # audited site, block-level HTML matching, whitespace normalisation, the retirement vocabulary
+    # admitting an ordinary English word, an empty site list, an empty registry, an unknown compute
+    # rule, an unregistered derived carrier, path-of comparison, word boundaries, a doubly-carried
+    # key, a whitespace-only class leak, and a pushed self-closing tag. ⚠ TWO of its behaviours have
+    # NO entry and the reason is written in that file beside each: both crash as FileNotFoundError
+    # when disabled, so a mutation would forge a `[FAIL]` instead of failing its case. Every figure
+    # here was read off the guard's own refusal — the last from `got 1484 want 1480` for that one.
+    # ⟳⟳⟳ 2026-10-16, round 4's CLAUDE half: 1484 → 1488. Four more — the composed page and the
+    # derived source each leaving the audited path set (two lines that had been declared
+    # "unmutatable" and were not), and a void element ceasing to separate words in each of its two
+    # spellings. Read off `got 1488 want 1484`.
+    # ⟳⟳ 2026-10-16, round 4: 1480 → 1484. Four more for CODEX's round — the absent-path refusal
+    # returning a clean result (whose entry r3 claimed could not exist, and r4 refuted in one line),
+    # whitespace between inline elements being deleted, the closure rule reading values instead of
+    # carrier openings, and the tolerant unwind popping one element instead of the subtree.
+    # ⟳ 2026-10-17, ADR-0015 (backlog #282/#298): 1488 → 1489. ONE entry — `check-canonical-source`
+    # goes 5 → 6 for the `*.html` widening, which had NO falsifier when it was written: reverting
+    # `SEARCHED` left the guard printing OK because the page it now governs was invisible to it.
+    # Read off `got 1489 want 1488`. ⚠ This is a RISE and needs no permission; the FALL that
+    # ADR-0015 also implies — shedding `check-claim-propagation`'s copy-policing half — is recorded
+    # separately at that file's entry, because a fall is the thing that needs a stated reason.
+    # ⟳ 2026-10-17 — ADR-0015 and rounds 5–6. ⛔ THE HAND-SUMMED TRAIL THAT STOOD HERE WAS WRONG
+    # THREE TIMES IN TWO DAYS, each caught by a reviewer and never by me: r5 CODEX Low (it said 19
+    # retired where 17 was right), r6 CODEX Low (it claimed a nineteenth mutation that never
+    # existed), r6 CLAUDE M4 (its shown derivation reached 1476 against an assertion of 1478).
+    #
+    # ⭐ SO THERE IS NO ARITHMETIC IN THIS COMMENT ANY MORE. A total re-typed beside the dict it
+    # describes drifts every time the dict moves, and the drifting total is THIS FILE'S OWN
+    # SUBJECT. Only the per-file deltas this branch caused are recorded, because those are facts
+    # about the work rather than a sum:
+    #
+    #     check-claim-propagation    32 -> 18   17 retired WITH THEIR SUBJECT, 4 retargeted, 3 added
+    #     check-canonical-source      5 -> 10   the `*.html` widening, then four predicate versions,
+    #                                           less one arm the harness showed was dead
+    #
+    # ⛔ THE AUTHORITATIVE TOTAL IS THE CASE BELOW, which sums the dict and is compared against the
+    # on-disk manifests; `check-selftest-counts.py` verifies it by EXECUTION. If you want the
+    # number, run it. Do not add these up by hand — that is the thing that failed three times.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1479)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -33,3 +33,64 @@ not better: see [[printing-more-evidence-weakens-substring-cases]] — ⚠ which
 round 12 produced three Highs of the same class — so *the architecture review ran* is not evidence
 *the thrashing stopped*. Related: [[a-second-implementation-of-one-rule-drifts]],
 [[gates-detect-defects-not-design]].
+
+---
+
+## ⭐⭐ AND THE SAME BLINDNESS IN THE PROBE I WRITE BY HAND, WHICH MISLED ME IN BOTH DIRECTIONS
+
+**Measured 2026-10-16, `marketplace-inventory` round 3, four probes in one hour.** To ask *does this
+fix have a case?* I neutered a line and counted the suite's failure lines:
+
+```bash
+python3 "$PROBE" --self-test 2>&1 | grep -cE '^  \[FAIL\]'
+```
+
+⛔ **A CRASH PRINTS NO `[FAIL]` LINE, so that count reads 0 — and `0` is exactly what "the fix is
+not covered" looks like.** Two of the four results were wrong, in OPPOSITE directions:
+
+| probe | counting `[FAIL]` said | reading rc + traceback said |
+|---|---|---|
+| whitespace guard removed | 0 red → "uncovered" | `rc=0`, no traceback, **79/79 green — genuinely uncovered** |
+| `wanted \|= {DERIVED pages}` deleted | 0 red → "uncovered" | `rc=1`, **1 traceback, `FileNotFoundError`** — covered *structurally* |
+
+So the same number meant "no case exists" once and "the probe crashed" once, and nothing in the
+output distinguished them.
+
+⟳ ⛔ **AND THE SECOND ROW ONCE ENDED "and unmutatable", WHICH WAS FALSE — REFUTED 2026-10-17 BY
+ROUND 5's CODEX HALF, AND THE REPOSITORY'S OWN MANIFEST NOW PROVES IT.** The claim was reached from
+**one mutation shape**: DELETING the line, which crashes. A **substitution** — weakening it to
+`wanted |= {d["page"] for d in DERIVED}`, keeping the line but dropping the `audited_sites`
+expansion — produces a clean, attributed failure with no traceback:
+
+```text
+[FAIL] audit: an absent COMPOSED page reached only through DERIVED is CannotRun:
+       got 'FileNotFoundError' want 'CannotRun'
+```
+
+That exact mutation is now a live manifest entry and it is KILLED. ⚠ The original text also said I
+would have written "a case for a line that cannot be disabled without crashing — work against a
+defect that was not there"; the defect WAS there, and declining to cover it would have been the
+error.
+
+⭐ **THE LESSON THE OVERREACH TEACHES, which is sharper than the one it damaged: "unmutatable" is a
+claim about EVERY mutation of a line, and I reached it from one.** Deletion is the crudest shape.
+Before concluding a line cannot be mutated, weaken it — substitute a narrower expression, flip an
+operator, drop one operand — because a line that crashes when removed will usually fail cleanly when
+merely made wrong. See [[cannot-die-may-mean-a-second-clause]], which is this same error in the
+other direction.
+
+⭐ **THE FIX IS THE SAME SHAPE AS THE RULE ABOVE, TURNED ON MY OWN TOOL: read the EXIT CODE and ask
+whether a traceback appeared, not just what the child printed.** The probe that works is four
+fields, and the cost of the extra three is one line:
+
+```bash
+out=$(python3 "$PROBE" --self-test 2>&1); rc=$?
+printf 'rc=%s fails=%s traceback=%s last=%s\n' "$rc" \
+  "$(echo "$out" | grep -cE '^  \[FAIL\]')" "$(echo "$out" | grep -c Traceback)" "$(echo "$out" | tail -1)"
+```
+
+⚠ **And a count of zero is never self-explanatory in either tool.** `check-plan-code` has the same
+rule written into its own contract — *a mutation that crashes is a crash forging a `[FAIL]`* — and I
+re-derived it from scratch with a shell pipeline instead of reusing it. See
+[[a-second-implementation-of-one-rule-drifts]], [[the-control-refuted-the-premise]],
+[[a-case-can-pass-for-an-ambient-reason]].

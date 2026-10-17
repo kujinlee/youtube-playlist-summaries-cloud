@@ -120,6 +120,41 @@ python3 scripts/brief-compose.py --content <fragment.html> --slug <slug> --title
 
 The fragment is a `<title>`, one `<style>…</style>`, then body markup — no `<html>`/`<head>`/`<body>`.
 
+> ### ⛔ EDIT THE FRAGMENT, THEN RECOMPOSE — IN THE SAME COMMIT. The composed `.html` is DERIVED.
+>
+> **Added 2026-10-16 by round 3 of `marketplace-inventory` (CLAUDE M9), because the composed page
+> is a derived artifact and this contract did not say so.** ⟳ This read *"because a guard now
+> **enforces** it on at least one page"* until round 4's Claude half pointed out that the sentence
+> survived, in bold, as this rule's justification — **eleven lines above the correction saying the
+> guard does not enforce it.** The rule stands on the derivation, which needs no guard to be true. A fragment edit that is not
+> followed by `brief-compose.py` leaves a committed `.html` that is **not** the composition of its
+> committed fragment — the reader opens the stale one.
+>
+> ⚠ **Measured the same day, by the author of that guard, twice within the hour:** a reflow landed
+> in a fragment with no recompose, and a phrase the guard registered went missing from the served
+> page while sitting intact in the fragment. Nothing was wrong for the reader either time; the
+> derived artifact had simply stopped deriving.
+>
+> ⟳ ⛔ **WHAT THE GUARD ACTUALLY DOES — CORRECTED 2026-10-16 BY ROUND 4 (CODEX B2), WHICH REFUTED
+> THE SENTENCE THAT STOOD HERE.** It said `scripts/check-claim-propagation.py` *"refuses this"* and
+> *"enforces"* recomposition. **It does not, and the reviewer showed it in one line:** append an
+> unregistered sentence to the fragment, leave the composed page alone, and the audit returns
+> `problems: []`. Reproduced here over a **green control** — because the first attempt returned
+> `rc=1` for an unrelated stale figure, which would have read as the claim being true.
+>
+> | What it does | What it does NOT do |
+> |---|---|
+> | requires every **registered derived figure** to be present and correct at **both** the fragment and the composed page | compose the fragment and compare the result against the committed page |
+> | so a drift that touches a registered figure is refused — which is how the author's own stale `spec-lines` was caught again on 2026-10-17 | notice a drift that touches nothing registered, which is most edits |
+>
+> ⟳ ⛔ **NARROWER STILL SINCE 2026-10-17 (ADR-0015), AND THE ROW ABOVE IS THE CORRECTED ONE.** It used to say *"every registered **token** and registered derived figure"*. The TOKEN half is **deleted** — `check-claim-propagation.py` no longer reads prose at all, because the repository had already decided the opposite remedy (`check-canonical-source.py` refuses the second copy) and because three claims were measured drifted while the token half was GREEN over all three (`docs/backlog.md` row 297). So the gap this paragraph protects is **wider** than it was, not narrower, and the hand-run falsifier below is now the only check on a skipped recompose that touches no registered figure.
+>
+> ⛔ **SO THE PARAGRAPH ABOVE IS THE PROTECTION, FOR EVERY PAGE INCLUDING THAT ONE** — the guard
+> narrows the gap for one dated document pair (`docs/backlog.md` row 293) and closes it for nobody.
+> **The falsifier, stated so it can be run by hand:** re-compose a committed fragment and diff the
+> result against the committed `.html`; any difference means a recompose was skipped. Nothing does
+> that automatically, and claiming otherwise is what this correction is for.
+
 `brief-compose.py` lifts the tray — 13 CSS rules, the markup, ~6 KB of JS — **verbatim from an
 existing explainer**. Never hand-copy it. It took four rounds of shipped defects to get right
 (`explainer-serve.py`'s docstring records them), and hand-copying working code between documents is

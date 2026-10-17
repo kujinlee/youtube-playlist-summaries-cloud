@@ -63,5 +63,70 @@
     "expect": [
       "a site restating the handoff banner with no citation is detected"
     ]
+  },
+  {
+    "name": "the walk stops reading HTML, so a generated page can carry a second copy of a canon unseen (ADR-0015, #282)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "SEARCHED = (\"*.md\", \"*.py\", \"*.sh\", \"*.html\")",
+        "SEARCHED = (\"*.md\", \"*.py\", \"*.sh\")"
+      ]
+    ],
+    "expect": [
+      "a restatement in an HTML page is detected"
+    ]
+  },
+  {
+    "name": "a repo-root file is declared a citing site, which HARNESS_TREE does not stage — so this guard's own CONTROL goes red and every mutation shard reports NOT MEASURED (the live CI failure of 2026-10-17)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "            \"docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md\",",
+        "            \"docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md\",\n            \"CONTEXT.md\","
+      ]
+    ],
+    "expect": [
+      "CANONS: every declared citing site is one HARNESS_TREE can stage"
+    ]
+  },
+  {
+    "name": "the PARENT-SEGMENT arm leaves the predicate, so `../<checkout>/x` passes while a staged tree reports it absent ⟳ RETARGETED 2026-10-17 (r6 CLAUDE M2 — this is the arm whose absence was the finding, measured end to end)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "\"..\" in parts",
+        "False"
+      ]
+    ],
+    "expect": [
+      "unstageable_cites refuses every nonportable registration and no stageable one"
+    ]
+  },
+  {
+    "name": "the STAGED-PREFIX arm leaves the predicate, so a repo-root file passes — the original rule, now a consequence of stageability rather than a special case (r6 CLAUDE M2/M3)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "not c.startswith(STAGEABLE_PREFIXES)",
+        "False"
+      ]
+    ],
+    "expect": [
+      "unstageable_cites refuses every nonportable registration and no stageable one"
+    ]
+  },
+  {
+    "name": "one prefix leaves STAGEABLE_PREFIXES, which the IDENTITY case catches — the duplicate of HARNESS_TREE is a ratchet only while something fails when the two drift (r6 CLAUDE M3)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "                      \".claude/hooks/\", \".github/workflows/\", \".agents/skills/\")",
+        "                      \".claude/hooks/\", \".github/workflows/\")"
+      ]
+    ],
+    "expect": [
+      "STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift"
+    ]
   }
 ]
