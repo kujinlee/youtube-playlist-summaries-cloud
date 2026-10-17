@@ -63,5 +63,18 @@
     "expect": [
       "a site restating the handoff banner with no citation is detected"
     ]
+  },
+  {
+    "name": "the walk stops reading HTML, so a generated page can carry a second copy of a canon unseen (ADR-0015, #282)",
+    "file": "scripts/check-canonical-source.py",
+    "edits": [
+      [
+        "SEARCHED = (\"*.md\", \"*.py\", \"*.sh\", \"*.html\")",
+        "SEARCHED = (\"*.md\", \"*.py\", \"*.sh\")"
+      ]
+    ],
+    "expect": [
+      "a restatement in an HTML page is detected"
+    ]
   }
 ]

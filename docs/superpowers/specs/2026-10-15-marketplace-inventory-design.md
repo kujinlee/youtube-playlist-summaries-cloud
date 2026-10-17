@@ -1,3 +1,4 @@
+<!-- canon: marketplace-inventory -->
 # Marketplace inventory — what this harness can ship to a stranger, and what cannot
 
 > **Anchor:** `harness-ships-elsewhere` — **ADR:** none

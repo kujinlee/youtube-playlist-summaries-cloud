@@ -96,7 +96,7 @@ FAILS IF
   * a declared citing site does not cite the canonical path;
   * any non-exempt file RESTATES a mechanism (carries its tokens) without citing its canon.
 
-  --self-test  runs 25 cases over synthetic trees, including that each failure mode is DETECTED.
+  --self-test  runs 27 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
 import contextlib
@@ -170,6 +170,54 @@ CANONS: list[dict] = [
             "docs/memory/a-vendored-line-number-has-no-owner.md",
         ],
     },
+    {
+        "name": "marketplace-inventory",
+        "file": "docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md",
+        # DECISION SYMBOLS — the stable strings the inventory's decisions are referred to BY.
+        # Added 2026-10-17 by ADR-0015, which supersedes `check-claim-propagation.py`'s
+        # copy-policing half. A page may paraphrase the spec without limit; it may not reprint
+        # these without citing the spec.
+        #
+        # ⛔⛔ THE BARE SYMBOLS (`D1`..`D9`, `C1`..`C5`, `SHIP`) ARE NOT USABLE AS TOKENS AND THIS
+        # IS MEASURED, NOT PRUDENCE. This oracle is a case-sensitive SUBSTRING test, and over the
+        # widened population `D1` occurs in 121 files, `C1` in 94 and `SHIP` in 105 — the explainer
+        # CSS alone carries `#c5c1b9` 232 times and `#c4ab72` 120 times. A token list of two-
+        # character symbols would fire on hex colours. So the tokens are the distinctive multi-word
+        # forms, and the measurement is RE-RUN when one is added rather than assumed.
+        #
+        # ⚠ MEASURED 2026-10-17, each token: present in the spec, and in ZERO files outside this
+        # canon and its two declared citing sites — once `check-claim-propagation.py`'s token
+        # registry is shed. That registry was the ONLY other carrier (`docs/dashboard-entries.md`
+        # held `Redistributable`, which is why that word is NOT a token here), so shedding it and
+        # adding this entry are mutually reinforcing rather than independent.
+        #
+        # ⛔ WHAT THIS ENTRY DOES NOT DO, said here because believing otherwise rebuilds backlog
+        # #297 in a new guard: `audit()` is `hit and not _cites(...)`, so BOTH citing sites below
+        # already cite the spec and are therefore immune — and they were immune on the day this
+        # entry was added, while carrying all 17 decision symbols and THREE claims measured as
+        # drifted (#297). The enforcement here is PROSPECTIVE: a NEW site reprinting a symbol
+        # without citing is refused. Agreement between canon and citing site is enforced by
+        # review, never by this guard (#289, and ADR-0015's Consequences).
+        "tokens": [
+            "DON'T-SHIP",
+            "harvest: practice",
+            "harvest: none",
+            "SHIP /",
+            "BEST-EFFORT, VERSIONED",
+            "C4 is STRUCK",
+        ],
+        "cites": [
+            "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.fragment.html",
+            "docs/explainers/2026-10-15-brief-marketplace-inventory-walkthrough.html",
+            # ⭐ THESE TWO WERE CAUGHT BY THIS ENTRY ON THE DAY IT WAS ADDED, which is the only
+            # live falsifier it has so far: both discuss the decision symbols legitimately (one
+            # defines the vocabulary, one records the decision) and neither cited the spec. They
+            # are DECLARED rather than merely fixed, so a future edit that drops the citation is
+            # refused instead of silently passing.
+            "CONTEXT.md",
+            "docs/adr/0015-a-page-paraphrases-freely-and-cites-decision-symbols.md",
+        ],
+    },
 ]
 
 # ⚠ `\.remember/` WAS AN UNREACHABLE ALTERNATIVE and is gone (r6 CLAUDE H4). The walk can
@@ -177,7 +225,17 @@ CANONS: list[dict] = [
 # branch matched nothing and no case covered it — an exemption written against an imagined
 # population, which is the same defect as measuring one.
 EXEMPT = re.compile(r"^(docs/reviews/|docs/dashboard-entries\.md$)")
-SEARCHED = ("*.md", "*.py", "*.sh")
+# ⟳ 2026-10-17 (ADR-0015, backlog #282): `*.html` ADDED. The guard could not see a generated
+# explainer page at all, which the docstring above had listed as a stated gap — and that gap was
+# load-bearing, not cosmetic: the `marketplace-inventory` canon's citing sites ARE two HTML pages,
+# so without this the entry below would govern a population its subject is not in. MEASURED before
+# widening: population 1,937 files, 0 of them HTML; the spec present, the walkthrough absent.
+# MEASURED safe: 0 HTML files in the widened population carry EITHER pre-existing canon's tokens —
+# verified against a known positive (the same search over `*.md` returns 10+ sites), so the zero is
+# a true negative and not a broken search. ⚠ Still NOT covered, so the bound stays honest rather
+# than becoming a claim of completeness: `*.txt`, `*.json`, `*.yml`, and `tests/`, `lib/`,
+# `.github/` — the rest of #282.
+SEARCHED = ("*.md", "*.py", "*.sh", "*.html")
 MARKER = "<!-- canon: {} -->"
 
 
@@ -436,6 +494,23 @@ def self_test() -> int:
         r = _tree(t / "rootok", CANON, {"docs/site.md": CITE, "CLAUDE.md": "MECHTOKEN " + CITE})
         case("CONTROL — a root file that cites the canon is clean",
              [x for x in r if "CLAUDE.md" in x], [])
+
+        # ⛔ HTML, WHICH THE WALK DID NOT REACH UNTIL 2026-10-17 (ADR-0015, backlog #282). The
+        # `marketplace-inventory` canon's two declared citing sites are BOTH `.html`, so before the
+        # widening this guard governed a canon whose only restating surface it could not read — a
+        # canon enforced over a population its subject was absent from. MEASURED at the commit
+        # before: `_walked_textfiles` returned 1,937 files, 0 of them HTML.
+        r = _tree(t / "htmlmiss", CANON,
+                  {"docs/site.md": CITE, "docs/explainers/page.html": "MECHTOKEN again\n"})
+        case("a restatement in an HTML page is detected",
+             any("restates c" in x and "page.html" in x for x in r), True)
+        # CONTROL — an HTML page that DOES cite must stay clean. Without this the case above is
+        # satisfied by a blanket refusal of any `.html` carrying the token, which would refuse every
+        # legitimate explainer page and make the widening worse than the gap it closed.
+        r = _tree(t / "htmlok", CANON,
+                  {"docs/site.md": CITE, "docs/explainers/page.html": "MECHTOKEN " + CITE})
+        case("CONTROL — an HTML page that cites the canon is clean",
+             [x for x in r if "page.html" in x], [])
         # CONTROL — the walk must not reach deeper than the root's own files, or it would start
         # auditing node_modules and every untracked tree.
         r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})

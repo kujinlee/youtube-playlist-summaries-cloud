@@ -1374,7 +1374,7 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
-    "scripts/check-canonical-source.py": 5,   # r6 redesign: the inverted-restatement mutation
+    "scripts/check-canonical-source.py": 6,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -5137,7 +5137,13 @@ def _self_test() -> int:
     # returning a clean result (whose entry r3 claimed could not exist, and r4 refuted in one line),
     # whitespace between inline elements being deleted, the closure rule reading values instead of
     # carrier openings, and the tolerant unwind popping one element instead of the subtree.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1488)
+    # ⟳ 2026-10-17, ADR-0015 (backlog #282/#298): 1488 → 1489. ONE entry — `check-canonical-source`
+    # goes 5 → 6 for the `*.html` widening, which had NO falsifier when it was written: reverting
+    # `SEARCHED` left the guard printing OK because the page it now governs was invisible to it.
+    # Read off `got 1489 want 1488`. ⚠ This is a RISE and needs no permission; the FALL that
+    # ADR-0015 also implies — shedding `check-claim-propagation`'s copy-policing half — is recorded
+    # separately at that file's entry, because a fall is the thing that needs a stated reason.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1489)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
