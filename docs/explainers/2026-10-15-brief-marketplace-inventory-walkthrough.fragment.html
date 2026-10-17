@@ -156,7 +156,7 @@ li::marker{color:var(--fg3)}
 <div class="box warn">
   <span class="lbl">Read this first — what state everything is in</span>
   <p><strong>Nothing is implemented.</strong> What exists is a
-  <strong data-derived="spec-lines">973</strong>-line spec, an allocated anchor, and a
+  <strong data-derived="spec-lines">1059</strong>-line spec, an allocated anchor, and a
   feature-map node. No scan is written, no install has been attempted, no component has a verdict.</p>
   <p class="note">Branch <code>marketplace-inventory</code>, spec
   <code data-derived="spec-path">docs/superpowers/specs/2026-10-15-marketplace-inventory-design.md</code>.
@@ -321,17 +321,19 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 
 <div class="box bad">
   <span class="lbl">The index figure has decayed — it is 1.81× low against its own file set</span>
-  <p><code>docs/portable-practices.md</code> has described the comprehensibility suite as
-  <strong>“9 files / 3,599 lines”</strong> since <strong>2026-09-07</strong>, and it
-  <em>enumerates</em> those nine. Those same nine files today total
-  <strong>6,525 lines</strong>.</p>
+  <p>⟳ <strong>Tense corrected by round 3 — the index no longer says this.</strong>
+  <code>docs/portable-practices.md</code> <em>did</em> describe the suite as
+  <strong>“9 files / 3,599 lines”</strong> from <strong>2026-09-07</strong>, enumerating those nine.
+  Those same nine files total <strong>6,525 lines</strong> today — and the index’s headline now reads
+  <strong>“~11,000 lines”</strong>, with the old figure kept as a dated correction inside it. The
+  decay below is still the finding; stating it in the present tense was not.</p>
   <p>Nothing broke because of this. It is quoted in the one document whose job is to describe what
   travels. <strong>But the reason matters, and round 1 corrected it:</strong> the figure was derived
   and enumerated, and was <strong>exactly right on the day it was measured</strong>
   (<code>cacbac17</code>, 3,599 vs 3,599) — then <em>already 3.7% stale on the day it was
   republished</em> into the index four days later. Its subject then
   grew <strong>1.75×</strong> against the value measured when it was republished (3,737 → 6,525) —
-  and is <strong>1.81×</strong> against the 3,599 the index still prints. So this is an argument for
+  and is <strong>1.81×</strong> against the 3,599 the index printed until <code>b200f2cf</code>. So this is an argument for
   <strong>re-deriving dated counts</strong>, not an argument
   about recollection. See the refutation below.</p>
 </div>
@@ -370,9 +372,21 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   that the component table itself lists (round 1, M3).</span></p>
 </div>
 
-<p>Two further claims in that same block are stale: it says the registry <em>“registers 10 anchors”</em>
-(it held <strong>13</strong> before this spec and <strong>14</strong> after), and that <em>“a second
-anchor is owed”</em> for the present-tense reader — <code>explanation-on-demand</code> now exists.</p>
+<div class="box warn">
+  <span class="lbl">⟳ Round 3: all three “stale claims” had already been fixed — by a PR that merged today</span>
+  <p>This section said two further claims in that block were stale: <em>“registers 10 anchors”</em>
+  and <em>“a second anchor is owed”</em>. The index now reports <strong>13</strong>, names the 14th as
+  allocated on this branch, and records that <code>explanation-on-demand</code> exists.</p>
+  <p>⛔ <strong>All three were corrected in <code>b200f2cf</code> — PR #377 — which merged to master
+  earlier today, and this branch has carried them since it rebased that afternoon.</strong> So the
+  deliverable you decided the placement of was already discharged, and <em>“the inventory found
+  three stale claims”</em> was itself a stale claim. It is recorded rather than quietly repaired.</p>
+  <p class="note">⚠ <strong>Your decision is unaffected</strong> — D8 is a rule about <em>where</em> a
+  correction lands, not about which ones are outstanding. Two real index defects remain and are what
+  it now delivers: the <em>“roughly 3x”</em> undercount (a <strong>cross-set</strong> ratio — the
+  nine files’ own ratio is <strong>1.81×</strong>), and <em>“the problem is concentrated in one
+  file”</em>, which this page already measures as false.</p>
+</div>
 
 <div class="box warn">
   <span class="lbl">⟳ Round 1 refuted this section's headline — and that is the most useful thing it did</span>
@@ -490,8 +504,9 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
   <code>explainer-delivery.md</code> scores <strong>0</strong> on the vocabulary measurement — and
   carries <strong>three repo-relative <code>python3 scripts/…</code> invocations</strong> resolved
   from wherever the caller happens to be standing. It is the contract <em>all four</em> page-producing
-  skills route through, so in a stranger's repository those resolve to nothing, or to an unrelated
-  neighbour's <code>scripts/</code>. <strong>That is a C3 and C4 blocker for every component of the
+  skills route through, so in a stranger's repository those resolve to nothing — measured, 4 of 4,
+  exit 2 — or, should a neighbour ever hold a file of the same name, to that file. ⚠ Only the first
+  of those two has been observed. <strong>That is a C3 and C4 blocker for every component of the
   suite</strong>, and it lives in the file this spec previously presented as the good news.</p>
   <p class="note">The old measurement — <code>explainer-delivery.md</code> <strong>0</strong>,
   <code>explain-topic</code> and <code>explain-findings</code> <strong>1</strong> each,
@@ -507,7 +522,7 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
   <div class="scroll">
   <table>
     <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
-    <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>⛔ <strong>you</strong> — this is a choice, not a finding</td></tr>
+    <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
     <tr><td>the <strong>corpus</strong> — effort (1)'s 157 memory files</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong>, which nobody has done</td></tr>
   </table>
   </div>
@@ -587,7 +602,7 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
     </tr>
     <tr>
       <td>Two detectors looked only for project words and file invocations — blind to bare guard names, to skills that <em>instruct you to load another skill</em>, and to ordinary Python imports of packages a stranger lacks.</td>
-      <td>Six detectors, and a <strong>mention</strong> is reported separately from a <strong>dependency</strong>. Fixtures are exempted by behaviour, not by location.</td>
+      <td>⟳ <strong>Seven</strong> detectors — round 2 added inbound registration, and this cell said <em>six</em> until round 3 caught it. A <strong>mention</strong> is reported separately from a <strong>dependency</strong>, and fixtures are exempted by behaviour, not by location.</td>
     </tr>
     <tr>
       <td>The install test could pass using <em>your</em> machine — one of the folders involved is a shortcut back into this repository.</td>
@@ -595,7 +610,7 @@ anchor is owed”</em> for the present-tense reader — <code>explanation-on-dem
     </tr>
     <tr>
       <td>Pass meant <em>“a page appeared and you could ask it a question”</em> — satisfied by an empty page, and also by a page full of wrong facts.</td>
-      <td>A <strong>seeded</strong> repository with known facts, so <em>correctly empty</em> is distinguishable from <em>broken</em>; plus one useful operation, one recovery scenario, and a coverage matrix bounding what was actually exercised.</td>
+      <td>A <strong>seeded</strong> repository with known facts, so <em>correctly empty</em> is distinguishable from <em>broken</em>; plus one useful operation, a coverage matrix bounding what was exercised, and ⟳ recovery as a <strong>conditional</strong> — round 2 split it into <em>does anything document recovery?</em> (no, and that is itself a C4 finding) and a pass condition that applies only if something does. This cell said <em>one recovery scenario</em> flatly until round 3.</td>
     </tr>
     <tr>
       <td>Nothing established that <em>this</em> suite can be packaged at all — only that somebody else's marketplace exists.</td>
@@ -810,7 +825,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     <table>
       <tr><th>Measured now</th><th>What it means</th></tr>
       <tr><td><strong>Neither has any</strong> of the four document paths the ground-truth list looks for, and neither has a <code>.claude/</code> directory</td><td>the hollow page is the <em>expected</em> outcome in a real repo, not an edge case</td></tr>
-      <tr><td>⛔ <strong>Both have a <code>scripts/</code> directory</strong></td><td>the three CWD-relative <code>python3 scripts/…</code> invocations resolve to <strong>their</strong> scripts, not ours — so the coupling does not fail loudly, it <strong>silently runs the wrong neighbour's file.</strong> That is worse than a missing file</td></tr>
+      <tr><td>⛔ <strong>Both have a <code>scripts/</code> directory — and neither has either FILE</strong></td><td>⟳ <strong>corrected by round 3.</strong> This said the invocations <em>silently run the wrong neighbour's file</em>. Re-measured from inside both clones: <strong>4 of 4 exit 2</strong>, <code>No such file or directory</code>. The failure is <strong>loud</strong>. A silent wrong run needs a collision at the <em>file</em> name, which neither repo has — so a possible failure class had been written down as a measured one</td></tr>
     </table>
     </div>
 
@@ -841,7 +856,7 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
     <div class="scroll">
     <table>
       <tr><th>Option</th><th>What it does to the measured failure</th><th>Verdict</th></tr>
-      <tr><td>a unique name, e.g. <code>comprehensibility_scripts/</code></td><td>turns a <strong>silent wrong-neighbour run</strong> into a <strong>loud missing-file error</strong></td><td>a real improvement — but <strong>not a fix</strong>, it is still relative to the caller</td></tr>
+      <tr><td>a unique name, e.g. <code>comprehensibility_scripts/</code></td><td>⟳ <strong>nothing that was measured</strong> — the failure is already loud in both repos. It would only matter against a <em>file</em>-name collision, and neither has one</td><td>an improvement against an <strong>unobserved</strong> case — and still <strong>not a fix</strong>, it is relative to the caller either way</td></tr>
       <tr><td>a user-configurable path</td><td>moves the failure to setup time, and adds a config file to ship, document and get wrong</td><td><span class="pill no">rejected</span> more surface, same class</td></tr>
       <tr><td>⭐ <code>${CLAUDE_PLUGIN_ROOT}/scripts/…</code></td><td>the package resolves <strong>its own</strong> location; the working directory stops mattering</td><td><span class="pill yes">the fix</span> no new name, no configuration, already the convention</td></tr>
     </table>
@@ -858,8 +873,10 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
     <p class="note">⭐ <strong>And it is the first concrete entry for the harvest axis you added:</strong>
     <em>a shipped package resolves its own files from its own location, never from the caller's working
-    directory — and a path merely renamed to be unusual still fails, it just fails loudly instead of
-    silently.</em> That travels to any packaging ecosystem, which is what D6 is for.</p>
+    directory — and renaming the directory does not fix it, because the resolution is what is wrong,
+    not the name.</em> ⟳ The earlier second clause — <em>“it just fails loudly instead of
+    silently”</em> — is <strong>struck</strong>: it priced an outcome that had never been measured.
+    That travels to any packaging ecosystem, which is what D6 is for.</p>
   </div>
 </div>
 
@@ -916,21 +933,27 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
 
   <div class="box warn">
     <span class="lbl">✅ You answered this, and it became D8 — with the counter bounded</span>
-    <p><em>“yes, fix in here.”</em> So the three corrections stay inside PR 1, for the reason the
-    recommendation gave: <strong>the inventory is what discovered them.</strong></p>
-    <p><strong>But the counter was real, so it is not simply accepted.</strong> All three are
-    docs-only factual repairs that depend on nothing else in PR 1 — so they go in as its
-    <strong>first commit</strong> and can be merged alone if the rest parks.</p>
+    <p><em>“yes, fix in here.”</em> So a correction lands with the work that found it, for the
+    reason the recommendation gave: <strong>the inventory is what discovers them.</strong></p>
+    <p>⛔ <strong>Round 3 then found the three claims had already been fixed</strong> — in
+    <code>b200f2cf</code>, merged today (see section 3). Your decision stands, because it is about
+    <em>placement</em>; what changed is the list. <strong>Two real index defects remain:</strong> the
+    <em>“roughly 3x”</em> undercount, which is a cross-set ratio where the nine files’ own is
+    <strong>1.81×</strong>, and <em>“concentrated in one file”</em>, already measured false.</p>
+    <p><strong>And the counter was real, so it is not simply accepted.</strong> Both are docs-only
+    repairs depending on nothing else in PR 1 — so they go in as its <strong>first commit</strong>
+    and can be merged alone if the rest parks.</p>
     <p class="note">⚠ <strong>What makes that bound fail, stated so it can be checked:</strong>
-    PR 1 open with any of the three corrections not yet committed. If that is ever observed, the
-    stall risk you accepted has gone live and the corrections should be split into their own PR.</p>
+    PR 1 open with either correction not yet committed. If that is ever observed, the stall risk you
+    accepted has gone live and the corrections should be split into their own PR.</p>
   </div>
 </div>
 
 <div class="q">
   <h4>4 · Does “publishable” need a support policy decided first?</h4>
   <p>D1 commits to a public bar, which implies versioning, breaking-change handling, and answering
-  strangers' issues. <strong>The spec does not price any of that</strong>, and the inventory will
+  strangers' issues. <strong>The spec did not price any of that when this question was written</strong>
+  — ⟳ it now does, in §4d, which is D9 below — and the inventory would otherwise
   happily mark things <code>SHIP</code> without it.</p>
   <p><strong>My recommendation: decide it before the inventory, not after</strong> — a component is only
   shippable against a stated support commitment, and “we will work that out later” is how an
@@ -981,11 +1004,20 @@ its installability does not. <code>check-features</code> reports 27 nodes — 24
       </tr>
     </table>
     </div>
-    <p class="note">⚠ <strong>It went in as a gate, not a sentence of intent.</strong> §4d of the
-    spec states the bar, C4 is graded against it, and a component cannot be <code>SHIP</code> while
-    the published package contradicts it. <strong>What makes D9 fail:</strong> a release with
-    no version tag, or a tag with no <code>CHANGELOG</code> entry. Under best-effort support those two
-    <em>are</em> the whole promise — so breaking one is not falling short of an aspiration.</p>
+    <p class="note">⚠ <strong>What makes D9 fail — and round 3 found the first version naming only
+    two of its three promises.</strong> A release with <strong>no version tag</strong>; a tag with
+    <strong>no <code>CHANGELOG</code> entry</strong>; or ⟳ <strong>a breaking change with no
+    major-version bump</strong>. The counterexample to the old pair is one line: <code>1.2.0</code>,
+    tagged, changelogged, and breaking.</p>
+    <p class="note">⛔ <strong>Two corrections to how this was first written up, both round 3.</strong>
+    ⟳ <strong>D9 does not grade C4</strong> — a package can have compliant versioning and tell a
+    stranger to “contact the author” (passes D9, fails C4), or recover perfectly with no tag
+    (passes C4, fails D9), so they vary independently. ⭐ What survives is the half worth asking:
+    <em>best-effort timing does not weaken C4</em> — it raises its importance, because the
+    documentation becomes the only channel a stranger has. And ⟳ <strong>D9 cannot be observed
+    inside PR 1 at all</strong>: all three failing observations are about a <em>release</em>, and
+    PR 1 produces none. It is a deferred publication requirement, checkable at first publication —
+    calling it a milestone gate was the same error in smaller type.</p>
     <p class="note">⚠ <strong>And one bound, so this does not become an unmeetable deliverable:</strong>
     the tag and the changelog belong to the <strong>published</strong> marketplace repo, which §10
     still defers. <strong>PR 1 owes the stated bar and nothing more</strong> — it produces no

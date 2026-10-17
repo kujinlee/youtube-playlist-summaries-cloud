@@ -131,9 +131,11 @@ number is not evidence of completeness, and §3's mapping step is what would mak
 against its own file set.** ⟳ **CORRECTED 2026-10-16 by round 1 (CLAUDE H1), which refuted this
 paragraph's first version — and the refutation is the more useful finding.**
 
-`docs/portable-practices.md` describes the suite as *"9 files / 3,599 lines"* and **enumerates those
-nine**: the four page-producing skills, the shared delivery contract, `brief-compose.py`,
-`explainer-serve.py`, `page_chrome.py`, `page_markup.py`.
+⟳ **TENSE CORRECTED 2026-10-16 BY ROUND 3 (CODEX B2): THE INDEX NO LONGER SAYS THIS.** It *said*
+*"9 files / 3,599 lines"* and enumerated those nine — the four page-producing skills, the shared
+delivery contract, `brief-compose.py`, `explainer-serve.py`, `page_chrome.py`, `page_markup.py` —
+and **that is now a dated correction inside the index, not its assertion.** Its headline reads
+**"~11,000 lines"** today. The history below is still the finding; the present tense was wrong.
 
 ⟳ **CORRECTED AGAIN 2026-10-16 by round 2 (CODEX 9), which found round 1's own history wrong.**
 Round 1 said `100cf498` *"introduced the figure"* and that it was *"accurate when written"*. The
@@ -185,10 +187,16 @@ companion that B3 forced (see §5).
 **11,607 lines** across the 17 components of effort (3). ⚠ That is a different and larger set than
 `portable-practices.md`'s nine, and the two must not be compared without saying so.
 
-⚠ Two further claims in that same block are stale and must be corrected with it: it says the registry
-*"registers 10 anchors"* (it held **13** before this spec, and **14** after it, since this document allocates one) and that *"a second anchor is owed"* for the present-tense
-reader (`explanation-on-demand` now exists). **Where all three corrections land, and the decision
-that put them there, is D8 (§7 item 8); this section does not restate it.**
+⟳ **AND THE OTHER TWO ARE ALSO ALREADY FIXED (r3 CODEX B2).** The index said *"registers 10
+anchors"* and that *"a second anchor is owed"*. It now reports **13**, names the 14th as allocated
+on this branch, and records that `explanation-on-demand` **exists**, striking the old sentence.
+
+⛔ **ALL THREE WERE CORRECTED IN `b200f2cf` — PR #377, merged to master 2026-10-16 — AND THIS BRANCH
+HAS CONTAINED THEM SINCE ITS REBASE THE SAME AFTERNOON.** Verified by `git log -S` on each phrase,
+and `git merge-base --is-ancestor` against `master`. So **deliverable 8 as originally written is
+discharged**, and the three-claim list was describing a repository state that no longer existed when
+it was written down. **What remains, and what D8 therefore delivers, is in §7 item 8** — this
+section does not restate it.
 
 ### Effort (2) — development velocity
 
@@ -248,7 +256,7 @@ Criteria 1 and 2 are `docs/portable-practices.md`'s existing filters. D1's publi
 | **C1** | **Measured** — it works, with evidence, not a confident belief | existing self-tests and manifests |
 | **C2** | **Project-independent** — runs with no Supabase, no Gemini, no Fly | counting is **evidence, not a verdict** — see below |
 | **C3** | **Self-contained** — does not depend on parts of this repo that are not shipping | counting is **evidence, not a verdict** — see below |
-| **C4** | **Supportable** — a stranger can install it, use it, and recover from failure without the author | ⛔ **not countable** — this is what the install experiment is for, graded against **D9**'s stated support bar (§4d) |
+| **C4** | **Supportable** — a stranger can install it, use it, and recover from failure without the author | ⛔ **not countable** — this is what the install experiment is for. ⟳ It is **NOT** graded against D9 (r3 CODEX M1): see §4d |
 | **C5** | ⭐ **Redistributable** — we are permitted to publish it, and it contains nothing that must not be published | ⛔ **not countable, and NOT YET ANSWERABLE** — see below |
 
 ⭐ **C5 IS NEW, AND NOBODY HAD ASKED IT (r2 CLAUDE M10).** D1 commits to *"public strangers, full
@@ -309,7 +317,7 @@ how a non-path reference is recognised.
 |---|---|---|
 | `entry-point` | invokes it directly | per component, by the install experiment |
 | `library` | never invokes it; it is a dependency of an entry-point | **inherited** — but only under the rules below |
-| `data` | supplies content (e.g. the memory corpus) | **C4 is STRUCK, not graded** — the component is graded against C1–C3 only, and §4b's completeness rule is satisfied by a struck C4 rather than by a grade (r2 CLAUDE M5) |
+| `data` | supplies content (e.g. the memory corpus) | **C4 is STRUCK, not graded** — §4b's completeness rule is satisfied by a struck C4 rather than by a grade (r2 CLAUDE M5). ⟳ **C5 IS NOT STRUCK WITH IT (r3 CODEX M2):** the earlier wording said *"graded against C1–C3 only"*, which exempted a `data` component from the one criterion added **for** it — a corpus can pass C1–C3 and still hold material we may not redistribute. A `data` component is graded **C1–C3 and C5** |
 
 ⚠ **A component may hold BOTH `entry-point` and `library`** — a module that is executable *and*
 imported is not a third role, it carries two, and is assessed as an entry-point while also supplying
@@ -325,6 +333,7 @@ is undefined the moment there is more than one, and silently wrong when there ar
 | imported by a **mix** of passing and failing entry-points | ⛔ **inherits the failure ONLY IF the failure is ATTRIBUTED TO CODE IN THAT LIBRARY** — the entry-point's failure trace reaches it. A failure attributed elsewhere (an absent credential, a missing host binary) leaves the library on the passing importers' evidence |
 | imported only by entry-points that are themselves `argued` | the library is **`argued`** — not `inherited` (there is no measured scenario to inherit) and not `none` (something was established) |
 | imported by **no** entry-point | **no inheritance is possible** — grade `none`. ⚠ An orphan library is also a scope question: ask why it is shipping at all |
+| imported by entry-points that **all** fail | ⟳ **ADDED BY r3 CODEX M3 — the table covered every population but this one.** Apply the same attribution test: a failure **attributed to code in this library** makes it a measured failing component, graded `measured` with that defect named. A failure attributed elsewhere leaves it with **no measured scenario at all** — `argued` if its importers were argued, otherwise `none`. ⛔ **Do NOT read `inherited` here:** `inherited` is defined through a *successful* named scenario, so applying it literally to an all-failing population returns `none` and discards measured fault evidence |
 | part of an **import cycle** | graded by the entry-points at the cycle's boundary; a cycle with no entry-point outside it is `none` |
 
 ⛔ **WHY THE IMPLICATION TEST IS LOAD-BEARING, MEASURED ON THE FILE THIS TABLE WAS ADDED TO RESCUE
@@ -375,28 +384,32 @@ being resolved against the CALLER'S working directory instead of against the pac
 
 | Option | What it does to the measured failure | Verdict |
 |---|---|---|
-| a unique name (`comprehensibility_scripts/`) | turns a **silent wrong-neighbour run** into a **loud missing-file error** | a real improvement, but **not a fix** — still CWD-relative |
+| a unique name (`comprehensibility_scripts/`) | ⟳ **nothing that was measured** (r3 CODEX B1). The failure is *already* loud in both repos — 4 of 4 exit 2. A unique name would only matter against a **file-name** collision, and neither repo has one | an improvement against an **unobserved** case, and still **not a fix** — CWD-relative either way |
 | a user-configurable path | moves the failure to setup time, and adds a config file to ship, document and get wrong | **rejected** — more surface, same class |
 | ⭐ **`${CLAUDE_PLUGIN_ROOT}/scripts/…`** | the package resolves **its own** location; the CWD stops mattering | ⭐ **the fix.** No new name, no user configuration, already the ecosystem convention |
 
-⚠ **Measured: our suite uses `${CLAUDE_PLUGIN_ROOT}` NOWHERE.** Every one of the three invocations is
-CWD-relative, which is exactly why a stranger's `scripts/` can answer instead.
+⚠ **Measured: our suite uses `${CLAUDE_PLUGIN_ROOT}` NOWHERE.** Every one of the three invocations
+is CWD-relative, so what answers them is whatever the caller's working directory holds — which in
+both repositories measured is **nothing, loudly** (§6, as corrected by r3).
 
 ⛔ **FIXING IT REMAINS OUT OF SCOPE (§7 repairs nothing, by D2 and the owner's option A) — but the
 inventory must now record the defect WITH its known fix**, because *“C3 blocker, remedy unknown”* and
 *“C3 blocker, one-line remedy already conventional”* are different verdicts for a reader deciding
 what to do next.
 
-⭐ **AND THIS IS THE FIRST CONCRETE `harvest: practice` ENTRY (D6, §4c):** *a shipped package resolves
-its own files from its own location, never from the caller's working directory — and a path that is
-merely renamed to be unusual still fails, it just fails loudly instead of silently.* That travels to
-any packaging ecosystem, which is what D6 exists to capture.
+⭐ **AND THIS IS THE FIRST CONCRETE `harvest: practice` ENTRY (D6, §4c):** *a shipped package
+resolves its own files from its own location, never from the caller's working directory — and
+renaming the directory does not fix it, because the resolution is what is wrong, not the name.*
+⟳ The entry's earlier second clause (*"it just fails loudly instead of silently"*) is **struck**: it
+priced an outcome r3 CODEX B1 showed had never been measured. That travels to any packaging
+ecosystem, which is what D6 exists to capture.
 
 - ⛔ **AND "the problem is concentrated in one file" IS FALSE (r1 CLAUDE H5).**
   `.agents/skills/shared/explainer-delivery.md` scores **0** under the vocabulary detector — and
   carries **three repo-relative `python3 scripts/...` invocations** resolved from the caller's CWD.
   It is the contract **all four** page-producing skills route through, so in a stranger's repo those
-  resolve to nothing, or to an unrelated neighbour's `scripts/`. That is a C3/C4 blocker for every
+  resolve to nothing — measured, 4 of 4, exit 2 (§6) — or, should a neighbour ever hold a file of
+  the same name, to that file. ⚠ Only the first of those two has been observed. That is a C3/C4 blocker for every
   component of effort (3), and it sits in the file this spec previously presented as the good news.
   The existing measurement is C2-only; "concentrated in one file" is a C3 conclusion that a C2
   measurement cannot support.
@@ -545,18 +558,40 @@ best-effort support C4 matters *more*, because documentation is the only channel
   because it acquires a recurring obligation from strangers on their schedule, and a missed window is
   a broken promise rather than an unmet hope.
 
-⛔ **D9 IS A GATE, NOT A SENTENCE OF INTENT, SO IT NAMES WHAT MAKES IT FAIL.** A component cannot be
-`SHIP` while the published package contradicts the stated policy. **The failing observation: a
-release of the published package carrying no version tag, or a version tag with no `CHANGELOG`
-entry.** Either one is checkable by looking at the release, and under A they are the *whole* of what
-was promised — so breaking them is not a shortfall against an aspiration, it is the only promise
-there was.
+⛔ **D9 NAMES WHAT MAKES IT FAIL — AND THE FIRST VERSION NAMED ONLY TWO OF ITS THREE PROMISES
+(r3 CODEX M1).** It said *"a release with no version tag, or a tag with no `CHANGELOG` entry"* and
+called those two *"the whole promise"*. They are not: the table above also promises **a major bump
+for a breaking change**, and a release can satisfy both stated observations while breaking it. The
+counterexample is one line — `1.2.0`, tagged, with a changelog entry, carrying a breaking change.
 
-⚠ **Bound, stated rather than hidden:** the tag-and-changelog mechanics belong to the **published**
-marketplace repository, whose creation §10 defers. **So D9 constrains publication, and PR 1 delivers
-only the stated bar itself** — this spec's §4d, and C4 graded against it. ⛔ **PR 1 does not produce
-a `CHANGELOG`, a tag, or a release**, and reading it as doing so would make an unmeetable deliverable
-out of a decision.
+**The failing observations, all three, each checkable by looking at a release:**
+
+| # | Observation that fails D9 |
+|---|---|
+| 1 | a release with **no version tag** |
+| 2 | a version tag with **no `CHANGELOG` entry** |
+| 3 | ⟳ a release containing a **breaking change without a major-version bump** |
+
+⛔ **AND D9 IS NOT C4'S GRADING PREDICATE. THAT CLAIM IS WITHDRAWN (r3 CODEX M1), AND THE THREE
+CASES THAT KILL IT ARE WORTH KEEPING:**
+
+- compliant versioning, but recovery instructions that say *"contact the author"* → **passes D9,
+  fails C4**;
+- working independent recovery, but no version tag → **passes C4, fails D9**;
+- so the two vary independently, and a predicate that can be satisfied while the thing it supposedly
+  grades fails is not a predicate.
+
+⭐ **What survives, and it is the half that was worth asking:** *best-effort response timing does not
+weaken C4.* Independent recovery stays gradeable precisely **because** no help is promised — the
+documentation is the only channel a stranger has, which raises C4's importance rather than lowering
+its bar.
+
+⛔ **AND WITHIN PR 1, D9 CANNOT BE OBSERVED AT ALL — SO IT IS A DEFERRED PUBLICATION REQUIREMENT,
+NOT A MILESTONE GATE, AND CALLING IT A GATE HERE WAS THE SAME MISTAKE IN SMALLER TYPE.** §10 defers
+the published marketplace repository, and all three failing observations are observations **about a
+release**. PR 1 produces no release, no tag and no `CHANGELOG`, so **none of the three can fire
+inside this milestone.** D9 becomes checkable at the moment of first publication, and what PR 1
+owes is the stated bar itself — §4d, and nothing more.
 
 ## 5. The scan — `scripts/check-publishability.py`
 
@@ -584,8 +619,21 @@ manifest, a caller, and no fail-open handler.
    component need an entry in host configuration, a hook registration, a `PATH` entry, or a plugin
    manifest stanza in order to do anything at all?* The four regen hooks and the recall hook are
    inert without a `settings.json` stanza a stranger does not have, and that dependency is invisible
-   to every outward-looking detector. **The check is cheap:** a component with no importer and no
-   invoker must declare what registers it, or it is `NEEDS-WORK` with that named defect.
+   to every outward-looking detector.
+
+   ⟳ **THE PREDICATE IS NOT "HAS NO INVOKER" (r3 CODEX M4, which gave it a case in each
+   direction).** The first version read *a component with no importer and no invoker must declare
+   what registers it*. Invocation and required registration are different properties:
+
+   | | The case | Why the first predicate got it wrong |
+   |---|---|---|
+   | **false negative** | a hook invoked by its own self-test, but missing its production `settings.json` stanza | it *has* an invoker, so the predicate never asks for the registration that is actually absent |
+   | **false positive** | a documented standalone CLI whose caller is the **user** | no in-repo importer or invoker, yet it needs no host registration at all |
+
+   ⛔ **So the predicate is: a component that requires a host registration in order to do anything
+   must declare it** — and the detector decides *requires* from how it is reached in production, not
+   from whether any caller exists. A **test-only** invoker does not discharge it; a component whose
+   production caller is a person needs no registration and is not flagged.
 
 ⛔ **THE SCANNED REGION IS STATED, because the choice alone flips a verdict (r1 CLAUDE H4).**
 
@@ -794,10 +842,22 @@ then a 500 on first live press).
    (`docs/backlog.md`, `docs/roadmap-to-launch.md`, `docs/reviews/`, `docs/superpowers/`), and
    neither has a `.claude/` directory. So the hollow-page failure (§6's pass condition) is the
    *expected* outcome in a real repo, not an edge case.
-2. ⛔ **BOTH HAVE A `scripts/` DIRECTORY.** `explainer-delivery.md`'s three CWD-relative
-   `python3 scripts/…` invocations therefore resolve to **their** `scripts/`, not to ours — so the
-   coupling does not fail loudly, it **silently runs the wrong neighbour's file**. That is strictly
-   worse than a missing file, and it is the case `hardcode-only-what-fails-loudly` names.
+2. ⟳ **CORRECTED 2026-10-16 BY ROUND 3 (CODEX B1), WHICH REFUTED THIS ITEM'S FIRST VERSION — and
+   the refutation is worth more than the claim was.** It read: *both have a `scripts/` directory,
+   so the three CWD-relative invocations silently run the wrong neighbour's file, which is strictly
+   worse than a missing file.* ⛔ **THE SECOND HALF WAS NEVER OBSERVED.** Both repositories do have
+   a `scripts/` directory — and **neither contains either target file.**
+
+   **Re-measured 2026-10-16 from inside each clone** (`omc` at `679b418`, `openai-codex` at
+   `807e03a`), running `brief-compose.py` and `explainer-serve.py` in each — **4 of 4 exit `2`**
+   with `can't open file …: [Errno 2] No such file or directory`.
+
+   **So what is measured is a LOUD failure in both real repositories.** A silent wrong-neighbour
+   run needs a collision at the **file** name, not at the directory name, and neither repository
+   has one. The mechanism is unchanged and so is the remedy — a CWD-relative path is answered by
+   whatever the caller's working directory holds — but ⛔ **a possible failure class was written
+   down as a measured result, and `hardcode-only-what-fails-loudly` was cited for a case that had
+   not happened. That is the defect this whole spec exists to find, committed by the spec.**
 
 ⚠ **A tier-B CONSTRAINT, stated so it is not discovered late:** both are **shallow clones (1
 commit)**, so every ground-truth item that reasons over git history is unsatisfiable there for a
@@ -823,18 +883,19 @@ and is a candidate follow-up if either survives.
 
 ## 7. What PR 1 produces
 
-0. ⭐ **A packaging spike, BEFORE the scan is written (added by r1 CLAUDE M5, r1 CODEX 10).** One
-   skill and one script, packaged into a throwaway local marketplace, installed under a fresh `HOME`
-   and invoked from an unrelated directory. It discharges D3's packaging assumption (§2) and builds
-   the isolated environment §6 needs. ⛔ **If it fails, D4 is unachievable and §9's third falsifier
-   has fired** — so it runs first, when that is still cheap to act on.
-1. This spec, reviewed and committed.
 0b. ⭐ **The ISOLATION BASELINE, written before the spike runs (added by r2 CLAUDE H2).** A document
    naming the interpreter version, the package set, the available commands, the network policy, and
    **what the capture mechanism cannot observe**. ⛔ **§6 REQUIRED a baseline and nothing produced
    one** — which is round 1's Blocking B3 (*"§5 requires a declared shipping set; nothing in §7
-   produces one"*) recurring one round later in the same pair of sections. It precedes item 0 because
-   the spike is the first thing that needs an environment to run in.
+   produces one"*) recurring one round later in the same pair of sections. It is **first**, because
+   the spike is the first thing that needs an environment to run in. ⟳ It is also now *printed*
+   first: it claimed to precede item 0 while appearing after it, and the list carried **two** copies
+   of item 1 as a result (found while folding r3).
+0. ⭐ **A packaging spike, BEFORE the scan is written (added by r1 CLAUDE M5, r1 CODEX 10).** One
+   skill and one script, packaged into a throwaway local marketplace, installed under a fresh `HOME`
+   and invoked from an unrelated directory. It discharges D3's packaging assumption (§2) and builds
+   the isolated environment §6 needs. ⛔ **If it fails, D4 is unachievable and §9's third falsifier
+   has fired** — so it runs early, when that is still cheap to act on.
 1. This spec, reviewed and committed.
 2. ⭐ **The shipping-set declaration (added by r1 CLAUDE B3, r1 CODEX 2)** — per publishable unit,
    as **data the scan reads**, listing member files with symlinks resolved and an expected file
@@ -849,8 +910,12 @@ and is a candidate follow-up if either survives.
    the condition §5 warns about, with no gate on the inference.
 3. `scripts/check-publishability.py` + `--self-test` + mutation manifest + CI registration,
    **including the empty-set mutation §5 requires.**
-4. The install-experiment record: failures found, which the scan predicted, **and every resource the
-   run touched** (§6).
+4. The install-experiment record: failures found, which the scan predicted, and — ⟳ **CORRECTED by
+   r3 CODEX M6** — **the resource record the capture mechanism of §6 can actually produce, together
+   with what that mechanism cannot see.** The earlier wording demanded *"every resource the run
+   touched"*, which is the exhaustive requirement **§6 explicitly retired** as *"an
+   aspiration with no implementation"*; restoring it here made the two sections impossible to
+   satisfy at once. ⚠ An unobservable access is **declared unobservable**, never counted as absent.
 5. **The inventory** — every component of all three efforts with its **role**, its `SHIP` /
    `NEEDS-WORK` / `DON'T-SHIP` verdict, and its evidence. ⚠ Components whose C4 rests on argument
    rather than the experiment are labelled as such (§6's bound).
@@ -859,17 +924,36 @@ and is a candidate follow-up if either survives.
    pass nor a component the experiment simply never reached (`argued`) generates a row. **A row means
    a defect someone can act on**, which is what the original rule produced phantom entries against.
 7. `docs/anchors.md` — `harness-ships-elsewhere` registered, claimed by this document. **Closes row 290.**
-8. Corrections to `portable-practices.md`'s three stale claims (§3 above) — **the line-count one
-   recorded as a decayed dated count, not as a recalled figure** (r1 CLAUDE H1).
-   ⭐ **D8 — THEY LAND IN THIS PR, NOT IN A SEPARATE ONE. Decided 2026-10-16 by the owner**, asked
-   through the walkthrough page: *"yes, fix in here."* The reason is that **the inventory is what
-   discovered them**, and a correction separated from the evidence that found it tends not to land.
-   ⛔ **THE COUNTER WAS REAL, SO IT IS BOUNDED RATHER THAN WAVED THROUGH.** The objection: if this
-   milestone stalls, three known-wrong sentences stay published for exactly as long as it does. All
-   three are **docs-only factual repairs that depend on nothing else in PR 1**, so they go in as its
-   **first commit** and are mergeable alone. **The observation that makes this bound FAIL: PR 1 is
-   open and any of the three corrections is not yet committed.** At that point the stall risk the
-   owner accepted is live and the corrections should be split out into their own PR.
+8. Corrections to `portable-practices.md` — ⟳ **SUBJECT REPLACED 2026-10-16 by round 3 (CODEX B2),
+   AND THE DECISION ABOVE IT SURVIVES THE REPLACEMENT.**
+
+   ⭐ **D8 — A CORRECTION LANDS WITH THE WORK THAT FOUND IT, NOT IN A SEPARATE PR. Decided
+   2026-10-16 by the owner**, asked through the walkthrough page: *"yes, fix in here."* The reason
+   is that **the inventory is what discovers them**, and a correction separated from the evidence
+   that found it tends not to land.
+
+   ⛔ **BUT THE THREE CLAIMS IT WAS DECIDED ABOUT WERE ALREADY FIXED** — in `b200f2cf` (PR #377),
+   merged to master and present on this branch since its rebase (§3). **The owner answered a
+   question whose subject no longer existed**, which is recorded here rather than quietly repaired,
+   because *"the inventory found three stale claims"* was itself a stale claim. ⚠ D8 is a rule about
+   **placement**, so it is unaffected by which corrections are outstanding; only the list changes.
+
+   **What D8 actually delivers, both still present in the index today and both measured:**
+
+   | The index says | Why it is wrong | Measured against |
+   |---|---|---|
+   | the old figure *"undercounted its own subject by roughly 3x"* | **3x is a CROSS-SET ratio.** The subject of `3,599` was the **nine** enumerated files, which are **6,525** today — **1.81x**. The ~11,000 is a **different and larger set** (17 components), and §3 forbids comparing the two without saying so | §3's own three-stage table |
+   | *"The problem is concentrated in one file"* | already **measured false** — `explainer-delivery.md` scores **0** on the vocabulary detector and still carries three CWD-relative invocations, so the C3 defect is in the file presented as the good news | §4 (r1 CLAUDE H5) |
+
+   ⚠ **Both are one-line repairs, and the second is a C3 conclusion a C2 measurement cannot support**
+   — which is the same confusion §4 records, appearing once more in the index.
+
+   ⛔ **THE COUNTER THE OWNER WEIGHED WAS REAL, SO THE BOUND STANDS, AGAINST THE NEW LIST.** The
+   objection: if this milestone stalls, known-wrong sentences stay published for as long as it does.
+   Both repairs are **docs-only and depend on nothing else in PR 1**, so they go in as
+   its **first commit** and are mergeable alone. **The observation that makes this bound FAIL: PR 1 open with
+   either correction not yet committed.** At that point the stall risk the owner accepted is live
+   and the corrections should be split into their own PR.
 9. The scoring rubric as a `portable-practices.md` entry — a reusable publishability test is itself a
    D2 contribution, and this milestone is the measurement that earns it.
 9b. ⭐ **THE HARVEST (D6, §4c)** — for every component, a `harvest` field, and for every
@@ -912,9 +996,11 @@ specifically to keep evaluation independent of repair.
   that **this artifact** can travel it (r1 CLAUDE M5, r1 CODEX 10).
 - **For this spec:** if the install experiment cannot be made to run at all, D4 is unachievable and the
   method must be re-decided with the owner rather than silently downgraded to paper scoring.
-- **For D9's support bar (§4d):** a release of the published package with no version tag, or a tag
-  with no `CHANGELOG` entry — under best-effort support those two are the entire promise, so either
-  one falsifies the policy rather than merely falling short of it.
+- **For D9's support bar (§4d):** a release of the published package with **no version tag**, a tag
+  with **no `CHANGELOG` entry**, or ⟳ **a breaking change with no major-version bump** (r3 CODEX M1
+  — the third promise, missing from the first version of this bullet). ⚠ **All three are
+  observations about a RELEASE, and PR 1 produces none**, so this falsifier becomes checkable at
+  first publication and cannot fire inside this milestone.
 
 ## 9b. What the spec self-review caught in this document
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Refuse a document set where one rule is stated in several places and the fold updated only some.
 
-    python3 scripts/check-claim-propagation.py --self-test # 31 cases against synthetic trees
+    python3 scripts/check-claim-propagation.py --self-test # 45 cases against synthetic trees
 
 WHY THIS EXISTS
 ---------------
@@ -107,6 +107,17 @@ RETIRED: list[dict] = [
         "why": "r1 CLAUDE B2: the failure that matters is a degraded result, not a blocker",
         "sites": [SPEC, PAGE],
     },
+    {
+        "id": "licence-blocks-the-milestone",
+        "token": "blocks this milestone",
+        "why": ("the owner caught this overstatement on 2026-10-16: a missing licence blocks "
+                "PUBLISHING, which §10 defers, and never blocked the milestone. ⚠ Registered "
+                "2026-10-16 by r3 CODEX M5, which observed that D7 registers the LIVE claim "
+                "(MIT) and left the retired one unguarded — so the corrected overstatement "
+                "could be re-asserted with the gate green. It is absent from both documents "
+                "today; this entry keeps it that way"),
+        "sites": [SPEC, PAGE],
+    },
 ]
 
 # A live claim: its token must be present at EVERY site listed.
@@ -146,8 +157,10 @@ LIVE: list[dict] = [
         "why": ("D9, decided by the owner 2026-10-16 by selection card: best-effort, versioned. "
                 "⚠ The token is the FALSIFIER, because under best-effort support the tag and the "
                 "changelog are the whole promise — a bar whose failing observation is dropped from "
-                "either site stops being a gate. ⚠ It must stay on ONE LINE at both sites: this "
-                "guard tests a raw substring, and the page's first wording wrapped mid-phrase"),
+                "either site stops being a gate. ⟳ This entry used to warn that the phrase must "
+                "stay on ONE LINE, because the match was a raw substring. It no longer has to: "
+                "`flat()` normalises whitespace, after that warning was ignored by the author "
+                "within the hour"),
         "sites": [SPEC, PAGE],
     },
     {
@@ -190,6 +203,26 @@ LIVE: list[dict] = [
     },
 ]
 
+def audited_sites(sites: list[str]) -> list[str]:
+    """Expand a registration to the paths that must actually agree.
+
+    ⛔ `PAGE` is the hand-edited fragment; `PAGE_HTML` is what `brief-compose.py` produces from it
+    and **the only file a reader ever opens**. r3 CODEX H3: `PAGE_HTML` was defined, written by
+    this suite's own fixture, and named by ZERO claims — so a token could reach the fragment and
+    miss the served page, and the guard built to catch a dropped site was blind to the one site
+    that matters. Measured the same day by the author, who committed exactly that drift: a reflow
+    landed in the fragment and the page was never recomposed.
+
+    ⚠ DERIVED, never listed. Adding `PAGE_HTML` to each registration by hand rebuilds the recall
+    failure that `page_for` had already paid for once in this very file — a new claim would forget
+    it, and forgetting is the defect, not the typing.
+    """
+    out = list(sites)
+    if PAGE in out and PAGE_HTML not in out:
+        out.append(PAGE_HTML)
+    return out
+
+
 # Derived figures: an element carrying data-derived="<key>" whose text must equal a computed value.
 DERIVED: list[dict] = [
     {
@@ -201,6 +234,15 @@ DERIVED: list[dict] = [
     },
 ]
 
+# ⚠ WHY THE ABSENT-PATH CHECK (r3 CODEX H1) CARRIES NO MUTATION ENTRY, STATED RATHER THAN HIDDEN.
+# Three of round 3's four High findings got one; this one cannot have a usable one. Every way to
+# disable the check leaves the code below reading a file that is not there, so the mutation dies as
+# `FileNotFoundError` instead of failing the case it names — *a crash forging a `[FAIL]`*, which
+# this file has already paid for once. Measured: `if absent_paths:` → `if False:` ends the suite in
+# a traceback, and the named case never prints. ⭐ That is a property of the fix, not a gap in it —
+# the check cannot be removed without the guard failing loudly — and the falsifier is the pair of
+# self-test cases above, which do fail if absence is ever noted-and-skipped again.
+#
 # ⛔ Stated in the code, not only in the docstring: this registry is a floor, not a closure.
 # A rule restated in words no token above matches is invisible to this guard.
 REGISTRY_IS_INCOMPLETE = True
@@ -236,9 +278,24 @@ class _Blocks(html.parser.HTMLParser):
         "area base br col embed hr img input link meta param source track wbr".split()
     )
 
+    # ⛔ TEXT IS ACCUMULATED PER BLOCK, NOT PER TEXT NODE (r3 CODEX H4). Matching per node means
+    # ordinary inline markup HIDES a registered claim: measured, "<p>A library inherits its
+    # support verdict from the entry-points.</p>" scored (asserted=1, quoted=0) while the same
+    # sentence with <em>support verdict</em> scored (0, 0) — identical to a reader, invisible to
+    # the guard. Blocks are the unit the markdown path already uses, so the two now agree.
+    BLOCK = frozenset(
+        "p div li td th tr table h1 h2 h3 h4 h5 h6 section article blockquote pre "
+        "ul ol dl dt dd header footer main aside figure figcaption".split()
+    )
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.stack: list[tuple[str, dict]] = []
+        # (text, classes-seen) per block, in document order. `classes` is the union over every
+        # element open at any moment this block emitted text — so `<span class="note">` inside a
+        # plain <p> still exempts, which per-node matching got right and a block's own attributes
+        # alone would lose. Measured: the page carries 7 such spans.
+        self.blocks: list[dict] = []
         self.nodes: list[tuple[str, list[tuple[str, dict]]]] = []
         # key -> accumulated text, taken ONLY from nodes whose open-element chain still
         # contains the carrying element. Keyed first-wins so a later stray cannot overwrite.
@@ -246,6 +303,8 @@ class _Blocks(html.parser.HTMLParser):
 
     def handle_starttag(self, tag, attrs):  # noqa: D102
         a = {k: (v if v is not None else "") for k, v in attrs}
+        if tag.lower() in self.BLOCK:
+            self.blocks.append({"text": "", "classes": "", "depth": len(self.stack)})
         if tag.lower() not in self.VOID:
             self.stack.append((tag, a))
 
@@ -264,6 +323,12 @@ class _Blocks(html.parser.HTMLParser):
         if not data.strip():
             return
         self.nodes.append((data, list(self.stack)))
+        if not self.blocks:
+            # text outside any block element is its own block
+            self.blocks.append({"text": "", "classes": "", "depth": 0})
+        blk = self.blocks[-1]
+        blk["text"] += data
+        blk["classes"] += " " + " ".join(a.get("class", "") for _, a in self.stack)
         for _, a in self.stack:
             key = a.get("data-derived")
             if key:
@@ -276,28 +341,55 @@ def _markdown_blocks(text: str) -> list[str]:
     return [b for b in re.split(r"\n\s*\n", text) if b.strip()]
 
 
+def flat(s: str) -> str:
+    """Collapse every run of whitespace to one space.
+
+    ⛔ WHY MATCHING IS WHITESPACE-INSENSITIVE. A registered token is a phrase, and a phrase gets
+    broken by reflowing a paragraph — which is editing, not a change of meaning. Measured twice in
+    one session on 2026-10-16: `'no version tag'` went missing from the page because the sentence
+    wrapped between `with` and `no`, and `'first commit'` went missing from the spec the same way
+    an hour later. Both times the guard was right that the token was absent and wrong about what
+    that meant. ⚠ This is the same defect as r3 CODEX H4 one layer down: there, inline markup split
+    the phrase; here, a newline did. A claim that disappears when someone rewraps a line is not a
+    claim this guard can hold anyone to.
+    """
+    return " ".join(s.split())
+
+
 def _html_occurrences(text: str, token: str) -> tuple[int, int]:
-    """Return (asserted, quoted) counts for `token` in an HTML fragment."""
+    """Return (asserted, quoted) counts for `token` in an HTML fragment.
+
+    ⚠ A block, not a text node, is the unit — see `_Blocks.BLOCK`. One consequence is stated
+    rather than left to be discovered: a retirement marker ANYWHERE in a block now exempts the
+    whole block, exactly as `_markdown_occurrences` has always behaved per markdown block. That
+    is a wider exemption than per-node matching gave, and it is the price of not being defeated
+    by an `<em>`. The blocks here are `<p>`-sized, and the alternative — a claim that disappears
+    when someone bolds two words of it — is the failure that was measured.
+    """
     p = _Blocks()
     p.feed(text)
     asserted = quoted = 0
-    for data, chain in p.nodes:
-        if token not in data:
+    needle = flat(token)
+    for blk in p.blocks:
+        data = flat(blk["text"])
+        if needle not in data:
             continue
-        classes = " ".join(a.get("class", "") for _, a in chain)
-        if "note" in classes or any(m in data for m in RETIREMENT_MARKERS):
-            quoted += 1
+        hits = data.count(needle)
+        if "note" in blk["classes"] or any(m in data for m in RETIREMENT_MARKERS):
+            quoted += hits
         else:
-            asserted += 1
+            asserted += hits
     return asserted, quoted
 
 
 def _markdown_occurrences(text: str, token: str) -> tuple[int, int]:
     asserted = quoted = 0
-    for block in _markdown_blocks(text):
-        if token not in block:
+    needle = flat(token)
+    for raw in _markdown_blocks(text):
+        block = flat(raw)
+        if needle not in block:
             continue
-        hits = block.count(token)
+        hits = block.count(needle)
         if any(m in block for m in RETIREMENT_MARKERS):
             quoted += hits
         else:
@@ -326,19 +418,29 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
     problems: list[str] = []
     notes: list[str] = []
 
-    wanted = {s for c in RETIRED + LIVE for s in c["sites"]}
-    wanted |= {d["page"] for d in DERIVED} | {d["source"] for d in DERIVED}
-    missing = sorted(s for s in wanted if not (root / s).is_file())
-    present = sorted(wanted - set(missing))
+    wanted = {s for c in RETIRED + LIVE for s in audited_sites(c["sites"])}
+    wanted |= {p for d in DERIVED for p in audited_sites([d["page"]])}
+    wanted |= {d["source"] for d in DERIVED}
+    absent_paths = sorted(s for s in wanted if not (root / s).is_file())
 
-    if not present:
+    # ⛔ AN ABSENT REGISTERED PATH IS CANNOT RUN, NEVER A NOTE (r3 CODEX H1). The first version
+    # noted each absent path and skipped it everywhere below, so DELETING a registered document
+    # produced `problems == []` and an exit of 0: the live-claim denominator and the derived-figure
+    # check both quietly got smaller, and the guard reported success about a document that was
+    # gone. Measured by the reviewer against the real spec with the fragment removed.
+    # ⚠ The consequence is deliberate: if these documents are ever renamed or archived, this gate
+    # goes red and the registry has to be updated with them. A guard whose subject has vanished
+    # must not be the thing that stays quiet.
+    if absent_paths:
+        all_gone = len(absent_paths) == len(wanted)
         raise CannotRun(
-            "no registered document exists under "
-            f"{root} — every one of {len(wanted)} registered path(s) is absent, so a clean "
-            "result here would be a zero over nothing"
+            f"{len(absent_paths)} of {len(wanted)} registered path(s) absent under {root}: "
+            + ", ".join(absent_paths)
+            + ("\n      every registered path is absent, so a clean result would be a zero over "
+               "nothing" if all_gone else
+               "\n      a site that is not there cannot be compared with the sites that are, so "
+               "this is NOT CHECKED rather than clean")
         )
-    for m in missing:
-        notes.append(f"registered path absent, not audited: {m}")
 
     cache: dict[str, str] = {}
 
@@ -349,9 +451,7 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
 
     # 1 — retired claims must not be asserted
     for claim in RETIRED:
-        for site in claim["sites"]:
-            if site in missing:
-                continue
+        for site in audited_sites(claim["sites"]):
             text = read(site)
             fn = _html_occurrences if _is_html(site) else _markdown_occurrences
             asserted, quoted = fn(text, claim["token"])
@@ -370,10 +470,10 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
 
     # 2 — live claims must reach every declared site
     for claim in LIVE:
-        absent = [
-            s for s in claim["sites"] if s not in missing and claim["token"] not in read(s)
-        ]
-        auditable = [s for s in claim["sites"] if s not in missing]
+        # No `missing` filter: every registered path is proved present above, or we raised.
+        sites = audited_sites(claim["sites"])
+        absent = [s for s in sites if flat(claim["token"]) not in flat(read(s))]
+        auditable = sites
         if absent and len(absent) < len(auditable):
             problems.append(
                 f"LIVE claim reached only some of its sites: {claim['id']} — "
@@ -389,32 +489,35 @@ def audit(root: pathlib.Path) -> tuple[list[str], list[str]]:
             )
 
     # 3 — derived figures must agree with their source
+    # ⚠ Each derived figure is checked in the fragment AND in the served page composed from it
+    # (r3 CODEX H3). `page` is what every message names, so a failure says which of the two is
+    # wrong — "the figure is stale" and "the page was never recomposed" are different repairs.
     for spec in DERIVED:
-        if spec["page"] in missing or spec["source"] in missing:
-            continue
-        found = _derived_values(read(spec["page"]))
-        if spec["key"] not in found:
-            problems.append(
-                f"DERIVED figure absent: the page declares no "
-                f'data-derived="{spec["key"]}" element in {spec["page"]}\n'
-                f"      it must be present and correct, not hand-written: {spec['why']}"
-            )
-            continue
         if spec["compute"] != "line-count-of":
             raise CannotRun(f"unknown compute rule {spec['compute']!r}")
         actual = len(read(spec["source"]).splitlines())
-        claimed_raw = found[spec["key"]]
-        digits = re.sub(r"[^0-9]", "", claimed_raw)
-        if not digits:
-            problems.append(
-                f"DERIVED figure is not a number: {spec['key']} reads {claimed_raw!r}"
-            )
-        elif int(digits) != actual:
-            problems.append(
-                f"DERIVED figure disagrees with its source: {spec['key']} says "
-                f"{int(digits)}, {spec['source']} has {actual} lines\n"
-                f"      {spec['why']}"
-            )
+        for page in audited_sites([spec["page"]]):
+            found = _derived_values(read(page))
+            if spec["key"] not in found:
+                problems.append(
+                    f"DERIVED figure absent: the page declares no "
+                    f'data-derived="{spec["key"]}" element in {page}\n'
+                    f"      it must be present and correct, not hand-written: {spec['why']}"
+                )
+                continue
+            claimed_raw = found[spec["key"]]
+            digits = re.sub(r"[^0-9]", "", claimed_raw)
+            if not digits:
+                problems.append(
+                    f"DERIVED figure is not a number: {spec['key']} reads {claimed_raw!r} "
+                    f"in {page}"
+                )
+            elif int(digits) != actual:
+                problems.append(
+                    f"DERIVED figure disagrees with its source: {spec['key']} says "
+                    f"{int(digits)} in {page}, {spec['source']} has {actual} lines\n"
+                    f"      {spec['why']}"
+                )
 
     return problems, notes
 
@@ -453,6 +556,17 @@ def _self_test() -> int:
         (0, 1),
     )
     case("md: absent token is neither", _markdown_occurrences("nothing here\n", tok), (0, 0))
+    # ⛔ THE WRAP TRAP, WHICH COST THE AUTHOR TWICE IN ONE SESSION. Both fixtures below say the
+    # same sentence; the second has a newline inside the phrase, which is what rewrapping a
+    # paragraph does. Before `flat()` the second scored (0, 0) — the guard reported a claim
+    # missing because a line had been reflowed.
+    wrapped_md = "it said a library inherits its support\nverdict from the entry-points\n"
+    case("md: a token split by a LINE BREAK is still found",
+         _markdown_occurrences(wrapped_md, tok), (1, 0))
+    case("html: a token split by a LINE BREAK is still found",
+         _html_occurrences("<p>a library inherits its support\nverdict from the x</p>", tok),
+         (1, 0))
+
     case(
         "md: marker in a DIFFERENT block does not exempt",
         _markdown_occurrences("⟳ corrected elsewhere\n\n" + md_assert, tok),
@@ -474,6 +588,24 @@ def _self_test() -> int:
     case("html: bare <p> is an assertion", _html_occurrences(html_assert, tok), (1, 0))
     case("html: class=note is a quotation", _html_occurrences(html_note, tok), (0, 1))
     case("html: inline marker is a quotation", _html_occurrences(html_marked, tok), (0, 1))
+    # ⛔ THE SHAPE THAT HID A REGISTERED CLAIM (r3 CODEX H4). Both strings below render the same
+    # words to a reader; the second once scored (0, 0) because matching was per text node and
+    # `<em>` split the token in two. The pair is the falsifier: make matching per-node again and
+    # the second case fails while the first still passes, which is what makes it diagnostic.
+    html_split = "<p>a library inherits its <em>support verdict</em> from the entry-points</p>"
+    case("html: a bare assertion is asserted", _html_occurrences(html_assert, tok), (1, 0))
+    case(
+        "html: the SAME words split by inline markup are still asserted",
+        _html_occurrences(html_split, tok),
+        (1, 0),
+    )
+    # ⚠ and the fix must not cost the inline-class exemption: the page carries 7 of these, so a
+    # block-level rule that only read the block's OWN attributes would re-break them.
+    case(
+        "html: a note class on an INLINE span still exempts",
+        _html_occurrences('<p>x <span class="note">' + tok + "</span></p>", tok),
+        (0, 1),
+    )
     case(
         "html: nested inside a note ancestor is a quotation",
         _html_occurrences('<div class="note"><span><em>' + tok + "</em></span></div>", tok),
@@ -525,13 +657,16 @@ def _self_test() -> int:
     )
 
     # ── the audit, against synthetic trees
-    def tree(spec_text: str, page_text: str) -> pathlib.Path:
+    def tree(spec_text: str, page_text: str, html_text: str | None = None) -> pathlib.Path:
+        """`html_text` defaults to the fragment, which is what a recomposed page IS. Passing a
+        DIFFERENT one is how the served-page drift of r3 CODEX H3 is constructed."""
         d = pathlib.Path(tempfile.mkdtemp())
         (d / SPEC).parent.mkdir(parents=True, exist_ok=True)
         (d / PAGE).parent.mkdir(parents=True, exist_ok=True)
         (d / SPEC).write_text(spec_text, encoding="utf-8")
         (d / PAGE).write_text(page_text, encoding="utf-8")
-        (d / PAGE_HTML).write_text(page_text, encoding="utf-8")
+        (d / PAGE_HTML).write_text(page_text if html_text is None else html_text,
+                                   encoding="utf-8")
         return d
 
     live_tokens = "\n\n".join(c["token"] for c in LIVE)
@@ -572,12 +707,41 @@ def _self_test() -> int:
     probs, _ = audit(tree(quoted_spec, page_for(quoted_spec)))
     case("audit: a marked quotation is not a problem", probs, [])
 
-    # a LIVE token present at one site and removed from another
+    # ⚠ THIS CASE'S NAME ONCE OVERSOLD IT, AND THAT MATTERED (r3 CODEX H2). It drops `LIVE[0]`,
+    # which is registered at the SPEC ALONE, so what it exercises is ABSENT-EVERYWHERE — the
+    # `== len(auditable)` arm. It says nothing about partial propagation, which is the whole
+    # reason this guard exists. Measured: replacing the partial arm with `if False:` left the
+    # suite 34/34 GREEN. The two arms need two cases, and the pair below is that coverage.
     one_short = "\n\n".join(c["token"] for c in LIVE[1:]) + "\n"
     probs, _ = audit(tree(one_short, page_for(one_short)))
     case(
         "audit: a LIVE claim absent from all its sites is a problem",
         any("LIVE claim absent from ALL" in p for p in probs),
+        True,
+    )
+
+    # ⛔ THE CENTRAL BEHAVIOUR, PINNED AT LAST: present at one required site, absent at another.
+    # The subject is DERIVED — the first claim registered at both sites — so a registry edit
+    # cannot leave this case testing nothing. The spec keeps the token (clean_spec holds every
+    # live token), and only the page loses it, which is exactly a fold that updated one site.
+    both_sited = next(c for c in LIVE if PAGE in c["sites"] and SPEC in c["sites"])
+    page_minus = page_for(clean_spec).replace(both_sited["token"], "__FOLD_NEVER_REACHED_HERE__")
+    assert both_sited["token"] not in page_minus, "fixture failed to remove the token"
+    assert both_sited["token"] in clean_spec, "fixture lost the token from the spec too"
+    probs, _ = audit(tree(clean_spec, page_minus))
+    case(
+        "audit: a LIVE claim at the spec and NOT the page is a problem",
+        any("reached only some of its sites" in p for p in probs),
+        True,
+    )
+    case(
+        "audit: and it is reported as PARTIAL, not as absent everywhere",
+        any("absent from ALL" in p for p in probs),
+        False,
+    )
+    case(
+        "audit: and the problem NAMES the site the fold missed",
+        any(PAGE in p and "reached only some" in p for p in probs),
         True,
     )
 
@@ -609,6 +773,57 @@ def _self_test() -> int:
         case("audit: an empty tree raises CannotRun", "no raise", "CannotRun")
     except CannotRun:
         case("audit: an empty tree raises CannotRun", "CannotRun", "CannotRun")
+
+    # ⛔ ONE registered path absent is ALSO CannotRun — the case r3 CODEX H1 was filed against.
+    # The bug was not "an empty tree passes"; it was "a tree missing ONE document passes", and the
+    # empty-tree case above cannot see it, because with nothing present the old code raised for a
+    # different reason. These two cases are not interchangeable and the pair is the coverage.
+    partial = tree(clean_spec, page_for(clean_spec))
+    (partial / PAGE).unlink()
+    try:
+        audit(partial)
+        case("audit: ONE absent registered path raises CannotRun", "no raise", "CannotRun")
+    except CannotRun as exc:
+        case("audit: ONE absent registered path raises CannotRun", "CannotRun", "CannotRun")
+        case(
+            "audit: and it NAMES the path it could not read",
+            PAGE in str(exc),
+            True,
+        )
+        case(
+            "audit: and it does not claim everything is gone when one file is",
+            "every registered path is absent" in str(exc),
+            False,
+        )
+
+    # ⛔ THE SERVED PAGE IS AUDITED TOO (r3 CODEX H3). Without `audited_sites`, a token in the
+    # fragment and missing from the composed `.html` is invisible — and that is not hypothetical:
+    # the author committed exactly that drift on 2026-10-16, a reflow folded into the fragment
+    # with no recompose. These two cases fail if `audited_sites` ever stops expanding `PAGE`.
+    served_minus = page_for(clean_spec).replace(
+        both_sited["token"], "__NEVER_RECOMPOSED__"
+    )
+    probs, _ = audit(tree(clean_spec, page_for(clean_spec), served_minus))
+    case(
+        "audit: a token in the fragment and NOT the served page is a problem",
+        any("reached only some of its sites" in p for p in probs),
+        True,
+    )
+    case(
+        "audit: and the problem names the SERVED page, not the fragment",
+        any(PAGE_HTML in p for p in probs),
+        True,
+    )
+    # and the derived figure, which is composed into the served page the same way
+    probs, _ = audit(
+        tree(clean_spec, page_for(clean_spec),
+             '<strong data-derived="spec-lines">99999</strong>')
+    )
+    case(
+        "audit: a derived figure wrong ONLY in the served page is a problem",
+        any("DERIVED figure disagrees" in p and PAGE_HTML in p for p in probs),
+        True,
+    )
 
     # the registry must admit its own incompleteness
     case("registry declares itself incomplete", REGISTRY_IS_INCOMPLETE, True)
