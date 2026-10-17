@@ -255,7 +255,7 @@ The four components:
 | `scripts/recall-llm.py` — the semantic matcher | 2,550 | **`master`** |
 | `scripts/check-surface-recall.py` — the lexical matcher and its guard | 820 | `master` |
 | `.claude/hooks/surface-recall.sh` — the caller | 113 | `master` |
-| the memory corpus | 157 files | outside this repo |
+| the memory corpus | `git ls-tree -r --name-only HEAD -- docs/memory` piped to a count of `.md` files — **159** at HEAD, 157 on `master`. ⚠ r6 CLAUDE M7: that count INCLUDES the `MEMORY.md` index; the component's own producer `recall-llm.memory_files()` EXCLUDES it and returns **158**. Both are stated because the next reader would otherwise 'correct' one to the other — and for C5, which is about what is redistributed, the index is in scope | ⛔ **`docs/memory/`, TRACKED — and this repository is PUBLIC, so the corpus is ALREADY PUBLISHED.** This cell read *outside this repo* and that was false (r6 fold). It changes what C5 asks: not *may we publish this* but *is anything already public that should not be*. ⚠ r6 CLAUDE M7: the FILES are published; the HARNESS PATH is not — `recall-llm.memory_dir()` returns `None` in a clone, so a stranger gets the corpus as documents and no working recall |
 
 ⛔ **`scripts/recall-llm.py` IS ON `master`, NOT ON AN UNMERGED BRANCH**, and so are its callers and
 its mutation manifest (`scripts/mutations/recall-llm.json`; nine referencing files under `.claude/`
@@ -306,7 +306,7 @@ paragraph. Two sub-questions with different answers:
 | What | The question | Who answers it |
 |---|---|---|
 | the **code** | under what licence is it published? | ✅ **ANSWERED 2026-10-16: MIT** — see below |
-| the **corpus** (effort (1)'s 157 memory files) | does it contain private content, credentials, or third-party material we may not redistribute? | a **content review**, which nobody has done |
+| the **corpus** (effort (1)'s memory files — count derived by the §3 producer, **159** at HEAD) | does it contain private content, credentials, or third-party material we may not redistribute? | a **content review**, which nobody has done |
 
 ⭐ **D7 — THE CODE HALF IS SETTLED: MIT. Decided 2026-10-16 by the owner.** Chosen over Apache-2.0
 and over deferring. ⚠ The comparables were measured, not guessed: `Yeachan-Heo/oh-my-claudecode` ships
@@ -1057,7 +1057,7 @@ and is a candidate follow-up if either survives.
    upgrades a verdict. This is the deliverable that makes a `DON'T-SHIP` component still worth
    having evaluated.
 10. A dashboard entry.
-11. ⛔ **THE C5 CONTENT REVIEW OF EFFORT (1)'s 157 MEMORY FILES — THE OWNER'S, AND A DELIVERABLE
+11. ⛔ **THE C5 CONTENT REVIEW OF EFFORT (1)'s MEMORY FILES (159 at HEAD, 157 on `master`; the §3 row names the producer) — THE OWNER'S, AND A DELIVERABLE
    RATHER THAN A GAP (r3 CLAUDE H2).** Do those files hold private content, credentials, or
    third-party material that may not be redistributed? ⚠ **This cannot be delegated**: the judgement
    about what is private is the owner's, and nobody else can make it.

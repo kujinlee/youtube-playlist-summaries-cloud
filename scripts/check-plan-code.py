@@ -649,9 +649,14 @@ EXPECTED_MUTATIONS = {
     # ⟳⟳ 2026-10-17, r5 CODEX M3: 15 -> 18. Three surviving branches of `_Carriers` that no
     # case pinned — stripped accumulation, the VOID vocabulary beyond `img`, and an unmatched
     # end tag. The reviewer found them by applying each mutation and getting 41/41 GREEN.
-    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H1: 18 -> 19, for the VOID VOCABULARY as opposed to six of its
-    # fourteen members. The comment on the previous case asserted it covered the set; the code
-    # supplied a hardcoded 6-tuple and dropping all 8 unpinned members was 49/49 GREEN.
+    # ⟳⟳⟳ 2026-10-17, r5 CLAUDE H1 — THE VOID VOCABULARY, as opposed to six of its fourteen
+    # members. The comment on the previous case asserted it covered the set; the code supplied a
+    # hardcoded 6-tuple and dropping all 8 unpinned members was 49/49 GREEN.
+    # ⟳ r6 CODEX Low: THIS COMMENT SAID `18 -> 19` AND NO NINETEENTH MUTATION EXISTS. The fix
+    # EXTENDED an existing entry's `expect` list, because the harness refused a second entry on
+    # the same anchor as measuring nothing new — so the count did not move, and the arithmetic
+    # comment below correctly says `18 -> 18`. ⚠ The executable count is right; the audit trail
+    # was wrong, in the one number this round was asked to verify. Corrected, not raised.
     "scripts/check-claim-propagation.py": 18,
     "scripts/check-anchors.py": 5,
     "scripts/check-arch-findings.py": 5,
@@ -1405,7 +1410,22 @@ EXPECTED_MUTATIONS = {
     # RETARGETED onto an extracted predicate before it could kill at all: over the LIVE table
     # no declared entry uses a `./` spelling, so removing the normalisation changed nothing and
     # the mutation SURVIVED — caught here, not by a reviewer, by running the negative control.
-    "scripts/check-canonical-source.py": 8,   # r6 redesign: the inverted-restatement mutation
+    # ⟳⟳⟳⟳ 2026-10-17, r6 CODEX Medium: 8 -> 9. The root-file rule has TWO refusal arms —
+    # absolute/escaping, and root-level — and one mutation left the second unpinned. ⚠ Isolating
+    # the ABSOLUTE arm needed a NESTED absolute path as input: an absolute path to a root-level
+    # file is caught by the other arm anyway, so the first attempt had no witness and its negative
+    # control did not redden. Found by RUNNING the control, not by reading the code.
+    # ⟳⟳⟳⟳⟳ 2026-10-17, r6 CLAUDE M2+M3: 9 -> 11. The predicate was REDESIGNED from a filesystem
+    # test to a LEXICAL one (v4), because v3 both MISSED a parent roundtrip to a nested file —
+    # `resolve()` erases the `..` — and FALSELY REFUSED `node_modules/typescript/...`, which the
+    # harness stages, because that path is a symlink in a worktree and `resolve()` followed it out.
+    # ⛔ That made the verdict HOST-DEPENDENT. v4 has THREE arms and each needs its own witness,
+    # plus one for the STAGEABLE_PREFIXES duplicate, whose identity case is the only thing that
+    # makes the duplicate a ratchet rather than this repo's most-measured defect.
+    # ⟳ 2026-10-17, r6 fold: 11 -> 10. The ABSOLUTE arm was DEAD CODE and the harness proved it
+    # by refusing to let its mutation die — no staged prefix begins with `/`, so the prefix arm
+    # already caught every absolute path. The arm is deleted; the entry goes with its subject.
+    "scripts/check-canonical-source.py": 10,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -5174,22 +5194,24 @@ def _self_test() -> int:
     # Read off `got 1489 want 1488`. ⚠ This is a RISE and needs no permission; the FALL that
     # ADR-0015 also implies — shedding `check-claim-propagation`'s copy-policing half — is recorded
     # separately at that file's entry, because a fall is the thing that needs a stated reason.
-    # ⟳ 2026-10-17, ADR-0015: 1489 -> 1472, then -> 1476 after round 5. The trail, because a
-    # single net figure hides a FALL inside a RISE and the fall is the part needing a reason:
-    #   `check-claim-propagation`  32 -> 15  (17 RETIRED with their subject, 4 retargeted)
-    #   `check-canonical-source`    5 ->  6  (the `*.html` widening had no falsifier)
-    #   then r5 CODEX M3           15 -> 18  (three unpinned `_Carriers` branches)
-    #   and the root-file invariant  6 ->  7  (the live CI control failure)
-    #   r5 CLAUDE H1 adds NO entry  18 -> 18  — the obvious new mutation reused the `VOID` anchor
-    #     and the harness REFUSED it as 'measures nothing new', correctly; the existing entry's
-    #     EXPECT list is extended to name the identity case instead
-    #   and r5 CLAUDE H2            7 ->  8  (the predicate normalises, so a spelling cannot slip)
-    # Net 1489 - 17 + 1 + 3 + 1 = 1477 ... which is NOT 1476, so one of those is wrong and
-    # the arithmetic is deliberately shown rather than asserted: `check-canonical-source`
-    # rose 5 -> 6 in commit 650ef620, which is ALREADY inside the 1489 baseline. So the
-    # trail from 1489 is -17 + 3 + 1 = 1476. ⭐ Written out because r5 CODEX caught a count
-    # here that did not close, and a sum whose derivation is not shown is the same defect.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1477)
+    # ⟳ 2026-10-17 — ADR-0015 and rounds 5–6. ⛔ THE HAND-SUMMED TRAIL THAT STOOD HERE WAS WRONG
+    # THREE TIMES IN TWO DAYS, each caught by a reviewer and never by me: r5 CODEX Low (it said 19
+    # retired where 17 was right), r6 CODEX Low (it claimed a nineteenth mutation that never
+    # existed), r6 CLAUDE M4 (its shown derivation reached 1476 against an assertion of 1478).
+    #
+    # ⭐ SO THERE IS NO ARITHMETIC IN THIS COMMENT ANY MORE. A total re-typed beside the dict it
+    # describes drifts every time the dict moves, and the drifting total is THIS FILE'S OWN
+    # SUBJECT. Only the per-file deltas this branch caused are recorded, because those are facts
+    # about the work rather than a sum:
+    #
+    #     check-claim-propagation    32 -> 18   17 retired WITH THEIR SUBJECT, 4 retargeted, 3 added
+    #     check-canonical-source      5 -> 10   the `*.html` widening, then four predicate versions,
+    #                                           less one arm the harness showed was dead
+    #
+    # ⛔ THE AUTHORITATIVE TOTAL IS THE CASE BELOW, which sums the dict and is compared against the
+    # on-disk manifests; `check-selftest-counts.py` verifies it by EXECUTION. If you want the
+    # number, run it. Do not add these up by hand — that is the thing that failed three times.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1479)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -22,8 +22,12 @@ the thing each forbids is different in KIND:
 
   * that one forbids a RUNNABLE PROCEDURE, so its oracle is a FENCED CODE BLOCK containing a
     delivery command (or a `Monitor({` arming block), scoped to `.agents/skills/*/SKILL.md`;
-  * this one forbids a SYMBOL, so its oracle is a token substring over four directories and three
-    extensions.
+  * this one forbids a SYMBOL, so its oracle is a token substring over four directories PLUS THE
+    REPO ROOT (`ROOT_GLOBS`, which is why `CLAUDE.md` is audited) and FOUR
+    extensions — `*.md`, `*.py`, `*.sh`, `*.html`. ⟳ r6 CLAUDE M5: this said THREE, which
+    ADR-0015's `*.html` widening made false the same day. The identical sentence in `ci.yml` was
+    corrected in the r6 fold and THIS COPY WAS MISSED — the same instance-not-class miss, in the
+    same fold that was correcting one.
   * and only that one asserts ENUMERATION COMPLETENESS: a skill that produces a page but is absent
     from its `PAGE_SKILLS` escapes the check. Nothing here replaces that, so folding it into this
     file would DELETE a falsifier.
@@ -99,13 +103,14 @@ FAILS IF
   --self-test  runs 29 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
+import ast as _ast
 import contextlib
 import io
 import os
 import re
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -272,27 +277,64 @@ MARKER = "<!-- canon: {} -->"
 ROOT_GLOBS = ("*.md",)
 
 
-def root_level_cites(canons: list[dict]) -> list[str]:
-    """Declared citing sites that name a REPO-ROOT file, which `HARNESS_TREE` does not stage.
+# ⛔ THE PREFIXES `HARNESS_TREE` STAGES — a DELIBERATE second copy, guarded by an identity case.
+# Deriving them by importing `check-plan-code` is not available: that module raises at import time
+# outside its own package context. So the copy is independent and a case asserts the two agree,
+# which is the one shape in which a duplicate is a ratchet rather than this repo's most-measured
+# defect (`a-class-fix-needs-an-independent-copy-and-an-identity-case`).
+STAGEABLE_PREFIXES = ("scripts/", "supabase/", "docs/", "node_modules/typescript/",
+                      ".claude/hooks/", ".github/workflows/", ".agents/skills/")
+
+
+def unstageable_cites(canons: list[dict]) -> list[str]:
+    """Declared citing sites that `HARNESS_TREE` cannot stage. ⭐ A LEXICAL test, deliberately.
 
     ⛔ A declared citing site must EXIST (`audit()` reports *"declared a citing site but does not
-    exist"*), and `check-plan-code.py`'s `HARNESS_TREE` stages `scripts`, `supabase`, `docs`,
-    `node_modules/typescript`, `.claude/hooks`, `.github/workflows` and `.agents/skills` — **no
-    repo-root files**. Declaring one therefore reddens this guard's own CONTROL inside the staged
-    tree and turns every mutation shard into NOT MEASURED. Measured live in CI 2026-10-17: 6 of 8.
+    exist"*), and the mutation harness stages only the prefixes above — **no repo-root files**.
+    Declaring something unstageable reddens this guard's own CONTROL inside the staged tree and
+    turns every mutation shard into NOT MEASURED. Measured live in CI 2026-10-17: 6 of 8.
 
-    ⚠ IT NORMALISES, and that is the whole point (r5 CLAUDE H2). The first version tested
-    `"/" not in c`, which pinned the SPELLING: `"./CONTEXT.md"` passed 28/28 while the staged tree
-    still went red. The consumer is `root / cite_rel`, under which `CONTEXT.md` and `./CONTEXT.md`
-    resolve IDENTICALLY, so they must be treated identically here.
+    ⟳⟳⟳ 2026-10-17, r6 CLAUDE M2 + M3 — **THE FOURTH VERSION, AND THE FIRST THAT IS NOT ABOUT THE
+    FILESYSTEM.** The three before it: `"/" not in c`; then `os.path.normpath`; then resolving the
+    entry the way `audit()` does and asking where it landed. ⚠ **That third version was "assert the
+    property, not the mechanism" applied to the WRONG PROPERTY**, and it failed in BOTH directions
+    at once, each measured:
 
-    ⭐ EXTRACTED so the live-table case and the fixture case share ONE predicate. Keeping it inline
-    meant the only assertion ran over the LIVE table — where no entry uses a `./` spelling — so
-    reverting the normalisation changed nothing and the mutation guarding it SURVIVED. A rule with
-    one caller and no adversarial input is a rule with no falsifier.
+      * it MISSED `../<checkout>/.agents/skills/handoff/SKILL.md` — `resolve()` erases the `..`
+        that makes the string nonportable, so the entry landed inside the root and looked clean
+        while a staged tree reports it absent;
+      * it FALSELY REFUSED `node_modules/typescript/package.json`, a path the harness DOES stage,
+        because `node_modules` is a symlink in a worktree and `resolve()` followed it out of the
+        tree. ⛔ **That made the verdict differ between this machine and CI**, where `npm ci`
+        creates a real directory — a guard whose answer depends on the host.
+
+    ⭐ **The property that matters is PORTABILITY OF THE REGISTRATION STRING into a staged tree, and
+    that is lexical.** Resolving imports the filesystem's accidents — symlinks, existence, host
+    differences — into a verdict that should depend only on the text someone wrote. So: no
+    resolution, no `stat`, no symlink following. Three refusals, and every one is decidable from the
+    string alone:
+
+      1. contains a `..` segment — leaves the checkout, whatever it resolves to today. ⚠ REACHABLE
+         ONLY because of rule 2's shape: `docs/../CONTEXT.md` and `scripts/../../x.md` DO start with
+         a staged prefix, so rule 2 passes them and only this one refuses them;
+      2. not under a staged prefix — which covers every repo-root file (the original rule, now a
+         consequence rather than a special case) AND every absolute path.
+
+    ⛔ THERE WAS A THIRD ARM FOR `is_absolute()` AND IT WAS DEAD CODE. The mutation harness found it
+    by refusing to let its mutation die: making the check `False` left the suite green, which was the
+    CORRECT signal. Measured — no entry of `STAGEABLE_PREFIXES` begins with `/`, so **every**
+    absolute path already fails rule 2 and the absolute arm could never be the reason anything was
+    refused. ⭐ Deleted rather than given a contrived witness: an arm that cannot fire is not
+    coverage, and inventing an input to justify it would have been the third instance in one day of
+    two arms answering for one input.
     """
-    return sorted(c for canon in canons for c in canon["cites"]
-                  if "/" not in os.path.normpath(c))
+    out: list[str] = []
+    for canon in canons:
+        for c in canon["cites"]:
+            parts = PurePosixPath(c).parts
+            if ".." in parts or not c.startswith(STAGEABLE_PREFIXES):
+                out.append(c)
+    return sorted(set(out))
 
 
 def _cites(body: str, cite_token: str, canon_abs: Path, citing_abs: Path,
@@ -562,19 +604,48 @@ def self_test() -> int:
         # shards into NOT MEASURED. The consumer is `root / cite_rel`, under which `CONTEXT.md` and
         # `./CONTEXT.md` resolve IDENTICALLY, so the two spellings must be treated identically here.
         # `normpath` collapses both and leaves a genuine `docs/adr/x.md` alone (verified).
-        case("CANONS: no declared citing site is a repo-root file (HARNESS_TREE stages none)",
-             root_level_cites(CANONS), [])
-        # ⭐ AND THE PREDICATE ITSELF, AGAINST INPUT IT MUST REFUSE. The case above runs over the
-        # LIVE table, which is right — a fixture would have passed while `CANONS` really carried
-        # `"CONTEXT.md"`. But it is ALSO why the live case alone cannot pin the normalisation: no
-        # declared entry uses a `./` spelling, so removing `normpath` changes nothing there and the
-        # mutation survived. These three spellings all resolve to the repo root and must all be
-        # caught; `docs/adr/x.md` must NOT be, or the rule would refuse every legitimate site.
-        _spellings = [{"cites": ["CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md",
-                                 "docs/adr/x.md"]}]
-        case("root_level_cites catches every spelling that resolves to the repo root",
-             root_level_cites(_spellings),
-             ["./CONTEXT.md", "CONTEXT.md", "docs/../CONTEXT.md"])
+        case("CANONS: every declared citing site is one HARNESS_TREE can stage",
+             unstageable_cites(CANONS), [])
+
+        # ⭐ THE IDENTITY CASE FOR THE SECOND COPY. `STAGEABLE_PREFIXES` duplicates `HARNESS_TREE`,
+        # and that is safe ONLY because this case fails when the two drift. Derived by `ast` so the
+        # assertion does not import `check-plan-code` (which raises outside its package context).
+        _ht_src = (ROOT / "scripts" / "check-plan-code.py").read_text(encoding="utf-8")
+        _ht = next(n for n in _ast.parse(_ht_src).body
+                   if isinstance(n, _ast.Assign)
+                   and getattr(n.targets[0], "id", "") == "HARNESS_TREE")
+        case("STAGEABLE_PREFIXES is exactly HARNESS_TREE, so the duplicate cannot drift",
+             sorted(STAGEABLE_PREFIXES),
+             sorted(e.value.rstrip("/") + "/" for e in _ht.value.elts))
+
+        # ⭐ AND THE PREDICATE ITSELF, AGAINST INPUT IT MUST REFUSE — plus input it must NOT.
+        # The live case above is right and is not enough: no declared entry uses an exotic spelling,
+        # so weakening the predicate changes nothing there and the mutation guarding it SURVIVES.
+        #
+        # ⟳⟳⟳ 2026-10-17, r6 CLAUDE M2 + M3 — the fixture is now BOTH-DIRECTIONAL, because v3
+        # failed in both. Each line below names the arm it isolates, and the LAST FOUR are the
+        # false-positive guard: without them a predicate that refuses everything passes the
+        # must-catch half, which is `a-forced-choice-test-cannot-fail`.
+        _spellings = [{"cites": [
+            # --- must be refused ---
+            "../" + ROOT.name + "/CONTEXT.md",                      # parent roundtrip
+            "../" + ROOT.name + "/.agents/skills/handoff/SKILL.md", # ⭐ M2: roundtrip to a NESTED
+            "../elsewhere/outside.md",                              # leaves the checkout
+            str((ROOT / "CONTEXT.md").resolve()),                   # absolute, root-level
+            str((ROOT / "docs" / "plugins.md").resolve()),          # absolute, NESTED
+            "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md",
+            # --- must NOT be refused: one per staged prefix, so a blanket refusal fails ---
+            "docs/adr/x.md", ".agents/skills/handoff/SKILL.md", "scripts/x.py",
+            "node_modules/typescript/package.json",                 # ⭐ M3: a symlink here
+        ]}]
+        case("unstageable_cites refuses every nonportable registration and no stageable one",
+             unstageable_cites(_spellings),
+             sorted({"../" + ROOT.name + "/CONTEXT.md",
+                     "../" + ROOT.name + "/.agents/skills/handoff/SKILL.md",
+                     "../elsewhere/outside.md",
+                     str((ROOT / "CONTEXT.md").resolve()),
+                     str((ROOT / "docs" / "plugins.md").resolve()),
+                     "CONTEXT.md", "./CONTEXT.md", "docs/../CONTEXT.md", ".//CONTEXT.md"}))
         # CONTROL — the walk must not reach deeper than the root's own files, or it would start
         # auditing node_modules and every untracked tree.
         r = _tree(t / "deep", CANON, {"docs/site.md": CITE, "tests/deep.md": "MECHTOKEN again\n"})

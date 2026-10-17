@@ -435,7 +435,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
 </tr>
 <tr>
   <td><strong>(1) recall</strong></td>
-  <td><code>recall-llm.py</code> (2,550 lines, <strong>on <code>master</code></strong>), <code>check-surface-recall.py</code>, its hook, and 157 memory files. <span class="note">Corrected by round 1 — the semantic matcher was missing and the two unmerged branches are not components.</span></td>
+  <td><code>recall-llm.py</code> (2,550 lines, <strong>on <code>master</code></strong>), <code>check-surface-recall.py</code>, its hook, and the memory corpus (<strong>159</strong> files at this commit, 157 on <code>master</code> — the spec's &sect;3 row names the producing command). <span class="note">Corrected by round 1 — the semantic matcher was missing and the two unmerged branches are not components.</span></td>
   <td>⭐ The measurement <strong>inverted</strong>: lexical top-1 <strong>3/20</strong> (53/60 true negatives); meaning-matching <strong>20/20</strong> with <strong>0 false fires in 60</strong>. <span class="note">⚠ 20/20 is the validation brief; <strong>19/20</strong> is the re-measurement against the prompt that actually ships — two experiments, stated separately rather than spanned as “19–20”. 0-in-60 is a 95% upper bound of <strong>5.0%</strong>, not “no false positives”.</span></td>
 </tr>
 </table>
@@ -530,7 +530,7 @@ have seen what each one rules out. <strong>Every one of them is still reversible
   <table>
     <tr><th>What</th><th>The question</th><th>Who answers it</th></tr>
     <tr><td>the <strong>code</strong></td><td>under what licence is it published?</td><td>✅ <strong>ANSWERED — MIT</strong> (D7, below). ⟳ This cell read <em>“you — this is a choice, not a finding”</em> until round 3; it was true when written and the answer is two sections further down</td></tr>
-    <tr><td>the <strong>corpus</strong> — effort (1)'s 157 memory files</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
+    <tr><td>the <strong>corpus</strong> — effort (1)'s memory files (<strong>159</strong> here, 157 on <code>master</code>)</td><td>does it hold private content, credentials, or third-party material we may not redistribute?</td><td>a <strong>content review</strong> — ⟳ now <strong>deliverable 11</strong>, listed as yours rather than left as a gap (round 3). Until it lands the corpus’s row reads <code>C5: unanswered</code> and <strong>cannot be <code>SHIP</code></strong></td></tr>
   </table>
   </div>
   <p class="note">⚠ <strong>Bounded honestly:</strong> no marketplace installed on this machine
