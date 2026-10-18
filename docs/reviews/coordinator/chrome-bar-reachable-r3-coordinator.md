@@ -49,6 +49,16 @@ first-wins duplicate attributes, the template's own id live while its contents a
 
 ## Bounds, stated rather than implied
 
+* ⟳ **CORRECTED BY r4 — this bound was understated.** It said the claim is narrowed to the
+  emitter without saying that TWO OF THREE `chrome_for` branches fall outside it. Only
+  branch 3 emits the scoped stylesheet; on branches 1 and 2 the composer emits none, so the
+  caller fact is correctly False and the guard does not reach those pages at all. A switcher
+  the composer did not dress is the FRAGMENT AUTHOR'S contract. That is not hypothetical:
+  `2026-10-05-topic-why-x-not-y.fragment.html` is branch 2 today, with its own schemer, ZERO
+  `ex-body`, and a correct consumption layer written as bare `body` / `h1,h2,h3,h4` /
+  `b,strong` — so any content-side test for the class refuses a working page. An
+  `or … in content` disjunct was tried and REMOVED: a spaced copy defeats an exact match, so
+  it bought no coverage while re-entering the r2/r3 oscillation.
 * **The consumption claim is narrowed to the EMITTER.** Deciding whether an arbitrary page's
   CSS is ACTIVE needs a CSS parser, and reaching for one would be the fourth round of the
   same mistake. "My own output contains no at-rule" IS decidable, so that is all that is

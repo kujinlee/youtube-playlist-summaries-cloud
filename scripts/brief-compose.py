@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 137 cases
+    python3 scripts/brief-compose.py --self-test  # 136 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -941,15 +941,20 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # the literal `False` changed nothing, which is why no case caught it. The scoped
     # stylesheet is the local assigned from `chrome_for` at the top of this function.
     #
-    # ⚠ `or … in content` covers the OTHER half, found separately: a fragment may BRING the
-    # scoped stylesheet and its own switcher, in which case the composer emitted nothing but
-    # the stylesheet still governs the finished page. Reproduced before this line was written.
-    # The comparison is against the module's own emitted bytes in this process — a
-    # hand-respelled copy is NOT matched, and that bound is recorded in the r3 coordinator
-    # note rather than papered over with a looser substring, which is what r3's Blocking was.
+    # ⛔ THE COMPOSER'S OWN CONTRIBUTION, AND DELIBERATELY NOTHING MORE.
+    # An `or … in content` disjunct was tried here and REMOVED on r4's evidence. It bought
+    # no coverage — a fragment carrying a SPACED copy of the same rules defeats an exact
+    # match, which is the spelling r3's Blocking used — while reintroducing the content
+    # sniff that r2 and r3 oscillated over for two rounds.
+    #
+    # ⚠ THE BOUND, STATED PLAINLY: only branch 3 of `chrome_for` emits the scoped
+    # stylesheet, so branches 1 and 2 are OUTSIDE this guard. A switcher the composer did
+    # not dress is the FRAGMENT AUTHOR'S contract, not this guard's — and that is not a
+    # hypothetical: `2026-10-05-topic-why-x-not-y.fragment.html` is branch 2 with its own
+    # schemer, ZERO `ex-body`, and a correct consumption layer written as bare
+    # `body` / `h1,h2,h3,h4` / `b,strong`. Any content-side test for the class refuses it.
     page_chrome.assert_wired(doc, "brief-compose (the composed document)",
-                             scoped_css_emitted=(page_chrome.text_style_css() in chrome_css
-                                                 or page_chrome.text_style_css() in content))
+                             scoped_css_emitted=page_chrome.text_style_css() in chrome_css)
     return doc
 
 
@@ -1707,10 +1712,12 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
                 + "<script>" + page_chrome.chrome_script() + "</script>"
                 + "<p>prose</p>" + consumer)
 
-    case("⛔ a FRAGMENT-supplied scoped stylesheet with no consumer is REFUSED too",
-         not _composes(_own_chrome_frag("")))
-    case("...and that page composes once something opts in",
-         _composes(_own_chrome_frag('<div class="ex-body">p</div>')))
+    # ⚠ PINNING A DELIBERATE GAP, not a capability. A fragment that brings the stylesheet
+    # itself is outside this guard (see the bound at the assert_wired call). Asserting that
+    # it COMPOSES means the day someone tightens the rule to reach it, this case reddens and
+    # they must change the bound on purpose rather than by accident.
+    case("a FRAGMENT-supplied scoped stylesheet is OUTSIDE this guard, by design",
+         _composes(_own_chrome_frag("")))
 
     case("a fragment that ALREADY has working chrome gets no MARKUP and no SCRIPT added",
          (_c1[1], _c1[2]) == ("", ""))

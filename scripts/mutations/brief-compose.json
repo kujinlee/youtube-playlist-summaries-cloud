@@ -219,23 +219,12 @@
   "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
  },
  {
-  "name": "a fragment-supplied scoped stylesheet stops counting",
-  "file": "scripts/brief-compose.py",
-  "edits": [
-   [
-    "or page_chrome.text_style_css() in content",
-    "or False"
-   ]
-  ],
-  "expect": "\u26d4 a FRAGMENT-supplied scoped stylesheet with no consumer is REFUSED too"
- },
- {
   "name": "the consumer flag is severed to a constant",
   "file": "scripts/brief-compose.py",
   "edits": [
    [
-    "scoped_css_emitted=(page_chrome.text_style_css() in chrome_css",
-    "scoped_css_emitted=(False and page_chrome.text_style_css() in chrome_css"
+    "scoped_css_emitted=page_chrome.text_style_css() in chrome_css)",
+    "scoped_css_emitted=False)"
    ]
   ],
   "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
