@@ -416,5 +416,16 @@
    ]
   ],
   "expect": "the switcher's own rules ship unconditionally \u2014 no at-rule can deactivate them"
+ },
+ {
+  "name": "a noscript's own id is dropped, hiding a real control",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "            nid = dict(attrs).get(\"id\")\n            if nid:\n                self.ids.append(nid)\n",
+    ""
+   ]
+  ],
+  "expect": "a <noscript>'s OWN id is live, so it can hide a real control"
  }
 ]

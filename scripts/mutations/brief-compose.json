@@ -228,5 +228,16 @@
    ]
   ],
   "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
+ },
+ {
+  "name": "the content disjunct is re-added, reaching outside the stated bound",
+  "file": "scripts/brief-compose.py",
+  "edits": [
+   [
+    "text_style_css() in chrome_css)",
+    "text_style_css() in chrome_css or page_chrome.text_style_css() in content)"
+   ]
+  ],
+  "expect": "\u26d4 a fragment that dresses its OWN switcher composes \u2014 the composer emitted no scoped stylesheet, so this is NOT this guard's subject. A red here means someone tightened it: decide deliberately, do not 'fix' the fixture."
  }
 ]

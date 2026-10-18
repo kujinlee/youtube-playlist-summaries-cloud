@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 136 cases
+    python3 scripts/brief-compose.py --self-test  # 137 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -1712,12 +1712,27 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
                 + "<script>" + page_chrome.chrome_script() + "</script>"
                 + "<p>prose</p>" + consumer)
 
-    # ⚠ PINNING A DELIBERATE GAP, not a capability. A fragment that brings the stylesheet
-    # itself is outside this guard (see the bound at the assert_wired call). Asserting that
-    # it COMPOSES means the day someone tightens the rule to reach it, this case reddens and
-    # they must change the bound on purpose rather than by accident.
-    case("a FRAGMENT-supplied scoped stylesheet is OUTSIDE this guard, by design",
-         _composes(_own_chrome_frag("")))
+    # ⚠ A PAIR, NOT ONE CASE — r4's point, and it is the ambient-pass shape otherwise. On its
+    # own, "this composes" stays green both when the arm DELIBERATELY declines and when the
+    # fixture is one the arm would never have refused anyway. The second case removes that
+    # ambiguity by showing the SAME page IS refused once the caller fact is True, which
+    # proves the first is green because of the caller fact alone and nothing else.
+    _gap = _own_chrome_frag("")
+    case("⛔ a fragment that dresses its OWN switcher composes — the composer emitted no "
+         "scoped stylesheet, so this is NOT this guard's subject. A red here means someone "
+         "tightened it: decide deliberately, do not 'fix' the fixture.",
+         _composes(_gap))
+
+    def _refused_when_told(page: str) -> bool:
+        try:
+            page_chrome.assert_wired(page, "gap-probe", scoped_css_emitted=True)
+            return False
+        except SystemExit:
+            return True
+
+    case("...and the SAME page IS refused once the caller says it emitted the stylesheet — "
+         "so the case above is green because of the caller fact, not because the arm is dead",
+         _refused_when_told(compose(_gap, "T", css, markup, script, "t")))
 
     case("a fragment that ALREADY has working chrome gets no MARKUP and no SCRIPT added",
          (_c1[1], _c1[2]) == ("", ""))

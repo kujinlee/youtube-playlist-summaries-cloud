@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 140 cases
+    python3 scripts/page_chrome.py --self-test          # 142 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -192,11 +192,23 @@ class _Scan(_HTMLParser):
         # seemed to cover them was passing for an ambient reason. Deleted rather than
         # given a contrived witness; `template` keeps its own case and mutation below.
         if tag == "noscript":
-            # ⚠ WITH SCRIPTING ENABLED Chromium creates NO elements from <noscript> content,
+            # ⚠ WITH SCRIPTING ENABLED Chromium creates NO elements from <noscript> CONTENT,
             # so a consumer declared in there is fictitious — r3's fixture passed the guard
-            # and rendered one scheme for three choices. This module's control REQUIRES a
-            # script to work at all, so the scripting-enabled reading is the only one that
-            # matters here.
+            # and rendered one scheme for three choices.
+            #
+            # ⛔ BUT THE <noscript> ELEMENT ITSELF EXISTS, AND ITS ID IS LIVE. r4 HIGH, and
+            # it is r3's `<template>` defect reintroduced in the line next to the fix for
+            # it: I wrote this branch beside the template one and shielded BOTH, instead of
+            # re-asking what the browser does with each. Measured in Chromium over http:
+            #   getElementById('chrome-theme') -> NOSCRIPT
+            #   getElementById('schemer')      -> NOSCRIPT
+            #   clicking the REAL theme button -> data-theme unchanged
+            #   clicking "plain"               -> data-scheme still null
+            #   both visible controls inert, and assert_wired PASSED.
+            # So the id is recorded exactly as a template's is; only the contents are hidden.
+            nid = dict(attrs).get("id")
+            if nid:
+                self.ids.append(nid)
             self._depth_template += 1
             return
         if tag == "template":
@@ -1250,6 +1262,16 @@ def self_test() -> int:
     case("...so a second id cannot hide a duplicate control either",
          _scan(_T + _T.replace('id="chrome-theme"', 'id="chrome-theme" id="other"')
                ).ids.count("chrome-theme"), 2)
+    # ⛔ r4 HIGH: the element EXISTS even though its contents do not. Chromium returns the
+    # <noscript> from getElementById, so an id on it silently disables the real control —
+    # r3's <template> defect, reintroduced in the adjacent branch of the fix for it.
+    case("a <noscript>'s OWN id is live, so it can hide a real control",
+         _scan('<noscript id="schemer"></noscript>' + _TSC).ids.count("schemer"), 2)
+    case("...which the duplicate-id refusal then reports",
+         'appears 2 times' in
+         (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
+                 f'<noscript id="chrome-theme"></noscript>{theme_control()}'
+                 f"<script>{chrome_script()}</script>") or ""), True)
     case("a <noscript> consumer is fictitious while scripting is on",
          has_text_consumer(f'<noscript><div class="{TEXT_SCOPE_CLASS}"></div></noscript>'), False)
     # The DEFAULT matters: a caller that says nothing must not have its page policed.
