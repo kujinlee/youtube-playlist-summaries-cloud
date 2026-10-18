@@ -15209,3 +15209,46 @@ persisting, and **1 distinct rendering out of 3**. Fixed in that page's fragment
 Verified: `page_chrome` 89/89, `brief-compose` 132/132, `check-fixture-variation` 67/67,
 `check-plan-code` 178/178; all 69 mutation anchors across the three ported manifests bind exactly
 once; declared counts unchanged (11/16/42).
+
+## 2026-10-18
+The theme and text-style buttons you said were missing from your page were there the whole time —
+they were drawn in the last thirty pixels of a page six and a half thousand pixels tall, so you
+would have had to scroll past everything to find them. That was true of all 93 pages, not just
+yours. They now stay pinned to the bottom of the window wherever you are on the page.
+
+Two separate things were wrong and each one hid the other. The text-style switcher genuinely had
+never been built into the thing that makes new pages — it existed only on a branch that was never
+merged, so any page made today could not have it. But the bar holding both controls was also
+unreachable, so even the pages that *did* have the switcher looked like they did not. Fixing either
+one alone would have left you looking at the same page.
+
+Your page has been rebuilt with both, and you can see it at
+http://127.0.0.1:7391/2026-10-18-brief-2026-10-17-topic-three-open-items.html — the three text
+buttons (colour, headings only, plain) and the light/dark toggle sit at the bottom of the window.
+
+**Waiting on you:** nothing here, but the 93 pages already written still have the old unreachable
+bar. They are files on disk that no longer match the thing that produces them, which is the same
+problem as the one filed yesterday, and regenerating them all is a bigger decision than this fix.
+<!--tech-->
+`chrome-bar-reachable`, backlog #300, merging `explainer-text-switcher-port`.
+
+`chrome_css()` gains `position:sticky;bottom:0;z-index:1`, `background:inherit` and a top rule.
+`z-index:1` is deliberately BELOW the ask-tray floater's 5. `inherit` rather than `var(--bg,…)`
+because backlog #80 forbids this module borrowing a surface and a case pins its token set at four
+foreground/border names — `inherit` adds no token and cannot be a surface the page's ink was never
+chosen against, because it IS the page's surface. Both #80 cases stay green, untouched.
+
+`bar_unreachable()` plus a third refusal in `assert_wired()`, ordered LAST: the other two ask
+whether the control works, this one whether it can be found.
+
+⚠ It asserts the MECHANISM, not the property. Reachability is a layout fact — document height,
+viewport, ancestor overflow — none of which exist in page text.
+
+Two defects the measurements caught and reading did not. The first predicate demanded the pin from
+any page with the control; seven of nine callers pass a FRAGMENT, so it refused `brief-compose`'s
+fixtures and took that suite 125/125 → 76/84, caught only because the pristine-master control ran
+first. And `the has_control gate is dropped` SURVIVED its first mutation run, masked by a fixture
+that tripped the next gate — the discriminating input is now its own case.
+
+page_chrome self-test 50 → 103. Mutations 11 → 20, all killed via the case each names over a green
+control, anchors distinct. Declared sum 1456 → 1465 = on-disk total. brief-compose 132/132.
