@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 50 cases
+    python3 scripts/page_chrome.py --self-test          # 64 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -80,6 +80,47 @@ def has_control(page: str) -> bool:
     return 'id="chrome-theme"' in page
 
 
+# The declaration that makes the bar reachable. One definition: a page and this guard
+# disagreeing about the string is the same silent no-op THEME_ATTR exists to prevent.
+CHROME_PIN = "position:sticky"
+
+# `\.chrome\{` and not `\.chrome` — `.chrome-btn{` must NOT satisfy the rule, and an
+# identity case below proves it does not.
+_CHROME_RULE_RE = re.compile(r"\.chrome\{([^}]*)\}")
+
+
+def bar_unreachable(page: str) -> bool:
+    """True when a page carries the control but no `.chrome` rule pins the bar.
+
+    ⛔ WHAT THIS DOES NOT CHECK, STATED RATHER THAN IMPLIED — the honest half, because a
+    guard that covers part of a rule and reads as covering all of it is the shape this
+    repository has paid for repeatedly:
+
+      * **It asserts the MECHANISM, not the property.** The property is *a reader can
+        reach the control*, which is a LAYOUT fact: it depends on document height,
+        viewport, and the ancestor chain, none of which exist in the page text. This
+        decides only whether the pinning declaration is present. A page could pin the bar
+        inside an `overflow:hidden` ancestor and pass here while rendering unreachably.
+      * It cannot see a bar pushed off-screen by anything other than the missing pin.
+
+    What it DOES buy is the one defect that actually happened, on all 93 pages at once,
+    and it fails loudly rather than silently — which is this module's whole thesis.
+    """
+    if not has_control(page):
+        return False
+    rules = _CHROME_RULE_RE.findall(page)
+    # ⛔ NO `.chrome` RULE AT ALL IS NOT A FINDING, AND THE FIRST DRAFT GOT THIS WRONG.
+    # MEASURED 2026-10-18: seven of this module's nine callers pass a FRAGMENT, whose chrome
+    # CSS is injected later at composition time. Demanding the pin from a subject that carries
+    # no stylesheet refused `brief-compose`'s own fixtures and took its suite from 125/125 to
+    # 76/84 — caught only because the pristine-master CONTROL was run first. The defect this
+    # predicate is for is a rule that EXISTS and is unpinned, which is the shape all 93 live
+    # pages had; a subject with no rule is simply not where that question is answerable.
+    if not rules:
+        return False
+    return not any(CHROME_PIN in r.replace(" ", "") for r in rules)
+
+
 def theme_control() -> str:
     """The button. Labelled for its ACTION, and `aria-pressed` carries the state."""
     return ('<button id="chrome-theme" type="button" class="chrome-btn" '
@@ -122,8 +163,37 @@ def chrome_css() -> str:
         # would leak this module's taste into six pages that deliberately differ — and
         # the case below fails on any hex, which is how the first draft's `#777` was
         # caught before it shipped.
+        # ⚠ STICKY, AND THAT IS THE POINT — backlog #300, found 2026-10-18 by the owner, who
+        # reported that a page "lacked the text-style and theme switcher buttons". It did not.
+        # MEASURED on the page they were looking at: both controls present, computed-visible,
+        # and `data-scheme` flipping produced THREE DISTINCT RENDERINGS out of three — every
+        # wiring predicate in this file was green. The bar rendered at **y=6445 in a 6475px
+        # document**, the last 30 pixels; on a 9321px brief the theme button sat at y=9290.
+        # The bar is the last child of <body> and was `position:static`, so on every one of the
+        # 93 live pages it was a FOOTER on a document thousands of pixels tall.
+        #
+        # ⛔ THIS IS THE FAIL-SILENT AT THE TOP OF THIS FILE, ONE LEVEL UP. `missing_palettes()`
+        # answers "what would I see if pressing it did nothing"; nothing answered "what would I
+        # see if nobody could REACH it", and the two are indistinguishable to a reader.
+        #
+        # `bottom:0` keeps it in normal flow (no layout jump, no overlap when scrolled to the
+        # end) while pinning it inside the viewport the rest of the time. `z-index:1` sits above
+        # page content and deliberately BELOW the ask-tray floater, which already uses 5.
         ".chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;"
-        "font-size:.82rem;color:var(--ink-soft,currentColor)}"
+        "font-size:.82rem;color:var(--ink-soft,currentColor);"
+        "position:sticky;"
+        "bottom:0;"
+        "z-index:1;"
+        # ⚠ `inherit`, NOT `var(--bg,…)` — and the distinction is load-bearing, not cosmetic.
+        # A sticky bar MUST be opaque or the page scrolls through it illegibly. But backlog #80
+        # forbids this module borrowing a SURFACE, and the case below pins the token set at four
+        # foreground/border names. `inherit` takes <body>'s own computed background, so it adds
+        # NO token and cannot be "a second surface the page's ink was never chosen against" —
+        # it is definitionally the same surface the page already chose its ink against.
+        # Measured in the browser before it was written: on a live page it resolves to
+        # rgb(23,24,26), the page's own ground, and both existing cases stay green untouched.
+        "background:inherit;padding-block:.45rem;"
+        "border-top:1px solid var(--rule,transparent)}"
         # ⚠ `background:transparent`, NOT `var(--card,…)` — backlog #80, 2026-09-01.
         # Of the five tokens this module reads, four are FOREGROUND or BORDER and fall back to
         # `currentColor`/`inherit`, so they are page-derived and safe by construction. `--card` was
@@ -255,6 +325,18 @@ def assert_wired(page: str, where: str) -> None:
             f"{where}: the theme control is on the page but no script CARRYING "
             f"{CHROME_SCRIPT_MARK!r} binds it. A script that merely mentions the "
             f"button id is not a handler. Include page_chrome.chrome_script().")
+    # ⚠ LAST, DELIBERATELY, and `the two refusals are independent` below pins the order.
+    # The two checks above ask whether the control WORKS; this one asks whether it can be
+    # FOUND. A page that fails both should be told about the broken mechanism first — that
+    # is the defect a generator author can act on without reading this file.
+    if bar_unreachable(page):
+        raise SystemExit(
+            f"{where}: the theme control is on the page but no `.chrome` rule contains "
+            f"{CHROME_PIN!r}, so the bar renders wherever it happens to fall in the "
+            f"document. It is the last child of <body>, so on a long page that is the "
+            f"final pixels — measured on one such page, y=6445 of 6475 — where no reader "
+            f"will find it. A control nobody can reach is indistinguishable from one that "
+            f"does nothing. Include page_chrome.chrome_css().")
 
 
 def _scripts(page: str) -> str:
@@ -276,7 +358,10 @@ def self_test() -> int:
 
     LIGHT = f':root[{THEME_ATTR}="light"]{{--bg:#fff}}'
     DARK = f':root[{THEME_ATTR}="dark"]{{--bg:#000}}'
-    full = (f"<style>{LIGHT}{DARK}</style>{theme_control()}"
+    # ⟳ 2026-10-18 (backlog #300): `chrome_css()` joined this fixture because `assert_wired`
+    # now also requires the bar to be REACHABLE. The assertion below is unchanged — a complete
+    # page raises nothing — but what "complete" means grew, so the fixture grew with it.
+    full = (f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
             f"<script>{chrome_script()}</script>")
 
     # --- the control, and what counts as one
@@ -439,6 +524,66 @@ def self_test() -> int:
     case("the tokens it reads are exactly the four foreground/border ones",
          sorted(set(re.findall(r"var\((--[a-z0-9-]+)", css))),
          ["--ink", "--ink-soft", "--rule", "--structural"])
+
+    # ── backlog #300: the bar must be REACHABLE, not merely wired ──
+    # The falsifier for this whole change is `STATIC_PAGE` below: it is the shape all 93 live
+    # pages had this morning, and it must go RED here and green after regeneration.
+    REACHABLE = f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
+    STATIC_PAGE = (f"<style>{LIGHT}{DARK}"
+                   ".chrome{display:flex;align-items:center;color:var(--ink-soft)}"
+                   f"</style>{theme_control()}")
+    case("the shipped CSS pins the bar into the viewport",
+         CHROME_PIN in chrome_css().replace(" ", ""), True)
+    case("...and anchors it to the bottom edge",
+         "bottom:0" in chrome_css().replace(" ", ""), True)
+    case("the sticky bar is opaque, or the page scrolls through it",
+         "background:inherit" in chrome_css().replace(" ", ""), True)
+    case("it sits BELOW the ask-tray floater, which owns z-index 5",
+         "z-index:1" in chrome_css().replace(" ", ""), True)
+    case("a page built with this module's CSS is reachable",
+         bar_unreachable(REACHABLE), False)
+    case("THE DEFECT: control + a static .chrome rule is refused",
+         bar_unreachable(STATIC_PAGE), True)
+    case("a FRAGMENT — control, but no .chrome rule — is not this check's subject",
+         bar_unreachable(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), False)
+    # ⚠ THE DISCRIMINATING INPUT, and the case above cannot stand in for it. A page with NO
+    # control but WITH an unpinned `.chrome` rule is the ONLY shape on which the `has_control`
+    # gate and the `rules` gate DISAGREE: the first says "not my business", the second alone
+    # would call it a defect. Found by a SURVIVING MUTATION — the no-control case below also
+    # carries no `.chrome` rule, so the `rules` gate answered first and nothing depended on
+    # `has_control` at all. A green suite said it was covered; it was masked.
+    case("CSS without a control is not a defect — the gates must disagree here",
+         bar_unreachable(f"<style>{LIGHT}{DARK}"
+                         ".chrome{display:flex;color:var(--ink-soft)}"
+                         "</style><p>no control on this page</p>"), False)
+    case("a page with no control owes no bar at all",
+         bar_unreachable(f"<style>{LIGHT}{DARK}</style><p>no control here</p>"), False)
+    # IDENTITY CASE. `.chrome-btn{position:sticky}` must NOT satisfy a rule about `.chrome`,
+    # or the predicate is satisfied by a sibling selector that shares a prefix.
+    case("`.chrome-btn` pinned does NOT count as the bar being pinned",
+         bar_unreachable(f"<style>{LIGHT}{DARK}"
+                         ".chrome{display:flex}.chrome-btn{position:sticky}"
+                         f"</style>{theme_control()}"), True)
+    # assert_wired must ACT on it, not merely be able to compute it — the guard and the
+    # refusal are separate things, and a predicate nothing calls protects nothing.
+    def _raises(page):
+        try:
+            assert_wired(page, "t")
+        except SystemExit:
+            return True
+        return False
+    case("assert_wired REFUSES to write an unreachable page",
+         _raises(STATIC_PAGE + f"<script>{chrome_script()}</script>"), True)
+    case("the two refusals are independent: an unreachable page with NO script reports "
+         "the broken mechanism first, not the placement",
+         "no script CARRYING" in (raises(STATIC_PAGE) or ""), True)
+    case("...and still writes a reachable, fully wired one",
+         _raises(REACHABLE + f"<script>{chrome_script()}</script>"), False)
+    # The background set, pinned the way the token set above is: `inherit` is the page's own
+    # ground and `transparent` is the button. A THIRD value means someone introduced a surface.
+    case("the only backgrounds are the page's own ground and the button's none",
+         sorted(set(d.strip() for d in re.findall(r"background:([^;}]*)", chrome_css()))),
+         ["inherit", "transparent"])
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0

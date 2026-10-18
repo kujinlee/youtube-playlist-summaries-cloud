@@ -119,5 +119,104 @@
    ]
   ],
   "expect": "...and a DIRTY one says so"
+ },
+ {
+  "name": "the chrome bar is not pinned into the viewport",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        \"position:sticky;\"\n",
+    ""
+   ]
+  ],
+  "expect": "the shipped CSS pins the bar into the viewport"
+ },
+ {
+  "name": "the pinned bar loses its bottom anchor",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        \"bottom:0;\"\n",
+    ""
+   ]
+  ],
+  "expect": "...and anchors it to the bottom edge"
+ },
+ {
+  "name": "the sticky bar is left transparent",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "\"background:inherit;padding-block:.45rem;\"",
+    "\"padding-block:.45rem;\""
+   ]
+  ],
+  "expect": "the sticky bar is opaque, or the page scrolls through it"
+ },
+ {
+  "name": "the bar is raised over the ask-tray floater",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        \"z-index:1;\"\n",
+    "        \"z-index:5;\"\n"
+   ]
+  ],
+  "expect": "it sits BELOW the ask-tray floater, which owns z-index 5"
+ },
+ {
+  "name": "the .chrome selector anchor is loosened to a prefix",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "re.compile(r\"\\.chrome\\{([^}]*)\\}\")",
+    "re.compile(r\"\\.chrome[^{]*\\{([^}]*)\\}\")"
+   ]
+  ],
+  "expect": "`.chrome-btn` pinned does NOT count as the bar being pinned"
+ },
+ {
+  "name": "the reachability predicate never fires",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return not any(CHROME_PIN in r.replace(\" \", \"\") for r in rules)",
+    "    return False"
+   ]
+  ],
+  "expect": "THE DEFECT: control + a static .chrome rule is refused"
+ },
+ {
+  "name": "the has_control gate is dropped from reachability",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if not has_control(page):\n        return False\n    rules =",
+    "    rules ="
+   ]
+  ],
+  "expect": "CSS without a control is not a defect"
+ },
+ {
+  "name": "fragments are no longer exempt from the pin",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if not rules:\n        return False\n",
+    ""
+   ]
+  ],
+  "expect": "a FRAGMENT \u2014 control, but no .chrome rule \u2014 is not this check's subject"
+ },
+ {
+  "name": "assert_wired stops refusing an unreachable page",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if bar_unreachable(page):\n        raise SystemExit(",
+    "    if False and bar_unreachable(page):\n        raise SystemExit("
+   ]
+  ],
+  "expect": "assert_wired REFUSES to write an unreachable page"
  }
 ]
