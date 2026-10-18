@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 133 cases
+    python3 scripts/page_chrome.py --self-test          # 140 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -191,19 +191,40 @@ class _Scan(_HTMLParser):
         # <template> is NOT. The script/style entries were dead code, and the case that
         # seemed to cover them was passing for an ambient reason. Deleted rather than
         # given a contrived witness; `template` keeps its own case and mutation below.
+        if tag == "noscript":
+            # ⚠ WITH SCRIPTING ENABLED Chromium creates NO elements from <noscript> content,
+            # so a consumer declared in there is fictitious — r3's fixture passed the guard
+            # and rendered one scheme for three choices. This module's control REQUIRES a
+            # script to work at all, so the scripting-enabled reading is the only one that
+            # matters here.
+            self._depth_template += 1
+            return
         if tag == "template":
+            # ⚠ THE TEMPLATE'S OWN ID IS LIVE even though its CONTENTS are not —
+            # `getElementById('schemer')` returns the <template> itself, so the script binds
+            # nothing. r3 measured a page where that silently disabled the visible switcher.
+            # Record the id, then shield what is inside.
+            tid = dict(attrs).get("id")
+            if tid:
+                self.ids.append(tid)
             self._depth_template += 1
             return
         if self._depth_template:
             return
-        d = dict(attrs)
+        # ⚠ FIRST WINS, like Chromium — `dict(attrs)` keeps the LAST and r3 measured the
+        # consequences both ways: `class="other" class="ex-body"` invented a consumer that
+        # does not exist, and `id="schemer" id="other"` hid a real duplicate control.
+        d = {}
+        for k, v in attrs:
+            if k not in d:
+                d[k] = v
         if d.get("id"):
             self.ids.append(d["id"])
         if d.get("class"):
             self.classes.update(d["class"].split())
 
     def handle_endtag(self, tag):
-        if tag == "template" and self._depth_template:
+        if tag in ("template", "noscript") and self._depth_template:
             self._depth_template -= 1
 
     # `handle_comment` is not overridden ON PURPOSE: a commented-out control contributes
@@ -318,10 +339,6 @@ def missing_text_tokens(page: str) -> list[str]:
 # Named once here so the CSS below and `missing_text_consumer` below cannot disagree about
 # the string — a page and its guard disagreeing is the silent no-op THEME_ATTR exists for.
 TEXT_SCOPE_CLASS = "ex-body"
-# The rule THIS MODULE emits, used to tell "my stylesheet is on this page" from "the page
-# implements the scheme itself". Derived from the emitter below rather than retyped, so the
-# two cannot drift — a second spelling of one rule is this repository's most-measured defect.
-TEXT_CSS_SIGNATURE = f".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}"
 
 
 def has_text_consumer(page: str) -> bool:
@@ -333,7 +350,7 @@ def has_text_consumer(page: str) -> bool:
     return TEXT_SCOPE_CLASS in _scan(page).classes
 
 
-def missing_text_consumer(page: str) -> bool:
+def missing_text_consumer(page: str, scoped_css_emitted: bool = False) -> bool:
     """True when the text-style control is on a page that NOTHING on it opts into.
 
     The two existing arms both pass on this page: the tokens ARE declared, and
@@ -346,17 +363,29 @@ def missing_text_consumer(page: str) -> bool:
     """
     if not has_text_control(page):
         return False
-    # ⛔ ONLY WHEN THIS MODULE'S STYLESHEET IS THE ONE THAT WOULD HAVE TO WORK — r2 HIGH.
-    # The first version refused ANY page whose control lacked `.ex-body`, and that blocked
-    # `2026-10-05-topic-why-x-not-y`, a page Codex rendered and proved CORRECT: it brings
-    # its own switcher and styles body, headings and emphasis directly through the scheme
-    # variables. It reaches `chrome_for`'s own-control branch, which ships NO
-    # `text_style_css()` at all — so the scope requirement this guard enforces was never
-    # on that page, and the guard was opining about a stylesheet that is not there.
-    # A guard that refuses a working page is the cry-wolf failure this repository treats as
-    # worse than no guard, so the rule now binds to the stylesheet rather than to the class.
-    if TEXT_CSS_SIGNATURE not in page:
+    if not scoped_css_emitted:
+        # ⛔ THE CALLER KNOWS; THIS MODULE MUST NOT GUESS. r3 Blocking.
+        # The previous version sniffed the page for `TEXT_CSS_SIGNATURE`, an exact-substring
+        # test for one spelling of one rule — and `.ex-body { color:var(--prose) }` with
+        # spaces defeated it, so the guard went SILENT on exactly the pages it exists for.
+        # Measured: the stylesheet present and valid, no consumer, `assert_wired` passing,
+        # and Chromium rendering one scheme for three choices. FAIL-OPEN.
+        #
+        # ⚠ AND TIGHTENING IT CANNOT WORK. The escape exists because r2 measured the
+        # un-escaped rule REFUSING a working page that ships its own scheme CSS. Any
+        # textual signature is defeated by equivalent CSS (fail-open); removing it
+        # re-creates the cry-wolf refusal. Two rounds were spent on that pair.
+        #
+        # The generator that just built this page KNOWS whether it included
+        # `text_style_css()` — it is the thing that did or did not call it. Being told
+        # dissolves both failure modes, because neither spelling nor sniffing is involved.
         return False
+    # ⛔ ONLY WHEN THIS MODULE'S STYLESHEET IS THE ONE THAT WOULD HAVE TO WORK — r2 HIGH.
+    # ⟳ r2 kept a page that ships its OWN scheme CSS out of this rule — correctly: it was
+    # refusing `2026-10-05-topic-why-x-not-y`, which Codex rendered and proved working. r2
+    # did that by SNIFFING for the module's own rule; r3 defeated the sniff with whitespace.
+    # The caller now supplies that fact (see `scoped_css_emitted` above), so this function
+    # no longer guesses and the page's exact CSS spelling is irrelevant to it.
     # Classes come from a PARSE, so `class='ex-body'` counts and `class="ex-bodyguard"`
     # does not — r2 measured the substring version getting both of those backwards.
     return TEXT_SCOPE_CLASS not in _scan(page).classes
@@ -683,7 +712,7 @@ def chrome_bar(slug: str, when: str, *, refresh: bool = True,
     return '<div class="chrome">' + "".join(parts) + "</div>"
 
 
-def assert_wired(page: str, where: str) -> None:
+def assert_wired(page: str, where: str, *, scoped_css_emitted: bool = False) -> None:
     """RAISE unless a page carrying the control can actually be switched.
 
     Callers run this on their finished HTML immediately before writing. A generator that
@@ -731,7 +760,7 @@ def assert_wired(page: str, where: str) -> None:
             f"page_chrome.text_style_css().")
     # ⚠ AFTER the arm above, deliberately: "there is no scheme CSS at all" is a more
     # fundamental answer than "nothing opts into it", and a case pins this order.
-    if missing_text_consumer(page):
+    if missing_text_consumer(page, scoped_css_emitted):
         raise SystemExit(
             f"{where}: the text-style control is on the page but nothing on it carries "
             f"{TEXT_SCOPE_CLASS!r}, which is the ONLY class its CSS styles. The buttons "
@@ -801,9 +830,9 @@ def self_test() -> int:
     case("a page with no control needs no palettes", missing_palettes(stamp("x")), [])
 
     # --- assert_wired: the caller-facing gate
-    def raises(page, where="p"):
+    def raises(page, where="p", scoped=False):
         try:
-            assert_wired(page, where)
+            assert_wired(page, where, scoped_css_emitted=scoped)
         except SystemExit as e:
             return str(e)
         return None
@@ -1040,8 +1069,17 @@ def self_test() -> int:
     case("...and each consuming rule is scoped to the class the guard requires",
          all(f".{TEXT_SCOPE_CLASS}" in r for r in TSCSS.split("}")
              if any(f"var({x})" in r for x in ("--prose", "--head", "--emph"))), True)
-    case("the signature the guard keys on is the one the emitter writes",
-         TEXT_CSS_SIGNATURE in TSCSS, True)
+    # ⛔ r3 MEDIUM: the three cases above assert the roles are REFERENCED, and r3 defeated
+    # them by wrapping every consuming rule in `@media not all{…}` — references intact,
+    # scope intact, 133/133 green, and Chromium rendering one scheme for three choices.
+    # ⚠ DECIDING WHETHER AN ARBITRARY PAGE'S CSS IS ACTIVE NEEDS A CSS PARSER, and reaching
+    # for one here would be the fourth round of the same mistake. But this module OWNS what
+    # it emits, and "my own output contains no at-rule" IS decidable from text. So the claim
+    # is narrowed to the emitter: the consuming rules ship unconditionally. If a future
+    # change needs an at-rule here, this case fails and someone must decide what the
+    # consumption claim then means — which is the point of pinning it rather than counting.
+    case("the switcher's own rules ship unconditionally — no at-rule can deactivate them",
+         re.findall(r"@[a-z-]+", text_style_css()), [])
     case("the switcher composites no text against the ground it cannot measure",
          "opacity" in TSCSS, False)
     case("...and selection survives on border, accent and weight, not contrast alone",
@@ -1165,19 +1203,20 @@ def self_test() -> int:
             f"{theme_control()}{text_style_control()}"
             f"<script>{chrome_script()}</script>")
     case("assert_wired REFUSES a switcher nothing opts into",
-         "which is the ONLY class its CSS styles" in (raises(_tsw) or ""), True)
+         "which is the ONLY class its CSS styles" in (raises(_tsw, scoped=True) or ""), True)
     case("...and ACCEPTS the same page once something does",
          "which is the ONLY class its CSS styles" in
          (raises(f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
                  f"{theme_control()}{text_style_control()}{_EXB}"
-                 f"<script>{chrome_script()}</script>") or ""), False)
+                 f"<script>{chrome_script()}</script>", scoped=True) or ""), False)
     case("a consumer hidden in an HTML COMMENT does not count as one",
          "which is the ONLY class its CSS styles" in
-         (raises(_tsw + f"<!-- {_EXB} -->") or ""), True)
+         (raises(_tsw + f"<!-- {_EXB} -->", scoped=True) or ""), True)
     # ── r2: every one of these was measured WRONG under the substring form it replaced,
     # and each is wrong in BOTH directions, which is why the instrument changed rather
     # than the thresholds. The parser decides quoting, comments and script text; I do not.
     _T = theme_control()
+    _TSC = text_style_control()
     case("mixed quoting is still TWO live controls",
          _scan(_T + _T.replace('"', "'")).ids.count("chrome-theme"), 2)
     # ⚠ Provided by `html.parser`'s CDATA handling, NOT by this module — measured when the
@@ -1200,16 +1239,40 @@ def self_test() -> int:
          ("@media print" in chrome_css(),
           f".{CHROME_PIN_CLASS}{{position:static}}" in chrome_css().replace(" ", ""),
           "padding-bottom:0" in chrome_css().replace(" ", "")), (True, True, True))
+    # ── r3's four parser findings, each measured against Chromium's actual behaviour ──
+    case("a <template>'s OWN id is live — getElementById returns the template itself",
+         _scan(_TSC + '<template id="schemer"></template>').ids.count("schemer"), 2)
+    case("...while what is INSIDE a template is not",
+         _scan('<template><button id="chrome-theme"></button></template>'
+               ).ids.count("chrome-theme"), 0)
+    case("duplicate attributes resolve FIRST-wins, as Chromium does",
+         has_text_consumer(f'<div class="other" class="{TEXT_SCOPE_CLASS}">x</div>'), False)
+    case("...so a second id cannot hide a duplicate control either",
+         _scan(_T + _T.replace('id="chrome-theme"', 'id="chrome-theme" id="other"')
+               ).ids.count("chrome-theme"), 2)
+    case("a <noscript> consumer is fictitious while scripting is on",
+         has_text_consumer(f'<noscript><div class="{TEXT_SCOPE_CLASS}"></div></noscript>'), False)
+    # The DEFAULT matters: a caller that says nothing must not have its page policed.
+    case("the guard's default is to stay out of it, not to police",
+         missing_text_consumer(text_style_css() + text_style_control()), False)
     case("a class is read from a PARSE, so single quotes count",
          has_text_consumer("<div class='" + TEXT_SCOPE_CLASS + "'>p</div>"), True)
     case("...and a class that merely has the right PREFIX does not",
          has_text_consumer(f'<div class="{TEXT_SCOPE_CLASS}guard">p</div>'), False)
     # ── r2 HIGH: the guard binds to THIS module's stylesheet, not to the class in general.
-    case("a page implementing the scheme ITSELF is not refused",
+    case("a page whose caller emitted NO scoped stylesheet is not this guard's business",
          missing_text_consumer(text_style_control()
-                               + "<style>body{color:var(--prose)}</style><p>x</p>"), False)
-    case("...but a page carrying THIS module's stylesheet with no consumer IS",
-         missing_text_consumer(text_style_css() + text_style_control()), True)
+                               + "<style>body{color:var(--prose)}</style><p>x</p>", False), False)
+    case("...but a page whose caller DID emit the scoped stylesheet, with no consumer, IS",
+         missing_text_consumer(text_style_css() + text_style_control(), True), True)
+    # ⛔ THE r3 BLOCKING, PINNED. `.ex-body { color:var(--prose) }` with spaces defeated the
+    # signature sniff and silenced the guard on exactly the pages it is for. Being TOLD makes
+    # the spelling irrelevant, so this must hold for a form the sniff could never match.
+    case("...and whitespace-equivalent CSS no longer silences it",
+         missing_text_consumer(
+             text_style_css().replace(f".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}",
+                                      f".{TEXT_SCOPE_CLASS} {{ color:var(--prose) }}")
+             + text_style_control(), True), True)
     case("assert_wired REFUSES two controls with the same id",
          'appears 2 times' in
          (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"

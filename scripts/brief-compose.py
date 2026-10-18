@@ -933,7 +933,12 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # with a control and no chrome CSS at all — y=8423 of 8481, backlog #300's exact defect,
     # reproduced THROUGH the guard written to prevent it. Checking the artifact that reaches
     # the reader is the only check that can be about the reader.
-    page_chrome.assert_wired(doc, "brief-compose (the composed document)")
+    # ⚠ Whether THIS COMPOSER emitted the scoped stylesheet is something it knows from what
+    # it was handed, not something to infer from the finished page. The comparison is against
+    # the module's own emitted string in this same process — exact, not a spelling guess,
+    # which is what r3 defeated with whitespace when the module sniffed the page instead.
+    page_chrome.assert_wired(doc, "brief-compose (the composed document)",
+                             scoped_css_emitted=page_chrome.text_style_css() in css)
     return doc
 
 

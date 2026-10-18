@@ -286,17 +286,6 @@
   "expect": "a FINISHED document is never exempt"
  },
  {
-  "name": "the missing-consumer arm never fires",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if missing_text_consumer(page):",
-    "    if False and missing_text_consumer(page):"
-   ]
-  ],
-  "expect": "REFUSES a switcher nothing opts into"
- },
- {
   "name": "the switcher composites text against an unmeasurable ground again",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -317,17 +306,6 @@
    ]
   ],
   "expect": "CONSUMES --prose"
- },
- {
-  "name": "the parser stops shielding template contents",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        if tag == \"template\":\n            self._depth_template += 1\n            return\n",
-    ""
-   ]
-  ],
-  "expect": "inside a <template> is not a live control"
  },
  {
   "name": "duplicate control ids are tolerated",
@@ -352,28 +330,6 @@
   "expect": "PREFIX does not"
  },
  {
-  "name": "the stylesheet-binding escape is removed, refusing a page that works",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if TEXT_CSS_SIGNATURE not in page:\n        return False\n",
-    ""
-   ]
-  ],
-  "expect": "implementing the scheme ITSELF is not refused"
- },
- {
-  "name": "the signature is retyped instead of derived",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "TEXT_CSS_SIGNATURE = f\".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}\"",
-    "TEXT_CSS_SIGNATURE = \".ex-body{color:var(--prosey)}\""
-   ]
-  ],
-  "expect": "the one the emitter writes"
- },
- {
   "name": "the pinned bar keeps its pin in print",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -394,5 +350,71 @@
    ]
   ],
   "expect": "CONSUMES --emph"
+ },
+ {
+  "name": "the consumer guard goes back to guessing instead of being told",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if not scoped_css_emitted:",
+    "    if False:"
+   ]
+  ],
+  "expect": "emitted NO scoped stylesheet is not this guard's business"
+ },
+ {
+  "name": "the caller's answer is ignored and every switcher is policed",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "def missing_text_consumer(page: str, scoped_css_emitted: bool = False) -> bool:",
+    "def missing_text_consumer(page: str, scoped_css_emitted: bool = True) -> bool:"
+   ]
+  ],
+  "expect": "default is to stay out of it"
+ },
+ {
+  "name": "duplicate attributes resolve last-wins, against Chromium",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        d = {}\n        for k, v in attrs:\n            if k not in d:\n                d[k] = v",
+    "        d = dict(attrs)"
+   ]
+  ],
+  "expect": "FIRST-wins"
+ },
+ {
+  "name": "a template's own id is hidden along with its contents",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "            tid = dict(attrs).get(\"id\")\n            if tid:\n                self.ids.append(tid)\n",
+    ""
+   ]
+  ],
+  "expect": "OWN id is live"
+ },
+ {
+  "name": "noscript contents count as live again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        if tag == \"noscript\":",
+    "        if tag == \"__never__\":"
+   ]
+  ],
+  "expect": "fictitious while scripting is on"
+ },
+ {
+  "name": "the switcher stylesheet is wrapped in an inactive at-rule",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n",
+    "        \"@media not all{\"\n        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n"
+   ]
+  ],
+  "expect": "ship unconditionally"
  }
 ]

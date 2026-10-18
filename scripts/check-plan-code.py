@@ -1286,7 +1286,7 @@ EXPECTED_MUTATIONS = {
     # moved from sticky to a script-applied fixed class), and SIX new behaviours had no
     # mutation at all — the duplicate-id refusal, the consumer refusal and the
     # comment-stripping all survived deletion with 111/111 green.
-    "scripts/page_chrome.py": 36,
+    "scripts/page_chrome.py": 38,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5112,7 +5112,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1481)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1483)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
