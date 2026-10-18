@@ -11,17 +11,6 @@
   "expect": "...so prose about themes demands no palettes"
  },
  {
-  "name": "has_control matches the word theme anywhere",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return 'id=\"chrome-theme\"' in page",
-    "    return 'theme' in page"
-   ]
-  ],
-  "expect": "has_control is keyed on the id, not the word 'theme'"
- },
- {
   "name": "only ONE palette is required, not both",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -53,17 +42,6 @@
    ]
   ],
   "expect": "assert_wired refuses a control with palettes but NO script"
- },
- {
-  "name": "_scripts reads the whole page, not just script tags",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return \"\\n\".join(re.findall(r\"<script[^>]*>(.*?)</script>\", page, re.S))",
-    "    return page"
-   ]
-  ],
-  "expect": "the marker OUTSIDE a script tag does not satisfy the binding"
  },
  {
   "name": "the refresh slug is not escaped into the attribute",
@@ -242,17 +220,6 @@
   "expect": "a bar with NO control is never pinned \u2014 17 of 20 fragments are stamp-only"
  },
  {
-  "name": "the pinned-rule selector is loosened to a prefix",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "r\"\\.chrome-pinned\\{([^}]*)\\}\"",
-    "r\"\\.chrome-pinned[^{]*\\{([^}]*)\\}\""
-   ]
-  ],
-  "expect": "`.chrome-pinned-host` does NOT satisfy a rule about `.chrome-pinned`"
- },
- {
   "name": "the reachability predicate never fires",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -415,7 +382,7 @@
     "        \"@media not all{\"\n        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n"
    ]
   ],
-  "expect": "the switcher's own rules ship unconditionally \u2014 no at-rule can deactivate them"
+  "expect": "the emitted stylesheet contains no at-rule"
  },
  {
   "name": "a noscript's own id is dropped, hiding a real control",
@@ -427,5 +394,82 @@
    ]
   ],
   "expect": "a <noscript>'s OWN id is live, so it can hide a real control"
+ },
+ {
+  "name": "has_control goes back to a double-quote substring test",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return \"chrome-theme\" in _scan(page).ids",
+    "    return 'id=\"chrome-theme\"' in page"
+   ]
+  ],
+  "expect": "a SINGLE-QUOTED control is a control"
+ },
+ {
+  "name": "has_text_control goes back to a substring test",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return \"schemer\" in _scan(page).ids",
+    "    return 'id=\"schemer\"' in page"
+   ]
+  ],
+  "expect": "...and so is a single-quoted switcher"
+ },
+ {
+  "name": "_scripts goes back to a comment-blind regex",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return \"\\n\".join(_scan(page).scripts)",
+    "    return \"\\n\".join(re.findall(r\"<script[^>]*>(.*?)</script>\", page, re.S))"
+   ]
+  ],
+  "expect": "a handler that is COMMENTED OUT does not bind the control"
+ },
+ {
+  "name": "the two shields share one counter again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "            self._depth[\"noscript\"] += 1",
+    "            self._depth[\"template\"] += 1"
+   ]
+  ],
+  "expect": "a <noscript> closed by </template> does not invent a consumer"
+ },
+ {
+  "name": "the pin selector must touch the brace again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "r\"\\.chrome-pinned(?![\\w-])[^{}]*\\{([^}]*)\\}\")",
+    "r\"\\.chrome-pinned\\{([^}]*)\\}\")"
+   ]
+  ],
+  "expect": "a GROUPED selector still pins the bar, whichever side the class is on"
+ },
+ {
+  "name": "the refusal names the wrong rule again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "f\"{where}: the theme control is on the page but no `.{CHROME_PIN_CLASS}` rule contains \"",
+    "f\"{where}: the theme control is on the page but no `.chrome` rule contains \""
+   ]
+  ],
+  "expect": "the refusal names the rule the predicate actually requires"
+ },
+ {
+  "name": "script text is collected from inside a shielded element",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        if self._in_script and not any(self._depth.values()):",
+    "        if self._in_script:"
+   ]
+  ],
+  "expect": "a handler inside a <template> does not bind the control"
  }
 ]
