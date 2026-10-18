@@ -162,7 +162,7 @@
     "position:fixed;bottom:0;\""
    ]
   ],
-  "expect": "spans the viewport"
+  "expect": "...and it spans the viewport, or margin-inline-start:auto stops reaching the edge"
  },
  {
   "name": "the pinned bar is left transparent",
@@ -173,7 +173,7 @@
     "\""
    ]
   ],
-  "expect": "the pinned bar is opaque"
+  "expect": "the pinned bar is opaque, or the page scrolls through it"
  },
  {
   "name": "the bar is raised into the floater band",
@@ -184,7 +184,7 @@
     "\"z-index:40;background"
    ]
   ],
-  "expect": "a LOW positive z"
+  "expect": "the pinned bar sits above content and below any floater \u2014 a LOW positive z"
  },
  {
   "name": "the page reserves no space for the pinned bar",
@@ -195,7 +195,7 @@
     ""
    ]
   ],
-  "expect": "reserves the bar's OWN measured height"
+  "expect": "the page reserves the bar's OWN measured height, never a literal"
  },
  {
   "name": "the bar loses its separating rule",
@@ -206,7 +206,7 @@
     "\"}\""
    ]
   ],
-  "expect": "keeps a separating rule"
+  "expect": "the bar keeps a separating rule and its breathing room"
  },
  {
   "name": "the bar loses its vertical breathing room",
@@ -217,7 +217,7 @@
     "\"}\""
    ]
   ],
-  "expect": "keeps a separating rule"
+  "expect": "the bar keeps a separating rule and its breathing room"
  },
  {
   "name": "the script never applies the pin to the bar",
@@ -228,7 +228,7 @@
     ""
    ]
   ],
-  "expect": "adds the pin class to the BAR"
+  "expect": "the script adds the pin class to the BAR, not only the body"
  },
  {
   "name": "a stamp-only bar is pinned too",
@@ -239,7 +239,7 @@
     "if(bar){{"
    ]
   ],
-  "expect": "never pinned"
+  "expect": "a bar with NO control is never pinned \u2014 17 of 20 fragments are stamp-only"
  },
  {
   "name": "the pinned-rule selector is loosened to a prefix",
@@ -250,7 +250,7 @@
     "r\"\\.chrome-pinned[^{]*\\{([^}]*)\\}\""
    ]
   ],
-  "expect": "`.chrome-pinned-host` does NOT satisfy"
+  "expect": "`.chrome-pinned-host` does NOT satisfy a rule about `.chrome-pinned`"
  },
  {
   "name": "the reachability predicate never fires",
@@ -261,7 +261,7 @@
     "    rules = [CHROME_PIN]\n"
    ]
   ],
-  "expect": "THE DEFECT"
+  "expect": "THE DEFECT: control + a static .chrome rule is refused"
  },
  {
   "name": "the has_control gate is dropped from reachability",
@@ -272,7 +272,7 @@
     "    # \u26d4 A FINISHED DOCUMENT"
    ]
   ],
-  "expect": "the gates disagree here"
+  "expect": "a document with CSS but no control is not a defect \u2014 the gates disagree here"
  },
  {
   "name": "a finished document is exempted like a fragment",
@@ -283,7 +283,7 @@
     "    if False:\n"
    ]
   ],
-  "expect": "a FINISHED document is never exempt"
+  "expect": "a FINISHED document is never exempt, however it reached the writer"
  },
  {
   "name": "the switcher composites text against an unmeasurable ground again",
@@ -294,7 +294,7 @@
     "cursor:pointer;color:inherit;opacity:.6;font:inherit}\""
    ]
   ],
-  "expect": "composites no text"
+  "expect": "the switcher composites no text against the ground it cannot measure"
  },
  {
   "name": "the emitted stylesheet stops consuming the prose role",
@@ -305,7 +305,7 @@
     "        f\".{TEXT_SCOPE_CLASS}{{color:inherit}}\"\n"
    ]
   ],
-  "expect": "CONSUMES --prose"
+  "expect": "the emitted stylesheet actually CONSUMES --prose"
  },
  {
   "name": "duplicate control ids are tolerated",
@@ -316,7 +316,7 @@
     "        if False:"
    ]
   ],
-  "expect": "REFUSES two controls with the same id"
+  "expect": "assert_wired REFUSES two controls with the same id"
  },
  {
   "name": "the consumer test stops parsing and matches substrings again",
@@ -327,7 +327,7 @@
     "    return TEXT_SCOPE_CLASS in page"
    ]
   ],
-  "expect": "PREFIX does not"
+  "expect": "...and a class that merely has the right PREFIX does not"
  },
  {
   "name": "the pinned bar keeps its pin in print",
@@ -338,7 +338,7 @@
     "f\"@media print{{\""
    ]
   ],
-  "expect": "returns to the flow in print"
+  "expect": "the pinned bar returns to the flow in print, and frees its reserved space"
  },
  {
   "name": "the emitted stylesheet stops consuming the emphasis role",
@@ -349,7 +349,7 @@
     "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:inherit}}\""
    ]
   ],
-  "expect": "CONSUMES --emph"
+  "expect": "the emitted stylesheet actually CONSUMES --emph"
  },
  {
   "name": "the consumer guard goes back to guessing instead of being told",
@@ -360,7 +360,7 @@
     "    if False:"
    ]
   ],
-  "expect": "emitted NO scoped stylesheet is not this guard's business"
+  "expect": "a page whose caller emitted NO scoped stylesheet is not this guard's business"
  },
  {
   "name": "the caller's answer is ignored and every switcher is policed",
@@ -371,7 +371,7 @@
     "def missing_text_consumer(page: str, scoped_css_emitted: bool = True) -> bool:"
    ]
   ],
-  "expect": "default is to stay out of it"
+  "expect": "the guard's default is to stay out of it, not to police"
  },
  {
   "name": "duplicate attributes resolve last-wins, against Chromium",
@@ -382,7 +382,7 @@
     "        d = dict(attrs)"
    ]
   ],
-  "expect": "FIRST-wins"
+  "expect": "duplicate attributes resolve FIRST-wins, as Chromium does"
  },
  {
   "name": "a template's own id is hidden along with its contents",
@@ -393,7 +393,7 @@
     ""
    ]
   ],
-  "expect": "OWN id is live"
+  "expect": "a <template>'s OWN id is live \u2014 getElementById returns the template itself"
  },
  {
   "name": "noscript contents count as live again",
@@ -404,7 +404,7 @@
     "        if tag == \"__never__\":"
    ]
   ],
-  "expect": "fictitious while scripting is on"
+  "expect": "a <noscript> consumer is fictitious while scripting is on"
  },
  {
   "name": "the switcher stylesheet is wrapped in an inactive at-rule",
@@ -415,6 +415,6 @@
     "        \"@media not all{\"\n        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n"
    ]
   ],
-  "expect": "ship unconditionally"
+  "expect": "the switcher's own rules ship unconditionally \u2014 no at-rule can deactivate them"
  }
 ]

@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 133 cases
+    python3 scripts/brief-compose.py --self-test  # 137 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -933,12 +933,23 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # with a control and no chrome CSS at all — y=8423 of 8481, backlog #300's exact defect,
     # reproduced THROUGH the guard written to prevent it. Checking the artifact that reaches
     # the reader is the only check that can be about the reader.
-    # ⚠ Whether THIS COMPOSER emitted the scoped stylesheet is something it knows from what
-    # it was handed, not something to infer from the finished page. The comparison is against
-    # the module's own emitted string in this same process — exact, not a spelling guess,
-    # which is what r3 defeated with whitespace when the module sniffed the page instead.
+    # ⛔ `chrome_css`, NOT `css` — r4 BLOCKING. `css` is this function's PARAMETER and holds
+    # the extracted Ask-tray CSS; `TRAY_SELECTOR` can never lift `.ex-body` into it, so
+    # `text_style_css() in css` was STRUCTURALLY ALWAYS FALSE and round 3's entire consumer
+    # arm was dead on every path. Measured by instrumenting the suite: 0 of 41 assert_wired
+    # calls ever received True, while both suites stayed green — severing the expression to
+    # the literal `False` changed nothing, which is why no case caught it. The scoped
+    # stylesheet is the local assigned from `chrome_for` at the top of this function.
+    #
+    # ⚠ `or … in content` covers the OTHER half, found separately: a fragment may BRING the
+    # scoped stylesheet and its own switcher, in which case the composer emitted nothing but
+    # the stylesheet still governs the finished page. Reproduced before this line was written.
+    # The comparison is against the module's own emitted bytes in this process — a
+    # hand-respelled copy is NOT matched, and that bound is recorded in the r3 coordinator
+    # note rather than papered over with a looser substring, which is what r3's Blocking was.
     page_chrome.assert_wired(doc, "brief-compose (the composed document)",
-                             scoped_css_emitted=page_chrome.text_style_css() in css)
+                             scoped_css_emitted=(page_chrome.text_style_css() in chrome_css
+                                                 or page_chrome.text_style_css() in content))
     return doc
 
 
@@ -1657,6 +1668,50 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # CSS, measured at y=8423 of 8481. The property this case is for is UNCHANGED and is
     # now asserted exactly: no markup and no script are added, so no second control can
     # exist — while the stylesheet is supplied, because the control on the page needs it.
+    # ── r4 BLOCKING: the consumer arm was DEAD on every path because the flag read
+    # `compose`'s `css` PARAMETER — the Ask TRAY's css — instead of the local assigned from
+    # `chrome_for` inside `compose`. 0 of 41 assert_wired calls ever saw True, and severing
+    # the expression to the literal False left both suites green. `compose` derives the
+    # chrome itself, so these fixtures pass the TRAY's css/markup/script like every other
+    # case here; passing chrome_for's output into those slots duplicates the control and
+    # measures the duplicate-id arm instead — which is how the first attempt at these cases
+    # went red against correct code.
+    _tok = "{--accent:#06c;--em:#c00;--fg:#111;--fg2:#444}"
+
+    def _schemer_frag(consumer: str) -> str:
+        """A fragment with the SWITCHER and no theme control, so `chrome_for` reaches the
+        branch that emits `text_style_css()` ITSELF. The stylesheet can then only come from
+        the composer, which is what makes this discriminate the right variable."""
+        return ("<title>x</title><style>" + _dark + _full
+                + ':root[data-theme="dark"]' + _tok
+                + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                + "body{color:var(--ink);background:var(--bg)}</style>"
+                + page_chrome.text_style_control() + "<p>prose</p>" + consumer)
+
+    case("⛔ a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED",
+         not _composes(_schemer_frag("")))
+    case("...and the same page composes once something opts in",
+         _composes(_schemer_frag('<div class="ex-body">p</div>')))
+
+    def _own_chrome_frag(consumer: str) -> str:
+        """A fragment that brings the scoped stylesheet AND its own theme control, so
+        `chrome_for` takes the own-chrome branch and emits NO stylesheet. The sheet can then
+        only come from the CONTENT — the half the first fix missed and a mutation exposed."""
+        return ("<title>x</title><style>" + _dark + _full
+                + ':root[data-theme="dark"]' + _tok
+                + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                + "body{color:var(--ink);background:var(--bg)}"
+                + page_chrome.text_style_css() + page_chrome.chrome_css() + "</style>"
+                + page_chrome.theme_control() + page_chrome.text_style_control()
+                + '<span class="chrome-when">t</span>'
+                + "<script>" + page_chrome.chrome_script() + "</script>"
+                + "<p>prose</p>" + consumer)
+
+    case("⛔ a FRAGMENT-supplied scoped stylesheet with no consumer is REFUSED too",
+         not _composes(_own_chrome_frag("")))
+    case("...and that page composes once something opts in",
+         _composes(_own_chrome_frag('<div class="ex-body">p</div>')))
+
     case("a fragment that ALREADY has working chrome gets no MARKUP and no SCRIPT added",
          (_c1[1], _c1[2]) == ("", ""))
     case("...but it DOES get the stylesheet its own control needs",
