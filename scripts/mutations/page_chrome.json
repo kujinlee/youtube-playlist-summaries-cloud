@@ -121,83 +121,6 @@
   "expect": "...and a DIRTY one says so"
  },
  {
-  "name": "the chrome bar is not pinned into the viewport",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        \"position:sticky;\"\n",
-    ""
-   ]
-  ],
-  "expect": "the shipped CSS pins the bar into the viewport"
- },
- {
-  "name": "the pinned bar loses its bottom anchor",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        \"bottom:0;\"\n",
-    ""
-   ]
-  ],
-  "expect": "...and anchors it to the bottom edge"
- },
- {
-  "name": "the sticky bar is left transparent",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "\"background:inherit;padding-block:.45rem;\"",
-    "\"padding-block:.45rem;\""
-   ]
-  ],
-  "expect": "the sticky bar is opaque, or the page scrolls through it"
- },
- {
-  "name": "the bar is raised over the ask-tray floater",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        \"z-index:1;\"\n",
-    "        \"z-index:5;\"\n"
-   ]
-  ],
-  "expect": "it sits BELOW the ask-tray floater, which owns z-index 5"
- },
- {
-  "name": "the .chrome selector anchor is loosened to a prefix",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "re.compile(r\"\\.chrome\\{([^}]*)\\}\")",
-    "re.compile(r\"\\.chrome[^{]*\\{([^}]*)\\}\")"
-   ]
-  ],
-  "expect": "`.chrome-btn` pinned does NOT count as the bar being pinned"
- },
- {
-  "name": "the reachability predicate never fires",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return not any(CHROME_PIN in r.replace(\" \", \"\") for r in rules)",
-    "    return False"
-   ]
-  ],
-  "expect": "THE DEFECT: control + a static .chrome rule is refused"
- },
- {
-  "name": "the has_control gate is dropped from reachability",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if not has_control(page):\n        return False\n    rules =",
-    "    rules ="
-   ]
-  ],
-  "expect": "CSS without a control is not a defect"
- },
- {
   "name": "fragments are no longer exempt from the pin",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -218,5 +141,203 @@
    ]
   ],
   "expect": "assert_wired REFUSES to write an unreachable page"
+ },
+ {
+  "name": "the bar is not pinned to the viewport at all",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "{{position:fixed;left:0",
+    "{{left:0"
+   ]
+  ],
+  "expect": "the shipped CSS pins the bar into the viewport"
+ },
+ {
+  "name": "the pinned bar no longer spans the viewport width",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "position:fixed;left:0;right:0;bottom:0;\"",
+    "position:fixed;bottom:0;\""
+   ]
+  ],
+  "expect": "spans the viewport"
+ },
+ {
+  "name": "the pinned bar is left transparent",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "background:var(--bg,Canvas);\"",
+    "\""
+   ]
+  ],
+  "expect": "the pinned bar is opaque"
+ },
+ {
+  "name": "the bar is raised into the floater band",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "\"z-index:1;background",
+    "\"z-index:40;background"
+   ]
+  ],
+  "expect": "a LOW positive z"
+ },
+ {
+  "name": "the page reserves no space for the pinned bar",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\"\n",
+    ""
+   ]
+  ],
+  "expect": "reserves the bar's OWN measured height"
+ },
+ {
+  "name": "the bar loses its separating rule",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "\"border-top:1px solid var(--rule,transparent)}\"",
+    "\"}\""
+   ]
+  ],
+  "expect": "keeps a separating rule"
+ },
+ {
+  "name": "the bar loses its vertical breathing room",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "\"padding-block:.45rem}\"",
+    "\"}\""
+   ]
+  ],
+  "expect": "keeps a separating rule"
+ },
+ {
+  "name": "the script never applies the pin to the bar",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        f\"bar.classList.add({CHROME_PIN_CLASS!r});\"\n",
+    ""
+   ]
+  ],
+  "expect": "adds the pin class to the BAR"
+ },
+ {
+  "name": "a stamp-only bar is pinned too",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "if(bar&&bar.querySelector('#chrome-theme,#schemer')){{",
+    "if(bar){{"
+   ]
+  ],
+  "expect": "never pinned"
+ },
+ {
+  "name": "the pinned-rule selector is loosened to a prefix",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "r\"\\.chrome-pinned\\{([^}]*)\\}\"",
+    "r\"\\.chrome-pinned[^{]*\\{([^}]*)\\}\""
+   ]
+  ],
+  "expect": "`.chrome-pinned-host` does NOT satisfy"
+ },
+ {
+  "name": "the reachability predicate never fires",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    rules = _CHROME_RULE_RE.findall(page)\n",
+    "    rules = [CHROME_PIN]\n"
+   ]
+  ],
+  "expect": "THE DEFECT"
+ },
+ {
+  "name": "the has_control gate is dropped from reachability",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if not has_control(page):\n        return False\n    # \u26d4 A FINISHED DOCUMENT",
+    "    # \u26d4 A FINISHED DOCUMENT"
+   ]
+  ],
+  "expect": "the gates disagree here"
+ },
+ {
+  "name": "a finished document is exempted like a fragment",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if _is_document(page):\n",
+    "    if False:\n"
+   ]
+  ],
+  "expect": "a FINISHED document is never exempt"
+ },
+ {
+  "name": "comments count as live markup again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return _COMMENT_RE.sub(\"\", page)",
+    "    return page"
+   ]
+  ],
+  "expect": "COMMENTED-OUT second control is not a duplicate"
+ },
+ {
+  "name": "duplicate control ids are tolerated",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        if _vis.count(f'id=\"{_cid}\"') > 1:",
+    "        if False:"
+   ]
+  ],
+  "expect": "REFUSES two controls with the same id"
+ },
+ {
+  "name": "the missing-consumer arm never fires",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if missing_text_consumer(page):",
+    "    if False and missing_text_consumer(page):"
+   ]
+  ],
+  "expect": "REFUSES a switcher nothing opts into"
+ },
+ {
+  "name": "the consumer check ignores comment stripping",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    vis = _live(page)\n    return has_text_control(vis)",
+    "    vis = page\n    return has_text_control(vis)"
+   ]
+  ],
+  "expect": "hidden in an HTML COMMENT does not count"
+ },
+ {
+  "name": "the switcher composites text against an unmeasurable ground again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "cursor:pointer;color:inherit;font:inherit}\"",
+    "cursor:pointer;color:inherit;opacity:.6;font:inherit}\""
+   ]
+  ],
+  "expect": "composites no text"
  }
 ]

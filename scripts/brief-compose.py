@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 132 cases
+    python3 scripts/brief-compose.py --self-test  # 133 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -794,9 +794,17 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
         # the exact fail-silent this module exists for, reached through the composer.
         # Trust it only if it is genuinely wired, and supply a stamp if it lacks one.
         page_chrome.assert_wired(content, "brief-compose (fragment's own chrome)")
+        # ⛔ THE STYLESHEET SHIPS EVEN WHEN THE MARKUP DOES NOT — r1 BLOCKING/HIGH.
+        # Both returns below used to give css="". A fragment bringing its own control then
+        # produced a finished page with a control and NO chrome CSS, so the bar rendered
+        # wherever it fell and scrolled away: measured y=8423 of 8481. That is backlog
+        # #300's own defect, shipped through the guard written to prevent it — and the
+        # guard could not see it because it was only ever run on the FRAGMENT.
+        # The markup is still the fragment's own; only the stylesheet is supplied.
         if 'class="chrome-when"' in content:
-            return "", "", ""
-        return "", '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", ""
+            return page_chrome.chrome_css(), "", ""
+        return (page_chrome.chrome_css(),
+                '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
     if page_chrome.missing_palettes(content + page_chrome.theme_control()):
         return (page_chrome.chrome_css(),
                 '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
@@ -806,8 +814,28 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
     # asked for. Reached only on this branch -- the two returns above add a STAMP ONLY,
     # so a fragment that brings its own chrome or lacks a palette gets no switcher either,
     # which is correct: both are the fail-silent this module exists to prevent.
-    return (page_chrome.chrome_css() + page_chrome.text_style_css(),
-            page_chrome.chrome_bar("", generated_at, refresh=False, textstyle=True),
+    # ⛔ `textstyle` OFF when the fragment ALREADY carries a switcher — r1 BLOCKING, found
+    # by both halves. `chrome_script` binds `getElementById('schemer')`, which returns the
+    # FIRST match: the fragment's own inline copy. The one appended here would therefore be
+    # the DEAD one, and the two would show contradictory selected states. Measured 2 of 2 —
+    # BOTH real fragments that reach this branch already carry `id="schemer"`, so every page
+    # that got this feature got the collision. `assert_wired` now also refuses a duplicate
+    # id outright; this keeps the composer from creating one in the first place.
+    own_switcher = page_chrome.has_text_control(content)
+    # ⛔ AND NOT IF NOTHING WOULD CONSUME IT — r1 BLOCKING. `text_style_css()` styles ONLY
+    # `.ex-body …`, and NOTHING in this repository emits that class; it is hand-authored,
+    # on 2 of 20 repo fragments and 7 of 95 live pages. On a fragment without it the three
+    # buttons flip an attribute, persist a choice and restyle nothing — three options, one
+    # rendering, which is the fail-silent `page_chrome` exists to prevent. The composer
+    # therefore DECLINES to emit a control that cannot work; `assert_wired` separately
+    # refuses anyone who emits one anyway, so the rule has both a producer and a gate.
+    has_consumer = f'class="{page_chrome.TEXT_SCOPE_CLASS}' in content \
+        or f" {page_chrome.TEXT_SCOPE_CLASS}" in content
+    want_switcher = not own_switcher and has_consumer
+    return (page_chrome.chrome_css()
+            + (page_chrome.text_style_css() if want_switcher or own_switcher else ""),
+            page_chrome.chrome_bar("", generated_at, refresh=False,
+                                   textstyle=want_switcher),
             f"<script>{page_chrome.chrome_script()}</script>")
 
 
@@ -891,12 +919,21 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # what a selector scan could never tell apart from the tray's own rules.
     styled = (head + SHIM + "\n" + TRAY_BEGIN + "\n" + css + "\n" + TRAY_END
               + "\n" + chrome_css + "\n</style>")
-    return (
+    doc = (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{title}</title>\n{styled}\n</head>\n<body>\n"
         f"{body}\n{markup}\n{script}\n</body>\n</html>\n"
     )
+    # ⛔ THE FINISHED DOCUMENT, NOT ONLY THE FRAGMENT — r1 BLOCKING/HIGH.
+    # `assert_wired` was run at :796 on `content` and NOWHERE on what this function returns,
+    # so every guarantee it makes was about an intermediate. Measured: a wired fragment with
+    # no `.chrome` rule took branch 1, which adds no stylesheet, and shipped a finished page
+    # with a control and no chrome CSS at all — y=8423 of 8481, backlog #300's exact defect,
+    # reproduced THROUGH the guard written to prevent it. Checking the artifact that reaches
+    # the reader is the only check that can be about the reader.
+    page_chrome.assert_wired(doc, "brief-compose (the composed document)")
+    return doc
 
 
 def main(argv: list[str]) -> int:
@@ -1607,7 +1644,17 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
               f'<span class="chrome-when">generated <time>t</time></span>'
               f"<script>{page_chrome.chrome_script()}</script>")
     _c1 = chrome_for(_wired, "t")
-    case("a fragment that ALREADY has working chrome gets nothing added", _c1 == ("", "", ""))
+    # ⟳ 2026-10-18, r1. WAS `_c1 == ("", "", "")` — nothing at all. That conflated two
+    # different things under "added": duplicate MARKUP (which is the defect — a second
+    # control the script never binds) and the STYLESHEET the fragment's own control needs.
+    # Returning no stylesheet is what shipped a finished page with a control and no chrome
+    # CSS, measured at y=8423 of 8481. The property this case is for is UNCHANGED and is
+    # now asserted exactly: no markup and no script are added, so no second control can
+    # exist — while the stylesheet is supplied, because the control on the page needs it.
+    case("a fragment that ALREADY has working chrome gets no MARKUP and no SCRIPT added",
+         (_c1[1], _c1[2]) == ("", ""))
+    case("...but it DOES get the stylesheet its own control needs",
+         _c1[0] == page_chrome.chrome_css())
     # ⟲ Codex High: the button ALONE used to satisfy this branch, composing an inert
     # control and no stamp. It is now refused rather than trusted.
     try:

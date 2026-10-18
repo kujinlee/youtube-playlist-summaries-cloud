@@ -1282,7 +1282,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-18 (backlog #300): 11 -> 20. Nine entries for the reachability guard;
     # one of them — "the has_control gate is dropped from reachability" — exists only
     # because it SURVIVED first, masked by a fixture that tripped the next gate.
-    "scripts/page_chrome.py": 20,
+    # ⟳ 2026-10-18, r1 fold: 20 -> 31. The r1 redesign ORPHANED 7 of the 20 (the pin
+    # moved from sticky to a script-applied fixed class), and SIX new behaviours had no
+    # mutation at all — the duplicate-id refusal, the consumer refusal and the
+    # comment-stripping all survived deletion with 111/111 green.
+    "scripts/page_chrome.py": 31,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5108,7 +5112,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1465)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1476)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

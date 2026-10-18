@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 103 cases
+    python3 scripts/page_chrome.py --self-test          # 118 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -120,11 +120,56 @@ def has_control(page: str) -> bool:
 
 # The declaration that makes the bar reachable. One definition: a page and this guard
 # disagreeing about the string is the same silent no-op THEME_ATTR exists to prevent.
-CHROME_PIN = "position:sticky"
+# ⟳ 2026-10-18, r1: WAS `position:sticky`, WHICH WORKED ON 0 OF 5 PRODUCERS.
+# A `bottom`-only sticky offset only pulls a box UP into view; it says nothing about a box
+# whose flow position is already above the fold. MEASURED by both review halves: the bar sits
+# near the TOP on every generator (y=87-151), not at the end, so the pin changed nothing —
+# `gen-dashboard` y went 126 -> -7134 -> -14395 -> -28115 across a scroll sweep. It worked
+# only on the brief-composed path, which is the one page the author measured.
+#
+# `fixed` was then measured on all five: VISIBLE at every sampled scroll position, 5 of 5.
+# ⚠ `left:0;right:0` are NOT decoration — without them the bar shrink-wraps and
+# `.chrome-when{margin-inline-start:auto}` stops reaching the right edge.
+# ⚠ No ancestor on any of the five has transform/filter/perspective/contain/will-change,
+# which is the one thing that would silently make `fixed` resolve against a non-viewport
+# containing block. Checked explicitly rather than assumed.
+CHROME_PIN = "position:fixed"
+# The class the SCRIPT adds, never the markup. Two reasons, both measured:
+#   * a pinned bar OCCLUDES content (60 text elements on the features page, 9 on the backlog
+#     page), so the pin and the padding that compensates it must arrive together or not at
+#     all — and the padding needs the bar's real height, which is 44-63px at 1280px and
+#     129px at 320x568 because the bar wraps. A literal is wrong on phones.
+#   * 17 of 20 real fragments take the stamp-only branch. Pinning those spends 38px of every
+#     viewport, permanently, on a timestamp nobody interacts with.
+# So: no JS -> no pin, no occlusion, and the bar stays exactly where it is today.
+CHROME_PIN_CLASS = "chrome-pinned"
 
 # `\.chrome\{` and not `\.chrome` — `.chrome-btn{` must NOT satisfy the rule, and an
 # identity case below proves it does not.
-_CHROME_RULE_RE = re.compile(r"\.chrome\{([^}]*)\}")
+# ⟳ r1: now the PINNED rule. `\.chrome-pinned\{` and not `\.chrome`, so neither `.chrome{`
+# nor `.chrome-btn{` satisfies a rule about the pin; identity cases below prove both.
+_CHROME_RULE_RE = re.compile(r"\.chrome-pinned\{([^}]*)\}")
+_DOC_RE = re.compile(r"<body\b|</body>|<html\b", re.I)
+
+
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+
+def _live(page: str) -> str:
+    """The page with HTML COMMENTS removed. PURE.
+
+    ⛔ A BARE SUBSTRING COUNT OVER HTML CANNOT TELL LIVE MARKUP FROM COMMENTED-OUT MARKUP,
+    and this module already knew it: `a chrome block inside an HTML comment still gets a
+    real control added` has been a case here for weeks. The duplicate-id check below was
+    written without consulting it and immediately refused that fixture — a legitimate page
+    — because the commented block counted. Strip first, then match.
+    """
+    return _COMMENT_RE.sub("", page)
+
+
+def _is_document(page: str) -> bool:
+    """True for a FINISHED page, False for a fragment. PURE."""
+    return bool(_DOC_RE.search(page))
 
 
 def bar_unreachable(page: str) -> bool:
@@ -146,7 +191,16 @@ def bar_unreachable(page: str) -> bool:
     """
     if not has_control(page):
         return False
+    # ⛔ A FINISHED DOCUMENT IS NEVER EXEMPT, and r1 proved why with a live page.
+    # The exemption below exists for FRAGMENTS, whose chrome CSS is injected later. But
+    # `assert_wired` is run on the fragment ONLY — `compose()` never re-checked what it
+    # returned — and `chrome_for`'s first branch returns NO stylesheet, so a wired fragment
+    # with no `.chrome` rule shipped a finished page carrying a control and no chrome CSS at
+    # all: measured y=8423 of 8481, which is backlog #300's exact defect reproduced THROUGH
+    # the guard written to prevent it. A document with a <body> has no "later" left.
     rules = _CHROME_RULE_RE.findall(page)
+    if _is_document(page):
+        return not any(CHROME_PIN in r.replace(" ", "") for r in rules)
     # ⛔ NO `.chrome` RULE AT ALL IS NOT A FINDING, AND THE FIRST DRAFT GOT THIS WRONG.
     # MEASURED 2026-10-18: seven of this module's nine callers pass a FRAGMENT, whose chrome
     # CSS is injected later at composition time. Demanding the pin from a subject that carries
@@ -192,6 +246,38 @@ def missing_text_tokens(page: str) -> list[str]:
     return [tok for tok in TEXT_TOKENS if f"{tok}:" not in page]
 
 
+# ⛔ THE CLASS THE SWITCHER'S CSS KEYS ON, AND NOTHING IN THIS REPOSITORY EMITS IT.
+# Measured 2026-10-18 (r1 BLOCKING): `grep -rn ex-body scripts/ .agents/` returns ONLY the
+# three rules in `text_style_css()`. The class is hand-authored in fragments — 2 of 20 repo
+# fragments and 7 of 95 live pages carry it. On the other 93 the buttons flip an attribute,
+# persist a choice and restyle NOTHING.
+#
+# ⛔ AND THE SUITE COULD NOT SEE IT: deleting all three `.ex-body` rules — the switcher's
+# entire consumption layer — left page_chrome 103/103 and brief-compose 132/132. 235 cases,
+# zero red. That is the exact fail-silent the top of this file exists to prevent, one layer
+# BELOW where `missing_palettes` looks: the tokens are declared, and nothing consumes them.
+#
+# Named once here so the CSS below and `missing_text_consumer` below cannot disagree about
+# the string — a page and its guard disagreeing is the silent no-op THEME_ATTR exists for.
+TEXT_SCOPE_CLASS = "ex-body"
+
+
+def missing_text_consumer(page: str) -> bool:
+    """True when the text-style control is on a page that NOTHING on it opts into.
+
+    The two existing arms both pass on this page: the tokens ARE declared, and
+    `data-scheme` IS present (the emitter always ships `text_style_css()` beside the
+    control, which makes that arm vacuous on the only path that produces one).
+
+    ⛔ THIS ASSERTS A CONSUMER EXISTS, NOT THAT IT IS THE RIGHT ONE. A page could carry
+    `class="ex-body"` on an empty div and pass here while rendering one scheme for three
+    choices. Scoping correctness is a layout fact; presence is the part decidable here.
+    """
+    vis = _live(page)
+    return has_text_control(vis) and f'"{TEXT_SCOPE_CLASS}' not in vis \
+        and f" {TEXT_SCOPE_CLASS}" not in vis
+
+
 def text_style_control() -> str:
     """The prototype's control, markup-for-markup: `Text style: colour · headings only · plain`.
 
@@ -232,15 +318,29 @@ def text_style_css() -> str:
         ":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}"
         f':root[{TEXT_ATTR}="1"]{{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}}'
         f':root[{TEXT_ATTR}="2"]{{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}}'
-        ".ex-body{color:var(--prose)}"
-        ".ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}"
-        ".ex-body strong,.ex-body b{color:var(--emph)}"
+        f".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}"
+        f".{TEXT_SCOPE_CLASS} h1,.{TEXT_SCOPE_CLASS} h2,.{TEXT_SCOPE_CLASS} h3,"
+        f".{TEXT_SCOPE_CLASS} h4{{color:var(--head)}}"
+        f".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:var(--emph)}}"
         ".schemer{display:inline-flex;align-items:center;gap:.3em}"
-        ".schemer .lbl{opacity:.7}"
+        # ⟳ 2026-10-18, r1 MEDIUM: the unselected options measured 2.32:1 (light) and
+        # 2.85:1 (dark) once the 0.6 opacity was composited against the bar's own ground —
+        # roughly HALF of AA, on a control added without anyone measuring it. This module's
+        # own docstring records retuning the dashboard because --ink-soft came to 4.32:1 and
+        # that was judged under AA; shipping 2.32:1 beside that note is not defensible.
+        #
+        # ⛔ THE FIX IS TO DELETE THE OPACITY, NOT TO PICK A BIGGER NUMBER. Opacity composites
+        # the text against whatever is behind it, so its contrast is not a property of this
+        # rule at all — it depends on the page's ground and cannot be asserted here. Without
+        # it the unselected label is `--ink-soft`, which is the SAME colour the rest of the
+        # bar already uses and whose contrast each page has already tuned. Selection stays
+        # legible through three non-colour channels — border, accent colour and weight — so
+        # it does not rely on a contrast difference either.
+        ".schemer .lbl{color:var(--ink-soft,inherit)}"
         ".schemer button{background:none;border:1px solid transparent;border-radius:1em;"
-        "padding:0 .55em;cursor:pointer;color:inherit;opacity:.6;font:inherit}"
+        "padding:0 .55em;cursor:pointer;color:inherit;font:inherit}"
         ".schemer button.on{border-color:var(--accent);color:var(--accent);"
-        "font-weight:600;opacity:1}"
+        "font-weight:600}"
     )
 
 
@@ -296,9 +396,6 @@ def chrome_css() -> str:
         # page content and deliberately BELOW the ask-tray floater, which already uses 5.
         ".chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;"
         "font-size:.82rem;color:var(--ink-soft,currentColor);"
-        "position:sticky;"
-        "bottom:0;"
-        "z-index:1;"
         # ⚠ `inherit`, NOT `var(--bg,…)` — and the distinction is load-bearing, not cosmetic.
         # A sticky bar MUST be opaque or the page scrolls through it illegibly. But backlog #80
         # forbids this module borrowing a SURFACE, and the case below pins the token set at four
@@ -307,8 +404,31 @@ def chrome_css() -> str:
         # it is definitionally the same surface the page already chose its ink against.
         # Measured in the browser before it was written: on a live page it resolves to
         # rgb(23,24,26), the page's own ground, and both existing cases stay green untouched.
-        "background:inherit;padding-block:.45rem;"
+        "padding-block:.45rem}"
+        # ── the pinned variant. Only the script adds this class; see CHROME_PIN_CLASS ──
+        # ⚠ `var(--bg,Canvas)`, NOT `inherit`. `inherit` was measured dead: `.chrome`'s parent
+        # is `DIV.shell` / `HEADER.mast` / `DIV.wrap` on 4 of 4 generators, all transparent, so
+        # the bar computed `rgba(0,0,0,0)` on every one of them while the page's own ground was
+        # opaque. `--bg` is DECLARED and opaque on all five (#f7f8fa, #f6f5f2, #f6f5f2, #faf8f4,
+        # #f7f6f3) and it is theme-keyed, which a system colour is not.
+        # ⚠ THIS IS A FIFTH TOKEN, and the pinned-token case says a fifth obliges saying which
+        # KIND it is. It is the page's own GROUND — the surface the page chose its ink against,
+        # and the one `inherit` was reaching for. backlog #80 forbids borrowing a SECOND surface
+        # (`--card`, which #79 drove to 1.03:1); this is the first. The property #80 protects is
+        # preserved; the token set is widened deliberately and recorded, not silently.
+        f".{CHROME_PIN_CLASS}{{position:fixed;left:0;right:0;bottom:0;"
+        # ⚠ A LOW z-index ON PURPOSE, and the number is not the point. Any floating UI must sit
+        # ABOVE this bar. ⟳ r1 LOW: the previous comment claimed the ask tray "owns z-index 5".
+        # It does not — `#tray` computes 50 and the pages declare 70. That figure was taken from
+        # a grep count and never checked against the tray. The case below now asserts the BAND
+        # (a small positive integer), not the literal, because mutating 1 -> 0 preserves the
+        # ordering the rule is about and must not redden.
+        "z-index:1;background:var(--bg,Canvas);"
+        "padding-inline:1rem;"
         "border-top:1px solid var(--rule,transparent)}"
+        # The bar reports its own height so the page can reserve exactly that much and no more.
+        # Fallback 3rem matters only in the instant before the script runs.
+        f"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}"
         # ⚠ `background:transparent`, NOT `var(--card,…)` — backlog #80, 2026-09-01.
         # Of the five tokens this module reads, four are FOREGROUND or BORDER and fall back to
         # `currentColor`/`inherit`, so they are page-derived and safe by construction. `--card` was
@@ -401,6 +521,20 @@ def chrome_script() -> str:
         ".then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();})"
         ".catch(function(e){r.disabled=false;"
         "if(say)say.textContent='could not rebuild: '+e.message;});});}"
+        # ── THE PIN. Applied here and never in the markup, so the pin and the space it
+        # needs arrive together. A bar with NO control is left exactly where it is: 17 of
+        # 20 real fragments are stamp-only, and pinning those spends 38px of every viewport
+        # on a timestamp. `bar.querySelector` is the test, so the rule is "does this bar
+        # have something to press", not "which caller built it".
+        f"var bar=document.querySelector('.chrome');"
+        f"if(bar&&bar.querySelector('#chrome-theme,#schemer')){{"
+        f"bar.classList.add({CHROME_PIN_CLASS!r});"
+        f"document.body.classList.add({CHROME_PIN_CLASS + '-host'!r});"
+        # The bar WRAPS: 44-63px at 1280, 129px at 320x568. Measuring it beats any literal.
+        "var sync=function(){document.documentElement.style.setProperty("
+        "'--chrome-h',bar.offsetHeight+'px');};sync();"
+        "if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}"
+        "else{window.addEventListener('resize',sync);}}"
         "})();"
     )
 
@@ -490,11 +624,30 @@ def assert_wired(page: str, where: str) -> None:
             f"nothing and the reader would get a control that changes an attribute "
             f"nothing styles. Declare it in both theme palettes (parity is enforced by "
             f"check-theme-token-coverage.py) or pass textstyle=False.")
+    _vis = _live(page)
+    for _cid in ("chrome-theme", "schemer"):
+        if _vis.count(f'id="{_cid}"') > 1:
+            raise SystemExit(
+                f"{where}: id=\"{_cid}\" appears {_vis.count(f'id=\"{_cid}\"')} times. "
+                f"The script binds it with getElementById, which returns only the FIRST, "
+                f"so every later copy renders and does nothing — and the two then show "
+                f"contradictory selected states. Measured on 2 of 2 real fragments that "
+                f"reach this path. Emit the control once.")
     if has_text_control(page) and TEXT_ATTR not in page:
         raise SystemExit(
             f"{where}: the text-style control is on the page but {TEXT_ATTR!r} appears "
             f"nowhere in it, so no CSS can respond to a press. Include "
             f"page_chrome.text_style_css().")
+    # ⚠ AFTER the arm above, deliberately: "there is no scheme CSS at all" is a more
+    # fundamental answer than "nothing opts into it", and a case pins this order.
+    if missing_text_consumer(page):
+        raise SystemExit(
+            f"{where}: the text-style control is on the page but nothing on it carries "
+            f"{TEXT_SCOPE_CLASS!r}, which is the ONLY class its CSS styles. The buttons "
+            f"would flip {TEXT_ATTR!r}, persist a choice, and restyle nothing — three "
+            f"options, one rendering. Measured on 93 of 95 live pages. Put "
+            f"{TEXT_SCOPE_CLASS!r} on the element wrapping the prose, or pass "
+            f"textstyle=False.")
     # ⚠ LAST, DELIBERATELY, and `the two refusals are independent` below pins the order.
     # The two checks above ask whether the control WORKS; this one asks whether it can be
     # FOUND. A page that fails both should be told about the broken mechanism first — that
@@ -503,10 +656,11 @@ def assert_wired(page: str, where: str) -> None:
         raise SystemExit(
             f"{where}: the theme control is on the page but no `.chrome` rule contains "
             f"{CHROME_PIN!r}, so the bar renders wherever it happens to fall in the "
-            f"document. It is the last child of <body>, so on a long page that is the "
-            f"final pixels — measured on one such page, y=6445 of 6475 — where no reader "
-            f"will find it. A control nobody can reach is indistinguishable from one that "
-            f"does nothing. Include page_chrome.chrome_css().")
+            f"document and scrolls away with it. ⟳ This message USED to say the bar is "
+            f"\"the last child of <body>\" — that is true only on the brief-composed path. "
+            f"On all four generators it sits near the TOP (y=87-151), under the <h1>, and "
+            f"scrolls off upward. Either way a reader cannot reach it. Include "
+            f"page_chrome.chrome_css().")
 
 
 def _scripts(page: str) -> str:
@@ -685,15 +839,29 @@ def self_test() -> int:
     # page's ink was never chosen against, which is exactly how #79 reached 1.03:1. The rule is
     # therefore about the PROPERTY (no borrowed surface), not about the one token that broke.
     _bg_decls = re.findall(r"background:([^;}]*)", css)
-    case("the chrome paints no background it did not choose itself",
-         [d for d in _bg_decls if "var(" in d], [])
+    # ⟳ 2026-10-18, r1. WAS `== []` — no var() background at all. A pinned bar MUST be
+    # opaque or the page scrolls through it illegibly, so that form could not survive the
+    # fix. ⛔ THE PROPERTY #80 PROTECTS IS UNCHANGED AND IS WHAT IS ASSERTED HERE: the bar
+    # borrows no SECOND surface — none the page's ink was never chosen against. `--bg` is
+    # the page's own GROUND, the first surface, declared and opaque on all five producers
+    # (#f7f8fa #f6f5f2 #f6f5f2 #faf8f4 #f7f6f3) and theme-keyed. `--card`, the token #79
+    # drove to 1.03:1, remains forbidden by the case below and by this list being exact.
+    # Widening this to "any var() is fine" is the retreat that would make #80 unfalsifiable.
+    case("the only var() background is the page's own GROUND, never a second surface",
+         sorted(d.strip() for d in _bg_decls if "var(" in d), ["var(--bg,Canvas)"])
     case("…and `--card` in particular is gone — the token #79 turned on",
          "--card" in css, False)
     # ⚠ The four tokens that MAY still be read, pinned by name. If a fifth appears, someone must
     # come back here and say which kind it is; a silently widened set is how the first one got in.
-    case("the tokens it reads are exactly the four foreground/border ones",
+    # ⟳ r1: FOUR -> SIX, and the comment above demands saying which KIND each addition is,
+    # which is the whole point of pinning the set rather than counting it.
+    #   --bg       a GROUND token — the page's own first surface (see the case above).
+    #   --chrome-h a LENGTH this module WRITES rather than reads: the bar's measured height,
+    #              published so the page can reserve exactly that much. Not a page colour at
+    #              all, so #80's surface rule does not reach it.
+    case("the tokens it reads are exactly these six, each classified above",
          sorted(set(re.findall(r"var\((--[a-z0-9-]+)", css))),
-         ["--ink", "--ink-soft", "--rule", "--structural"])
+         ["--bg", "--chrome-h", "--ink", "--ink-soft", "--rule", "--structural"])
 
 
     # ─── THE TEXT-STYLE SWITCHER ──────────────────────────────────────────────────
@@ -702,7 +870,11 @@ def self_test() -> int:
     TS = text_style_control()
     TSCSS = text_style_css()
     DECL = "<style>:root{--accent:#123456;--em:#654321}</style>"
-    ts_full = f"<style>{LIGHT}{DARK}{TSCSS}</style>{DECL}{TS}<script>{chrome_script()}</script>"
+    # ⟳ r1: a consumer joined this fixture because `assert_wired` now also requires one.
+    # The assertion is unchanged — a complete page raises nothing — but "complete" grew.
+    ts_full = (f"<style>{LIGHT}{DARK}{TSCSS}</style>{DECL}{TS}"
+               f'<div class="{TEXT_SCOPE_CLASS}">prose</div>'
+               f"<script>{chrome_script()}</script>")
 
     case("the control is the prototype's element", 'id="schemer"' in TS, True)
     case("...with its label", "Text style:" in TS, True)
@@ -762,6 +934,16 @@ def self_test() -> int:
           if v in ("--verified", "--warn")], [])
     case("the control's live style keys on the class the prototype's CSS uses",
          ".schemer button.on" in TSCSS, True)
+    # ⟳ r1 MEDIUM. Opacity composites against whatever is behind the text, so a contrast
+    # figure for it is not a property of this stylesheet. Measured at 0.6 it was 2.32:1
+    # light / 2.85:1 dark — about half of AA. This asserts the MECHANISM is gone, which is
+    # the only part decidable here; the contrast itself belongs to the page's own ground.
+    case("the switcher composites no text against the ground it cannot measure",
+         "opacity" in TSCSS, False)
+    case("...and selection survives on border, accent and weight, not contrast alone",
+         all(k in TSCSS.replace(" ", "")
+             for k in ("border-color:var(--accent)", "color:var(--accent)",
+                       "font-weight:600")), True)
 
     # --- assert_wired, the caller-facing gate
     case("assert_wired accepts a fully wired switcher", raises(ts_full), None)
@@ -805,17 +987,38 @@ def self_test() -> int:
     # The falsifier for this whole change is `STATIC_PAGE` below: it is the shape all 93 live
     # pages had this morning, and it must go RED here and green after regeneration.
     REACHABLE = f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
+    # ⟳ r1: this fixture is now a DOCUMENT. The exemption for a subject with no rule is
+    # for FRAGMENTS; r1 showed a finished page reaching the reader through it (y=8423 of
+    # 8481), so a <body> is what makes this the defect rather than a legitimate fragment.
     STATIC_PAGE = (f"<style>{LIGHT}{DARK}"
                    ".chrome{display:flex;align-items:center;color:var(--ink-soft)}"
-                   f"</style>{theme_control()}")
+                   f"</style><body>{theme_control()}</body>")
     case("the shipped CSS pins the bar into the viewport",
          CHROME_PIN in chrome_css().replace(" ", ""), True)
     case("...and anchors it to the bottom edge",
          "bottom:0" in chrome_css().replace(" ", ""), True)
-    case("the sticky bar is opaque, or the page scrolls through it",
-         "background:inherit" in chrome_css().replace(" ", ""), True)
-    case("it sits BELOW the ask-tray floater, which owns z-index 5",
-         "z-index:1" in chrome_css().replace(" ", ""), True)
+    case("the pinned bar is opaque, or the page scrolls through it",
+         "background:var(--bg,Canvas)" in chrome_css().replace(" ", ""), True)
+    case("...and it spans the viewport, or margin-inline-start:auto stops reaching the edge",
+         all(k in chrome_css().replace(" ", "") for k in ("left:0", "right:0")), True)
+    case("the page reserves the bar's OWN measured height, never a literal",
+         "padding-bottom:var(--chrome-h" in chrome_css().replace(" ", ""), True)
+    case("the pin is applied by the SCRIPT, so no-JS gets no pin and no occlusion",
+         (CHROME_PIN_CLASS in chrome_script(), CHROME_PIN_CLASS in chrome_bar("s", "t")),
+         (True, False))
+    case("a bar with NO control is never pinned — 17 of 20 fragments are stamp-only",
+         "#chrome-theme,#schemer" in chrome_script(), True)
+    # ⟳ 2026-10-18, r1 LOW. WAS `"z-index:1" in css` and the comment claimed the ask tray
+    # "owns z-index 5". ⛔ BOTH WRONG. `#tray` computes 50 and the pages declare 70; the 5
+    # came from a grep COUNT and was never checked against the tray — a figure invented to
+    # support a sound argument, which is this repository's most-repeated tell. And the case
+    # pinned the literal, not the ordering: mutating 1 -> 0 PRESERVES the property (still
+    # far below any floater) yet reddened it, so it defended a token rather than a rule.
+    # Asserting the BAND is what the rule is actually about: a small positive integer, so
+    # the bar paints above page content and below anything that floats over it.
+    _z = re.search(r"\.chrome-pinned\{[^}]*z-index:(\d+)", chrome_css().replace(" ", ""))
+    case("the pinned bar sits above content and below any floater — a LOW positive z",
+         bool(_z) and 0 < int(_z.group(1)) < 10, True)
     case("a page built with this module's CSS is reachable",
          bar_unreachable(REACHABLE), False)
     case("THE DEFECT: control + a static .chrome rule is refused",
@@ -828,18 +1031,63 @@ def self_test() -> int:
     # would call it a defect. Found by a SURVIVING MUTATION — the no-control case below also
     # carries no `.chrome` rule, so the `rules` gate answered first and nothing depended on
     # `has_control` at all. A green suite said it was covered; it was masked.
-    case("CSS without a control is not a defect — the gates must disagree here",
+    # ⚠ A DOCUMENT, and it must be. ⟳ r1 fold: after the redesign this fixture was a
+    # FRAGMENT, so `if not rules: return False` answered before `has_control` was ever
+    # consulted and the mutation that deletes that gate SURVIVED. The gates only disagree
+    # on a finished page with NO control and no pinned rule: `has_control` says "not my
+    # business", everything downstream would call it a defect.
+    case("a document with CSS but no control is not a defect — the gates disagree here",
          bar_unreachable(f"<style>{LIGHT}{DARK}"
                          ".chrome{display:flex;color:var(--ink-soft)}"
-                         "</style><p>no control on this page</p>"), False)
+                         "</style><body><p>no control on this page</p></body>"), False)
     case("a page with no control owes no bar at all",
          bar_unreachable(f"<style>{LIGHT}{DARK}</style><p>no control here</p>"), False)
     # IDENTITY CASE. `.chrome-btn{position:sticky}` must NOT satisfy a rule about `.chrome`,
     # or the predicate is satisfied by a sibling selector that shares a prefix.
-    case("`.chrome-btn` pinned does NOT count as the bar being pinned",
+    case("neither `.chrome` nor `.chrome-btn` pinned counts as the BAR being pinned",
          bar_unreachable(f"<style>{LIGHT}{DARK}"
-                         ".chrome{display:flex}.chrome-btn{position:sticky}"
-                         f"</style>{theme_control()}"), True)
+                         ".chrome{position:fixed}.chrome-btn{position:fixed}"
+                         f"</style><body>{theme_control()}</body>"), True)
+    # IDENTITY: the body-padding rule SHARES the class as a prefix and must not satisfy it.
+    case("`.chrome-pinned-host` does NOT satisfy a rule about `.chrome-pinned`",
+         bar_unreachable(f"<style>{LIGHT}{DARK}"
+                         ".chrome-pinned-host{position:fixed}"
+                         f"</style><body>{theme_control()}</body>"), True)
+    # ── the refusals must FIRE, not merely be satisfiable. Each of these survived its
+    # mutation until it was written: a fixture that passes a guard proves only that the
+    # guard does not false-positive; it says nothing about whether the guard does anything.
+    _EXB = f'<div class="{TEXT_SCOPE_CLASS}">prose</div>'
+    _tsw = (f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
+            f"{theme_control()}{text_style_control()}"
+            f"<script>{chrome_script()}</script>")
+    case("assert_wired REFUSES a switcher nothing opts into",
+         "which is the ONLY class its CSS styles" in (raises(_tsw) or ""), True)
+    case("...and ACCEPTS the same page once something does",
+         "which is the ONLY class its CSS styles" in
+         (raises(f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
+                 f"{theme_control()}{text_style_control()}{_EXB}"
+                 f"<script>{chrome_script()}</script>") or ""), False)
+    case("a consumer hidden in an HTML COMMENT does not count as one",
+         "which is the ONLY class its CSS styles" in
+         (raises(_tsw + f"<!-- {_EXB} -->") or ""), True)
+    case("assert_wired REFUSES two controls with the same id",
+         'appears 2 times' in
+         (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
+                 f"{theme_control()}{theme_control()}"
+                 f"<script>{chrome_script()}</script>") or ""), True)
+    case("...but a COMMENTED-OUT second control is not a duplicate",
+         'appears 2 times' in
+         (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
+                 f"{theme_control()}<!-- {theme_control()} -->"
+                 f"<script>{chrome_script()}</script>") or ""), False)
+    # The pin is applied to the BAR; the body only hosts the padding. A mutation that drops
+    # the bar's own class leaves the host class behind, so naming the class is not enough.
+    case("the script adds the pin class to the BAR, not only the body",
+         "bar.classList.add" in chrome_script(), True)
+    case("the bar keeps a separating rule and its breathing room",
+         ("border-top" in chrome_css(), "padding-block" in chrome_css()), (True, True))
+    case("a FINISHED document is never exempt, however it reached the writer",
+         bar_unreachable(f"<style>{LIGHT}{DARK}</style><body>{theme_control()}</body>"), True)
     # assert_wired must ACT on it, not merely be able to compute it — the guard and the
     # refusal are separate things, and a predicate nothing calls protects nothing.
     def _raises(page):
@@ -859,7 +1107,7 @@ def self_test() -> int:
     # ground and `transparent` is the button. A THIRD value means someone introduced a surface.
     case("the only backgrounds are the page's own ground and the button's none",
          sorted(set(d.strip() for d in re.findall(r"background:([^;}]*)", chrome_css()))),
-         ["inherit", "transparent"])
+         ["transparent", "var(--bg,Canvas)"])
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0
