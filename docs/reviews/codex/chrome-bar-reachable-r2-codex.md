@@ -1,5 +1,8 @@
 <!-- codex-review: model=gpt-6.1-sol -->
 
+
+**REVIEW GAP:** claude — not invoked for round 2. `docs/plugins.md` says round 1 runs both halves CONCURRENTLY and rounds 2+ ALTERNATE, because a concurrent pair never reviews the FIXES. Round 1 ran both; rounds 2, 3 and 5 are the Codex side of that alternation and round 4 was the Claude side. This is a single-reviewer round BY CONSTRUCTION, and saying so is the point of this line.
+
 - **High — `scripts/page_chrome.py:277`: the consumer refusal blocks a working repository page.** Composing `docs/explainers/2026-10-05-topic-why-x-not-y.fragment.html` exits 1 with “nothing on it carries 'ex-body'.” That fragment styles `body`, headings, and emphasis directly through its scheme variables. **Verified:** attempted composition of all 20 repository fragments; this one failed. Rendered it separately and clicked its three options: heading/emphasis colors changed correctly. The guard generalizes the shared stylesheet’s scope requirement to an independently implemented switcher.
 
 - **Medium — `scripts/page_chrome.py:277` and `scripts/brief-compose.py:832`: consumer detection accepts class prefixes and rejects valid quoting.** `class="ex-bodyguard"` satisfies both substring checks but matches none of the `.ex-body` rules. Conversely, `class='ex-body'` fails the refusal despite being valid HTML. **Verified:** the prefix fixture passed `assert_wired`; browser clicks changed `data-scheme` but produced identical computed colors for all three options. The single-quoted fixture was refused, yet rendered three distinct schemes when loaded directly.

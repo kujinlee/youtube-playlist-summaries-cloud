@@ -1,5 +1,8 @@
 <!-- codex-review: model=gpt-6.1-sol -->
 
+
+**REVIEW GAP:** claude — not invoked for round 3. `docs/plugins.md` says round 1 runs both halves CONCURRENTLY and rounds 2+ ALTERNATE, because a concurrent pair never reviews the FIXES. Round 1 ran both; rounds 2, 3 and 5 are the Codex side of that alternation and round 4 was the Claude side. This is a single-reviewer round BY CONSTRUCTION, and saying so is the point of this line.
+
 - **Blocking — `scripts/page_chrome.py:358`: equivalent CSS disables the consumer guard.** Changing the emitted rule from `.ex-body{color:var(--prose)}` to `.ex-body { color:var(--prose) }` makes `missing_text_consumer()` return False. The stylesheet remains present and valid, but a page without any consumer passes `assert_wired()`. **Verified:** Chromium clicks changed `data-scheme` while prose and emphasis colors remained identical.
 
 - **Medium — `scripts/page_chrome.py:194`: template shielding hides the template element’s own id.** `<template id="schemer"></template>` before the visible switcher passes duplicate detection. Chromium’s `getElementById('schemer')` returns that template, so the script binds no visible buttons. **Verified:** the guard accepted the fixture; Chromium found two matching ids, and clicking the visible “plain” option changed neither the scheme attribute nor computed colors.

@@ -1,5 +1,8 @@
 <!-- codex-review: model=gpt-6.1-sol -->
 
+
+**REVIEW GAP:** claude — not invoked for round 5. `docs/plugins.md` says round 1 runs both halves CONCURRENTLY and rounds 2+ ALTERNATE, because a concurrent pair never reviews the FIXES. Round 1 ran both; rounds 2, 3 and 5 are the Codex side of that alternation and round 4 was the Claude side. This is a single-reviewer round BY CONSTRUCTION, and saying so is the point of this line.
+
 No Blocking findings.
 
 - **High — `scripts/page_chrome.py:236`: nested `<noscript>` hides a live control from every guard.** `<noscript><noscript></noscript><button id="chrome-theme">Theme</button>` leaves the scanner’s shield raised. **Verified:** `assert_wired()` accepted this without palettes or a handler; Chromium found one visible theme button. Moving `has_control()` onto this scan introduced a fail-open.
