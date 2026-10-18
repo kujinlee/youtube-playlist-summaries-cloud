@@ -471,5 +471,27 @@
    ]
   ],
   "expect": "a handler inside a <template> does not bind the control"
+ },
+ {
+  "name": "the shield branches resolve attributes last-wins again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "            nid = self._attrs(attrs).get(\"id\")",
+    "            nid = dict(attrs).get(\"id\")"
+   ]
+  ],
+  "expect": "duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else"
+ },
+ {
+  "name": "the enclosing shield is checked after the branches again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        if any(self._depth.values()):\n            if tag in self._depth:\n                self._depth[tag] += 1\n            elif tag == \"script\":\n                self._in_script += 1\n            return\n",
+    ""
+   ]
+  ],
+  "expect": "an element inside a shield contributes nothing, whatever element it is"
  }
 ]

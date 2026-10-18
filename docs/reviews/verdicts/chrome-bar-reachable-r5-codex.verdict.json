@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 3627 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "4f4e2748508aa2bf11789b37076dfde30f23e6a8",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/tmp/r5-prompt.md",
+  "reason": "3627 chars",
+  "refused": false,
+  "review": "chrome-bar-reachable-r5-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

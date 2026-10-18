@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 155 cases
+    python3 scripts/page_chrome.py --self-test          # 157 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -204,6 +204,22 @@ class _Scan(_HTMLParser):
         # The first is a fail-open, the second a false duplicate-id refusal.
         self._depth = {"template": 0, "noscript": 0}
 
+    @staticmethod
+    def _attrs(attrs):
+        """First-wins, as Chromium resolves duplicate attributes. PURE.
+
+        ⛔ ONE HELPER, because r5 found the previous fix applied FIRST-WINS in the main path
+        and left `dict(attrs)` — last-wins — in the two early-return branches it had just
+        written. `<noscript id="chrome-theme" id="other">` then escaped duplicate detection
+        while the reversed order falsely refused a working page. Instance-not-class, in the
+        same function as the fix.
+        """
+        d = {}
+        for k, v in attrs:
+            if k not in d:
+                d[k] = v
+        return d
+
     def handle_starttag(self, tag, attrs):
         # ⚠ `template` ONLY, and a surviving mutation is why. The first version listed
         # script and style here too; removing them changed NOTHING, because `html.parser`
@@ -212,6 +228,16 @@ class _Scan(_HTMLParser):
         # <template> is NOT. The script/style entries were dead code, and the case that
         # seemed to cover them was passing for an ambient reason. Deleted rather than
         # given a contrived witness; `template` keeps its own case and mutation below.
+        # ⛔ THE ENCLOSING SHIELD IS CHECKED FIRST. r5: the template/noscript branches ran
+        # BEFORE it, so `<template><noscript id="chrome-theme"></noscript></template>`
+        # recorded an id Chromium never creates — a false duplicate-id refusal beside a real
+        # control. An element inside a shield contributes nothing, whatever element it is.
+        if any(self._depth.values()):
+            if tag in self._depth:
+                self._depth[tag] += 1
+            elif tag == "script":
+                self._in_script += 1
+            return
         if tag == "script":
             self._in_script += 1
             return
@@ -230,7 +256,7 @@ class _Scan(_HTMLParser):
             #   clicking "plain"               -> data-scheme still null
             #   both visible controls inert, and assert_wired PASSED.
             # So the id is recorded exactly as a template's is; only the contents are hidden.
-            nid = dict(attrs).get("id")
+            nid = self._attrs(attrs).get("id")
             if nid:
                 self.ids.append(nid)
             self._depth["noscript"] += 1
@@ -240,7 +266,7 @@ class _Scan(_HTMLParser):
             # `getElementById('schemer')` returns the <template> itself, so the script binds
             # nothing. r3 measured a page where that silently disabled the visible switcher.
             # Record the id, then shield what is inside.
-            tid = dict(attrs).get("id")
+            tid = self._attrs(attrs).get("id")
             if tid:
                 self.ids.append(tid)
             self._depth["template"] += 1
@@ -250,10 +276,7 @@ class _Scan(_HTMLParser):
         # ⚠ FIRST WINS, like Chromium — `dict(attrs)` keeps the LAST and r3 measured the
         # consequences both ways: `class="other" class="ex-body"` invented a consumer that
         # does not exist, and `id="schemer" id="other"` hid a real duplicate control.
-        d = {}
-        for k, v in attrs:
-            if k not in d:
-                d[k] = v
+        d = self._attrs(attrs)
         if d.get("id"):
             self.ids.append(d["id"])
         if d.get("class"):
@@ -1345,6 +1368,15 @@ def self_test() -> int:
     case("...while a real one still does",
          CHROME_SCRIPT_MARK in _scripts(f"<script>{chrome_script()}</script>"), True)
     # ── r4: one counter shielded two mechanisms, so either end tag lifted either shield.
+    # ── r5: the first-wins fix had reached ONE of three branches, and the shield check ran
+    # AFTER the branches it was meant to gate. Both are this module's own inconsistency.
+    case("duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else",
+         (_scan('<noscript id="chrome-theme" id="other"></noscript>').ids,
+          _scan('<noscript id="other" id="chrome-theme"></noscript>').ids),
+         (["chrome-theme"], ["other"]))
+    case("an element inside a shield contributes nothing, whatever element it is",
+         (_scan('<template><noscript id="chrome-theme"></noscript></template>').ids,
+          _scan('<noscript><template id="x"></template></noscript>').ids), ([], []))
     case("a <noscript> closed by </template> does not invent a consumer",
          "ex-body" in _scan('<noscript></template>'
                             '<div class="ex-body">x</div></noscript>').classes, False)
