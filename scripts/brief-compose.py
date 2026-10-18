@@ -829,9 +829,10 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
     # rendering, which is the fail-silent `page_chrome` exists to prevent. The composer
     # therefore DECLINES to emit a control that cannot work; `assert_wired` separately
     # refuses anyone who emits one anyway, so the rule has both a producer and a gate.
-    has_consumer = f'class="{page_chrome.TEXT_SCOPE_CLASS}' in content \
-        or f" {page_chrome.TEXT_SCOPE_CLASS}" in content
-    want_switcher = not own_switcher and has_consumer
+    # ⛔ ASK page_chrome, DO NOT RE-SPELL THE TEST — r2 flagged this line's substring form
+    # alongside the one in `page_chrome`, which is the tell that one rule had two spellings.
+    # A second implementation of one rule drifts; this repository has measured that 17 times.
+    want_switcher = not own_switcher and page_chrome.has_text_consumer(content)
     return (page_chrome.chrome_css()
             + (page_chrome.text_style_css() if want_switcher or own_switcher else ""),
             page_chrome.chrome_bar("", generated_at, refresh=False,

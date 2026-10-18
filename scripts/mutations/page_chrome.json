@@ -286,28 +286,6 @@
   "expect": "a FINISHED document is never exempt"
  },
  {
-  "name": "comments count as live markup again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return _COMMENT_RE.sub(\"\", page)",
-    "    return page"
-   ]
-  ],
-  "expect": "COMMENTED-OUT second control is not a duplicate"
- },
- {
-  "name": "duplicate control ids are tolerated",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        if _vis.count(f'id=\"{_cid}\"') > 1:",
-    "        if False:"
-   ]
-  ],
-  "expect": "REFUSES two controls with the same id"
- },
- {
   "name": "the missing-consumer arm never fires",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -319,17 +297,6 @@
   "expect": "REFUSES a switcher nothing opts into"
  },
  {
-  "name": "the consumer check ignores comment stripping",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    vis = _live(page)\n    return has_text_control(vis)",
-    "    vis = page\n    return has_text_control(vis)"
-   ]
-  ],
-  "expect": "hidden in an HTML COMMENT does not count"
- },
- {
   "name": "the switcher composites text against an unmeasurable ground again",
   "file": "scripts/page_chrome.py",
   "edits": [
@@ -339,5 +306,93 @@
    ]
   ],
   "expect": "composites no text"
+ },
+ {
+  "name": "the emitted stylesheet stops consuming the prose role",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        f\".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}\"\n",
+    "        f\".{TEXT_SCOPE_CLASS}{{color:inherit}}\"\n"
+   ]
+  ],
+  "expect": "CONSUMES --prose"
+ },
+ {
+  "name": "the parser stops shielding template contents",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        if tag == \"template\":\n            self._depth_template += 1\n            return\n",
+    ""
+   ]
+  ],
+  "expect": "inside a <template> is not a live control"
+ },
+ {
+  "name": "duplicate control ids are tolerated",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        if _ids.count(_cid) > 1:",
+    "        if False:"
+   ]
+  ],
+  "expect": "REFUSES two controls with the same id"
+ },
+ {
+  "name": "the consumer test stops parsing and matches substrings again",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return TEXT_SCOPE_CLASS in _scan(page).classes",
+    "    return TEXT_SCOPE_CLASS in page"
+   ]
+  ],
+  "expect": "PREFIX does not"
+ },
+ {
+  "name": "the stylesheet-binding escape is removed, refusing a page that works",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if TEXT_CSS_SIGNATURE not in page:\n        return False\n",
+    ""
+   ]
+  ],
+  "expect": "implementing the scheme ITSELF is not refused"
+ },
+ {
+  "name": "the signature is retyped instead of derived",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "TEXT_CSS_SIGNATURE = f\".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}\"",
+    "TEXT_CSS_SIGNATURE = \".ex-body{color:var(--prosey)}\""
+   ]
+  ],
+  "expect": "the one the emitter writes"
+ },
+ {
+  "name": "the pinned bar keeps its pin in print",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "f\"@media print{{.{CHROME_PIN_CLASS}{{position:static}}\"",
+    "f\"@media print{{\""
+   ]
+  ],
+  "expect": "returns to the flow in print"
+ },
+ {
+  "name": "the emitted stylesheet stops consuming the emphasis role",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:var(--emph)}}\"",
+    "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:inherit}}\""
+   ]
+  ],
+  "expect": "CONSUMES --emph"
  }
 ]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 118 cases
+    python3 scripts/page_chrome.py --self-test          # 133 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -35,6 +35,7 @@ the convenience on top and degrades to a no-op that SAYS SO.
 """
 from __future__ import annotations
 import html as _html
+from html.parser import HTMLParser as _HTMLParser
 import os
 import pathlib
 import re
@@ -152,19 +153,76 @@ _CHROME_RULE_RE = re.compile(r"\.chrome-pinned\{([^}]*)\}")
 _DOC_RE = re.compile(r"<body\b|</body>|<html\b", re.I)
 
 
-_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+class _Scan(_HTMLParser):
+    """Real element ids and classes, from a PARSE rather than a substring search.
 
+    ⛔ WHY A PARSER, AND WHY THE THREE SUBSTRING CHECKS IT REPLACES WERE ALL WRONG IN BOTH
+    DIRECTIONS AT ONCE. r2 measured every one of them:
 
-def _live(page: str) -> str:
-    """The page with HTML COMMENTS removed. PURE.
+      * `page.count('id="chrome-theme"')` ACCEPTED a page with one double-quoted and one
+        single-quoted control — two live controls, the second inert — and REFUSED a page
+        whose only second occurrence was inside a JavaScript string literal.
+      * `'"ex-body' in page` ACCEPTED `class="ex-bodyguard"`, which matches none of the
+        rules, and REFUSED `class='ex-body'`, which is valid HTML that renders correctly.
+      * a non-greedy `<!--.*?-->` strip DELETED LIVE MARKUP between
+        `<script>const start="<!--";</script>` and `<script>const end="-->";</script>`,
+        hiding a real duplicate control from the guard.
 
-    ⛔ A BARE SUBSTRING COUNT OVER HTML CANNOT TELL LIVE MARKUP FROM COMMENTED-OUT MARKUP,
-    and this module already knew it: `a chrome block inside an HTML comment still gets a
-    real control added` has been a case here for weeks. The duplicate-id check below was
-    written without consulting it and immediately refused that fixture — a legitimate page
-    — because the commented block counted. Strip first, then match.
+    The browser does not read HTML with regular expressions, so neither can a guard that
+    claims to describe what the browser will do. `html.parser` knows what a comment is,
+    what a script's contents are, and that attribute quoting is not part of the value.
+
+    ⚠ IT IS STILL NOT A BROWSER. It does not build a tree, resolve `<template>`, or run
+    scripts that inject markup. What it buys is that quoting, comments and script text —
+    the three things r2 broke — are decided by a parser rather than by me.
     """
-    return _COMMENT_RE.sub("", page)
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.ids: list[str] = []
+        self.classes: set[str] = set()
+        self._depth_template = 0
+
+    def handle_starttag(self, tag, attrs):
+        # ⚠ `template` ONLY, and a surviving mutation is why. The first version listed
+        # script and style here too; removing them changed NOTHING, because `html.parser`
+        # already treats both as CDATA — measured: an `id` inside <script> or <style> is
+        # invisible to handle_starttag without any help from me, while one inside
+        # <template> is NOT. The script/style entries were dead code, and the case that
+        # seemed to cover them was passing for an ambient reason. Deleted rather than
+        # given a contrived witness; `template` keeps its own case and mutation below.
+        if tag == "template":
+            self._depth_template += 1
+            return
+        if self._depth_template:
+            return
+        d = dict(attrs)
+        if d.get("id"):
+            self.ids.append(d["id"])
+        if d.get("class"):
+            self.classes.update(d["class"].split())
+
+    def handle_endtag(self, tag):
+        if tag == "template" and self._depth_template:
+            self._depth_template -= 1
+
+    # `handle_comment` is not overridden ON PURPOSE: a commented-out control contributes
+    # nothing, which is the behaviour the suite has asserted since before this guard.
+
+
+def _scan(page: str) -> _Scan:
+    """Parse a page for its LIVE element ids and classes. PURE."""
+    s = _Scan()
+    try:
+        s.feed(page)
+        s.close()
+    except Exception:
+        # ⛔ A PARSE THAT FAILED IS NOT A PAGE WITH NO CONTROLS. Returning an empty scan
+        # here would make every check below silently pass — fail-open, which the ratchet
+        # forbids. An unparseable page keeps whatever was found before the failure, and
+        # the caller's own rules then apply to it.
+        pass
+    return s
 
 
 def _is_document(page: str) -> bool:
@@ -260,6 +318,19 @@ def missing_text_tokens(page: str) -> list[str]:
 # Named once here so the CSS below and `missing_text_consumer` below cannot disagree about
 # the string — a page and its guard disagreeing is the silent no-op THEME_ATTR exists for.
 TEXT_SCOPE_CLASS = "ex-body"
+# The rule THIS MODULE emits, used to tell "my stylesheet is on this page" from "the page
+# implements the scheme itself". Derived from the emitter below rather than retyped, so the
+# two cannot drift — a second spelling of one rule is this repository's most-measured defect.
+TEXT_CSS_SIGNATURE = f".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}"
+
+
+def has_text_consumer(page: str) -> bool:
+    """True when some LIVE element on the page carries the scoping class. PURE.
+
+    The single spelling of that test. `brief-compose` asks this rather than re-deriving
+    it; r2 found the two copies had already diverged in their quoting behaviour.
+    """
+    return TEXT_SCOPE_CLASS in _scan(page).classes
 
 
 def missing_text_consumer(page: str) -> bool:
@@ -273,9 +344,22 @@ def missing_text_consumer(page: str) -> bool:
     `class="ex-body"` on an empty div and pass here while rendering one scheme for three
     choices. Scoping correctness is a layout fact; presence is the part decidable here.
     """
-    vis = _live(page)
-    return has_text_control(vis) and f'"{TEXT_SCOPE_CLASS}' not in vis \
-        and f" {TEXT_SCOPE_CLASS}" not in vis
+    if not has_text_control(page):
+        return False
+    # ⛔ ONLY WHEN THIS MODULE'S STYLESHEET IS THE ONE THAT WOULD HAVE TO WORK — r2 HIGH.
+    # The first version refused ANY page whose control lacked `.ex-body`, and that blocked
+    # `2026-10-05-topic-why-x-not-y`, a page Codex rendered and proved CORRECT: it brings
+    # its own switcher and styles body, headings and emphasis directly through the scheme
+    # variables. It reaches `chrome_for`'s own-control branch, which ships NO
+    # `text_style_css()` at all — so the scope requirement this guard enforces was never
+    # on that page, and the guard was opining about a stylesheet that is not there.
+    # A guard that refuses a working page is the cry-wolf failure this repository treats as
+    # worse than no guard, so the rule now binds to the stylesheet rather than to the class.
+    if TEXT_CSS_SIGNATURE not in page:
+        return False
+    # Classes come from a PARSE, so `class='ex-body'` counts and `class="ex-bodyguard"`
+    # does not — r2 measured the substring version getting both of those backwards.
+    return TEXT_SCOPE_CLASS not in _scan(page).classes
 
 
 def text_style_control() -> str:
@@ -429,6 +513,13 @@ def chrome_css() -> str:
         # The bar reports its own height so the page can reserve exactly that much and no more.
         # Fallback 3rem matters only in the instant before the script runs.
         f"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}"
+        # ⛔ NOT IN PRINT — r2 MEDIUM, verified against a rasterised 12-page PDF. A fixed
+        # element repeats at the bottom of EVERY printed page, while the reserved padding
+        # exists only once at the document end; on page 2 the band covered a real row
+        # sitting 9.6pt from the edge. Print has no viewport to pin to and no scrolling to
+        # escape, so the bar simply returns to the flow and the reservation is dropped.
+        f"@media print{{.{CHROME_PIN_CLASS}{{position:static}}"
+        f"body.{CHROME_PIN_CLASS}-host{{padding-bottom:0}}}}"
         # ⚠ `background:transparent`, NOT `var(--card,…)` — backlog #80, 2026-09-01.
         # Of the five tokens this module reads, four are FOREGROUND or BORDER and fall back to
         # `currentColor`/`inherit`, so they are page-derived and safe by construction. `--card` was
@@ -624,11 +715,11 @@ def assert_wired(page: str, where: str) -> None:
             f"nothing and the reader would get a control that changes an attribute "
             f"nothing styles. Declare it in both theme palettes (parity is enforced by "
             f"check-theme-token-coverage.py) or pass textstyle=False.")
-    _vis = _live(page)
+    _ids = _scan(page).ids
     for _cid in ("chrome-theme", "schemer"):
-        if _vis.count(f'id="{_cid}"') > 1:
+        if _ids.count(_cid) > 1:
             raise SystemExit(
-                f"{where}: id=\"{_cid}\" appears {_vis.count(f'id=\"{_cid}\"')} times. "
+                f"{where}: id=\"{_cid}\" appears {_ids.count(_cid)} times. "
                 f"The script binds it with getElementById, which returns only the FIRST, "
                 f"so every later copy renders and does nothing — and the two then show "
                 f"contradictory selected states. Measured on 2 of 2 real fragments that "
@@ -938,6 +1029,19 @@ def self_test() -> int:
     # figure for it is not a property of this stylesheet. Measured at 0.6 it was 2.32:1
     # light / 2.85:1 dark — about half of AA. This asserts the MECHANISM is gone, which is
     # the only part decidable here; the contrast itself belongs to the page's own ground.
+    # ⛔ THE SURVIVOR r1 AND r2 BOTH NAMED, AND r1's FOLD DID NOT CLOSE. Deleting all three
+    # consumption rules left 118/118 and 133/133 green: the r1 fold added a check for
+    # "does the PAGE carry a consumer element" and recorded the Blocking folded, but the
+    # defect was "nothing notices if the CONSUMING CSS is deleted". Different claims.
+    # Every role the control offers must be spent by some rule in the emitted stylesheet.
+    for _role in ("--prose", "--head", "--emph"):
+        case(f"the emitted stylesheet actually CONSUMES {_role}",
+             f"var({_role})" in TSCSS, True)
+    case("...and each consuming rule is scoped to the class the guard requires",
+         all(f".{TEXT_SCOPE_CLASS}" in r for r in TSCSS.split("}")
+             if any(f"var({x})" in r for x in ("--prose", "--head", "--emph"))), True)
+    case("the signature the guard keys on is the one the emitter writes",
+         TEXT_CSS_SIGNATURE in TSCSS, True)
     case("the switcher composites no text against the ground it cannot measure",
          "opacity" in TSCSS, False)
     case("...and selection survives on border, accent and weight, not contrast alone",
@@ -1070,6 +1174,42 @@ def self_test() -> int:
     case("a consumer hidden in an HTML COMMENT does not count as one",
          "which is the ONLY class its CSS styles" in
          (raises(_tsw + f"<!-- {_EXB} -->") or ""), True)
+    # ── r2: every one of these was measured WRONG under the substring form it replaced,
+    # and each is wrong in BOTH directions, which is why the instrument changed rather
+    # than the thresholds. The parser decides quoting, comments and script text; I do not.
+    _T = theme_control()
+    case("mixed quoting is still TWO live controls",
+         _scan(_T + _T.replace('"', "'")).ids.count("chrome-theme"), 2)
+    # ⚠ Provided by `html.parser`'s CDATA handling, NOT by this module — measured when the
+    # mutation that removed "script" from the tag list survived. Asserted anyway, because
+    # the behaviour is load-bearing and a future parser swap must not lose it silently.
+    case("an id that exists only inside a SCRIPT STRING is not a control",
+         _scan(_T + '<script>const s = \'id="chrome-theme"\';</script>'
+               ).ids.count("chrome-theme"), 1)
+    case("a COMMENTED-OUT control is not a control",
+         _scan(_T + f"<!-- {_T} -->").ids.count("chrome-theme"), 1)
+    # ⛔ THE BYPASS THAT DEFEATED THE REGEX STRIPPER: comment delimiters living inside
+    # JavaScript string literals made `<!--.*?-->` swallow the live control between them.
+    case("comment delimiters inside script strings do not erase live markup",
+         _scan(_T + '<script>const a="<!--";</script>' + _T
+               + '<script>const b="-->";</script>').ids.count("chrome-theme"), 2)
+    case("an id inside a <template> is not a live control — this module's own guard",
+         _scan(_T + '<template><button id="chrome-theme"></button></template>'
+               ).ids.count("chrome-theme"), 1)
+    case("the pinned bar returns to the flow in print, and frees its reserved space",
+         ("@media print" in chrome_css(),
+          f".{CHROME_PIN_CLASS}{{position:static}}" in chrome_css().replace(" ", ""),
+          "padding-bottom:0" in chrome_css().replace(" ", "")), (True, True, True))
+    case("a class is read from a PARSE, so single quotes count",
+         has_text_consumer("<div class='" + TEXT_SCOPE_CLASS + "'>p</div>"), True)
+    case("...and a class that merely has the right PREFIX does not",
+         has_text_consumer(f'<div class="{TEXT_SCOPE_CLASS}guard">p</div>'), False)
+    # ── r2 HIGH: the guard binds to THIS module's stylesheet, not to the class in general.
+    case("a page implementing the scheme ITSELF is not refused",
+         missing_text_consumer(text_style_control()
+                               + "<style>body{color:var(--prose)}</style><p>x</p>"), False)
+    case("...but a page carrying THIS module's stylesheet with no consumer IS",
+         missing_text_consumer(text_style_css() + text_style_control()), True)
     case("assert_wired REFUSES two controls with the same id",
          'appears 2 times' in
          (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
