@@ -15162,3 +15162,50 @@ today. 74 cases, 33 mutations, 33 killed, **33 attributed**, 0 survivors.**
 | **three findings DECLINED with reasons** | an unreachable handler (a case would test `subprocess`, not the rule); `--base` naming a TIP rather than a merge base (pre-existing, not reachable in CI); and two flags that measurably protect nothing, kept because asserting *"git never colourises this"* from one version is the overreach that has already cost rounds |
 | **thrashing: 14 of 24 fix-induced, a FOURTH consecutive round** | ⚠ but the CHARACTER changed, and that is what to weigh: rounds 1–4 produced fail-opens by five routes through ONE seam; round 5's deliverable findings are a filename decoding bug, an index state, a read order and a containment test — four unrelated edges. 14 of 24 are instrument findings. The defect class that drove four rounds is gone |
 | **final state** | **78 cases · 37 mutations, 37 killed, 37 attributed, 0 survivors** · figures 96.7%, 111/895 (12.4%), 9/40 at 0.23/commit, each reproduced twice by different methods · declared sum 1456, every step read from the guard's own `got N want 0` · `ci.yml`'s figures corrected after four rounds carrying the first generation · ⛔ NOT CONVERGED, and the branch is the owner's call |
+
+## 2026-10-18
+The text-style switcher — the "colour / headings only / plain" control — now works on newly built
+explainer pages. It had been working on some pages and not others, and the reason turned out to be
+worth knowing.
+
+It was never broken and nothing removed it. The control was built on a side branch that was never
+reviewed and never merged. Pages written while that branch was active have the control baked into
+them, and those pages were later committed — so the *result* reached the main line while the *code
+that produces it* never did. Seven pages have it; ninety-three do not; and any page built today
+could not get it, because nothing in the main line knows the control exists.
+
+That is why it looked like a feature had been silently dropped. From where you sit — older pages
+have it, the newest does not — a regression and a never-integrated feature are indistinguishable.
+
+Two things came out of this. The control is now ported onto its own branch so new pages can have it,
+and the wider problem is written down: a generated page can reach the main line carrying behaviour
+the code cannot reproduce, and nothing checks for that.
+
+**Waiting on you:** this branch has had no review, and it changes a file every explainer page
+depends on. It should get one before it merges.
+<!--tech-->
+Branch `explainer-text-switcher-port`, off `master`. Cherry-picks `03d67b8d` and `11650aab` from
+`explainer-text-switcher` (2 commits, no PR, no review) — `page_chrome.py` +283,
+`brief-compose.py` +122, `check-fixture-variation.py` +6.
+
+Root cause, measured: `git log -S'TEXT_SCHEMES' master -- scripts/page_chrome.py` is EMPTY — the
+code never entered master. The control's markup lives in each page's FRAGMENT, so `brief-compose`
+preserves it on recomposition (verified: regenerating `2026-10-15-brief-status-alignment` with
+today's producer still yields `data-scheme` x3) while new pages never acquire it. Across
+`~/explainers`: 93 pages, 17 with the theme control, 7 with the text switcher, 3 with both. The
+commit that most recently carried one onto master is #377, *A drifted citation is caught by
+comparing citation strings* — unrelated to page chrome.
+
+Filed as backlog **#299** (the class, not this instance): a check that every CONTROL in a tracked
+page under `docs/explainers/` is one the current producer can emit. Scoped to controls, not content.
+
+⚠ Finding for this branch's review: a page can carry the switcher, pass `page_chrome.assert_wired()`
+and still be INERT. `assert_wired` checks that `--accent`/`--em` are DECLARED; the switcher's CSS
+keys on `.ex-body`, which it does not check. Measured on the first build of
+`2026-10-17-topic-three-open-items`: three buttons, `data-scheme` flipping, `localStorage`
+persisting, and **1 distinct rendering out of 3**. Fixed in that page's fragment by opting into
+`.ex-body`; the guard gap is unaddressed.
+
+Verified: `page_chrome` 89/89, `brief-compose` 132/132, `check-fixture-variation` 67/67,
+`check-plan-code` 178/178; all 69 mutation anchors across the three ported manifests bind exactly
+once; declared counts unchanged (11/16/42).
