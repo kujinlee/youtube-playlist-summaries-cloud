@@ -1320,7 +1320,7 @@ EXPECTED_MUTATIONS = {
     # by a substring vanishing. The whole tail computation is now covered by an entry that
     # severs it as ONE exact expression, which is what the reviewer's two green severances
     # showed was missing.
-    "scripts/page_chrome.py": 70,
+    "scripts/page_chrome.py": 74,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5146,7 +5146,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1521)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1525)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -15,8 +15,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]",
-        "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]"
+        "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]",
+        "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]"
       ]
     ],
     "expect": "a control with NEITHER palette is caught"
@@ -224,7 +224,7 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    rules = _CHROME_RULE_RE.findall(_strip_css_comments(page))\n",
+        "    rules = _CHROME_RULE_RE.findall(_applied_css(page))\n",
         "    rules = [CHROME_PIN]\n"
       ]
     ],
@@ -488,7 +488,7 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        if any(self._depth.values()):\n            if tag in self._depth:\n                self._depth[tag] += 1\n            elif tag == \"script\":\n                self._in_script += 1\n            return\n",
+        "        if any(self._depth.values()):\n            if tag in self._depth:\n                self._depth[tag] += 1\n            elif tag == \"script\":\n                self._in_script += 1\n            elif tag == \"style\":\n                self._in_style += 1\n            return\n",
         ""
       ]
     ],
@@ -675,8 +675,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    rules = _CHROME_RULE_RE.findall(_strip_css_comments(page))",
-        "    rules = _CHROME_RULE_RE.findall(page)"
+        "    return strip_css_comments(css_of(page))",
+        "    return css_of(page)"
       ]
     ],
     "expect": "a page whose only pin rule is COMMENTED OUT is REFUSED as unreachable"
@@ -686,11 +686,11 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    return re.sub(r\"/\\*.*?\\*/\", \" \", page, flags=re.S)",
-        "    return re.sub(r\"/\\*.*?\\*/\", \"\", page, flags=re.S)"
+        "            if css.startswith(\"*/\", i):\n                in_comment = False; out.append(\"  \"); i += 2",
+        "            if css.startswith(\"*/\", i):\n                in_comment = False; i += 2"
       ]
     ],
-    "expect": "the strip replaces a comment with a SPACE, so it cannot weld a selector into existence"
+    "expect": "a comment becomes whitespace of the same length, so nothing is welded together"
   },
   {
     "name": "the switcher is never moved into the bar, so it stays in the prose",
@@ -768,5 +768,49 @@
       ]
     ],
     "expect": "both consumers read the CACHE, and no live `tail()` call survives anywhere"
+  },
+  {
+    "name": "missing_palettes reads the RAW PAGE again, so commented-out palettes read as live",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    css = _applied_css(page)\n",
+        "    css = page\n"
+      ]
+    ],
+    "expect": "...and BOTH palettes commented out \u2014 the arm this file calls load-bearing"
+  },
+  {
+    "name": "css_of takes the whole document, so HTML attributes are scanned as CSS",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return \"\\n\".join(_scan(page).css)",
+        "    return page"
+      ]
+    ],
+    "expect": "css_of takes only what a browser applies, so attributes are never scanned"
+  },
+  {
+    "name": "a <style> inside a shield is collected, though a browser does not apply it",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            elif tag == \"style\":\n                self._in_style += 1\n            return\n",
+        "            elif tag == \"style\":\n                self._in_style += 1\n"
+      ]
+    ],
+    "expect": "an element inside a shield contributes nothing, whatever element it is"
+  },
+  {
+    "name": "strings are not consumed, so a `/*` inside one starts a comment",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if ch in \"\\\"'\":\n            quote, keep = ch, brackets > 0\n",
+        "        if False:\n            quote, keep = ch, brackets > 0\n"
+      ]
+    ],
+    "expect": "a stray `/*` inside a CSS value string does not erase the rule after it"
   }
 ]

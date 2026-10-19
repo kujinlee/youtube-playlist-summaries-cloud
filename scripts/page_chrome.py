@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 193 cases
+    python3 scripts/page_chrome.py --self-test          # 199 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -141,6 +141,106 @@ TEXT_OPT_OUTS = ("1", "2")
 TEXT_TOKENS = ("--accent", "--em")
 
 
+# ── THE CSS A BROWSER APPLIES, AND THE ONE WAY THIS REPOSITORY STRIPS ITS COMMENTS ──
+# ⟳ 2026-10-19, r6 CLAUDE HIGH. These two functions MOVED HERE from `brief-compose`, which
+# is the module that imports this one — so this is the only place both can reach, and there
+# is now ONE implementation rather than two.
+#
+# ⛔ WHY IT MOVED, AND IT IS THE REPOSITORY'S MOST-MEASURED DEFECT (17 instances). Round 6's
+# first fold added a LOCAL `_strip_css_comments` as `re.sub(r"/\*.*?\*/", " ", page)` —
+# which is EXACTLY the naive regex `brief-compose.strip_css_comments`'s own docstring names
+# as defective, 400 lines away, with the correct scanner already in the same composition
+# path. Its bound was presented as a fresh trade-off without mentioning that the repository
+# had measured that bound as a defect two rounds earlier and built the fix.
+#
+# ⚠ AND IT WAS NOT MERELY REDUNDANT, IT WAS A FAIL-OPEN REGRESSION, measured by the
+# reviewer on the fragment path — seven of nine callers pass a fragment:
+#     '.a{content:"/*"}' + LIGHT + DARK + '.chrome-pinned{position:static}' + '/* note */'
+# is backlog #300's exact shape, a pin rule that exists and does not pin. The stray `/*` in
+# a value STRING paired with the trailing `*/`, the naive strip erased the real rule, `rules`
+# became empty and the fragment exemption fired: REFUSED before the fold, ACCEPTED after.
+# 12 of 81 live explainer pages carry unbalanced `/*`; on one real composed page the naive
+# strip deleted 12,451 of 40,476 characters. No live verdict flipped only because the shim's
+# comments happen to close first — an accident of ordering, not a property.
+#
+# ⚠ THE SUBJECT IS THE CSS, NOT THE PAGE, and that distinction is load-bearing: this scanner
+# BLANKS value strings, so run over a whole HTML document it would blank `id="chrome-theme"`
+# and every other attribute. `css_of` is what makes the subject right.
+
+
+def strip_css_comments(css: str) -> str:
+    r"""CSS with comments removed AND value-string contents blanked. PURE.
+
+    ⛔ ONE PASS, NOT THREE REGEXES — r2 found three separate defects that all reduce to "a regex
+    over CSS does not know what a string is":
+
+      * `content:"var(--x)"` and `url("data:…var(--x)…")` were read as USES of `--x`, so a page was
+        refused for a token no browser resolves (r2 High);
+      * `--open:"/*"` … `--close:"*/"` let the naive `/\*.*?\*/` erase a REAL declaration between
+        them, so a complete light palette was refused as incomplete (r2 Medium);
+      * comments carrying a `}` truncated the shim scan (r1 Low).
+
+    ⚠ ATTRIBUTE-SELECTOR STRINGS ARE PRESERVED. Blanking every string would turn
+    `:root[data-theme="light"]` into `:root[data-theme=" "]`, and light would stop being
+    distinguishable from dark — the scan would then be reading the wrong palette while looking
+    green. Strings inside `[...]` are kept verbatim; only value strings are blanked.
+    """
+    out: list[str] = []
+    i, n, brackets, in_comment = 0, len(css), 0, False
+    while i < n:
+        if in_comment:
+            if css.startswith("*/", i):
+                in_comment = False; out.append("  "); i += 2
+            else:
+                out.append(" "); i += 1
+            continue
+        if css.startswith("/*", i):
+            in_comment = True; out.append("  "); i += 2
+            continue
+        ch = css[i]
+        if ch == "[":
+            brackets += 1; out.append(ch); i += 1; continue
+        if ch == "]":
+            brackets = max(0, brackets - 1); out.append(ch); i += 1; continue
+        if ch == "}":
+            # ⚠ bracket depth is per-RULE. An unmatched `[` — `url(a[b.png)` is the realistic
+            # source — otherwise left every later string unblanked, re-enabling the prose-in-a-
+            # string false positive for the rest of the stylesheet (r3 R3-6).
+            brackets = 0; out.append(ch); i += 1; continue
+        if ch in "\"'":
+            quote, keep = ch, brackets > 0
+            out.append(ch); i += 1
+            # ⚠ A NEWLINE ENDS A BAD STRING. CSS says an unterminated string is recovered at the
+            # end of the line, so everything after it is real CSS. Consuming to EOF instead made
+            # one stray quote blank an entire stylesheet — r3 Blocking.
+            while i < n and css[i] != quote and css[i] != "\n":
+                if css[i] == "\\" and i + 1 < n:
+                    out.append(css[i:i + 2] if keep else "  "); i += 2; continue
+                out.append(css[i] if keep else " "); i += 1
+            if i < n:
+                out.append(css[i]); i += 1
+            continue
+        out.append(ch); i += 1
+    return "".join(out)
+
+
+def css_of(page: str) -> str:
+    """The CSS a browser will apply: every live `<style>` body, every `style=` attribute.
+
+    ⛔ NEITHER THE WHOLE DOCUMENT NOR ITS HEAD — both were measured wrong in the module this
+    moved from: the head alone missed a second `<style>` block and inline styles, and the
+    whole document swept in BODY PROSE, so a page DISCUSSING a selector read as declaring it
+    (r1 F7). Taken from the parse, so a `<style>` inside a `<template>` — which a browser
+    does not apply — contributes nothing.
+    """
+    return "\n".join(_scan(page).css)
+
+
+def _applied_css(page: str) -> str:
+    """What every CSS-reading predicate in this file asks: applied CSS, comments gone. PURE."""
+    return strip_css_comments(css_of(page))
+
+
 def missing_palettes(page: str) -> list[str]:
     """Which `data-theme` palettes a page with the control is missing. Empty is good.
 
@@ -150,7 +250,23 @@ def missing_palettes(page: str) -> list[str]:
     """
     if not has_control(page):
         return []
-    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]
+    # ⟳ 2026-10-19, r6 CLAUDE HIGH — THE APPLIED CSS, NOT THE RAW PAGE, and this is the arm
+    # the docstring at the top of this file calls "the load-bearing part". Round 6 widened
+    # the subject to cover commented-out CSS and then fixed ONE of five arms — the one it
+    # had itself ranked least severe. Measured by the reviewer, the same authoring mistake
+    # one line up in the same stylesheet:
+    #     pin rule commented out            -> REFUSED   (the fold's own case)
+    #     dark palette commented out        -> ACCEPTED
+    #     BOTH palettes commented out       -> ACCEPTED  <- a button that styles nothing
+    # The third is verbatim "the fail-silent this module must prevent" from the docstring.
+    #
+    # ⚠ AND READING THE CSS RATHER THAN THE PAGE ALSO CLOSES r1 F7 AT THE SOURCE: a page
+    # whose PROSE discusses `:root[data-theme="light"]` satisfied the old substring test and
+    # was refused with a message asserting it had a working toggle. `brief-compose` carried
+    # a second predicate (`declares_light`) to work around exactly that; the workaround is
+    # no longer the only thing standing between the prose and this answer.
+    css = _applied_css(page)
+    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]
 
 
 def has_control(page: str) -> bool:
@@ -264,6 +380,11 @@ class _Scan(_HTMLParser):
         # repository's most-measured defect (17 instances), and the failure it would cause
         # is specific: a bar inserted inside a <template> renders nothing at all.
         self.title_end: tuple[int, int] | None = None
+        # The CSS a browser will APPLY: every live `<style>` body and every `style=`
+        # attribute. Collected here rather than by a second parser because the shield rule
+        # applies to stylesheets too — a `<style>` inside a `<template>` is not applied.
+        self.css: list[str] = []
+        self._in_style = 0
         # ⚠ ONE COUNTER PER MECHANISM. r4 measured a single shared counter being lifted
         # by the WRONG end tag, wrong in both directions and both browser-verified:
         #   <noscript></template><div class="ex-body">  -> scan saw a consumer, DOM had none
@@ -304,9 +425,14 @@ class _Scan(_HTMLParser):
                 self._depth[tag] += 1
             elif tag == "script":
                 self._in_script += 1
+            elif tag == "style":
+                self._in_style += 1
             return
         if tag == "script":
             self._in_script += 1
+            return
+        if tag == "style":
+            self._in_style += 1
             return
         if tag == "noscript":
             # ⚠ WITH SCRIPTING ENABLED Chromium creates NO elements from <noscript> CONTENT,
@@ -348,10 +474,16 @@ class _Scan(_HTMLParser):
             self.ids.append(d["id"])
         if d.get("class"):
             self.classes.update(d["class"].split())
+        if d.get("style"):
+            # An inline style is CSS a browser applies; wrapped so it scans like a rule.
+            self.css.append("*{" + d["style"] + "}")
 
     def handle_endtag(self, tag):
         if tag == "script" and self._in_script:
             self._in_script -= 1
+            return
+        if tag == "style" and self._in_style:
+            self._in_style -= 1
             return
         if (tag == "h1" and self.title_end is None
                 and not self._in_script and not any(self._depth.values())):
@@ -364,6 +496,8 @@ class _Scan(_HTMLParser):
         # never reaches here, because the parser routes comments to `handle_comment`.
         if self._in_script and not any(self._depth.values()):
             self.scripts.append(data)
+        if self._in_style and not any(self._depth.values()):
+            self.css.append(data)
 
     # `handle_comment` is not overridden ON PURPOSE: a commented-out control contributes
     # nothing, which is the behaviour the suite has asserted since before this guard.
@@ -387,22 +521,6 @@ def _scan(page: str) -> _Scan:
 def _is_document(page: str) -> bool:
     """True for a FINISHED page, False for a fragment. PURE."""
     return bool(_DOC_RE.search(page))
-
-
-def _strip_css_comments(page: str) -> str:
-    """`/* … */` replaced by a space, so a commented-out rule cannot satisfy a match. PURE.
-
-    ⚠ A SPACE, not an empty string: deleting the comment would weld the text either side
-    together and could MANUFACTURE a selector that appears in neither half.
-    ⚠ Non-greedy and DOTALL — a multi-line comment is one comment, and `.*?` stops at the
-    first terminator rather than swallowing to the last one on the page.
-    ⚠ THE BOUND: this is a CSS rule applied to a whole HTML document, so a literal `/*`
-    inside a quoted string or a script survives as a comment start. That is inside the
-    declared subject only because the alternative — a full CSS parse of every page — buys
-    nothing for the mistake this exists to catch, which is a selector commented out in a
-    stylesheet. A case below pins the one shape where it misreads.
-    """
-    return re.sub(r"/\*.*?\*/", " ", page, flags=re.S)
 
 
 def bar_unreachable(page: str) -> bool:
@@ -442,7 +560,7 @@ def bar_unreachable(page: str) -> bool:
     # out-of-scope shapes with cases instead of a sentence.
     # ⚠ Stripped from a COPY used only for this match. `page` is not rewritten, because
     # every other predicate in this module reads the real document.
-    rules = _CHROME_RULE_RE.findall(_strip_css_comments(page))
+    rules = _CHROME_RULE_RE.findall(_applied_css(page))
     if _is_document(page):
         return not any(CHROME_PIN in r.replace(" ", "") for r in rules)
     # ⛔ NO `.chrome` RULE AT ALL IS NOT A FINDING, AND THE FIRST DRAFT GOT THIS WRONG.
@@ -1193,838 +1311,901 @@ def self_test() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
-    LIGHT = f':root[{THEME_ATTR}="light"]{{--bg:#fff}}'
-    DARK = f':root[{THEME_ATTR}="dark"]{{--bg:#000}}'
-    # ⟳ 2026-10-18 (backlog #300): `chrome_css()` joined this fixture because `assert_wired`
-    # now also requires the bar to be REACHABLE. The assertion below is unchanged — a complete
-    # page raises nothing — but what "complete" means grew, so the fixture grew with it.
-    full = (f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
-            f"<script>{chrome_script()}</script>")
+    # ⛔ THE BODY IS WRAPPED SO AN ABORT BECOMES A NAMED FAILING CASE. This protection
+    # existed in `brief-compose.self_test` and never reached here — a sibling the class
+    # fix skipped. MEASURED TWICE on 2026-10-19: a case using `str.index` raised under one
+    # mutation, and a stale function name raised after a rename, and BOTH TIMES this suite
+    # printed NOTHING AT ALL — no `[FAIL] <case>` line, no tally, not even the `ok` lines
+    # for the two hundred cases already decided. `check-plan-code` reads a kill from a
+    # `[FAIL] ` line, so it reported the mutation as unattributable and said every entry
+    # for this file was unverifiable until the printer was fixed. A case that DIES from a
+    # defect is weaker than one that REPORTS it.
+    def _body() -> None:
 
-    # --- the control, and what counts as one
-    case("the control renders a button", "<button" in theme_control(), True)
-    case("has_control sees it", has_control(theme_control()), True)
-    case("has_control is keyed on the id, not the word 'theme'",
-         has_control("<p>this page discusses the theme at length</p>"), False)
-    case("...so prose about themes demands no palettes",
-         missing_palettes("<p>a theme is a colour scheme</p>"), [])
-    case("the button says what it does", "aria-pressed" in theme_control(), True)
+        def _raises_wired(page: str) -> bool:
+            try:
+                assert_wired(page, "self-test"); return False
+            except SystemExit:
+                return True
 
-    # --- THE FAIL-SILENT. A control without palettes is the defect this file exists for.
-    case("a control with NEITHER palette is caught",
-         sorted(missing_palettes(theme_control())), ["dark", "light"])
-    case("a control with only the dark palette is caught",
-         missing_palettes(f"<style>{DARK}</style>{theme_control()}"), ["light"])
-    case("a control with only the light palette is caught",
-         missing_palettes(f"<style>{LIGHT}</style>{theme_control()}"), ["dark"])
-    case("a control with BOTH palettes passes",
-         missing_palettes(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), [])
-    # A page that takes the stamp alone is not required to carry palettes.
-    case("a page with no control needs no palettes", missing_palettes(stamp("x")), [])
+        LIGHT = f':root[{THEME_ATTR}="light"]{{--bg:#fff}}'
+        DARK = f':root[{THEME_ATTR}="dark"]{{--bg:#000}}'
+        # ⟳ 2026-10-18 (backlog #300): `chrome_css()` joined this fixture because `assert_wired`
+        # now also requires the bar to be REACHABLE. The assertion below is unchanged — a complete
+        # page raises nothing — but what "complete" means grew, so the fixture grew with it.
+        full = (f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
+                f"<script>{chrome_script()}</script>")
 
-    # --- assert_wired: the caller-facing gate
-    def raises(page, where="p", scoped=False):
+        # --- the control, and what counts as one
+        case("the control renders a button", "<button" in theme_control(), True)
+        case("has_control sees it", has_control(theme_control()), True)
+        case("has_control is keyed on the id, not the word 'theme'",
+             has_control("<p>this page discusses the theme at length</p>"), False)
+        case("...so prose about themes demands no palettes",
+             missing_palettes("<p>a theme is a colour scheme</p>"), [])
+        case("the button says what it does", "aria-pressed" in theme_control(), True)
+
+        # --- THE FAIL-SILENT. A control without palettes is the defect this file exists for.
+        case("a control with NEITHER palette is caught",
+             sorted(missing_palettes(theme_control())), ["dark", "light"])
+        case("a control with only the dark palette is caught",
+             missing_palettes(f"<style>{DARK}</style>{theme_control()}"), ["light"])
+        case("a control with only the light palette is caught",
+             missing_palettes(f"<style>{LIGHT}</style>{theme_control()}"), ["dark"])
+        case("a control with BOTH palettes passes",
+             missing_palettes(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), [])
+        # A page that takes the stamp alone is not required to carry palettes.
+        case("a page with no control needs no palettes", missing_palettes(stamp("x")), [])
+
+        # --- assert_wired: the caller-facing gate
+        def raises(page, where="p", scoped=False):
+            try:
+                assert_wired(page, where, scoped_css_emitted=scoped)
+            except SystemExit as e:
+                return str(e)
+            return None
+
+        case("assert_wired accepts a fully wired page", raises(full), None)
+        case("assert_wired refuses a control with no palettes",
+             "nothing styles" in (raises(theme_control()) or ""), True)
+        case("...and names the missing selector",
+             'data-theme="light"' in (raises(f"<style>{DARK}</style>{theme_control()}") or ""), True)
+        case("assert_wired refuses a control with palettes but NO script",
+             "no script CARRYING" in (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}") or ""),
+             True)
+        case("assert_wired is silent on a page with no control at all",
+             raises("<p>hello</p>"), None)
+        # A script mentioning the id in PROSE must not satisfy the binding check by accident.
+        # ⟲ Codex High. A script that only MENTIONS the id is not a binding.
+        case("a script that merely names the button does NOT satisfy the binding check",
+             "no script CARRYING" in
+             (raises(f'<style>{LIGHT}{DARK}</style>{theme_control()}'
+                     '<script>console.log("chrome-theme")</script>') or ""), True)
+        case("...while the real script does", raises(full), None)
+        case("the marker appears in the emitted script", CHROME_SCRIPT_MARK in chrome_script(), True)
+        # ⟲ Found by the mutation harness, not by reading: with the marker check in place,
+        # nothing distinguished "inside a <script>" from "anywhere on the page", so
+        # `_scripts` returning the whole page survived. A marker in a COMMENT is the case.
+        case("the marker OUTSIDE a script tag does not satisfy the binding",
+             "no script CARRYING" in
+             (raises(f'<style>{LIGHT}{DARK}</style>{theme_control()}'
+                     f"<!-- {CHROME_SCRIPT_MARK} -->") or ""), True)
+        case("...and a script tag is what satisfies it, not a comment in the body",
+             "no script CARRYING" in
+             (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}<!-- chrome-theme -->") or ""),
+             True)
+
+        # --- the script
+        js = chrome_script()
+        case("the script applies the stored theme before paint", "localStorage.getItem" in js, True)
+        case("...persists the choice", "localStorage.setItem" in js, True)
+        case("...falls back to the OS when nothing is stored", "prefers-color-scheme" in js, True)
+        case("...tolerates a missing button rather than throwing", "if(b){" in js, True)
+        case("...tolerates a missing refresh button too", "if(r){" in js, True)
+        case("...survives localStorage being unavailable", js.count("catch(e){}") >= 2, True)
+        case("...only ever stores one of the two legal values",
+             sorted(set(re.findall(r"'(light|dark)'", js))), ["dark", "light"])
+        # The button must ANNOUNCE the one case it cannot serve, rather than doing nothing.
+        case("the refresh button says so when there is no server",
+             "file:" in js and "no server to rebuild it" in js, True)
+        case("...and re-enables itself after a failure", "r.disabled=false" in js, True)
+        case("...and reports the server's own reason", "could not rebuild: " in js, True)
+
+        # --- provenance. Lives here, not in a generator, because two pages computing "what
+        # was this built from" two ways is the drift this module exists to stop.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as _td:
+            _no_git = pathlib.Path(_td)          # a directory that is not a repo
+            _p = provenance("2026-01-01 00:00", _no_git)
+            case("provenance says UNKNOWN outside a repo rather than inventing a sha",
+                 ("UNKNOWN" in _p, "2026-01-01 00:00" in _p), (True, True))
+        _here = provenance("2026-01-01 00:00", pathlib.Path(__file__).resolve().parent.parent)
+        case("provenance carries the TIME it was given", "2026-01-01 00:00" in _here, True)
+        case("...and a commit, which is what a bare clock could not answer",
+             len(_here.split(" · ")) >= 2, True)
+        # ⚠ THE READER-FOUND REQUIREMENT, on a REAL repo. The first version of this case
+        # compared against `pathlib.Path("/")` — not a repo, so the two strings differed by
+        # the UNKNOWN text and never by the dirty flag. It was VACUOUS, and the mutation
+        # deleting the qualifier survived it. Found by mutating this file, not by reading it.
+        with _tf.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td)
+            _env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+            _q = dict(cwd=_r, capture_output=True, env=_env)
+            subprocess.run(["git", "init", "-q"], **_q)
+            (_r / "f.txt").write_text("one")
+            subprocess.run(["git", "add", "-A"], **_q)
+            subprocess.run(["git", "commit", "-qm", "c"], **_q)
+            _clean = provenance("t", _r)
+            (_r / "f.txt").write_text("two")            # the ONLY difference
+            _dirty = provenance("t", _r)
+            case("a CLEAN tree does not claim uncommitted changes",
+                 "uncommitted changes" in _clean, False)
+            case("...and a DIRTY one says so", "uncommitted changes" in _dirty, True)
+            case("...so the two do not render identically", _clean != _dirty, True)
+            case("both carry the same commit, so the difference IS the dirty flag",
+                 _clean.split(" · ")[1] == _dirty.split(" · ")[1], True)
+        # The launch-failure branch, which a non-repo directory never reaches: git EXITS
+        # NONZERO there rather than failing to start, so this is the only way in.
+        _real_run = subprocess.run
         try:
-            assert_wired(page, where, scoped_css_emitted=scoped)
-        except SystemExit as e:
-            return str(e)
-        return None
-
-    case("assert_wired accepts a fully wired page", raises(full), None)
-    case("assert_wired refuses a control with no palettes",
-         "nothing styles" in (raises(theme_control()) or ""), True)
-    case("...and names the missing selector",
-         'data-theme="light"' in (raises(f"<style>{DARK}</style>{theme_control()}") or ""), True)
-    case("assert_wired refuses a control with palettes but NO script",
-         "no script CARRYING" in (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}") or ""),
-         True)
-    case("assert_wired is silent on a page with no control at all",
-         raises("<p>hello</p>"), None)
-    # A script mentioning the id in PROSE must not satisfy the binding check by accident.
-    # ⟲ Codex High. A script that only MENTIONS the id is not a binding.
-    case("a script that merely names the button does NOT satisfy the binding check",
-         "no script CARRYING" in
-         (raises(f'<style>{LIGHT}{DARK}</style>{theme_control()}'
-                 '<script>console.log("chrome-theme")</script>') or ""), True)
-    case("...while the real script does", raises(full), None)
-    case("the marker appears in the emitted script", CHROME_SCRIPT_MARK in chrome_script(), True)
-    # ⟲ Found by the mutation harness, not by reading: with the marker check in place,
-    # nothing distinguished "inside a <script>" from "anywhere on the page", so
-    # `_scripts` returning the whole page survived. A marker in a COMMENT is the case.
-    case("the marker OUTSIDE a script tag does not satisfy the binding",
-         "no script CARRYING" in
-         (raises(f'<style>{LIGHT}{DARK}</style>{theme_control()}'
-                 f"<!-- {CHROME_SCRIPT_MARK} -->") or ""), True)
-    case("...and a script tag is what satisfies it, not a comment in the body",
-         "no script CARRYING" in
-         (raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}<!-- chrome-theme -->") or ""),
-         True)
-
-    # --- the script
-    js = chrome_script()
-    case("the script applies the stored theme before paint", "localStorage.getItem" in js, True)
-    case("...persists the choice", "localStorage.setItem" in js, True)
-    case("...falls back to the OS when nothing is stored", "prefers-color-scheme" in js, True)
-    case("...tolerates a missing button rather than throwing", "if(b){" in js, True)
-    case("...tolerates a missing refresh button too", "if(r){" in js, True)
-    case("...survives localStorage being unavailable", js.count("catch(e){}") >= 2, True)
-    case("...only ever stores one of the two legal values",
-         sorted(set(re.findall(r"'(light|dark)'", js))), ["dark", "light"])
-    # The button must ANNOUNCE the one case it cannot serve, rather than doing nothing.
-    case("the refresh button says so when there is no server",
-         "file:" in js and "no server to rebuild it" in js, True)
-    case("...and re-enables itself after a failure", "r.disabled=false" in js, True)
-    case("...and reports the server's own reason", "could not rebuild: " in js, True)
-
-    # --- provenance. Lives here, not in a generator, because two pages computing "what
-    # was this built from" two ways is the drift this module exists to stop.
-    import tempfile as _tf
-    with _tf.TemporaryDirectory() as _td:
-        _no_git = pathlib.Path(_td)          # a directory that is not a repo
-        _p = provenance("2026-01-01 00:00", _no_git)
-        case("provenance says UNKNOWN outside a repo rather than inventing a sha",
-             ("UNKNOWN" in _p, "2026-01-01 00:00" in _p), (True, True))
-    _here = provenance("2026-01-01 00:00", pathlib.Path(__file__).resolve().parent.parent)
-    case("provenance carries the TIME it was given", "2026-01-01 00:00" in _here, True)
-    case("...and a commit, which is what a bare clock could not answer",
-         len(_here.split(" · ")) >= 2, True)
-    # ⚠ THE READER-FOUND REQUIREMENT, on a REAL repo. The first version of this case
-    # compared against `pathlib.Path("/")` — not a repo, so the two strings differed by
-    # the UNKNOWN text and never by the dirty flag. It was VACUOUS, and the mutation
-    # deleting the qualifier survived it. Found by mutating this file, not by reading it.
-    with _tf.TemporaryDirectory() as _td:
-        _r = pathlib.Path(_td)
-        _env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-        _q = dict(cwd=_r, capture_output=True, env=_env)
-        subprocess.run(["git", "init", "-q"], **_q)
-        (_r / "f.txt").write_text("one")
-        subprocess.run(["git", "add", "-A"], **_q)
-        subprocess.run(["git", "commit", "-qm", "c"], **_q)
-        _clean = provenance("t", _r)
-        (_r / "f.txt").write_text("two")            # the ONLY difference
-        _dirty = provenance("t", _r)
-        case("a CLEAN tree does not claim uncommitted changes",
-             "uncommitted changes" in _clean, False)
-        case("...and a DIRTY one says so", "uncommitted changes" in _dirty, True)
-        case("...so the two do not render identically", _clean != _dirty, True)
-        case("both carry the same commit, so the difference IS the dirty flag",
-             _clean.split(" · ")[1] == _dirty.split(" · ")[1], True)
-    # The launch-failure branch, which a non-repo directory never reaches: git EXITS
-    # NONZERO there rather than failing to start, so this is the only way in.
-    _real_run = subprocess.run
-    try:
-        subprocess.run = lambda *a, **k: (_ for _ in ()).throw(OSError("no git"))
-        _p = provenance("2026-01-01 00:00", pathlib.Path("."))
-    finally:
-        subprocess.run = _real_run
-    case("a git that cannot be LAUNCHED yields UNKNOWN, never a bare clock",
-         ("UNKNOWN" in _p, "2026-01-01 00:00" in _p), (True, True))
-
-    # --- the stamp
-    case("the stamp renders the value it was given", "2026-08-31 06:40" in stamp("2026-08-31 06:40"),
-         True)
-    case("the stamp escapes its input", "&lt;b&gt;" in stamp("<b>"), True)
-    case("the stamp is machine-readable", "<time>" in stamp("x"), True)
-    # Determinism: the module must not read a clock, or every page render differs.
-    case("the stamp is deterministic for one input", stamp("t"), stamp("t"))
-
-    # --- the bar
-    bar = chrome_bar("dashboard", "2026-08-31 06:40")
-    case("the bar carries all three controls",
-         (has_control(bar), "chrome-refresh" in bar, "chrome-when" in bar), (True, True, True))
-    case("the bar names the page it would rebuild", 'data-page="dashboard"' in bar, True)
-    case("refresh=False drops the refresh button, keeping the rest",
-         ("chrome-refresh" in chrome_bar("x", "t", refresh=False),
-          has_control(chrome_bar("x", "t", refresh=False))), (False, True))
-    case("the slug is escaped into the attribute",
-         'data-page="a&quot;b"' in chrome_bar('a"b', "t"), True)
-
-    # --- the CSS names no colours of its own
-    css = chrome_css()
-    case("the chrome CSS defines no literal colour, only the page's variables",
-         re.search(r"#[0-9a-fA-F]{3,6}\b", css), None)
-
-    # ── backlog #80: the chrome borrows no SURFACE from the page ──
-    # Every token it still reads is a foreground or a border, falling back to `currentColor` /
-    # `inherit` — page-derived, and safe because the page chose its ink against its own background.
-    # A token supplying a BACKGROUND is different in kind: it introduces a second surface the
-    # page's ink was never chosen against, which is exactly how #79 reached 1.03:1. The rule is
-    # therefore about the PROPERTY (no borrowed surface), not about the one token that broke.
-    _bg_decls = re.findall(r"background:([^;}]*)", css)
-    # ⟳ 2026-10-18, r1. WAS `== []` — no var() background at all. A pinned bar MUST be
-    # opaque or the page scrolls through it illegibly, so that form could not survive the
-    # fix. ⛔ THE PROPERTY #80 PROTECTS IS UNCHANGED AND IS WHAT IS ASSERTED HERE: the bar
-    # borrows no SECOND surface — none the page's ink was never chosen against. `--bg` is
-    # the page's own GROUND, the first surface, declared and opaque on all five producers
-    # (#f7f8fa #f6f5f2 #f6f5f2 #faf8f4 #f7f6f3) and theme-keyed. `--card`, the token #79
-    # drove to 1.03:1, remains forbidden by the case below and by this list being exact.
-    # Widening this to "any var() is fine" is the retreat that would make #80 unfalsifiable.
-    case("the only var() background is the page's own GROUND, never a second surface",
-         sorted(d.strip() for d in _bg_decls if "var(" in d), ["var(--bg,Canvas)"])
-    case("…and `--card` in particular is gone — the token #79 turned on",
-         "--card" in css, False)
-    # ⚠ The four tokens that MAY still be read, pinned by name. If a fifth appears, someone must
-    # come back here and say which kind it is; a silently widened set is how the first one got in.
-    # ⟳ r1: FOUR -> SIX, and the comment above demands saying which KIND each addition is,
-    # which is the whole point of pinning the set rather than counting it.
-    #   --bg       a GROUND token — the page's own first surface (see the case above).
-    #   --chrome-h a LENGTH this module WRITES rather than reads: the bar's measured height,
-    #              published so the page can reserve exactly that much. Not a page colour at
-    #              all, so #80's surface rule does not reach it.
-    case("the tokens it reads are exactly these six, each classified above",
-         sorted(set(re.findall(r"var\((--[a-z0-9-]+)", css))),
-         ["--bg", "--chrome-h", "--ink", "--ink-soft", "--rule", "--structural"])
-
-
-    # ─── THE TEXT-STYLE SWITCHER ──────────────────────────────────────────────────
-    # ⛔ EVERY NAME ASSERTED HERE IS THE PROTOTYPE'S. These cases are the guard against
-    # this module drifting away from the page that already ships the control inline.
-    TS = text_style_control()
-    TSCSS = text_style_css()
-    DECL = "<style>:root{--accent:#123456;--em:#654321}</style>"
-    # ⟳ r1: a consumer joined this fixture because `assert_wired` now also requires one.
-    # The assertion is unchanged — a complete page raises nothing — but "complete" grew.
-    ts_full = (f"<style>{LIGHT}{DARK}{TSCSS}</style>{DECL}{TS}"
-               f'<div class="{TEXT_SCOPE_CLASS}">prose</div>'
-               f"<script>{chrome_script()}</script>")
-
-    case("the control is the prototype's element", 'id="schemer"' in TS, True)
-    case("...with its label", "Text style:" in TS, True)
-    case("the three schemes, in the prototype's order and spelling",
-         re.findall(r'data-s="(\d)"[^>]*>([^<]*)<', TS),
-         [("3", "colour"), ("2", "headings only"), ("1", "plain")])
-    case("has_text_control sees it", has_text_control(TS), True)
-    case("has_text_control is keyed on the id, not the words 'text style'",
-         has_text_control("<p>this page discusses text style at length</p>"), False)
-    case("...so prose about text style demands no tokens",
-         missing_text_tokens("<p>text style matters</p>"), [])
-    # ⛔ COLOUR IS SCHEME 3 AND IS THE DEFAULT — the prototype's arrangement, not an
-    # inversion of it. Both the paint class and the announced state start on it.
-    case("exactly one option starts marked live", TS.count('class="on"'), 1)
-    case("...and it is scheme 3", 'data-s="3" class="on"' in TS, True)
-    case("...which is the default", TEXT_DEFAULT, "3")
-    case("the announced state agrees with the painted one",
-         TS.count('aria-pressed="true"'), 1)
-
-    # --- THE FAIL-SILENT: a control whose tokens the page never declares
-    case("a control declaring NEITHER token is caught",
-         missing_text_tokens(TS), list(TEXT_TOKENS))
-    case("a control declaring only --accent is caught",
-         missing_text_tokens(f"<style>:root{{--accent:#123456}}</style>{TS}"), ["--em"])
-    case("a control declaring both passes", missing_text_tokens(DECL + TS), [])
-    case("a page with no control needs no tokens", missing_text_tokens(stamp("x")), [])
-    # ⭐ THE MEASURED TRAP, and why the check keys on `--accent:` not `--accent`: a page
-    # that only USES the token is precisely the page whose role resolves to nothing.
-    case("a page that only USES a token has not DECLARED it",
-         missing_text_tokens(f"<style>h1{{color:var(--accent)}}p{{color:var(--em)}}</style>{TS}"),
-         list(TEXT_TOKENS))
-
-    # --- the CSS, against the prototype's own values
-    case("the default scheme needs no attribute", TSCSS.split("{")[0], ":root")
-    case("the default scheme is NOT keyed on an attribute",
-         f'[{TEXT_ATTR}="{TEXT_DEFAULT}"]' in TSCSS, False)
-    case("both opt-outs are attribute overrides",
-         all(f'[{TEXT_ATTR}="{v}"]' in TSCSS for v in TEXT_OPT_OUTS), True)
-    # ⭐ THE DEFECT THE THREE-ROLE SCHEME EXISTS TO REMOVE: scheme 1 computed heading,
-    # prose and emphasis to ONE identical colour. "The switcher exists" passes on that
-    # version too, so assert the roles are DISTINCT.
-    _roles = re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))", TSCSS.split("}")[0])
-    case("the three roles spend three DIFFERENT tokens", len(set(_roles)), 3)
-    # ⚠ BOUNDED TO ITS OWN BLOCK. The first draft split on the selector and read the REST
-    # of the stylesheet, so it picked up scheme 2's roles too and reported 3 distinct
-    # tokens — a case that was measuring the wrong span, not a defect in the CSS.
-    _pl = TSCSS.split(f'[{TEXT_ATTR}="1"]')[1].split("}")[0]
-    case("...and `plain` collapses all three onto the page's own ink",
-         len(set(re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))", _pl))), 1)
-    # ⚠ `headings only` KEEPS the prose tone and drops only emphasis — the prototype's
-    # behaviour, which a first draft of this module got wrong in the other direction.
-    _h = TSCSS.split(f'[{TEXT_ATTR}="2"]')[1].split("}")[0]
-    case("`headings only` keeps the prose tone", "--prose:var(--fg2)" in _h, True)
-    case("...and drops only the emphasis colour", "--emph:var(--fg)" in _h, True)
-    case("the scheme spends neither reserved semantic token",
-         [v for v in re.findall(r"var\((--[a-z0-9-]+)", TSCSS)
-          if v in ("--verified", "--warn")], [])
-    case("the control's live style keys on the class the prototype's CSS uses",
-         ".schemer button.on" in TSCSS, True)
-    # ⟳ r1 MEDIUM. Opacity composites against whatever is behind the text, so a contrast
-    # figure for it is not a property of this stylesheet. Measured at 0.6 it was 2.32:1
-    # light / 2.85:1 dark — about half of AA. This asserts the MECHANISM is gone, which is
-    # the only part decidable here; the contrast itself belongs to the page's own ground.
-    # ⛔ THE SURVIVOR r1 AND r2 BOTH NAMED, AND r1's FOLD DID NOT CLOSE. Deleting all three
-    # consumption rules left 118/118 and 133/133 green: the r1 fold added a check for
-    # "does the PAGE carry a consumer element" and recorded the Blocking folded, but the
-    # defect was "nothing notices if the CONSUMING CSS is deleted". Different claims.
-    # Every role the control offers must be spent by some rule in the emitted stylesheet.
-    for _role in ("--prose", "--head", "--emph"):
-        case(f"the emitted stylesheet actually CONSUMES {_role}",
-             f"var({_role})" in TSCSS, True)
-    case("...and each consuming rule is scoped to the class the guard requires",
-         all(f".{TEXT_SCOPE_CLASS}" in r for r in TSCSS.split("}")
-             if any(f"var({x})" in r for x in ("--prose", "--head", "--emph"))), True)
-    # ⛔ r3 MEDIUM: the three cases above assert the roles are REFERENCED, and r3 defeated
-    # them by wrapping every consuming rule in `@media not all{…}` — references intact,
-    # scope intact, 133/133 green, and Chromium rendering one scheme for three choices.
-    # ⚠ DECIDING WHETHER AN ARBITRARY PAGE'S CSS IS ACTIVE NEEDS A CSS PARSER, and reaching
-    # for one here would be the fourth round of the same mistake. But this module OWNS what
-    # it emits, and "my own output contains no at-rule" IS decidable from text. So the claim
-    # is narrowed to the emitter: the consuming rules ship unconditionally. If a future
-    # change needs an at-rule here, this case fails and someone must decide what the
-    # consumption claim then means — which is the point of pinning it rather than counting.
-    # ⟳ RENAMED ON r4's EVIDENCE, because the old name claimed more than the case asserts.
-    # It was "the switcher's own rules ship unconditionally". r4 collapsed three renderings
-    # to one with TWO emitter-only changes that introduce NO at-rule — three same-specificity
-    # `.ex-body` overrides, and a second bare role block — both suites green, verified in a
-    # browser against a known-positive control that renders 3. So this is a falsifier for
-    # "no at-rule", and NOTHING MORE. ⛔ The uncovered region is real and is recorded in the
-    # r3 coordinator note: a later equal-specificity rule, a selector that cannot match, or a
-    # duplicate role block each defeat it, and separating those from legitimate CSS needs a
-    # cascade, not a text match. Naming the case honestly is the fix available here.
-    case("the emitted stylesheet contains no at-rule",
-         re.findall(r"@[a-z-]+", text_style_css()), [])
-    case("the switcher composites no text against the ground it cannot measure",
-         "opacity" in TSCSS, False)
-    case("...and selection survives on border, accent and weight, not contrast alone",
-         all(k in TSCSS.replace(" ", "")
-             for k in ("border-color:var(--accent)", "color:var(--accent)",
-                       "font-weight:600")), True)
-
-    # --- assert_wired, the caller-facing gate
-    case("assert_wired accepts a fully wired switcher", raises(ts_full), None)
-    case("assert_wired refuses a switcher whose tokens are undeclared",
-         "nothing styles" in (raises(f"<style>{LIGHT}{DARK}{TSCSS}</style>{TS}") or ""), True)
-    case("...and names the undeclared token",
-         "--em" in (raises(f"<style>{LIGHT}{DARK}{TSCSS}</style>"
-                           f"<style>:root{{--accent:#123}}</style>{TS}") or ""), True)
-    case("assert_wired refuses a switcher with no scheme CSS at all",
-         "appears nowhere" in (raises(f"<style>{LIGHT}{DARK}</style>{DECL}{TS}") or ""), True)
-    case("assert_wired is silent on a page with no switcher",
-         raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}"
-                f"<script>{chrome_script()}</script>"), None)
-
-    # --- the bar: OPT-IN, because four of five callers are tabular pages
-    case("the bar does NOT carry the switcher by default",
-         has_text_control(chrome_bar("s", "t")), False)
-    case("...and textstyle=True adds it",
-         has_text_control(chrome_bar("s", "t", textstyle=True)), True)
-    case("...while the theme control is unaffected either way",
-         (has_control(chrome_bar("s", "t")),
-          has_control(chrome_bar("s", "t", textstyle=True))), (True, True))
-
-    # --- the script, against the prototype's semantics
-    _js = chrome_script()
-    case("the script removes the attribute for the default rather than setting it",
-         "R.removeAttribute(TA)" in _js, True)
-    case("...and clears the stored key rather than storing the default",
-         "localStorage.removeItem(TK)" in _js, True)
-    case("the script never stores the default scheme's value",
-         f"setItem(TK,{TEXT_DEFAULT!r}" in _js, False)
-    case("only the two opt-outs are accepted from storage",
-         sorted(re.findall(r"sv===\'(\d)\'", _js)), sorted(TEXT_OPT_OUTS))
-    case("it carries the prototype's attribute and storage key",
-         (TEXT_ATTR in _js, TEXT_KEY in _js), (True, True))
-    case("a missing switcher does not throw and take the page's scripts down",
-         "if(box){" in _js, True)
-    case("the live option is marked by BOTH class and aria-pressed",
-         ("className=on?'on':''" in _js, "aria-pressed" in _js), (True, True))
-    # ── backlog #300: the bar must be REACHABLE, not merely wired ──
-    # The falsifier for this whole change is `STATIC_PAGE` below: it is the shape all 93 live
-    # pages had this morning, and it must go RED here and green after regeneration.
-    REACHABLE = f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
-    # ⟳ r1: this fixture is now a DOCUMENT. The exemption for a subject with no rule is
-    # for FRAGMENTS; r1 showed a finished page reaching the reader through it (y=8423 of
-    # 8481), so a <body> is what makes this the defect rather than a legitimate fragment.
-    STATIC_PAGE = (f"<style>{LIGHT}{DARK}"
-                   ".chrome{display:flex;align-items:center;color:var(--ink-soft)}"
-                   f"</style><body>{theme_control()}</body>")
-    case("the shipped CSS pins the bar into the viewport",
-         CHROME_PIN in chrome_css().replace(" ", ""), True)
-    # ⟳ 2026-10-18: THE TOP edge, and the pair is asserted so a half-revert cannot pass.
-    # The resting place moved under the title, so the bar now leaves the viewport upward and
-    # must return to the edge it left by. `bottom:0` surviving anywhere in this rule would
-    # stretch the bar over the whole viewport height, so its ABSENCE is asserted too.
-    case("...and anchors it to the TOP edge, the one it scrolled off",
-         ("top:0" in chrome_css().replace(" ", ""),
-          "bottom:0" in chrome_css().replace(" ", "")), (True, False))
-    case("the pinned bar is opaque, or the page scrolls through it",
-         "background:var(--bg,Canvas)" in chrome_css().replace(" ", ""), True)
-    case("...and it spans the viewport, or margin-inline-start:auto stops reaching the edge",
-         all(k in chrome_css().replace(" ", "") for k in ("left:0", "right:0")), True)
-    # ⟳ 2026-10-18: THE SLOT reserves, not <body>. Same property — the bar's OWN measured
-    # height, never a literal — moved to the element that actually has the hole in it.
-    case("the SLOT reserves the bar's OWN measured height, never a literal",
-         f".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}"
-         in chrome_css().replace(" ", ""), True)
-    case("...and <body> no longer reserves anything, or a top-pinned bar would leave a "
-         "blank band at the document end",
-         "padding-bottom:var(--chrome-h" in chrome_css().replace(" ", ""), False)
-    case("in-page anchors clear the pinned bar, keyed on the same measured height",
-         "scroll-padding-top:var(--chrome-h,0)" in chrome_css().replace(" ", ""), True)
-    case("the pin is applied by the SCRIPT, so no-JS gets no pin and no occlusion",
-         (CHROME_PIN_CLASS in chrome_script(), CHROME_PIN_CLASS in chrome_bar("s", "t")),
-         (True, False))
-    # ⛔ THE WHOLE PREDICATE, NOT THE SELECTOR STRING — and this case SURVIVED its own
-    # mutation on 2026-10-19 until it was rewritten. The r6 threshold fix introduced a
-    # SECOND use of `#chrome-theme,#schemer` (the `ctls` lookup), so `"…" in chrome_script()`
-    # stayed True after the guard clause was deleted: the case named the predicate and
-    # tested a substring that something else also supplies. Exactly the ambient-pass shape
-    # this repository keeps paying for, created by an edit two hundred lines away.
-    case("a bar with NO control is never pinned — 17 of 20 fragments are stamp-only",
-         "if(bar&&bar.querySelector('#chrome-theme,#schemer')){" in chrome_script(), True)
-    # ── "under the title AND pinned", the owner's choice, as ONE element ──────────────
-    _bar = chrome_bar("s", "t", textstyle=True)
-    case("chrome_bar wraps the bar in the slot the script observes, so no caller can "
-         "forget it",
-         _bar.startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'), True)
-    case("...and emits exactly ONE bar — a second copy is the duplicate-id defect that "
-         "cost rounds 2 and 4, because getElementById binds the FIRST",
-         (_bar.count('class="chrome"'), _bar.count(f'class="{CHROME_SLOT_CLASS}"'),
-          _scan(_bar).ids.count("chrome-theme")), (1, 1, 1))
-    case("the bar rests IN the flow: the slot carries no pin and no fixed position",
-         (CHROME_PIN_CLASS in _bar, "position:fixed" in _bar), (False, False))
-    # ⛔ THE PREDICATE IS VISIBILITY, NOT DIRECTION, and the case asserts the spelling
-    # because the two are indistinguishable in behaviour until a caller emits the bar at the
-    # END of a document — which is what every composed explainer page did this morning
-    # (y=6445 of 6475), and is backlog #300 itself. `scrolled past` would leave those
-    # unpinned and unreachable; `not visible` reaches them.
-    case("the pin is keyed on the slot not being VISIBLE, in either direction",
-         ("pin(!es[0].isIntersecting)" in chrome_script(),
-          ".observe(slot)" in chrome_script()), (True, True))
-    case("...with a scroll fallback asking the same question where there is no "
-         "IntersectionObserver",
-         ("window.IntersectionObserver" in chrome_script(),
-          "getBoundingClientRect" in chrome_script(),
-          "addEventListener('scroll'" in chrome_script()), (True, True, True))
-
-    case("the bar is found THROUGH the slot, so a stray .chrome elsewhere is not pinned",
-         f"slot.querySelector('.chrome')" in chrome_script(), True)
-    # ── the pin threshold, asserted as WHOLE EXPRESSIONS ────────────────────────────
-    # ⛔ EVERY CASE HERE NAMES ONE EXACT, CONTIGUOUS EXPRESSION, and the reason is measured.
-    # r6 CLAUDE HIGH: the previous three cases asserted SUBSTRINGS — "getBoundingClientRect()
-    # .bottom", "if(b<m)m=b;", "m=Infinity;" — every one of which something ELSE in this
-    # emitted script also supplies. The reviewer severed the rule two ways (the control box
-    # replaced by the slot's; the lowest control replaced by the last) and the suite stayed
-    # at 184/184 BOTH TIMES, with the defect reproduced in a browser. A case that names a
-    # behaviour and tests a fragment another line also contains is this repository's
-    # most-repeated defect, and it was re-created in the cases written for its own fix.
-    #
-    # ⚠ WHAT THIS BUYS AND WHAT IT DOES NOT. An exact expression is falsifiable: any
-    # severance of the rule changes it, so both of the reviewer's severances now redden.
-    # It is NOT a behavioural test — the property is a LAYOUT fact and no case in either
-    # suite runs a browser, which is stated in the module bound and remains true. These
-    # cases defend the rule against edits; a browser is still the only witness that the
-    # rule is the right one.
-    _TAIL = ("var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
-             "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
-             "if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));")
-    case("the gap is measured from the CONTROL boxes, takes the TOPMOST, and is clamped at "
-         "zero — one exact expression, because every fragment of it is supplied elsewhere",
-         _TAIL in chrome_script(), True)
-    case("the reserve is measured in fractional pixels, so pinning cannot shift the page",
-         ("'--chrome-h',bar.getBoundingClientRect().height+'px');" in chrome_script(),
-          "offsetHeight" in chrome_script()), (True, False))
-    # ⛔ ONE GUARD, GOVERNING THE WHOLE BODY VIA `return`. r6 CLAUDE BLOCKING: the previous
-    # shape was a braceless `if` that governed one statement, so the re-arm ran while PINNED
-    # and the page flipped the class 60 times per second on a stationary dashboard.
-    case("the reserve, the gap and the re-arm are all behind ONE guard that returns",
-         f"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;"
-         in chrome_script(), True)
-    case("...and the gap is WRITTEN at exactly one site, so no expression can sample it "
-         "in the wrong state",
-         chrome_script().count("tailPx=("), 1)
-    case("both consumers read the CACHE, and no live `tail()` call survives anywhere",
-         ("{rootMargin:(-tailPx)+'px 0px 0px 0px'}" in chrome_script(),
-          "r.bottom-tailPx<=0" in chrome_script(),
-          "tail()" in chrome_script()), (True, True, False))
-    case("the observer is rebuilt on re-wrap, because rootMargin is fixed at construction",
-         ("if(io)io.disconnect();" in chrome_script(),
-          "arm();};sync();" in chrome_script()), (True, True))
-
-    # ── ⛔ THE EMITTED SCRIPT MUST PARSE, AND NOTHING CHECKED THAT FOR 190 CASES ───────
-    # MEASURED 2026-10-19: a rewrite of the pin block dropped ONE closing brace. The suite
-    # stayed GREEN at 190/190 while `chrome_script()` emitted invalid JavaScript —
-    # `Unexpected token ')'` in Chromium, the whole IIFE dead, every control on every page
-    # inert. Worse, a BROWSER measurement taken on that page read "0 class flips per
-    # second" and looked exactly like the defect it was checking having been fixed.
-    #
-    # ⚠ EVERY OTHER CASE IN THIS FILE ASKS WHAT THE SCRIPT CONTAINS. None asked whether it
-    # is a program. A substring assertion cannot notice a missing brace, and 190 of them
-    # could not either — which is the sharpest instance of this repository's own lesson
-    # that a green suite describes only what its cases look at.
-    _js = chrome_script()
-    case("the emitted script's braces and parens balance",
-         (_js.count("{") == _js.count("}"), _js.count("(") == _js.count(")")),
-         (True, True))
-    # ⛔ A REAL PARSE, not a balance heuristic — `}{` balances and does not parse. `node` is
-    # this project's CI interpreter (Node 22) and the mutation harness inherits PATH, so a
-    # missing `node` is a FAILURE and not a skip: a check that cannot reach its subject
-    # must say so loudly rather than pass.
-    def _parses(js: str) -> str:
-        import subprocess, tempfile, os
-        fd, path = tempfile.mkstemp(suffix=".js")
-        try:
-            os.write(fd, js.encode()); os.close(fd)
-            r = subprocess.run(["node", "--check", path],
-                               capture_output=True, text=True, timeout=30)
-            return "ok" if r.returncode == 0 else f"PARSE ERROR: {r.stderr.strip()[:120]}"
-        except FileNotFoundError:
-            return "CANNOT RUN: node is not on PATH — treat this as NOT CHECKED"
-        except Exception as e:
-            return f"CANNOT RUN: {e}"
+            subprocess.run = lambda *a, **k: (_ for _ in ()).throw(OSError("no git"))
+            _p = provenance("2026-01-01 00:00", pathlib.Path("."))
         finally:
-            try: os.unlink(path)
-            except OSError: pass
-    case("...and it PARSES as JavaScript — the check that would have caught the brace",
-         _parses(_js), "ok")
-    case("...and so does the inline theme-applying half, which a page runs early",
-         _parses(f"(function(){{{theme_control()!r};}})();"), "ok")
+            subprocess.run = _real_run
+        case("a git that cannot be LAUNCHED yields UNKNOWN, never a bare clock",
+             ("UNKNOWN" in _p, "2026-01-01 00:00" in _p), (True, True))
 
-    # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
-    case("the script moves a hand-authored #schemer INTO the bar, so one element carries "
-         "both controls (r6 High: it sat in the prose at y=-673 while the bar was pinned)",
-         "if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);" in chrome_script(), True)
-    # ⛔ ORDER, NOT MERELY PRESENCE. The move must precede the control predicate — a bar
-    # that gains the switcher must PIN — and precede `ctls`, or the switcher would not
-    # count when the tail is measured and r6's threshold defect returns for it alone.
-    case("...before the control predicate AND before the tail is measured, or the bar it "
-         "joins neither pins nor accounts for it",
-         _ordered_in(chrome_script(), "bar.appendChild(sch)",
-                     "if(bar&&bar.querySelector('#chrome-theme,#schemer')){",
-                     "var ctls=bar.querySelectorAll"), True)
-    case("...and it is never moved twice, which would be a no-op at best",
-         "!bar.contains(sch)" in chrome_script(), True)
-    # ── ONE producer shape for the slot ───────────────────────────────────────────────
-    case("stamp_bar is slotted too, so `.chrome` has one slot-emitting shape and not four",
-         stamp_bar("t").startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'),
-         True)
-    case("...and carries NO control, so it still does not pin on its own — 17 of 20 "
-         "fragments are stamp-only",
-         (has_control(stamp_bar("t")), has_text_control(stamp_bar("t"))), (False, False))
-    # ── place_bar: the resting place, and the four shapes it must get right ──────────
-    case("place_bar puts the bar just after the title, not before it",
-         place_bar("<h1>T</h1>\n<p>x</p>", "[BAR]"), "<h1>T</h1>\n[BAR]\n<p>x</p>")
-    case("...and FIRST when there is no title, never last — last is the state this "
-         "change exists to end (backlog #300)",
-         place_bar("<p>no title</p>", "[BAR]"), "[BAR]\n<p>no title</p>")
-    # ⛔ A BAR INSERTED INSIDE A <template> RENDERS NOTHING, which is why this is a parse
-    # sharing `_Scan`'s shield rule and not a `markup.index("</h1>")`.
-    case("...skipping a SHIELDED <h1>, whose </h1> a substring search would have chosen",
-         place_bar("<template><h1>t</h1></template><h1>R</h1><p>y</p>", "[BAR]"),
-         "<template><h1>t</h1></template><h1>R</h1>\n[BAR]<p>y</p>")
-    case("...and a COMMENTED-OUT one, for the same reason",
-         place_bar('<!-- <h1>c</h1> --><h1 class="a">R</h1><p>y</p>', "[BAR]"),
-         '<!-- <h1>c</h1> --><h1 class="a">R</h1>\n[BAR]<p>y</p>')
-    # The bar must survive placement intact — a lost closing tag here would silently
-    # swallow the rest of the document into the slot.
-    case("place_bar neither drops nor duplicates the bar it was given",
-         place_bar("<h1>T</h1><p>x</p>", _bar).count('class="chrome"'), 1)
-    # ⟳ 2026-10-18, r1 LOW. WAS `"z-index:1" in css` and the comment claimed the ask tray
-    # "owns z-index 5". ⛔ BOTH WRONG. `#tray` computes 50 and the pages declare 70; the 5
-    # came from a grep COUNT and was never checked against the tray — a figure invented to
-    # support a sound argument, which is this repository's most-repeated tell. And the case
-    # pinned the literal, not the ordering: mutating 1 -> 0 PRESERVES the property (still
-    # far below any floater) yet reddened it, so it defended a token rather than a rule.
-    # Asserting the BAND is what the rule is actually about: a small positive integer, so
-    # the bar paints above page content and below anything that floats over it.
-    _z = re.search(r"\.chrome-pinned\{[^}]*z-index:(\d+)", chrome_css().replace(" ", ""))
-    case("the pinned bar sits above content and below any floater — a LOW positive z",
-         bool(_z) and 0 < int(_z.group(1)) < 10, True)
-    case("a page built with this module's CSS is reachable",
-         bar_unreachable(REACHABLE), False)
-    case("THE DEFECT: control + a static .chrome rule is refused",
-         bar_unreachable(STATIC_PAGE), True)
-    case("a FRAGMENT — control, but no .chrome rule — is not this check's subject",
-         bar_unreachable(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), False)
-    # ⚠ THE DISCRIMINATING INPUT, and the case above cannot stand in for it. A page with NO
-    # control but WITH an unpinned `.chrome` rule is the ONLY shape on which the `has_control`
-    # gate and the `rules` gate DISAGREE: the first says "not my business", the second alone
-    # would call it a defect. Found by a SURVIVING MUTATION — the no-control case below also
-    # carries no `.chrome` rule, so the `rules` gate answered first and nothing depended on
-    # `has_control` at all. A green suite said it was covered; it was masked.
-    # ⚠ A DOCUMENT, and it must be. ⟳ r1 fold: after the redesign this fixture was a
-    # FRAGMENT, so `if not rules: return False` answered before `has_control` was ever
-    # consulted and the mutation that deletes that gate SURVIVED. The gates only disagree
-    # on a finished page with NO control and no pinned rule: `has_control` says "not my
-    # business", everything downstream would call it a defect.
-    case("a document with CSS but no control is not a defect — the gates disagree here",
-         bar_unreachable(f"<style>{LIGHT}{DARK}"
-                         ".chrome{display:flex;color:var(--ink-soft)}"
-                         "</style><body><p>no control on this page</p></body>"), False)
-    case("a page with no control owes no bar at all",
-         bar_unreachable(f"<style>{LIGHT}{DARK}</style><p>no control here</p>"), False)
-    # IDENTITY CASE. `.chrome-btn{position:sticky}` must NOT satisfy a rule about `.chrome`,
-    # or the predicate is satisfied by a sibling selector that shares a prefix.
-    case("neither `.chrome` nor `.chrome-btn` pinned counts as the BAR being pinned",
-         bar_unreachable(f"<style>{LIGHT}{DARK}"
-                         ".chrome{position:fixed}.chrome-btn{position:fixed}"
-                         f"</style><body>{theme_control()}</body>"), True)
-    # IDENTITY: the body-padding rule SHARES the class as a prefix and must not satisfy it.
-    case("`.chrome-pinned-host` does NOT satisfy a rule about `.chrome-pinned`",
-         bar_unreachable(f"<style>{LIGHT}{DARK}"
-                         ".chrome-pinned-host{position:fixed}"
-                         f"</style><body>{theme_control()}</body>"), True)
-    # ── the refusals must FIRE, not merely be satisfiable. Each of these survived its
-    # mutation until it was written: a fixture that passes a guard proves only that the
-    # guard does not false-positive; it says nothing about whether the guard does anything.
-    _EXB = f'<div class="{TEXT_SCOPE_CLASS}">prose</div>'
-    _tsw = (f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
-            f"{theme_control()}{text_style_control()}"
-            f"<script>{chrome_script()}</script>")
-    case("assert_wired REFUSES a switcher nothing opts into",
-         "which is the ONLY class its CSS styles" in (raises(_tsw, scoped=True) or ""), True)
-    case("...and ACCEPTS the same page once something does",
-         "which is the ONLY class its CSS styles" in
-         (raises(f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
-                 f"{theme_control()}{text_style_control()}{_EXB}"
-                 f"<script>{chrome_script()}</script>", scoped=True) or ""), False)
-    case("a consumer hidden in an HTML COMMENT does not count as one",
-         "which is the ONLY class its CSS styles" in
-         (raises(_tsw + f"<!-- {_EXB} -->", scoped=True) or ""), True)
-    # ── r2: every one of these was measured WRONG under the substring form it replaced,
-    # and each is wrong in BOTH directions, which is why the instrument changed rather
-    # than the thresholds. The parser decides quoting, comments and script text; I do not.
-    _T = theme_control()
-    _TSC = text_style_control()
-    case("mixed quoting is still TWO live controls",
-         _scan(_T + _T.replace('"', "'")).ids.count("chrome-theme"), 2)
-    # ⚠ Provided by `html.parser`'s CDATA handling, NOT by this module — measured when the
-    # mutation that removed "script" from the tag list survived. Asserted anyway, because
-    # the behaviour is load-bearing and a future parser swap must not lose it silently.
-    case("an id that exists only inside a SCRIPT STRING is not a control",
-         _scan(_T + '<script>const s = \'id="chrome-theme"\';</script>'
-               ).ids.count("chrome-theme"), 1)
-    case("a COMMENTED-OUT control is not a control",
-         _scan(_T + f"<!-- {_T} -->").ids.count("chrome-theme"), 1)
-    # ⛔ THE BYPASS THAT DEFEATED THE REGEX STRIPPER: comment delimiters living inside
-    # JavaScript string literals made `<!--.*?-->` swallow the live control between them.
-    case("comment delimiters inside script strings do not erase live markup",
-         _scan(_T + '<script>const a="<!--";</script>' + _T
-               + '<script>const b="-->";</script>').ids.count("chrome-theme"), 2)
-    case("an id inside a <template> is not a live control — this module's own guard",
-         _scan(_T + '<template><button id="chrome-theme"></button></template>'
-               ).ids.count("chrome-theme"), 1)
-    case("the pinned bar returns to the flow in print, and frees its reserved space",
-         ("@media print" in chrome_css(),
-          f".{CHROME_PIN_CLASS}{{position:static}}" in chrome_css().replace(" ", ""),
-          f".{CHROME_SLOT_CLASS}{{min-height:0}}" in chrome_css().replace(" ", "")),
-         (True, True, True))
-    # ── r3's four parser findings, each measured against Chromium's actual behaviour ──
-    case("a <template>'s OWN id is live — getElementById returns the template itself",
-         _scan(_TSC + '<template id="schemer"></template>').ids.count("schemer"), 2)
-    case("...while what is INSIDE a template is not",
-         _scan('<template><button id="chrome-theme"></button></template>'
-               ).ids.count("chrome-theme"), 0)
-    case("duplicate attributes resolve FIRST-wins, as Chromium does",
-         has_text_consumer(f'<div class="other" class="{TEXT_SCOPE_CLASS}">x</div>'), False)
-    case("...so a second id cannot hide a duplicate control either",
-         _scan(_T + _T.replace('id="chrome-theme"', 'id="chrome-theme" id="other"')
-               ).ids.count("chrome-theme"), 2)
-    # ⛔ r4 HIGH: the element EXISTS even though its contents do not. Chromium returns the
-    # <noscript> from getElementById, so an id on it silently disables the real control —
-    # r3's <template> defect, reintroduced in the adjacent branch of the fix for it.
-    # ── r4: the id predicates were substring tests while `_scan` held the answer. Wrong
-    # in BOTH directions, which is why the instrument changed rather than the pattern.
-    case("a SINGLE-QUOTED control is a control",
-         has_control(_T.replace('"', "'")), True)
-    case("...and so is a single-quoted switcher",
-         has_text_control(_TSC.replace('"', "'")), True)
-    case("a control inside an HTML COMMENT is NOT one",
-         has_control(f"<!-- {_T} -->"), False)
-    case("...so the guard does not refuse a page that carries no live control",
-         raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style><!-- {_T} -->"), None)
-    case("a handler that is COMMENTED OUT does not bind the control",
-         CHROME_SCRIPT_MARK in _scripts(f"<!-- <script>{CHROME_SCRIPT_MARK}</script> -->"),
-         False)
-    # A handler inside <template> or <noscript> NEVER RUNS — template contents are inert
-    # and noscript contents are not created with scripting on — so it cannot bind a control.
-    # Found by a surviving mutation: the shield was right and nothing asserted it.
-    case("a handler inside a <template> does not bind the control",
-         CHROME_SCRIPT_MARK in _scripts(f"<template><script>{CHROME_SCRIPT_MARK}</script>"
-                                        f"</template>"), False)
-    case("...nor one inside a <noscript>",
-         CHROME_SCRIPT_MARK in _scripts(f"<noscript><script>{CHROME_SCRIPT_MARK}</script>"
-                                        f"</noscript>"), False)
-    case("...while a real one still does",
-         CHROME_SCRIPT_MARK in _scripts(f"<script>{chrome_script()}</script>"), True)
-    # ── r4: one counter shielded two mechanisms, so either end tag lifted either shield.
-    # ── r5: the first-wins fix had reached ONE of three branches, and the shield check ran
-    # AFTER the branches it was meant to gate. Both are this module's own inconsistency.
-    case("duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else",
-         (_scan('<noscript id="chrome-theme" id="other"></noscript>').ids,
-          _scan('<noscript id="other" id="chrome-theme"></noscript>').ids),
-         (["chrome-theme"], ["other"]))
-    case("an element inside a shield contributes nothing, whatever element it is",
-         (_scan('<template><noscript id="chrome-theme"></noscript></template>').ids,
-          _scan('<noscript><template id="x"></template></noscript>').ids), ([], []))
-    case("a <noscript> closed by </template> does not invent a consumer",
-         "ex-body" in _scan('<noscript></template>'
-                            '<div class="ex-body">x</div></noscript>').classes, False)
-    case("...and a <template> closed by </noscript> invents no control either",
-         "chrome-theme" in _scan('<template></noscript>'
-                                 '<button id="chrome-theme"></button></template>').ids, False)
-    # ── r4 LOW: the pin may appear in a grouped selector, or with whitespace before `{`.
-    # ⚠ the script is part of the fixture or the BINDING arm fires first and these cases
-    # measure that arm instead of the one they name — the third time that has bitten here.
-    _pin_doc = (lambda css: f"<style>{LIGHT}{DARK}{css}</style><body>{_T}"
-                            f"<script>{chrome_script()}</script></body>")
-    case("a GROUPED selector still pins the bar, whichever side the class is on",
-         (bar_unreachable(_pin_doc(".chrome-pinned,.x{position:fixed;left:0;right:0}")),
-          bar_unreachable(_pin_doc(".x,.chrome-pinned{position:fixed;left:0;right:0}"))),
-         (False, False))
-    case("...and whitespace before the brace does not make it unreachable",
-         bar_unreachable(_pin_doc(".chrome-pinned\n{position:fixed}")), False)
-    case("the refusal names the rule the predicate actually requires",
-         f".{CHROME_PIN_CLASS}" in (raises(_pin_doc(".chrome{position:fixed}")) or ""), True)
-    case("a <noscript>'s OWN id is live, so it can hide a real control",
-         _scan('<noscript id="schemer"></noscript>' + _TSC).ids.count("schemer"), 2)
-    case("...which the duplicate-id refusal then reports",
-         'appears 2 times' in
-         (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
-                 f'<noscript id="chrome-theme"></noscript>{theme_control()}'
-                 f"<script>{chrome_script()}</script>") or ""), True)
-    case("a <noscript> consumer is fictitious while scripting is on",
-         has_text_consumer(f'<noscript><div class="{TEXT_SCOPE_CLASS}"></div></noscript>'), False)
-    # The DEFAULT matters: a caller that says nothing must not have its page policed.
-    case("the guard's default is to stay out of it, not to police",
-         missing_text_consumer(text_style_css() + text_style_control()), False)
-    case("a class is read from a PARSE, so single quotes count",
-         has_text_consumer("<div class='" + TEXT_SCOPE_CLASS + "'>p</div>"), True)
-    case("...and a class that merely has the right PREFIX does not",
-         has_text_consumer(f'<div class="{TEXT_SCOPE_CLASS}guard">p</div>'), False)
-    # ── r2 HIGH: the guard binds to THIS module's stylesheet, not to the class in general.
-    case("a page whose caller emitted NO scoped stylesheet is not this guard's business",
-         missing_text_consumer(text_style_control()
-                               + "<style>body{color:var(--prose)}</style><p>x</p>", False), False)
-    case("...but a page whose caller DID emit the scoped stylesheet, with no consumer, IS",
-         missing_text_consumer(text_style_css() + text_style_control(), True), True)
-    # ⛔ THE r3 BLOCKING, PINNED. `.ex-body { color:var(--prose) }` with spaces defeated the
-    # signature sniff and silenced the guard on exactly the pages it is for. Being TOLD makes
-    # the spelling irrelevant, so this must hold for a form the sniff could never match.
-    case("...and whitespace-equivalent CSS no longer silences it",
-         missing_text_consumer(
-             text_style_css().replace(f".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}",
-                                      f".{TEXT_SCOPE_CLASS} {{ color:var(--prose) }}")
-             + text_style_control(), True), True)
-    case("assert_wired REFUSES two controls with the same id",
-         'appears 2 times' in
-         (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
-                 f"{theme_control()}{theme_control()}"
-                 f"<script>{chrome_script()}</script>") or ""), True)
-    case("...but a COMMENTED-OUT second control is not a duplicate",
-         'appears 2 times' in
-         (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
-                 f"{theme_control()}<!-- {theme_control()} -->"
-                 f"<script>{chrome_script()}</script>") or ""), False)
-    # ⟳ 2026-10-18: TOGGLED, not added. The pin is now reversible — that is the whole of
-    # "under the title AND pinned" — so the mechanism is `classList.toggle(cls, on)` and the
-    # <body> host class is gone. Asserting the toggle AND the absence of the one-way add is
-    # what stops a revert to unconditional pinning passing this case.
-    case("the script TOGGLES the pin class on the bar, so the pin is reversible",
-         (f"classList.toggle({CHROME_PIN_CLASS!r},on)" in chrome_script(),
-          "bar.classList.add" in chrome_script()), (True, False))
-    case("the bar keeps a separating rule and its breathing room",
-         ("border-top" in chrome_css(), "padding-block" in chrome_css()), (True, True))
-    case("a FINISHED document is never exempt, however it reached the writer",
-         bar_unreachable(f"<style>{LIGHT}{DARK}</style><body>{theme_control()}</body>"), True)
-    # assert_wired must ACT on it, not merely be able to compute it — the guard and the
-    # refusal are separate things, and a predicate nothing calls protects nothing.
-    def _raises(page):
-        try:
-            assert_wired(page, "t")
-        except SystemExit:
-            return True
-        return False
-    case("assert_wired REFUSES to write an unreachable page",
-         _raises(STATIC_PAGE + f"<script>{chrome_script()}</script>"), True)
-    case("the two refusals are independent: an unreachable page with NO script reports "
-         "the broken mechanism first, not the placement",
-         "no script CARRYING" in (raises(STATIC_PAGE) or ""), True)
-    case("...and still writes a reachable, fully wired one",
-         _raises(REACHABLE + f"<script>{chrome_script()}</script>"), False)
-    # The background set, pinned the way the token set above is: `inherit` is the page's own
-    # ground and `transparent` is the button. A THIRD value means someone introduced a surface.
-    case("the only backgrounds are the page's own ground and the button's none",
-         sorted(set(d.strip() for d in re.findall(r"background:([^;}]*)", chrome_css()))),
-         ["transparent", "var(--bg,Canvas)"])
+        # --- the stamp
+        case("the stamp renders the value it was given", "2026-08-31 06:40" in stamp("2026-08-31 06:40"),
+             True)
+        case("the stamp escapes its input", "&lt;b&gt;" in stamp("<b>"), True)
+        case("the stamp is machine-readable", "<time>" in stamp("x"), True)
+        # Determinism: the module must not read a clock, or every page render differs.
+        case("the stamp is deterministic for one input", stamp("t"), stamp("t"))
 
-    # ── OUT OF SCOPE BY THE BOUND ────────────────────────────────────────────────
-    # ⛔ THESE FIVE CASES RECORD BEHAVIOUR. THEY DO NOT ENDORSE IT, AND THEY ASSERT
-    # NOTHING ABOUT CHROMIUM. Each is one of the five shapes round 5 found and the
-    # coordinator note declined to fold, because each is the same thing: a text scan
-    # guessing at a browser. The module docstring declares the subject that puts them out
-    # of scope — markup from this repository's generators or its explainer skills.
-    #
-    # ⚠ WHAT THEY ARE FOR, STATED PLAINLY: they are the falsifier for the BOUND, not for
-    # the behaviour. Tighten `_Scan` or `_CHROME_RULE_RE` to handle one of these and its
-    # case goes RED, which is the intended outcome — it sends the author to the docstring
-    # to widen the subject on purpose. Fix the case and the bound together, or neither.
-    #
-    # ⚠ AND WHAT THEY ARE NOT: they are not evidence that the recorded answer is right.
-    # Every "Chromium does X" claim in r5 is a reviewer's reading of the HTML spec, NOT a
-    # browser measurement — nobody has run these five through a browser, here or there.
-    # So the `want` values below are this module's output, measured 2026-10-18 by running
-    # it, and that is the whole of their authority.
-    _nested_ns = ('<button id="chrome-theme">a</button>'
-                  '<noscript><noscript></noscript><button id="chrome-theme">b</button>')
-    case("OUT OF SCOPE: a second control behind a NESTED <noscript> is not counted, "
-         "so no duplicate is reported (r5 High; the depth counter nests, Chromium's "
-         "raw-text parsing arguably does not — NOT browser-verified)",
-         _scan(_nested_ns).ids.count("chrome-theme") > 1, False)
-    case("OUT OF SCOPE: an UNTERMINATED <script> still contributes its text, so the "
-         "binding assertion is satisfied by it (r5 High)",
-         CHROME_SCRIPT_MARK in _scripts(f"<p>x</p><script>/*{CHROME_SCRIPT_MARK}*/"), True)
-    case("OUT OF SCOPE: a <template> inside <svg> shields its contents here (r5 Medium; "
-         "in foreign content the child is arguably live)",
-         has_control('<svg><template><button id="chrome-theme">t</button>'
-                     '</template></svg>'), False)
-    case("OUT OF SCOPE: <noscript><script></noscript> leaves the scanner in script mode, "
-         "so a control after it is invisible (r5 Medium, fail-CLOSED — it refuses rather "
-         "than accepts, which is why it ranks below the two Highs)",
-         has_control('<noscript><script></noscript>'
-                     '<button id="chrome-theme">t</button>'), False)
-    # ⟳ PROMOTED OUT OF THE OUT-OF-SCOPE BLOCK, 2026-10-19, r6 CODEX MEDIUM. This case
-    # used to RECORD a fail-open; it now asserts the fix. The reviewer's argument beat the
-    # bound: a fragment author commenting out a selector while editing CSS is an ordinary
-    # mistake inside the declared subject, not adversarial markup. ⭐ And the promotion is
-    # exactly what the recording cases are for — the tightening reddened this case first,
-    # which is what forced the bound to be widened on purpose instead of by accident.
-    # ⛔ ASKED THROUGH `bar_unreachable`, NOT THROUGH THE REGEX. The first version called
-    # `_CHROME_RULE_RE.search` directly and was measured UNFALSIFIABLE: stripping comments
-    # at the guard left it GREEN at 163/163, because the case's subject was the pattern and
-    # the fix's subject was the guard.
-    case("a page whose only pin rule is COMMENTED OUT is REFUSED as unreachable",
-         bar_unreachable(
-             '<html><body><button id="chrome-theme">t</button>'
-             f'<style>{LIGHT}{DARK}'
-             '/* .chrome-pinned */ .nonexistent{position:fixed}</style>'
-             f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), True)
-    case("...while a real rule beside a comment still passes — the strip must not eat the "
-         "live rule next to the dead one",
-         bar_unreachable(
-             '<html><body><button id="chrome-theme">t</button>'
-             f'<style>{LIGHT}{DARK}'
-             '/* disabled: .chrome-pinned */ .chrome-pinned{position:fixed}</style>'
-             f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), False)
-    # ⚠ A SPACE, NOT DELETION — the case that pins why. Welding the halves together could
-    # manufacture a selector present in neither.
-    case("the strip replaces a comment with a SPACE, so it cannot weld a selector into "
-         "existence",
-         _strip_css_comments(".chrome/*x*/-pinned{position:fixed}"),
-         ".chrome -pinned{position:fixed}")
-    # ⚠ THE BOUND OF THE STRIP, WITNESSED rather than only stated: this is a CSS rule run
-    # over a whole HTML document, so a `/*` inside a script string reads as a comment start.
-    case("the strip's own bound: a `/*` inside a script is still treated as a comment, "
-         "and that is recorded rather than claimed otherwise",
-         "A" in _strip_css_comments('<script>var s="/*";</script>A<style>*/</style>'), False)
-    # ⚠ The SUBJECT sentence, not the argument for it — and this case is weak on purpose,
-    # which is said rather than hidden: it can only notice the sentence being deleted, and
-    # a case that names its own fix's tokens defends only its deletion. The five cases
-    # above are the real falsifier. This one exists because the subject disappearing while
-    # the refusals stay broad is the specific regression that would make the five
-    # misleading, and nothing else would notice it.
-    case("the subject is declared where it is enforced",
-         "generators or by its explainer skills" in (assert_wired.__doc__ or ""), True)
+        # --- the bar
+        bar = chrome_bar("dashboard", "2026-08-31 06:40")
+        case("the bar carries all three controls",
+             (has_control(bar), "chrome-refresh" in bar, "chrome-when" in bar), (True, True, True))
+        case("the bar names the page it would rebuild", 'data-page="dashboard"' in bar, True)
+        case("refresh=False drops the refresh button, keeping the rest",
+             ("chrome-refresh" in chrome_bar("x", "t", refresh=False),
+              has_control(chrome_bar("x", "t", refresh=False))), (False, True))
+        case("the slug is escaped into the attribute",
+             'data-page="a&quot;b"' in chrome_bar('a"b', "t"), True)
 
+        # --- the CSS names no colours of its own
+        css = chrome_css()
+        case("the chrome CSS defines no literal colour, only the page's variables",
+             re.search(r"#[0-9a-fA-F]{3,6}\b", css), None)
+
+        # ── backlog #80: the chrome borrows no SURFACE from the page ──
+        # Every token it still reads is a foreground or a border, falling back to `currentColor` /
+        # `inherit` — page-derived, and safe because the page chose its ink against its own background.
+        # A token supplying a BACKGROUND is different in kind: it introduces a second surface the
+        # page's ink was never chosen against, which is exactly how #79 reached 1.03:1. The rule is
+        # therefore about the PROPERTY (no borrowed surface), not about the one token that broke.
+        _bg_decls = re.findall(r"background:([^;}]*)", css)
+        # ⟳ 2026-10-18, r1. WAS `== []` — no var() background at all. A pinned bar MUST be
+        # opaque or the page scrolls through it illegibly, so that form could not survive the
+        # fix. ⛔ THE PROPERTY #80 PROTECTS IS UNCHANGED AND IS WHAT IS ASSERTED HERE: the bar
+        # borrows no SECOND surface — none the page's ink was never chosen against. `--bg` is
+        # the page's own GROUND, the first surface, declared and opaque on all five producers
+        # (#f7f8fa #f6f5f2 #f6f5f2 #faf8f4 #f7f6f3) and theme-keyed. `--card`, the token #79
+        # drove to 1.03:1, remains forbidden by the case below and by this list being exact.
+        # Widening this to "any var() is fine" is the retreat that would make #80 unfalsifiable.
+        case("the only var() background is the page's own GROUND, never a second surface",
+             sorted(d.strip() for d in _bg_decls if "var(" in d), ["var(--bg,Canvas)"])
+        case("…and `--card` in particular is gone — the token #79 turned on",
+             "--card" in css, False)
+        # ⚠ The four tokens that MAY still be read, pinned by name. If a fifth appears, someone must
+        # come back here and say which kind it is; a silently widened set is how the first one got in.
+        # ⟳ r1: FOUR -> SIX, and the comment above demands saying which KIND each addition is,
+        # which is the whole point of pinning the set rather than counting it.
+        #   --bg       a GROUND token — the page's own first surface (see the case above).
+        #   --chrome-h a LENGTH this module WRITES rather than reads: the bar's measured height,
+        #              published so the page can reserve exactly that much. Not a page colour at
+        #              all, so #80's surface rule does not reach it.
+        case("the tokens it reads are exactly these six, each classified above",
+             sorted(set(re.findall(r"var\((--[a-z0-9-]+)", css))),
+             ["--bg", "--chrome-h", "--ink", "--ink-soft", "--rule", "--structural"])
+
+
+        # ─── THE TEXT-STYLE SWITCHER ──────────────────────────────────────────────────
+        # ⛔ EVERY NAME ASSERTED HERE IS THE PROTOTYPE'S. These cases are the guard against
+        # this module drifting away from the page that already ships the control inline.
+        TS = text_style_control()
+        TSCSS = text_style_css()
+        DECL = "<style>:root{--accent:#123456;--em:#654321}</style>"
+        # ⟳ r1: a consumer joined this fixture because `assert_wired` now also requires one.
+        # The assertion is unchanged — a complete page raises nothing — but "complete" grew.
+        ts_full = (f"<style>{LIGHT}{DARK}{TSCSS}</style>{DECL}{TS}"
+                   f'<div class="{TEXT_SCOPE_CLASS}">prose</div>'
+                   f"<script>{chrome_script()}</script>")
+
+        case("the control is the prototype's element", 'id="schemer"' in TS, True)
+        case("...with its label", "Text style:" in TS, True)
+        case("the three schemes, in the prototype's order and spelling",
+             re.findall(r'data-s="(\d)"[^>]*>([^<]*)<', TS),
+             [("3", "colour"), ("2", "headings only"), ("1", "plain")])
+        case("has_text_control sees it", has_text_control(TS), True)
+        case("has_text_control is keyed on the id, not the words 'text style'",
+             has_text_control("<p>this page discusses text style at length</p>"), False)
+        case("...so prose about text style demands no tokens",
+             missing_text_tokens("<p>text style matters</p>"), [])
+        # ⛔ COLOUR IS SCHEME 3 AND IS THE DEFAULT — the prototype's arrangement, not an
+        # inversion of it. Both the paint class and the announced state start on it.
+        case("exactly one option starts marked live", TS.count('class="on"'), 1)
+        case("...and it is scheme 3", 'data-s="3" class="on"' in TS, True)
+        case("...which is the default", TEXT_DEFAULT, "3")
+        case("the announced state agrees with the painted one",
+             TS.count('aria-pressed="true"'), 1)
+
+        # --- THE FAIL-SILENT: a control whose tokens the page never declares
+        case("a control declaring NEITHER token is caught",
+             missing_text_tokens(TS), list(TEXT_TOKENS))
+        case("a control declaring only --accent is caught",
+             missing_text_tokens(f"<style>:root{{--accent:#123456}}</style>{TS}"), ["--em"])
+        case("a control declaring both passes", missing_text_tokens(DECL + TS), [])
+        case("a page with no control needs no tokens", missing_text_tokens(stamp("x")), [])
+        # ⭐ THE MEASURED TRAP, and why the check keys on `--accent:` not `--accent`: a page
+        # that only USES the token is precisely the page whose role resolves to nothing.
+        case("a page that only USES a token has not DECLARED it",
+             missing_text_tokens(f"<style>h1{{color:var(--accent)}}p{{color:var(--em)}}</style>{TS}"),
+             list(TEXT_TOKENS))
+
+        # --- the CSS, against the prototype's own values
+        case("the default scheme needs no attribute", TSCSS.split("{")[0], ":root")
+        case("the default scheme is NOT keyed on an attribute",
+             f'[{TEXT_ATTR}="{TEXT_DEFAULT}"]' in TSCSS, False)
+        case("both opt-outs are attribute overrides",
+             all(f'[{TEXT_ATTR}="{v}"]' in TSCSS for v in TEXT_OPT_OUTS), True)
+        # ⭐ THE DEFECT THE THREE-ROLE SCHEME EXISTS TO REMOVE: scheme 1 computed heading,
+        # prose and emphasis to ONE identical colour. "The switcher exists" passes on that
+        # version too, so assert the roles are DISTINCT.
+        _roles = re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))", TSCSS.split("}")[0])
+        case("the three roles spend three DIFFERENT tokens", len(set(_roles)), 3)
+        # ⚠ BOUNDED TO ITS OWN BLOCK. The first draft split on the selector and read the REST
+        # of the stylesheet, so it picked up scheme 2's roles too and reported 3 distinct
+        # tokens — a case that was measuring the wrong span, not a defect in the CSS.
+        _pl = TSCSS.split(f'[{TEXT_ATTR}="1"]')[1].split("}")[0]
+        case("...and `plain` collapses all three onto the page's own ink",
+             len(set(re.findall(r"--(?:head|prose|emph):(var\(--[a-z0-9-]+\))", _pl))), 1)
+        # ⚠ `headings only` KEEPS the prose tone and drops only emphasis — the prototype's
+        # behaviour, which a first draft of this module got wrong in the other direction.
+        _h = TSCSS.split(f'[{TEXT_ATTR}="2"]')[1].split("}")[0]
+        case("`headings only` keeps the prose tone", "--prose:var(--fg2)" in _h, True)
+        case("...and drops only the emphasis colour", "--emph:var(--fg)" in _h, True)
+        case("the scheme spends neither reserved semantic token",
+             [v for v in re.findall(r"var\((--[a-z0-9-]+)", TSCSS)
+              if v in ("--verified", "--warn")], [])
+        case("the control's live style keys on the class the prototype's CSS uses",
+             ".schemer button.on" in TSCSS, True)
+        # ⟳ r1 MEDIUM. Opacity composites against whatever is behind the text, so a contrast
+        # figure for it is not a property of this stylesheet. Measured at 0.6 it was 2.32:1
+        # light / 2.85:1 dark — about half of AA. This asserts the MECHANISM is gone, which is
+        # the only part decidable here; the contrast itself belongs to the page's own ground.
+        # ⛔ THE SURVIVOR r1 AND r2 BOTH NAMED, AND r1's FOLD DID NOT CLOSE. Deleting all three
+        # consumption rules left 118/118 and 133/133 green: the r1 fold added a check for
+        # "does the PAGE carry a consumer element" and recorded the Blocking folded, but the
+        # defect was "nothing notices if the CONSUMING CSS is deleted". Different claims.
+        # Every role the control offers must be spent by some rule in the emitted stylesheet.
+        for _role in ("--prose", "--head", "--emph"):
+            case(f"the emitted stylesheet actually CONSUMES {_role}",
+                 f"var({_role})" in TSCSS, True)
+        case("...and each consuming rule is scoped to the class the guard requires",
+             all(f".{TEXT_SCOPE_CLASS}" in r for r in TSCSS.split("}")
+                 if any(f"var({x})" in r for x in ("--prose", "--head", "--emph"))), True)
+        # ⛔ r3 MEDIUM: the three cases above assert the roles are REFERENCED, and r3 defeated
+        # them by wrapping every consuming rule in `@media not all{…}` — references intact,
+        # scope intact, 133/133 green, and Chromium rendering one scheme for three choices.
+        # ⚠ DECIDING WHETHER AN ARBITRARY PAGE'S CSS IS ACTIVE NEEDS A CSS PARSER, and reaching
+        # for one here would be the fourth round of the same mistake. But this module OWNS what
+        # it emits, and "my own output contains no at-rule" IS decidable from text. So the claim
+        # is narrowed to the emitter: the consuming rules ship unconditionally. If a future
+        # change needs an at-rule here, this case fails and someone must decide what the
+        # consumption claim then means — which is the point of pinning it rather than counting.
+        # ⟳ RENAMED ON r4's EVIDENCE, because the old name claimed more than the case asserts.
+        # It was "the switcher's own rules ship unconditionally". r4 collapsed three renderings
+        # to one with TWO emitter-only changes that introduce NO at-rule — three same-specificity
+        # `.ex-body` overrides, and a second bare role block — both suites green, verified in a
+        # browser against a known-positive control that renders 3. So this is a falsifier for
+        # "no at-rule", and NOTHING MORE. ⛔ The uncovered region is real and is recorded in the
+        # r3 coordinator note: a later equal-specificity rule, a selector that cannot match, or a
+        # duplicate role block each defeat it, and separating those from legitimate CSS needs a
+        # cascade, not a text match. Naming the case honestly is the fix available here.
+        case("the emitted stylesheet contains no at-rule",
+             re.findall(r"@[a-z-]+", text_style_css()), [])
+        case("the switcher composites no text against the ground it cannot measure",
+             "opacity" in TSCSS, False)
+        case("...and selection survives on border, accent and weight, not contrast alone",
+             all(k in TSCSS.replace(" ", "")
+                 for k in ("border-color:var(--accent)", "color:var(--accent)",
+                           "font-weight:600")), True)
+
+        # --- assert_wired, the caller-facing gate
+        case("assert_wired accepts a fully wired switcher", raises(ts_full), None)
+        case("assert_wired refuses a switcher whose tokens are undeclared",
+             "nothing styles" in (raises(f"<style>{LIGHT}{DARK}{TSCSS}</style>{TS}") or ""), True)
+        case("...and names the undeclared token",
+             "--em" in (raises(f"<style>{LIGHT}{DARK}{TSCSS}</style>"
+                               f"<style>:root{{--accent:#123}}</style>{TS}") or ""), True)
+        case("assert_wired refuses a switcher with no scheme CSS at all",
+             "appears nowhere" in (raises(f"<style>{LIGHT}{DARK}</style>{DECL}{TS}") or ""), True)
+        case("assert_wired is silent on a page with no switcher",
+             raises(f"<style>{LIGHT}{DARK}</style>{theme_control()}"
+                    f"<script>{chrome_script()}</script>"), None)
+
+        # --- the bar: OPT-IN, because four of five callers are tabular pages
+        case("the bar does NOT carry the switcher by default",
+             has_text_control(chrome_bar("s", "t")), False)
+        case("...and textstyle=True adds it",
+             has_text_control(chrome_bar("s", "t", textstyle=True)), True)
+        case("...while the theme control is unaffected either way",
+             (has_control(chrome_bar("s", "t")),
+              has_control(chrome_bar("s", "t", textstyle=True))), (True, True))
+
+        # --- the script, against the prototype's semantics
+        _js = chrome_script()
+        case("the script removes the attribute for the default rather than setting it",
+             "R.removeAttribute(TA)" in _js, True)
+        case("...and clears the stored key rather than storing the default",
+             "localStorage.removeItem(TK)" in _js, True)
+        case("the script never stores the default scheme's value",
+             f"setItem(TK,{TEXT_DEFAULT!r}" in _js, False)
+        case("only the two opt-outs are accepted from storage",
+             sorted(re.findall(r"sv===\'(\d)\'", _js)), sorted(TEXT_OPT_OUTS))
+        case("it carries the prototype's attribute and storage key",
+             (TEXT_ATTR in _js, TEXT_KEY in _js), (True, True))
+        case("a missing switcher does not throw and take the page's scripts down",
+             "if(box){" in _js, True)
+        case("the live option is marked by BOTH class and aria-pressed",
+             ("className=on?'on':''" in _js, "aria-pressed" in _js), (True, True))
+        # ── backlog #300: the bar must be REACHABLE, not merely wired ──
+        # The falsifier for this whole change is `STATIC_PAGE` below: it is the shape all 93 live
+        # pages had this morning, and it must go RED here and green after regeneration.
+        REACHABLE = f"<style>{LIGHT}{DARK}{chrome_css()}</style>{theme_control()}"
+        # ⟳ r1: this fixture is now a DOCUMENT. The exemption for a subject with no rule is
+        # for FRAGMENTS; r1 showed a finished page reaching the reader through it (y=8423 of
+        # 8481), so a <body> is what makes this the defect rather than a legitimate fragment.
+        STATIC_PAGE = (f"<style>{LIGHT}{DARK}"
+                       ".chrome{display:flex;align-items:center;color:var(--ink-soft)}"
+                       f"</style><body>{theme_control()}</body>")
+        case("the shipped CSS pins the bar into the viewport",
+             CHROME_PIN in chrome_css().replace(" ", ""), True)
+        # ⟳ 2026-10-18: THE TOP edge, and the pair is asserted so a half-revert cannot pass.
+        # The resting place moved under the title, so the bar now leaves the viewport upward and
+        # must return to the edge it left by. `bottom:0` surviving anywhere in this rule would
+        # stretch the bar over the whole viewport height, so its ABSENCE is asserted too.
+        case("...and anchors it to the TOP edge, the one it scrolled off",
+             ("top:0" in chrome_css().replace(" ", ""),
+              "bottom:0" in chrome_css().replace(" ", "")), (True, False))
+        case("the pinned bar is opaque, or the page scrolls through it",
+             "background:var(--bg,Canvas)" in chrome_css().replace(" ", ""), True)
+        case("...and it spans the viewport, or margin-inline-start:auto stops reaching the edge",
+             all(k in chrome_css().replace(" ", "") for k in ("left:0", "right:0")), True)
+        # ⟳ 2026-10-18: THE SLOT reserves, not <body>. Same property — the bar's OWN measured
+        # height, never a literal — moved to the element that actually has the hole in it.
+        case("the SLOT reserves the bar's OWN measured height, never a literal",
+             f".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}"
+             in chrome_css().replace(" ", ""), True)
+        case("...and <body> no longer reserves anything, or a top-pinned bar would leave a "
+             "blank band at the document end",
+             "padding-bottom:var(--chrome-h" in chrome_css().replace(" ", ""), False)
+        case("in-page anchors clear the pinned bar, keyed on the same measured height",
+             "scroll-padding-top:var(--chrome-h,0)" in chrome_css().replace(" ", ""), True)
+        case("the pin is applied by the SCRIPT, so no-JS gets no pin and no occlusion",
+             (CHROME_PIN_CLASS in chrome_script(), CHROME_PIN_CLASS in chrome_bar("s", "t")),
+             (True, False))
+        # ⛔ THE WHOLE PREDICATE, NOT THE SELECTOR STRING — and this case SURVIVED its own
+        # mutation on 2026-10-19 until it was rewritten. The r6 threshold fix introduced a
+        # SECOND use of `#chrome-theme,#schemer` (the `ctls` lookup), so `"…" in chrome_script()`
+        # stayed True after the guard clause was deleted: the case named the predicate and
+        # tested a substring that something else also supplies. Exactly the ambient-pass shape
+        # this repository keeps paying for, created by an edit two hundred lines away.
+        case("a bar with NO control is never pinned — 17 of 20 fragments are stamp-only",
+             "if(bar&&bar.querySelector('#chrome-theme,#schemer')){" in chrome_script(), True)
+        # ── "under the title AND pinned", the owner's choice, as ONE element ──────────────
+        _bar = chrome_bar("s", "t", textstyle=True)
+        case("chrome_bar wraps the bar in the slot the script observes, so no caller can "
+             "forget it",
+             _bar.startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'), True)
+        case("...and emits exactly ONE bar — a second copy is the duplicate-id defect that "
+             "cost rounds 2 and 4, because getElementById binds the FIRST",
+             (_bar.count('class="chrome"'), _bar.count(f'class="{CHROME_SLOT_CLASS}"'),
+              _scan(_bar).ids.count("chrome-theme")), (1, 1, 1))
+        case("the bar rests IN the flow: the slot carries no pin and no fixed position",
+             (CHROME_PIN_CLASS in _bar, "position:fixed" in _bar), (False, False))
+        # ⛔ THE PREDICATE IS VISIBILITY, NOT DIRECTION, and the case asserts the spelling
+        # because the two are indistinguishable in behaviour until a caller emits the bar at the
+        # END of a document — which is what every composed explainer page did this morning
+        # (y=6445 of 6475), and is backlog #300 itself. `scrolled past` would leave those
+        # unpinned and unreachable; `not visible` reaches them.
+        case("the pin is keyed on the slot not being VISIBLE, in either direction",
+             ("pin(!es[0].isIntersecting)" in chrome_script(),
+              ".observe(slot)" in chrome_script()), (True, True))
+        case("...with a scroll fallback asking the same question where there is no "
+             "IntersectionObserver",
+             ("window.IntersectionObserver" in chrome_script(),
+              "getBoundingClientRect" in chrome_script(),
+              "addEventListener('scroll'" in chrome_script()), (True, True, True))
+
+        case("the bar is found THROUGH the slot, so a stray .chrome elsewhere is not pinned",
+             f"slot.querySelector('.chrome')" in chrome_script(), True)
+        # ── the pin threshold, asserted as WHOLE EXPRESSIONS ────────────────────────────
+        # ⛔ EVERY CASE HERE NAMES ONE EXACT, CONTIGUOUS EXPRESSION, and the reason is measured.
+        # r6 CLAUDE HIGH: the previous three cases asserted SUBSTRINGS — "getBoundingClientRect()
+        # .bottom", "if(b<m)m=b;", "m=Infinity;" — every one of which something ELSE in this
+        # emitted script also supplies. The reviewer severed the rule two ways (the control box
+        # replaced by the slot's; the lowest control replaced by the last) and the suite stayed
+        # at 184/184 BOTH TIMES, with the defect reproduced in a browser. A case that names a
+        # behaviour and tests a fragment another line also contains is this repository's
+        # most-repeated defect, and it was re-created in the cases written for its own fix.
+        #
+        # ⚠ WHAT THIS BUYS AND WHAT IT DOES NOT. An exact expression is falsifiable: any
+        # severance of the rule changes it, so both of the reviewer's severances now redden.
+        # It is NOT a behavioural test — the property is a LAYOUT fact and no case in either
+        # suite runs a browser, which is stated in the module bound and remains true. These
+        # cases defend the rule against edits; a browser is still the only witness that the
+        # rule is the right one.
+        _TAIL = ("var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
+                 "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
+                 "if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));")
+        case("the gap is measured from the CONTROL boxes, takes the TOPMOST, and is clamped at "
+             "zero — one exact expression, because every fragment of it is supplied elsewhere",
+             _TAIL in chrome_script(), True)
+        case("the reserve is measured in fractional pixels, so pinning cannot shift the page",
+             ("'--chrome-h',bar.getBoundingClientRect().height+'px');" in chrome_script(),
+              "offsetHeight" in chrome_script()), (True, False))
+        # ⛔ ONE GUARD, GOVERNING THE WHOLE BODY VIA `return`. r6 CLAUDE BLOCKING: the previous
+        # shape was a braceless `if` that governed one statement, so the re-arm ran while PINNED
+        # and the page flipped the class 60 times per second on a stationary dashboard.
+        case("the reserve, the gap and the re-arm are all behind ONE guard that returns",
+             f"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;"
+             in chrome_script(), True)
+        case("...and the gap is WRITTEN at exactly one site, so no expression can sample it "
+             "in the wrong state",
+             chrome_script().count("tailPx=("), 1)
+        case("both consumers read the CACHE, and no live `tail()` call survives anywhere",
+             ("{rootMargin:(-tailPx)+'px 0px 0px 0px'}" in chrome_script(),
+              "r.bottom-tailPx<=0" in chrome_script(),
+              "tail()" in chrome_script()), (True, True, False))
+        case("the observer is rebuilt on re-wrap, because rootMargin is fixed at construction",
+             ("if(io)io.disconnect();" in chrome_script(),
+              "arm();};sync();" in chrome_script()), (True, True))
+
+        # ── ⛔ THE EMITTED SCRIPT MUST PARSE, AND NOTHING CHECKED THAT FOR 190 CASES ───────
+        # MEASURED 2026-10-19: a rewrite of the pin block dropped ONE closing brace. The suite
+        # stayed GREEN at 190/190 while `chrome_script()` emitted invalid JavaScript —
+        # `Unexpected token ')'` in Chromium, the whole IIFE dead, every control on every page
+        # inert. Worse, a BROWSER measurement taken on that page read "0 class flips per
+        # second" and looked exactly like the defect it was checking having been fixed.
+        #
+        # ⚠ EVERY OTHER CASE IN THIS FILE ASKS WHAT THE SCRIPT CONTAINS. None asked whether it
+        # is a program. A substring assertion cannot notice a missing brace, and 190 of them
+        # could not either — which is the sharpest instance of this repository's own lesson
+        # that a green suite describes only what its cases look at.
+        _js = chrome_script()
+        case("the emitted script's braces and parens balance",
+             (_js.count("{") == _js.count("}"), _js.count("(") == _js.count(")")),
+             (True, True))
+        # ⛔ A REAL PARSE, not a balance heuristic — `}{` balances and does not parse. `node` is
+        # this project's CI interpreter (Node 22) and the mutation harness inherits PATH, so a
+        # missing `node` is a FAILURE and not a skip: a check that cannot reach its subject
+        # must say so loudly rather than pass.
+        def _parses(js: str) -> str:
+            import subprocess, tempfile, os
+            fd, path = tempfile.mkstemp(suffix=".js")
+            try:
+                os.write(fd, js.encode()); os.close(fd)
+                r = subprocess.run(["node", "--check", path],
+                                   capture_output=True, text=True, timeout=30)
+                return "ok" if r.returncode == 0 else f"PARSE ERROR: {r.stderr.strip()[:120]}"
+            except FileNotFoundError:
+                return "CANNOT RUN: node is not on PATH — treat this as NOT CHECKED"
+            except Exception as e:
+                return f"CANNOT RUN: {e}"
+            finally:
+                try: os.unlink(path)
+                except OSError: pass
+        case("...and it PARSES as JavaScript — the check that would have caught the brace",
+             _parses(_js), "ok")
+        case("...and so does the inline theme-applying half, which a page runs early",
+             _parses(f"(function(){{{theme_control()!r};}})();"), "ok")
+
+        # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
+        case("the script moves a hand-authored #schemer INTO the bar, so one element carries "
+             "both controls (r6 High: it sat in the prose at y=-673 while the bar was pinned)",
+             "if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);" in chrome_script(), True)
+        # ⛔ ORDER, NOT MERELY PRESENCE. The move must precede the control predicate — a bar
+        # that gains the switcher must PIN — and precede `ctls`, or the switcher would not
+        # count when the tail is measured and r6's threshold defect returns for it alone.
+        case("...before the control predicate AND before the tail is measured, or the bar it "
+             "joins neither pins nor accounts for it",
+             _ordered_in(chrome_script(), "bar.appendChild(sch)",
+                         "if(bar&&bar.querySelector('#chrome-theme,#schemer')){",
+                         "var ctls=bar.querySelectorAll"), True)
+        case("...and it is never moved twice, which would be a no-op at best",
+             "!bar.contains(sch)" in chrome_script(), True)
+        # ── ONE producer shape for the slot ───────────────────────────────────────────────
+        case("stamp_bar is slotted too, so `.chrome` has one slot-emitting shape and not four",
+             stamp_bar("t").startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'),
+             True)
+        case("...and carries NO control, so it still does not pin on its own — 17 of 20 "
+             "fragments are stamp-only",
+             (has_control(stamp_bar("t")), has_text_control(stamp_bar("t"))), (False, False))
+        # ── place_bar: the resting place, and the four shapes it must get right ──────────
+        case("place_bar puts the bar just after the title, not before it",
+             place_bar("<h1>T</h1>\n<p>x</p>", "[BAR]"), "<h1>T</h1>\n[BAR]\n<p>x</p>")
+        case("...and FIRST when there is no title, never last — last is the state this "
+             "change exists to end (backlog #300)",
+             place_bar("<p>no title</p>", "[BAR]"), "[BAR]\n<p>no title</p>")
+        # ⛔ A BAR INSERTED INSIDE A <template> RENDERS NOTHING, which is why this is a parse
+        # sharing `_Scan`'s shield rule and not a `markup.index("</h1>")`.
+        case("...skipping a SHIELDED <h1>, whose </h1> a substring search would have chosen",
+             place_bar("<template><h1>t</h1></template><h1>R</h1><p>y</p>", "[BAR]"),
+             "<template><h1>t</h1></template><h1>R</h1>\n[BAR]<p>y</p>")
+        case("...and a COMMENTED-OUT one, for the same reason",
+             place_bar('<!-- <h1>c</h1> --><h1 class="a">R</h1><p>y</p>', "[BAR]"),
+             '<!-- <h1>c</h1> --><h1 class="a">R</h1>\n[BAR]<p>y</p>')
+        # The bar must survive placement intact — a lost closing tag here would silently
+        # swallow the rest of the document into the slot.
+        case("place_bar neither drops nor duplicates the bar it was given",
+             place_bar("<h1>T</h1><p>x</p>", _bar).count('class="chrome"'), 1)
+        # ⟳ 2026-10-18, r1 LOW. WAS `"z-index:1" in css` and the comment claimed the ask tray
+        # "owns z-index 5". ⛔ BOTH WRONG. `#tray` computes 50 and the pages declare 70; the 5
+        # came from a grep COUNT and was never checked against the tray — a figure invented to
+        # support a sound argument, which is this repository's most-repeated tell. And the case
+        # pinned the literal, not the ordering: mutating 1 -> 0 PRESERVES the property (still
+        # far below any floater) yet reddened it, so it defended a token rather than a rule.
+        # Asserting the BAND is what the rule is actually about: a small positive integer, so
+        # the bar paints above page content and below anything that floats over it.
+        _z = re.search(r"\.chrome-pinned\{[^}]*z-index:(\d+)", chrome_css().replace(" ", ""))
+        case("the pinned bar sits above content and below any floater — a LOW positive z",
+             bool(_z) and 0 < int(_z.group(1)) < 10, True)
+        case("a page built with this module's CSS is reachable",
+             bar_unreachable(REACHABLE), False)
+        case("THE DEFECT: control + a static .chrome rule is refused",
+             bar_unreachable(STATIC_PAGE), True)
+        case("a FRAGMENT — control, but no .chrome rule — is not this check's subject",
+             bar_unreachable(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), False)
+        # ⚠ THE DISCRIMINATING INPUT, and the case above cannot stand in for it. A page with NO
+        # control but WITH an unpinned `.chrome` rule is the ONLY shape on which the `has_control`
+        # gate and the `rules` gate DISAGREE: the first says "not my business", the second alone
+        # would call it a defect. Found by a SURVIVING MUTATION — the no-control case below also
+        # carries no `.chrome` rule, so the `rules` gate answered first and nothing depended on
+        # `has_control` at all. A green suite said it was covered; it was masked.
+        # ⚠ A DOCUMENT, and it must be. ⟳ r1 fold: after the redesign this fixture was a
+        # FRAGMENT, so `if not rules: return False` answered before `has_control` was ever
+        # consulted and the mutation that deletes that gate SURVIVED. The gates only disagree
+        # on a finished page with NO control and no pinned rule: `has_control` says "not my
+        # business", everything downstream would call it a defect.
+        case("a document with CSS but no control is not a defect — the gates disagree here",
+             bar_unreachable(f"<style>{LIGHT}{DARK}"
+                             ".chrome{display:flex;color:var(--ink-soft)}"
+                             "</style><body><p>no control on this page</p></body>"), False)
+        case("a page with no control owes no bar at all",
+             bar_unreachable(f"<style>{LIGHT}{DARK}</style><p>no control here</p>"), False)
+        # IDENTITY CASE. `.chrome-btn{position:sticky}` must NOT satisfy a rule about `.chrome`,
+        # or the predicate is satisfied by a sibling selector that shares a prefix.
+        case("neither `.chrome` nor `.chrome-btn` pinned counts as the BAR being pinned",
+             bar_unreachable(f"<style>{LIGHT}{DARK}"
+                             ".chrome{position:fixed}.chrome-btn{position:fixed}"
+                             f"</style><body>{theme_control()}</body>"), True)
+        # IDENTITY: the body-padding rule SHARES the class as a prefix and must not satisfy it.
+        case("`.chrome-pinned-host` does NOT satisfy a rule about `.chrome-pinned`",
+             bar_unreachable(f"<style>{LIGHT}{DARK}"
+                             ".chrome-pinned-host{position:fixed}"
+                             f"</style><body>{theme_control()}</body>"), True)
+        # ── the refusals must FIRE, not merely be satisfiable. Each of these survived its
+        # mutation until it was written: a fixture that passes a guard proves only that the
+        # guard does not false-positive; it says nothing about whether the guard does anything.
+        _EXB = f'<div class="{TEXT_SCOPE_CLASS}">prose</div>'
+        _tsw = (f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
+                f"{theme_control()}{text_style_control()}"
+                f"<script>{chrome_script()}</script>")
+        case("assert_wired REFUSES a switcher nothing opts into",
+             "which is the ONLY class its CSS styles" in (raises(_tsw, scoped=True) or ""), True)
+        case("...and ACCEPTS the same page once something does",
+             "which is the ONLY class its CSS styles" in
+             (raises(f"<style>{LIGHT}{DARK}{text_style_css()}{chrome_css()}</style>{DECL}"
+                     f"{theme_control()}{text_style_control()}{_EXB}"
+                     f"<script>{chrome_script()}</script>", scoped=True) or ""), False)
+        case("a consumer hidden in an HTML COMMENT does not count as one",
+             "which is the ONLY class its CSS styles" in
+             (raises(_tsw + f"<!-- {_EXB} -->", scoped=True) or ""), True)
+        # ── r2: every one of these was measured WRONG under the substring form it replaced,
+        # and each is wrong in BOTH directions, which is why the instrument changed rather
+        # than the thresholds. The parser decides quoting, comments and script text; I do not.
+        _T = theme_control()
+        _TSC = text_style_control()
+        case("mixed quoting is still TWO live controls",
+             _scan(_T + _T.replace('"', "'")).ids.count("chrome-theme"), 2)
+        # ⚠ Provided by `html.parser`'s CDATA handling, NOT by this module — measured when the
+        # mutation that removed "script" from the tag list survived. Asserted anyway, because
+        # the behaviour is load-bearing and a future parser swap must not lose it silently.
+        case("an id that exists only inside a SCRIPT STRING is not a control",
+             _scan(_T + '<script>const s = \'id="chrome-theme"\';</script>'
+                   ).ids.count("chrome-theme"), 1)
+        case("a COMMENTED-OUT control is not a control",
+             _scan(_T + f"<!-- {_T} -->").ids.count("chrome-theme"), 1)
+        # ⛔ THE BYPASS THAT DEFEATED THE REGEX STRIPPER: comment delimiters living inside
+        # JavaScript string literals made `<!--.*?-->` swallow the live control between them.
+        case("comment delimiters inside script strings do not erase live markup",
+             _scan(_T + '<script>const a="<!--";</script>' + _T
+                   + '<script>const b="-->";</script>').ids.count("chrome-theme"), 2)
+        case("an id inside a <template> is not a live control — this module's own guard",
+             _scan(_T + '<template><button id="chrome-theme"></button></template>'
+                   ).ids.count("chrome-theme"), 1)
+        case("the pinned bar returns to the flow in print, and frees its reserved space",
+             ("@media print" in chrome_css(),
+              f".{CHROME_PIN_CLASS}{{position:static}}" in chrome_css().replace(" ", ""),
+              f".{CHROME_SLOT_CLASS}{{min-height:0}}" in chrome_css().replace(" ", "")),
+             (True, True, True))
+        # ── r3's four parser findings, each measured against Chromium's actual behaviour ──
+        case("a <template>'s OWN id is live — getElementById returns the template itself",
+             _scan(_TSC + '<template id="schemer"></template>').ids.count("schemer"), 2)
+        case("...while what is INSIDE a template is not",
+             _scan('<template><button id="chrome-theme"></button></template>'
+                   ).ids.count("chrome-theme"), 0)
+        case("duplicate attributes resolve FIRST-wins, as Chromium does",
+             has_text_consumer(f'<div class="other" class="{TEXT_SCOPE_CLASS}">x</div>'), False)
+        case("...so a second id cannot hide a duplicate control either",
+             _scan(_T + _T.replace('id="chrome-theme"', 'id="chrome-theme" id="other"')
+                   ).ids.count("chrome-theme"), 2)
+        # ⛔ r4 HIGH: the element EXISTS even though its contents do not. Chromium returns the
+        # <noscript> from getElementById, so an id on it silently disables the real control —
+        # r3's <template> defect, reintroduced in the adjacent branch of the fix for it.
+        # ── r4: the id predicates were substring tests while `_scan` held the answer. Wrong
+        # in BOTH directions, which is why the instrument changed rather than the pattern.
+        case("a SINGLE-QUOTED control is a control",
+             has_control(_T.replace('"', "'")), True)
+        case("...and so is a single-quoted switcher",
+             has_text_control(_TSC.replace('"', "'")), True)
+        case("a control inside an HTML COMMENT is NOT one",
+             has_control(f"<!-- {_T} -->"), False)
+        case("...so the guard does not refuse a page that carries no live control",
+             raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style><!-- {_T} -->"), None)
+        case("a handler that is COMMENTED OUT does not bind the control",
+             CHROME_SCRIPT_MARK in _scripts(f"<!-- <script>{CHROME_SCRIPT_MARK}</script> -->"),
+             False)
+        # A handler inside <template> or <noscript> NEVER RUNS — template contents are inert
+        # and noscript contents are not created with scripting on — so it cannot bind a control.
+        # Found by a surviving mutation: the shield was right and nothing asserted it.
+        case("a handler inside a <template> does not bind the control",
+             CHROME_SCRIPT_MARK in _scripts(f"<template><script>{CHROME_SCRIPT_MARK}</script>"
+                                            f"</template>"), False)
+        case("...nor one inside a <noscript>",
+             CHROME_SCRIPT_MARK in _scripts(f"<noscript><script>{CHROME_SCRIPT_MARK}</script>"
+                                            f"</noscript>"), False)
+        case("...while a real one still does",
+             CHROME_SCRIPT_MARK in _scripts(f"<script>{chrome_script()}</script>"), True)
+        # ── r4: one counter shielded two mechanisms, so either end tag lifted either shield.
+        # ── r5: the first-wins fix had reached ONE of three branches, and the shield check ran
+        # AFTER the branches it was meant to gate. Both are this module's own inconsistency.
+        case("duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else",
+             (_scan('<noscript id="chrome-theme" id="other"></noscript>').ids,
+              _scan('<noscript id="other" id="chrome-theme"></noscript>').ids),
+             (["chrome-theme"], ["other"]))
+        case("an element inside a shield contributes nothing, whatever element it is",
+             (_scan('<template><noscript id="chrome-theme"></noscript></template>').ids,
+              _scan('<noscript><template id="x"></template></noscript>').ids), ([], []))
+        case("a <noscript> closed by </template> does not invent a consumer",
+             "ex-body" in _scan('<noscript></template>'
+                                '<div class="ex-body">x</div></noscript>').classes, False)
+        case("...and a <template> closed by </noscript> invents no control either",
+             "chrome-theme" in _scan('<template></noscript>'
+                                     '<button id="chrome-theme"></button></template>').ids, False)
+        # ── r4 LOW: the pin may appear in a grouped selector, or with whitespace before `{`.
+        # ⚠ the script is part of the fixture or the BINDING arm fires first and these cases
+        # measure that arm instead of the one they name — the third time that has bitten here.
+        _pin_doc = (lambda css: f"<style>{LIGHT}{DARK}{css}</style><body>{_T}"
+                                f"<script>{chrome_script()}</script></body>")
+        case("a GROUPED selector still pins the bar, whichever side the class is on",
+             (bar_unreachable(_pin_doc(".chrome-pinned,.x{position:fixed;left:0;right:0}")),
+              bar_unreachable(_pin_doc(".x,.chrome-pinned{position:fixed;left:0;right:0}"))),
+             (False, False))
+        case("...and whitespace before the brace does not make it unreachable",
+             bar_unreachable(_pin_doc(".chrome-pinned\n{position:fixed}")), False)
+        case("the refusal names the rule the predicate actually requires",
+             f".{CHROME_PIN_CLASS}" in (raises(_pin_doc(".chrome{position:fixed}")) or ""), True)
+        case("a <noscript>'s OWN id is live, so it can hide a real control",
+             _scan('<noscript id="schemer"></noscript>' + _TSC).ids.count("schemer"), 2)
+        case("...which the duplicate-id refusal then reports",
+             'appears 2 times' in
+             (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
+                     f'<noscript id="chrome-theme"></noscript>{theme_control()}'
+                     f"<script>{chrome_script()}</script>") or ""), True)
+        case("a <noscript> consumer is fictitious while scripting is on",
+             has_text_consumer(f'<noscript><div class="{TEXT_SCOPE_CLASS}"></div></noscript>'), False)
+        # The DEFAULT matters: a caller that says nothing must not have its page policed.
+        case("the guard's default is to stay out of it, not to police",
+             missing_text_consumer(text_style_css() + text_style_control()), False)
+        case("a class is read from a PARSE, so single quotes count",
+             has_text_consumer("<div class='" + TEXT_SCOPE_CLASS + "'>p</div>"), True)
+        case("...and a class that merely has the right PREFIX does not",
+             has_text_consumer(f'<div class="{TEXT_SCOPE_CLASS}guard">p</div>'), False)
+        # ── r2 HIGH: the guard binds to THIS module's stylesheet, not to the class in general.
+        case("a page whose caller emitted NO scoped stylesheet is not this guard's business",
+             missing_text_consumer(text_style_control()
+                                   + "<style>body{color:var(--prose)}</style><p>x</p>", False), False)
+        case("...but a page whose caller DID emit the scoped stylesheet, with no consumer, IS",
+             missing_text_consumer(text_style_css() + text_style_control(), True), True)
+        # ⛔ THE r3 BLOCKING, PINNED. `.ex-body { color:var(--prose) }` with spaces defeated the
+        # signature sniff and silenced the guard on exactly the pages it is for. Being TOLD makes
+        # the spelling irrelevant, so this must hold for a form the sniff could never match.
+        case("...and whitespace-equivalent CSS no longer silences it",
+             missing_text_consumer(
+                 text_style_css().replace(f".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}",
+                                          f".{TEXT_SCOPE_CLASS} {{ color:var(--prose) }}")
+                 + text_style_control(), True), True)
+        case("assert_wired REFUSES two controls with the same id",
+             'appears 2 times' in
+             (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
+                     f"{theme_control()}{theme_control()}"
+                     f"<script>{chrome_script()}</script>") or ""), True)
+        case("...but a COMMENTED-OUT second control is not a duplicate",
+             'appears 2 times' in
+             (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
+                     f"{theme_control()}<!-- {theme_control()} -->"
+                     f"<script>{chrome_script()}</script>") or ""), False)
+        # ⟳ 2026-10-18: TOGGLED, not added. The pin is now reversible — that is the whole of
+        # "under the title AND pinned" — so the mechanism is `classList.toggle(cls, on)` and the
+        # <body> host class is gone. Asserting the toggle AND the absence of the one-way add is
+        # what stops a revert to unconditional pinning passing this case.
+        case("the script TOGGLES the pin class on the bar, so the pin is reversible",
+             (f"classList.toggle({CHROME_PIN_CLASS!r},on)" in chrome_script(),
+              "bar.classList.add" in chrome_script()), (True, False))
+        case("the bar keeps a separating rule and its breathing room",
+             ("border-top" in chrome_css(), "padding-block" in chrome_css()), (True, True))
+        case("a FINISHED document is never exempt, however it reached the writer",
+             bar_unreachable(f"<style>{LIGHT}{DARK}</style><body>{theme_control()}</body>"), True)
+        # assert_wired must ACT on it, not merely be able to compute it — the guard and the
+        # refusal are separate things, and a predicate nothing calls protects nothing.
+        def _raises(page):
+            try:
+                assert_wired(page, "t")
+            except SystemExit:
+                return True
+            return False
+        case("assert_wired REFUSES to write an unreachable page",
+             _raises(STATIC_PAGE + f"<script>{chrome_script()}</script>"), True)
+        case("the two refusals are independent: an unreachable page with NO script reports "
+             "the broken mechanism first, not the placement",
+             "no script CARRYING" in (raises(STATIC_PAGE) or ""), True)
+        case("...and still writes a reachable, fully wired one",
+             _raises(REACHABLE + f"<script>{chrome_script()}</script>"), False)
+        # The background set, pinned the way the token set above is: `inherit` is the page's own
+        # ground and `transparent` is the button. A THIRD value means someone introduced a surface.
+        case("the only backgrounds are the page's own ground and the button's none",
+             sorted(set(d.strip() for d in re.findall(r"background:([^;}]*)", chrome_css()))),
+             ["transparent", "var(--bg,Canvas)"])
+
+        # ── OUT OF SCOPE BY THE BOUND ────────────────────────────────────────────────
+        # ⛔ THESE FIVE CASES RECORD BEHAVIOUR. THEY DO NOT ENDORSE IT, AND THEY ASSERT
+        # NOTHING ABOUT CHROMIUM. Each is one of the five shapes round 5 found and the
+        # coordinator note declined to fold, because each is the same thing: a text scan
+        # guessing at a browser. The module docstring declares the subject that puts them out
+        # of scope — markup from this repository's generators or its explainer skills.
+        #
+        # ⚠ WHAT THEY ARE FOR, STATED PLAINLY: they are the falsifier for the BOUND, not for
+        # the behaviour. Tighten `_Scan` or `_CHROME_RULE_RE` to handle one of these and its
+        # case goes RED, which is the intended outcome — it sends the author to the docstring
+        # to widen the subject on purpose. Fix the case and the bound together, or neither.
+        #
+        # ⚠ AND WHAT THEY ARE NOT: they are not evidence that the recorded answer is right.
+        # Every "Chromium does X" claim in r5 is a reviewer's reading of the HTML spec, NOT a
+        # browser measurement — nobody has run these five through a browser, here or there.
+        # So the `want` values below are this module's output, measured 2026-10-18 by running
+        # it, and that is the whole of their authority.
+        _nested_ns = ('<button id="chrome-theme">a</button>'
+                      '<noscript><noscript></noscript><button id="chrome-theme">b</button>')
+        case("OUT OF SCOPE: a second control behind a NESTED <noscript> is not counted, "
+             "so no duplicate is reported (r5 High; the depth counter nests, Chromium's "
+             "raw-text parsing arguably does not — NOT browser-verified)",
+             _scan(_nested_ns).ids.count("chrome-theme") > 1, False)
+        case("OUT OF SCOPE: an UNTERMINATED <script> still contributes its text, so the "
+             "binding assertion is satisfied by it (r5 High)",
+             CHROME_SCRIPT_MARK in _scripts(f"<p>x</p><script>/*{CHROME_SCRIPT_MARK}*/"), True)
+        case("OUT OF SCOPE: a <template> inside <svg> shields its contents here (r5 Medium; "
+             "in foreign content the child is arguably live)",
+             has_control('<svg><template><button id="chrome-theme">t</button>'
+                         '</template></svg>'), False)
+        case("OUT OF SCOPE: <noscript><script></noscript> leaves the scanner in script mode, "
+             "so a control after it is invisible (r5 Medium, fail-CLOSED — it refuses rather "
+             "than accepts, which is why it ranks below the two Highs)",
+             has_control('<noscript><script></noscript>'
+                         '<button id="chrome-theme">t</button>'), False)
+        # ⟳ PROMOTED OUT OF THE OUT-OF-SCOPE BLOCK, 2026-10-19, r6 CODEX MEDIUM. This case
+        # used to RECORD a fail-open; it now asserts the fix. The reviewer's argument beat the
+        # bound: a fragment author commenting out a selector while editing CSS is an ordinary
+        # mistake inside the declared subject, not adversarial markup. ⭐ And the promotion is
+        # exactly what the recording cases are for — the tightening reddened this case first,
+        # which is what forced the bound to be widened on purpose instead of by accident.
+        # ⛔ ASKED THROUGH `bar_unreachable`, NOT THROUGH THE REGEX. The first version called
+        # `_CHROME_RULE_RE.search` directly and was measured UNFALSIFIABLE: stripping comments
+        # at the guard left it GREEN at 163/163, because the case's subject was the pattern and
+        # the fix's subject was the guard.
+        case("a page whose only pin rule is COMMENTED OUT is REFUSED as unreachable",
+             bar_unreachable(
+                 '<html><body><button id="chrome-theme">t</button>'
+                 f'<style>{LIGHT}{DARK}'
+                 '/* .chrome-pinned */ .nonexistent{position:fixed}</style>'
+                 f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), True)
+        case("...while a real rule beside a comment still passes — the strip must not eat the "
+             "live rule next to the dead one",
+             bar_unreachable(
+                 '<html><body><button id="chrome-theme">t</button>'
+                 f'<style>{LIGHT}{DARK}'
+                 '/* disabled: .chrome-pinned */ .chrome-pinned{position:fixed}</style>'
+                 f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), False)
+        # ⚠ A SPACE, NOT DELETION — the case that pins why. Welding the halves together could
+        # manufacture a selector present in neither.
+        # ⚠ THE PROPERTY, NOT THE SPELLING. A first version asserted the exact output and was
+        # wrong by one space — the scanner emits two for `/*`, one per character inside and two
+        # for `*/`. Typing the number I expected, then correcting it to the number it produced,
+        # would have made the case a copy of the implementation. What matters is that a comment
+        # becomes whitespace of the SAME LENGTH, so offsets survive and no selector is welded
+        # into existence out of the halves either side.
+        _weld = ".chrome/*x*/-pinned{position:fixed}"
+        case("a comment becomes whitespace of the same length, so nothing is welded together",
+             (len(strip_css_comments(_weld)) == len(_weld),
+              "chrome-pinned" in strip_css_comments(_weld),
+              strip_css_comments(_weld).strip().startswith(".chrome"),
+              "position:fixed" in strip_css_comments(_weld)),
+             (True, False, True, True))
+        # ⛔ THE SHAPE THAT WAS A FAIL-OPEN REGRESSION, now a case. A stray `/*` in a CSS value
+        # STRING used to pair with a later `*/` and erase the real rule between them; the
+        # one-pass scanner knows what a string is, so the pin rule survives and the page is
+        # correctly refused. This is the reviewer's measured input, verbatim.
+        case("a stray `/*` inside a CSS value string does not erase the rule after it",
+             bar_unreachable(
+                 '<button id="chrome-theme">t</button><style>'
+                 '.a{content:"/*"}' + LIGHT + DARK
+                 + '.chrome-pinned{position:static}/* note */'
+                 f'</style><script>/*{CHROME_SCRIPT_MARK}*/</script>'), True)
+        # ⚠ THE SUBJECT IS THE APPLIED CSS, NOT THE PAGE — and this case is why it has to be.
+        # The scanner BLANKS value strings, so run over a whole document it would blank every
+        # HTML attribute, `id="chrome-theme"` included.
+        case("css_of takes only what a browser applies, so attributes are never scanned",
+             ('id="chrome-theme"' not in css_of('<button id="chrome-theme">t</button>'
+                                                '<style>a{b:1}</style>'),
+              "a{b:1}" in css_of('<button id="chrome-theme">t</button><style>a{b:1}</style>')),
+             (True, True))
+        case("...and a <style> inside a <template> is not applied, so it is not collected",
+             "d{e:3}" in css_of('<template><style>d{e:3}</style></template>'), False)
+        # The reviewer's four commented-out-CSS inputs, all four now refused. B and C were
+        # ACCEPTED by the first fold — C ships a button that styles nothing, which is verbatim
+        # the fail-silent the top of this file exists to prevent.
+        def _wired_doc(style):
+            return ('<html><body>' + theme_control()
+                    + f'<style>{style}</style>'
+                    + f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>')
+        _PIN = ".chrome-pinned{position:fixed}"
+        case("a commented-out DARK palette is refused, not just a commented-out pin rule",
+             _raises_wired(_wired_doc(f'{LIGHT}/*{DARK}*/{_PIN}')), True)
+        case("...and BOTH palettes commented out — the arm this file calls load-bearing",
+             _raises_wired(_wired_doc(f'/*{LIGHT}{DARK}*/{_PIN}')), True)
+        case("...and a wholly commented-out stylesheet",
+             _raises_wired(_wired_doc(f'/*{LIGHT}{DARK}{_PIN}*/')), True)
+        case("...while the same stylesheet with nothing commented out is written",
+             _raises_wired(_wired_doc(f'{LIGHT}{DARK}{_PIN}')), False)
+        # ⚠ The SUBJECT sentence, not the argument for it — and this case is weak on purpose,
+        # which is said rather than hidden: it can only notice the sentence being deleted, and
+        # a case that names its own fix's tokens defends only its deletion. The five cases
+        # above are the real falsifier. This one exists because the subject disappearing while
+        # the refusals stay broad is the specific regression that would make the five
+        # misleading, and nothing else would notice it.
+        case("the subject is declared where it is enforced",
+             "generators or by its explainer skills" in (assert_wired.__doc__ or ""), True)
+
+
+    try:
+        _body()
+    except Exception as _e:
+        case("the suite runs to completion without raising",
+             f"{type(_e).__name__}: {_e}", "ok")
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0
 

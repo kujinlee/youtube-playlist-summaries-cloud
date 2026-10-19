@@ -247,60 +247,18 @@ def markup_of(document: str) -> str:
     return "".join(_scan(document).markup)
 
 
-def strip_css_comments(css: str) -> str:
-    r"""CSS with comments removed AND value-string contents blanked. PURE.
-
-    ⛔ ONE PASS, NOT THREE REGEXES — r2 found three separate defects that all reduce to "a regex
-    over CSS does not know what a string is":
-
-      * `content:"var(--x)"` and `url("data:…var(--x)…")` were read as USES of `--x`, so a page was
-        refused for a token no browser resolves (r2 High);
-      * `--open:"/*"` … `--close:"*/"` let the naive `/\*.*?\*/` erase a REAL declaration between
-        them, so a complete light palette was refused as incomplete (r2 Medium);
-      * comments carrying a `}` truncated the shim scan (r1 Low).
-
-    ⚠ ATTRIBUTE-SELECTOR STRINGS ARE PRESERVED. Blanking every string would turn
-    `:root[data-theme="light"]` into `:root[data-theme=" "]`, and light would stop being
-    distinguishable from dark — the scan would then be reading the wrong palette while looking
-    green. Strings inside `[...]` are kept verbatim; only value strings are blanked.
-    """
-    out: list[str] = []
-    i, n, brackets, in_comment = 0, len(css), 0, False
-    while i < n:
-        if in_comment:
-            if css.startswith("*/", i):
-                in_comment = False; out.append("  "); i += 2
-            else:
-                out.append(" "); i += 1
-            continue
-        if css.startswith("/*", i):
-            in_comment = True; out.append("  "); i += 2
-            continue
-        ch = css[i]
-        if ch == "[":
-            brackets += 1; out.append(ch); i += 1; continue
-        if ch == "]":
-            brackets = max(0, brackets - 1); out.append(ch); i += 1; continue
-        if ch == "}":
-            # ⚠ bracket depth is per-RULE. An unmatched `[` — `url(a[b.png)` is the realistic
-            # source — otherwise left every later string unblanked, re-enabling the prose-in-a-
-            # string false positive for the rest of the stylesheet (r3 R3-6).
-            brackets = 0; out.append(ch); i += 1; continue
-        if ch in "\"'":
-            quote, keep = ch, brackets > 0
-            out.append(ch); i += 1
-            # ⚠ A NEWLINE ENDS A BAD STRING. CSS says an unterminated string is recovered at the
-            # end of the line, so everything after it is real CSS. Consuming to EOF instead made
-            # one stray quote blank an entire stylesheet — r3 Blocking.
-            while i < n and css[i] != quote and css[i] != "\n":
-                if css[i] == "\\" and i + 1 < n:
-                    out.append(css[i:i + 2] if keep else "  "); i += 2; continue
-                out.append(css[i] if keep else " "); i += 1
-            if i < n:
-                out.append(css[i]); i += 1
-            continue
-        out.append(ch); i += 1
-    return "".join(out)
+# ⟳ 2026-10-19, r6 CLAUDE HIGH — THE SCANNER MOVED TO `page_chrome` AND THIS IS NOW A
+# DELEGATION, not a copy. It had to move DOWN: this module imports `page_chrome`, so that is
+# the only place both can reach, and `page_chrome` needs the same rule for its own CSS-reading
+# predicates. Round 6's first fold added a second, NAIVE implementation there — the exact
+# `re.sub(r"/\*.*?\*/", …)` this function's docstring names as defective — and it caused a
+# measured fail-open on the fragment path. One rule, one place; a second implementation of one
+# rule is this repository's most-measured defect, at 17 instances.
+#
+# ⚠ THE NAME STAYS EXPORTED HERE because nineteen call sites and several cases in this file
+# use it, and renaming them buys nothing. The docstring, the three r2 defects it records and
+# every case that pins its behaviour now live in `page_chrome.strip_css_comments`.
+strip_css_comments = page_chrome.strip_css_comments
 
 
 def css_scan_truncated(css: str) -> bool:
