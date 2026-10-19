@@ -773,12 +773,26 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
     # so a fragment that brings its own chrome or lacks a palette gets no switcher either,
     # which is correct: both are the fail-silent this module exists to prevent.
     # ⛔ `textstyle` OFF when the fragment ALREADY carries a switcher — r1 BLOCKING, found
-    # by both halves. `chrome_script` binds `getElementById('schemer')`, which returns the
-    # FIRST match: the fragment's own inline copy. The one appended here would therefore be
-    # the DEAD one, and the two would show contradictory selected states. Measured 2 of 2 —
+    # by both halves. Emitting a second `#schemer` makes one of the two inert, and the two
+    # then show contradictory selected states. Measured 2 of 2 —
     # BOTH real fragments that reach this branch already carry `id="schemer"`, so every page
     # that got this feature got the collision. `assert_wired` now also refuses a duplicate
     # id outright; this keeps the composer from creating one in the first place.
+    #
+    # ⟳ 2026-10-19, r6 CLAUDE MEDIUM — THE REASON r1 GAVE IS NOW BACKWARDS, and it was being
+    # used to cost an open decision. r1 said the composer's copy "would therefore be the DEAD
+    # one" because `getElementById` returns the FIRST match and the bar was appended to the
+    # END of <body>. The resting place moved under the <h1> at `de48f095`. Measured on the
+    # real composed 2026-10-06 page: `<h1>` at 16327, the slot at 16388, the fragment's own
+    # `id="schemer"` at 17041 — so the COMPOSER's copy is now first, i.e. the live one, and
+    # the hand-authored copy would be the dead one. The refusal above is unaffected and
+    # still correct; only the stated reason was stale.
+    #
+    # ⚠ AND THAT RE-COSTS AN OPEN OPTION, which is why the correction is not cosmetic. The
+    # owner chose a runtime DOM move partly because "the composer emits the dead one" made
+    # the composer-owns-the-switcher route look worse than it is. With the bar first in
+    # document order that objection is gone. The route is not taken here — it is the owner's
+    # call and the current fix works — but it should be re-costed, not inherited.
     own_switcher = page_chrome.has_text_control(content)
     # ⛔ AND NOT IF NOTHING WOULD CONSUME IT — r1 BLOCKING. `text_style_css()` styles ONLY
     # `.ex-body …`, and NOTHING in this repository emits that class; it is hand-authored,

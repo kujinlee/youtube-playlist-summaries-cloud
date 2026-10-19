@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 199 cases
+    python3 scripts/page_chrome.py --self-test          # 201 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -2149,6 +2149,36 @@ def self_test() -> int:
         # becomes whitespace of the SAME LENGTH, so offsets survive and no selector is welded
         # into existence out of the halves either side.
         _weld = ".chrome/*x*/-pinned{position:fixed}"
+        # ⛔ AND THE INVERSE, WHICH WAS ARGUED IN ONE DIRECTION AND MEASURED IN NEITHER
+        # OTHER — r6 CLAUDE LOW. The same-length whitespace that stops a selector being
+        # WELDED also UN-WELDS one: `.chrome-pinned/*x*/-host` becomes
+        # `.chrome-pinned     -host`, the space satisfies `(?![\w-])`, and a rule that does
+        # NOT pin the bar in a browser is accepted — while the plain `.chrome-pinned-host`
+        # is correctly refused. Measured on a document:
+        #     .chrome-pinned/*x*/-host{position:fixed}  -> unreachable=False  (accepted)
+        #     .chrome-pinned-host{position:fixed}       -> unreachable=True   (refused)
+        #
+        # ⚠ RECORDED, NOT FIXED, and the reason is the SUBJECT rather than the cost. A
+        # comment inside a selector NAME is adversarial markup, which this module's declared
+        # subject excludes — the reviewer classified it Low on exactly that ground. A fix
+        # exists (replace comments with a sentinel character and add it to the negative
+        # lookahead) and is NOT taken, because this scanner is now SHARED with
+        # `brief-compose`, whose own token and selector scans read its output: changing what
+        # a comment becomes, for an adversarial input, would put a measured-correct module at
+        # risk to harden against a shape nothing in this repository writes.
+        # ⭐ The space is load-bearing in TWO directions and now has a case for each.
+        case("OUT OF SCOPE: a comment INSIDE a selector name un-welds it into a matching "
+             "rule that does not pin the bar (r6 Low, adversarial — recorded, not endorsed)",
+             bar_unreachable(
+                 '<html><body>' + theme_control()
+                 + f'<style>{LIGHT}{DARK}.chrome-pinned/*x*/-host{{position:fixed}}</style>'
+                 + f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), False)
+        case("...while the un-commented spelling is still correctly refused, which is what "
+             "makes the line above a BOUND and not simply the rule",
+             bar_unreachable(
+                 '<html><body>' + theme_control()
+                 + f'<style>{LIGHT}{DARK}.chrome-pinned-host{{position:fixed}}</style>'
+                 + f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), True)
         case("a comment becomes whitespace of the same length, so nothing is welded together",
              (len(strip_css_comments(_weld)) == len(_weld),
               "chrome-pinned" in strip_css_comments(_weld),
