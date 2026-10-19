@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 184 cases
+    python3 scripts/page_chrome.py --self-test          # 190 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -840,6 +840,24 @@ def chrome_script() -> str:
         # holds them is off screen, which is the owner's "under the title AND pinned".
         f"var slot=document.querySelector('.{CHROME_SLOT_CLASS}');"
         f"var bar=slot&&slot.querySelector('.chrome');"
+        # ⛔ THE FRAGMENT'S OWN SWITCHER IS MOVED INTO THE BAR — the owner's decision,
+        # 2026-10-19, after r6 CODEX HIGH. Three real fragments carry a hand-authored
+        # `#schemer` in their PROSE: the composer declines to add its own (that is r1's
+        # duplicate-id fix, and `getElementById` would bind the fragment's copy anyway), so
+        # the theme control pinned and the text-style control scrolled away. MEASURED on the
+        # 2026-10-06 page at 320x568, scrolled to 1200: the bar pinned at top:0 while
+        # `#schemer` sat at y=-673.
+        #
+        # ⚠ WHY A MOVE IS SAFE HERE, AND IT WAS MEASURED RATHER THAN ASSUMED: all three
+        # fragments style it by CLASS — `.schemer`, `.schemer button`, `.schemer .lbl`,
+        # `.schemer button.on` — with no descendant or positional selector, so every rule
+        # follows the element. A fragment that styled it positionally would lose that, and
+        # nothing here can detect it; that is the cost the owner accepted.
+        #
+        # ⚠ BEFORE the control predicate and before `ctls`, deliberately: a bar that gains
+        # the switcher must both PIN and count it when measuring the tail.
+        "var sch=document.getElementById('schemer');"
+        "if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);"
         f"if(bar&&bar.querySelector('#chrome-theme,#schemer')){{"
         # The bar WRAPS: 44-63px at 1280, 129px at 320x568. Measuring it beats any literal.
         # ⛔ ONLY WHILE UNPINNED, AND THIS IS A FEEDBACK LOOP, NOT A STYLE CHOICE. A pinned
@@ -874,10 +892,22 @@ def chrome_script() -> str:
         # padding literal, because the bar wraps and the controls may end on different lines.
         # Shrinking the observer's root by it makes "not intersecting" mean exactly "the
         # last pressable pixel has left the viewport".
+        # ⛔ THE TOPMOST CONTROL, VIA `min` — AND THIS LINE IS THE FIFTH CONSECUTIVE ROUND
+        # IN WHICH A FIX CREATED A NEW INSTANCE OF THE CLASS IT FIXED. r6's threshold fix
+        # used the LOWEST control (`max`), which is right only while the bar is ONE ROW.
+        # Moving the fragment's switcher into the bar made it wrap to TWO, and then the
+        # first control to leave the viewport is the one on the TOP row — measured on the
+        # 2026-10-06 page at 320x568, y=231: theme button at -30.9 (gone), schemer at +81.2
+        # (visible), bar NOT pinned. Same class as the defect this block was written for:
+        # the threshold did not guarantee that EVERY control is reachable.
+        #
+        # `min` pins as soon as the FIRST control is clipped, which is the property wanted —
+        # once pinned they are all at top:0 — and it cannot flap, because the slot stays in
+        # flow at a reserved height, so the quantity being compared does not move.
         "var ctls=bar.querySelectorAll('#chrome-theme,#schemer');"
-        "var tail=function(){var sb=slot.getBoundingClientRect().bottom,m=-Infinity;"
+        "var tail=function(){var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
         "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
-        "if(b>m)m=b;}return m===-Infinity?0:Math.max(0,sb-m);};"
+        "if(b<m)m=b;}return m===Infinity?0:Math.max(0,sb-m);};"
         # ⚠ `!isIntersecting`, NOT "scrolled past". The slot can leave the viewport in either
         # direction, and the bar must be reachable both times: above it on a page scrolled
         # down, BELOW it on a caller that still emits the bar at the end of the document.
@@ -901,6 +931,23 @@ def chrome_script() -> str:
         "arm();}"
         "})();"
     )
+
+
+def stamp_bar(when: str) -> str:
+    """A stamp-only bar, SLOTTED like the full one. PURE.
+
+    ⟳ 2026-10-19. `brief-compose.chrome_for` built this shape by string concatenation in
+    THREE separate returns, so `.chrome` had four producers and only `chrome_bar` emitted
+    the slot. That is why one real page (`2026-10-05-topic-why-x-not-y`) had a `.chrome`
+    with no slot at all and nothing the pin mechanism could observe.
+
+    ⚠ A STAMP-ONLY BAR STILL DOES NOT PIN — `chrome_script` keys on the bar containing
+    something to press, not on the slot existing, and 17 of 20 fragments are stamp-only.
+    The slot is here so that a bar which LATER acquires a control (the switcher is moved
+    into it at runtime) has somewhere to be observed. Giving the slot one producer is the
+    point; the pin predicate is unchanged.
+    """
+    return f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">{stamp(when)}</div></div>'
 
 
 def place_bar(markup: str, bar: str) -> str:
@@ -1545,10 +1592,40 @@ def self_test() -> int:
          "padding literal — the bar wraps and the controls may end on different lines",
          ("bar.querySelectorAll('#chrome-theme,#schemer')" in chrome_script(),
           "getBoundingClientRect().bottom" in chrome_script()), (True, True))
+    # ⛔ `min`, NOT `max`, AND THE PAIR IS ASSERTED. The bar wraps to two rows once the
+    # fragment's switcher joins it, and then the FIRST control to leave the viewport is on
+    # the TOP row. Keying on the lowest control measured the bar as still reachable while
+    # the theme button was already gone (320x568, y=231: theme at -30.9, schemer at +81.2,
+    # unpinned). A revert to `max` must redden, not merely stop being mentioned.
+    case("the tail is keyed on the TOPMOST control, so the bar pins as soon as the FIRST "
+         "of several rows is clipped",
+         ("m=Infinity;" in chrome_script(), "if(b<m)m=b;" in chrome_script(),
+          "if(b>m)m=b;" in chrome_script()), (True, True, False))
     case("...and the observer is re-armed whenever the bar re-wraps, because rootMargin is "
          "fixed at construction while the tail is not",
          ("if(typeof arm==='function')arm();" in chrome_script(),
           "io.disconnect()" in chrome_script()), (True, True))
+    # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
+    case("the script moves a hand-authored #schemer INTO the bar, so one element carries "
+         "both controls (r6 High: it sat in the prose at y=-673 while the bar was pinned)",
+         "if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);" in chrome_script(), True)
+    # ⛔ ORDER, NOT MERELY PRESENCE. The move must precede the control predicate — a bar
+    # that gains the switcher must PIN — and precede `ctls`, or the switcher would not
+    # count when the tail is measured and r6's threshold defect returns for it alone.
+    case("...before the control predicate AND before the tail is measured, or the bar it "
+         "joins neither pins nor accounts for it",
+         (chrome_script().index("bar.appendChild(sch)")
+          < chrome_script().index("if(bar&&bar.querySelector('#chrome-theme,#schemer')){")
+          < chrome_script().index("var ctls=bar.querySelectorAll")), True)
+    case("...and it is never moved twice, which would be a no-op at best",
+         "!bar.contains(sch)" in chrome_script(), True)
+    # ── ONE producer shape for the slot ───────────────────────────────────────────────
+    case("stamp_bar is slotted too, so `.chrome` has one slot-emitting shape and not four",
+         stamp_bar("t").startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'),
+         True)
+    case("...and carries NO control, so it still does not pin on its own — 17 of 20 "
+         "fragments are stamp-only",
+         (has_control(stamp_bar("t")), has_text_control(stamp_bar("t"))), (False, False))
     # ── place_bar: the resting place, and the four shapes it must get right ──────────
     case("place_bar puts the bar just after the title, not before it",
          place_bar("<h1>T</h1>\n<p>x</p>", "[BAR]"), "<h1>T</h1>\n[BAR]\n<p>x</p>")

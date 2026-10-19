@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 143 cases
+    python3 scripts/brief-compose.py --self-test  # 149 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -804,10 +804,10 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
         if 'class="chrome-when"' in content:
             return page_chrome.chrome_css(), "", ""
         return (page_chrome.chrome_css(),
-                '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
+                page_chrome.stamp_bar(generated_at), "")
     if page_chrome.missing_palettes(content + page_chrome.theme_control()):
         return (page_chrome.chrome_css(),
-                '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
+                page_chrome.stamp_bar(generated_at), "")
     # ⛔ THE ONE `textstyle=True` IN THE REPOSITORY. `chrome_bar` defaults it OFF because
     # four of its five callers are dense tabular pages the three-role scheme was never
     # tuned against; the explainer family is the prose one, and the only scope the reader
@@ -1778,13 +1778,32 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # emit no control. Measured 2026-10-18 over all 20 repo fragments: 2 composed pages
     # carry a control (both slotted), 18 are stamp-only. The day a stamp-only branch gains
     # a button, the script finds a control it cannot pin — backlog #300, from the other end.
+    # ⛔ A FOURTH FIXTURE, AND ITS ABSENCE LET A MUTATION SURVIVE. `_wired` carries
+    # `class="chrome-when"`, so branch 1 returns NO bar at all and its OTHER return — the
+    # stamp bar for a fragment that brings its own control but no stamp — was exercised by
+    # nothing. Measured 2026-10-19: reverting that return to an inline unslotted div left
+    # the suite GREEN. The branch had a case; the case had no input that reached it.
+    _c1b = chrome_for(f"<style>{_pals}</style>{_ctl}"
+                      f"<script>{page_chrome.chrome_script()}</script>", "t")
+    case("a fragment with its own control but NO stamp gets one, and it is slotted",
+         f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _c1b[1]
+         and "chrome-when" in _c1b[1])
     for _lbl, _got in (("fragment's own chrome", _c1[1]),
+                       ("own chrome, no stamp", _c1b[1]),
                        ("both palettes, full bar", _c2[1]),
                        ("no palettes, stamp only", _c3[1])):
         _holds = 'id="chrome-theme"' in _got or 'id="schemer"' in _got
         case(f"chrome_for({_lbl}): a bar with a control is inside the slot the script "
              f"observes — or it holds no control",
              (not _holds) or f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _got)
+        # ⟳ 2026-10-19, STRENGTHENED past the version above. r6 found a real page
+        # (2026-10-05-topic-why-x-not-y) whose `.chrome` had NO slot, because the
+        # stamp-only returns built the div inline. The weaker claim — "slotted IF it holds
+        # a control" — was satisfied by that page and could not see it. EVERY bar this
+        # function returns is now slotted, so a bar that LATER gains the switcher at
+        # runtime has somewhere to be observed.
+        case(f"chrome_for({_lbl}): EVERY bar it returns is slotted, control or not",
+             (_got == "") or f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _got)
     case("every branch renders the provenance it was given",
          all("2026-01-02 03:04" in chrome_for(f, "2026-01-02 03:04")[1]
              for f in (f"<style>{_pals}</style><p>x</p>",

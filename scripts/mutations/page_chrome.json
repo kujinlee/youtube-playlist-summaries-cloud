@@ -702,5 +702,60 @@
       ]
     ],
     "expect": "the strip replaces a comment with a SPACE, so it cannot weld a selector into existence"
+  },
+  {
+    "name": "the switcher is never moved into the bar, so it stays in the prose",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var sch=document.getElementById('schemer');\"\n        \"if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);\"\n",
+        ""
+      ]
+    ],
+    "expect": "the script moves a hand-authored #schemer INTO the bar, so one element carries both controls (r6 High: it sat in the prose at y=-673 while the bar was pinned)"
+  },
+  {
+    "name": "the tail is keyed on the LOWEST control again, so a two-row bar pins too late",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"if(b<m)m=b;}return m===Infinity?0:Math.max(0,sb-m);};\"",
+        "        \"if(b>m)m=b;}return m===Infinity?0:Math.max(0,sb-m);};\""
+      ]
+    ],
+    "expect": "the tail is keyed on the TOPMOST control, so the bar pins as soon as the FIRST of several rows is clipped"
+  },
+  {
+    "name": "the switcher move happens AFTER the control predicate, so the bar it joins never pins",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var sch=document.getElementById('schemer');\"\n        \"if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);\"\n        f\"if(bar&&bar.querySelector('#chrome-theme,#schemer')){{\"\n",
+        "        f\"if(bar&&bar.querySelector('#chrome-theme,#schemer')){{\"\n        \"var sch=document.getElementById('schemer');\"\n        \"if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);\"\n"
+      ]
+    ],
+    "expect": "...before the control predicate AND before the tail is measured, or the bar it joins neither pins nor accounts for it"
+  },
+  {
+    "name": "the switcher is moved unconditionally, re-appending one already in the bar",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);\"\n",
+        "        \"if(bar&&sch)bar.appendChild(sch);\"\n"
+      ]
+    ],
+    "expect": "...and it is never moved twice, which would be a no-op at best"
+  },
+  {
+    "name": "stamp_bar loses its slot, so a bar that gains the switcher has nothing to observe",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return f'<div class=\"{CHROME_SLOT_CLASS}\"><div class=\"chrome\">{stamp(when)}</div></div>'",
+        "    return f'<div class=\"chrome\">{stamp(when)}</div>'"
+      ]
+    ],
+    "expect": "stamp_bar is slotted too, so `.chrome` has one slot-emitting shape and not four"
   }
 ]

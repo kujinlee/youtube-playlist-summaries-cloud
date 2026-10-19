@@ -250,5 +250,27 @@
       ]
     ],
     "expect": "the composed document carries the bar UNDER the title, not at the end (backlog #300: it was the last child of <body> at y=6445 of 6475)"
+  },
+  {
+    "name": "the no-palette branch builds its stamp bar inline again, with no slot",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if page_chrome.missing_palettes(content + page_chrome.theme_control()):\n        return (page_chrome.chrome_css(),\n                page_chrome.stamp_bar(generated_at), \"\")",
+        "    if page_chrome.missing_palettes(content + page_chrome.theme_control()):\n        return (page_chrome.chrome_css(),\n                '<div class=\"chrome\">' + page_chrome.stamp(generated_at) + \"</div>\", \"\")"
+      ]
+    ],
+    "expect": "chrome_for(no palettes, stamp only): EVERY bar it returns is slotted, control or not"
+  },
+  {
+    "name": "the own-chrome branch builds its stamp bar inline again, with no slot",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            return page_chrome.chrome_css(), \"\", \"\"\n        return (page_chrome.chrome_css(),\n                page_chrome.stamp_bar(generated_at), \"\")",
+        "            return page_chrome.chrome_css(), \"\", \"\"\n        return (page_chrome.chrome_css(),\n                '<div class=\"chrome\">' + page_chrome.stamp(generated_at) + \"</div>\", \"\")"
+      ]
+    ],
+    "expect": "a fragment with its own control but NO stamp gets one, and it is slotted"
   }
 ]
