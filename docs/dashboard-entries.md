@@ -15503,3 +15503,64 @@ which the branch also inverted; `:125` records *"exactly what PR #302 cost, twic
 ⛔ **F1 committed the error F1 diagnoses** — *instance closed, class left open* — in the paragraph
 meant to state its own limits. And I inferred from the reviewer's file that my leads had not landed,
 rather than asking: an inference stated as a measurement, which is this review's own F5.
+
+## 2026-10-19 [needs-you]
+Baseline measurements for the two things waiting on a conversation with you — taken before any of
+the work, which is what you asked for.
+
+**The brittleness question.** Yesterday's design doc said one measurement would separate its two
+explanations, and that it had not been run: are the long review rounds happening on *product* work
+or on the *machinery* that checks it? I ran it. It works now, and it does not answer the question —
+**only 7 of 90 reviewed pull requests since August touched product code at all**, so the comparison
+has seven items on one side. Both groups took the same number of rounds (a median of four). So the
+option that said "measure this first" has been spent and cannot become decisive by waiting, because
+the thing it needs more of — product work — is the very thing that stopped happening.
+
+What the measurement *did* find is blunter than what it was looking for: **92% of reviewed work
+since August never touched product code.** That agrees with the doc's own line counts, from a
+completely different direction, and it needs no statistics.
+
+⚠ Two instruments failed before one worked, and I think that is the honest headline. The first
+attempt (not mine) read file paths out of review prose. My first attempt read git — and failed the
+*same* check, claiming zero product work in August, the month of the schema and blob work. The
+cause was two separate mistakes at once: I was joining each review to the wrong commit, and I was
+asking "which category is biggest?" when in this project prose is always biggest. A product change
+of 1,551 lines still loses to the 3,326 lines of prose shipped beside it.
+
+**The memory question.** You asked how to compact the index. Separately I found something worth more
+than the compaction: the index carries a *second copy* of the information the matcher uses, and the
+matcher never reads the index. The copy had already gone stale — that is exactly why I lost your
+timestamp format this morning and then invented a third one. Also measured, from 19 days of real
+use nobody had looked at: **four fifths of the memory has never once been surfaced**, and a single
+entry accounts for a quarter of everything that has.
+
+**Waiting on you:** both. Nothing is being changed. The compaction is explicitly held until we do it
+together, and the brittleness options are still unranked.
+<!--tech-->
+Two survey documents, both DESIGN status, both deciding nothing.
+
+**`docs/superpowers/specs/2026-10-19-rounds-to-convergence-is-rising-design.md` §9** — takes §6
+option C. Join: one squash commit = one PR = its code *and* its review docs; rounds from
+`docs/reviews/**/<subject>-r<N>-<who>.md` inside that commit. Statistic: product SHARE, continuous,
+`docs/reviews/**` excluded as artifact. Result: 7 of 90 reviewed PRs touch product; medians 4.0 vs
+4.0; means 6.4 (n=7) vs 4.7 (n=83) — **underpowered, does not separate the hypotheses.** Monthly
+medians 5.5/3.0/8.0 differ from §2's 2.0/3.0/8.0 because §2 counts subjects-by-review-date excluding
+`spec-`/`plan-` and §9 counts PRs-by-squash excluding nothing; both stated, neither reconciled.
+⚠ Join coverage is August onward — `(#67)` verified, `#22`/`#23` are pre-squash merge commits and
+outside it, so the known-positive check verified 1 of 3 intended.
+
+**`docs/superpowers/specs/2026-10-19-memory-recall-survey.md`** — 49 recall caches, 19 days, 265
+plan steps, re-derivable snippet embedded and run. 75 fired / 190 `NONE` = **2.5:1**, which
+**refutes the `50:1` figure in backlog row 191** — or rather shows it has no stated population.
+**128 of 158 eligible entries (81%) have never fired**; `running-codex` is 26% of all fires, top 10
+are 72%. Today's `phase6-chrome-instrument` plan returned `NONE` on all 6 steps while four errors
+with existing entries were committed — filed as a CANDIDATE case with four unanswered objections,
+the strongest being that `begin-plan.py` reads pre-declared intentions, not actions.
+
+Backlog: row **191** amended with the survey and the ratio correction; row **307** filed for the
+index/matcher duplication (145 prose hooks vs 158 `FIRES-WHEN:` triggers, `recall-llm.py:431-432`
+excludes the index by name). Costed: no guard parses the index, so format is free, but trimming
+cannot reach the target — 70-char caps land at 21,587 against 17,100; the row COUNT is binding.
+
+⚠ **`docs/dev-process.md` is at 219/220 lines and `docs/plugins.md` at 259/260** — one line of
+runway each. The next rule added to either BLOCKS.

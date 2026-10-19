@@ -107,3 +107,97 @@ The §4 classification. Rounds-to-convergence for branches that were never revie
 files, so they are invisible to §2 — this measures reviewed work only). Any attribution of the §3
 product figures to a cause: the roadmap may simply have had no product work scheduled, and this
 document did not check.
+
+---
+
+## 9. ⟳ 2026-10-19, SAME DAY — §4 WAS RUN. It is now runnable, and it is UNDERPOWERED
+
+**Status: still DESIGN, still deciding nothing.** The owner asked for *"survey works … to have
+measurements before the work"* and kept the decision for together. §4 said the product/apparatus
+split of the rounds *"remains UNMEASURED … the one measurement that would separate the two live
+hypotheses, and §6 option C is to take it."* This section takes it and reports what it can and
+cannot settle.
+
+### 9.1 Two instruments failed before one worked, and both failures are the useful part
+
+| attempt | what it did | how it died |
+|---|---|---|
+| original (§4) | regexed file paths out of **review prose** | same count for every October subject; **zero** product-dominated subjects in August |
+| mine, first | joined subject → **the commit that ADDED its review files**, then classified by *dominant added lines* | **failed the identical known-positive check — zero product subjects in August.** Diagnosed: `plan-cloud-blob-key-encoding`'s review-file commit adds 14,366 lines of `docs/reviews` and ~**0** lines of `lib/`, because reviews are filed as docs and code is squashed separately — **the join was invalid** |
+| mine, second | joined by **PR / squash commit**, classified by **product SHARE** (continuous) | **passes.** Product lines appear where they must |
+
+⛔ **TWO INDEPENDENT DEFECTS, and only one of them was the one §4 blamed.** The join was wrong *and*
+the statistic was wrong. *Dominance by added lines* cannot ever return "product" in this repository:
+the three product PRs used as known positives register product lines of **489 / 1,551 / 803** while
+each carries more prose and apparatus than product. **Winner-take-all was hiding a continuous
+quantity** — and that asymmetry is itself a reading of the brittleness question, not noise to
+correct away.
+
+### 9.2 The instrument, stated so it can be re-run or refuted
+
+* **Join:** one squash commit on `master` = one PR = both its code and its review documents.
+  Rounds come from `docs/reviews/**/<subject>-r<N>-<who>.md` paths *inside that same commit*.
+* **Statistic:** `product share = product / (product + apparatus + prose)` over added lines, with
+  `docs/reviews/**` excluded as the review artifact rather than the work.
+* **Categories:** product = `lib app components worker supabase`; apparatus =
+  `scripts .claude .github tests`; prose = the rest of `docs/`.
+* ⚠ **COVERAGE BOUND, measured:** the join needs a trailing `(#N)` squash subject. **365** master
+  commits have one; **#67 does and is verified; #22 and #23 do NOT** — they are
+  *"Merge pull request #22 from …"*, from before the repo moved to squash-merges. **So this covers
+  August onward**, which is §2's population, and says nothing about June–July.
+* ⚠ **KNOWN-POSITIVE CHECK RUN, and it verified 1 of the 3 PRs intended** — the other two fell
+  outside the join for the reason above. One is not three; stated rather than rounded up.
+
+### 9.3 The result
+
+| month | reviewed PRs | median rounds | median product share | PRs touching product at all |
+|---|---|---|---|---|
+| 2026-08 | 24 | 5.5 | **0.0%** | **4 of 24** |
+| 2026-09 | 60 | 3.0 | **0.0%** | **3 of 60** |
+| 2026-10 | 6 | 8.0 | **0.0%** | **0 of 6** |
+
+And the comparison §4 was for:
+
+| group | n | median rounds | mean rounds |
+|---|---|---|---|
+| PRs that touch product | **7** | **4.0** | 6.4 |
+| apparatus / prose only | **83** | **4.0** | 4.7 |
+
+⛔ **THE MEDIANS ARE IDENTICAL AND n=7 ON ONE SIDE. THIS DOES NOT SEPARATE THE TWO HYPOTHESES.**
+The means differ in the direction of *"product work costs more rounds"* (6.4 vs 4.7), and with seven
+observations against a skewed distribution that is not a finding. **Option C has now been taken and
+it did not do the job C was proposed to do** — which is the one thing a reader needs before
+sequencing anything behind it.
+
+⭐ **THE SIDE FINDING IS STRONGER THAN THE INTENDED ONE: 83 of 90 reviewed PRs since August — 92% —
+touched no product code at all.** That is an independent instrument agreeing with §3's line counts
+and its `17 → 3 → 0` commit series, and it does not depend on the underpowered comparison above.
+
+⚠ **MY MONTHLY MEDIANS DIFFER FROM §2's (5.5 / 3.0 / 8.0 against 2.0 / 3.0 / 8.0) AND THAT IS A
+DIFFERENT DENOMINATOR, NOT A CONTRADICTION.** §2 counts *subjects* dated by the git-add date of
+their earliest review file and excludes `spec-`/`plan-` prefixes; §9 counts *PRs* dated by their
+squash and excludes nothing. Both are stated; neither is reconciled here, because picking one
+silently is how a population gets lost.
+
+### 9.4 What this changes for the options in §6 — as evidence, not as a recommendation
+
+* **C is spent.** It was *"measure §4 first"*, it has been measured, and the comparison is
+  underpowered at n=7. Re-running it later gains power only as product PRs accumulate — and §3's
+  measurement is that they are not accumulating, so **C cannot become decisive by waiting.**
+* **A and B are untouched by this.** Nothing here distinguishes *"the apparatus is now the defect
+  surface"* from *"what remains is simply the hard part"*; §5's correlation-only caveat stands
+  verbatim.
+* **D gains the most support, and from an instrument that was not looking for it.** 92% of reviewed
+  effort not reaching product code is the measurement a reader notices, and it needs no inference
+  about rounds.
+
+### 9.5 NOT RUN — failures, not passes
+
+* **Why** 92% of reviewed PRs avoid product code. §8 already flags that *"the roadmap may simply have
+  had no product work scheduled"*, and that remains unchecked — it is the difference between a
+  capability problem and a scheduling fact, and nothing here distinguishes them.
+* Rounds for branches never reviewed; unchanged from §8.
+* June–July, outside the join's coverage.
+* Any per-round attribution: this classifies a **PR**, so a PR whose rounds were spent on its
+  apparatus half while its product half was trivial is counted as product-touching.
+* A dual review of this section.

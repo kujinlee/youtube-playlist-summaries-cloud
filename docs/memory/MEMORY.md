@@ -9,6 +9,8 @@
 
 ## How things go wrong here (⭐ = costly, recurring)
 
+- [⭐⭐ A class fix needs an INDEPENDENT copy + identity case](a-class-fix-needs-an-independent-copy-and-an-identity-case.md) — looping over the set under test makes the case LIST shrink, not redden (57/57→56/56). The one sound duplicate
+- [⭐⭐ A guard can MANDATE the duplication it audits](a-guard-can-mandate-the-duplication-it-audits.md) — deleting the stale copy went RED; 4 rounds could only reword. Ask what a guard FORBIDS
 - [⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — green says nothing about the BASE (use `origin/master`); a red is a STOP, it hid a second failure. ⭐ **Never read `$?` after a PIPE**, and `grep | head || echo MISSING` can NEVER fire. ⭐⭐ **A restore verified against WHAT I DID lost a 32KB review** — diff the old tip BEFORE `reset --hard`
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
@@ -24,6 +26,7 @@
 - [⭐⭐ A harness cannot read a CAUSE from a child's text](a-harness-cannot-read-a-cause-from-a-childs-text.md) — 3 rounds, ONE cause; an arch review did NOT stop it. A crash FORGED a `[FAIL]`
 - [⭐ A vendored LINE NUMBER has no owner](a-vendored-line-number-has-no-owner.md) — 5 sites, one the REFUSAL TEXT; `grep -r` skips symlinks. ⛔ The FIX cited a stale COMMENT
 - [⭐ A BOUND enumerates what is WITNESSED](a-bound-enumerates-what-is-witnessed.md) — I listed what the seam TOUCHES; the cases covered 3 of 4. The missing one reinstated the defect the harness exists for. ⚠ A caveat headed "stated rather than hidden" that is wrong is worse than none
+- [⭐⭐ Assert the emitted artifact PARSES](assert-the-emitted-artifact-parses.md) — 201 cases green over invalid JS; every control dead, and the browser's "0 flips" read as success. `}{` balances
 - [⭐ A test that cannot fail](a-test-that-cannot-fail.md) — what observation makes this FAIL? Removing a signal hollows out its falsifier
 - [⭐⭐ Ask an agent to REFUTE, not confirm](ask-an-agent-to-refute-not-confirm.md) — 4-for-4 on 2026-09-23: the refuting prompts caught a wrong correction I had ALREADY PUBLISHED; the confirming one shipped a summary contradicting its own table. ⚠ The gap is VERIFICATION/RESEARCH agents — review halves already have a mandate (33 docs); I claimed otherwise without grepping
 - [⭐ Dual review: what it catches](dual-review-what-it-catches.md) — halves NOT redundant; the finding-reviewer right 3/3; ⭐ and **review is the wrong instrument for a SURFACE** — 6 rounds ≈ 7 edge cases, one corpus run ≈ 5,287
@@ -73,6 +76,8 @@
 
 ## Design & guard lessons
 
+- [⭐ The apparatus outgrew its subject](the-apparatus-outgrew-its-subject.md) — guards+tests **4.4×** the product; repo budgets PROSE, never guards; a branch shipped 46 browser-visible lines of 2,633
+
 - [One rule, one place](one-rule-one-place.md) — duplicate vocabulary shadows a duplicate mechanism; de-duplicating DROPS the clause the signature can't see
 - [anon EXECUTE is the DEFAULT](anon-execute-is-the-default-not-a-decision.md) — ⭐ anon-callable unless someone remembers
 - [RLS denial looks like absence](rls-denial-is-indistinguishable-from-absence.md) — same 404 both ways; the serve guard re-charged 6¢→12¢
@@ -94,12 +99,13 @@
 
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
-- [⏳ A waiting line carries a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — asked 2026-10-06: `⏳ **13:25 PDT** — …`, with the START not just the duration. "~25 min" is unreadable an hour later
+- [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
 - [⏳ Show a WAITING SIGNAL, not prose](show-a-waiting-signal-not-prose.md) — asked for 2026-09-23: lead with `⏳ **Waiting** — <what>`; "still running" buried in a paragraph does not register
-- [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — plain words, a `## ▶ STEP n of N` banner BEFORE each step, and a live progress line for background work. ⭐⭐ **3rd lapse 2026-09-23: a step that GREW to 12 findings stayed "step 5" for 20 tool calls.** Sub-divide with a ONE-LINE `▸ 5.3 — …` marker; the trail is DATA for a future workflow view
+- [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — ⛔ banner BEFORE each step, format SETTLED 10-16: `## ▶ [mm-dd hh:mm] STEP n of N` — prepended, no tz/seconds/`·`. Sub-steps too: `▸ [mm-dd hh:mm] 5.3 — …`. ⭐⭐ This LINE omitted the stamp for 3 days and I copied the line, not the file
 - [⭐ A title is SCANNED, not read](a-title-is-scanned-not-read.md) — asked 2026-10-02: lead with the concrete SCOPE, then the finding. An essayistic title says what was LEARNED and hides what was TOUCHED. The body still argues
 - [⭐ How to shape a message to me](how-to-shape-a-message-to-me.md) — LEAD with the conclusion, state READINESS separately from ownership, and ⛔ CLOSE with the repo's **CHECK/RESULT table** (`process-checklists.md`), never prose
 - [⭐⭐ Never close with a promise](never-close-with-a-promise.md) — ⛔ **5th instance 2026-09-25.** The Stop guard EXISTS and was INERT — I never armed it. ARM `begin-plan.py` for review/fold loops too, not just implementation
+- [⭐⭐ Blocking on a gate that does not EXIST](a-blocking-question-while-afk-costs-the-whole-night.md) — AskUserQuestion BLOCKS (6.5h idle, 2-line change). ⭐⭐ Worse 10-19: I cited "the owner's call" — **0 hits in 5 process docs** — and folded 5 rounds / 20h. GREP the rule and QUOTE it, or there isn't one
 - [⭐ Putting a choice to the user](putting-a-choice-to-the-user.md) — TAG A/B/C + a question exit; never two options that are the SAME action; decide it yourself when obvious
 - [⭐ Name and define every reference](name-and-define-every-reference.md) — never a bare `#39` or `M4`; gloss jargon on first use. Do NOT try to script it
 - [⛔ PUSH is mine, MERGING is theirs](push-is-mine-merging-is-theirs.md) — ruled 2026-09-30; never ask again. A PR is a SEPARATE judgement — not for unconverged work
@@ -129,6 +135,7 @@
 
 ## Slice history (all MERGED unless noted — open the file for PR/SHA)
 
+- [⭐⭐ chrome-bar + Phase 6 — #378 MERGED](chrome-bar-reachable-378-merged.md) — `11c1d5db`, NOT CONVERGED, 1 Blocking FILED. ⭐⭐ The suite is **monotone**: 17 added bytes kill the feature, all gates green (manifests 2.0% additive). The 8-round gate cleared on a **prose-only** round — `is_prose()` · #300/#304/#305/#306 OPEN
 - [⭐⭐ recall fold — PR #360 MERGED](recall-fold-360-merged.md) — `5128b99b`, **merged NOT CONVERGED with 3 Highs open**. 9 rounds; each fix CREATED the next instance. ⭐⭐ The fix was already in the repo at `check-ci-watched.py:860` and reached **zero** siblings → ADR-0014
 - [⭐⭐ backlog #154 — PR #331 READY](backlog-154-dash-scalar-ready-331.md) — `0791ca6f`, **not merged**. EIGHT rounds, each a NEW GRANULARITY (line→node→document→key-depth). Fix changed KIND: **refuse, don't widen**. ⭐ My class-fix made 6 mutations UNKILLABLE, suite green — only the sweep saw it
 - [⭐ arch review #153 — PR #329 READY](arch-review-153-workflow-readers.md) — `ccff9878`, **not merged**. Verdict: extract `_structural()`, NOT parse. Found a **LIVE false green** → #154 first. 4 rounds; #155 SIZE NOT KNOWN → size by ATTEMPTING
