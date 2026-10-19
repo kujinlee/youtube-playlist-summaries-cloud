@@ -1314,7 +1314,13 @@ EXPECTED_MUTATIONS = {
     # TIGHTENING, and round 6 applied that tightening, so the behaviour it mutated is now
     # the delivered one. Its inverse carries the coverage. That is the one sanctioned kind
     # of fall — the entry is retired because its subject is gone, not orphaned.
-    "scripts/page_chrome.py": 69,
+    # ⟳ 2026-10-19, r6 CLAUDE fold: 71 -> 70. ONE entry retired on the reviewer's argument —
+    # `ctls=[]` exercised the `m===Infinity?0:` fallback, which is unreachable on the
+    # delivered path, and never tested the property its name claimed; it was killed purely
+    # by a substring vanishing. The whole tail computation is now covered by an entry that
+    # severs it as ONE exact expression, which is what the reviewer's two green severances
+    # showed was missing.
+    "scripts/page_chrome.py": 70,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5140,7 +5146,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1520)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1521)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -609,11 +609,11 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "f\"var sync=function(){{if(!bar.classList.contains({CHROME_PIN_CLASS!r}))\"",
-        "f\"var sync=function(){{if(True or {CHROME_PIN_CLASS!r})\""
+        "        f\"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;\"\n        \"document.documentElement.style.setProperty(\"\n        \"'--chrome-h',bar.getBoundingClientRect().height+'px');\"\n",
+        "        f\"var sync=function(){{if(0)return;\"\n        \"document.documentElement.style.setProperty(\"\n        \"'--chrome-h',bar.getBoundingClientRect().height+'px');\"\n"
       ]
     ],
-    "expect": "the height is measured only while UNPINNED, or the reserve and the observer chase each other"
+    "expect": "the reserve, the gap and the re-arm are all behind ONE guard that returns"
   },
   {
     "name": "place_bar appends instead of inserting under the title",
@@ -642,8 +642,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "\"'--chrome-h',bar.getBoundingClientRect().height+'px');\"",
-        "\"'--chrome-h',bar.offsetHeight+'px');\""
+        "        \"'--chrome-h',bar.getBoundingClientRect().height+'px');\"\n",
+        "        \"'--chrome-h',bar.offsetHeight+'px');\"\n"
       ]
     ],
     "expect": "the reserve is measured in fractional pixels, so pinning cannot shift the page"
@@ -653,33 +653,22 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "\"{rootMargin:(-tail())+'px 0px 0px 0px'});io.observe(slot);};\"",
-        "\"{rootMargin:'0px'});io.observe(slot);};\""
+        "{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};",
+        "{rootMargin:'0px 0px 0px 0px'});io.observe(slot);};"
       ]
     ],
-    "expect": "the pin threshold is shrunk by the slot's tail, so a control that has left the viewport pins even while the slot has not"
-  },
-  {
-    "name": "the tail is derived from one control instead of the lowest",
-    "file": "scripts/page_chrome.py",
-    "edits": [
-      [
-        "\"var ctls=bar.querySelectorAll('#chrome-theme,#schemer');\"",
-        "\"var ctls=[];\""
-      ]
-    ],
-    "expect": "...and the tail is MEASURED from the live control boxes, not derived from the padding literal \u2014 the bar wraps and the controls may end on different lines"
+    "expect": "both consumers read the CACHE, and no live `tail()` call survives anywhere"
   },
   {
     "name": "the observer is never re-armed, so rootMargin keeps a stale tail",
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "\"if(typeof arm==='function')arm();};sync();\"",
-        "\"};sync();\""
+        "        \"arm();};sync();\"\n",
+        "        \"};sync();\"\n"
       ]
     ],
-    "expect": "...and the observer is re-armed whenever the bar re-wraps, because rootMargin is fixed at construction while the tail is not"
+    "expect": "the observer is rebuilt on re-wrap, because rootMargin is fixed at construction"
   },
   {
     "name": "CSS comments reach the pin match again",
@@ -719,11 +708,11 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        \"if(b<m)m=b;}return m===Infinity?0:Math.max(0,sb-m);};\"",
-        "        \"if(b>m)m=b;}return m===Infinity?0:Math.max(0,sb-m);};\""
+        "        \"var sb=slot.getBoundingClientRect().bottom,m=Infinity;\"\n        \"for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;\"\n        \"if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));\"\n",
+        "        \"var sb=slot.getBoundingClientRect().bottom,m=Infinity;\"\n        \"for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;\"\n        \"if(b>m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));\"\n"
       ]
     ],
-    "expect": "the tail is keyed on the TOPMOST control, so the bar pins as soon as the FIRST of several rows is clipped"
+    "expect": "the gap is measured from the CONTROL boxes, takes the TOPMOST, and is clamped at zero \u2014 one exact expression, because every fragment of it is supplied elsewhere"
   },
   {
     "name": "the switcher move happens AFTER the control predicate, so the bar it joins never pins",
@@ -757,5 +746,27 @@
       ]
     ],
     "expect": "stamp_bar is slotted too, so `.chrome` has one slot-emitting shape and not four"
+  },
+  {
+    "name": "the closing brace is dropped, so the emitted script is not a program",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "now parse the output.\n        \"}\"\n",
+        "now parse the output.\n        \"\"\n"
+      ]
+    ],
+    "expect": "...and it PARSES as JavaScript \u2014 the check that would have caught the brace"
+  },
+  {
+    "name": "the fallback reads a LIVE measurement again instead of the cache",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||\"",
+        "\"pin(r.bottom<=0||r.top>=(window.innerHeight||\""
+      ]
+    ],
+    "expect": "both consumers read the CACHE, and no live `tail()` call survives anywhere"
   }
 ]

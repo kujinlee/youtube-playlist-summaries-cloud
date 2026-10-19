@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 190 cases
+    python3 scripts/page_chrome.py --self-test          # 193 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -859,76 +859,83 @@ def chrome_script() -> str:
         "var sch=document.getElementById('schemer');"
         "if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);"
         f"if(bar&&bar.querySelector('#chrome-theme,#schemer')){{"
-        # The bar WRAPS: 44-63px at 1280, 129px at 320x568. Measuring it beats any literal.
-        # ⛔ ONLY WHILE UNPINNED, AND THIS IS A FEEDBACK LOOP, NOT A STYLE CHOICE. A pinned
-        # bar spans the viewport; the same bar in flow sits inside a narrower container and
-        # therefore wraps MORE. Re-measuring after pinning would shrink `--chrome-h`, which
-        # shrinks the slot, which moves the page under the reader, which can re-cross the
-        # observer's threshold. Holding the in-flow height also keeps the reservation an
-        # over-estimate rather than an under-estimate, so the slot can leave a thin gap but
-        # can never swallow a line of text.
-        f"var sync=function(){{if(!bar.classList.contains({CHROME_PIN_CLASS!r}))"
-        "document.documentElement.style.setProperty("
-        # ⛔ `getBoundingClientRect().height`, NOT `offsetHeight` — MEASURED, not preferred.
-        # `offsetHeight` returns a ROUNDED integer, so a bar whose real height is 44.5px
-        # reserved 44px and the page shifted by the half pixel it lost: the goals page's
-        # scrollHeight went 7354 unpinned -> 7353 pinned, on 1 of the 5 producers. One pixel
-        # is invisible, and that is exactly why it had to be found by measuring document
-        # height across the transition rather than by looking at the page.
-        "'--chrome-h',bar.getBoundingClientRect().height+'px');"
-        "if(typeof arm==='function')arm();};sync();"
-        "if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}"
-        "else{window.addEventListener('resize',sync);}"
-        f"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};"
-        # ⛔ THE THRESHOLD IS THE CONTROL'S BOTTOM EDGE, NOT THE SLOT'S — r6 CODEX MEDIUM,
-        # and it is a stable geometric defect, not a timing one. The slot extends BELOW the
-        # pressable area by the bar's own bottom padding, so "the slot still intersects" and
-        # "the button is still reachable" are different claims. MEASURED by the reviewer on
-        # the real 2026-10-06 fragment at 320x568, scrolled to 231px: the theme button
-        # occupied y=-31.02 to -1.39 — entirely off screen — while the slot still reached
-        # y=+5.80, so the bar stayed unpinned and the control could not be pressed.
+        # ⛔ EVERYTHING BELOW IS GOVERNED BY ONE PRECONDITION, AND IT IS ENFORCED BY
+        # STRUCTURE BECAUSE A SENTENCE ALREADY FAILED. r6 CLAUDE BLOCKING: the previous
+        # version read `if(!pinned) setProperty(…); arm();` — an `if` with no braces
+        # governs ONE statement, so `arm()` ran in BOTH states, while the comment beside it
+        # asserted the opposite AND that assertion was the whole termination argument.
         #
-        # `tail` is that gap, measured from the live boxes rather than derived from the
-        # padding literal, because the bar wraps and the controls may end on different lines.
-        # Shrinking the observer's root by it makes "not intersecting" mean exactly "the
-        # last pressable pixel has left the viewport".
-        # ⛔ THE TOPMOST CONTROL, VIA `min` — AND THIS LINE IS THE FIFTH CONSECUTIVE ROUND
-        # IN WHICH A FIX CREATED A NEW INSTANCE OF THE CLASS IT FIXED. r6's threshold fix
-        # used the LOWEST control (`max`), which is right only while the bar is ONE ROW.
-        # Moving the fragment's switcher into the bar made it wrap to TWO, and then the
-        # first control to leave the viewport is the one on the TOP row — measured on the
-        # 2026-10-06 page at 320x568, y=231: theme button at -30.9 (gone), schemer at +81.2
-        # (visible), bar NOT pinned. Same class as the defect this block was written for:
-        # the threshold did not guarantee that EVERY control is reachable.
+        # The measured consequence, on a real generated dashboard at 1280x900, y=165:
+        # `pin` flipped the class 60 TIMES PER SECOND on a stationary page with no input,
+        # and the state it settled in was the UNPINNED one with the theme button at
+        # y=-2.38 — Codex finding 2's exact defect, reproduced by the fix for it. The band
+        # is `0 < slot.bottom < tail`: ~7px at 1280x900, ~41px at 320x568. It reaches any
+        # page whose side gutter differs from the bar's own `padding-inline:1rem`, which is
+        # 4 of 5 producers (`gen-dashboard` and `gen-backlog-page` both declare 20px); the
+        # 2026-10-06 explainer is quiet only because its container happens to pad 16px.
         #
-        # `min` pins as soon as the FIRST control is clipped, which is the property wanted —
-        # once pinned they are all at top:0 — and it cannot flap, because the slot stays in
-        # flow at a reserved height, so the quantity being compared does not move.
+        # ⛔ AND THE ROOT CAUSE IS NOT THE MISSING BRACES. `tail` is meaningful ONLY while
+        # the bar is in flow — pinned, the controls sit at the viewport top while the slot
+        # is above the fold, so `sb - m` goes negative and the clamp returns 0, which is a
+        # rootMargin of zero and an immediate unpin. TWO call sites evaluated it while
+        # pinned (the re-arm and the scroll fallback), and the reviewer verified that
+        # bracing the guard fixes the first and leaves the second untouched.
+        #
+        # So the gap is MEASURED ONCE, IN FLOW, AND CACHED. `tailPx` is written at exactly
+        # one place — inside the single guard below — and every consumer reads the cache.
+        # There is no expression that can sample it in the wrong state.
+        "var tailPx=0;"
         "var ctls=bar.querySelectorAll('#chrome-theme,#schemer');"
-        "var tail=function(){var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
-        "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
-        "if(b<m)m=b;}return m===Infinity?0:Math.max(0,sb-m);};"
-        # ⚠ `!isIntersecting`, NOT "scrolled past". The slot can leave the viewport in either
-        # direction, and the bar must be reachable both times: above it on a page scrolled
-        # down, BELOW it on a caller that still emits the bar at the end of the document.
-        # That second case is backlog #300's exact shape, and keying on visibility rather
-        # than on direction means the mechanism survives a caller putting the bar anywhere.
-        #
-        # ⚠ REBUILT BY `sync`, because `rootMargin` is fixed at construction while `tail`
-        # changes whenever the bar re-wraps. `sync` runs only while UNPINNED, so the margin
-        # is always the one measured from the bar in flow — and the rebuild terminates: a
-        # rebuild can pin, pinning resizes the bar, and the resulting `sync` returns early.
+        f"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};"
+        # The observer re-armed with the cached margin. `rootMargin` is fixed at
+        # construction, so a re-wrap needs a new observer — but only ever from `sync`.
         "var io=null;var arm=function(){if(!window.IntersectionObserver)return;"
         "if(io)io.disconnect();"
+        # ⚠ `!isIntersecting`, NOT "scrolled past". The slot can leave the viewport in
+        # either direction and the controls must be reachable both times: above it on a
+        # page scrolled down, BELOW it on a caller that emits the bar at the end of the
+        # document — backlog #300's own shape.
         "io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},"
-        "{rootMargin:(-tail())+'px 0px 0px 0px'});io.observe(slot);};"
-        # No IntersectionObserver: the same predicate, read from the box on every scroll.
-        "var fb=null;if(!window.IntersectionObserver){"
-        "fb=function(){var r=slot.getBoundingClientRect();"
-        "pin(r.bottom-tail()<=0||r.top>=(window.innerHeight||"
+        "{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};"
+        # ⛔ THE ONE GUARDED SITE. A single `return` governs the whole body, so neither the
+        # reserve nor the gap nor the re-arm can happen while the bar is out of flow.
+        # ⚠ THE BAR WRAPS — 44-63px at 1280, 129px at 320x568 — so both quantities are
+        # measured, never derived from a literal.
+        # ⚠ `getBoundingClientRect().height`, NOT `offsetHeight`: the latter rounds, and a
+        # 43.109375px bar reserved 43px, which shifted the goals page's scrollHeight
+        # 7354 -> 7353 at the pin. One pixel, found only by measuring across the transition.
+        # ⚠ THE TOPMOST control via `min`: once the switcher joins the bar it wraps to two
+        # rows, and the first control to leave the viewport is on the TOP row. Measured at
+        # 320x568, y=231: theme button at -30.9 (gone), schemer at +81.2 (visible).
+        f"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;"
+        "document.documentElement.style.setProperty("
+        "'--chrome-h',bar.getBoundingClientRect().height+'px');"
+        "var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
+        "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
+        "if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));"
+        "arm();};sync();"
+        "if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}"
+        "else{window.addEventListener('resize',sync);}"
+        # No IntersectionObserver: the same predicate, from the box, on every scroll — and
+        # reading the CACHE, which is what makes it correct while pinned. The previous
+        # version called `tail()` here on every event and therefore read the clamped zero
+        # whenever the bar was pinned: measured, it alternated pinned/unpinned with EVERY
+        # scroll event, leaving the schemer at -6.97 to -36.97 on alternate events.
+        "if(!window.IntersectionObserver){"
+        "var fb=function(){var r=slot.getBoundingClientRect();"
+        "pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||"
         "document.documentElement.clientHeight));};fb();"
         "window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}"
-        "arm();}"
+        # ⛔ THE BRACE THAT CLOSES `if(bar&&bar.querySelector(…)){`. It was DROPPED when this
+        # block was rewritten and the suite stayed at 190/190 while the emitted JavaScript
+        # was SYNTACTICALLY INVALID — `Unexpected token ')'`, the whole IIFE dead, every
+        # control inert on every page. A browser measurement then read 0 class flips per
+        # second and looked like the fix working. Two cases below now parse the output.
+        "}"
+        # ⚠ THE BOUND THIS DESIGN ACCEPTS, STATED: a viewport resize WHILE PINNED does not
+        # re-measure, so the reserve and the gap stay at their last in-flow values until
+        # the bar returns to flow. That is deliberate — re-measuring while pinned is
+        # exactly the defect above — and it is strictly better than a non-terminating loop.
         "})();"
     )
 
@@ -1153,6 +1160,30 @@ def _scripts(page: str) -> str:
 # ---------------------------------------------------------------- self-test
 def self_test() -> int:
     ok = fail = 0
+
+    def _ordered_in(hay: str, *needles: str) -> bool:
+        """Do these appear in this order, each exactly once? NEVER RAISES. PURE.
+
+        ⛔ WHY THIS EXISTS, AND IT IS A REPORT-FORMAT DEFECT NOT A COVERAGE ONE. The
+        ordering case below was written with `str.index`, which RAISES when the substring
+        is gone. Under one mutation the suite therefore died with a traceback and printed
+        NOTHING — not the `[FAIL] <case>` line the mutation harness joins on, and not even
+        the `ok` lines for the two hundred cases that had already passed. The harness
+        caught it and said so exactly: *"the suite went RED but printed no [FAIL] line, so
+        NOTHING COULD SEE THE KILL … every entry for this file is unattributable until you
+        fix it."* A kill nobody can attribute is not coverage, and a crash that erases the
+        whole report is worse than a red case.
+
+        ⚠ `find`, and a missing needle makes the case FAIL rather than abort. Each needle
+        must also be UNIQUE: two occurrences make an ordering claim ambiguous, and this
+        file has already paid twice for a case whose substring something else supplied.
+        """
+        at = []
+        for n in needles:
+            if hay.count(n) != 1:
+                return False
+            at.append(hay.find(n))
+        return all(a < b for a, b in zip(at, at[1:]))
 
     def case(name, got, want):
         nonlocal ok, fail
@@ -1564,47 +1595,90 @@ def self_test() -> int:
          ("window.IntersectionObserver" in chrome_script(),
           "getBoundingClientRect" in chrome_script(),
           "addEventListener('scroll'" in chrome_script()), (True, True, True))
-    # ⛔ THE FEEDBACK LOOP, PINNED BY A CASE because it is not visible in the rendering.
-    # A pinned bar spans the viewport and wraps LESS than the same bar inside a page
-    # container. Re-measuring after pinning shrinks --chrome-h, which shrinks the slot,
-    # which moves the page under the reader and can re-cross the observer's threshold.
-    case("the height is measured only while UNPINNED, or the reserve and the observer "
-         "chase each other",
-         f"if(!bar.classList.contains({CHROME_PIN_CLASS!r}))" in chrome_script(), True)
+
     case("the bar is found THROUGH the slot, so a stray .chrome elsewhere is not pinned",
          f"slot.querySelector('.chrome')" in chrome_script(), True)
-    # ⟳ 2026-10-18: the reserve is measured in FRACTIONAL pixels. `offsetHeight` rounds, so
-    # a 44.5px bar reserved 44px and the goals page shifted 1px at the pin (scrollHeight
-    # 7354 -> 7353). Both halves of the pair are asserted: a revert to `offsetHeight` must
-    # redden, not merely stop being mentioned.
+    # ── the pin threshold, asserted as WHOLE EXPRESSIONS ────────────────────────────
+    # ⛔ EVERY CASE HERE NAMES ONE EXACT, CONTIGUOUS EXPRESSION, and the reason is measured.
+    # r6 CLAUDE HIGH: the previous three cases asserted SUBSTRINGS — "getBoundingClientRect()
+    # .bottom", "if(b<m)m=b;", "m=Infinity;" — every one of which something ELSE in this
+    # emitted script also supplies. The reviewer severed the rule two ways (the control box
+    # replaced by the slot's; the lowest control replaced by the last) and the suite stayed
+    # at 184/184 BOTH TIMES, with the defect reproduced in a browser. A case that names a
+    # behaviour and tests a fragment another line also contains is this repository's
+    # most-repeated defect, and it was re-created in the cases written for its own fix.
+    #
+    # ⚠ WHAT THIS BUYS AND WHAT IT DOES NOT. An exact expression is falsifiable: any
+    # severance of the rule changes it, so both of the reviewer's severances now redden.
+    # It is NOT a behavioural test — the property is a LAYOUT fact and no case in either
+    # suite runs a browser, which is stated in the module bound and remains true. These
+    # cases defend the rule against edits; a browser is still the only witness that the
+    # rule is the right one.
+    _TAIL = ("var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
+             "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
+             "if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));")
+    case("the gap is measured from the CONTROL boxes, takes the TOPMOST, and is clamped at "
+         "zero — one exact expression, because every fragment of it is supplied elsewhere",
+         _TAIL in chrome_script(), True)
     case("the reserve is measured in fractional pixels, so pinning cannot shift the page",
-         ("bar.getBoundingClientRect().height" in chrome_script(),
+         ("'--chrome-h',bar.getBoundingClientRect().height+'px');" in chrome_script(),
           "offsetHeight" in chrome_script()), (True, False))
-    # ⟳ r6 CODEX MEDIUM: the threshold is the CONTROL's bottom edge, not the slot's. The
-    # slot extends below the pressable area by the bar's bottom padding, so on the real
-    # 2026-10-06 fragment at 320x568 scrolled to 231px the theme button sat at y=-31 to
-    # -1.4 — off screen — while the slot still reached +5.8 and the bar stayed unpinned.
-    case("the pin threshold is shrunk by the slot's tail, so a control that has left the "
-         "viewport pins even while the slot has not",
-         ("rootMargin:(-tail())" in chrome_script(),
-          "r.bottom-tail()<=0" in chrome_script()), (True, True))
-    case("...and the tail is MEASURED from the live control boxes, not derived from the "
-         "padding literal — the bar wraps and the controls may end on different lines",
-         ("bar.querySelectorAll('#chrome-theme,#schemer')" in chrome_script(),
-          "getBoundingClientRect().bottom" in chrome_script()), (True, True))
-    # ⛔ `min`, NOT `max`, AND THE PAIR IS ASSERTED. The bar wraps to two rows once the
-    # fragment's switcher joins it, and then the FIRST control to leave the viewport is on
-    # the TOP row. Keying on the lowest control measured the bar as still reachable while
-    # the theme button was already gone (320x568, y=231: theme at -30.9, schemer at +81.2,
-    # unpinned). A revert to `max` must redden, not merely stop being mentioned.
-    case("the tail is keyed on the TOPMOST control, so the bar pins as soon as the FIRST "
-         "of several rows is clipped",
-         ("m=Infinity;" in chrome_script(), "if(b<m)m=b;" in chrome_script(),
-          "if(b>m)m=b;" in chrome_script()), (True, True, False))
-    case("...and the observer is re-armed whenever the bar re-wraps, because rootMargin is "
-         "fixed at construction while the tail is not",
-         ("if(typeof arm==='function')arm();" in chrome_script(),
-          "io.disconnect()" in chrome_script()), (True, True))
+    # ⛔ ONE GUARD, GOVERNING THE WHOLE BODY VIA `return`. r6 CLAUDE BLOCKING: the previous
+    # shape was a braceless `if` that governed one statement, so the re-arm ran while PINNED
+    # and the page flipped the class 60 times per second on a stationary dashboard.
+    case("the reserve, the gap and the re-arm are all behind ONE guard that returns",
+         f"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;"
+         in chrome_script(), True)
+    case("...and the gap is WRITTEN at exactly one site, so no expression can sample it "
+         "in the wrong state",
+         chrome_script().count("tailPx=("), 1)
+    case("both consumers read the CACHE, and no live `tail()` call survives anywhere",
+         ("{rootMargin:(-tailPx)+'px 0px 0px 0px'}" in chrome_script(),
+          "r.bottom-tailPx<=0" in chrome_script(),
+          "tail()" in chrome_script()), (True, True, False))
+    case("the observer is rebuilt on re-wrap, because rootMargin is fixed at construction",
+         ("if(io)io.disconnect();" in chrome_script(),
+          "arm();};sync();" in chrome_script()), (True, True))
+
+    # ── ⛔ THE EMITTED SCRIPT MUST PARSE, AND NOTHING CHECKED THAT FOR 190 CASES ───────
+    # MEASURED 2026-10-19: a rewrite of the pin block dropped ONE closing brace. The suite
+    # stayed GREEN at 190/190 while `chrome_script()` emitted invalid JavaScript —
+    # `Unexpected token ')'` in Chromium, the whole IIFE dead, every control on every page
+    # inert. Worse, a BROWSER measurement taken on that page read "0 class flips per
+    # second" and looked exactly like the defect it was checking having been fixed.
+    #
+    # ⚠ EVERY OTHER CASE IN THIS FILE ASKS WHAT THE SCRIPT CONTAINS. None asked whether it
+    # is a program. A substring assertion cannot notice a missing brace, and 190 of them
+    # could not either — which is the sharpest instance of this repository's own lesson
+    # that a green suite describes only what its cases look at.
+    _js = chrome_script()
+    case("the emitted script's braces and parens balance",
+         (_js.count("{") == _js.count("}"), _js.count("(") == _js.count(")")),
+         (True, True))
+    # ⛔ A REAL PARSE, not a balance heuristic — `}{` balances and does not parse. `node` is
+    # this project's CI interpreter (Node 22) and the mutation harness inherits PATH, so a
+    # missing `node` is a FAILURE and not a skip: a check that cannot reach its subject
+    # must say so loudly rather than pass.
+    def _parses(js: str) -> str:
+        import subprocess, tempfile, os
+        fd, path = tempfile.mkstemp(suffix=".js")
+        try:
+            os.write(fd, js.encode()); os.close(fd)
+            r = subprocess.run(["node", "--check", path],
+                               capture_output=True, text=True, timeout=30)
+            return "ok" if r.returncode == 0 else f"PARSE ERROR: {r.stderr.strip()[:120]}"
+        except FileNotFoundError:
+            return "CANNOT RUN: node is not on PATH — treat this as NOT CHECKED"
+        except Exception as e:
+            return f"CANNOT RUN: {e}"
+        finally:
+            try: os.unlink(path)
+            except OSError: pass
+    case("...and it PARSES as JavaScript — the check that would have caught the brace",
+         _parses(_js), "ok")
+    case("...and so does the inline theme-applying half, which a page runs early",
+         _parses(f"(function(){{{theme_control()!r};}})();"), "ok")
+
     # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
     case("the script moves a hand-authored #schemer INTO the bar, so one element carries "
          "both controls (r6 High: it sat in the prose at y=-673 while the bar was pinned)",
@@ -1614,9 +1688,9 @@ def self_test() -> int:
     # count when the tail is measured and r6's threshold defect returns for it alone.
     case("...before the control predicate AND before the tail is measured, or the bar it "
          "joins neither pins nor accounts for it",
-         (chrome_script().index("bar.appendChild(sch)")
-          < chrome_script().index("if(bar&&bar.querySelector('#chrome-theme,#schemer')){")
-          < chrome_script().index("var ctls=bar.querySelectorAll")), True)
+         _ordered_in(chrome_script(), "bar.appendChild(sch)",
+                     "if(bar&&bar.querySelector('#chrome-theme,#schemer')){",
+                     "var ctls=bar.querySelectorAll"), True)
     case("...and it is never moved twice, which would be a no-op at best",
          "!bar.contains(sch)" in chrome_script(), True)
     # ── ONE producer shape for the slot ───────────────────────────────────────────────
