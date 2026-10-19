@@ -67,6 +67,37 @@ not a prose defect and it will recur, because nothing in the suite watches the a
 * `page_chrome.self_test` reports an abort as a named failing case, a protection
   `brief-compose` has carried since r1 and that never reached its sibling.
 
+## ⭐ THE ARGUMENT THIS NOTE WAS MISSING, ADDED 2026-10-19 AFTER ROUND 8
+
+**The fold-then-review cycle has no fixed point on this branch, and `check-review-recorded`
+proves it mechanically rather than by argument.**
+
+That gate requires some round to have seen the CURRENT tree. But every fold commits guarded
+code *after* the review that prompted it. So:
+
+* a round finds something → it is folded → guarded code moves → the gate goes red again;
+* the loop terminates only on **a round that requires no fold at all**.
+
+Eight rounds have not produced one. Round 8's Codex half came closest — it found no eighth
+fix-created-finding sequence and said the commits under review were substantive — and its
+Claude half still returned a Medium (a mutation entry deleted while its replacement was
+added, so the pin ROSE while coverage fell), which needed a fold, which re-reddened the gate.
+
+⚠ THIS IS NOT A COMPLAINT ABOUT THE GATE, which is correct and has caught real things. It is
+the observation that **"review until converged" is not a terminating procedure here**, and
+the reason is the same one this note already gives: the property under review is a LAYOUT
+fact, the instrument is text, and each new text instrument has its own defects to find. A
+procedure whose stopping condition is "a round with no findings" cannot stop while the
+instrument keeps generating them.
+
+That is the strongest single argument for moving the claim to a rendering assertion, and it
+is an argument about the PROCEDURE rather than about any one defect — which is why it belongs
+in a Phase 6 inventory and not in a round document.
+
+⚠ AND THE HONEST COUNTER: the branch could also stop by DECLARING the stop — the repository
+provides `NO-REVIEW: <reason>` in the pull-request body for exactly this. That is a judgement
+about accepting an unreviewed fold, which is the owner's and not the coordinator's.
+
 ## Recommendation to the owner — a decision, not a defect
 
 Convene the Phase 6 architecture review on ONE question: **should the reachability claim
