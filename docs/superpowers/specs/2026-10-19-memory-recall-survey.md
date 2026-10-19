@@ -163,7 +163,7 @@ argues that the unit of matching may be the wrong thing to study before the rank
 
 | # | Measurement | What it would settle | Cost |
 |---|---|---|---|
-| S1 | Label the **75 real fires** for *was this worth interrupting for?* | The relevance question, on real data instead of fixtures. This is the direct input to row 191's named next question | S — the fires exist; the work is judging them |
+| S1 | Label the **75 real fires** for *was this worth interrupting for?* — ⭐ **the sheet is BUILT and committed unfilled: `2026-10-19-memory-recall-S1-worksheet.md`**, 75 rows carrying each fire's date, plan, step text and entry | The relevance question, on real data instead of fixtures. This is the direct input to row 191's named next question | **assembly DONE; judging remains** — and deliberately not mine alone, per row 191's own contamination caveat |
 | S2 | Label the **190 `NONE`s** for *should something have fired?* | The false-negative rate in deployment. Today's case (§3) is item 1 of 190 | M — 190 judgements |
 | S3 | Re-run the 80-item fixture with **real** distractors drawn from the 128 never-fired entries, replacing synthetic padding | Row 191's own caveat that *"synthetic distractors are easier to reject than real lessons, which cluster"*. Every published figure is an optimistic bound until this runs | S — fixtures and corpus both exist |
 | S4 | Author situations as **the human**, not as an LLM paraphrase | Row 191's LLM-to-LLM invertibility caveat — the one that makes 20/20 not yet a claim about human-to-LLM | S, but needs the owner |
