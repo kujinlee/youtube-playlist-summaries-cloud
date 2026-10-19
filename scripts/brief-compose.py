@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 151 cases
+    python3 scripts/brief-compose.py --self-test  # 153 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -1884,6 +1884,33 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
                       + page_chrome.text_style_control()
                       + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
                       "Quarterly review", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "")
+    # ⛔ `generated_at` IS WITNESSED TOO — r8 CLAUDE LOW, and it is the SAME CLASS the
+    # commit above just closed for `title`, in the SAME function, which I did not sweep.
+    # Severing `chrome_for(content, generated_at)` to `chrome_for(content, "")` left
+    # 151/151 AND 223/223 green: the stamp a reader uses to tell a stale page from a current
+    # one could have been blank on every composed page with every gate passing.
+    # ⚠ I then swept every parameter of the fourteen functions this branch touched and this
+    # was the ONLY survivor, which is the check I should have run when I fixed `title`.
+    _stamped = compose("<title>x</title><style>" + _dark + _full
+                       + ':root[data-theme="dark"]' + _tok
+                       + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                       + "body{color:var(--ink);background:var(--bg)}</style>"
+                       + page_chrome.text_style_control()
+                       + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                       "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "",
+                       "2026-03-04 05:06")
+    case("the generated-at moment reaches the composed page's stamp",
+         "2026-03-04 05:06" in _stamped)
+    case("...and a different moment gives a different document, so the stamp is not a "
+         "constant a reader cannot trust",
+         _stamped != compose("<title>x</title><style>" + _dark + _full
+                             + ':root[data-theme="dark"]' + _tok
+                             + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                             + "body{color:var(--ink);background:var(--bg)}</style>"
+                             + page_chrome.text_style_control()
+                             + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                             "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "",
+                             "2026-11-12 13:14"))
     case("the requested title reaches the document's <title>, not a placeholder",
          "<title>Quarterly review</title>" in _titled)
     case("...and a different request gives a different document",

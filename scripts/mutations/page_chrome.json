@@ -966,5 +966,16 @@
       ]
     ],
     "expect": "the refusal names the CALLER's label, so a reader learns which page refused"
+  },
+  {
+    "name": "<body> reserves bottom padding again, for a bar that pins at the TOP",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \":root{scroll-padding-top:var(--chrome-h,0)}\"\n",
+        "        \":root{scroll-padding-top:var(--chrome-h,0)}\"\n        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\"\n"
+      ]
+    ],
+    "expect": "...and <body> no longer reserves anything, or a top-pinned bar would leave a blank band at the document end"
   }
 ]

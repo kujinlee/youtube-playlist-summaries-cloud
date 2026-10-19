@@ -325,8 +325,13 @@ CHROME_PIN_CLASS = "chrome-pinned"
 #
 # ⚠ THE SLOT IS WHY PINNING DOES NOT JUMP THE PAGE. A fixed element leaves the flow, so
 # without a placeholder the content below it would rise by the bar's height at the moment of
-# pinning. The slot holds `min-height:var(--chrome-h)` — the height the bar reported while
-# it was still in flow — so the space is already reserved and nothing moves.
+# pinning. The chosen slot carries an INLINE `min-height` the script sets from the height the
+# bar reported while it was still in flow, so the space is already reserved and nothing moves.
+# ⟳ 2026-10-19, r8 CLAUDE LOW: this sentence said `min-height:var(--chrome-h)`, which was a
+# CLASS rule in the stylesheet — the mechanism r8's HIGH removed, because it inflated every
+# slot including one nested inside the bar being measured. A defining comment that describes
+# a deleted mechanism is worse than none: it is the first thing a reader of this constant
+# reads, and it would have sent them looking for a rule that no longer exists.
 CHROME_SLOT_CLASS = "chrome-slot"
 
 # `\.chrome\{` and not `\.chrome` — `.chrome-btn{` must NOT satisfy the rule, and an

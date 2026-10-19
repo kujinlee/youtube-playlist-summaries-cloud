@@ -807,7 +807,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-19: 25 -> 26. `compose.title` — same shape as above: varied in the source
     # text, unwitnessed by any case, so a caller asking for "Quarterly review" would have
     # got "T" with every gate passing.
-    "scripts/brief-compose.py": 26,
+    "scripts/brief-compose.py": 27,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1349,7 +1349,7 @@ EXPECTED_MUTATIONS = {
     # bar being measured — 225 -> 1965px in two seconds) and `assert_wired`'s label, which
     # the reviewer severed while the suite stayed green: dropping it from KNOWN_UNVARIED was
     # lexically correct and the parameter was still indistinguishable from a constant.
-    "scripts/page_chrome.py": 88,
+    "scripts/page_chrome.py": 89,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5175,7 +5175,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1543)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1545)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

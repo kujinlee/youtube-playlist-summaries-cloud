@@ -316,5 +316,16 @@
       ]
     ],
     "expect": "the requested title reaches the document's <title>, not a placeholder"
+  },
+  {
+    "name": "the generated-at moment never reaches the stamp, which no case required",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)",
+        "    chrome_css, chrome_bar, chrome_js = chrome_for(content, \"\")"
+      ]
+    ],
+    "expect": "the generated-at moment reaches the composed page's stamp"
   }
 ]
