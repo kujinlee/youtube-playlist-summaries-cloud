@@ -15270,7 +15270,8 @@ Two things are worth your attention. The first is that one page still misses out
 declares an incomplete colour palette, so the builder refuses to dress it at all, and that is an
 older problem this work did not touch. The second is bigger and is a question rather than a defect.
 
-**Waiting on you — a decision, not a defect.** Six review rounds on this feature have now produced
+**Waiting on you — a decision, not a defect.** Seven review rounds on this feature have now
+produced
 the same shape: each round's fix created the next round's finding, always in the same file. The
 reason is identifiable. The thing being checked — *can a reader reach this control* — depends on
 page height, window size and scrolling, and no amount of reading the page's text can answer it.
