@@ -15447,3 +15447,59 @@ reviewer absorbing my mistake, not process.
 browser sweep at this tip; the historical dropped-brace artifact; real device; print; zoom;
 font-load reflow; the no-IntersectionObserver fallback in a browser;
 `2026-10-05-topic-why-x-not-y` (no chrome script by construction).
+
+## 2026-10-19
+Correction to the entry above, which was wrong about who owns one of its findings — and the review
+that found that out is the same review, carrying on after I had already written it up.
+
+Two things changed. First, the remedy I proposed for one defect does not work, and the reviewer
+proved it rather than arguing it. I had said: the page's script can be *run* rather than just
+syntax-checked, and that would catch a dead page cheaply. It was tried. On the genuinely broken
+page the cheap runner reports **the healthy page's answer** — because it has no concept of layout
+at all, so a size comparison that should fail instead compares zero to zero and passes. A gate
+built on it would have been worse than none, because it would have looked like coverage. The
+proportionate fix turns out to be smaller than what I proposed, not larger: simply notice when the
+page reports an error at all. That catches the loud version of the problem and cannot touch the
+quiet one, and the entry above is right that the quiet one is what matters.
+
+Second, and more usefully: I blamed the five wasted rounds on a rule nobody had written, and that
+was only half of it. The reviewer found the missing half. There is a script in this project whose
+single job is to answer *is this going in circles, and should we stop?* It could not answer,
+because the information it reads was never written down: **none of this branch's fifteen round
+documents carried the small header that supplies it, while seventy-seven such documents elsewhere
+in the project do.** So the question got answered from memory five times instead. The project had
+already paid for exactly this once before and created the header to prevent it. Filling it in on
+three documents is minutes of work, and it is the one thing that would have prevented the whole
+review.
+
+I also told you one finding here had been reviewed by nobody. That was wrong within six minutes of
+my writing it — the reviewer had picked it up and attacked it, confirmed it with better evidence
+than mine, and refuted my account of who owned it.
+<!--tech-->
+Addendum from the Claude half (`arch-chrome-instrument-r1-claude.md`, 616 → 811 lines, H3–H5).
+
+**H3 — row 305's remedy refuted.** `jsdom` (already a dependency, `runScripts: 'dangerously'`):
+unmodified → bar `chrome chrome-pinned`; prepended `throw` → throws, bar `chrome`; the 17-byte
+addition → **no throw, bar `chrome chrome-pinned`**. Cause established, not guessed: no layout
+(`rect {top:0,bottom:0,height:0}` both pages) and no `IntersectionObserver`, so the script takes
+its fallback at `page_chrome.py:1172` where `0 - 0 <= 0` fires `pin(true)` on both. Instrument
+ladder: text cases miss both · `node --check` misses both · console-error read catches the `throw`,
+misses the 17-byte case · jsdom catches the `throw` and **false-greens** the 17-byte case · only
+Chromium catches both. Row 305 rewritten accordingly; row 304 must not be sized from it.
+
+**H5 — my #184 amendment withdrawn, refiled as row 306.** `0 of 15` of this branch's round
+documents carry the header `docs/round-header-template.md:3` calls mandatory; **77** elsewhere do.
+`check-review-decision.py` → `CANNOT RUN … no ```yaml header block`, **rc=2**, own suite 61/61.
+#184's remedy is *build a caller*; a caller here returns rc=2 — opposite remedies. Causal chain:
+counters never recorded → the instrument cannot run → the arming call made from recall → attributed
+to a gate no document contains. `round-header-template.md:5-8` had already recorded the precedent:
+*"On PR #302 nobody kept either, which is why four rounds ran where two were owed."*
+
+**H4 — the owner's-call finding confirmed and extended.** Three statements assign the arming call
+to the loop (`review-method.md:133`, `:525`, `:178`) and the spine's Conditional AFK policy rules
+*notify and continue*. Bounded: `review-method.md:124` *is* a human gate here, over tree identity,
+which the branch also inverted; `:125` records *"exactly what PR #302 cost, twice."*
+
+⛔ **F1 committed the error F1 diagnoses** — *instance closed, class left open* — in the paragraph
+meant to state its own limits. And I inferred from the reviewer's file that my leads had not landed,
+rather than asking: an inference stated as a measurement, which is this review's own F5.

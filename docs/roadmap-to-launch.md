@@ -2432,11 +2432,21 @@ unapplied for eight days while every document read "merged, done".
 > it has them (Phase 1 *user approval*, Phase 5 *Merging is a human gate*) while **Phase 6's gate
 > cell marks none**.
 >
-> ⭐ **This is `docs/backlog.md` row 184's own falsifier firing**, so that row now carries a measured
-> cost instead of an argument, and its cheaper candidate remedy (*merely RECORD the consultation*)
-> would have caught it — the notes say what they decided and simply never name the card. ⚠ **Not a
-> new row**, deliberately: the mechanism was already filed, and filing it twice would have hidden
-> that the existing row had been right for three weeks.
+> ⛔⟳ **I FIRST RECORDED THIS AS `docs/backlog.md` ROW 184's FALSIFIER FIRING. THE REVIEW'S CLAUDE
+> HALF REFUTED THAT (H5) AND IS RIGHT; IT IS NOW ROW 306.** The card could not have answered at all:
+> **0 of 15** of the branch's round documents carry the header `docs/round-header-template.md:3`
+> calls mandatory (against **77** compliant elsewhere), so `check-review-decision.py` exits
+> **rc=2, CANNOT RUN** with its own suite at 61/61. A cannot-run is a third outcome, and the two
+> defects have **opposite remedies** — row 184's work item is *build a caller*, and a caller here
+> returns rc=2.
+>
+> ⭐ **So the causal chain is longer than "it deferred to an authority that does not exist":** the
+> counters the decision procedure needs were never recorded → the only instrument that reads them
+> cannot run → the arming call had to be made from recall → it was, five times, and was then
+> attributed to a gate no document contains. The repo had already bought this lesson —
+> `round-header-template.md:5-8`, *"On PR #302 nobody kept either, which is why four rounds ran
+> where two were owed."* Skipping the header in all 15 documents reproduced it as five rounds where
+> **zero** were owed. The backfill is minutes and is row 306's whole content.
 >
 > ⚠ **AND A NOTE AGAINST READING COUNTS**, which this programme keeps relearning: the branch's
 > fix-created-round tally was published as **eight**, corrected to **seven** (`c293e31b`), and is

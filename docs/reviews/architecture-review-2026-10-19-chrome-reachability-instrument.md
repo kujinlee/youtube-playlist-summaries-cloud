@@ -40,7 +40,7 @@ make the instrument its own designed slice. Concretely:
    loop. #136's own measured lesson (4) is that *a fix introducing a new artifact restarts that
    artifact's clock rather than riding the current round*; a Playwright gate introduced as round 9's
    fold would arrive with zero design work, which is the exact shape that cost PR #313 three rounds.
-3. **Candidate D is already adopted** and needs no further work (`scripts/page_chrome.py:29-70`).
+3. **Candidate D is already adopted** and needs no further work (`scripts/page_chrome.py:30-70`).
 4. **Nothing further is folded into `scripts/` on this branch.** That is also what clears the PR's
    last red — see *The terminating move*, which required no owner decision and was available for
    five rounds.
@@ -104,10 +104,12 @@ and the guard rejected it with the correct explanation. Recorded because it is e
 text instrument within its declared subject, and against reading this finding as "the guard is bad".
 
 **What this does and does not license.** It refutes "nothing further is needed" (candidate B as
-stated). It does **not** establish that a browser is the only remedy: *executing* the script under
-Node — rather than only parsing it — would close this specific class far more cheaply, and nothing
-in the inventory considers that option. It is strictly weaker than a browser (it still says nothing
-about layout) and strictly stronger than today. Filed as row 305.
+stated). ⛔ **THE SENTENCE THAT STOOD HERE IS WITHDRAWN AND THE WITHDRAWAL IS THE POINT.** It read:
+*"executing the script under Node — rather than only parsing it — would close this specific class
+far more cheaply, and nothing in the inventory considers that option."* The Claude half considered
+it, ran it with `jsdom`, and it **false-greens the silent case** (H3 below). The proportionate
+remedy is smaller still — a one-line *no page errors* read — and it closes only the noisy member of
+the class. Filed, corrected, as row 305.
 
 ⛔ **SUPERSEDED IN STRENGTH BY THE CLAUDE HALF'S S8, AND THE DIFFERENCE MATTERS — my probe proves a
 weaker thing than I thought it did.** A prepended `throw` raises a **startup error**, so the cheap
@@ -271,7 +273,7 @@ is ADR-0014's propagation warning (`:35-42`):
 
 * **Candidate D is already adopted** — assertions describe this repository's generators and its
   skill-authored fragments, not adversarial markup, with five shapes enumerated as out of scope and
-  witnessed by cases (`page_chrome.py:29-70`). This is a design decision of real consequence and it
+  witnessed by cases (`page_chrome.py:30-70`). This is a design decision of real consequence and it
   lives in a docstring.
 * **One bar**, under the title in flow and pinned after scrolling, with the slot preserving its space.
 * **A hand-authored fragment switcher is moved into the bar at runtime**, so one element carries both
@@ -363,21 +365,52 @@ so no finding is corrupted. But the hazard is one this project has already paid 
 night (*a live agent's file is not static*), and I reintroduced it. The reviewer handled my mistake;
 that is luck, not process.
 
-⚠ **AND MY TWO LATE LEADS NEVER REACHED IT.** I sent the runtime-`throw` measurement and the
-*owner's-call* finding to the Claude half at 19 minutes; it had already committed to its write and
-neither appears in its document. **So F2 — the five-rounds-past-the-stop-condition finding — has
-been reviewed by nobody.** It is the one finding here resting on a single pair of eyes, and it
-should be treated as such until a round attacks it.
+⛔⟳ **CORRECTED. I WROTE THAT MY TWO LATE LEADS NEVER REACHED THE CLAUDE HALF AND THAT F2 HAD BEEN
+REVIEWED BY NOBODY. BOTH WERE WRONG WITHIN SIX MINUTES OF MY WRITING THEM.** The half picked up the
+message and filed an addendum (H3–H5, 616 → 811 lines) that attacked both leads and **refuted one of
+my conclusions and one of my ownership claims.** I had read its file, seen no mention of the leads,
+and inferred they had not landed — an inference stated as a measurement, which is the failure this
+document's own F5 is about. The addendum:
+
+| # | Severity | Finding | Effect on this document |
+|---|---|---|---|
+| **H3** | High · structural | **Lead 1 confirmed from its own fixture — and F1's floated remedy REFUTED.** `jsdom` is already a dependency, so it ran it: unmodified → bar `chrome chrome-pinned`; prepended `throw` → throws, bar `chrome`; **the 17-byte case → no throw, bar `chrome chrome-pinned`**. **The execution instrument returns the healthy page's answer for the dead one** — because jsdom has no layout (`rect {top:0,bottom:0,height:0}` on both) and no `IntersectionObserver`, so the script takes its fallback at `:1172` where `0 - 0 <= 0` fires `pin(true)` on everything | **F1's remedy paragraph is WITHDRAWN.** Row 305 rewritten: the proportionate fix is *read the console* (one line), which catches the `throw` and misses the silent case |
+| **H4** | High · structural | **Lead 2 confirmed, with better evidence than my grep.** It searched for the document that would collapse the finding and found **three that say the opposite, imperatively** — `review-method.md:133` (Q5's *Then*: `ARCHITECTURE REVIEW`), `:525` (*"it is the ARMING CONDITION itself"*), `:178` (*"it escalates from FIX to REDESIGN"*) — plus the spine's *Conditional AFK* policy ruling **notify and continue** | **F2 strengthened**, and honestly bounded: `review-method.md:124` *is* a human gate here, but over **tree identity**, which the branch also inverted — and `:125` records the precedent, *"exactly what PR #302 cost, twice"* |
+| **H5** | High · structural | **My ownership claim REFUTED. It is neither #184 nor #136 — it is a missing INPUT.** `0 of 15` of this branch's round documents carry the header `round-header-template.md:3` calls mandatory, against **77** compliant elsewhere; `check-review-decision.py` exits **rc=2 CANNOT RUN** on this subject with its own suite at **61/61** | **The #184 amendment is WITHDRAWN and refiled as row 306.** #184's remedy is *build a caller*, and a caller here returns rc=2 — opposite remedies |
+
+⭐ **H5 supplies the causal chain I had only half of.** Not *"the loop deferred to an authority that
+does not exist"* alone, but: **the counters the decision procedure needs were never recorded → the
+only instrument that reads them cannot run → the arming call had to be made from recall → it was,
+five times, and was then attributed to an authority that does not exist.** The repo had already
+bought that lesson — `round-header-template.md:5-8`: *"On PR #302 nobody kept either, which is why
+four rounds ran where two were owed."* This branch skipped the header in all 15 documents and the
+failure recurred as five rounds where **zero** were owed.
+
+⛔ **AND F1 COMMITTED THE ERROR F1 DIAGNOSES.** Its headline is *"the instance is closed; the class
+is not"* about the parse gate; its remedy paragraph then closed a new instance (the `throw`) and left
+the same class open, one paragraph later. Recorded plainly, because this project's record is that the
+fix for a class defect is where the next instance of it appears.
+
+⚠ **What remains single-sourced is now narrower:** F2's *grep* evidence has been independently
+reproduced and extended, so the finding stands on two pairs of eyes. Nothing in this document is now
+unreviewed.
 
 ## Work this review files
 
 Filed in the same turn as this document, per `dev-process.md`:
 
-1. **#184** — amended: its own falsifier has fired, cost five rounds / 20 hours. Not a new row.
+1. **#184** — amendment **WITHDRAWN** per H5: the card could not have answered at all, which is a
+   cannot-run and not this row's falsifier. The branch history is retained on the row as evidence
+   about discovery, explicitly not as evidence for its falsifier.
 2. **#136** — amended: a second worked example of route (b), again reached by argument.
 3. **Row 304** — the instrument slice, direction **C**, with M4's harness prerequisite as its first
-   task and B1/H1 as its falsifiers.
-4. **Row 305** — the execute-the-script gate: cheap, weaker than a browser, worth doing regardless.
+   task, H1 as task 0, and B1's 17-byte case as its falsifier. ⚠ Must **not** be sized from row 305.
+4. **Row 305** — rewritten after H3. The diagnosis stands; the *remedy* is refuted — jsdom
+   execution **false-greens** the silent case. The proportionate fix is a one-line console-error
+   read, which closes the noisy member of the class and cannot touch the silent one.
+5. **Row 306** — new, filed in place of the withdrawn #184 amendment: `0 of 15` round documents
+   carry the mandatory header, `check-review-decision.py` exits rc=2 on this subject, and the
+   backfill is minutes of work.
 5. **`CONTEXT.md`** — four terms added (wiring / operation / pinning mechanism / rendered
    reachability) with S8 as the worked example, per the Claude half's objection to my first draft.
    Done in this review, following Architecture Review #7's precedent.

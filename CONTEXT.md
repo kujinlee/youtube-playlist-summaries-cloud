@@ -144,7 +144,7 @@ The next four terms are about **what an assertion observes**, added 2026-10-19 b
 
 - A **guard** may declare **mutations**; each mutation binds by an **anchor** and names one case it must redden.
 - **Wiring** ⊅ **operation**, and **a parse** ⊅ **an execution**. A suite that asserts only what emitted text *contains* is blind to both, which is `page_chrome`'s recorded history: 190 green cases over invalid JavaScript, then every text and parse case green over a runtime fault.
-- **Rendered reachability** is a layout fact and therefore outside any text instrument's reach **by construction**, not by a gap someone can close. A guard may legitimately claim the three weaker terms and **say** it does not claim this one — which is what the declared subject bound at `scripts/page_chrome.py:29-70` does.
+- **Rendered reachability** is a layout fact and therefore outside any text instrument's reach **by construction**, not by a gap someone can close. A guard may legitimately claim the three weaker terms and **say** it does not claim this one — which is what the declared subject bound at `scripts/page_chrome.py:30-70` does.
 - A **reader** distinguishes **structural lines** from content; a **soundness check** is what makes it fail loudly rather than quietly when it cannot. A shared reader without one concentrates a blind spot across every caller.
 - A **coverage verdict** is earned only over green **controls**, with **recorded** equal to **declared**, and no entry a **cannot-run**.
 - A **ratchet** protects a count; a **falsifier** protects a claim. A ratchet with no falsifier ratchets nothing.
