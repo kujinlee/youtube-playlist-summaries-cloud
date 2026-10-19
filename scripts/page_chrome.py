@@ -2077,6 +2077,15 @@ def self_test() -> int:
         case("stamp_bar is slotted too, so `.chrome` has one slot-emitting shape and not four",
              stamp_bar("t").startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'),
              True)
+        # ⛔ TWO DISTINCT TIMESTAMPS, IN ONE CASE — `check-fixture-variation` refused the
+        # suite because every call passed `'t'`, so no case could tell `when` apart from a
+        # constant and the clause that renders it was unguarded. The pair is compared, not
+        # just present: a `stamp_bar` that ignored its argument would satisfy "contains a
+        # stamp" and fail this.
+        case("...and the moment it is given reaches the stamp, two distinct values apart",
+             (stamp_bar("2026-01-02 03:04") != stamp_bar("2026-09-08 07:06"),
+              "2026-01-02 03:04" in stamp_bar("2026-01-02 03:04"),
+              "2026-01-02 03:04" in stamp_bar("2026-09-08 07:06")), (True, True, False))
         case("...and carries NO control, so it still does not pin on its own — 17 of 20 "
              "fragments are stamp-only",
              (has_control(stamp_bar("t")), has_text_control(stamp_bar("t"))), (False, False))
@@ -2424,6 +2433,17 @@ def self_test() -> int:
                  '<html><body>' + theme_control()
                  + f'<style>{LIGHT}{DARK}.chrome-pinned-host{{position:fixed}}</style>'
                  + f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), True)
+        # ⛔ A SECOND, DISTINCT INPUT — same refusal: all four direct calls passed `_weld`,
+        # so the parameter was indistinguishable from a constant. This one exercises the
+        # string-awareness that the naive regex lacked, which is the whole reason this
+        # scanner was moved here rather than re-implemented.
+        _instr = strip_css_comments('.a{content:"/*"}.b{color:red}')
+        case("the scanner knows what a CSS string is, on an input unrelated to the weld "
+             "fixture: the `/*` inside cannot start a comment",
+             (".b{color:red}" in _instr,          # the rule after it survives
+              len(_instr) == len('.a{content:"/*"}.b{color:red}'),  # offsets preserved
+              '"/*"' in _instr),                  # ...and the CONTENTS are blanked
+             (True, True, False))
         case("a comment becomes whitespace of the same length, so nothing is welded together",
              (len(strip_css_comments(_weld)) == len(_weld),
               "chrome-pinned" in strip_css_comments(_weld),
