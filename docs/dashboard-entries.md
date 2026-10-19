@@ -15163,6 +15163,49 @@ today. 74 cases, 33 mutations, 33 killed, **33 attributed**, 0 survivors.**
 | **thrashing: 14 of 24 fix-induced, a FOURTH consecutive round** | ⚠ but the CHARACTER changed, and that is what to weigh: rounds 1–4 produced fail-opens by five routes through ONE seam; round 5's deliverable findings are a filename decoding bug, an index state, a read order and a containment test — four unrelated edges. 14 of 24 are instrument findings. The defect class that drove four rounds is gone |
 | **final state** | **78 cases · 37 mutations, 37 killed, 37 attributed, 0 survivors** · figures 96.7%, 111/895 (12.4%), 9/40 at 0.23/commit, each reproduced twice by different methods · declared sum 1456, every step read from the guard's own `got N want 0` · `ci.yml`'s figures corrected after four rounds carrying the first generation · ⛔ NOT CONVERGED, and the branch is the owner's call |
 
+## 2026-10-19
+There is now a written answer to the question you asked after the control-bar work: why does a
+simple feature need five review rounds, and why has this project become hard to change.
+
+The short version is that the first half of the question now has a number and the second half does
+not. Reviews per piece of work have roughly quadrupled since August — the typical branch went from
+two rounds to eight. Over the same period the product itself stopped moving: no lines of the actual
+application have been written this month, and the last change to it was a month ago.
+
+**What is not established is whether those two facts are connected**, and the document says so
+plainly rather than implying it. The measurement that would settle it — sorting the review rounds
+by whether they were about the product or about the checking machinery — was attempted, came out
+obviously wrong, and was thrown away rather than reported. So it remains open.
+
+**Waiting on you — a choice between four directions**, each with what it costs: fix the one corner
+that caused the recent rounds; put the checking machinery on a budget with a rule for retiring
+parts of it; take the missing measurement first and decide afterwards; or simply go back to
+building the product. Three of the four can be done together. The document recommends nothing on
+purpose — you said this one was for discussing together.
+<!--tech-->
+Branch `verification-apparatus-brittleness`, off `master`, one file:
+`docs/superpowers/specs/2026-10-19-rounds-to-convergence-is-rising-design.md`. Anchor
+`review-decides-itself` (ADR-0014). Phase 1, awaiting the human gate. PR #379.
+
+Rounds-to-convergence per CODE branch, from review filenames and git add-dates, `spec-`/`plan-`
+excluded: median **2.0 (Aug, n=5) → 3.0 (Sep, n=55) → 8.0 (Oct, n=6)**; mean 2.2 → 3.8 → 7.3.
+Added lines by area: product **5,467 → 740 → 0**, apparatus 38,095 → 53,315 → 21,345. Commits
+touching `lib app components worker supabase`: **17 → 3 → 0**; last one `e693f36a`, 2026-09-19.
+⚠ A known-positive check was run on that zero — all five directories exist and git does report
+commits against them earlier.
+
+⛔ A product/apparatus classifier over review PROSE was discarded as broken (it claimed August had
+zero product-dominated subjects, in the month of blob addressing), so the split of the ROUNDS is
+unmeasured — option C. Bounds stated in §5: n=6 and a partial month, "rounds filed" understates a
+branch merged NOT CONVERGED, added lines not net, and the whole thing is CORRELATION.
+
+⚠ **AND THIS ENTRY EXISTS BECAUSE I GOT THE EXEMPTION WRONG.** The first commit on this branch
+asserted that `docs/superpowers/specs` is exempt from the entry ratchet. It is not —
+`check-dashboard-entry.EXEMPT_DIRS` is `("docs/reviews/",)` alone. A local run agreed with me only
+because it diffed against the wrong base and reported "no tracked files changed"; with
+`GITHUB_BASE_REF=master` it REFUSES, which is what CI did. ⛔ And I had the tool for this:
+`check-merge-ready.py --pr <N>` answers the pull-request-only gates, I ran it for #378 and not for
+this one — the second time that omission has put a PR red.
 ## 2026-10-18
 The text-style switcher — the "colour / headings only / plain" control — now works on newly built
 explainer pages. It had been working on some pages and not others, and the reason turned out to be
