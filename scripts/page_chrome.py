@@ -1154,6 +1154,24 @@ def chrome_script() -> str:
         # control inert on every page. A browser measurement then read 0 class flips per
         # second and looked like the fix working. Two cases below now parse the output.
         "}"
+        # ⛔ A NUMBER MEASURED HERE DEPENDS ON AN INPUT NEITHER AUTHOR CONTROLS, and that
+        # is why r7's fold published a figure it could not reproduce. The bar's wrapped
+        # height is set by its CONTAINER's width; on a composed explainer that container is
+        # styled partly by the Ask-tray CSS, and `brief-compose` LIFTS that tray from
+        # whichever explainer page happens to be newest. Two composes of the SAME fragment
+        # on the same commit therefore give different bar heights.
+        #
+        # MEASURED 2026-10-19: a clean compose gives `--chrome-h` 132.2109375px against a
+        # 132.211px in-flow bar at 320x568 (container 288px) — the reviewer's figure, which
+        # I now reproduce exactly. r7's commit said 153.45px; that run had lifted a
+        # different tray. ⚠ THE PROPERTY WAS NEVER IN DOUBT — the reserve is re-measured on
+        # the return to flow and equals the in-flow bar — but a pixel figure in a line
+        # headed "VERIFIED" must name the compose it came from, or it is not verification.
+        #
+        # ⚠ AND THE REVIEWER WAS CAREFUL ABOUT THIS WHERE I WAS NOT: it wrote "I do not
+        # claim the fold's author measured nothing; I claim the number as written is not
+        # reproducible from the branch". That is the correct shape for such a finding.
+        #
         # ⚠ AND THE RESERVE CAN BE EXCEEDED BY A PIXEL — r8 CLAUDE LOW, recorded rather
         # than chased. `--chrome-h` is measured IN FLOW at the container's width; pinned the
         # bar is `left:0;right:0` at viewport width and wraps differently. Measured at
