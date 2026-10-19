@@ -1308,7 +1308,13 @@ EXPECTED_MUTATIONS = {
     # reservation and `classList.add` are spellings this fold removed, and an entry whose
     # anchor is gone reports NOT MEASURED rather than failing, which is how two orphans rode
     # this branch unnoticed until the real harness named them.
-    "scripts/page_chrome.py": 60,
+    # ⟳ 2026-10-19, the r6 fold: 60 -> 64 net. FIVE added (the pin threshold, the tail's
+    # source, the re-arm, the comment strip and its space-not-deletion rule) and ONE
+    # RETIRED WITH ITS SUBJECT: "CSS comments are stripped AT THE GUARD" described a
+    # TIGHTENING, and round 6 applied that tightening, so the behaviour it mutated is now
+    # the delivered one. Its inverse carries the coverage. That is the one sanctioned kind
+    # of fall — the entry is retired because its subject is gone, not orphaned.
+    "scripts/page_chrome.py": 64,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5134,7 +5140,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1509)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1513)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

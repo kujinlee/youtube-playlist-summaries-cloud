@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 178 cases
+    python3 scripts/page_chrome.py --self-test          # 184 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -44,10 +44,20 @@ compute, so this module stopped asking it. What it asks instead is *"did a gener
 fragment author make a mistake"*, and for that a parse is sufficient.
 
 ⚠ WHAT THAT LICENSES, ENUMERATED FROM THE CASES THAT WITNESS IT — not from what the
-scan touches. `self_test` carries five cases under the heading `OUT OF SCOPE BY THE
-BOUND`, one per shape r5 found: nested `<noscript>`, an unterminated `<script>`,
-`<svg><template>`, `<noscript><script></noscript>`, and a `.chrome-pinned` mention inside
-a CSS comment. Each case **records what this module currently does** with that shape and
+scan touches. `self_test` carries cases under the heading `OUT OF SCOPE BY THE BOUND`,
+one per shape r5 found and left out: nested `<noscript>`, an unterminated `<script>`,
+`<svg><template>`, and `<noscript><script></noscript>`.
+
+⟳ A FIFTH SHAPE WAS PROMOTED OUT OF THAT SET ON 2026-10-19, AND THE MECHANISM WORKED.
+r5 also excluded a `.chrome-pinned` mention inside a CSS comment; round 6's reviewer
+argued the bound was wrong for that one — a fragment author commenting out a selector
+while editing CSS is an ordinary mistake inside this subject, not adversarial markup —
+and the argument is better than mine. Comments are now stripped before the pin match and
+the case asserts the fix. ⭐ THE ORDER MATTERS: the tightening reddened the recording
+case FIRST, which is precisely what a bound witnessed by cases is for. A bound carried
+only by a sentence would have been widened silently.
+
+Each remaining case **records what this module currently does** with that shape and
 asserts nothing about what Chromium does — that comparison is NOT RUN here, and r5's
 claims about it are a reviewer's reading, not a browser measurement. So the cases are a
 falsifier for the BOUND, not for the behaviour: tighten the scan to handle one of those
@@ -379,6 +389,22 @@ def _is_document(page: str) -> bool:
     return bool(_DOC_RE.search(page))
 
 
+def _strip_css_comments(page: str) -> str:
+    """`/* … */` replaced by a space, so a commented-out rule cannot satisfy a match. PURE.
+
+    ⚠ A SPACE, not an empty string: deleting the comment would weld the text either side
+    together and could MANUFACTURE a selector that appears in neither half.
+    ⚠ Non-greedy and DOTALL — a multi-line comment is one comment, and `.*?` stops at the
+    first terminator rather than swallowing to the last one on the page.
+    ⚠ THE BOUND: this is a CSS rule applied to a whole HTML document, so a literal `/*`
+    inside a quoted string or a script survives as a comment start. That is inside the
+    declared subject only because the alternative — a full CSS parse of every page — buys
+    nothing for the mistake this exists to catch, which is a selector commented out in a
+    stylesheet. A case below pins the one shape where it misreads.
+    """
+    return re.sub(r"/\*.*?\*/", " ", page, flags=re.S)
+
+
 def bar_unreachable(page: str) -> bool:
     """True when a page carries the control but no `.chrome` rule pins the bar.
 
@@ -405,7 +431,18 @@ def bar_unreachable(page: str) -> bool:
     # with no `.chrome` rule shipped a finished page carrying a control and no chrome CSS at
     # all: measured y=8423 of 8481, which is backlog #300's exact defect reproduced THROUGH
     # the guard written to prevent it. A document with a <body> has no "later" left.
-    rules = _CHROME_RULE_RE.findall(page)
+    # ⟳ 2026-10-19, r6 CODEX MEDIUM — THE SUBJECT WAS WIDENED, DELIBERATELY, AND THIS IS
+    # THE RECORDING CASE DOING ITS JOB. r5 left `/* .chrome-pinned */ .nonexistent{…}`
+    # out of scope on the grounds that it is adversarial markup. The reviewer argued the
+    # bound is wrong HERE and the argument is better than mine: a fragment author
+    # commenting out a selector while editing CSS is an ordinary mistake inside the
+    # declared subject, unlike a nested <noscript>. So comments are stripped before the
+    # match, the recording case below was rewritten to assert the NEW behaviour, and the
+    # widening is on the record rather than silent — which is the whole point of pinning
+    # out-of-scope shapes with cases instead of a sentence.
+    # ⚠ Stripped from a COPY used only for this match. `page` is not rewritten, because
+    # every other predicate in this module reads the real document.
+    rules = _CHROME_RULE_RE.findall(_strip_css_comments(page))
     if _is_document(page):
         return not any(CHROME_PIN in r.replace(" ", "") for r in rules)
     # ⛔ NO `.chrome` RULE AT ALL IS NOT A FINDING, AND THE FIRST DRAFT GOT THIS WRONG.
@@ -820,22 +857,48 @@ def chrome_script() -> str:
         # scrollHeight went 7354 unpinned -> 7353 pinned, on 1 of the 5 producers. One pixel
         # is invisible, and that is exactly why it had to be found by measuring document
         # height across the transition rather than by looking at the page.
-        "'--chrome-h',bar.getBoundingClientRect().height+'px');};sync();"
+        "'--chrome-h',bar.getBoundingClientRect().height+'px');"
+        "if(typeof arm==='function')arm();};sync();"
         "if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}"
         "else{window.addEventListener('resize',sync);}"
         f"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};"
+        # ⛔ THE THRESHOLD IS THE CONTROL'S BOTTOM EDGE, NOT THE SLOT'S — r6 CODEX MEDIUM,
+        # and it is a stable geometric defect, not a timing one. The slot extends BELOW the
+        # pressable area by the bar's own bottom padding, so "the slot still intersects" and
+        # "the button is still reachable" are different claims. MEASURED by the reviewer on
+        # the real 2026-10-06 fragment at 320x568, scrolled to 231px: the theme button
+        # occupied y=-31.02 to -1.39 — entirely off screen — while the slot still reached
+        # y=+5.80, so the bar stayed unpinned and the control could not be pressed.
+        #
+        # `tail` is that gap, measured from the live boxes rather than derived from the
+        # padding literal, because the bar wraps and the controls may end on different lines.
+        # Shrinking the observer's root by it makes "not intersecting" mean exactly "the
+        # last pressable pixel has left the viewport".
+        "var ctls=bar.querySelectorAll('#chrome-theme,#schemer');"
+        "var tail=function(){var sb=slot.getBoundingClientRect().bottom,m=-Infinity;"
+        "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
+        "if(b>m)m=b;}return m===-Infinity?0:Math.max(0,sb-m);};"
         # ⚠ `!isIntersecting`, NOT "scrolled past". The slot can leave the viewport in either
         # direction, and the bar must be reachable both times: above it on a page scrolled
         # down, BELOW it on a caller that still emits the bar at the end of the document.
         # That second case is backlog #300's exact shape, and keying on visibility rather
         # than on direction means the mechanism survives a caller putting the bar anywhere.
-        "if(window.IntersectionObserver){"
-        "new IntersectionObserver(function(es){pin(!es[0].isIntersecting);}).observe(slot);}"
+        #
+        # ⚠ REBUILT BY `sync`, because `rootMargin` is fixed at construction while `tail`
+        # changes whenever the bar re-wraps. `sync` runs only while UNPINNED, so the margin
+        # is always the one measured from the bar in flow — and the rebuild terminates: a
+        # rebuild can pin, pinning resizes the bar, and the resulting `sync` returns early.
+        "var io=null;var arm=function(){if(!window.IntersectionObserver)return;"
+        "if(io)io.disconnect();"
+        "io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},"
+        "{rootMargin:(-tail())+'px 0px 0px 0px'});io.observe(slot);};"
         # No IntersectionObserver: the same predicate, read from the box on every scroll.
-        "else{var fb=function(){var r=slot.getBoundingClientRect();"
-        "pin(r.bottom<=0||r.top>=(window.innerHeight||"
+        "var fb=null;if(!window.IntersectionObserver){"
+        "fb=function(){var r=slot.getBoundingClientRect();"
+        "pin(r.bottom-tail()<=0||r.top>=(window.innerHeight||"
         "document.documentElement.clientHeight));};fb();"
-        "window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}"
+        "window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}"
+        "arm();}"
         "})();"
     )
 
@@ -1422,8 +1485,14 @@ def self_test() -> int:
     case("the pin is applied by the SCRIPT, so no-JS gets no pin and no occlusion",
          (CHROME_PIN_CLASS in chrome_script(), CHROME_PIN_CLASS in chrome_bar("s", "t")),
          (True, False))
+    # ⛔ THE WHOLE PREDICATE, NOT THE SELECTOR STRING — and this case SURVIVED its own
+    # mutation on 2026-10-19 until it was rewritten. The r6 threshold fix introduced a
+    # SECOND use of `#chrome-theme,#schemer` (the `ctls` lookup), so `"…" in chrome_script()`
+    # stayed True after the guard clause was deleted: the case named the predicate and
+    # tested a substring that something else also supplies. Exactly the ambient-pass shape
+    # this repository keeps paying for, created by an edit two hundred lines away.
     case("a bar with NO control is never pinned — 17 of 20 fragments are stamp-only",
-         "#chrome-theme,#schemer" in chrome_script(), True)
+         "if(bar&&bar.querySelector('#chrome-theme,#schemer')){" in chrome_script(), True)
     # ── "under the title AND pinned", the owner's choice, as ONE element ──────────────
     _bar = chrome_bar("s", "t", textstyle=True)
     case("chrome_bar wraps the bar in the slot the script observes, so no caller can "
@@ -1464,6 +1533,22 @@ def self_test() -> int:
     case("the reserve is measured in fractional pixels, so pinning cannot shift the page",
          ("bar.getBoundingClientRect().height" in chrome_script(),
           "offsetHeight" in chrome_script()), (True, False))
+    # ⟳ r6 CODEX MEDIUM: the threshold is the CONTROL's bottom edge, not the slot's. The
+    # slot extends below the pressable area by the bar's bottom padding, so on the real
+    # 2026-10-06 fragment at 320x568 scrolled to 231px the theme button sat at y=-31 to
+    # -1.4 — off screen — while the slot still reached +5.8 and the bar stayed unpinned.
+    case("the pin threshold is shrunk by the slot's tail, so a control that has left the "
+         "viewport pins even while the slot has not",
+         ("rootMargin:(-tail())" in chrome_script(),
+          "r.bottom-tail()<=0" in chrome_script()), (True, True))
+    case("...and the tail is MEASURED from the live control boxes, not derived from the "
+         "padding literal — the bar wraps and the controls may end on different lines",
+         ("bar.querySelectorAll('#chrome-theme,#schemer')" in chrome_script(),
+          "getBoundingClientRect().bottom" in chrome_script()), (True, True))
+    case("...and the observer is re-armed whenever the bar re-wraps, because rootMargin is "
+         "fixed at construction while the tail is not",
+         ("if(typeof arm==='function')arm();" in chrome_script(),
+          "io.disconnect()" in chrome_script()), (True, True))
     # ── place_bar: the resting place, and the four shapes it must get right ──────────
     case("place_bar puts the bar just after the title, not before it",
          place_bar("<h1>T</h1>\n<p>x</p>", "[BAR]"), "<h1>T</h1>\n[BAR]\n<p>x</p>")
@@ -1746,18 +1831,40 @@ def self_test() -> int:
          "than accepts, which is why it ranks below the two Highs)",
          has_control('<noscript><script></noscript>'
                      '<button id="chrome-theme">t</button>'), False)
-    # ⛔ THROUGH `bar_unreachable`, NOT THROUGH THE REGEX. The first version of this case
-    # called `_CHROME_RULE_RE.search` directly and was measured UNFALSIFIABLE: stripping CSS
-    # comments at the call site — the obvious tightening — left it GREEN at 163/163, because
-    # the case's subject was the pattern and the fix's subject was the guard. Asking the
-    # GUARD is what makes a fix at either site redden it.
-    case("OUT OF SCOPE: `[^{}]*` spans a CSS comment, so a page whose only pin rule is "
-         "COMMENTED OUT reads as reachable — a fail-open (r5 Medium)",
+    # ⟳ PROMOTED OUT OF THE OUT-OF-SCOPE BLOCK, 2026-10-19, r6 CODEX MEDIUM. This case
+    # used to RECORD a fail-open; it now asserts the fix. The reviewer's argument beat the
+    # bound: a fragment author commenting out a selector while editing CSS is an ordinary
+    # mistake inside the declared subject, not adversarial markup. ⭐ And the promotion is
+    # exactly what the recording cases are for — the tightening reddened this case first,
+    # which is what forced the bound to be widened on purpose instead of by accident.
+    # ⛔ ASKED THROUGH `bar_unreachable`, NOT THROUGH THE REGEX. The first version called
+    # `_CHROME_RULE_RE.search` directly and was measured UNFALSIFIABLE: stripping comments
+    # at the guard left it GREEN at 163/163, because the case's subject was the pattern and
+    # the fix's subject was the guard.
+    case("a page whose only pin rule is COMMENTED OUT is REFUSED as unreachable",
          bar_unreachable(
              '<html><body><button id="chrome-theme">t</button>'
              f'<style>{LIGHT}{DARK}'
              '/* .chrome-pinned */ .nonexistent{position:fixed}</style>'
+             f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), True)
+    case("...while a real rule beside a comment still passes — the strip must not eat the "
+         "live rule next to the dead one",
+         bar_unreachable(
+             '<html><body><button id="chrome-theme">t</button>'
+             f'<style>{LIGHT}{DARK}'
+             '/* disabled: .chrome-pinned */ .chrome-pinned{position:fixed}</style>'
              f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), False)
+    # ⚠ A SPACE, NOT DELETION — the case that pins why. Welding the halves together could
+    # manufacture a selector present in neither.
+    case("the strip replaces a comment with a SPACE, so it cannot weld a selector into "
+         "existence",
+         _strip_css_comments(".chrome/*x*/-pinned{position:fixed}"),
+         ".chrome -pinned{position:fixed}")
+    # ⚠ THE BOUND OF THE STRIP, WITNESSED rather than only stated: this is a CSS rule run
+    # over a whole HTML document, so a `/*` inside a script string reads as a comment start.
+    case("the strip's own bound: a `/*` inside a script is still treated as a comment, "
+         "and that is recorded rather than claimed otherwise",
+         "A" in _strip_css_comments('<script>var s="/*";</script>A<style>*/</style>'), False)
     # ⚠ The SUBJECT sentence, not the argument for it — and this case is weak on purpose,
     # which is said rather than hidden: it can only notice the sentence being deleted, and
     # a case that names its own fix's tokens defends only its deletion. The five cases

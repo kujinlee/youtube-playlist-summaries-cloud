@@ -224,7 +224,7 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    rules = _CHROME_RULE_RE.findall(page)\n",
+        "    rules = _CHROME_RULE_RE.findall(_strip_css_comments(page))\n",
         "    rules = [CHROME_PIN]\n"
       ]
     ],
@@ -539,17 +539,6 @@
     "expect": "OUT OF SCOPE: <noscript><script></noscript> leaves the scanner in script mode, so a control after it is invisible (r5 Medium, fail-CLOSED \u2014 it refuses rather than accepts, which is why it ranks below the two Highs)"
   },
   {
-    "name": "CSS comments are stripped AT THE GUARD, which widens the declared subject",
-    "file": "scripts/page_chrome.py",
-    "edits": [
-      [
-        "    rules = _CHROME_RULE_RE.findall(page)",
-        "    rules = _CHROME_RULE_RE.findall(re.sub(r\"/\\*.*?\\*/\", \"\", page, flags=re.S))"
-      ]
-    ],
-    "expect": "OUT OF SCOPE: `[^{}]*` spans a CSS comment, so a page whose only pin rule is COMMENTED OUT reads as reachable \u2014 a fail-open (r5 Medium)"
-  },
-  {
     "name": "the declared subject is deleted from the enforcement site",
     "file": "scripts/page_chrome.py",
     "edits": [
@@ -609,8 +598,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "\"new IntersectionObserver(function(es){pin(!es[0].isIntersecting);}).observe(slot);}\"",
-        "\"pin(true);}\""
+        "\"io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},\"",
+        "\"io=new IntersectionObserver(function(es){pin(true);},\""
       ]
     ],
     "expect": "the pin is keyed on the slot not being VISIBLE, in either direction"
@@ -653,10 +642,65 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "\"'--chrome-h',bar.getBoundingClientRect().height+'px');};sync();\"",
-        "\"'--chrome-h',bar.offsetHeight+'px');};sync();\""
+        "\"'--chrome-h',bar.getBoundingClientRect().height+'px');\"",
+        "\"'--chrome-h',bar.offsetHeight+'px');\""
       ]
     ],
     "expect": "the reserve is measured in fractional pixels, so pinning cannot shift the page"
+  },
+  {
+    "name": "the pin threshold goes back to the SLOT, hiding a control behind the bar's padding",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"{rootMargin:(-tail())+'px 0px 0px 0px'});io.observe(slot);};\"",
+        "\"{rootMargin:'0px'});io.observe(slot);};\""
+      ]
+    ],
+    "expect": "the pin threshold is shrunk by the slot's tail, so a control that has left the viewport pins even while the slot has not"
+  },
+  {
+    "name": "the tail is derived from one control instead of the lowest",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var ctls=bar.querySelectorAll('#chrome-theme,#schemer');\"",
+        "\"var ctls=[];\""
+      ]
+    ],
+    "expect": "...and the tail is MEASURED from the live control boxes, not derived from the padding literal \u2014 the bar wraps and the controls may end on different lines"
+  },
+  {
+    "name": "the observer is never re-armed, so rootMargin keeps a stale tail",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(typeof arm==='function')arm();};sync();\"",
+        "\"};sync();\""
+      ]
+    ],
+    "expect": "...and the observer is re-armed whenever the bar re-wraps, because rootMargin is fixed at construction while the tail is not"
+  },
+  {
+    "name": "CSS comments reach the pin match again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    rules = _CHROME_RULE_RE.findall(_strip_css_comments(page))",
+        "    rules = _CHROME_RULE_RE.findall(page)"
+      ]
+    ],
+    "expect": "a page whose only pin rule is COMMENTED OUT is REFUSED as unreachable"
+  },
+  {
+    "name": "the comment strip DELETES instead of spacing, welding selectors together",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return re.sub(r\"/\\*.*?\\*/\", \" \", page, flags=re.S)",
+        "    return re.sub(r\"/\\*.*?\\*/\", \"\", page, flags=re.S)"
+      ]
+    ],
+    "expect": "the strip replaces a comment with a SPACE, so it cannot weld a selector into existence"
   }
 ]
