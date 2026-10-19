@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 201 cases
+    python3 scripts/page_chrome.py --self-test          # 214 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -341,6 +341,8 @@ CHROME_SLOT_CLASS = "chrome-slot"
 _CHROME_RULE_RE = re.compile(
     r"\.chrome-pinned(?![\w-])[^{}]*\{([^}]*)\}")
 _DOC_RE = re.compile(r"<body\b|</body>|<html\b", re.I)
+# Elements that would swallow a press on a control placed inside them — see `_Scan`.
+_INTERACTIVE = frozenset({"a", "button", "label", "summary"})
 
 
 class _Scan(_HTMLParser):
@@ -385,6 +387,15 @@ class _Scan(_HTMLParser):
         # applies to stylesheets too — a `<style>` inside a `<template>` is not applied.
         self.css: list[str] = []
         self._in_style = 0
+        # ⛔ OPEN INTERACTIVE ANCESTORS — r7 CODEX MEDIUM. `place_bar` inserts just after the
+        # first live `</h1>`, and a LINKED heading is ordinary fragment markup:
+        # `<a href="#x"><h1>Title</h1></a>` put the whole control bar INSIDE the anchor, so
+        # pressing Theme changed the theme AND navigated, moving the page under the reader.
+        # Shielding establishes that a heading is LIVE; it says nothing about whether the
+        # position after it is a SAFE PARENT, and those are different questions.
+        # ⚠ The set is the elements that would swallow a press: a link, a button, a label
+        # (which forwards clicks to its control) and a summary (which toggles its details).
+        self._interactive = 0
         # ⚠ ONE COUNTER PER MECHANISM. r4 measured a single shared counter being lifted
         # by the WRONG end tag, wrong in both directions and both browser-verified:
         #   <noscript></template><div class="ex-body">  -> scan saw a consumer, DOM had none
@@ -408,6 +419,29 @@ class _Scan(_HTMLParser):
                 d[k] = v
         return d
 
+    def _own_id(self, attrs) -> None:
+        """Record THIS element's own id before shielding what is inside it.
+
+        ⛔ ONE HELPER, BECAUSE THE INSTANCE HAS BEEN FIXED THREE TIMES AND THE CLASS NEVER
+        WAS. r3 found it for `<template>`, r4 for `<noscript>` — in the line NEXT TO the
+        template fix — and r7 found it AGAIN for `<style>`, created by r6's own CSS fold.
+        Every one is the same sentence: a shielding element's CONTENTS are not live, but the
+        ELEMENT IS, and `getElementById` returns it.
+
+        MEASURED by the r7 reviewer: `<style id="chrome-theme">…</style>` beside a real
+        button made `assert_wired` ACCEPT the page, while Chromium's
+        `getElementById('chrome-theme')` returns the STYLE element — so clicking the visible
+        button left `data-theme` unchanged and `aria-pressed="false"`. The same input against
+        `cbf0e294^` recorded two ids and refused it correctly.
+
+        ⚠ `<script>` HAD IT TOO and nobody reported it. Fixing only the reported element
+        would have been the FOURTH instance-not-class pass over this one function, so every
+        shielding branch now calls this and an identity case covers each.
+        """
+        own = self._attrs(attrs).get("id")
+        if own:
+            self.ids.append(own)
+
     def handle_starttag(self, tag, attrs):
         # ⚠ `template` ONLY, and a surviving mutation is why. The first version listed
         # script and style here too; removing them changed NOTHING, because `html.parser`
@@ -429,9 +463,11 @@ class _Scan(_HTMLParser):
                 self._in_style += 1
             return
         if tag == "script":
+            self._own_id(attrs)
             self._in_script += 1
             return
         if tag == "style":
+            self._own_id(attrs)
             self._in_style += 1
             return
         if tag == "noscript":
@@ -449,9 +485,7 @@ class _Scan(_HTMLParser):
             #   clicking "plain"               -> data-scheme still null
             #   both visible controls inert, and assert_wired PASSED.
             # So the id is recorded exactly as a template's is; only the contents are hidden.
-            nid = self._attrs(attrs).get("id")
-            if nid:
-                self.ids.append(nid)
+            self._own_id(attrs)
             self._depth["noscript"] += 1
             return
         if tag == "template":
@@ -459,9 +493,7 @@ class _Scan(_HTMLParser):
             # `getElementById('schemer')` returns the <template> itself, so the script binds
             # nothing. r3 measured a page where that silently disabled the visible switcher.
             # Record the id, then shield what is inside.
-            tid = self._attrs(attrs).get("id")
-            if tid:
-                self.ids.append(tid)
+            self._own_id(attrs)
             self._depth["template"] += 1
             return
         if any(self._depth.values()):
@@ -474,6 +506,8 @@ class _Scan(_HTMLParser):
             self.ids.append(d["id"])
         if d.get("class"):
             self.classes.update(d["class"].split())
+        if tag in _INTERACTIVE:
+            self._interactive += 1
         if d.get("style"):
             # An inline style is CSS a browser applies; wrapped so it scans like a rule.
             self.css.append("*{" + d["style"] + "}")
@@ -485,8 +519,11 @@ class _Scan(_HTMLParser):
         if tag == "style" and self._in_style:
             self._in_style -= 1
             return
+        if tag in _INTERACTIVE and self._interactive:
+            self._interactive -= 1
         if (tag == "h1" and self.title_end is None
-                and not self._in_script and not any(self._depth.values())):
+                and not self._in_script and not any(self._depth.values())
+                and not self._interactive):
             self.title_end = self.getpos()
         if tag in self._depth and self._depth[tag]:
             self._depth[tag] -= 1
@@ -956,8 +993,20 @@ def chrome_script() -> str:
         # page loaded, which put the controls at the bottom edge of every page whatever the
         # reader was doing. They now rest under the title and pin only once the slot that
         # holds them is off screen, which is the owner's "under the title AND pinned".
-        f"var slot=document.querySelector('.{CHROME_SLOT_CLASS}');"
-        f"var bar=slot&&slot.querySelector('.chrome');"
+        # ⛔ THE SLOT THAT HOLDS A CONTROL, NOT THE FIRST ONE — r7 CODEX MEDIUM. A fragment
+        # may bring its OWN wired chrome in its own slot, and the composer then adds a
+        # stamp-only bar under the title: two slots, and `querySelector` took the stamp-only
+        # one, found nothing to press, and established no pinning for the real controls at
+        # all. Measured by the reviewer at scrollY=1800: both bars plain `.chrome`, the theme
+        # button ending at y=-1659. The composer explicitly supports that shape, so this
+        # needs no duplicate control and no malformed markup.
+        f"var slots=document.querySelectorAll('.{CHROME_SLOT_CLASS}');"
+        "var slot=null,bar=null;"
+        "for(var si=0;si<slots.length;si++){var sb=slots[si].querySelector('.chrome');"
+        "if(sb&&sb.querySelector('#chrome-theme,#schemer')){slot=slots[si];bar=sb;break;}}"
+        # None holds a control yet — take the first, because the switcher may be about to
+        # join it. If there is no slot at all, `bar` stays null and nothing happens.
+        "if(!slot&&slots.length){slot=slots[0];bar=slot.querySelector('.chrome');}"
         # ⛔ THE FRAGMENT'S OWN SWITCHER IS MOVED INTO THE BAR — the owner's decision,
         # 2026-10-19, after r6 CODEX HIGH. Three real fragments carry a hand-authored
         # `#schemer` in their PROSE: the composer declines to add its own (that is r1's
@@ -1004,7 +1053,25 @@ def chrome_script() -> str:
         # There is no expression that can sample it in the wrong state.
         "var tailPx=0;"
         "var ctls=bar.querySelectorAll('#chrome-theme,#schemer');"
-        f"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};"
+        # ⛔ RE-MEASURE ON THE RETURN TO FLOW — r7 CODEX HIGH, and it refutes a bound I wrote
+        # under the heading "stated rather than hidden", which is the worst place to be wrong
+        # because a reader trusts that heading and stops checking. The bound said a resize
+        # while pinned keeps its last in-flow values "until the bar returns to flow".
+        # ⚠ IT NEVER RETURNS, because `ResizeObserver` fires on the bar's CONTENT BOX and
+        # un-pinning need not change it. MEASURED by the reviewer on the real 2026-10-06
+        # fragment: load at 1280x900, scroll to 1800, resize to 320x568 while pinned, scroll
+        # back — the bar stays UNPINNED with the theme button at -31.02 to -1.39, and
+        # `--chrome-h` holds 62.125px while the in-flow bar is 132.1875px tall. The stale
+        # 16.25px margin survives indefinitely.
+        #
+        # So the TRANSITION is the trigger, not the resize: going unpinned re-measures.
+        # ⚠ AND IT GUARDS ON AN ACTUAL CHANGE, which is what makes it terminate: `sync`
+        # re-arms, the fresh observer fires with the same state, `pin` sees no change and
+        # returns. Without that test this is an infinite mutual recursion.
+        f"var pin=function(on){{"
+        f"if(bar.classList.contains({CHROME_PIN_CLASS!r})===on)return;"
+        f"bar.classList.toggle({CHROME_PIN_CLASS!r},on);"
+        "if(!on)sync();};"
         # The observer re-armed with the cached margin. `rootMargin` is fixed at
         # construction, so a re-wrap needs a new observer — but only ever from `sync`.
         "var io=null;var arm=function(){if(!window.IntersectionObserver)return;"
@@ -1343,7 +1410,11 @@ def self_test() -> int:
              has_control("<p>this page discusses the theme at length</p>"), False)
         case("...so prose about themes demands no palettes",
              missing_palettes("<p>a theme is a colour scheme</p>"), [])
-        case("the button says what it does", "aria-pressed" in theme_control(), True)
+        # ⛔ `aria-pressed` occurs three times across the emitted chrome, so its mere
+        # presence witnesses nothing about THIS control. The attribute is named with its
+        # own initial value, which is what a screen reader reads before any press.
+        case("the button says what it does, and starts in a stated state",
+             'aria-pressed="false"' in theme_control(), True)
 
         # --- THE FAIL-SILENT. A control without palettes is the defect this file exists for.
         case("a control with NEITHER palette is caught",
@@ -1397,8 +1468,18 @@ def self_test() -> int:
 
         # --- the script
         js = chrome_script()
-        case("the script applies the stored theme before paint", "localStorage.getItem" in js, True)
-        case("...persists the choice", "localStorage.setItem" in js, True)
+        # ⛔ EXACT EXPRESSIONS — r7 CODEX MEDIUM, and the reviewer DELETED THEME PERSISTENCE
+        # ENTIRELY with the suite still at 201/201. `localStorage.getItem` and `.setItem`
+        # each occur TWICE in this script: once for the theme and once for the text-style
+        # switcher. So `var s=localStorage.getItem(K)` -> `var s=null` and
+        # `localStorage.setItem(K,n)` -> `void 0` left both substrings present, supplied by
+        # the switcher's own persistence, and nothing could notice the theme's was gone.
+        # The THEME's two statements are named in full, so neither can be severed silently.
+        case("the script applies the stored theme before paint",
+             "try{var s=localStorage.getItem(K);"
+             "if(s==='dark'||s==='light')R.setAttribute(A,s);}" in js, True)
+        case("...and persists the theme choice, not merely the switcher's",
+             "try{localStorage.setItem(K,n);}catch(e){}});}" in js, True)
         case("...falls back to the OS when nothing is stored", "prefers-color-scheme" in js, True)
         case("...tolerates a missing button rather than throwing", "if(b){" in js, True)
         case("...tolerates a missing refresh button too", "if(r){" in js, True)
@@ -1661,7 +1742,8 @@ def self_test() -> int:
         case("a missing switcher does not throw and take the page's scripts down",
              "if(box){" in _js, True)
         case("the live option is marked by BOTH class and aria-pressed",
-             ("className=on?'on':''" in _js, "aria-pressed" in _js), (True, True))
+             ("className=on?'on':''" in _js,
+              "bs[i].setAttribute('aria-pressed',String(on));" in _js), (True, True))
         # ── backlog #300: the bar must be REACHABLE, not merely wired ──
         # The falsifier for this whole change is `STATIC_PAGE` below: it is the shape all 93 live
         # pages had this morning, and it must go RED here and green after regeneration.
@@ -1725,11 +1807,15 @@ def self_test() -> int:
         case("the pin is keyed on the slot not being VISIBLE, in either direction",
              ("pin(!es[0].isIntersecting)" in chrome_script(),
               ".observe(slot)" in chrome_script()), (True, True))
+        # ⛔ EXACT EXPRESSIONS, for the same reason: `window.IntersectionObserver` occurs
+        # twice in this script and `getBoundingClientRect` four times, so neither can witness
+        # the FALLBACK. The fallback's own predicate and its registration are named in full.
         case("...with a scroll fallback asking the same question where there is no "
              "IntersectionObserver",
-             ("window.IntersectionObserver" in chrome_script(),
-              "getBoundingClientRect" in chrome_script(),
-              "addEventListener('scroll'" in chrome_script()), (True, True, True))
+             ("if(!window.IntersectionObserver){" in chrome_script(),
+              "pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||" in chrome_script(),
+              "window.addEventListener('scroll',fb);" in chrome_script()),
+             (True, True, True))
 
         case("the bar is found THROUGH the slot, so a stray .chrome elsewhere is not pinned",
              f"slot.querySelector('.chrome')" in chrome_script(), True)
@@ -1771,6 +1857,62 @@ def self_test() -> int:
              ("{rootMargin:(-tailPx)+'px 0px 0px 0px'}" in chrome_script(),
               "r.bottom-tailPx<=0" in chrome_script(),
               "tail()" in chrome_script()), (True, True, False))
+        # ── r7's five findings, each with the input the reviewer used ─────────────────
+        # r7 HIGH 1: the bound I wrote promised recovery on return to flow and there was no
+        # such recovery — `ResizeObserver` fires on the CONTENT BOX, which un-pinning need
+        # not change, so a resize while pinned left `--chrome-h` at 62.125px against a
+        # 132.1875px in-flow bar, indefinitely. The TRANSITION is the trigger now.
+        case("going unpinned re-measures, so a resize while pinned cannot leave the "
+             "threshold stale forever",
+             f"bar.classList.toggle({CHROME_PIN_CLASS!r},on);if(!on)sync();"
+             in chrome_script(), True)
+        case("...and the pin is a no-op when the state is unchanged, which is what makes "
+             "that recursion terminate",
+             f"if(bar.classList.contains({CHROME_PIN_CLASS!r})===on)return;"
+             in chrome_script(), True)
+        # r7 MEDIUM 3: two slots — a fragment's own wired chrome plus the composer's
+        # stamp-only bar — and the script bound the stamp-only one, so the real controls
+        # never pinned. The theme button ended at y=-1659 at scrollY=1800.
+        case("the script picks the slot that HOLDS a control, not the first one",
+             ("document.querySelectorAll('.chrome-slot')" in chrome_script(),
+              "if(sb&&sb.querySelector('#chrome-theme,#schemer')){slot=slots[si];bar=sb;break;}"
+              in chrome_script()), (True, True))
+        case("...and falls back to the first slot, because the switcher may be about to "
+             "join it",
+             "if(!slot&&slots.length){slot=slots[0];" in chrome_script(), True)
+        # r7 HIGH 2: EVERY shielding element's own id is live. The instance was fixed three
+        # times — <template> at r3, <noscript> at r4, <style> at r7 — and the class never
+        # was. One identity case per element, and <script> was never reported at all.
+        for _tag in ("style", "script", "template", "noscript"):
+            case(f"a <{_tag}>'s OWN id is live, so it collides with a real control",
+                 _scan(f'<{_tag} id="chrome-theme"></{_tag}>'
+                       + theme_control()).ids.count("chrome-theme"), 2)
+        case("...while what is INSIDE a shield is still not live",
+             (_scan('<template><button id="chrome-theme"></button></template>'
+                    ).ids.count("chrome-theme"),
+              _scan('<noscript><button id="chrome-theme"></button></noscript>'
+                    ).ids.count("chrome-theme")), (0, 0))
+        case("the reviewer's input: a <style> carrying the control's id is REFUSED",
+             _raises_wired(
+                 '<html><body><style id="chrome-theme">' + LIGHT + DARK + chrome_css()
+                 + '</style>' + chrome_bar("", "now", refresh=False)
+                 + f'<script>{chrome_script()}</script></body></html>'), True)
+        # r7 MEDIUM 4: a LINKED heading put every control inside the anchor, so pressing
+        # Theme also navigated. Shielding proves a heading is LIVE; it says nothing about
+        # whether the position after it is a safe PARENT.
+        case("place_bar refuses to insert inside a link, and prepends instead",
+             place_bar('<a href="#d"><h1>T</h1></a><p>x</p>', "[B]").startswith("[B]"), True)
+        case("...and inside a button, a label or a summary, for the same reason",
+             (place_bar("<button><h1>T</h1></button><p>x</p>", "[B]").startswith("[B]"),
+              place_bar("<label><h1>T</h1></label><p>x</p>", "[B]").startswith("[B]"),
+              place_bar("<details><summary><h1>T</h1></summary></details>", "[B]"
+                        ).startswith("[B]")), (True, True, True))
+        # ⛔ THE DISCRIMINATING CASE: a link that CLOSES before the heading must NOT move the
+        # bar. Without this, counting any `<a>` anywhere would pass the three above.
+        case("...but a link that CLOSES before the title changes nothing",
+             place_bar('<a href="#d">l</a><h1>T</h1><p>x</p>', "[B]"),
+             '<a href="#d">l</a><h1>T</h1>\n[B]<p>x</p>')
+
         case("the observer is rebuilt on re-wrap, because rootMargin is fixed at construction",
              ("if(io)io.disconnect();" in chrome_script(),
               "arm();};sync();" in chrome_script()), (True, True))

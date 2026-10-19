@@ -202,7 +202,7 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        f\"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};\"\n",
+        "        f\"bar.classList.toggle({CHROME_PIN_CLASS!r},on);\"\n",
         ""
       ]
     ],
@@ -356,8 +356,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "            tid = self._attrs(attrs).get(\"id\")\n            if tid:\n                self.ids.append(tid)\n",
-        ""
+        "            # Record the id, then shield what is inside.\n            self._own_id(attrs)\n",
+        "            # Record the id, then shield what is inside.\n"
       ]
     ],
     "expect": "a <template>'s OWN id is live \u2014 getElementById returns the template itself"
@@ -389,8 +389,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "            nid = self._attrs(attrs).get(\"id\")\n            if nid:\n                self.ids.append(nid)\n",
-        ""
+        "            # So the id is recorded exactly as a template's is; only the contents are hidden.\n            self._own_id(attrs)\n",
+        "            # So the id is recorded exactly as a template's is; only the contents are hidden.\n"
       ]
     ],
     "expect": "a <noscript>'s OWN id is live, so it can hide a real control"
@@ -477,8 +477,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "            nid = self._attrs(attrs).get(\"id\")",
-        "            nid = dict(attrs).get(\"id\")"
+        "        own = self._attrs(attrs).get(\"id\")",
+        "        own = dict(attrs).get(\"id\")"
       ]
     ],
     "expect": "duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else"
@@ -631,8 +631,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        if (tag == \"h1\" and self.title_end is None\n                and not self._in_script and not any(self._depth.values())):",
-        "        if (tag == \"h1\" and self.title_end is None\n                and not self._in_script):"
+        "        if (tag == \"h1\" and self.title_end is None\n                and not self._in_script and not any(self._depth.values())\n                and not self._interactive):",
+        "        if (tag == \"h1\" and self.title_end is None\n                and not self._in_script\n                and not self._interactive):"
       ]
     ],
     "expect": "...skipping a SHIELDED <h1>, whose </h1> a substring search would have chosen"
@@ -763,8 +763,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "\"pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||\"",
-        "\"pin(r.bottom<=0||r.top>=(window.innerHeight||\""
+        "        \"pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||\"\n",
+        "        \"pin(r.bottom<=0||r.top>=(window.innerHeight||\"\n"
       ]
     ],
     "expect": "both consumers read the CACHE, and no live `tail()` call survives anywhere"
@@ -812,5 +812,104 @@
       ]
     ],
     "expect": "a stray `/*` inside a CSS value string does not erase the rule after it"
+  },
+  {
+    "name": "no re-measure on unpin, so a resize while pinned stays stale forever",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"if(!on)sync();};\"\n",
+        "        \"};\"\n"
+      ]
+    ],
+    "expect": "going unpinned re-measures, so a resize while pinned cannot leave the threshold stale forever"
+  },
+  {
+    "name": "the pin stops guarding on a state change, so sync and arm recurse",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        f\"var pin=function(on){{\"\n        f\"if(bar.classList.contains({CHROME_PIN_CLASS!r})===on)return;\"\n",
+        "        f\"var pin=function(on){{\"\n        \"\"\n"
+      ]
+    ],
+    "expect": "...and the pin is a no-op when the state is unchanged, which is what makes that recursion terminate"
+  },
+  {
+    "name": "the FIRST slot is taken again, so a stamp-only bar is bound instead of the real one",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"if(sb&&sb.querySelector('#chrome-theme,#schemer')){slot=slots[si];bar=sb;break;}}\"\n",
+        "        \"if(sb){slot=slots[si];bar=sb;break;}}\"\n"
+      ]
+    ],
+    "expect": "the script picks the slot that HOLDS a control, not the first one"
+  },
+  {
+    "name": "theme persistence is deleted, which the switcher's own calls used to hide",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}\"\n",
+        "        \"var s=null;if(0){}\"\n"
+      ]
+    ],
+    "expect": "the script applies the stored theme before paint"
+  },
+  {
+    "name": "the theme choice is no longer persisted",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"try{localStorage.setItem(K,n);}catch(e){}});}\"\n",
+        "        \"void 0;});}\"\n"
+      ]
+    ],
+    "expect": "...and persists the theme choice, not merely the switcher's"
+  },
+  {
+    "name": "<style> stops recording its own id, which is r7's own finding",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if tag == \"style\":\n            self._own_id(attrs)\n",
+        "        if tag == \"style\":\n"
+      ]
+    ],
+    "expect": "a <style>'s OWN id is live, so it collides with a real control"
+  },
+  {
+    "name": "<script> stops recording its own id \u2014 the sibling nobody reported",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if tag == \"script\":\n            self._own_id(attrs)\n",
+        "        if tag == \"script\":\n"
+      ]
+    ],
+    "expect": "a <script>'s OWN id is live, so it collides with a real control"
+  },
+  {
+    "name": "the shared own-id helper records nothing, hitting all four shields at once",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        own = self._attrs(attrs).get(\"id\")\n        if own:\n            self.ids.append(own)",
+        "        own = None\n        if own:\n            self.ids.append(own)"
+      ]
+    ],
+    "expect": "a <template>'s OWN id is live, so it collides with a real control"
+  },
+  {
+    "name": "interactive ancestors are ignored, so the bar can land inside a link",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "                and not self._interactive):",
+        "                and True):"
+      ]
+    ],
+    "expect": "place_bar refuses to insert inside a link, and prepends instead"
   }
 ]

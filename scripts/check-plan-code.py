@@ -1320,7 +1320,19 @@ EXPECTED_MUTATIONS = {
     # by a substring vanishing. The whole tail computation is now covered by an entry that
     # severs it as ONE exact expression, which is what the reviewer's two green severances
     # showed was missing.
-    "scripts/page_chrome.py": 74,
+    # ⟳⟳ 2026-10-19, the r7 fold: 74 -> 83. NINE, each measured as a sever against the
+    # delivered file BEFORE being written here, and five are round 7's own findings: no
+    # re-measure on unpin (the bound I had written was FALSE), the pin's state guard, the
+    # own-id helper plus its two reported elements, slot selection, interactive ancestors,
+    # and the TWO theme-persistence statements the switcher's identical calls were hiding —
+    # the reviewer deleted theme persistence entirely with the suite at 201/201 green.
+    #
+    # ⚠ FOUR OF THE NINE ANCHORS WERE DERIVED, NOT TYPED, and that is a lesson about this
+    # file rather than about these entries: every exact-expression CASE added here creates a
+    # SECOND occurrence of the emitted text it asserts, which silently breaks any anchor
+    # keyed on that text. Hand-anchoring failed four times in one session before the anchor
+    # was computed by widening backwards until the block occurs exactly once.
+    "scripts/page_chrome.py": 83,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5146,7 +5158,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1525)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1534)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
