@@ -154,8 +154,12 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'render_sentinel.plan_rel', 'split_step.arg',),
     'brief-compose.py': (
         'assert_theme_complete.also_read', 'assert_theme_complete.fragment_css',
-        'assert_theme_complete.live_control', 'compose.title', 'declared_vars.css',
+        'assert_theme_complete.live_control',
         'find_source.explicit', 'referenced_vars.css', 'vars_read_anywhere.css',),
+        # ⟳ 2026-10-06: `declared_vars.css` REMOVED -- it now varies. The text-style slice
+        # added cases that pass it the scheme CSS and a page's CSS, so the guard can tell a
+        # clause reading it from one that ignores it. A ratchet entry is a debt, and this one
+        # is paid; leaving it would let the parameter silently stop varying again.
     'check-anchors.py': (
         'audit.cutoff', 'audit.docs', 'audit.subdirs',),
     'check-anon-exposure.py': (
@@ -259,8 +263,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
         'parse_header.head_lines', 'parse_roots.text',),
     'gen-m4-manifest.py': (
         'has_m4.catalog', 'has_m4.manifest', 'psql.db',),
+    # ⟳ 2026-10-19: `assert_wired.where` REMOVED — it now varies. The r6/r7/r8 folds added
+    # cases that call `assert_wired` through several local helpers with distinct labels, so
+    # the ratchet printed *"now varies — delete it from KNOWN_UNVARIED"* and this entry
+    # became a dead exemption. A ratchet entry that no longer describes the suite makes the
+    # ratchet looser than reality, which is the one failure mode a ratchet cannot report
+    # about itself — it exits 0 while carrying it.
     'page_chrome.py': (
-        'assert_wired.page', 'assert_wired.where',),
+        'assert_wired.page',),
     'page_markup.py': (
         'escape.s', 'scan.s',),
     'prior-art.py': (

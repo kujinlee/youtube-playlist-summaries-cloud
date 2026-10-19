@@ -206,5 +206,126 @@
       "a genuine tray rule that is descendant-rooted is NOT a page override"
     ],
     "file": "scripts/brief-compose.py"
+  },
+  {
+    "name": "the consumer flag reads the TRAY css instead of the composer's",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "in chrome_css",
+        "in css"
+      ]
+    ],
+    "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
+  },
+  {
+    "name": "the consumer flag is severed to a constant",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "scoped_css_emitted=page_chrome.text_style_css() in chrome_css)",
+        "scoped_css_emitted=False)"
+      ]
+    ],
+    "expect": "\u26d4 a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED"
+  },
+  {
+    "name": "the content disjunct is re-added, reaching outside the stated bound",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "text_style_css() in chrome_css)",
+        "text_style_css() in chrome_css or page_chrome.text_style_css() in content)"
+      ]
+    ],
+    "expect": "\u26d4 a fragment that dresses its OWN switcher composes \u2014 the composer emitted no scoped stylesheet, so this is NOT this guard's subject. A red here means someone tightened it: decide deliberately, do not 'fix' the fixture."
+  },
+  {
+    "name": "the composer appends the bar to the END of <body> again (backlog #300)",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    body = page_chrome.place_bar(body, chrome_bar) + \"\\n\" + chrome_js",
+        "    body = body + \"\\n\" + chrome_bar + \"\\n\" + chrome_js"
+      ]
+    ],
+    "expect": "the composed document carries the bar UNDER the title, not at the end (backlog #300: it was the last child of <body> at y=6445 of 6475)"
+  },
+  {
+    "name": "the no-palette branch builds its stamp bar inline again, with no slot",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    if page_chrome.missing_palettes(content + page_chrome.theme_control()):\n        return (page_chrome.chrome_css(),\n                page_chrome.stamp_bar(generated_at), \"\")",
+        "    if page_chrome.missing_palettes(content + page_chrome.theme_control()):\n        return (page_chrome.chrome_css(),\n                '<div class=\"chrome\">' + page_chrome.stamp(generated_at) + \"</div>\", \"\")"
+      ]
+    ],
+    "expect": "chrome_for(no palettes, stamp only): EVERY bar it returns is slotted, control or not"
+  },
+  {
+    "name": "the own-chrome branch builds its stamp bar inline again, with no slot",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "            return page_chrome.chrome_css(), \"\", \"\"\n        return (page_chrome.chrome_css(),\n                page_chrome.stamp_bar(generated_at), \"\")",
+        "            return page_chrome.chrome_css(), \"\", \"\"\n        return (page_chrome.chrome_css(),\n                '<div class=\"chrome\">' + page_chrome.stamp(generated_at) + \"</div>\", \"\")"
+      ]
+    ],
+    "expect": "a fragment with its own control but NO stamp gets one, and it is slotted"
+  },
+  {
+    "name": "the paint rule gains specificity, so a fragment can no longer override it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  :where(html, body) { background: var(--bg); color: var(--fg); }",
+        "  html, body { background: var(--bg); color: var(--fg); }"
+      ]
+    ],
+    "expect": "the paint rule is zero-specificity (:where), so a fragment still wins"
+  },
+  {
+    "name": "the DARK --rule block is deleted from SHIM, which only a count can see",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;\n",
+        "    html { --rule-DEAD: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;\n"
+      ]
+    ],
+    "expect": "shim declares --rule on `html`, not `:root`, in BOTH theme blocks"
+  },
+  {
+    "name": "the composer's script stops BINDING the button, only naming it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "document.getElementById('chrome-theme')",
+        "String('chrome-theme')&&document.getElementById('chrome-theme-DEAD')"
+      ]
+    ],
+    "expect": "...and a script that BINDS it, not one that mentions it"
+  },
+  {
+    "name": "the requested title never reaches the document, which no case required",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "f\"<title>{title}</title>\\n{styled}\\n</head>\\n<body>\\n\"",
+        "f\"<title>T</title>\\n{styled}\\n</head>\\n<body>\\n\""
+      ]
+    ],
+    "expect": "the requested title reaches the document's <title>, not a placeholder"
+  },
+  {
+    "name": "the generated-at moment never reaches the stamp, which no case required",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)",
+        "    chrome_css, chrome_bar, chrome_js = chrome_for(content, \"\")"
+      ]
+    ],
+    "expect": "the generated-at moment reaches the composed page's stamp"
   }
 ]

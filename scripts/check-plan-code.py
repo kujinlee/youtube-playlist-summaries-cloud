@@ -795,7 +795,19 @@ EXPECTED_MUTATIONS = {
     # ⟳ r1 Codex Medium: 8 -> 10. A page-specific `#tray …` override was migrating INTO the
     # tray region and freezing there for every page later composed from it; the second entry
     # guards the fix's own failure mode, which is subtracting the tray away entirely.
-    "scripts/brief-compose.py": 16,
+    # ⟳ 2026-10-18, the r5 fold: 19 -> 20. The composer's resting place for the bar moved
+    # from the END of <body> to under the title, which is the line that CAUSED backlog #300
+    # (y=6445 of 6475). `place_bar` being unit-correct proves nothing about this path, so
+    # the entry severs the CALL SITE — the between-two-tested-pieces gap, measured here
+    # three times before.
+    # ⟳ 2026-10-19, the r8 fold: 22 -> 25. THREE, all the ambient-assertion SWEEP r7 did
+    # not do: `:where(` occurs four times in SHIM (two inside its own comments),
+    # `html { --rule:` twice (light and dark), and `chrome-theme` four times across the
+    # suite's strings while the subject is the BINDING call.
+    # ⟳ 2026-10-19: 25 -> 26. `compose.title` — same shape as above: varied in the source
+    # text, unwitnessed by any case, so a caller asking for "Quarterly review" would have
+    # got "T" with every gate passing.
+    "scripts/brief-compose.py": 27,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1279,7 +1291,65 @@ EXPECTED_MUTATIONS = {
     # vacuous cases of my own — a "dirty tree" assertion compared against a
     # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
     # and the git-cannot-launch branch was unreachable from a temp dir.
-    "scripts/page_chrome.py": 11,
+    # ⟳ 2026-10-18 (backlog #300): 11 -> 20. Nine entries for the reachability guard;
+    # one of them — "the has_control gate is dropped from reachability" — exists only
+    # because it SURVIVED first, masked by a fixture that tripped the next gate.
+    # ⟳ 2026-10-18, r1 fold: 20 -> 31. The r1 redesign ORPHANED 7 of the 20 (the pin
+    # moved from sticky to a script-applied fixed class), and SIX new behaviours had no
+    # mutation at all — the duplicate-id refusal, the consumer refusal and the
+    # comment-stripping all survived deletion with 111/111 green.
+    # ⟳ 2026-10-18, the r5 fold: 45 -> 51. SIX entries whose subject is THE DECLARED BOUND
+    # rather than a behaviour — five tighten the scan to handle one of r5's out-of-scope
+    # shapes, the sixth deletes the subject sentence from `assert_wired`'s docstring. They
+    # exist because the bound is the fix: the owner chose "narrow the subject", and a bound
+    # nothing can falsify is a sentence. ⚠ Every one was measured as a sever BEFORE being
+    # written here, and two of the first five did NOT redden — the nested-<noscript> sever
+    # was patching a branch the nesting does not happen in, and the CSS-comment case was
+    # asking the REGEX while the fix would land on the GUARD, so it stayed green at 163/163.
+    # Both are now pointed at what the code actually sees.
+    # ⟳⟳ 2026-10-18, the 2b fold: 51 -> 59. Eight entries for "under the title AND
+    # pinned": the top edge, the slot's reservation, the slot wrapper, a DOUBLE bar (rounds
+    # 2 and 4's duplicate-id defect, now mutated rather than argued), the conditional pin,
+    # the measure-while-unpinned feedback guard, place_bar's insertion point and its shield.
+    # ⚠ Three EXISTING entries were re-anchored, not added — `bottom:0`, the <body>
+    # reservation and `classList.add` are spellings this fold removed, and an entry whose
+    # anchor is gone reports NOT MEASURED rather than failing, which is how two orphans rode
+    # this branch unnoticed until the real harness named them.
+    # ⟳ 2026-10-19, the r6 fold: 60 -> 64 net. FIVE added (the pin threshold, the tail's
+    # source, the re-arm, the comment strip and its space-not-deletion rule) and ONE
+    # RETIRED WITH ITS SUBJECT: "CSS comments are stripped AT THE GUARD" described a
+    # TIGHTENING, and round 6 applied that tightening, so the behaviour it mutated is now
+    # the delivered one. Its inverse carries the coverage. That is the one sanctioned kind
+    # of fall — the entry is retired because its subject is gone, not orphaned.
+    # ⟳ 2026-10-19, r6 CLAUDE fold: 71 -> 70. ONE entry retired on the reviewer's argument —
+    # `ctls=[]` exercised the `m===Infinity?0:` fallback, which is unreachable on the
+    # delivered path, and never tested the property its name claimed; it was killed purely
+    # by a substring vanishing. The whole tail computation is now covered by an entry that
+    # severs it as ONE exact expression, which is what the reviewer's two green severances
+    # showed was missing.
+    # ⟳⟳ 2026-10-19, the r7 fold: 74 -> 83. NINE, each measured as a sever against the
+    # delivered file BEFORE being written here, and five are round 7's own findings: no
+    # re-measure on unpin (the bound I had written was FALSE), the pin's state guard, the
+    # own-id helper plus its two reported elements, slot selection, interactive ancestors,
+    # and the TWO theme-persistence statements the switcher's identical calls were hiding —
+    # the reviewer deleted theme persistence entirely with the suite at 201/201 green.
+    #
+    # ⚠ FOUR OF THE NINE ANCHORS WERE DERIVED, NOT TYPED, and that is a lesson about this
+    # file rather than about these entries: every exact-expression CASE added here creates a
+    # SECOND occurrence of the emitted text it asserts, which silently breaks any anchor
+    # keyed on that text. Hand-anchoring failed four times in one session before the anchor
+    # was computed by widening backwards until the block occurs exactly once.
+    # ⟳ 2026-10-19, the r8 fold: 83 -> 88. FIVE — the slot-vs-bar question r7's own fix got
+    # one `.chrome` wrong, its fallback, the interactive DECREMENT that had no shield while
+    # its increment did (the comment demanding exactly that guard is the line after the
+    # counter's declaration), the refresh assertion the sibling span was satisfying, and the
+    # interactive set itself.
+    # ⟳ 2026-10-19, the r8-codex fold: 87 -> 89. The per-slot reserve (r8 High: a
+    # document-level reserve consumed by a CLASS selector inflated a slot nested inside the
+    # bar being measured — 225 -> 1965px in two seconds) and `assert_wired`'s label, which
+    # the reviewer severed while the suite stayed green: dropping it from KNOWN_UNVARIED was
+    # lexically correct and the parameter was still indistinguishable from a constant.
+    "scripts/page_chrome.py": 89,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5105,7 +5175,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1456)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1545)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 125 cases
+    python3 scripts/brief-compose.py --self-test  # 153 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -91,7 +91,29 @@ SHIM = """
           --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
           --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
   html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
-         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
   /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
      one page's invention — every recent fragment has been re-declaring them privately to get past
      assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
@@ -225,60 +247,18 @@ def markup_of(document: str) -> str:
     return "".join(_scan(document).markup)
 
 
-def strip_css_comments(css: str) -> str:
-    r"""CSS with comments removed AND value-string contents blanked. PURE.
-
-    ⛔ ONE PASS, NOT THREE REGEXES — r2 found three separate defects that all reduce to "a regex
-    over CSS does not know what a string is":
-
-      * `content:"var(--x)"` and `url("data:…var(--x)…")` were read as USES of `--x`, so a page was
-        refused for a token no browser resolves (r2 High);
-      * `--open:"/*"` … `--close:"*/"` let the naive `/\*.*?\*/` erase a REAL declaration between
-        them, so a complete light palette was refused as incomplete (r2 Medium);
-      * comments carrying a `}` truncated the shim scan (r1 Low).
-
-    ⚠ ATTRIBUTE-SELECTOR STRINGS ARE PRESERVED. Blanking every string would turn
-    `:root[data-theme="light"]` into `:root[data-theme=" "]`, and light would stop being
-    distinguishable from dark — the scan would then be reading the wrong palette while looking
-    green. Strings inside `[...]` are kept verbatim; only value strings are blanked.
-    """
-    out: list[str] = []
-    i, n, brackets, in_comment = 0, len(css), 0, False
-    while i < n:
-        if in_comment:
-            if css.startswith("*/", i):
-                in_comment = False; out.append("  "); i += 2
-            else:
-                out.append(" "); i += 1
-            continue
-        if css.startswith("/*", i):
-            in_comment = True; out.append("  "); i += 2
-            continue
-        ch = css[i]
-        if ch == "[":
-            brackets += 1; out.append(ch); i += 1; continue
-        if ch == "]":
-            brackets = max(0, brackets - 1); out.append(ch); i += 1; continue
-        if ch == "}":
-            # ⚠ bracket depth is per-RULE. An unmatched `[` — `url(a[b.png)` is the realistic
-            # source — otherwise left every later string unblanked, re-enabling the prose-in-a-
-            # string false positive for the rest of the stylesheet (r3 R3-6).
-            brackets = 0; out.append(ch); i += 1; continue
-        if ch in "\"'":
-            quote, keep = ch, brackets > 0
-            out.append(ch); i += 1
-            # ⚠ A NEWLINE ENDS A BAD STRING. CSS says an unterminated string is recovered at the
-            # end of the line, so everything after it is real CSS. Consuming to EOF instead made
-            # one stray quote blank an entire stylesheet — r3 Blocking.
-            while i < n and css[i] != quote and css[i] != "\n":
-                if css[i] == "\\" and i + 1 < n:
-                    out.append(css[i:i + 2] if keep else "  "); i += 2; continue
-                out.append(css[i] if keep else " "); i += 1
-            if i < n:
-                out.append(css[i]); i += 1
-            continue
-        out.append(ch); i += 1
-    return "".join(out)
+# ⟳ 2026-10-19, r6 CLAUDE HIGH — THE SCANNER MOVED TO `page_chrome` AND THIS IS NOW A
+# DELEGATION, not a copy. It had to move DOWN: this module imports `page_chrome`, so that is
+# the only place both can reach, and `page_chrome` needs the same rule for its own CSS-reading
+# predicates. Round 6's first fold added a second, NAIVE implementation there — the exact
+# `re.sub(r"/\*.*?\*/", …)` this function's docstring names as defective — and it caused a
+# measured fail-open on the fragment path. One rule, one place; a second implementation of one
+# rule is this repository's most-measured defect, at 17 instances.
+#
+# ⚠ THE NAME STAYS EXPORTED HERE because nineteen call sites and several cases in this file
+# use it, and renaming them buys nothing. The docstring, the three r2 defects it records and
+# every case that pins its behaviour now live in `page_chrome.strip_css_comments`.
+strip_css_comments = page_chrome.strip_css_comments
 
 
 def css_scan_truncated(css: str) -> bool:
@@ -495,7 +475,20 @@ def assert_shimmed(tray_css: str, content_css: str) -> None:
     deliberate. Nothing could have caught it by reading; it took measuring computed styles in a
     browser. Now a tray that grows a new dependency fails the compose instead of shipping.
     """
-    missing = sorted(referenced_vars(tray_css) - declared_vars(SHIM) - declared_vars(content_css))
+    # ⟳ 2026-10-06: `- declared_vars(tray_css)` ADDED, and it is a false-positive fix, not a
+    # loosening. The three subtractions name the three places a value can legitimately come
+    # from; this one was missing, so a name the tray BOTH declares and reads was reported as
+    # defined by nobody. Reached the moment the tray grew its first self-contained block (the
+    # text-style scheme declares `--head`/`--prose`/`--emph` on `:root` and then spends them in
+    # its own consumption rules) -- before that the tray only ever READ names, which is why the
+    # omission was invisible for as long as it was.
+    # ⚠ IT ADDS NO NEW BLIND SPOT. `declared_vars` is textual, so a declaration inside a
+    # `@media` block that never applies counts as a declaration -- but that is equally true of
+    # the two terms already subtracted, so this widens the existing weakness to a third place
+    # rather than introducing a different kind. What it must NOT do is make a genuinely
+    # undefined name pass, and the case below severs exactly that.
+    missing = sorted(referenced_vars(tray_css) - declared_vars(SHIM)
+                     - declared_vars(content_css) - declared_vars(tray_css))
     if missing:
         raise SystemExit(
             "brief-compose: the tray reads custom properties nothing defines: "
@@ -759,14 +752,63 @@ def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
         # the exact fail-silent this module exists for, reached through the composer.
         # Trust it only if it is genuinely wired, and supply a stamp if it lacks one.
         page_chrome.assert_wired(content, "brief-compose (fragment's own chrome)")
+        # ⛔ THE STYLESHEET SHIPS EVEN WHEN THE MARKUP DOES NOT — r1 BLOCKING/HIGH.
+        # Both returns below used to give css="". A fragment bringing its own control then
+        # produced a finished page with a control and NO chrome CSS, so the bar rendered
+        # wherever it fell and scrolled away: measured y=8423 of 8481. That is backlog
+        # #300's own defect, shipped through the guard written to prevent it — and the
+        # guard could not see it because it was only ever run on the FRAGMENT.
+        # The markup is still the fragment's own; only the stylesheet is supplied.
         if 'class="chrome-when"' in content:
-            return "", "", ""
-        return "", '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", ""
+            return page_chrome.chrome_css(), "", ""
+        return (page_chrome.chrome_css(),
+                page_chrome.stamp_bar(generated_at), "")
     if page_chrome.missing_palettes(content + page_chrome.theme_control()):
         return (page_chrome.chrome_css(),
-                '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
-    return (page_chrome.chrome_css(),
-            page_chrome.chrome_bar("", generated_at, refresh=False),
+                page_chrome.stamp_bar(generated_at), "")
+    # ⛔ THE ONE `textstyle=True` IN THE REPOSITORY. `chrome_bar` defaults it OFF because
+    # four of its five callers are dense tabular pages the three-role scheme was never
+    # tuned against; the explainer family is the prose one, and the only scope the reader
+    # asked for. Reached only on this branch -- the two returns above add a STAMP ONLY,
+    # so a fragment that brings its own chrome or lacks a palette gets no switcher either,
+    # which is correct: both are the fail-silent this module exists to prevent.
+    # ⛔ `textstyle` OFF when the fragment ALREADY carries a switcher — r1 BLOCKING, found
+    # by both halves. Emitting a second `#schemer` makes one of the two inert, and the two
+    # then show contradictory selected states. Measured 2 of 2 —
+    # BOTH real fragments that reach this branch already carry `id="schemer"`, so every page
+    # that got this feature got the collision. `assert_wired` now also refuses a duplicate
+    # id outright; this keeps the composer from creating one in the first place.
+    #
+    # ⟳ 2026-10-19, r6 CLAUDE MEDIUM — THE REASON r1 GAVE IS NOW BACKWARDS, and it was being
+    # used to cost an open decision. r1 said the composer's copy "would therefore be the DEAD
+    # one" because `getElementById` returns the FIRST match and the bar was appended to the
+    # END of <body>. The resting place moved under the <h1> at `de48f095`. Measured on the
+    # real composed 2026-10-06 page: `<h1>` at 16327, the slot at 16388, the fragment's own
+    # `id="schemer"` at 17041 — so the COMPOSER's copy is now first, i.e. the live one, and
+    # the hand-authored copy would be the dead one. The refusal above is unaffected and
+    # still correct; only the stated reason was stale.
+    #
+    # ⚠ AND THAT RE-COSTS AN OPEN OPTION, which is why the correction is not cosmetic. The
+    # owner chose a runtime DOM move partly because "the composer emits the dead one" made
+    # the composer-owns-the-switcher route look worse than it is. With the bar first in
+    # document order that objection is gone. The route is not taken here — it is the owner's
+    # call and the current fix works — but it should be re-costed, not inherited.
+    own_switcher = page_chrome.has_text_control(content)
+    # ⛔ AND NOT IF NOTHING WOULD CONSUME IT — r1 BLOCKING. `text_style_css()` styles ONLY
+    # `.ex-body …`, and NOTHING in this repository emits that class; it is hand-authored,
+    # on 2 of 20 repo fragments and 7 of 95 live pages. On a fragment without it the three
+    # buttons flip an attribute, persist a choice and restyle nothing — three options, one
+    # rendering, which is the fail-silent `page_chrome` exists to prevent. The composer
+    # therefore DECLINES to emit a control that cannot work; `assert_wired` separately
+    # refuses anyone who emits one anyway, so the rule has both a producer and a gate.
+    # ⛔ ASK page_chrome, DO NOT RE-SPELL THE TEST — r2 flagged this line's substring form
+    # alongside the one in `page_chrome`, which is the tell that one rule had two spellings.
+    # A second implementation of one rule drifts; this repository has measured that 17 times.
+    want_switcher = not own_switcher and page_chrome.has_text_consumer(content)
+    return (page_chrome.chrome_css()
+            + (page_chrome.text_style_css() if want_switcher or own_switcher else ""),
+            page_chrome.chrome_bar("", generated_at, refresh=False,
+                                   textstyle=want_switcher),
             f"<script>{page_chrome.chrome_script()}</script>")
 
 
@@ -827,22 +869,74 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
     # reads tokens with no fallback of its own — `--bg` among them — so those are read by every
     # page whether or not the fragment names them. Omitting it made `--bg` required only when the
     # fragment happened to mention it.
+    # ⛔ THE SCHEME CSS IS PART OF THE READ CORPUS TOO, and it was not until 2026-10-06.
+    # `chrome_for` returns `chrome_css() + text_style_css()` and the whole thing is written
+    # into the page's <style>, but BOTH guards were handed `chrome_css()` alone — so the
+    # three-role scheme's `var(--accent)` / `var(--em)` reached every composed page while
+    # nothing verified they resolve. That is the same class as F3 above (SHIM omitted from
+    # the corpus), one layer newer: a block appended to every page must be read as such, or
+    # its dependencies are checked on no page at all.
+    # ⚠ HOW IT WAS FOUND, because it matters: NOT by review. An end-to-end compose of a
+    # realistic fragment passed every assertion, and the finding came from asking which
+    # STRING each guard actually receives. The guards were green about a corpus that did
+    # not contain the subject.
+    scheme_css = page_chrome.text_style_css()
     assert_theme_complete(page_css, live_control,
-                          css + "\n" + page_chrome.chrome_css() + "\n" + SHIM)
+                          css + "\n" + page_chrome.chrome_css() + "\n"
+                          + scheme_css + "\n" + SHIM)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
-    body = body + "\n" + chrome_bar + "\n" + chrome_js
+    # ⟳ 2026-10-18 — THE BAR GOES UNDER THE TITLE, NOT AT THE END. Appending it here is
+    # how backlog #300 happened: on this path the bar became the last child of <body>, so
+    # on a 6475px page it rendered at y=6445 — present, wired, computed-visible, and in the
+    # last 30 pixels. The owner's choice is under the title AND reachable afterwards, so
+    # the resting place moves and `chrome_script` pins it once the slot leaves the viewport.
+    # ⚠ `place_bar` owns the rule, in `page_chrome`, because that module owns the bar; the
+    # four generators place it under their own <h1> already and are unchanged.
+    # ⚠ The SCRIPT stays at the end of `body`, after the bar in document order, which is
+    # what it needs — it queries the slot when it runs.
+    body = page_chrome.place_bar(body, chrome_bar) + "\n" + chrome_js
     # ⭐ THE TRAY REGION IS DELIMITED AT BOTH ENDS (backlog #106). `extract_tray` reads back
     # exactly what is written between these two comments, so a recompose cannot re-lift the
     # fragment's own `#tray …` overrides — which is what `head` legitimately contains, and
     # what a selector scan could never tell apart from the tray's own rules.
     styled = (head + SHIM + "\n" + TRAY_BEGIN + "\n" + css + "\n" + TRAY_END
               + "\n" + chrome_css + "\n</style>")
-    return (
+    doc = (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{title}</title>\n{styled}\n</head>\n<body>\n"
         f"{body}\n{markup}\n{script}\n</body>\n</html>\n"
     )
+    # ⛔ THE FINISHED DOCUMENT, NOT ONLY THE FRAGMENT — r1 BLOCKING/HIGH.
+    # `assert_wired` was run at :796 on `content` and NOWHERE on what this function returns,
+    # so every guarantee it makes was about an intermediate. Measured: a wired fragment with
+    # no `.chrome` rule took branch 1, which adds no stylesheet, and shipped a finished page
+    # with a control and no chrome CSS at all — y=8423 of 8481, backlog #300's exact defect,
+    # reproduced THROUGH the guard written to prevent it. Checking the artifact that reaches
+    # the reader is the only check that can be about the reader.
+    # ⛔ `chrome_css`, NOT `css` — r4 BLOCKING. `css` is this function's PARAMETER and holds
+    # the extracted Ask-tray CSS; `TRAY_SELECTOR` can never lift `.ex-body` into it, so
+    # `text_style_css() in css` was STRUCTURALLY ALWAYS FALSE and round 3's entire consumer
+    # arm was dead on every path. Measured by instrumenting the suite: 0 of 41 assert_wired
+    # calls ever received True, while both suites stayed green — severing the expression to
+    # the literal `False` changed nothing, which is why no case caught it. The scoped
+    # stylesheet is the local assigned from `chrome_for` at the top of this function.
+    #
+    # ⛔ THE COMPOSER'S OWN CONTRIBUTION, AND DELIBERATELY NOTHING MORE.
+    # An `or … in content` disjunct was tried here and REMOVED on r4's evidence. It bought
+    # no coverage — a fragment carrying a SPACED copy of the same rules defeats an exact
+    # match, which is the spelling r3's Blocking used — while reintroducing the content
+    # sniff that r2 and r3 oscillated over for two rounds.
+    #
+    # ⚠ THE BOUND, STATED PLAINLY: only branch 3 of `chrome_for` emits the scoped
+    # stylesheet, so branches 1 and 2 are OUTSIDE this guard. A switcher the composer did
+    # not dress is the FRAGMENT AUTHOR'S contract, not this guard's — and that is not a
+    # hypothetical: `2026-10-05-topic-why-x-not-y.fragment.html` is branch 2 with its own
+    # schemer, ZERO `ex-body`, and a correct consumption layer written as bare
+    # `body` / `h1,h2,h3,h4` / `b,strong`. Any content-side test for the class refuses it.
+    page_chrome.assert_wired(doc, "brief-compose (the composed document)",
+                             scoped_css_emitted=page_chrome.text_style_css() in chrome_css)
+    return doc
 
 
 def main(argv: list[str]) -> int:
@@ -1379,8 +1473,13 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # ⚠ SHIM is concatenated AFTER the fragment's CSS, so an ordinary `body{…}` rule here would
     # OVERRIDE every page that paints itself. `:where()` contributes zero specificity, so the
     # default is always losable — the one form that can be added without breaking existing pages.
+    # ⛔ THE RULE ITSELF, NOT THE WORD — r8 CLAUDE MEDIUM (the ambient sweep). `:where(`
+    # occurs FOUR times in SHIM, two of them inside SHIM's own CSS COMMENTS, so its presence
+    # witnessed nothing; the conjunction's second half was doing all the work. The rule that
+    # must survive is the zero-specificity paint rule over `html, body`, named whole.
     case("the paint rule is zero-specificity (:where), so a fragment still wins",
-         ":where(" in SHIM and bool(re.search(r":where\([^)]*body", SHIM)))
+         bool(re.search(r":where\(\s*html\s*,\s*body\s*\)\s*\{[^}]*background:",
+                        strip_css_comments(SHIM))))
     case("--bg is not self-referential", not re.search(r"--bg:\s*var\(\s*--bg", SHIM))
 
     # ── the shim must never define a custom property in terms of ITSELF ─────────────────────────
@@ -1394,7 +1493,11 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # `--rule` is the one name a content page may also define, and the shim is spliced AFTER the
     # page's CSS — so it must be declared at LOWER specificity to remain a default rather than an
     # override. `html` is 0,0,1; `:root` is 0,1,0.
-    case("shim declares --rule on `html`, not `:root`", "html { --rule:" in SHIM)
+    # ⛔ BOTH OCCURRENCES, r8 CLAUDE MEDIUM. `html { --rule:` appears twice — the light
+    # block and the dark one — so severing either left the case green on the other. The
+    # count is asserted, not the presence.
+    case("shim declares --rule on `html`, not `:root`, in BOTH theme blocks",
+         SHIM.count("html { --rule:") == 2)
     case("the :root block does not declare --rule", "--rule" not in SHIM.split("html {")[0])
 
     # ── headings must get a positioning context, or the heading ask-path silently dies ───────────
@@ -1444,9 +1547,65 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
         case("…unless the CONTENT page defines it", True)
     except SystemExit:
         case("…unless the CONTENT page defines it", False)
+    # ⟳ 2026-10-06, the third subtraction. A name the TRAY declares and then spends is
+    # defined — it was reported as defined by nobody until the term was added.
+    # ⚠ ASSERTED ON `assert_shimmed` DIRECTLY, not through `compose`. The first draft of
+    # this case fed a self-declaring `:root` rule through `compose`, and it FAILED — because
+    # `extract_tray` lifts a fixed set of selectors and drops `:root`, so the declaration
+    # never reached `tray_css` and the case was measuring extract_tray's filtering rather
+    # than this rule. The real instance arrives by a different route: `text_style_css()` is
+    # concatenated onto the chrome CSS directly, never lifted.
+    # ⚠ `assert_shimmed` IS CALLED DIRECTLY AT EACH SITE, WITH LITERAL ARGUMENTS — not
+    # through a helper. `check-fixture-variation` refused two successive drafts that routed
+    # the calls through one wrapper: the guard reads the ARGUMENT EXPRESSIONS at each call
+    # site, so a single `assert_shimmed(tray, content)` inside a helper is ONE value however
+    # many different fixtures reach it. Varying the fixture behind a constant expression is
+    # exactly the shape it exists to refuse, and it was right twice.
+    try:
+        assert_shimmed(":root{--own-role:#0a0}#tray{color:var(--own-role)}", "")
+        case("assert_shimmed accepts a name the TRAY declares and spends", True)
+    except SystemExit:
+        case("assert_shimmed accepts a name the TRAY declares and spends", False)
+    # THE FALSIFIER for that widening: declared-where-read must not become declared-nowhere.
+    try:
+        assert_shimmed("#tray{color:var(--nobody-declares-this)}", "/*no decls*/")
+        case("…while a name declared NOWHERE is still refused", False)
+    except SystemExit as e:
+        case("…while a name declared NOWHERE is still refused",
+             "--nobody-declares-this" in str(e))
+    # content_css carries the resolution here — the same name, supplied by the PAGE.
+    try:
+        assert_shimmed("#tray{color:var(--page-supplies-this)}",
+                       ":root{--page-supplies-this:#333}")
+        case("…and a name only the CONTENT declares is accepted", True)
+    except SystemExit:
+        case("…and a name only the CONTENT declares is accepted", False)
+    # ...and a content declaring something ELSE must not rescue it.
+    try:
+        assert_shimmed("#tray{color:var(--page-supplies-this)}",
+                       ":root{--page-declares-the-wrong-one:#333}")
+        case("…but a content declaring a DIFFERENT name does not rescue it", False)
+    except SystemExit as e:
+        case("…but a content declaring a DIFFERENT name does not rescue it",
+             "--page-supplies-this" in str(e))
+    # ⭐ THE REAL INSTANCE: the scheme declares its three roles and spends them in one block.
+    try:
+        assert_shimmed(page_chrome.text_style_css(), ":root{--ink:#111}")
+        case("the text-style scheme's own three roles resolve", True)
+    except SystemExit:
+        case("the text-style scheme's own three roles resolve", False)
+    case("…and its roles are genuinely declared, not merely referenced",
+         {"--head", "--prose", "--emph"} <= declared_vars(page_chrome.text_style_css()))
+
     case("shim covers the names the real tray needs",
          {"--structure", "--structure-br", "--structure-bg", "--bg", "--good", "--defect"}
          <= declared_vars(SHIM))
+    # ⭐ MEASURED 2026-10-06: 6 of the 21 recomposable pages declare no `--accent` and 8 no
+    # `--em`, so the scheme resolves to nothing on a third of them unless the shim supplies
+    # both. This is the case that makes "the switcher works on every page it ships to" a
+    # measurement rather than a hope.
+    case("…and the two tokens the text-style scheme SPENDS",
+         set(page_chrome.TEXT_TOKENS) <= declared_vars(SHIM))
 
     case("has_tray rejects a page with no tray", not has_tray("<html><body>nope</body></html>"))
 
@@ -1497,7 +1656,78 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
               f'<span class="chrome-when">generated <time>t</time></span>'
               f"<script>{page_chrome.chrome_script()}</script>")
     _c1 = chrome_for(_wired, "t")
-    case("a fragment that ALREADY has working chrome gets nothing added", _c1 == ("", "", ""))
+    # ⟳ 2026-10-18, r1. WAS `_c1 == ("", "", "")` — nothing at all. That conflated two
+    # different things under "added": duplicate MARKUP (which is the defect — a second
+    # control the script never binds) and the STYLESHEET the fragment's own control needs.
+    # Returning no stylesheet is what shipped a finished page with a control and no chrome
+    # CSS, measured at y=8423 of 8481. The property this case is for is UNCHANGED and is
+    # now asserted exactly: no markup and no script are added, so no second control can
+    # exist — while the stylesheet is supplied, because the control on the page needs it.
+    # ── r4 BLOCKING: the consumer arm was DEAD on every path because the flag read
+    # `compose`'s `css` PARAMETER — the Ask TRAY's css — instead of the local assigned from
+    # `chrome_for` inside `compose`. 0 of 41 assert_wired calls ever saw True, and severing
+    # the expression to the literal False left both suites green. `compose` derives the
+    # chrome itself, so these fixtures pass the TRAY's css/markup/script like every other
+    # case here; passing chrome_for's output into those slots duplicates the control and
+    # measures the duplicate-id arm instead — which is how the first attempt at these cases
+    # went red against correct code.
+    _tok = "{--accent:#06c;--em:#c00;--fg:#111;--fg2:#444}"
+
+    def _schemer_frag(consumer: str) -> str:
+        """A fragment with the SWITCHER and no theme control, so `chrome_for` reaches the
+        branch that emits `text_style_css()` ITSELF. The stylesheet can then only come from
+        the composer, which is what makes this discriminate the right variable."""
+        return ("<title>x</title><style>" + _dark + _full
+                + ':root[data-theme="dark"]' + _tok
+                + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                + "body{color:var(--ink);background:var(--bg)}</style>"
+                + page_chrome.text_style_control() + "<p>prose</p>" + consumer)
+
+    case("⛔ a COMPOSER-supplied scoped stylesheet with no consumer is REFUSED",
+         not _composes(_schemer_frag("")))
+    case("...and the same page composes once something opts in",
+         _composes(_schemer_frag('<div class="ex-body">p</div>')))
+
+    def _own_chrome_frag(consumer: str) -> str:
+        """A fragment that brings the scoped stylesheet AND its own theme control, so
+        `chrome_for` takes the own-chrome branch and emits NO stylesheet. The sheet can then
+        only come from the CONTENT — the half the first fix missed and a mutation exposed."""
+        return ("<title>x</title><style>" + _dark + _full
+                + ':root[data-theme="dark"]' + _tok
+                + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                + "body{color:var(--ink);background:var(--bg)}"
+                + page_chrome.text_style_css() + page_chrome.chrome_css() + "</style>"
+                + page_chrome.theme_control() + page_chrome.text_style_control()
+                + '<span class="chrome-when">t</span>'
+                + "<script>" + page_chrome.chrome_script() + "</script>"
+                + "<p>prose</p>" + consumer)
+
+    # ⚠ A PAIR, NOT ONE CASE — r4's point, and it is the ambient-pass shape otherwise. On its
+    # own, "this composes" stays green both when the arm DELIBERATELY declines and when the
+    # fixture is one the arm would never have refused anyway. The second case removes that
+    # ambiguity by showing the SAME page IS refused once the caller fact is True, which
+    # proves the first is green because of the caller fact alone and nothing else.
+    _gap = _own_chrome_frag("")
+    case("⛔ a fragment that dresses its OWN switcher composes — the composer emitted no "
+         "scoped stylesheet, so this is NOT this guard's subject. A red here means someone "
+         "tightened it: decide deliberately, do not 'fix' the fixture.",
+         _composes(_gap))
+
+    def _refused_when_told(page: str) -> bool:
+        try:
+            page_chrome.assert_wired(page, "gap-probe", scoped_css_emitted=True)
+            return False
+        except SystemExit:
+            return True
+
+    case("...and the SAME page IS refused once the caller says it emitted the stylesheet — "
+         "so the case above is green because of the caller fact, not because the arm is dead",
+         _refused_when_told(compose(_gap, "T", css, markup, script, "t")))
+
+    case("a fragment that ALREADY has working chrome gets no MARKUP and no SCRIPT added",
+         (_c1[1], _c1[2]) == ("", ""))
+    case("...but it DOES get the stylesheet its own control needs",
+         _c1[0] == page_chrome.chrome_css())
     # ⟲ Codex High: the button ALONE used to satisfy this branch, composing an inert
     # control and no stamp. It is now refused rather than trusted.
     try:
@@ -1514,13 +1744,52 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("a fragment with both palettes gets the full bar", page_chrome.has_control(_c2[1]))
     case("...without a refresh button, since a composed brief has no generator to call",
          "chrome-refresh" not in _c2[1])
-    case("...and a script to bind it", "chrome-theme" in _c2[2])
+    # ⛔ THE BINDING CALL, NOT THE NAME — r8 CLAUDE MEDIUM. `chrome-theme` occurs four
+    # times across this suite's strings. What must be present in the composer's script is
+    # the call that BINDS the button, which is what r1 established when a script merely
+    # MENTIONING the id passed this gate.
+    case("...and a script that BINDS it, not one that mentions it",
+         "document.getElementById('chrome-theme')" in _c2[2])
     # ⭐ The fail-silent this whole module exists to prevent, at the composer.
     _c3 = chrome_for("<style>body{color:#000}</style><p>no palettes</p>", "t")
     case("a fragment with NO data-theme palettes gets NO control", not page_chrome.has_control(_c3[1]))
     case("...but still gets the stamp, which is the half that always works",
          "chrome-when" in _c3[1])
     case("...and no dangling script for a button that is not there", _c3[2] == "")
+    # ⛔ THE INVARIANT chrome_script DEPENDS ON, ACROSS ALL THREE BRANCHES: a bar that holds
+    # something to PRESS is inside the slot the script observes. ⚠ And it is asserted here
+    # rather than assumed because `.chrome` HAS FOUR PRODUCERS and only one of them is
+    # `chrome_bar`: the two stamp-only returns above and the fragment's-own-chrome return
+    # build the div by string concatenation, with no slot. That is correct only while they
+    # emit no control. Measured 2026-10-18 over all 20 repo fragments: 2 composed pages
+    # carry a control (both slotted), 18 are stamp-only. The day a stamp-only branch gains
+    # a button, the script finds a control it cannot pin — backlog #300, from the other end.
+    # ⛔ A FOURTH FIXTURE, AND ITS ABSENCE LET A MUTATION SURVIVE. `_wired` carries
+    # `class="chrome-when"`, so branch 1 returns NO bar at all and its OTHER return — the
+    # stamp bar for a fragment that brings its own control but no stamp — was exercised by
+    # nothing. Measured 2026-10-19: reverting that return to an inline unslotted div left
+    # the suite GREEN. The branch had a case; the case had no input that reached it.
+    _c1b = chrome_for(f"<style>{_pals}</style>{_ctl}"
+                      f"<script>{page_chrome.chrome_script()}</script>", "t")
+    case("a fragment with its own control but NO stamp gets one, and it is slotted",
+         f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _c1b[1]
+         and "chrome-when" in _c1b[1])
+    for _lbl, _got in (("fragment's own chrome", _c1[1]),
+                       ("own chrome, no stamp", _c1b[1]),
+                       ("both palettes, full bar", _c2[1]),
+                       ("no palettes, stamp only", _c3[1])):
+        _holds = 'id="chrome-theme"' in _got or 'id="schemer"' in _got
+        case(f"chrome_for({_lbl}): a bar with a control is inside the slot the script "
+             f"observes — or it holds no control",
+             (not _holds) or f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _got)
+        # ⟳ 2026-10-19, STRENGTHENED past the version above. r6 found a real page
+        # (2026-10-05-topic-why-x-not-y) whose `.chrome` had NO slot, because the
+        # stamp-only returns built the div inline. The weaker claim — "slotted IF it holds
+        # a control" — was satisfied by that page and could not see it. EVERY bar this
+        # function returns is now slotted, so a bar that LATER gains the switcher at
+        # runtime has somewhere to be observed.
+        case(f"chrome_for({_lbl}): EVERY bar it returns is slotted, control or not",
+             (_got == "") or f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _got)
     case("every branch renders the provenance it was given",
          all("2026-01-02 03:04" in chrome_for(f, "2026-01-02 03:04")[1]
              for f in (f"<style>{_pals}</style><p>x</p>",
@@ -1584,6 +1853,84 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("re-extracting a composed page returns the tray CSS unchanged", _c2 == css)
     case("...the tray markup unchanged", _m2 == markup)
     case("...and the tray script unchanged, with no </body> swept in", _s2 == script)
+    # ── backlog #300's resting place, ON THE COMPOSED DOCUMENT ──────────────────────
+    # ⛔ ASSERTED HERE AND NOT ONLY IN page_chrome. `place_bar` being correct proves nothing
+    # about this path: the bar reached the reader at y=6445 BECAUSE of the line in `compose`
+    # that appended it, and a unit-tested helper that `compose` stops calling is exactly the
+    # between-two-tested-pieces gap this repository has measured three times. The subject is
+    # the finished document.
+    # ⚠ ITS OWN FRAGMENT, NOT `_schemer_frag`. The first version reused that helper and was
+    # measured WRONG: the helper already emits `<p>prose</p>` before its `consumer`
+    # argument, so `.index("<p>prose</p>")` found the copy BEFORE the title and the case
+    # failed while the code was right. Unique markers, in a known order, asked of a string
+    # whose order I control.
+    _ordered = compose("<title>x</title><style>" + _dark + _full
+                       + ':root[data-theme="dark"]' + _tok
+                       + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                       + "body{color:var(--ink);background:var(--bg)}</style>"
+                       + page_chrome.text_style_control()
+                       + '<div class="ex-body"><h1>THE-TITLE</h1>'
+                       + "<p>THE-PROSE</p></div>",
+                       "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "")
+    # ⛔ `title` IS WITNESSED, NOT MERELY VARIED — r8 CODEX LOW. Dropping it from
+    # `KNOWN_UNVARIED` was lexically correct (cases pass "T" and "t"), but the reviewer
+    # severed the interpolation — `<title>T</title>` hard-coded — and the suite stayed GREEN:
+    # no case required the REQUESTED title to reach the document. A caller asking for
+    # "Quarterly review" would have got "T" with every gate passing.
+    _titled = compose("<title>x</title><style>" + _dark + _full
+                      + ':root[data-theme="dark"]' + _tok
+                      + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                      + "body{color:var(--ink);background:var(--bg)}</style>"
+                      + page_chrome.text_style_control()
+                      + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                      "Quarterly review", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "")
+    # ⛔ `generated_at` IS WITNESSED TOO — r8 CLAUDE LOW, and it is the SAME CLASS the
+    # commit above just closed for `title`, in the SAME function, which I did not sweep.
+    # Severing `chrome_for(content, generated_at)` to `chrome_for(content, "")` left
+    # 151/151 AND 223/223 green: the stamp a reader uses to tell a stale page from a current
+    # one could have been blank on every composed page with every gate passing.
+    # ⚠ I then swept every parameter of the fourteen functions this branch touched and this
+    # was the ONLY survivor, which is the check I should have run when I fixed `title`.
+    _stamped = compose("<title>x</title><style>" + _dark + _full
+                       + ':root[data-theme="dark"]' + _tok
+                       + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                       + "body{color:var(--ink);background:var(--bg)}</style>"
+                       + page_chrome.text_style_control()
+                       + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                       "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "",
+                       "2026-03-04 05:06")
+    case("the generated-at moment reaches the composed page's stamp",
+         "2026-03-04 05:06" in _stamped)
+    case("...and a different moment gives a different document, so the stamp is not a "
+         "constant a reader cannot trust",
+         _stamped != compose("<title>x</title><style>" + _dark + _full
+                             + ':root[data-theme="dark"]' + _tok
+                             + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                             + "body{color:var(--ink);background:var(--bg)}</style>"
+                             + page_chrome.text_style_control()
+                             + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                             "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "",
+                             "2026-11-12 13:14"))
+    case("the requested title reaches the document's <title>, not a placeholder",
+         "<title>Quarterly review</title>" in _titled)
+    case("...and a different request gives a different document",
+         _titled != compose("<title>x</title><style>" + _dark + _full
+                            + ':root[data-theme="dark"]' + _tok
+                            + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                            + "body{color:var(--ink);background:var(--bg)}</style>"
+                            + page_chrome.text_style_control()
+                            + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                            "Annual review", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", ""))
+    case("the composed document carries the bar UNDER the title, not at the end "
+         "(backlog #300: it was the last child of <body> at y=6445 of 6475)",
+         _ordered.index("THE-TITLE")
+         < _ordered.index('class="chrome-slot"')
+         < _ordered.index("THE-PROSE"))
+    case("...exactly once, because a second copy is inert — getElementById binds the FIRST",
+         _ordered.count('class="chrome-slot"') == 1
+         and _ordered.count('id="chrome-theme"') == 1)
+    case("...and the chrome script still follows the bar it binds",
+         _ordered.index('class="chrome-slot"') < _ordered.index(page_chrome.CHROME_SCRIPT_MARK))
     case("⭐ composing twice from an unchanged fragment is BYTE-IDENTICAL",
          compose(content, "T", _c2, _m2, _s2, _fixed_at) == _gen1)
 
