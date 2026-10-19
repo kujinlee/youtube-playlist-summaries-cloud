@@ -1473,8 +1473,13 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # ⚠ SHIM is concatenated AFTER the fragment's CSS, so an ordinary `body{…}` rule here would
     # OVERRIDE every page that paints itself. `:where()` contributes zero specificity, so the
     # default is always losable — the one form that can be added without breaking existing pages.
+    # ⛔ THE RULE ITSELF, NOT THE WORD — r8 CLAUDE MEDIUM (the ambient sweep). `:where(`
+    # occurs FOUR times in SHIM, two of them inside SHIM's own CSS COMMENTS, so its presence
+    # witnessed nothing; the conjunction's second half was doing all the work. The rule that
+    # must survive is the zero-specificity paint rule over `html, body`, named whole.
     case("the paint rule is zero-specificity (:where), so a fragment still wins",
-         ":where(" in SHIM and bool(re.search(r":where\([^)]*body", SHIM)))
+         bool(re.search(r":where\(\s*html\s*,\s*body\s*\)\s*\{[^}]*background:",
+                        strip_css_comments(SHIM))))
     case("--bg is not self-referential", not re.search(r"--bg:\s*var\(\s*--bg", SHIM))
 
     # ── the shim must never define a custom property in terms of ITSELF ─────────────────────────
@@ -1488,7 +1493,11 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # `--rule` is the one name a content page may also define, and the shim is spliced AFTER the
     # page's CSS — so it must be declared at LOWER specificity to remain a default rather than an
     # override. `html` is 0,0,1; `:root` is 0,1,0.
-    case("shim declares --rule on `html`, not `:root`", "html { --rule:" in SHIM)
+    # ⛔ BOTH OCCURRENCES, r8 CLAUDE MEDIUM. `html { --rule:` appears twice — the light
+    # block and the dark one — so severing either left the case green on the other. The
+    # count is asserted, not the presence.
+    case("shim declares --rule on `html`, not `:root`, in BOTH theme blocks",
+         SHIM.count("html { --rule:") == 2)
     case("the :root block does not declare --rule", "--rule" not in SHIM.split("html {")[0])
 
     # ── headings must get a positioning context, or the heading ask-path silently dies ───────────
@@ -1735,7 +1744,12 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("a fragment with both palettes gets the full bar", page_chrome.has_control(_c2[1]))
     case("...without a refresh button, since a composed brief has no generator to call",
          "chrome-refresh" not in _c2[1])
-    case("...and a script to bind it", "chrome-theme" in _c2[2])
+    # ⛔ THE BINDING CALL, NOT THE NAME — r8 CLAUDE MEDIUM. `chrome-theme` occurs four
+    # times across this suite's strings. What must be present in the composer's script is
+    # the call that BINDS the button, which is what r1 established when a script merely
+    # MENTIONING the id passed this gate.
+    case("...and a script that BINDS it, not one that mentions it",
+         "document.getElementById('chrome-theme')" in _c2[2])
     # ⭐ The fail-silent this whole module exists to prevent, at the composer.
     _c3 = chrome_for("<style>body{color:#000}</style><p>no palettes</p>", "t")
     case("a fragment with NO data-theme palettes gets NO control", not page_chrome.has_control(_c3[1]))

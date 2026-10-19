@@ -272,5 +272,38 @@
       ]
     ],
     "expect": "a fragment with its own control but NO stamp gets one, and it is slotted"
+  },
+  {
+    "name": "the paint rule gains specificity, so a fragment can no longer override it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  :where(html, body) { background: var(--bg); color: var(--fg); }",
+        "  html, body { background: var(--bg); color: var(--fg); }"
+      ]
+    ],
+    "expect": "the paint rule is zero-specificity (:where), so a fragment still wins"
+  },
+  {
+    "name": "the DARK --rule block is deleted from SHIM, which only a count can see",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;\n",
+        "    html { --rule-DEAD: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;\n"
+      ]
+    ],
+    "expect": "shim declares --rule on `html`, not `:root`, in BOTH theme blocks"
+  },
+  {
+    "name": "the composer's script stops BINDING the button, only naming it",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "document.getElementById('chrome-theme')",
+        "String('chrome-theme')&&document.getElementById('chrome-theme-DEAD')"
+      ]
+    ],
+    "expect": "...and a script that BINDS it, not one that mentions it"
   }
 ]

@@ -836,17 +836,6 @@
     "expect": "...and the pin is a no-op when the state is unchanged, which is what makes that recursion terminate"
   },
   {
-    "name": "the FIRST slot is taken again, so a stamp-only bar is bound instead of the real one",
-    "file": "scripts/page_chrome.py",
-    "edits": [
-      [
-        "        \"if(sb&&sb.querySelector('#chrome-theme,#schemer')){slot=slots[si];bar=sb;break;}}\"\n",
-        "        \"if(sb){slot=slots[si];bar=sb;break;}}\"\n"
-      ]
-    ],
-    "expect": "the script picks the slot that HOLDS a control, not the first one"
-  },
-  {
     "name": "theme persistence is deleted, which the switcher's own calls used to hide",
     "file": "scripts/page_chrome.py",
     "edits": [
@@ -911,5 +900,60 @@
       ]
     ],
     "expect": "place_bar refuses to insert inside a link, and prepends instead"
+  },
+  {
+    "name": "the slot is asked instead of the bar, so a stamp row shadows the control row",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];\"\n",
+        "        \"if(bars[bi]){bar=bars[bi];\"\n"
+      ]
+    ],
+    "expect": "the script picks the first .chrome that HOLDS a control, not the first slot"
+  },
+  {
+    "name": "the fallback takes a slot rather than a bar",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        # nothing happens, which is the stamp-only case on 17 of 20 fragments.\n        f\"if(!bar&&bars.length){{bar=bars[0];slot=bar.closest('.{CHROME_SLOT_CLASS}');}}\"\n",
+        "        # nothing happens, which is the stamp-only case on 17 of 20 fragments.\n        f\"if(!bar&&bars.length){{bar=null;slot=bar.closest('.{CHROME_SLOT_CLASS}');}}\"\n"
+      ]
+    ],
+    "expect": "...and falls back to the first BAR, because the switcher may be about to join it"
+  },
+  {
+    "name": "the interactive DECREMENT loses its shield, so a shielded end tag lifts a live count",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if (tag in _INTERACTIVE and self._interactive\n                and not any(self._depth.values())):",
+        "        if (tag in _INTERACTIVE and self._interactive\n                and True):"
+      ]
+    ],
+    "expect": "a SHIELDED </a> does not lift the live link count, so the bar stays out of the anchor (r8 High)"
+  },
+  {
+    "name": "the refresh BUTTON's id is renamed, which only the strengthened case can see",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return (f'<button id=\"chrome-refresh\" type=\"button\" class=\"chrome-btn\" ",
+        "    return (f'<button id=\"chrome-refresh-DEAD\" type=\"button\" class=\"chrome-btn\" "
+      ]
+    ],
+    "expect": "the bar carries all three controls"
+  },
+  {
+    "name": "the interactive set grows a non-swallowing element",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "_INTERACTIVE = frozenset({\"a\", \"button\", \"label\", \"summary\"})",
+        "_INTERACTIVE = frozenset({\"a\", \"button\", \"label\", \"summary\", \"div\"})"
+      ]
+    ],
+    "expect": "...and the interactive set is the MARKUP-level swallowers, not every swallower (r8 Low: onclick/tabindex/role are not covered)"
   }
 ]

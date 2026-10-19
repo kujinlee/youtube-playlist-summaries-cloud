@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 214 cases
+    python3 scripts/page_chrome.py --self-test          # 218 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -393,8 +393,17 @@ class _Scan(_HTMLParser):
         # pressing Theme changed the theme AND navigated, moving the page under the reader.
         # Shielding establishes that a heading is LIVE; it says nothing about whether the
         # position after it is a SAFE PARENT, and those are different questions.
-        # ⚠ The set is the elements that would swallow a press: a link, a button, a label
-        # (which forwards clicks to its control) and a summary (which toggles its details).
+        # ⚠ THE SET IS THE MARKUP-LEVEL swallowers, and that qualifier is the correction —
+        # r8 CLAUDE LOW showed the previous sentence ("the elements that would swallow a
+        # press") over-promised by one category. These four are complete for STANDARD
+        # ELEMENTS that can contain an `<h1>` and swallow a press; the reviewer checked
+        # `select`/`option`, `textarea`, `iframe`, `object`, `details`-without-`summary` and
+        # `legend`, and none both admits an `<h1>` and swallows. What is NOT covered is an
+        # ancestor that swallows BY ATTRIBUTE — `onclick=`, `tabindex`, `role="button"` — a
+        # clickable card wrapping its own title being the realistic shape. No repo fragment
+        # has one today, so this is a stated bound rather than an unfixed defect.
+        # ⚠ A link forwards its press by navigating, a label by forwarding to its control,
+        # a summary by toggling its details.
         self._interactive = 0
         # ⚠ ONE COUNTER PER MECHANISM. r4 measured a single shared counter being lifted
         # by the WRONG end tag, wrong in both directions and both browser-verified:
@@ -519,7 +528,21 @@ class _Scan(_HTMLParser):
         if tag == "style" and self._in_style:
             self._in_style -= 1
             return
-        if tag in _INTERACTIVE and self._interactive:
+        # ⛔ THE SAME SHIELD AS THE INCREMENT — r8 CLAUDE HIGH, and the comment demanding
+        # exactly this is the line after `self._interactive = 0`'s own declaration: *"ONE
+        # COUNTER PER MECHANISM. r4 measured a single shared counter being lifted by the
+        # WRONG end tag."* I added the counter without the guard that comment exists to
+        # demand. The increment sits after the shields, so an `<a>` inside a `<template>`
+        # correctly does not count — but the decrement had NO shield test, so a shielded
+        # `</a>` lifted a LIVE count to zero, `title_end` was recorded, and `place_bar` put
+        # the bar inside the anchor.
+        #
+        # BROWSER-VERIFIED by the reviewer on a composed page: pressing Theme changed the
+        # theme AND navigated to `#dest`, jumping the reader 6420px. That is r7 MEDIUM 4's
+        # defect verbatim, on the commit that fixed it.
+        # ⚠ Latent rather than live: 0 of the 20 repo fragments are affected today.
+        if (tag in _INTERACTIVE and self._interactive
+                and not any(self._depth.values())):
             self._interactive -= 1
         if (tag == "h1" and self.title_end is None
                 and not self._in_script and not any(self._depth.values())
@@ -1000,13 +1023,27 @@ def chrome_script() -> str:
         # all. Measured by the reviewer at scrollY=1800: both bars plain `.chrome`, the theme
         # button ending at y=-1659. The composer explicitly supports that shape, so this
         # needs no duplicate control and no malformed markup.
-        f"var slots=document.querySelectorAll('.{CHROME_SLOT_CLASS}');"
+        # ⛔ THE QUESTION IS ASKED OF THE `.chrome` ELEMENTS, NOT OF THEIR CONTAINERS —
+        # r8 CLAUDE HIGH, and it is r7's own fix failing to close r7's own class. r7 widened
+        # "the first slot" to "the first slot whose FIRST `.chrome` holds a control". The
+        # predicate it needed was "the first `.chrome` that holds a control". One `.chrome`
+        # deeper and the defect was unchanged.
+        #
+        # MEASURED by the reviewer on a composed page at 320x568 — one slot containing a
+        # stamp row and a control row, which `chrome_for` branch 1 ACCEPTS: `querySelector`
+        # returned the stamp row, the loop skipped the slot, the fallback took the same stamp
+        # row, the control predicate was false and the ENTIRE pin block including `sync()`
+        # never ran. `--chrome-h` was UNSET and `#chrome-theme` sat at y=-2383 at scrollY
+        # 2500 — r7 MEDIUM 3's own measurement (y=-1659) reproduced with its fix in place.
+        f"var bars=document.querySelectorAll('.{CHROME_SLOT_CLASS} .chrome');"
         "var slot=null,bar=null;"
-        "for(var si=0;si<slots.length;si++){var sb=slots[si].querySelector('.chrome');"
-        "if(sb&&sb.querySelector('#chrome-theme,#schemer')){slot=slots[si];bar=sb;break;}}"
-        # None holds a control yet — take the first, because the switcher may be about to
-        # join it. If there is no slot at all, `bar` stays null and nothing happens.
-        "if(!slot&&slots.length){slot=slots[0];bar=slot.querySelector('.chrome');}"
+        "for(var bi=0;bi<bars.length;bi++){"
+        "if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];"
+        f"slot=bar.closest('.{CHROME_SLOT_CLASS}');break;}}}}"
+        # None holds a control YET — take the first bar, because the switcher may be about
+        # to be moved into it. If there is no slotted bar at all, `bar` stays null and
+        # nothing happens, which is the stamp-only case on 17 of 20 fragments.
+        f"if(!bar&&bars.length){{bar=bars[0];slot=bar.closest('.{CHROME_SLOT_CLASS}');}}"
         # ⛔ THE FRAGMENT'S OWN SWITCHER IS MOVED INTO THE BAR — the owner's decision,
         # 2026-10-19, after r6 CODEX HIGH. Three real fragments carry a hand-authored
         # `#schemer` in their PROSE: the composer declines to add its own (that is r1's
@@ -1117,6 +1154,19 @@ def chrome_script() -> str:
         # control inert on every page. A browser measurement then read 0 class flips per
         # second and looked like the fix working. Two cases below now parse the output.
         "}"
+        # ⚠ AND THE RESERVE CAN BE EXCEEDED BY A PIXEL — r8 CLAUDE LOW, recorded rather
+        # than chased. `--chrome-h` is measured IN FLOW at the container's width; pinned the
+        # bar is `left:0;right:0` at viewport width and wraps differently. Measured at
+        # 320x568: reserve 132.2109375px, pinned bar 133.211px — a 1.0px OVERLAP of content.
+        # ⛔ NOT A REFLOW: `scrollHeight` is 31311 on both sides of the transition, so the
+        # page does not move; one pixel of content sits under the bar's border.
+        # ⚠ The comment above makes a point of sub-pixel fidelity, and that claim is about
+        # the RESERVE matching the IN-FLOW bar, which it does exactly. It is not a claim
+        # about the pinned bar, and the distinction is written here because the two were
+        # easy to read as one. Closing it would mean measuring a box that does not exist
+        # until the pin happens — i.e. re-measuring while pinned, which is the r7 HIGH this
+        # whole block is built to avoid. On the thrashing verdict, a stated pixel beats a
+        # sixth generation of pin machinery.
         # ⚠ THE BOUND THIS DESIGN ACCEPTS, STATED: a viewport resize WHILE PINNED does not
         # re-measure, so the reserve and the gap stay at their last in-flow values until
         # the bar returns to flow. That is deliberate — re-measuring while pinned is
@@ -1547,8 +1597,15 @@ def self_test() -> int:
 
         # --- the bar
         bar = chrome_bar("dashboard", "2026-08-31 06:40")
+        # ⛔ THE BUTTON'S OWN id, NOT THE WORD — r8 CLAUDE MEDIUM. `"chrome-refresh"` occurs
+        # TWICE in the bar: on the button and on its sibling `<span id="chrome-refresh-say">`.
+        # The reviewer renamed only the BUTTON's id — the id `chrome_script` binds by — making
+        # Refresh permanently inert on all five generated pages, and the suite stayed at
+        # 214/214 because the span supplied the substring. r7 fixed the five ambient
+        # assertions that were REPORTED and did not sweep for the class; this is that sweep.
         case("the bar carries all three controls",
-             (has_control(bar), "chrome-refresh" in bar, "chrome-when" in bar), (True, True, True))
+             (has_control(bar), 'id="chrome-refresh" type="button"' in bar,
+              'class="chrome-when"' in bar), (True, True, True))
         case("the bar names the page it would rebuild", 'data-page="dashboard"' in bar, True)
         case("refresh=False drops the refresh button, keeping the rest",
              ("chrome-refresh" in chrome_bar("x", "t", refresh=False),
@@ -1817,8 +1874,11 @@ def self_test() -> int:
               "window.addEventListener('scroll',fb);" in chrome_script()),
              (True, True, True))
 
-        case("the bar is found THROUGH the slot, so a stray .chrome elsewhere is not pinned",
-             f"slot.querySelector('.chrome')" in chrome_script(), True)
+        # ⟳ r8: the search is over `.chrome-slot .chrome`, so a stray `.chrome` OUTSIDE any
+        # slot is still never pinned — the property is unchanged, the spelling moved.
+        case("the bar is found inside a SLOT, so a stray .chrome elsewhere is not pinned",
+             f"document.querySelectorAll('.{CHROME_SLOT_CLASS} .chrome')" in chrome_script(),
+             True)
         # ── the pin threshold, asserted as WHOLE EXPRESSIONS ────────────────────────────
         # ⛔ EVERY CASE HERE NAMES ONE EXACT, CONTIGUOUS EXPRESSION, and the reason is measured.
         # r6 CLAUDE HIGH: the previous three cases asserted SUBSTRINGS — "getBoundingClientRect()
@@ -1873,13 +1933,23 @@ def self_test() -> int:
         # r7 MEDIUM 3: two slots — a fragment's own wired chrome plus the composer's
         # stamp-only bar — and the script bound the stamp-only one, so the real controls
         # never pinned. The theme button ended at y=-1659 at scrollY=1800.
-        case("the script picks the slot that HOLDS a control, not the first one",
-             ("document.querySelectorAll('.chrome-slot')" in chrome_script(),
-              "if(sb&&sb.querySelector('#chrome-theme,#schemer')){slot=slots[si];bar=sb;break;}"
-              in chrome_script()), (True, True))
-        case("...and falls back to the first slot, because the switcher may be about to "
+        # ⛔ r8 CLAUDE HIGH: the question is asked of the BARS, not of their containers.
+        # Asking "the first slot whose FIRST .chrome holds a control" left the defect intact
+        # one `.chrome` deeper — a slot with a stamp row and a control row pinned nothing at
+        # all and never even ran `sync()`.
+        case("the script picks the first .chrome that HOLDS a control, not the first slot",
+             ("if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];"
+              in chrome_script(),
+              f"slot=bar.closest('.{CHROME_SLOT_CLASS}');break;}}" in chrome_script()),
+             (True, True))
+        # ⚠ THE TWO BOUNDS r8 RECORDED, witnessed so they cannot quietly become claims.
+        case("...and the interactive set is the MARKUP-level swallowers, not every "
+             "swallower (r8 Low: onclick/tabindex/role are not covered)",
+             _INTERACTIVE == frozenset({"a", "button", "label", "summary"}), True)
+        case("...and falls back to the first BAR, because the switcher may be about to "
              "join it",
-             "if(!slot&&slots.length){slot=slots[0];" in chrome_script(), True)
+             f"if(!bar&&bars.length){{bar=bars[0];slot=bar.closest('.{CHROME_SLOT_CLASS}');}}"
+             in chrome_script(), True)
         # r7 HIGH 2: EVERY shielding element's own id is live. The instance was fixed three
         # times — <template> at r3, <noscript> at r4, <style> at r7 — and the class never
         # was. One identity case per element, and <script> was never reported at all.
@@ -1902,6 +1972,21 @@ def self_test() -> int:
         # whether the position after it is a safe PARENT.
         case("place_bar refuses to insert inside a link, and prepends instead",
              place_bar('<a href="#d"><h1>T</h1></a><p>x</p>', "[B]").startswith("[B]"), True)
+        # ⛔ THE REVIEWER'S OWN INPUT, and its ABSENCE is why the r8 mutation survived: no
+        # case fed `place_bar` a SHIELDED end tag, so unguarding the decrement changed no
+        # outcome the suite looked at. The shielded `</a>` lifts a live open-link count to
+        # zero, `title_end` is recorded inside the anchor, and pressing Theme navigates —
+        # browser-verified at scrollY 0 -> 6420.
+        case("a SHIELDED </a> does not lift the live link count, so the bar stays out of "
+             "the anchor (r8 High)",
+             place_bar('<a href="#dest"><noscript><a href="/plain">plain</a></noscript>'
+                       '<h1>Title</h1></a><p>Intro</p>', "[B]").startswith("[B]"), True)
+        case("...and a <template> in place of the <noscript> behaves identically",
+             place_bar('<a href="#dest"><template><a href="/p">p</a></template>'
+                       '<h1>T</h1></a><p>x</p>', "[B]").startswith("[B]"), True)
+        case("...while a <button> wrapping a shielded <button> is also still refused",
+             place_bar('<button><template><button>x</button></template><h1>T</h1></button>'
+                       '<p>y</p>', "[B]").startswith("[B]"), True)
         case("...and inside a button, a label or a summary, for the same reason",
              (place_bar("<button><h1>T</h1></button><p>x</p>", "[B]").startswith("[B]"),
               place_bar("<label><h1>T</h1></label><p>x</p>", "[B]").startswith("[B]"),
