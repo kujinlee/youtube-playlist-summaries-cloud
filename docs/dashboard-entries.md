@@ -15252,3 +15252,72 @@ that tripped the next gate — the discriminating input is now its own case.
 
 page_chrome self-test 50 → 103. Mutations 11 → 20, all killed via the case each names over a green
 control, anchors distinct. Declared sum 1456 → 1465 = on-disk total. brief-compose 132/132.
+
+## 2026-10-19
+The theme and text-style controls are now reachable on every generated page, and that was the
+original complaint: they were never missing, they were rendering in the last thirty pixels of
+documents thousands of pixels tall.
+
+They now sit under the title, where you choose before reading, and follow you to the top of the
+screen once you scroll past them. One control bar that changes position — not a second copy,
+because a second copy is inert by construction and that mistake already cost two review rounds.
+
+Measured in a real browser on all five kinds of page, at desktop and phone width: both controls
+visible at every scroll position tested, the page does not jump when the bar pins, and it returns
+to its resting place when you scroll back up.
+
+Two things are worth your attention. The first is that one page still misses out: its own source
+declares an incomplete colour palette, so the builder refuses to dress it at all, and that is an
+older problem this work did not touch. The second is bigger and is a question rather than a defect.
+
+**Waiting on you — a decision, not a defect.** Six review rounds on this feature have now produced
+the same shape: each round's fix created the next round's finding, always in the same file. The
+reason is identifiable. The thing being checked — *can a reader reach this control* — depends on
+page height, window size and scrolling, and no amount of reading the page's text can answer it.
+Every real defect this round was found by opening a browser, and every fix was confirmed in one.
+The suggestion is to move that check out of text and into a real browser test. The project already
+has the tool for it. That is an architecture decision and it is yours to make.
+<!--tech-->
+Branch `chrome-bar-reachable`, 24 commits, off `master`. `page_chrome.py`, `brief-compose.py`,
+their two mutation manifests and `check-plan-code.py`.
+
+**Shape.** `chrome_bar` emits the bar inside a `.chrome-slot`; `place_bar` inserts it after the
+first LIVE `</h1>` (sharing `_Scan`'s shield rule, so a `</h1>` in a comment, a script or a
+`<template>` cannot be chosen); `chrome_script` toggles `.chrome-pinned` on `!isIntersecting` of
+the slot, with the observer root shrunk by the gap between the TOPMOST control's bottom and the
+slot's bottom. The slot holds `min-height:var(--chrome-h)` so pinning cannot shift the page. The
+`<body>` padding reservation and `body.chrome-pinned-host` are retired. A hand-authored `#schemer`
+is moved into the bar at runtime (the owner's choice, 2026-10-19) — safe because all three
+affected fragments style it by CLASS, verified.
+
+**Measured, 1280x900 unless stated.** composed explainer 8,145px doc, bar y=120 at rest, visible
+6/6 · dashboard 28,627px, y=126, 5/5 · backlog 42,692px, y=87, 5/5 · features 12,758px, y=151, 5/5
+· goals 7,354px, y=151, 5/5 · phone 320x568 5/5, no horizontal scroll · dashboard through r6's
+oscillation band at 1px granularity: 0 class flips/s at 9 of 9 positions (was 60/s), button on
+screen at all 9 · both controls reachable 7/7 and 6/6 on the two pages carrying the script.
+
+**Guards.** page_chrome 201/201 (was 157) · brief-compose 149/149 (was 137) · check-plan-code
+178/178 · real harness over both whole manifests 96 mutations, 96 killed, 96 attributed, 0
+survivors · full `--mutate .` 1,509/1,509 killed, 0 survivors · Jest 2,892/278 · 52 of 54 CI
+document guards rc=0 (`check-review-recorded` wants a round against the current tree, which r6 is)
+· check-review-rounds 409 parsed, 0 silent gaps.
+
+**Rounds 5 and 6.** r5: five findings DECLINED and the guard's SUBJECT narrowed instead (owner's
+option A) — markup from this repo's generators or its explainer skills, witnessed by four
+`OUT OF SCOPE` cases that redden if the scan is tightened. r6 Codex: the pin threshold keyed on the
+slot rather than the control; the CSS-comment exclusion argued wrong and PROMOTED out of the bound.
+r6 Claude, BLOCKING: a braceless guard let the observer re-arm while pinned — 60 class flips/s on a
+production page, reinstating the finding it fixed. Three defects found while fixing it: the emitted
+JavaScript was INVALID behind 201 green cases (now `node --check`ed); a raising case erased the
+entire report (now a named failing case, a protection `brief-compose` has had since r1); and a
+second, NAIVE `strip_css_comments` shipped beside the correct one it duplicated, with a measured
+fail-open — now ONE implementation in `page_chrome`, and the CSS-reading predicates read applied
+CSS rather than raw page text, which closed r1's F7 class too.
+
+⛔ **NOT CONVERGED, and Phase 6 is ARMED and not convened** — thrashing with per-finding evidence
+in `docs/reviews/coordinator/chrome-bar-reachable-r6-coordinator.md`. Merge and convening are both
+the owner's.
+
+**NOT RUN:** CI until the PR exists; real device; print; zoom; font-load reflow; the
+no-IntersectionObserver fallback in a browser; `2026-10-05-topic-why-x-not-y` (no chrome script by
+construction).
