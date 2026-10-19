@@ -125,8 +125,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "{{position:fixed;left:0",
-        "{{left:0"
+        "{{position:fixed;top:0",
+        "{{top:0"
       ]
     ],
     "expect": "the shipped CSS pins the bar into the viewport"
@@ -136,8 +136,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "position:fixed;left:0;right:0;bottom:0;\"",
-        "position:fixed;bottom:0;\""
+        "        \"left:0;right:0;\"\n",
+        ""
       ]
     ],
     "expect": "...and it spans the viewport, or margin-inline-start:auto stops reaching the edge"
@@ -169,11 +169,11 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\"\n",
-        ""
+        "        # including the 17 of 20 stamp-only fragments that never pin at all.\n        f\".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}\"\n",
+        "        # including the 17 of 20 stamp-only fragments that never pin at all.\n"
       ]
     ],
-    "expect": "the page reserves the bar's OWN measured height, never a literal"
+    "expect": "the SLOT reserves the bar's OWN measured height, never a literal"
   },
   {
     "name": "the bar loses its separating rule",
@@ -202,11 +202,11 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        f\"bar.classList.add({CHROME_PIN_CLASS!r});\"\n",
+        "        f\"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};\"\n",
         ""
       ]
     ],
-    "expect": "the script adds the pin class to the BAR, not only the body"
+    "expect": "the script TOGGLES the pin class on the bar, so the pin is reversible"
   },
   {
     "name": "a stamp-only bar is pinned too",
@@ -559,5 +559,104 @@
       ]
     ],
     "expect": "the subject is declared where it is enforced"
+  },
+  {
+    "name": "the pin returns to the BOTTOM edge, where the bar no longer rests",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "f\".{CHROME_PIN_CLASS}{{position:fixed;top:0;\"",
+        "f\".{CHROME_PIN_CLASS}{{position:fixed;bottom:0;\""
+      ]
+    ],
+    "expect": "...and anchors it to the TOP edge, the one it scrolled off"
+  },
+  {
+    "name": "<body> reserves bottom padding again, for a bar that pins at the top",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        f\".{CHROME_SLOT_CLASS}{{min-height:0}}}}\"",
+        "        f\".{CHROME_SLOT_CLASS}{{min-height:0}}}}\"\n        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\""
+      ]
+    ],
+    "expect": "...and <body> no longer reserves anything, or a top-pinned bar would leave a blank band at the document end"
+  },
+  {
+    "name": "the slot wrapper is dropped, so the script has nothing to observe",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return f'<div class=\"{CHROME_SLOT_CLASS}\">' + inner + \"</div>\"",
+        "    return inner"
+      ]
+    ],
+    "expect": "chrome_bar wraps the bar in the slot the script observes, so no caller can forget it"
+  },
+  {
+    "name": "the bar is emitted TWICE, which is rounds 2 and 4's duplicate-id defect",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    inner = '<div class=\"chrome\">' + \"\".join(parts) + \"</div>\"",
+        "    inner = ('<div class=\"chrome\">' + \"\".join(parts) + \"</div>\") * 2"
+      ]
+    ],
+    "expect": "...and emits exactly ONE bar \u2014 a second copy is the duplicate-id defect that cost rounds 2 and 4, because getElementById binds the FIRST"
+  },
+  {
+    "name": "the pin becomes unconditional again, putting the controls at an edge on load",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"new IntersectionObserver(function(es){pin(!es[0].isIntersecting);}).observe(slot);}\"",
+        "\"pin(true);}\""
+      ]
+    ],
+    "expect": "the pin is keyed on the slot not being VISIBLE, in either direction"
+  },
+  {
+    "name": "the height is re-measured while PINNED, so the reserve and the observer chase each other",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "f\"var sync=function(){{if(!bar.classList.contains({CHROME_PIN_CLASS!r}))\"",
+        "f\"var sync=function(){{if(True or {CHROME_PIN_CLASS!r})\""
+      ]
+    ],
+    "expect": "the height is measured only while UNPINNED, or the reserve and the observer chase each other"
+  },
+  {
+    "name": "place_bar appends instead of inserting under the title",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return markup[:gt + 1] + \"\\n\" + bar + markup[gt + 1:]",
+        "    return markup + \"\\n\" + bar"
+      ]
+    ],
+    "expect": "place_bar puts the bar just after the title, not before it"
+  },
+  {
+    "name": "the shield is ignored when choosing the title, so the bar can land in a <template>",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if (tag == \"h1\" and self.title_end is None\n                and not self._in_script and not any(self._depth.values())):",
+        "        if (tag == \"h1\" and self.title_end is None\n                and not self._in_script):"
+      ]
+    ],
+    "expect": "...skipping a SHIELDED <h1>, whose </h1> a substring search would have chosen"
+  },
+  {
+    "name": "the reserve rounds to whole pixels again, shifting the page at the pin",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"'--chrome-h',bar.getBoundingClientRect().height+'px');};sync();\"",
+        "\"'--chrome-h',bar.offsetHeight+'px');};sync();\""
+      ]
+    ],
+    "expect": "the reserve is measured in fractional pixels, so pinning cannot shift the page"
   }
 ]

@@ -186,6 +186,22 @@ CHROME_PIN = "position:fixed"
 #     viewport, permanently, on a timestamp nobody interacts with.
 # So: no JS -> no pin, no occlusion, and the bar stays exactly where it is today.
 CHROME_PIN_CLASS = "chrome-pinned"
+# The IN-FLOW placeholder the bar sits in, and the reason this design has one element
+# rather than two. ⟳ 2026-10-18, the owner's choice: the controls belong UNDER THE TITLE,
+# where a reader chooses before reading, AND they must stay reachable after scrolling past.
+#
+# ⛔ TWO COPIES WAS THE OBVIOUS SHAPE AND IT IS THE DEFECT ROUNDS 2 AND 4 BOTH PAID FOR.
+# `chrome_script` binds with `getElementById`, which returns the FIRST match, so a second
+# bar renders fully and does nothing — and the two then show contradictory selected states.
+# `assert_wired` refuses duplicate ids for exactly this reason. So there is ONE bar, and it
+# CHANGES POSITION: in flow inside this slot while the slot is on screen, `position:fixed`
+# at the top once the slot leaves it.
+#
+# ⚠ THE SLOT IS WHY PINNING DOES NOT JUMP THE PAGE. A fixed element leaves the flow, so
+# without a placeholder the content below it would rise by the bar's height at the moment of
+# pinning. The slot holds `min-height:var(--chrome-h)` — the height the bar reported while
+# it was still in flow — so the space is already reserved and nothing moves.
+CHROME_SLOT_CLASS = "chrome-slot"
 
 # `\.chrome\{` and not `\.chrome` — `.chrome-btn{` must NOT satisfy the rule, and an
 # identity case below proves it does not.
@@ -231,6 +247,13 @@ class _Scan(_HTMLParser):
         self.scripts: list[str] = []
         self._in_script = 0
         self.classes: set[str] = set()
+        # ⛔ ONE PARSER, ONE SHIELD RULE. `place_bar` needs the first LIVE `</h1>`, and
+        # "live" means exactly what it means for an id: not inside a <template>, a
+        # <noscript> or a <script>. Reading that position here rather than in a second
+        # scanner is not tidiness — a separate implementation of the shield rule is this
+        # repository's most-measured defect (17 instances), and the failure it would cause
+        # is specific: a bar inserted inside a <template> renders nothing at all.
+        self.title_end: tuple[int, int] | None = None
         # ⚠ ONE COUNTER PER MECHANISM. r4 measured a single shared counter being lifted
         # by the WRONG end tag, wrong in both directions and both browser-verified:
         #   <noscript></template><div class="ex-body">  -> scan saw a consumer, DOM had none
@@ -320,6 +343,9 @@ class _Scan(_HTMLParser):
         if tag == "script" and self._in_script:
             self._in_script -= 1
             return
+        if (tag == "h1" and self.title_end is None
+                and not self._in_script and not any(self._depth.values())):
+            self.title_end = self.getpos()
         if tag in self._depth and self._depth[tag]:
             self._depth[tag] -= 1
 
@@ -631,7 +657,17 @@ def chrome_css() -> str:
         # and the one `inherit` was reaching for. backlog #80 forbids borrowing a SECOND surface
         # (`--card`, which #79 drove to 1.03:1); this is the first. The property #80 protects is
         # preserved; the token set is widened deliberately and recorded, not silently.
-        f".{CHROME_PIN_CLASS}{{position:fixed;left:0;right:0;bottom:0;"
+        # ⟳ 2026-10-18: `top:0`, WAS `bottom:0`. The resting place moved to under the
+        # title, so the direction the bar leaves the viewport reversed — it now scrolls off
+        # UPWARD, and a bar that returns to the bottom edge would be nowhere near where the
+        # reader last saw it. `top:0` is the same edge it came from.
+        # ⚠ THE EDGE AND THE SPAN ARE ON SEPARATE LINES ON PURPOSE. They are two
+        # independent properties — which edge the bar returns to, and whether it reaches
+        # both margins — and the mutation harness keys an entry on its anchor TEXT, so two
+        # properties sharing one line can carry only one entry between them. Splitting the
+        # line is what lets each be severed on its own.
+        f".{CHROME_PIN_CLASS}{{position:fixed;top:0;"
+        "left:0;right:0;"
         # ⚠ A LOW z-index ON PURPOSE, and the number is not the point. Any floating UI must sit
         # ABOVE this bar. ⟳ r1 LOW: the previous comment claimed the ask tray "owns z-index 5".
         # It does not — `#tray` computes 50 and the pages declare 70. That figure was taken from
@@ -641,16 +677,28 @@ def chrome_css() -> str:
         "z-index:1;background:var(--bg,Canvas);"
         "padding-inline:1rem;"
         "border-top:1px solid var(--rule,transparent)}"
-        # The bar reports its own height so the page can reserve exactly that much and no more.
-        # Fallback 3rem matters only in the instant before the script runs.
-        f"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}"
+        # ⟳ 2026-10-18: THE RESERVATION MOVED FROM <body> TO THE SLOT, and that is what
+        # retires `body.chrome-pinned-host`. A bottom-pinned bar occluded the END of the
+        # document, so the page padded its own bottom; a bar that pins at the top occludes
+        # nothing it has not already left, and the only space that must be held is the hole
+        # it leaves in the flow. The slot holds exactly that and the <body> rule is gone —
+        # keeping it would have reserved a blank band at the document end for nothing.
+        # ⚠ Fallback `0`, not `3rem`: before the script runs the bar is IN the slot and
+        # supplies the height itself, so a non-zero floor would add a gap on every page,
+        # including the 17 of 20 stamp-only fragments that never pin at all.
+        f".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}"
+        # In-page anchors must not land under the pinned bar. Keyed on the same custom
+        # property, so it is 0 until the bar has measured itself.
+        ":root{scroll-padding-top:var(--chrome-h,0)}"
         # ⛔ NOT IN PRINT — r2 MEDIUM, verified against a rasterised 12-page PDF. A fixed
         # element repeats at the bottom of EVERY printed page, while the reserved padding
         # exists only once at the document end; on page 2 the band covered a real row
         # sitting 9.6pt from the edge. Print has no viewport to pin to and no scrolling to
         # escape, so the bar simply returns to the flow and the reservation is dropped.
         f"@media print{{.{CHROME_PIN_CLASS}{{position:static}}"
-        f"body.{CHROME_PIN_CLASS}-host{{padding-bottom:0}}}}"
+        # ⟳ The slot's reservation is dropped for the same reason the pin is: with the bar
+        # back in the flow the space is occupied, and holding it as well prints a blank band.
+        f".{CHROME_SLOT_CLASS}{{min-height:0}}}}"
         # ⚠ `background:transparent`, NOT `var(--card,…)` — backlog #80, 2026-09-01.
         # Of the five tokens this module reads, four are FOREGROUND or BORDER and fall back to
         # `currentColor`/`inherit`, so they are page-derived and safe by construction. `--card` was
@@ -748,17 +796,84 @@ def chrome_script() -> str:
         # 20 real fragments are stamp-only, and pinning those spends 38px of every viewport
         # on a timestamp. `bar.querySelector` is the test, so the rule is "does this bar
         # have something to press", not "which caller built it".
-        f"var bar=document.querySelector('.chrome');"
+        #
+        # ⟳ 2026-10-18 — CONDITIONAL, WAS UNCONDITIONAL. The bar used to pin the moment the
+        # page loaded, which put the controls at the bottom edge of every page whatever the
+        # reader was doing. They now rest under the title and pin only once the slot that
+        # holds them is off screen, which is the owner's "under the title AND pinned".
+        f"var slot=document.querySelector('.{CHROME_SLOT_CLASS}');"
+        f"var bar=slot&&slot.querySelector('.chrome');"
         f"if(bar&&bar.querySelector('#chrome-theme,#schemer')){{"
-        f"bar.classList.add({CHROME_PIN_CLASS!r});"
-        f"document.body.classList.add({CHROME_PIN_CLASS + '-host'!r});"
         # The bar WRAPS: 44-63px at 1280, 129px at 320x568. Measuring it beats any literal.
-        "var sync=function(){document.documentElement.style.setProperty("
-        "'--chrome-h',bar.offsetHeight+'px');};sync();"
+        # ⛔ ONLY WHILE UNPINNED, AND THIS IS A FEEDBACK LOOP, NOT A STYLE CHOICE. A pinned
+        # bar spans the viewport; the same bar in flow sits inside a narrower container and
+        # therefore wraps MORE. Re-measuring after pinning would shrink `--chrome-h`, which
+        # shrinks the slot, which moves the page under the reader, which can re-cross the
+        # observer's threshold. Holding the in-flow height also keeps the reservation an
+        # over-estimate rather than an under-estimate, so the slot can leave a thin gap but
+        # can never swallow a line of text.
+        f"var sync=function(){{if(!bar.classList.contains({CHROME_PIN_CLASS!r}))"
+        "document.documentElement.style.setProperty("
+        # ⛔ `getBoundingClientRect().height`, NOT `offsetHeight` — MEASURED, not preferred.
+        # `offsetHeight` returns a ROUNDED integer, so a bar whose real height is 44.5px
+        # reserved 44px and the page shifted by the half pixel it lost: the goals page's
+        # scrollHeight went 7354 unpinned -> 7353 pinned, on 1 of the 5 producers. One pixel
+        # is invisible, and that is exactly why it had to be found by measuring document
+        # height across the transition rather than by looking at the page.
+        "'--chrome-h',bar.getBoundingClientRect().height+'px');};sync();"
         "if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}"
-        "else{window.addEventListener('resize',sync);}}"
+        "else{window.addEventListener('resize',sync);}"
+        f"var pin=function(on){{bar.classList.toggle({CHROME_PIN_CLASS!r},on);}};"
+        # ⚠ `!isIntersecting`, NOT "scrolled past". The slot can leave the viewport in either
+        # direction, and the bar must be reachable both times: above it on a page scrolled
+        # down, BELOW it on a caller that still emits the bar at the end of the document.
+        # That second case is backlog #300's exact shape, and keying on visibility rather
+        # than on direction means the mechanism survives a caller putting the bar anywhere.
+        "if(window.IntersectionObserver){"
+        "new IntersectionObserver(function(es){pin(!es[0].isIntersecting);}).observe(slot);}"
+        # No IntersectionObserver: the same predicate, read from the box on every scroll.
+        "else{var fb=function(){var r=slot.getBoundingClientRect();"
+        "pin(r.bottom<=0||r.top>=(window.innerHeight||"
+        "document.documentElement.clientHeight));};fb();"
+        "window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}"
         "})();"
     )
+
+
+def place_bar(markup: str, bar: str) -> str:
+    """Put the bar UNDER THE TITLE: just after the first live `</h1>`. PURE.
+
+    ⟳ 2026-10-18, the owner's choice. The four generators already place the bar themselves,
+    under their own `<h1>`; the composed explainer path appended it to the END of <body>,
+    which is why backlog #300's bar sat at y=6445 of a 6475px document. This is the rule
+    that gives that path the same resting place, and it lives beside `chrome_bar` so there
+    is ONE answer to "where does the bar go" rather than one per caller.
+
+    ⚠ NO `<h1>` -> THE BAR GOES FIRST, not last. A reader who cannot find a title still
+    gets the controls before the prose, and "last" is the state this change exists to end.
+
+    ⛔ THE BOUND, AND IT IS THE MODULE'S BOUND, NOT A NEW ONE. The position comes from
+    `html.parser`, so an `</h1>` inside a comment, a script or a shielded element is not
+    reported and cannot be chosen — which is the whole reason this is a parse and not a
+    `markup.index("</h1>")`. What it does NOT handle is markup where the first live `</h1>`
+    is not where the title ends: an `<h1>` closed implicitly, or re-opened later. Those are
+    adversarial shapes under the subject declared at the top of this file, and this function
+    inherits that bound rather than restating it.
+    """
+    pos = _scan(markup).title_end
+    if pos is None:
+        return bar + "\n" + markup
+    line, col = pos
+    lines = markup.splitlines(keepends=True)
+    if line - 1 >= len(lines):
+        return bar + "\n" + markup
+    start = sum(len(x) for x in lines[:line - 1]) + col
+    # The end tag starts at `start` and runs to its own `>`. An end tag carries no
+    # attributes, so no `>` can hide inside one.
+    gt = markup.find(">", start)
+    if gt < 0:
+        return bar + "\n" + markup
+    return markup[:gt + 1] + "\n" + bar + markup[gt + 1:]
 
 
 def provenance(now: str, root: pathlib.Path) -> str:
@@ -811,7 +926,14 @@ def chrome_bar(slug: str, when: str, *, refresh: bool = True,
     if refresh:
         parts.append(refresh_control(slug))
     parts.append(stamp(when))
-    return '<div class="chrome">' + "".join(parts) + "</div>"
+    # ⛔ THE SLOT IS EMITTED HERE, NOT BY THE CALLER, and that is the point of putting it in
+    # this function. Five callers place this bar; the script needs a placeholder to observe
+    # and a hole to reserve. Leaving that to the callers would be a contract with five
+    # implementers and no enforcement — which is `.ex-body`'s shape exactly, the one class
+    # in this feature that NOTHING in the repository emits and that cost round 5 its
+    # consumer arm. A caller cannot forget what it does not write.
+    inner = '<div class="chrome">' + "".join(parts) + "</div>"
+    return f'<div class="{CHROME_SLOT_CLASS}">' + inner + "</div>"
 
 
 def assert_wired(page: str, where: str, *, scoped_css_emitted: bool = False) -> None:
@@ -1276,19 +1398,90 @@ def self_test() -> int:
                    f"</style><body>{theme_control()}</body>")
     case("the shipped CSS pins the bar into the viewport",
          CHROME_PIN in chrome_css().replace(" ", ""), True)
-    case("...and anchors it to the bottom edge",
-         "bottom:0" in chrome_css().replace(" ", ""), True)
+    # ⟳ 2026-10-18: THE TOP edge, and the pair is asserted so a half-revert cannot pass.
+    # The resting place moved under the title, so the bar now leaves the viewport upward and
+    # must return to the edge it left by. `bottom:0` surviving anywhere in this rule would
+    # stretch the bar over the whole viewport height, so its ABSENCE is asserted too.
+    case("...and anchors it to the TOP edge, the one it scrolled off",
+         ("top:0" in chrome_css().replace(" ", ""),
+          "bottom:0" in chrome_css().replace(" ", "")), (True, False))
     case("the pinned bar is opaque, or the page scrolls through it",
          "background:var(--bg,Canvas)" in chrome_css().replace(" ", ""), True)
     case("...and it spans the viewport, or margin-inline-start:auto stops reaching the edge",
          all(k in chrome_css().replace(" ", "") for k in ("left:0", "right:0")), True)
-    case("the page reserves the bar's OWN measured height, never a literal",
-         "padding-bottom:var(--chrome-h" in chrome_css().replace(" ", ""), True)
+    # ⟳ 2026-10-18: THE SLOT reserves, not <body>. Same property — the bar's OWN measured
+    # height, never a literal — moved to the element that actually has the hole in it.
+    case("the SLOT reserves the bar's OWN measured height, never a literal",
+         f".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}"
+         in chrome_css().replace(" ", ""), True)
+    case("...and <body> no longer reserves anything, or a top-pinned bar would leave a "
+         "blank band at the document end",
+         "padding-bottom:var(--chrome-h" in chrome_css().replace(" ", ""), False)
+    case("in-page anchors clear the pinned bar, keyed on the same measured height",
+         "scroll-padding-top:var(--chrome-h,0)" in chrome_css().replace(" ", ""), True)
     case("the pin is applied by the SCRIPT, so no-JS gets no pin and no occlusion",
          (CHROME_PIN_CLASS in chrome_script(), CHROME_PIN_CLASS in chrome_bar("s", "t")),
          (True, False))
     case("a bar with NO control is never pinned — 17 of 20 fragments are stamp-only",
          "#chrome-theme,#schemer" in chrome_script(), True)
+    # ── "under the title AND pinned", the owner's choice, as ONE element ──────────────
+    _bar = chrome_bar("s", "t", textstyle=True)
+    case("chrome_bar wraps the bar in the slot the script observes, so no caller can "
+         "forget it",
+         _bar.startswith(f'<div class="{CHROME_SLOT_CLASS}"><div class="chrome">'), True)
+    case("...and emits exactly ONE bar — a second copy is the duplicate-id defect that "
+         "cost rounds 2 and 4, because getElementById binds the FIRST",
+         (_bar.count('class="chrome"'), _bar.count(f'class="{CHROME_SLOT_CLASS}"'),
+          _scan(_bar).ids.count("chrome-theme")), (1, 1, 1))
+    case("the bar rests IN the flow: the slot carries no pin and no fixed position",
+         (CHROME_PIN_CLASS in _bar, "position:fixed" in _bar), (False, False))
+    # ⛔ THE PREDICATE IS VISIBILITY, NOT DIRECTION, and the case asserts the spelling
+    # because the two are indistinguishable in behaviour until a caller emits the bar at the
+    # END of a document — which is what every composed explainer page did this morning
+    # (y=6445 of 6475), and is backlog #300 itself. `scrolled past` would leave those
+    # unpinned and unreachable; `not visible` reaches them.
+    case("the pin is keyed on the slot not being VISIBLE, in either direction",
+         ("pin(!es[0].isIntersecting)" in chrome_script(),
+          ".observe(slot)" in chrome_script()), (True, True))
+    case("...with a scroll fallback asking the same question where there is no "
+         "IntersectionObserver",
+         ("window.IntersectionObserver" in chrome_script(),
+          "getBoundingClientRect" in chrome_script(),
+          "addEventListener('scroll'" in chrome_script()), (True, True, True))
+    # ⛔ THE FEEDBACK LOOP, PINNED BY A CASE because it is not visible in the rendering.
+    # A pinned bar spans the viewport and wraps LESS than the same bar inside a page
+    # container. Re-measuring after pinning shrinks --chrome-h, which shrinks the slot,
+    # which moves the page under the reader and can re-cross the observer's threshold.
+    case("the height is measured only while UNPINNED, or the reserve and the observer "
+         "chase each other",
+         f"if(!bar.classList.contains({CHROME_PIN_CLASS!r}))" in chrome_script(), True)
+    case("the bar is found THROUGH the slot, so a stray .chrome elsewhere is not pinned",
+         f"slot.querySelector('.chrome')" in chrome_script(), True)
+    # ⟳ 2026-10-18: the reserve is measured in FRACTIONAL pixels. `offsetHeight` rounds, so
+    # a 44.5px bar reserved 44px and the goals page shifted 1px at the pin (scrollHeight
+    # 7354 -> 7353). Both halves of the pair are asserted: a revert to `offsetHeight` must
+    # redden, not merely stop being mentioned.
+    case("the reserve is measured in fractional pixels, so pinning cannot shift the page",
+         ("bar.getBoundingClientRect().height" in chrome_script(),
+          "offsetHeight" in chrome_script()), (True, False))
+    # ── place_bar: the resting place, and the four shapes it must get right ──────────
+    case("place_bar puts the bar just after the title, not before it",
+         place_bar("<h1>T</h1>\n<p>x</p>", "[BAR]"), "<h1>T</h1>\n[BAR]\n<p>x</p>")
+    case("...and FIRST when there is no title, never last — last is the state this "
+         "change exists to end (backlog #300)",
+         place_bar("<p>no title</p>", "[BAR]"), "[BAR]\n<p>no title</p>")
+    # ⛔ A BAR INSERTED INSIDE A <template> RENDERS NOTHING, which is why this is a parse
+    # sharing `_Scan`'s shield rule and not a `markup.index("</h1>")`.
+    case("...skipping a SHIELDED <h1>, whose </h1> a substring search would have chosen",
+         place_bar("<template><h1>t</h1></template><h1>R</h1><p>y</p>", "[BAR]"),
+         "<template><h1>t</h1></template><h1>R</h1>\n[BAR]<p>y</p>")
+    case("...and a COMMENTED-OUT one, for the same reason",
+         place_bar('<!-- <h1>c</h1> --><h1 class="a">R</h1><p>y</p>', "[BAR]"),
+         '<!-- <h1>c</h1> --><h1 class="a">R</h1>\n[BAR]<p>y</p>')
+    # The bar must survive placement intact — a lost closing tag here would silently
+    # swallow the rest of the document into the slot.
+    case("place_bar neither drops nor duplicates the bar it was given",
+         place_bar("<h1>T</h1><p>x</p>", _bar).count('class="chrome"'), 1)
     # ⟳ 2026-10-18, r1 LOW. WAS `"z-index:1" in css` and the comment claimed the ask tray
     # "owns z-index 5". ⛔ BOTH WRONG. `#tray` computes 50 and the pages declare 70; the 5
     # came from a grep COUNT and was never checked against the tray — a figure invented to
@@ -1377,7 +1570,8 @@ def self_test() -> int:
     case("the pinned bar returns to the flow in print, and frees its reserved space",
          ("@media print" in chrome_css(),
           f".{CHROME_PIN_CLASS}{{position:static}}" in chrome_css().replace(" ", ""),
-          "padding-bottom:0" in chrome_css().replace(" ", "")), (True, True, True))
+          f".{CHROME_SLOT_CLASS}{{min-height:0}}" in chrome_css().replace(" ", "")),
+         (True, True, True))
     # ── r3's four parser findings, each measured against Chromium's actual behaviour ──
     case("a <template>'s OWN id is live — getElementById returns the template itself",
          _scan(_TSC + '<template id="schemer"></template>').ids.count("schemer"), 2)
@@ -1485,10 +1679,13 @@ def self_test() -> int:
          (raises(f"<style>{LIGHT}{DARK}{chrome_css()}</style>"
                  f"{theme_control()}<!-- {theme_control()} -->"
                  f"<script>{chrome_script()}</script>") or ""), False)
-    # The pin is applied to the BAR; the body only hosts the padding. A mutation that drops
-    # the bar's own class leaves the host class behind, so naming the class is not enough.
-    case("the script adds the pin class to the BAR, not only the body",
-         "bar.classList.add" in chrome_script(), True)
+    # ⟳ 2026-10-18: TOGGLED, not added. The pin is now reversible — that is the whole of
+    # "under the title AND pinned" — so the mechanism is `classList.toggle(cls, on)` and the
+    # <body> host class is gone. Asserting the toggle AND the absence of the one-way add is
+    # what stops a revert to unconditional pinning passing this case.
+    case("the script TOGGLES the pin class on the bar, so the pin is reversible",
+         (f"classList.toggle({CHROME_PIN_CLASS!r},on)" in chrome_script(),
+          "bar.classList.add" in chrome_script()), (True, False))
     case("the bar keeps a separating rule and its breathing room",
          ("border-top" in chrome_css(), "padding-block" in chrome_css()), (True, True))
     case("a FINISHED document is never exempt, however it reached the writer",

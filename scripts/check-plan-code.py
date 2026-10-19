@@ -795,7 +795,12 @@ EXPECTED_MUTATIONS = {
     # ⟳ r1 Codex Medium: 8 -> 10. A page-specific `#tray …` override was migrating INTO the
     # tray region and freezing there for every page later composed from it; the second entry
     # guards the fix's own failure mode, which is subtracting the tray away entirely.
-    "scripts/brief-compose.py": 19,
+    # ⟳ 2026-10-18, the r5 fold: 19 -> 20. The composer's resting place for the bar moved
+    # from the END of <body> to under the title, which is the line that CAUSED backlog #300
+    # (y=6445 of 6475). `place_bar` being unit-correct proves nothing about this path, so
+    # the entry severs the CALL SITE — the between-two-tested-pieces gap, measured here
+    # three times before.
+    "scripts/brief-compose.py": 20,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1295,7 +1300,15 @@ EXPECTED_MUTATIONS = {
     # was patching a branch the nesting does not happen in, and the CSS-comment case was
     # asking the REGEX while the fix would land on the GUARD, so it stayed green at 163/163.
     # Both are now pointed at what the code actually sees.
-    "scripts/page_chrome.py": 51,
+    # ⟳⟳ 2026-10-18, the 2b fold: 51 -> 59. Eight entries for "under the title AND
+    # pinned": the top edge, the slot's reservation, the slot wrapper, a DOUBLE bar (rounds
+    # 2 and 4's duplicate-id defect, now mutated rather than argued), the conditional pin,
+    # the measure-while-unpinned feedback guard, place_bar's insertion point and its shield.
+    # ⚠ Three EXISTING entries were re-anchored, not added — `bottom:0`, the <body>
+    # reservation and `classList.add` are spellings this fold removed, and an entry whose
+    # anchor is gone reports NOT MEASURED rather than failing, which is how two orphans rode
+    # this branch unnoticed until the real harness named them.
+    "scripts/page_chrome.py": 60,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5121,7 +5134,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1499)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1509)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

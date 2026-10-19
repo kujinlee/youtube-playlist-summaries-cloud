@@ -913,7 +913,16 @@ def compose(content: str, title: str, css: str, markup: str, script: str,
                           css + "\n" + page_chrome.chrome_css() + "\n"
                           + scheme_css + "\n" + SHIM)
     chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
-    body = body + "\n" + chrome_bar + "\n" + chrome_js
+    # ⟳ 2026-10-18 — THE BAR GOES UNDER THE TITLE, NOT AT THE END. Appending it here is
+    # how backlog #300 happened: on this path the bar became the last child of <body>, so
+    # on a 6475px page it rendered at y=6445 — present, wired, computed-visible, and in the
+    # last 30 pixels. The owner's choice is under the title AND reachable afterwards, so
+    # the resting place moves and `chrome_script` pins it once the slot leaves the viewport.
+    # ⚠ `place_bar` owns the rule, in `page_chrome`, because that module owns the bar; the
+    # four generators place it under their own <h1> already and are unchanged.
+    # ⚠ The SCRIPT stays at the end of `body`, after the bar in document order, which is
+    # what it needs — it queries the slot when it runs.
+    body = page_chrome.place_bar(body, chrome_bar) + "\n" + chrome_js
     # ⭐ THE TRAY REGION IS DELIMITED AT BOTH ENDS (backlog #106). `extract_tray` reads back
     # exactly what is written between these two comments, so a recompose cannot re-lift the
     # fragment's own `#tray …` overrides — which is what `head` legitimately contains, and
@@ -1761,6 +1770,21 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("...but still gets the stamp, which is the half that always works",
          "chrome-when" in _c3[1])
     case("...and no dangling script for a button that is not there", _c3[2] == "")
+    # ⛔ THE INVARIANT chrome_script DEPENDS ON, ACROSS ALL THREE BRANCHES: a bar that holds
+    # something to PRESS is inside the slot the script observes. ⚠ And it is asserted here
+    # rather than assumed because `.chrome` HAS FOUR PRODUCERS and only one of them is
+    # `chrome_bar`: the two stamp-only returns above and the fragment's-own-chrome return
+    # build the div by string concatenation, with no slot. That is correct only while they
+    # emit no control. Measured 2026-10-18 over all 20 repo fragments: 2 composed pages
+    # carry a control (both slotted), 18 are stamp-only. The day a stamp-only branch gains
+    # a button, the script finds a control it cannot pin — backlog #300, from the other end.
+    for _lbl, _got in (("fragment's own chrome", _c1[1]),
+                       ("both palettes, full bar", _c2[1]),
+                       ("no palettes, stamp only", _c3[1])):
+        _holds = 'id="chrome-theme"' in _got or 'id="schemer"' in _got
+        case(f"chrome_for({_lbl}): a bar with a control is inside the slot the script "
+             f"observes — or it holds no control",
+             (not _holds) or f'class="{page_chrome.CHROME_SLOT_CLASS}"' in _got)
     case("every branch renders the provenance it was given",
          all("2026-01-02 03:04" in chrome_for(f, "2026-01-02 03:04")[1]
              for f in (f"<style>{_pals}</style><p>x</p>",
@@ -1824,6 +1848,35 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     case("re-extracting a composed page returns the tray CSS unchanged", _c2 == css)
     case("...the tray markup unchanged", _m2 == markup)
     case("...and the tray script unchanged, with no </body> swept in", _s2 == script)
+    # ── backlog #300's resting place, ON THE COMPOSED DOCUMENT ──────────────────────
+    # ⛔ ASSERTED HERE AND NOT ONLY IN page_chrome. `place_bar` being correct proves nothing
+    # about this path: the bar reached the reader at y=6445 BECAUSE of the line in `compose`
+    # that appended it, and a unit-tested helper that `compose` stops calling is exactly the
+    # between-two-tested-pieces gap this repository has measured three times. The subject is
+    # the finished document.
+    # ⚠ ITS OWN FRAGMENT, NOT `_schemer_frag`. The first version reused that helper and was
+    # measured WRONG: the helper already emits `<p>prose</p>` before its `consumer`
+    # argument, so `.index("<p>prose</p>")` found the copy BEFORE the title and the case
+    # failed while the code was right. Unique markers, in a known order, asked of a string
+    # whose order I control.
+    _ordered = compose("<title>x</title><style>" + _dark + _full
+                       + ':root[data-theme="dark"]' + _tok
+                       + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                       + "body{color:var(--ink);background:var(--bg)}</style>"
+                       + page_chrome.text_style_control()
+                       + '<div class="ex-body"><h1>THE-TITLE</h1>'
+                       + "<p>THE-PROSE</p></div>",
+                       "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "")
+    case("the composed document carries the bar UNDER the title, not at the end "
+         "(backlog #300: it was the last child of <body> at y=6445 of 6475)",
+         _ordered.index("THE-TITLE")
+         < _ordered.index('class="chrome-slot"')
+         < _ordered.index("THE-PROSE"))
+    case("...exactly once, because a second copy is inert — getElementById binds the FIRST",
+         _ordered.count('class="chrome-slot"') == 1
+         and _ordered.count('id="chrome-theme"') == 1)
+    case("...and the chrome script still follows the bar it binds",
+         _ordered.index('class="chrome-slot"') < _ordered.index(page_chrome.CHROME_SCRIPT_MARK))
     case("⭐ composing twice from an unchanged fragment is BYTE-IDENTICAL",
          compose(content, "T", _c2, _m2, _s2, _fixed_at) == _gen1)
 
