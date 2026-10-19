@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 137 cases
+    python3 scripts/brief-compose.py --self-test  # 143 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
