@@ -35,7 +35,7 @@ and it would be invisible — the page looks fine.
 USAGE
 -----
     python3 scripts/brief-compose.py --content body.html --slug backlog-36 --title "Brief — #36"
-    python3 scripts/brief-compose.py --self-test  # 149 cases
+    python3 scripts/brief-compose.py --self-test  # 151 cases
 
 COMPOSING IS IDEMPOTENT (backlog #106, 2026-09-10)
 --------------------------------------------------
@@ -1872,6 +1872,28 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
                        + '<div class="ex-body"><h1>THE-TITLE</h1>'
                        + "<p>THE-PROSE</p></div>",
                        "t", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "")
+    # ⛔ `title` IS WITNESSED, NOT MERELY VARIED — r8 CODEX LOW. Dropping it from
+    # `KNOWN_UNVARIED` was lexically correct (cases pass "T" and "t"), but the reviewer
+    # severed the interpolation — `<title>T</title>` hard-coded — and the suite stayed GREEN:
+    # no case required the REQUESTED title to reach the document. A caller asking for
+    # "Quarterly review" would have got "T" with every gate passing.
+    _titled = compose("<title>x</title><style>" + _dark + _full
+                      + ':root[data-theme="dark"]' + _tok
+                      + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                      + "body{color:var(--ink);background:var(--bg)}</style>"
+                      + page_chrome.text_style_control()
+                      + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                      "Quarterly review", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", "")
+    case("the requested title reaches the document's <title>, not a placeholder",
+         "<title>Quarterly review</title>" in _titled)
+    case("...and a different request gives a different document",
+         _titled != compose("<title>x</title><style>" + _dark + _full
+                            + ':root[data-theme="dark"]' + _tok
+                            + ':root[data-theme="light"]' + _tok + ":root" + _tok
+                            + "body{color:var(--ink);background:var(--bg)}</style>"
+                            + page_chrome.text_style_control()
+                            + '<div class="ex-body"><h1>H</h1><p>p</p></div>',
+                            "Annual review", "#tray{a:1}\n#qbox{b:2}\n.askbtn{c:3}", "", ""))
     case("the composed document carries the bar UNDER the title, not at the end "
          "(backlog #300: it was the last child of <body> at y=6445 of 6475)",
          _ordered.index("THE-TITLE")

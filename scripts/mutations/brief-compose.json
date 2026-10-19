@@ -305,5 +305,16 @@
       ]
     ],
     "expect": "...and a script that BINDS it, not one that mentions it"
+  },
+  {
+    "name": "the requested title never reaches the document, which no case required",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "f\"<title>{title}</title>\\n{styled}\\n</head>\\n<body>\\n\"",
+        "f\"<title>T</title>\\n{styled}\\n</head>\\n<body>\\n\""
+      ]
+    ],
+    "expect": "the requested title reaches the document's <title>, not a placeholder"
   }
 ]

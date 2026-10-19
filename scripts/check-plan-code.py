@@ -804,7 +804,10 @@ EXPECTED_MUTATIONS = {
     # not do: `:where(` occurs four times in SHIM (two inside its own comments),
     # `html { --rule:` twice (light and dark), and `chrome-theme` four times across the
     # suite's strings while the subject is the BINDING call.
-    "scripts/brief-compose.py": 25,
+    # ⟳ 2026-10-19: 25 -> 26. `compose.title` — same shape as above: varied in the source
+    # text, unwitnessed by any case, so a caller asking for "Quarterly review" would have
+    # got "T" with every gate passing.
+    "scripts/brief-compose.py": 26,
     # ⟳ 2026-09-10. A guard created and manifested in ONE commit — `check-ratchet-contract` flagged
     # it `[R4_no_mutation_manifest]` the moment it hit disk, which is the ratchet doing its job. Six
     # entries, one per clause it decides, plus the fail-open path: a guard whose CANNOT-RUN branch
@@ -1341,7 +1344,12 @@ EXPECTED_MUTATIONS = {
     # its increment did (the comment demanding exactly that guard is the line after the
     # counter's declaration), the refresh assertion the sibling span was satisfying, and the
     # interactive set itself.
-    "scripts/page_chrome.py": 87,
+    # ⟳ 2026-10-19, the r8-codex fold: 87 -> 89. The per-slot reserve (r8 High: a
+    # document-level reserve consumed by a CLASS selector inflated a slot nested inside the
+    # bar being measured — 225 -> 1965px in two seconds) and `assert_wired`'s label, which
+    # the reviewer severed while the suite stayed green: dropping it from KNOWN_UNVARIED was
+    # lexically correct and the parameter was still indistinguishable from a constant.
+    "scripts/page_chrome.py": 88,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5167,7 +5175,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1541)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1543)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

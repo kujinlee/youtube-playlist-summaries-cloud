@@ -165,17 +165,6 @@
     "expect": "the pinned bar sits above content and below any floater \u2014 a LOW positive z"
   },
   {
-    "name": "the page reserves no space for the pinned bar",
-    "file": "scripts/page_chrome.py",
-    "edits": [
-      [
-        "        # including the 17 of 20 stamp-only fragments that never pin at all.\n        f\".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}\"\n",
-        "        # including the 17 of 20 stamp-only fragments that never pin at all.\n"
-      ]
-    ],
-    "expect": "the SLOT reserves the bar's OWN measured height, never a literal"
-  },
-  {
     "name": "the bar loses its separating rule",
     "file": "scripts/page_chrome.py",
     "edits": [
@@ -561,15 +550,15 @@
     "expect": "...and anchors it to the TOP edge, the one it scrolled off"
   },
   {
-    "name": "<body> reserves bottom padding again, for a bar that pins at the top",
+    "name": "print stops releasing the slot's reserve, so the band prints",
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        f\".{CHROME_SLOT_CLASS}{{min-height:0}}}}\"",
-        "        f\".{CHROME_SLOT_CLASS}{{min-height:0}}}}\"\n        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\""
+        "        f\".{CHROME_SLOT_CLASS}{{min-height:0!important}}}}\"\n",
+        "        f\".{CHROME_SLOT_CLASS}{{min-height:0}}}}\"\n"
       ]
     ],
-    "expect": "...and <body> no longer reserves anything, or a top-pinned bar would leave a blank band at the document end"
+    "expect": "the pinned bar returns to the flow in print, and frees its reserved space"
   },
   {
     "name": "the slot wrapper is dropped, so the script has nothing to observe",
@@ -609,8 +598,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        f\"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;\"\n        \"document.documentElement.style.setProperty(\"\n        \"'--chrome-h',bar.getBoundingClientRect().height+'px');\"\n",
-        "        f\"var sync=function(){{if(0)return;\"\n        \"document.documentElement.style.setProperty(\"\n        \"'--chrome-h',bar.getBoundingClientRect().height+'px');\"\n"
+        "        # 320x568, y=231: theme button at -30.9 (gone), schemer at +81.2 (visible).\n        f\"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;\"\n",
+        "        # 320x568, y=231: theme button at -30.9 (gone), schemer at +81.2 (visible).\n        f\"var sync=function(){{if(0)return;\"\n"
       ]
     ],
     "expect": "the reserve, the gap and the re-arm are all behind ONE guard that returns"
@@ -642,8 +631,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "        \"'--chrome-h',bar.getBoundingClientRect().height+'px');\"\n",
-        "        \"'--chrome-h',bar.offsetHeight+'px');\"\n"
+        "        \"var h=bar.getBoundingClientRect().height;\"\n",
+        "        \"var h=bar.offsetHeight;\"\n"
       ]
     ],
     "expect": "the reserve is measured in fractional pixels, so pinning cannot shift the page"
@@ -955,5 +944,27 @@
       ]
     ],
     "expect": "...and the interactive set is the MARKUP-level swallowers, not every swallower (r8 Low: onclick/tabindex/role are not covered)"
+  },
+  {
+    "name": "the per-slot reserve is removed, so a nested slot grows without bound",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"slot.style.minHeight=h+'px';\"\n",
+        "        \"\"\n"
+      ]
+    ],
+    "expect": "the reserve is set on the CHOSEN slot, not as a document-wide class rule"
+  },
+  {
+    "name": "assert_wired ignores the caller's label, so every refusal names the same page",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "def assert_wired(page: str, where: str, *, scoped_css_emitted: bool = False) -> None:",
+        "def assert_wired(page: str, where: str, *, scoped_css_emitted: bool = False) -> None:\n    where = \"p\""
+      ]
+    ],
+    "expect": "the refusal names the CALLER's label, so a reader learns which page refused"
   }
 ]

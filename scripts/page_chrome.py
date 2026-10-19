@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 220 cases
+    python3 scripts/page_chrome.py --self-test          # 223 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -901,7 +901,21 @@ def chrome_css() -> str:
         # ⚠ Fallback `0`, not `3rem`: before the script runs the bar is IN the slot and
         # supplies the height itself, so a non-zero floor would add a gap on every page,
         # including the 17 of 20 stamp-only fragments that never pin at all.
-        f".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}"
+        # ⛔ NO CLASS RULE FOR THE RESERVE — r8 CODEX HIGH, and the defect it caused was
+        # CONTINUOUS LAYOUT GROWTH, not the cosmetic band I had filed. `--chrome-h` is a
+        # document-level custom property and this WAS a CLASS selector, so it inflated
+        # EVERY slot — including one nested INSIDE the bar being measured. Setting the
+        # reserve enlarged the inner slot, which enlarged the measured outer bar, which
+        # `ResizeObserver` re-measured: 225.6px -> 1102.5px -> 1965px, document height
+        # 6328 -> 8067, content moving y=147 -> y=1196 in 1.2 seconds.
+        # ⚠ MEASURED PRE-EXISTING by the reviewer — restoring the previous selector still
+        # grows — so this is not another regression from the r7 selector fix. It IS the
+        # defect backlog #302 recorded, and #302 recorded it WRONGLY as cosmetic.
+        #
+        # The reserve is now an INLINE style the script sets on the ONE slot it chose, so a
+        # slot the script did not select reserves nothing and cannot feed the loop.
+        # `--chrome-h` survives only for `scroll-padding-top`, which is document-level by
+        # nature: an in-page anchor lands against the viewport, not against a slot.
         # In-page anchors must not land under the pinned bar. Keyed on the same custom
         # property, so it is 0 until the bar has measured itself.
         ":root{scroll-padding-top:var(--chrome-h,0)}"
@@ -913,7 +927,9 @@ def chrome_css() -> str:
         f"@media print{{.{CHROME_PIN_CLASS}{{position:static}}"
         # ⟳ The slot's reservation is dropped for the same reason the pin is: with the bar
         # back in the flow the space is occupied, and holding it as well prints a blank band.
-        f".{CHROME_SLOT_CLASS}{{min-height:0}}}}"
+        # ⚠ `!important` because the reserve is now an INLINE style, and inline beats a
+        # stylesheet rule. Without it the printed page keeps the band.
+        f".{CHROME_SLOT_CLASS}{{min-height:0!important}}}}"
         # ⚠ `background:transparent`, NOT `var(--card,…)` — backlog #80, 2026-09-01.
         # Of the five tokens this module reads, four are FOREGROUND or BORDER and fall back to
         # `currentColor`/`inherit`, so they are page-derived and safe by construction. `--card` was
@@ -1130,8 +1146,13 @@ def chrome_script() -> str:
         # rows, and the first control to leave the viewport is on the TOP row. Measured at
         # 320x568, y=231: theme button at -30.9 (gone), schemer at +81.2 (visible).
         f"var sync=function(){{if(bar.classList.contains({CHROME_PIN_CLASS!r}))return;"
-        "document.documentElement.style.setProperty("
-        "'--chrome-h',bar.getBoundingClientRect().height+'px');"
+        "var h=bar.getBoundingClientRect().height;"
+        # ⛔ ON THE CHOSEN SLOT, NOT AS A DOCUMENT-WIDE CLASS RULE — see the CSS note. A
+        # nested slot the script did not select now reserves nothing, so it cannot grow and
+        # cannot inflate the bar being measured.
+        "slot.style.minHeight=h+'px';"
+        # `--chrome-h` is still published, for `scroll-padding-top` alone.
+        "document.documentElement.style.setProperty('--chrome-h',h+'px');"
         "var sb=slot.getBoundingClientRect().bottom,m=Infinity;"
         "for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;"
         "if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));"
@@ -1844,9 +1865,13 @@ def self_test() -> int:
              all(k in chrome_css().replace(" ", "") for k in ("left:0", "right:0")), True)
         # ⟳ 2026-10-18: THE SLOT reserves, not <body>. Same property — the bar's OWN measured
         # height, never a literal — moved to the element that actually has the hole in it.
-        case("the SLOT reserves the bar's OWN measured height, never a literal",
-             f".{CHROME_SLOT_CLASS}{{min-height:var(--chrome-h,0)}}"
-             in chrome_css().replace(" ", ""), True)
+        # ⟳ r8 CODEX HIGH: the reserve is PER-SLOT now, so the assertion moved from the
+        # stylesheet to the script — and the pair is asserted, because a class rule coming
+        # back is exactly the growth loop returning.
+        case("the reserve is set on the CHOSEN slot, not as a document-wide class rule",
+             ("slot.style.minHeight=h+'px';" in chrome_script(),
+              f".{CHROME_SLOT_CLASS}{{min-height:var(" in chrome_css().replace(" ", "")),
+             (True, False))
         case("...and <body> no longer reserves anything, or a top-pinned bar would leave a "
              "blank band at the document end",
              "padding-bottom:var(--chrome-h" in chrome_css().replace(" ", ""), False)
@@ -1920,8 +1945,12 @@ def self_test() -> int:
              "zero — one exact expression, because every fragment of it is supplied elsewhere",
              _TAIL in chrome_script(), True)
         case("the reserve is measured in fractional pixels, so pinning cannot shift the page",
-             ("'--chrome-h',bar.getBoundingClientRect().height+'px');" in chrome_script(),
+             ("var h=bar.getBoundingClientRect().height;" in chrome_script(),
               "offsetHeight" in chrome_script()), (True, False))
+        case("...and the same measurement feeds both the slot and scroll-padding, so they "
+             "cannot disagree",
+             ("slot.style.minHeight=h+'px';" in chrome_script(),
+              "setProperty('--chrome-h',h+'px');" in chrome_script()), (True, True))
         # ⛔ ONE GUARD, GOVERNING THE WHOLE BODY VIA `return`. r6 CLAUDE BLOCKING: the previous
         # shape was a braceless `if` that governed one statement, so the re-arm ran while PINNED
         # and the page flipped the class 60 times per second on a stationary dashboard.
@@ -1980,6 +2009,18 @@ def self_test() -> int:
                     ).ids.count("chrome-theme"),
               _scan('<noscript><button id="chrome-theme"></button></noscript>'
                     ).ids.count("chrome-theme")), (0, 0))
+        # ⛔ `where` IS WITNESSED, NOT MERELY VARIED — r8 CODEX LOW. Removing it from
+        # `KNOWN_UNVARIED` was lexically correct (the suite does pass distinct labels), but
+        # the reviewer severed `where = "p"` inside the function and the suite stayed GREEN:
+        # no case required the caller's label to reach the message. Satisfying the ratchet's
+        # SOURCE-TEXT rule is not covering the parameter, which is this repository's
+        # "fixing a premise is not covering the branch" in one line.
+        case("the refusal names the CALLER's label, so a reader learns which page refused",
+             ("my-page-42" in (raises(STATIC_PAGE, "my-page-42") or ""),
+              "other-label" in (raises(STATIC_PAGE, "other-label") or "")),
+             (True, True))
+        case("...and two distinct labels give two distinct messages",
+             raises(STATIC_PAGE, "page-a") != raises(STATIC_PAGE, "page-b"), True)
         case("the reviewer's input: a <style> carrying the control's id is REFUSED",
              _raises_wired(
                  '<html><body><style id="chrome-theme">' + LIGHT + DARK + chrome_css()
@@ -2195,7 +2236,7 @@ def self_test() -> int:
         case("the pinned bar returns to the flow in print, and frees its reserved space",
              ("@media print" in chrome_css(),
               f".{CHROME_PIN_CLASS}{{position:static}}" in chrome_css().replace(" ", ""),
-              f".{CHROME_SLOT_CLASS}{{min-height:0}}" in chrome_css().replace(" ", "")),
+              f".{CHROME_SLOT_CLASS}{{min-height:0!important}}" in chrome_css().replace(" ", "")),
              (True, True, True))
         # ── r3's four parser findings, each measured against Chromium's actual behaviour ──
         case("a <template>'s OWN id is live — getElementById returns the template itself",
