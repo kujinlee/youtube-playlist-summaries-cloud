@@ -201,3 +201,41 @@ silently is how a population gets lost.
 * Any per-round attribution: this classifies a **PR**, so a PR whose rounds were spent on its
   apparatus half while its product half was trivial is counted as product-touching.
 * A dual review of this section.
+
+### 9.6 ⟳ The §8 caveat is now checked, and the answer is mostly "scheduling" — but not in the benign way
+
+§8 left this open: *"the roadmap may simply have had no product work scheduled, and this document did
+not check."* It has now been checked, from two directions, and **both halves are needed or the answer
+inverts.**
+
+**Half one — product work IS queued, so "nothing was available" is false.** Of **198 open**
+`docs/backlog.md` rows, **32 touch product paths or areas**: the original enhancement bundle
+(#1–#8 — renderer, dig-deeper, PDF), cloud features and money/security rows (#12, #17–#63), and
+#139 (`worker/`). So the October zero is not explained by an empty product queue.
+
+**Half two — and no product PROGRAMME is open, which is the part that matters.** The roadmap's
+CURRENT GOAL names three programmes: **1** comprehensibility (**D2**), **2** development speed
+(**D2**), **3** the product itself (**D1**) — whose state cell reads *"M1+M2+M3 closed. Live: Fly
+v11, deployed 2026-10-15; prod schema 0027."* **Two of the three current programmes are the
+apparatus, and the product programme is marked closed-and-live.** Independently, **109 of the 198
+open rows (55%) are `(tooling)`.**
+
+⭐ **So the honest reading is neither "capability" nor the benign "nothing was scheduled":** product
+work was available and un-queued-for. **The schedule itself points at the apparatus** — by
+construction, not by accident, and with the product's own milestones legitimately closed. A reader
+looking for a defect here will not find one; they will find a goal structure that allocates two
+programmes to D2 and none to D1.
+
+⚠ **WHAT THIS DOES TO §6, as evidence rather than a recommendation.** Option **D** (*ship product*)
+is not merely unranked — **it has no open programme to attach to**, so choosing it is a goal change,
+which `docs/dev-process.md` makes a human gate and this document cannot take. Options **A** and **B**
+sit inside programme 2, which is open. That asymmetry is a fact about the roadmap, not an argument
+for either.
+
+⚠ **BOUNDS.** "Touches product" is read from the backlog's author-written *Touches* column and its
+bundle label — prose, not paths, so it is crude in both directions. "Open" is read from the absence
+of a `✅` marker, which `check-backlog-closure` already warns is stale on 2 rows. And a queued row is
+not a scheduled one: this measures **availability and allocation**, never intent.
+
+**STILL NOT RUN:** whether any of those 32 rows was ever *attempted* and abandoned — which is the
+only remaining reading under which "capability" rather than "allocation" is the explanation.
