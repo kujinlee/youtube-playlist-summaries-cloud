@@ -2415,6 +2415,35 @@ unapplied for eight days while every document read "merged, done".
 > it or remove it"*), so the registration needs a claiming document and cannot be a one-line edit.
 > Tracked as **`docs/backlog.md` row 290**.
 
+> ### ⟳ 2026-10-19 — PROGRAMME 2 (`review-decides-itself`): the Phase 6 review on PR #378 ran, and its sharpest finding is about this programme rather than about the chrome
+>
+> **Convened** on `chrome-bar-reachable` at `271818c9`; written up in
+> `docs/reviews/architecture-review-2026-10-19-chrome-reachability-instrument.md`. Verdict: **route
+> (b) SPLIT** per `docs/backlog.md` row 136's taxonomy — the delivered feature ships, the instrument
+> becomes its own designed slice (**new row 304**, with **row 305** as the cheap partial remedy).
+>
+> ⛔ **WHY IT LANDS ON THIS PROGRAMME.** ADR-0014's goal is *"a review loop decides its own next step
+> — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only
+> for decisions that are genuinely theirs."* **Both halves of that were violated on one branch.** The
+> thrashing stop condition was declared met at **round 3** (10-18 15:50); rounds 4-8 were folded
+> anyway, to a tip dated 10-19 12:03 — **five rounds, 20 hours** — because two coordinator notes
+> blocked convening on *"`dev-process.md` makes it the owner's call"*. Measured: `grep -ci "owner's
+> call"` is **0** across all five process documents, and the phases table marks its human gates where
+> it has them (Phase 1 *user approval*, Phase 5 *Merging is a human gate*) while **Phase 6's gate
+> cell marks none**.
+>
+> ⭐ **This is `docs/backlog.md` row 184's own falsifier firing**, so that row now carries a measured
+> cost instead of an argument, and its cheaper candidate remedy (*merely RECORD the consultation*)
+> would have caught it — the notes say what they decided and simply never name the card. ⚠ **Not a
+> new row**, deliberately: the mechanism was already filed, and filing it twice would have hidden
+> that the existing row had been right for three weeks.
+>
+> ⚠ **AND A NOTE AGAINST READING COUNTS**, which this programme keeps relearning: the branch's
+> fix-created-round tally was published as **eight**, corrected to **seven** (`c293e31b`), and is
+> actually **six** — while the arming condition (*two consecutive, one component*) was unambiguous
+> from round 3 onward. `docs/dev-process.md:118` already says *"a count was the wrong repair for
+> it"*; the remedy is to stop publishing the count, not to correct it a third time.
+
 > ### ⛔ SUPERSEDED 2026-10-15 by the block above — CURRENT GOAL as set by the user 2026-09-06. Three items, no ordering between them.
 >
 > **Everything else in this block remains a candidate pool. These three are the plan.** They are
