@@ -1,497 +1,563 @@
 [
- {
-  "name": "a page with no control is asked for palettes anyway",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if not has_control(page):\n        return []",
-    "    if False:\n        return []"
-   ]
-  ],
-  "expect": "...so prose about themes demands no palettes"
- },
- {
-  "name": "only ONE palette is required, not both",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]",
-    "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]"
-   ]
-  ],
-  "expect": "a control with NEITHER palette is caught"
- },
- {
-  "name": "assert_wired reports instead of refusing",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    miss = missing_palettes(page)\n    if miss:\n        raise SystemExit(",
-    "    miss = missing_palettes(page)\n    if False:\n        raise SystemExit("
-   ]
-  ],
-  "expect": "assert_wired refuses a control with no palettes"
- },
- {
-  "name": "the script-binding half of assert_wired is dropped",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):",
-    "    if False and has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):"
-   ]
-  ],
-  "expect": "assert_wired refuses a control with palettes but NO script"
- },
- {
-  "name": "the refresh slug is not escaped into the attribute",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    s = _html.escape(slug, quote=True)",
-    "    s = slug"
-   ]
-  ],
-  "expect": "the slug is escaped into the attribute"
- },
- {
-  "name": "the stamp does not escape its input",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return (f'<span class=\"chrome-when\">generated <time>{_html.escape(when)}</time></span>')",
-    "    return (f'<span class=\"chrome-when\">generated <time>{when}</time></span>')"
-   ]
-  ],
-  "expect": "the stamp escapes its input"
- },
- {
-  "name": "chrome_bar always includes the refresh button",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if refresh:\n        parts.append(refresh_control(slug))",
-    "    if True:\n        parts.append(refresh_control(slug))"
-   ]
-  ],
-  "expect": "refresh=False drops the refresh button, keeping the rest"
- },
- {
-  "name": "provenance invents a sha when git cannot be launched",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        return f\"{now} \u00b7 commit UNKNOWN (git could not be run)\"",
-    "        return now"
-   ]
-  ],
-  "expect": "a git that cannot be LAUNCHED yields UNKNOWN, never a bare clock"
- },
- {
-  "name": "provenance drops the dirty qualifier",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return out + (\" \u00b7 uncommitted changes\" if d.stdout.strip() else \"\")",
-    "    return out"
-   ]
-  ],
-  "expect": "...and a DIRTY one says so"
- },
- {
-  "name": "fragments are no longer exempt from the pin",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if not rules:\n        return False\n",
-    ""
-   ]
-  ],
-  "expect": "a FRAGMENT \u2014 control, but no .chrome rule \u2014 is not this check's subject"
- },
- {
-  "name": "assert_wired stops refusing an unreachable page",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if bar_unreachable(page):\n        raise SystemExit(",
-    "    if False and bar_unreachable(page):\n        raise SystemExit("
-   ]
-  ],
-  "expect": "assert_wired REFUSES to write an unreachable page"
- },
- {
-  "name": "the bar is not pinned to the viewport at all",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "{{position:fixed;left:0",
-    "{{left:0"
-   ]
-  ],
-  "expect": "the shipped CSS pins the bar into the viewport"
- },
- {
-  "name": "the pinned bar no longer spans the viewport width",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "position:fixed;left:0;right:0;bottom:0;\"",
-    "position:fixed;bottom:0;\""
-   ]
-  ],
-  "expect": "...and it spans the viewport, or margin-inline-start:auto stops reaching the edge"
- },
- {
-  "name": "the pinned bar is left transparent",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "background:var(--bg,Canvas);\"",
-    "\""
-   ]
-  ],
-  "expect": "the pinned bar is opaque, or the page scrolls through it"
- },
- {
-  "name": "the bar is raised into the floater band",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "\"z-index:1;background",
-    "\"z-index:40;background"
-   ]
-  ],
-  "expect": "the pinned bar sits above content and below any floater \u2014 a LOW positive z"
- },
- {
-  "name": "the page reserves no space for the pinned bar",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\"\n",
-    ""
-   ]
-  ],
-  "expect": "the page reserves the bar's OWN measured height, never a literal"
- },
- {
-  "name": "the bar loses its separating rule",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "\"border-top:1px solid var(--rule,transparent)}\"",
-    "\"}\""
-   ]
-  ],
-  "expect": "the bar keeps a separating rule and its breathing room"
- },
- {
-  "name": "the bar loses its vertical breathing room",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "\"padding-block:.45rem}\"",
-    "\"}\""
-   ]
-  ],
-  "expect": "the bar keeps a separating rule and its breathing room"
- },
- {
-  "name": "the script never applies the pin to the bar",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        f\"bar.classList.add({CHROME_PIN_CLASS!r});\"\n",
-    ""
-   ]
-  ],
-  "expect": "the script adds the pin class to the BAR, not only the body"
- },
- {
-  "name": "a stamp-only bar is pinned too",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "if(bar&&bar.querySelector('#chrome-theme,#schemer')){{",
-    "if(bar){{"
-   ]
-  ],
-  "expect": "a bar with NO control is never pinned \u2014 17 of 20 fragments are stamp-only"
- },
- {
-  "name": "the reachability predicate never fires",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    rules = _CHROME_RULE_RE.findall(page)\n",
-    "    rules = [CHROME_PIN]\n"
-   ]
-  ],
-  "expect": "THE DEFECT: control + a static .chrome rule is refused"
- },
- {
-  "name": "the has_control gate is dropped from reachability",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if not has_control(page):\n        return False\n    # \u26d4 A FINISHED DOCUMENT",
-    "    # \u26d4 A FINISHED DOCUMENT"
-   ]
-  ],
-  "expect": "a document with CSS but no control is not a defect \u2014 the gates disagree here"
- },
- {
-  "name": "a finished document is exempted like a fragment",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if _is_document(page):\n",
-    "    if False:\n"
-   ]
-  ],
-  "expect": "a FINISHED document is never exempt, however it reached the writer"
- },
- {
-  "name": "the switcher composites text against an unmeasurable ground again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "cursor:pointer;color:inherit;font:inherit}\"",
-    "cursor:pointer;color:inherit;opacity:.6;font:inherit}\""
-   ]
-  ],
-  "expect": "the switcher composites no text against the ground it cannot measure"
- },
- {
-  "name": "the emitted stylesheet stops consuming the prose role",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        f\".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}\"\n",
-    "        f\".{TEXT_SCOPE_CLASS}{{color:inherit}}\"\n"
-   ]
-  ],
-  "expect": "the emitted stylesheet actually CONSUMES --prose"
- },
- {
-  "name": "duplicate control ids are tolerated",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        if _ids.count(_cid) > 1:",
-    "        if False:"
-   ]
-  ],
-  "expect": "assert_wired REFUSES two controls with the same id"
- },
- {
-  "name": "the consumer test stops parsing and matches substrings again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return TEXT_SCOPE_CLASS in _scan(page).classes",
-    "    return TEXT_SCOPE_CLASS in page"
-   ]
-  ],
-  "expect": "...and a class that merely has the right PREFIX does not"
- },
- {
-  "name": "the pinned bar keeps its pin in print",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "f\"@media print{{.{CHROME_PIN_CLASS}{{position:static}}\"",
-    "f\"@media print{{\""
-   ]
-  ],
-  "expect": "the pinned bar returns to the flow in print, and frees its reserved space"
- },
- {
-  "name": "the emitted stylesheet stops consuming the emphasis role",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:var(--emph)}}\"",
-    "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:inherit}}\""
-   ]
-  ],
-  "expect": "the emitted stylesheet actually CONSUMES --emph"
- },
- {
-  "name": "the consumer guard goes back to guessing instead of being told",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    if not scoped_css_emitted:",
-    "    if False:"
-   ]
-  ],
-  "expect": "a page whose caller emitted NO scoped stylesheet is not this guard's business"
- },
- {
-  "name": "the caller's answer is ignored and every switcher is policed",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "def missing_text_consumer(page: str, scoped_css_emitted: bool = False) -> bool:",
-    "def missing_text_consumer(page: str, scoped_css_emitted: bool = True) -> bool:"
-   ]
-  ],
-  "expect": "the guard's default is to stay out of it, not to police"
- },
- {
-  "name": "duplicate attributes resolve last-wins, against Chromium",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        d = {}\n        for k, v in attrs:\n            if k not in d:\n                d[k] = v",
-    "        d = dict(attrs)"
-   ]
-  ],
-  "expect": "duplicate attributes resolve FIRST-wins, as Chromium does"
- },
- {
-  "name": "a template's own id is hidden along with its contents",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "            tid = dict(attrs).get(\"id\")\n            if tid:\n                self.ids.append(tid)\n",
-    ""
-   ]
-  ],
-  "expect": "a <template>'s OWN id is live \u2014 getElementById returns the template itself"
- },
- {
-  "name": "noscript contents count as live again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        if tag == \"noscript\":",
-    "        if tag == \"__never__\":"
-   ]
-  ],
-  "expect": "a <noscript> consumer is fictitious while scripting is on"
- },
- {
-  "name": "the switcher stylesheet is wrapped in an inactive at-rule",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n",
-    "        \"@media not all{\"\n        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n"
-   ]
-  ],
-  "expect": "the emitted stylesheet contains no at-rule"
- },
- {
-  "name": "a noscript's own id is dropped, hiding a real control",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "            nid = dict(attrs).get(\"id\")\n            if nid:\n                self.ids.append(nid)\n",
-    ""
-   ]
-  ],
-  "expect": "a <noscript>'s OWN id is live, so it can hide a real control"
- },
- {
-  "name": "has_control goes back to a double-quote substring test",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return \"chrome-theme\" in _scan(page).ids",
-    "    return 'id=\"chrome-theme\"' in page"
-   ]
-  ],
-  "expect": "a SINGLE-QUOTED control is a control"
- },
- {
-  "name": "has_text_control goes back to a substring test",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return \"schemer\" in _scan(page).ids",
-    "    return 'id=\"schemer\"' in page"
-   ]
-  ],
-  "expect": "...and so is a single-quoted switcher"
- },
- {
-  "name": "_scripts goes back to a comment-blind regex",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "    return \"\\n\".join(_scan(page).scripts)",
-    "    return \"\\n\".join(re.findall(r\"<script[^>]*>(.*?)</script>\", page, re.S))"
-   ]
-  ],
-  "expect": "a handler that is COMMENTED OUT does not bind the control"
- },
- {
-  "name": "the two shields share one counter again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "            self._depth[\"noscript\"] += 1",
-    "            self._depth[\"template\"] += 1"
-   ]
-  ],
-  "expect": "a <noscript> closed by </template> does not invent a consumer"
- },
- {
-  "name": "the pin selector must touch the brace again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "r\"\\.chrome-pinned(?![\\w-])[^{}]*\\{([^}]*)\\}\")",
-    "r\"\\.chrome-pinned\\{([^}]*)\\}\")"
-   ]
-  ],
-  "expect": "a GROUPED selector still pins the bar, whichever side the class is on"
- },
- {
-  "name": "the refusal names the wrong rule again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "f\"{where}: the theme control is on the page but no `.{CHROME_PIN_CLASS}` rule contains \"",
-    "f\"{where}: the theme control is on the page but no `.chrome` rule contains \""
-   ]
-  ],
-  "expect": "the refusal names the rule the predicate actually requires"
- },
- {
-  "name": "script text is collected from inside a shielded element",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        if self._in_script and not any(self._depth.values()):",
-    "        if self._in_script:"
-   ]
-  ],
-  "expect": "a handler inside a <template> does not bind the control"
- },
- {
-  "name": "the shield branches resolve attributes last-wins again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "            nid = self._attrs(attrs).get(\"id\")",
-    "            nid = dict(attrs).get(\"id\")"
-   ]
-  ],
-  "expect": "duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else"
- },
- {
-  "name": "the enclosing shield is checked after the branches again",
-  "file": "scripts/page_chrome.py",
-  "edits": [
-   [
-    "        if any(self._depth.values()):\n            if tag in self._depth:\n                self._depth[tag] += 1\n            elif tag == \"script\":\n                self._in_script += 1\n            return\n",
-    ""
-   ]
-  ],
-  "expect": "an element inside a shield contributes nothing, whatever element it is"
- }
+  {
+    "name": "a page with no control is asked for palettes anyway",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if not has_control(page):\n        return []",
+        "    if False:\n        return []"
+      ]
+    ],
+    "expect": "...so prose about themes demands no palettes"
+  },
+  {
+    "name": "only ONE palette is required, not both",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]",
+        "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]"
+      ]
+    ],
+    "expect": "a control with NEITHER palette is caught"
+  },
+  {
+    "name": "assert_wired reports instead of refusing",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    miss = missing_palettes(page)\n    if miss:\n        raise SystemExit(",
+        "    miss = missing_palettes(page)\n    if False:\n        raise SystemExit("
+      ]
+    ],
+    "expect": "assert_wired refuses a control with no palettes"
+  },
+  {
+    "name": "the script-binding half of assert_wired is dropped",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):",
+        "    if False and has_control(page) and CHROME_SCRIPT_MARK not in _scripts(page):"
+      ]
+    ],
+    "expect": "assert_wired refuses a control with palettes but NO script"
+  },
+  {
+    "name": "the refresh slug is not escaped into the attribute",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    s = _html.escape(slug, quote=True)",
+        "    s = slug"
+      ]
+    ],
+    "expect": "the slug is escaped into the attribute"
+  },
+  {
+    "name": "the stamp does not escape its input",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return (f'<span class=\"chrome-when\">generated <time>{_html.escape(when)}</time></span>')",
+        "    return (f'<span class=\"chrome-when\">generated <time>{when}</time></span>')"
+      ]
+    ],
+    "expect": "the stamp escapes its input"
+  },
+  {
+    "name": "chrome_bar always includes the refresh button",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if refresh:\n        parts.append(refresh_control(slug))",
+        "    if True:\n        parts.append(refresh_control(slug))"
+      ]
+    ],
+    "expect": "refresh=False drops the refresh button, keeping the rest"
+  },
+  {
+    "name": "provenance invents a sha when git cannot be launched",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        return f\"{now} \u00b7 commit UNKNOWN (git could not be run)\"",
+        "        return now"
+      ]
+    ],
+    "expect": "a git that cannot be LAUNCHED yields UNKNOWN, never a bare clock"
+  },
+  {
+    "name": "provenance drops the dirty qualifier",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return out + (\" \u00b7 uncommitted changes\" if d.stdout.strip() else \"\")",
+        "    return out"
+      ]
+    ],
+    "expect": "...and a DIRTY one says so"
+  },
+  {
+    "name": "fragments are no longer exempt from the pin",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if not rules:\n        return False\n",
+        ""
+      ]
+    ],
+    "expect": "a FRAGMENT \u2014 control, but no .chrome rule \u2014 is not this check's subject"
+  },
+  {
+    "name": "assert_wired stops refusing an unreachable page",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if bar_unreachable(page):\n        raise SystemExit(",
+        "    if False and bar_unreachable(page):\n        raise SystemExit("
+      ]
+    ],
+    "expect": "assert_wired REFUSES to write an unreachable page"
+  },
+  {
+    "name": "the bar is not pinned to the viewport at all",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "{{position:fixed;left:0",
+        "{{left:0"
+      ]
+    ],
+    "expect": "the shipped CSS pins the bar into the viewport"
+  },
+  {
+    "name": "the pinned bar no longer spans the viewport width",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "position:fixed;left:0;right:0;bottom:0;\"",
+        "position:fixed;bottom:0;\""
+      ]
+    ],
+    "expect": "...and it spans the viewport, or margin-inline-start:auto stops reaching the edge"
+  },
+  {
+    "name": "the pinned bar is left transparent",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "background:var(--bg,Canvas);\"",
+        "\""
+      ]
+    ],
+    "expect": "the pinned bar is opaque, or the page scrolls through it"
+  },
+  {
+    "name": "the bar is raised into the floater band",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"z-index:1;background",
+        "\"z-index:40;background"
+      ]
+    ],
+    "expect": "the pinned bar sits above content and below any floater \u2014 a LOW positive z"
+  },
+  {
+    "name": "the page reserves no space for the pinned bar",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        f\"body.{CHROME_PIN_CLASS}-host{{padding-bottom:var(--chrome-h,3rem)}}\"\n",
+        ""
+      ]
+    ],
+    "expect": "the page reserves the bar's OWN measured height, never a literal"
+  },
+  {
+    "name": "the bar loses its separating rule",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"border-top:1px solid var(--rule,transparent)}\"",
+        "\"}\""
+      ]
+    ],
+    "expect": "the bar keeps a separating rule and its breathing room"
+  },
+  {
+    "name": "the bar loses its vertical breathing room",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"padding-block:.45rem}\"",
+        "\"}\""
+      ]
+    ],
+    "expect": "the bar keeps a separating rule and its breathing room"
+  },
+  {
+    "name": "the script never applies the pin to the bar",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        f\"bar.classList.add({CHROME_PIN_CLASS!r});\"\n",
+        ""
+      ]
+    ],
+    "expect": "the script adds the pin class to the BAR, not only the body"
+  },
+  {
+    "name": "a stamp-only bar is pinned too",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "if(bar&&bar.querySelector('#chrome-theme,#schemer')){{",
+        "if(bar){{"
+      ]
+    ],
+    "expect": "a bar with NO control is never pinned \u2014 17 of 20 fragments are stamp-only"
+  },
+  {
+    "name": "the reachability predicate never fires",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    rules = _CHROME_RULE_RE.findall(page)\n",
+        "    rules = [CHROME_PIN]\n"
+      ]
+    ],
+    "expect": "THE DEFECT: control + a static .chrome rule is refused"
+  },
+  {
+    "name": "the has_control gate is dropped from reachability",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if not has_control(page):\n        return False\n    # \u26d4 A FINISHED DOCUMENT",
+        "    # \u26d4 A FINISHED DOCUMENT"
+      ]
+    ],
+    "expect": "a document with CSS but no control is not a defect \u2014 the gates disagree here"
+  },
+  {
+    "name": "a finished document is exempted like a fragment",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if _is_document(page):\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": "a FINISHED document is never exempt, however it reached the writer"
+  },
+  {
+    "name": "the switcher composites text against an unmeasurable ground again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "cursor:pointer;color:inherit;font:inherit}\"",
+        "cursor:pointer;color:inherit;opacity:.6;font:inherit}\""
+      ]
+    ],
+    "expect": "the switcher composites no text against the ground it cannot measure"
+  },
+  {
+    "name": "the emitted stylesheet stops consuming the prose role",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        f\".{TEXT_SCOPE_CLASS}{{color:var(--prose)}}\"\n",
+        "        f\".{TEXT_SCOPE_CLASS}{{color:inherit}}\"\n"
+      ]
+    ],
+    "expect": "the emitted stylesheet actually CONSUMES --prose"
+  },
+  {
+    "name": "duplicate control ids are tolerated",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if _ids.count(_cid) > 1:",
+        "        if False:"
+      ]
+    ],
+    "expect": "assert_wired REFUSES two controls with the same id"
+  },
+  {
+    "name": "the consumer test stops parsing and matches substrings again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return TEXT_SCOPE_CLASS in _scan(page).classes",
+        "    return TEXT_SCOPE_CLASS in page"
+      ]
+    ],
+    "expect": "...and a class that merely has the right PREFIX does not"
+  },
+  {
+    "name": "the pinned bar keeps its pin in print",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "f\"@media print{{.{CHROME_PIN_CLASS}{{position:static}}\"",
+        "f\"@media print{{\""
+      ]
+    ],
+    "expect": "the pinned bar returns to the flow in print, and frees its reserved space"
+  },
+  {
+    "name": "the emitted stylesheet stops consuming the emphasis role",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:var(--emph)}}\"",
+        "f\".{TEXT_SCOPE_CLASS} strong,.{TEXT_SCOPE_CLASS} b{{color:inherit}}\""
+      ]
+    ],
+    "expect": "the emitted stylesheet actually CONSUMES --emph"
+  },
+  {
+    "name": "the consumer guard goes back to guessing instead of being told",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if not scoped_css_emitted:",
+        "    if False:"
+      ]
+    ],
+    "expect": "a page whose caller emitted NO scoped stylesheet is not this guard's business"
+  },
+  {
+    "name": "the caller's answer is ignored and every switcher is policed",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "def missing_text_consumer(page: str, scoped_css_emitted: bool = False) -> bool:",
+        "def missing_text_consumer(page: str, scoped_css_emitted: bool = True) -> bool:"
+      ]
+    ],
+    "expect": "the guard's default is to stay out of it, not to police"
+  },
+  {
+    "name": "duplicate attributes resolve last-wins, against Chromium",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        d = {}\n        for k, v in attrs:\n            if k not in d:\n                d[k] = v",
+        "        d = dict(attrs)"
+      ]
+    ],
+    "expect": "duplicate attributes resolve FIRST-wins, as Chromium does"
+  },
+  {
+    "name": "a template's own id is hidden along with its contents",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            tid = self._attrs(attrs).get(\"id\")\n            if tid:\n                self.ids.append(tid)\n",
+        ""
+      ]
+    ],
+    "expect": "a <template>'s OWN id is live \u2014 getElementById returns the template itself"
+  },
+  {
+    "name": "noscript contents count as live again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if tag == \"noscript\":",
+        "        if tag == \"__never__\":"
+      ]
+    ],
+    "expect": "a <noscript> consumer is fictitious while scripting is on"
+  },
+  {
+    "name": "the switcher stylesheet is wrapped in an inactive at-rule",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n",
+        "        \"@media not all{\"\n        \":root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}\"\n"
+      ]
+    ],
+    "expect": "the emitted stylesheet contains no at-rule"
+  },
+  {
+    "name": "a noscript's own id is dropped, hiding a real control",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            nid = self._attrs(attrs).get(\"id\")\n            if nid:\n                self.ids.append(nid)\n",
+        ""
+      ]
+    ],
+    "expect": "a <noscript>'s OWN id is live, so it can hide a real control"
+  },
+  {
+    "name": "has_control goes back to a double-quote substring test",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return \"chrome-theme\" in _scan(page).ids",
+        "    return 'id=\"chrome-theme\"' in page"
+      ]
+    ],
+    "expect": "a SINGLE-QUOTED control is a control"
+  },
+  {
+    "name": "has_text_control goes back to a substring test",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return \"schemer\" in _scan(page).ids",
+        "    return 'id=\"schemer\"' in page"
+      ]
+    ],
+    "expect": "...and so is a single-quoted switcher"
+  },
+  {
+    "name": "_scripts goes back to a comment-blind regex",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    return \"\\n\".join(_scan(page).scripts)",
+        "    return \"\\n\".join(re.findall(r\"<script[^>]*>(.*?)</script>\", page, re.S))"
+      ]
+    ],
+    "expect": "a handler that is COMMENTED OUT does not bind the control"
+  },
+  {
+    "name": "the two shields share one counter again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            self._depth[\"noscript\"] += 1",
+        "            self._depth[\"template\"] += 1"
+      ]
+    ],
+    "expect": "a <noscript> closed by </template> does not invent a consumer"
+  },
+  {
+    "name": "the pin selector must touch the brace again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "r\"\\.chrome-pinned(?![\\w-])[^{}]*\\{([^}]*)\\}\")",
+        "r\"\\.chrome-pinned\\{([^}]*)\\}\")"
+      ]
+    ],
+    "expect": "a GROUPED selector still pins the bar, whichever side the class is on"
+  },
+  {
+    "name": "the refusal names the wrong rule again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "f\"{where}: the theme control is on the page but no `.{CHROME_PIN_CLASS}` rule contains \"",
+        "f\"{where}: the theme control is on the page but no `.chrome` rule contains \""
+      ]
+    ],
+    "expect": "the refusal names the rule the predicate actually requires"
+  },
+  {
+    "name": "script text is collected from inside a shielded element",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if self._in_script and not any(self._depth.values()):",
+        "        if self._in_script:"
+      ]
+    ],
+    "expect": "a handler inside a <template> does not bind the control"
+  },
+  {
+    "name": "the shield branches resolve attributes last-wins again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            nid = self._attrs(attrs).get(\"id\")",
+        "            nid = dict(attrs).get(\"id\")"
+      ]
+    ],
+    "expect": "duplicate ids on a <noscript> resolve FIRST-wins, like everywhere else"
+  },
+  {
+    "name": "the enclosing shield is checked after the branches again",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if any(self._depth.values()):\n            if tag in self._depth:\n                self._depth[tag] += 1\n            elif tag == \"script\":\n                self._in_script += 1\n            return\n",
+        ""
+      ]
+    ],
+    "expect": "an element inside a shield contributes nothing, whatever element it is"
+  },
+  {
+    "name": "the nested-<noscript> shape is HANDLED, which widens the declared subject",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if any(self._depth.values()):\n            if tag in self._depth:\n                self._depth[tag] += 1",
+        "        if any(self._depth.values()):\n            if tag in self._depth and tag != \"noscript\":\n                self._depth[tag] += 1"
+      ]
+    ],
+    "expect": "OUT OF SCOPE: a second control behind a NESTED <noscript> is not counted, so no duplicate is reported (r5 High; the depth counter nests, Chromium's raw-text parsing arguably does not \u2014 NOT browser-verified)"
+  },
+  {
+    "name": "an unterminated <script> is discarded at EOF, which widens the declared subject",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    # `handle_comment` is not overridden ON PURPOSE: a commented-out control contributes\n    # nothing, which is the behaviour the suite has asserted since before this guard.",
+        "    def close(self):\n        super().close()\n        if self._in_script and self.scripts:\n            self.scripts.pop()\n\n    # `handle_comment` is not overridden ON PURPOSE: a commented-out control contributes\n    # nothing, which is the behaviour the suite has asserted since before this guard."
+      ]
+    ],
+    "expect": "OUT OF SCOPE: an UNTERMINATED <script> still contributes its text, so the binding assertion is satisfied by it (r5 High)"
+  },
+  {
+    "name": "<template> stops shielding, which widens the declared subject to foreign content",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            self._depth[\"template\"] += 1\n            return",
+        "            return"
+      ]
+    ],
+    "expect": "OUT OF SCOPE: a <template> inside <svg> shields its contents here (r5 Medium; in foreign content the child is arguably live)"
+  },
+  {
+    "name": "<noscript> content is dropped as raw text, which widens the declared subject",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    s = _Scan()\n    try:\n        s.feed(page)",
+        "    s = _Scan()\n    try:\n        s.feed(re.sub(r\"<noscript\\b[^>]*>.*?</noscript>\", \"\", page, flags=re.S|re.I))"
+      ]
+    ],
+    "expect": "OUT OF SCOPE: <noscript><script></noscript> leaves the scanner in script mode, so a control after it is invisible (r5 Medium, fail-CLOSED \u2014 it refuses rather than accepts, which is why it ranks below the two Highs)"
+  },
+  {
+    "name": "CSS comments are stripped AT THE GUARD, which widens the declared subject",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    rules = _CHROME_RULE_RE.findall(page)",
+        "    rules = _CHROME_RULE_RE.findall(re.sub(r\"/\\*.*?\\*/\", \"\", page, flags=re.S))"
+      ]
+    ],
+    "expect": "OUT OF SCOPE: `[^{}]*` spans a CSS comment, so a page whose only pin rule is COMMENTED OUT reads as reachable \u2014 a fail-open (r5 Medium)"
+  },
+  {
+    "name": "the declared subject is deleted from the enforcement site",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "markup written by this repository's generators or by its explainer skills",
+        "markup written by anyone at all"
+      ]
+    ],
+    "expect": "the subject is declared where it is enforced"
+  }
 ]

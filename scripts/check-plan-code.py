@@ -1286,7 +1286,16 @@ EXPECTED_MUTATIONS = {
     # moved from sticky to a script-applied fixed class), and SIX new behaviours had no
     # mutation at all — the duplicate-id refusal, the consumer refusal and the
     # comment-stripping all survived deletion with 111/111 green.
-    "scripts/page_chrome.py": 45,
+    # ⟳ 2026-10-18, the r5 fold: 45 -> 51. SIX entries whose subject is THE DECLARED BOUND
+    # rather than a behaviour — five tighten the scan to handle one of r5's out-of-scope
+    # shapes, the sixth deletes the subject sentence from `assert_wired`'s docstring. They
+    # exist because the bound is the fix: the owner chose "narrow the subject", and a bound
+    # nothing can falsify is a sentence. ⚠ Every one was measured as a sever BEFORE being
+    # written here, and two of the first five did NOT redden — the nested-<noscript> sever
+    # was patching a branch the nesting does not happen in, and the CSS-comment case was
+    # asking the REGEX while the fix would land on the GUARD, so it stayed green at 163/163.
+    # Both are now pointed at what the code actually sees.
+    "scripts/page_chrome.py": 51,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5112,7 +5121,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1493)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1499)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 157 cases
+    python3 scripts/page_chrome.py --self-test          # 163 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -26,6 +26,40 @@ it looks shipped, it does nothing, and no error is raised anywhere. `missing_pal
 is the answer to *"what would I see if this were silently doing nothing?"* — every
 caller runs it over its own finished HTML and refuses to write on a miss. That check is
 the load-bearing part of this file, not the button.
+
+⛔ THE SUBJECT OF EVERY ASSERTION IN THIS FILE, DECLARED ONCE BECAUSE FIVE REVIEW
+ROUNDS WENT LOOKING FOR IT. `assert_wired` and the predicates under it describe markup
+produced by **this repository's five generators or by its explainer skills** — the
+fragments under `docs/explainers/*.fragment.html` included, because those are
+hand-authored and a fragment author plausibly writes single-quoted HTML, which r4
+measured as a live fail-open. They do **NOT** describe adversarial markup, and they do
+not claim to compute what a browser does with it.
+
+That boundary is not a disclaimer, it is the design. Rounds 1-5 each measured a new way
+the text-level scan disagrees with Chromium — substring, regex, comment-stripping regex,
+`html.parser`, and finally a caller-supplied fact — and each round's patch created the
+next round's finding, in one component, which is `dev-process.md`'s thrashing shape. The
+question *"what will a browser do with arbitrary markup"* is not a predicate text can
+compute, so this module stopped asking it. What it asks instead is *"did a generator or a
+fragment author make a mistake"*, and for that a parse is sufficient.
+
+⚠ WHAT THAT LICENSES, ENUMERATED FROM THE CASES THAT WITNESS IT — not from what the
+scan touches. `self_test` carries five cases under the heading `OUT OF SCOPE BY THE
+BOUND`, one per shape r5 found: nested `<noscript>`, an unterminated `<script>`,
+`<svg><template>`, `<noscript><script></noscript>`, and a `.chrome-pinned` mention inside
+a CSS comment. Each case **records what this module currently does** with that shape and
+asserts nothing about what Chromium does — that comparison is NOT RUN here, and r5's
+claims about it are a reviewer's reading, not a browser measurement. So the cases are a
+falsifier for the BOUND, not for the behaviour: tighten the scan to handle one of those
+shapes and its case goes red, which sends the author to this paragraph to widen the
+subject deliberately instead of silently.
+
+⚠ AND THE HONEST HALF OF THE HONEST HALF: narrowing the subject removes those five from
+scope; it does not make the module's claim a layout claim. `bar_unreachable` still
+asserts a MECHANISM and says so in its own docstring. The property a reader cares about —
+*can I reach the control* — is a rendering fact, and the only instrument that can decide
+it is a browser. See `docs/reviews/coordinator/chrome-bar-reachable-r5-coordinator.md`
+option 2, which remains open.
 
 ⚠ THE STAMP RANKS ABOVE THE REFRESH BUTTON, deliberately. A button cannot help when the
 local server is not running or the page was opened over `file://`, and without a
@@ -786,6 +820,21 @@ def assert_wired(page: str, where: str, *, scoped_css_emitted: bool = False) -> 
     Callers run this on their finished HTML immediately before writing. A generator that
     forgets is the fail-silent described at the top of this file: a button that changes
     an attribute nothing styles.
+
+    ⛔ THE SUBJECT, REPEATED HERE BECAUSE THIS IS WHERE IT IS ENFORCED and a reader who
+    reaches this function may never have read the module docstring. **This guard describes
+    markup written by this repository's generators or by its explainer skills. It is not a
+    predicate about arbitrary markup, and a shape it mishandles is a BOUND question, not a
+    defect.** The module docstring carries the argument and names the five cases that
+    witness the bound; the only thing restated here is the subject itself, because the
+    subject is what this function's refusals are about.
+
+    ⚠ WHICH FIXES THE SEVERITY OF A WHOLE CLASS OF FINDING, and that is the point of
+    declaring it. "This scan disagrees with Chromium on <shape>" is, against this subject,
+    a finding only if a generator or a fragment author would write <shape>. Single-quoted
+    HTML qualifies and was fixed (r4). Nested `<noscript>` does not, and is recorded rather
+    than fixed. Nothing here claims the second kind cannot be reached by someone writing
+    markup by hand on purpose — it claims that is not what this guard is for.
     """
     miss = missing_palettes(page)
     if miss:
@@ -1464,6 +1513,62 @@ def self_test() -> int:
     case("the only backgrounds are the page's own ground and the button's none",
          sorted(set(d.strip() for d in re.findall(r"background:([^;}]*)", chrome_css()))),
          ["transparent", "var(--bg,Canvas)"])
+
+    # ── OUT OF SCOPE BY THE BOUND ────────────────────────────────────────────────
+    # ⛔ THESE FIVE CASES RECORD BEHAVIOUR. THEY DO NOT ENDORSE IT, AND THEY ASSERT
+    # NOTHING ABOUT CHROMIUM. Each is one of the five shapes round 5 found and the
+    # coordinator note declined to fold, because each is the same thing: a text scan
+    # guessing at a browser. The module docstring declares the subject that puts them out
+    # of scope — markup from this repository's generators or its explainer skills.
+    #
+    # ⚠ WHAT THEY ARE FOR, STATED PLAINLY: they are the falsifier for the BOUND, not for
+    # the behaviour. Tighten `_Scan` or `_CHROME_RULE_RE` to handle one of these and its
+    # case goes RED, which is the intended outcome — it sends the author to the docstring
+    # to widen the subject on purpose. Fix the case and the bound together, or neither.
+    #
+    # ⚠ AND WHAT THEY ARE NOT: they are not evidence that the recorded answer is right.
+    # Every "Chromium does X" claim in r5 is a reviewer's reading of the HTML spec, NOT a
+    # browser measurement — nobody has run these five through a browser, here or there.
+    # So the `want` values below are this module's output, measured 2026-10-18 by running
+    # it, and that is the whole of their authority.
+    _nested_ns = ('<button id="chrome-theme">a</button>'
+                  '<noscript><noscript></noscript><button id="chrome-theme">b</button>')
+    case("OUT OF SCOPE: a second control behind a NESTED <noscript> is not counted, "
+         "so no duplicate is reported (r5 High; the depth counter nests, Chromium's "
+         "raw-text parsing arguably does not — NOT browser-verified)",
+         _scan(_nested_ns).ids.count("chrome-theme") > 1, False)
+    case("OUT OF SCOPE: an UNTERMINATED <script> still contributes its text, so the "
+         "binding assertion is satisfied by it (r5 High)",
+         CHROME_SCRIPT_MARK in _scripts(f"<p>x</p><script>/*{CHROME_SCRIPT_MARK}*/"), True)
+    case("OUT OF SCOPE: a <template> inside <svg> shields its contents here (r5 Medium; "
+         "in foreign content the child is arguably live)",
+         has_control('<svg><template><button id="chrome-theme">t</button>'
+                     '</template></svg>'), False)
+    case("OUT OF SCOPE: <noscript><script></noscript> leaves the scanner in script mode, "
+         "so a control after it is invisible (r5 Medium, fail-CLOSED — it refuses rather "
+         "than accepts, which is why it ranks below the two Highs)",
+         has_control('<noscript><script></noscript>'
+                     '<button id="chrome-theme">t</button>'), False)
+    # ⛔ THROUGH `bar_unreachable`, NOT THROUGH THE REGEX. The first version of this case
+    # called `_CHROME_RULE_RE.search` directly and was measured UNFALSIFIABLE: stripping CSS
+    # comments at the call site — the obvious tightening — left it GREEN at 163/163, because
+    # the case's subject was the pattern and the fix's subject was the guard. Asking the
+    # GUARD is what makes a fix at either site redden it.
+    case("OUT OF SCOPE: `[^{}]*` spans a CSS comment, so a page whose only pin rule is "
+         "COMMENTED OUT reads as reachable — a fail-open (r5 Medium)",
+         bar_unreachable(
+             '<html><body><button id="chrome-theme">t</button>'
+             f'<style>{LIGHT}{DARK}'
+             '/* .chrome-pinned */ .nonexistent{position:fixed}</style>'
+             f'<script>/*{CHROME_SCRIPT_MARK}*/</script></body></html>'), False)
+    # ⚠ The SUBJECT sentence, not the argument for it — and this case is weak on purpose,
+    # which is said rather than hidden: it can only notice the sentence being deleted, and
+    # a case that names its own fix's tokens defends only its deletion. The five cases
+    # above are the real falsifier. This one exists because the subject disappearing while
+    # the refusals stay broad is the specific regression that would make the five
+    # misleading, and nothing else would notice it.
+    case("the subject is declared where it is enforced",
+         "generators or by its explainer skills" in (assert_wired.__doc__ or ""), True)
 
     print(f"\n{ok}/{ok + fail} passed")
     return 1 if fail else 0
