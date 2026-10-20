@@ -89,5 +89,70 @@
     "expect": [
       "LIMIT_BYTES matches the 24.4KB the harness reported"
     ]
+  },
+  {
+    "name": "INDEX is repointed at another corpus file, so the guard measures the wrong subject (r1 CODEX #2a)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "INDEX = ROOT / \"docs\" / \"memory\" / \"MEMORY.md\"\n",
+        "INDEX = ROOT / \"docs\" / \"memory\" / \"slice-history.md\"\n"
+      ]
+    ],
+    "expect": [
+      "INDEX is the always-loaded index, not some other corpus file"
+    ]
+  },
+  {
+    "name": "main() under-reports the size by one byte, so an index one over the limit passes (r1 CODEX #2b)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    rc, msg = budget_verdict(index_size(index), limit, shown)\n",
+        "    rc, msg = budget_verdict((index_size(index) or 1) - 1, limit, shown)\n"
+      ]
+    ],
+    "expect": [
+      "main() fails a file ONE BYTE over, measured end to end"
+    ]
+  },
+  {
+    "name": "the reported path becomes a constant, so a mis-pointed guard reads correct (r1 CODEX #2c)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "        shown = str(index.relative_to(ROOT))\n",
+        "        shown = \"WRONG\"\n"
+      ]
+    ],
+    "expect": [
+      "an OK verdict NAMES the file too, repo-relative \u2014 not just the CANNOT RUN arms"
+    ]
+  },
+  {
+    "name": "the read-error handler is removed, so an unreadable index crashes instead of CANNOT RUN (r1 CODEX #6)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    try:\n        return len(path.read_bytes())\n    except OSError:\n        return None\n",
+        "    return len(path.read_bytes())\n"
+      ]
+    ],
+    "expect": [
+      "a present-but-unreadable index is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "the unknown-argument predicate accepts everything, so validation is dead (r1 CODEX #7)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    return [a for a in argv if a != \"--self-test\"]\n",
+        "    return []\n"
+      ]
+    ],
+    "expect": [
+      "a positional operand counts as unknown, not as an accepted operand"
+    ]
   }
 ]

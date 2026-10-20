@@ -87,6 +87,12 @@ POPULATION: frozenset[str] = frozenset({
     # 46 → 73 → 74 → 76 → 79 while it was being written, each step for a real reason, so a
     # docstring count nothing verifies would have been wrong four times in one evening.
     "check-main-drivable.py",
+    # ⟳ 2026-10-19: pinned in the commit that creates it, because this guard REFUSED it until
+    # it was — a declared count with no reader is exactly `a-count-with-no-owner`. Earned:
+    # its suite went 16 → 18 → 19 → 24 → 26 → 37 → 39 while being written, each step for a
+    # real reason (a surviving mutation, ADR-0014 D2, then five r1 CODEX findings), so an
+    # unverified docstring number would have been wrong SIX times in one evening.
+    "check-memory-index-budget.py",
     "check-memory-link.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the

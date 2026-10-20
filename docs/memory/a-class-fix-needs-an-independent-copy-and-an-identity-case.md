@@ -9,10 +9,14 @@ metadata:
 **Generalising a case by deriving its inputs from the code under test produces a case that cannot
 fail.** The obvious class fix is the wrong one, and it fails silently in the direction of good news.
 
-**MEASURED 2026-10-17, r5 CLAUDE H1, `check-claim-propagation.py` — ⚠ the script is NOT on
-`master` and never has been. Durable locator: `refs/pull/376/head:scripts/check-claim-propagation.py`
-(verified fetchable 2026-10-19). ⛔ NOT a bare path and NOT a branch sha: the commit that version
-lives on is unreachable from `master`, so both die with the branch; GitHub retains the pull ref.** A case pinned one void element;
+**MEASURED 2026-10-17, r5 CLAUDE H1, `check-claim-propagation.py`.**
+
+⛔ **LOCATOR — CORRECTED 2026-10-19 BY r1 CODEX #8, AND THE FIRST FIX WAS THE SAME BUG AGAIN.** The script is **not on `master`** *(as of 2026-10-19; if PR #376 is squash-merged this sentence stops being true and a live copy exists — re-check before relying on it)*.
+- **Immutable identity:** `d06da80c62da50973e55bec956bc0d8215266b94:scripts/check-claim-propagation.py`. A full SHA names one object forever.
+- **Retrieval route, not an identity:** PR #376 — `git fetch origin refs/pull/376/head`, then read the SHA above.
+- ⚠ **`refs/pull/376/head` is NOT a pin and citing it alone was wrong.** It FOLLOWS the PR head: measured 2026-10-19 it was `2e0ad1ef`, already moved past the `d06da80c` the finding below was measured on. A bare path, a branch name and a pull ref are all MOVING locators; only the SHA is not.
+- ⚠ **Residual risk, stated rather than hidden:** GitHub's retention of pull refs is documented practice, not a guaranteed archive. If PR #376 is closed unmerged and the ref is reaped, the SHA still names the object but nothing may serve it.
+ A case pinned one void element;
 the fix was supposed to pin all fourteen. Three versions:
 
 | version | drop `area` from `VOID` | verdict |

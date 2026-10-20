@@ -15612,3 +15612,55 @@ subject gets switched off (#56).
 Also repairs two citations of `check-claim-propagation.py` to `refs/pull/376/head:<path>`. The
 proposed `<sha>:path` was NOT durable: `d06da80c` is unreachable from `master` and lives only on the
 open `marketplace-inventory` branch, so a bare path and a branch sha die together with it.
+
+## 2026-10-19
+Correction to the entry above, from the adversarial review of it. Three of the numbers I reported
+were wrong, and one of the fixes was the same mistake a second time.
+
+The check I shipped could have been pointed at the wrong file entirely and every one of its tests
+would still have passed — it never asserted *which* file it measures. It also crashed rather than
+reporting cleanly when a file exists but cannot be read, and its size check was one byte loose at
+the exact boundary it exists to catch. All three are fixed and each now has a test that fails if
+the fix is removed.
+
+The citation repair in the entry above was wrong in the way it was trying to fix. I pointed those
+two notes at a pull-request reference, believing it was a permanent address; it is not — it follows
+the pull request and had already moved on from the version I measured. They now cite the exact
+commit, with the pull request only as directions for retrieving it.
+
+And two more memory notes are invisible to the recall system than I said. I counted notes that have
+a description; what actually matters is whether the trigger inside it can be read, and two have one
+that cannot. The original record was right and my correction of it was wrong.
+
+Nothing here changes what the check does for you. The index is under budget, the history is intact,
+and the periodic cleanup is still handled.
+<!--tech-->
+r1 CODEX, 8 findings, `docs/reviews/codex/memory-index-budget-r1-codex.md`. Its #1 (harness suite
+red: 176/178) was already fixed in `bc165e93`. Folded: **#2a** repointing `INDEX` at another corpus
+file left all 26 cases green — every verdict now names the file it measured and 3 cases pin the
+subject; **#2b** a `size - 1` mutation in `main()` let a 24,986-byte index pass — added an
+exactly-on-boundary integration pair; **#2c** the printed label was unwitnessed — captured via
+`contextlib.redirect_stdout`; **#6** `read_bytes()` errors escaped instead of rc 2 — narrow `OSError`,
+with the precondition `os.access(...) is False` ASSERTED so the case cannot pass vacuously as root;
+**#7** validation ran after dispatch, so `main(["--self-test","--bogus"])` returned 0.
+
+⛔ #7's fix exposed a hazard in my own suite: severing the filter made that call re-enter
+`_self_test` — UNBOUNDED RECURSION, one red case repeated hundreds of times, and the mutation could
+not be attributed. Extracted `unknown_args()` as a pure predicate so the property is witnessed
+without the suite being able to invoke itself.
+
+⚠ My first verification of these fixes had a RED CONTROL (35/37) and was therefore not evidence:
+two new cases resolve `ROOT` from the script's own location, so a bare single-file copy breaks them.
+Re-run inside the pruned `HARNESS_TREE`: **12 mutations, 12 killed, 12 attributed, 0 survivors**,
+green control and re-control. Suite 39 cases; `EXPECTED_MUTATIONS` 7 → 12 and both companion
+declarations 1552 → 1557.
+
+⚠ NOT VERIFIED and now stated in the guard: the harness's truncation ALGORITHM. The dropped amount
+was 2,820 bytes = 24 newlines of tail beginning mid-row, so "~30 of 118 rows" was never established;
+the real index had **146** `- ` lines (my 118 was counted AFTER the move) with 35 over 200 chars / 38
+over 200 bytes, max 602/620. The guard measures the quantity the warning reports, which may be a
+correlate rather than the cause. Also corrected: the docstring claimed a character count "would have
+reported this index as fitting" — false, 26,930 > 24,985.
+
+Corpus, re-measured through `parse_trigger`: 163 files, 161 descriptions, **159 parsed triggers, 4
+without** — backlog #309's original 4 was right; my "2" tested the wrong predicate.
