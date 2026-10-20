@@ -3490,6 +3490,7 @@ def _self_test() -> int:
                                       # ⟳ 2026-10-02: ADR-0014's rule D2 arrives with its
                                       # manifest in the same commit.
                                       "scripts/check-main-drivable.py",
+                                      "scripts/check-memory-index-budget.py",
                                       "scripts/check-memory-link.py",
                                       "scripts/check-merge-ready.py",
                                       "scripts/check-paid-caller-arrival.py",
@@ -5182,7 +5183,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1545)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1552)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
