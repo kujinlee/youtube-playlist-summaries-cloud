@@ -215,6 +215,20 @@ jobs:
       - name: check-review-rounds self-test
         run: python3 scripts/check-review-rounds.py --self-test
 
+      # ⛔ THE RE-EVALUATION PROMISE for the route-escalation mechanism, and it is a RATCHET.
+      # Its loudest trigger is STARVATION, because that is how its predecessor died:
+      # `check-review-decision.py` was correct and saw rounds=0 on 81% of the subjects where it
+      # applied (57 with >=2 rounds, 10 readable). It was never wrong; it was never fed.
+      # History is the pinned baseline in docs/reviews/decision-scheme/baseline.json and is
+      # NEVER retro-filled — trigger 1 counts only subjects whose SECOND round document was
+      # added after `armed_at`. A gate red from birth over 57 historical subjects gets switched
+      # off, which backlog #56 measured.
+      - name: Decision-scheme re-evaluation triggers
+        run: python3 scripts/check-decision-scheme.py
+
+      - name: check-decision-scheme self-test
+        run: python3 scripts/check-decision-scheme.py --self-test
+
       # A feature's documents must say which GOAL they belong to, by a name that survives a rename.
       # Written after an hour was lost re-deriving a roadmap that existed: the feature spans three
       # vocabularies after two honest renames, and membership by keyword returns 7 of 162 specs and

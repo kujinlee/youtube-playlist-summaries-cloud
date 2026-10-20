@@ -15828,3 +15828,43 @@ MEASURED, not silent), absolute-from-elsewhere and clean layouts · `EXPECTED_MU
 companions 1567 → 1573 · `check-review-rounds` rc=0 with all four halves filed.
 ⚠ Still NOT VERIFIED: the truncation ALGORITHM, and code points vs UTF-16 units. ⚠ The hook is
 outside the mutation population (all 1,573 entries are `.py`; no `.sh` precedent) and UNREGISTERED.
+
+## 2026-10-20 [needs-you]
+The review loop now has a way to decide **patch it or rebuild it**, and it works by betting rather
+than by knowing. The old plan was to work out *why* each defect existed and read the answer off that;
+that plan is dead, because why-a-defect-exists is not something any tool can observe. So instead the
+loop starts with the cheapest repair, and each repair carries the thing you would see if it had not
+worked — the same area producing problems again in the next round. When that happens it moves up to
+the next kind of repair, and never retries one that already failed. It stops when the options run out.
+
+Two numbers that make this worth doing rather than just tidy. Picking the right area to examine at
+random would be right about **7%** of the time; the ranking we have scores at least **37%** on the
+most pessimistic reading, so the bet is clearly favourable. And it now says **"no lead"** instead of
+naming an area when the evidence does not actually favour one — which, measured, is **half** the
+cases we have. It had been naming one anyway, chosen alphabetically.
+
+There is also a promise attached: the whole mechanism is watched by a check that will say when it has
+stopped earning its place. Its loudest alarm is **nobody is using it** — because that is exactly how
+the previous version of this died. It was never wrong; it simply never got the information it needed,
+on 81% of the work it applied to.
+
+**Waiting on you:** this is a pull request, not a merge. The merge is yours, as always. Worth knowing
+before you decide: the mechanism's inputs are **judgements a person records**, not measurements, and
+nothing checks them — that is a consequence of the causation problem above, not an oversight, and it
+is written down in the code rather than glossed. What makes it honest is that the guess is written
+down *before* the outcome is known, so it can be scored later. If after ten of these the record shows
+it is not beating the old median of four rounds, the check will say so in those words.
+<!--tech-->
+Branch `decision-route-escalation`, stacked on `baseline-surveys` (PR #380, unmerged — the ranker it
+amends lives there). `scripts/check-review-decision.py`: `scope_tally`/`scope_lead`/`scope_lead_lines`
+split out of what was one expression, so the margin and the tied set are reportable; `review_scope`'s
+alphabetical order is deliberately unchanged. ⛔ `main()` never called `review_scope` at all — the
+ranker shipped yesterday was reachable only from its own self-test while `dev-process.md` said running
+the script computed it. `rounds_for` now reads a half document's header when no coordinator document
+carries that round (measured per round: 97% of rounds carry a half, 35% a coordinator doc);
+coordinator precedence and strict-coordinator/best-effort-half are both pinned by cases. New
+`scripts/check-decision-scheme.py` — 51 cases, 11 mutations, 0 survivors, wired into `ci.yml` with no
+`NO-CALLER:` escape. Baseline pinned at `docs/reviews/decision-scheme/baseline.json` (median 4 rounds
+over 57 subjects, derived at `5d957db8`, before the scheme existed). Suites 87/87 and 51/51, both also
+green under `uv run --python 3.12` — the CI pin, not this machine's 3.14. Mutation manifest 1573 →
+1595 declared. Backlog #315–#319 filed. Full `--mutate .` not yet verdicted locally.

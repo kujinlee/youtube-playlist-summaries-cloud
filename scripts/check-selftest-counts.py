@@ -186,6 +186,9 @@ POPULATION: frozenset[str] = frozenset({
                                     # the near-miss; that is the gap this row closes.
     "check-review-rounds.py",
     "check-review-decision.py",
+    "check-decision-scheme.py",   # NEW 2026-10-20 — pinned on arrival, because its
+                                  # sibling above drifted 61 -> 68 -> 80 in two days
+
     "check-review-recorded.py",      # ⟳ 2026-09-14, r11 Medium. It had a `--self-test`, declared no
                                      # count, and was in neither direction this file reports:
                                      # `population_errors` catches pinned-but-no-longer-declaring

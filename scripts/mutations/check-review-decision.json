@@ -141,5 +141,150 @@
     "expect": [
       "CANNOT_RUN exits 2 \u2014 a refusal is not an ordinary failure"
     ]
+  },
+  {
+    "name": "scope_lead never abstains, so an alphabetical winner reads as a finding",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "abstain = len(tied) > 1",
+        "abstain = False"
+      ]
+    ],
+    "expect": [
+      "a 5-way tie ABSTAINS, and names every tied component rather than one of them"
+    ]
+  },
+  {
+    "name": "scope_lead's tied names lose their stable order, which the reader prints",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "tied = [c for c, v in sorted(tally.items()) if v == n1]",
+        "tied = [c for c, v in tally.items() if v == n1]"
+      ]
+    ],
+    "expect": [
+      "...and the tied names are reported in a stable order, because the reader prints them"
+    ]
+  },
+  {
+    "name": "scope_lead pins the runner-up at zero, so every margin looks wide",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "n2 = counts[1] if len(counts) > 1 else 0",
+        "n2 = 0"
+      ]
+    ],
+    "expect": [
+      "a margin of ONE is a lead, not a tie \u2014 the adjacent case to abstention",
+      "a WIDE margin is reported as its own value, not as a boolean"
+    ]
+  },
+  {
+    "name": "scope_tally counts FINDINGS instead of rounds, so a noisy round outranks a recurrence",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "tally[c] = tally.get(c, 0) + 1",
+        "tally[c] = tally.get(c, 0) + len(r.get(\"findings\", []))"
+      ]
+    ],
+    "expect": [
+      "a component counts ONCE per round however many findings it carried",
+      "a WIDE margin is reported as its own value, not as a boolean"
+    ]
+  },
+  {
+    "name": "the reader drops the tied-names line, hiding WHICH components tied",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "            out.append(f\"              tied: {', '.join(lead['top'])}\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "the reader says NO LEAD and lists the tied names on a second line"
+    ]
+  },
+  {
+    "name": "the reader reports every lead as an abstention",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "    if lead[\"abstain\"]:\n        out = [f\"  scope-rank: NO LEAD \u2014 {lead['why']}\"]",
+        "    if True:\n        out = [f\"  scope-rank: NO LEAD \u2014 {lead['why']}\"]"
+      ]
+    ],
+    "expect": [
+      "the reader names the winner and its margin when there IS a lead"
+    ]
+  },
+  {
+    "name": "the reader omits the margin figures, leaving a bare winner",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "    return [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']} \"\n            f\"(n1={lead['n1']} n2={lead['n2']})\"]",
+        "    return [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']}\"]"
+      ]
+    ],
+    "expect": [
+      "the reader names the winner and its margin when there IS a lead"
+    ]
+  },
+  {
+    "name": "relocation reads only the coordinator, restoring the 35% ceiling",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "def rounds_for(subject: str, writers: tuple[str, ...] = (\"coordinator\", \"codex\", \"claude\"),",
+        "def rounds_for(subject: str, writers: tuple[str, ...] = (\"coordinator\",),"
+      ]
+    ],
+    "expect": [
+      "a HALF supplies a round the coordinator never wrote \u2014 97% vs 35% is the point"
+    ]
+  },
+  {
+    "name": "a HALF outranks the coordinator, so one reviewer's view beats the adjudication",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "            if h[\"round\"] in by_round:\n                continue                      # earlier writer in `writers` already spoke",
+        "            if False:\n                continue                      # earlier writer in `writers` already spoke"
+      ]
+    ],
+    "expect": [
+      "...and the COORDINATOR still wins the round it does carry, because it adjudicates"
+    ]
+  },
+  {
+    "name": "a malformed header is swallowed for the coordinator too, making a missing input a pass",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "                if writer == \"coordinator\":\n                    raise",
+        "                if False:\n                    raise"
+      ]
+    ],
+    "expect": [
+      "a MALFORMED coordinator header still raises, so a missing input is not a pass"
+    ]
+  },
+  {
+    "name": "every writer is strict, so a half quoting yaml in prose fails its whole subject",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "                if writer == \"coordinator\":\n                    raise\n                continue",
+        "                raise"
+      ]
+    ],
+    "expect": [
+      "PROSE in a half that quotes a yaml block is skipped, NOT raised"
+    ]
   }
 ]

@@ -1,0 +1,48 @@
+{
+  "_what": "The PRE-SCHEME baseline for the route-escalation mechanism's trigger 3 (\"no better than doing nothing\"). Pinned BEFORE the scheme shipped, because after it ships every number here is contaminated by it.",
+  "_why_pinned_and_not_computed_at_read_time": "A comparator recomputed on every run cannot detect that the thing it compares against has moved. Pinned so drift is visible; scripts/check-decision-scheme.py --rederive recomputes and reports the delta.",
+  "derived_at": "2026-10-20",
+  "derived_from_head": "5d957db8b5e62e288460dbae3df8e2aadc1e4282",
+  "derivation": "subjects = basename(docs/reviews/{codex,claude,coordinator}/*.md) parsed by check-review-rounds.SHAPES; a subject counts when it has >=2 distinct round numbers; rounds_to_termination = count of distinct round numbers",
+  "corpus": {
+    "subjects_with_any_round": 63,
+    "subjects_with_ge2_rounds": 57,
+    "rounds_total": 261
+  },
+  "rounds_to_termination": {
+    "min": 2,
+    "median": 4,
+    "mean": 4.58,
+    "max": 17,
+    "distribution": {
+      "2": 13,
+      "3": 15,
+      "4": 10,
+      "5": 5,
+      "6": 2,
+      "7": 3,
+      "8": 3,
+      "9": 1,
+      "10": 2,
+      "11": 2,
+      "17": 1
+    },
+    "over_four_rounds": 19,
+    "over_four_rounds_share": 0.333
+  },
+  "capture_rates_per_round": {
+    "_denominator": 261,
+    "at_least_one_half": 0.973,
+    "both_halves": 0.655,
+    "coordinator_document": 0.349
+  },
+  "_the_number_that_matters": "median 4 \u2014 and dev-process.md's Phase 6 says reaching four rounds OBLIGES ASKING, so the pre-scheme process put half of all subjects at that threshold. The scheme earns its keep by moving the median below 4 and shrinking the 33% tail above it, not by any accuracy figure.",
+  "armed_at": "2026-10-20T10:00:00-07:00",
+  "_armed_at_means": "Trigger 1 (NOT FED) counts only subjects whose SECOND round document was added after this instant. History is the pinned baseline and is never retro-filled: a gate red from birth over 57 historical subjects gets switched off, which backlog #56 measured.",
+  "ladder": [
+    "accrete",
+    "redesign",
+    "split",
+    "defer"
+  ]
+}

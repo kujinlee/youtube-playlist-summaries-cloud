@@ -1,6 +1,18 @@
 # Round-document header
 
-Every **coordinator** round document carries this block immediately after its title.
+Every **coordinator** round document carries this block immediately after its title — and ⟳
+**since 2026-10-20 a HALF may carry it instead**, which is where it is actually produced.
+
+⭐ **MEASURED, per round, over the 57 subjects where the procedure applies (261 rounds): at least
+one half 254 = 97%; both halves 171 = 66%; a coordinator document 91 = 35%.** Reading only
+coordinator documents capped feedability at a third of rounds, and the procedure saw `rounds=0` on
+81% of its subjects. The grammar is unchanged — the same `yaml` block, the same fields — so this is
+relocation, not a second format. ⚠ **Precedence: a coordinator header still WINS the round it
+carries**, because it adjudicates the two halves and a half speaks only for its own reviewer. ⚠ And
+strictness is keyed to the writer: a malformed header in a coordinator document RAISES (a missing
+input is a failure, never a pass), while a half is best-effort and skipped — which is how 254
+existing halves stay silent instead of going red from birth. `rounds_for`'s docstring in
+`scripts/check-review-decision.py` owns both rules.
 
 **Why it exists.** The decision procedure needs two counters — *consecutive fix-induced rounds* and
 *rounds since a finding in the deliverable*. On PR #302 nobody kept either, which is why four rounds

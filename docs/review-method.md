@@ -301,6 +301,59 @@ up. The fix is not a new measurement. It is permission for the existing one to c
 
 **Convergence is not enough on its own.** *"No new Blocking or High"* is a statement about the
 REVIEWERS, not the design. A locally-repairable design passes it forever.
+### Redesign or accretion — a BET with an escalation ladder, not a classification (added 2026-10-20)
+
+**The owner's goal was a deterministic mechanism. It is not available, and the boundary is sharp:**
+`fix_induced` asks *why* a defect exists, and causation is not an observable (the measurement is in
+the section above — 2 of 8 agreement, 19 of 27 cited locations reviewer-invented fixtures). The
+owner's own correction is what makes a mechanism possible: *"goal to make it deterministic may be too
+strict. Maybe probabilistic ranking and betting on higher side?"*, then *"if we detect the failure of
+choice … then we should be able to try again with other choices."*
+
+⭐ **That replaces *be right* with *be correctable*, and correctability is observable where
+correctness was not.** A one-shot classifier with a 37% lower bound is a weak instrument; a loop that
+detects its own failed choice and escalates does not need to be right first time — it needs to
+**terminate**. The figure of merit becomes **rounds-to-termination**, which is measurable, instead of
+accuracy, which is capped at n = 3 by the circularity above.
+
+| route | bet | the observation that says it FAILED | escalates to |
+|---|---|---|---|
+| **ACCRETE** | patch it | the unit carried findings in the round after the patch | REDESIGN |
+| **REDESIGN** | restructure it | the unit still carried findings after a restructuring fold — *a redesign applied without stopping the finding stream is far stronger evidence than any counter* (#136) | SPLIT |
+| **SPLIT** | ship the stable half, make the unstable half its own subject | the split-out subject thrashed on its own in its first two rounds | DEFER |
+| **DEFER** | stop, file it | terminal | — |
+
+Start at the cheapest route: the cost of a wrong bet is one round. ⛔ **A route is never retried on
+the same unit** — a second attempt IS the escalation trigger, and that is what stops the loop running
+forever. ⭐ **This also supplies the stopping rule #136 asks for, derived rather than argued: you stop
+when the ROUTES ARE EXHAUSTED**, not when findings-per-round looks small.
+
+**The odds, because a bet needs them.** Mean distinct components per subject is **13.8** (median 11)
+over the 10 readable subjects, so a coin is right about **7%** of the time. The ranker's 3-of-3 gives
+a one-sided 95% lower bound of **37%** — better than chance by more than 5×, on the most pessimistic
+reading. It accrues: 5/5 → 55%, 10/10 → 74%.
+
+⚠ **AND THE RANKING ABSTAINS, because on half the corpus first place was the alphabet.** Measured:
+**5 of the 10 readable subjects have no lead at all** — every top component tied on appearance count
+— and the ordering resolved those by name. `arm-prod-drift-cron` is five components at one appearance
+each. A deterministic answer that is evidence-free is worse than an abstention, because only one of
+the two gets re-examined. `scope_lead` reports the margin and the tied set; `scope_lead_lines` prints
+*NO LEAD* rather than a winner.
+
+**The re-evaluation promise — `scripts/check-decision-scheme.py` over an append-only
+`docs/reviews/decision-scheme/decision-log.jsonl`, prediction written BEFORE outcome.** Seven
+triggers; four FAIL, three WARN. ⛔ **Trigger 1 is STARVATION and it is first on purpose:** the
+predecessor was correct and saw `rounds=0` on 81% of the subjects where it applied. It is a RATCHET —
+history is the pinned baseline in `baseline.json` (median **4** rounds over 57 subjects, derived at
+`5d957db8`) and is never retro-filled, because a gate red from birth over 57 historical subjects gets
+switched off (#56). The triggers, their observations and their verdicts are declared in that script's
+own docstring and are not restated here.
+
+⚠ **Every log row is AUTHORED, and nothing verifies it.** That is not a defect awaiting more code; it
+is the measured consequence of causation not being observable. What the log buys is that the
+prediction is written before the outcome — a bet placed in advance can be scored, which is exactly
+what #314 says a hindsight label cannot be.
+
 ## Premise tags, and the asymmetry they exist to fix (added 2026-08-08)
 
 **The diagnosis, which is sharper than "my instruments only look at the schema":** the validation

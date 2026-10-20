@@ -172,3 +172,28 @@ the COUNT of items from the document itself and reconcile it against the number 
 heading grep that returns fewer items than the summary claims is the cheap version of this check,
 and it would have fired here in one second. ⚠ The same applies to a teammate's report: its counts
 are a free falsifier for your own reading, so compare them rather than skimming past them.
+
+⟳ **2026-10-20 — I MEASURED THAT AN INPUT *EXISTED* AND REPORTED THAT THE SCHEME WAS *FEASIBLE*.**
+Designing a redesign-or-accretion mechanism, I proposed deriving the component partition from files
+touched between review rounds, anchored on each verdict's `head` SHA. I then "proved feasibility":
+**176 of 261 verdicts carry a `head`, 20 subjects have ≥2 resolvable heads, 32% unresolvable** —
+all correct, all irrelevant. The previous session had already measured and recorded that *"the
+commit anchor is ambiguous because the verdict records what the reviewer SAW, not the fold"*, plus
+two more refutations (19 of 27 cited finding locations are reviewer-invented fixtures, so the
+finding→file join does not exist; and *touched by the fix* ≠ *caused by the fix*). The owner caught
+it in one sentence — *"last session it was determined that git history doesn't give clear signal
+because real cause of defect cannot be known"* — and the transcript confirmed it verbatim.
+
+⭐ **AVAILABILITY IS A PROXY FOR VALIDITY AND READS EXACTLY LIKE IT.** A count of how many inputs
+are *present* is a satisfying, concrete, easily-green number; whether the input *means* what the
+design needs is the question, and it had already been answered NO.
+
+**Why:** a feasibility probe answers whichever question is cheapest to measure, and existence is
+always cheaper than meaning. Three decimal figures in a table made a refuted premise look
+freshly established.
+
+**How to apply:** before probing feasibility, write down the SENTENCE the probe is meant to
+support, then ask whether the thing being counted could be fully present while the sentence stays
+false. If it could, the probe measures availability and the design is still unvalidated. ⚠ And when
+the user says *"it was determined last session"*, grep the transcript before defending the design —
+see [[the-answer-may-only-exist-in-the-transcript]], which is where the verbatim conclusion was.

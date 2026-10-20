@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 68 cases
+    python3 scripts/check-review-decision.py --self-test  # 91 cases
 
 WHY THIS EXISTS
 ---------------
@@ -124,13 +124,74 @@ def review_scope(rounds: list[dict]) -> list[str]:
     threshold on this quantity separated labelled from unlabelled subjects, raw or normalised by
     round count, so it must not be read as "convene". `thrashing_component` keeps that job.
     """
+    return [c for c, _ in sorted(scope_tally(rounds).items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def scope_tally(rounds: list[dict]) -> dict[str, int]:
+    """PURE. component -> the NUMBER OF ROUNDS it appeared in.
+
+    One rule, one place: `review_scope` ORDERS this and `scope_lead` MEASURES ITS MARGIN. The
+    two were a single expression until 2026-10-20, which is why nothing could ask how big the
+    lead was. A component counts ONCE per round however many findings it carried — the signal
+    is "this component came back", not "this round was noisy".
+    """
     tally: dict[str, int] = {}
     for r in rounds:
-        # a component counts ONCE per round, however many findings it carried: the signal is
-        # "this component came back", not "this round was noisy".
         for c in {f.get("component") for f in r.get("findings", []) if f.get("component")}:
             tally[c] = tally.get(c, 0) + 1
-    return [c for c, _ in sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return tally
+
+
+def scope_lead(rounds: list[dict]) -> dict:
+    """PURE. Is first place a LEAD, or an artifact of the tie-break?
+
+    ⛔ MEASURED 2026-10-20 over the 10 subjects whose coordinator documents are readable:
+    **5 of them have no lead at all** — every top component tied on appearance count — and
+    `review_scope` resolves those by NAME (`key=(-kv[1], kv[0])`). `arm-prod-drift-cron` has
+    five components tied at one appearance each, and the ranking's first element is
+    `cron-comment` because `c` sorts first.
+
+    ⭐ Determinism was never the missing property. The ranker is deterministic by construction;
+    what it lacked was any way for a reader to see that first place was won by the alphabet. A
+    deterministic answer that is evidence-free is worse than an abstention, because only one of
+    the two gets re-examined.
+
+    ⚠ `review_scope`'s ORDER is deliberately UNCHANGED — the case "ties break by name, so the
+    order is deterministic" still holds and should. What changes is that nothing has to read
+    that order as a finding.
+    """
+    tally = scope_tally(rounds)
+    if not tally:
+        return {"top": [], "n1": 0, "n2": 0, "margin": 0, "tied": 0, "abstain": True,
+                "why": "no component appeared in any round"}
+    counts = sorted(tally.values(), reverse=True)
+    n1 = counts[0]
+    n2 = counts[1] if len(counts) > 1 else 0
+    tied = [c for c, v in sorted(tally.items()) if v == n1]
+    abstain = len(tied) > 1
+    return {
+        "top": tied, "n1": n1, "n2": n2, "margin": n1 - n2, "tied": len(tied),
+        "abstain": abstain,
+        "why": (f"{len(tied)} components tied at {n1} appearance(s) — first place is the "
+                f"tie-break, not evidence" if abstain
+                else f"{tied[0]} leads by {n1 - n2}"),
+    }
+
+
+def scope_lead_lines(lead: dict) -> list[str]:
+    """PURE. How `scope_lead` is REPORTED to a reader.
+
+    Extracted so the reader is testable. The first version of this printed inline inside
+    `main()`, which meant the repair for "the ranker had no reader" shipped a reader with no
+    case — the same shape one level down. `main()` must not re-implement any of this.
+    """
+    if lead["abstain"]:
+        out = [f"  scope-rank: NO LEAD — {lead['why']}"]
+        if lead["top"]:
+            out.append(f"              tied: {', '.join(lead['top'])}")
+        return out
+    return [f"  scope-rank: {lead['top'][0]} — {lead['why']} "
+            f"(n1={lead['n1']} n2={lead['n2']})"]
 
 
 def thrashing_component(rounds: list[dict]) -> str | None:
@@ -385,19 +446,59 @@ def _block_findings(body: str) -> list[dict]:
     return [f for f in out if f]
 
 
-def rounds_for(subject: str) -> list[dict]:
-    """Every coordinator round document for `subject`, ordered by round number.
+def rounds_for(subject: str, writers: tuple[str, ...] = ("coordinator", "codex", "claude"),
+               base: Path | None = None) -> list[dict]:
+    """Every readable round document for `subject`, ordered by round number.
 
-    A document without a header propagates its ValueError — the caller turns that into
-    CANNOT RUN rather than a decision.
+    ⭐ RELOCATION, 2026-10-20 — and the measurement is the whole argument. Per ROUND, across
+    the 57 subjects where the procedure applies (261 rounds):
+
+        at least one HALF (codex|claude) .... 254 of 261 = 97%
+        a COORDINATOR document .............. 91 of 261 = 35%
+
+    Reading only `coordinator/` capped feedability at 35% of rounds, and the procedure saw
+    `rounds=0` on 81% of its subjects. The fields are the SAME grammar in the SAME `yaml`
+    block; what changes is that they may live in the artifact the gate already forces to
+    exist, rather than in a second one that is written a third of the time.
+
+    ⚠ IT IS ADDITIVE, AND THE ORDER OF `writers` IS THE PRECEDENCE. A coordinator document
+    still wins when it carries a header, because it ADJUDICATES the two halves and a half
+    speaks only for its own reviewer. The halves are the fallback, not the replacement —
+    reversing that would let one reviewer's unadjudicated view outrank the adjudication.
+
+    ⚠ A header that is present but MALFORMED propagates its ValueError; the caller turns that
+    into CANNOT RUN rather than a decision. A document with NO header block is skipped, which
+    is how 254 existing halves stay silent instead of going red from birth.
     """
-    d = REPO / "docs" / "reviews" / "coordinator"
-    out = []
-    for f in sorted(d.glob(f"{subject}-r*-coordinator.md")):
-        h = parse_header(f.read_text())
-        h["source"] = f.name
-        out.append(h)
-    return sorted(out, key=lambda r: r["round"])
+    # INJECTABLE so the PRECEDENCE and STRICTNESS rules are testable without the repository's
+    # own 718-file review directory standing in as a fixture.
+    base = (REPO / "docs" / "reviews") if base is None else base
+    by_round: dict[int, dict] = {}
+    for writer in writers:
+        for f in sorted((base / writer).glob(f"{subject}-r*-{writer}.md")):
+            try:
+                h = parse_header(f.read_text())
+            except ValueError:
+                # ⛔ PRECEDENCE DECIDES STRICTNESS, AND A SUBSTRING TEST DOES NOT.
+                # The COORDINATOR document is what the procedure has always depended on, so a
+                # malformed header there still RAISES — a missing input is a failure, never a
+                # pass. A HALF is best-effort: it is skipped, which is how 254 existing halves
+                # stay silent instead of going red from birth.
+                #
+                # ⟳ The first version of this tested `"```yaml" in text` to tell "no header"
+                # from "broken header". MEASURED, it dropped coordinator-only readability from
+                # 10 subjects to 5: review prose DISCUSSES the header and quotes a yaml block,
+                # so the substring matched documents that were never carrying one. That is the
+                # same class `check-plan-file-tags.py` records — "prose ABOUT a tag must keep
+                # passing; a bare substring test breaks every one of them."
+                if writer == "coordinator":
+                    raise
+                continue
+            if h["round"] in by_round:
+                continue                      # earlier writer in `writers` already spoke
+            h["source"] = f"{writer}/{f.name}"
+            by_round[h["round"]] = h
+    return sorted(by_round.values(), key=lambda r: r["round"])
 
 
 def _git(*args: str) -> str:
@@ -546,6 +647,129 @@ def _self_test() -> int:
     case("no rounds -> no scope, rather than a guess", review_scope([]), [])
     case("findings with no component are ignored rather than counted as one",
          review_scope([{"round": 1, "findings": [{"fix_induced": True}, {"component": "a"}]}]), ["a"])
+
+    # ── scope_lead: is first place a LEAD, or the tie-break speaking? ─────────────────────────
+    # ⭐ THE IDENTITY CASE, and it is the MEASURED shape, not a constructed one. Five of the ten
+    # readable subjects have no lead; `arm-prod-drift-cron` is five components at one appearance
+    # each. Both halves are asserted TOGETHER on purpose: the order still resolves
+    # alphabetically (which is wanted, and was pinned deliberately) AND the lead reports that
+    # the order is all it is. A case asserting only one half passes while the defect is live.
+    _five = [{"round": 1, "findings": [{"component": c, "fix_induced": True} for c in
+              ("merge-readiness", "schedule-durability", "cron-comment",
+               "drift-window", "doc-row")]}]
+    case("a 5-way tie ABSTAINS, and names every tied component rather than one of them",
+         (scope_lead(_five)["abstain"], scope_lead(_five)["tied"], scope_lead(_five)["margin"]),
+         (True, 5, 0))
+    # ⚠ THE LIST, not its length. Asserting `tied == 5` leaves `sorted()` free to be dropped,
+    # and the reader PRINTS these names — so an unstable order is a reader defect, caught here.
+    case("...and the tied names are reported in a stable order, because the reader prints them",
+         scope_lead(_five)["top"],
+         ["cron-comment", "doc-row", "drift-window", "merge-readiness", "schedule-durability"])
+    case("the reader says NO LEAD and lists the tied names on a second line",
+         scope_lead_lines(scope_lead(_five)),
+         ["  scope-rank: NO LEAD — 5 components tied at 1 appearance(s) — first place is the "
+          "tie-break, not evidence",
+          "              tied: cron-comment, doc-row, drift-window, merge-readiness, "
+          "schedule-durability"])
+    case("the reader names the winner and its margin when there IS a lead",
+         scope_lead_lines(scope_lead(_real)),
+         ["  scope-rank: parse-header — parse-header leads by 1 (n1=5 n2=4)"])
+    case("the reader does not emit a tied line when there is nothing to tie",
+         scope_lead_lines(scope_lead([])), ["  scope-rank: NO LEAD — no component appeared in "
+                                           "any round"])
+    case("...while review_scope's ORDER is unchanged and still alphabetical — the two coexist, "
+         "which is the whole repair",
+         review_scope(_five)[0], "cron-comment")
+    # ⚠ ADJACENT NEGATIVE, not an absurd one: the boundary is margin 0 vs margin 1, so the case
+    # that matters sits one appearance away from the tie it must not be confused with.
+    _narrow = [_r(1, "a", "b"), _r(2, "a")]
+    case("a margin of ONE is a lead, not a tie — the adjacent case to abstention",
+         (scope_lead(_narrow)["abstain"], scope_lead(_narrow)["margin"],
+          scope_lead(_narrow)["top"]), (False, 1, ["a"]))
+    # TWO DISTINCT INPUTS for the margin arithmetic: a fixture that supplies one constant
+    # cannot show the producer computes anything.
+    _wide = [_r(n, "number-populations") for n in range(1, 6)] + [_r(6, "number-populations",
+                                                                    "invariant-scope")]
+    case("a WIDE margin is reported as its own value, not as a boolean",
+         (scope_lead(_wide)["margin"], scope_lead(_wide)["n1"], scope_lead(_wide)["n2"]),
+         (5, 6, 1))
+    case("the real measured fixture leads by one, so it does NOT abstain",
+         (scope_lead(_real)["abstain"], scope_lead(_real)["top"][0],
+          scope_lead(_real)["margin"]), (False, "parse-header", 1))
+    case("an empty round set ABSTAINS rather than naming a component",
+         (scope_lead([])["abstain"], scope_lead([])["top"]), (True, []))
+    case("a lone component leads trivially — n2 is 0, not undefined",
+         (scope_lead([_r(1, "only")])["margin"], scope_lead([_r(1, "only")])["abstain"]),
+         (1, False))
+    # INDEPENDENT COPY: asserted on the tally itself, so the per-round rule is pinned without
+    # going through the orderer that was the only reader of it before.
+    case("scope_tally counts a component ONCE per round, asserted on the tally directly",
+         scope_tally([{"round": 1, "findings": [{"component": "a"}] * 4}, _r(2, "a")]), {"a": 2})
+    # A SECOND, DISTINCT input to the same producer: one fixture supplying one constant cannot
+    # show that the tally computes anything.
+    case("...and a different shape gives a different tally, not the same one",
+         scope_tally([_r(1, "x", "y"), _r(2, "y")]), {"x": 1, "y": 2})
+
+    # ── rounds_for: relocation to the halves ─────────────────────────────────────────────────
+    import tempfile as _tf
+    _hdr = ("# r{n}\n\n```yaml\nround: {n}\nfixes_nontrivial: false\nsubject: s\n"
+            "findings:\n  - {{id: X, severity: Low, aim: instrument, fix_induced: false, "
+            "component: {c}, disposition: fixed}}\n```\n")
+    with _tf.TemporaryDirectory() as _d:
+        _b = Path(_d)
+        for _w in ("coordinator", "codex", "claude"):
+            (_b / _w).mkdir()
+        (_b / "coordinator/s-r1-coordinator.md").write_text(_hdr.format(n=1, c="from-coord"))
+        (_b / "codex/s-r1-codex.md").write_text(_hdr.format(n=1, c="from-codex"))
+        (_b / "codex/s-r2-codex.md").write_text(_hdr.format(n=2, c="from-codex"))
+        case("a HALF supplies a round the coordinator never wrote — 97% vs 35% is the point",
+             _try(lambda: [r["round"] for r in rounds_for("s", base=_b)]), [1, 2])
+        case("...and the COORDINATOR still wins the round it does carry, because it adjudicates",
+             _try(lambda: rounds_for("s", base=_b)[0]["findings"][0]["component"]),
+             "from-coord")
+        case("the source names the writer, so a reader can see where a round came from",
+             _try(lambda: [r["source"] for r in rounds_for("s", base=_b)]),
+             ["coordinator/s-r1-coordinator.md", "codex/s-r2-codex.md"])
+        # ⭐ THE IDENTITY CASE for the regression this file already caused once: a half that
+        # DISCUSSES the header quotes a yaml block, and a substring test read that as a broken
+        # header — dropping coordinator-only readability from 10 subjects to 5.
+        (_b / "claude/s-r3-claude.md").write_text(
+            "# r3\n\nThe template says to write ```yaml\nround: 3\n``` which is prose, not a "
+            "header.\n")
+        # ⛔ `_try`, NOT a bare call. A mutation making this raise would otherwise kill the
+        # suite and report ZERO [FAIL] lines — the helper's own docstring records that exact
+        # miss, and this case reproduced it before being wrapped.
+        case("PROSE in a half that quotes a yaml block is skipped, NOT raised",
+             _try(lambda: [r["round"] for r in rounds_for("s", base=_b)]), [1, 2])
+        (_b / "claude/s-r4-claude.md").write_text("# r4\n\nno header at all here\n")
+        case("a half with no header block is skipped rather than failing the subject",
+             _try(lambda: [r["round"] for r in rounds_for("s", base=_b)]), [1, 2])
+        # ⛔ STRICTNESS IS KEYED TO THE WRITER. The coordinator document is what the procedure
+        # has always depended on, so a broken header THERE is a failure, never a pass.
+        (_b / "coordinator/s-r5-coordinator.md").write_text(
+            "# r5\n\n```yaml\nsubject: s\nfindings: []\n```\n")
+        case("a MALFORMED coordinator header still raises, so a missing input is not a pass",
+             _raises(lambda: rounds_for("s", base=_b)), True)
+        case("...while the same malformed block in a HALF is skipped",
+             _raises(lambda: rounds_for("s", writers=("codex", "claude"), base=_b)), False)
+        # ⚠ A SECOND SUBJECT IN A SECOND DIRECTORY. With one `subject` and one `base` across
+        # every call, no case could tell either parameter from a constant — a subject filter
+        # that ignored its argument would pass. `check-fixture-variation.py` caught it here.
+        (_b / "coordinator/other-r1-coordinator.md").write_text(_hdr.format(n=1, c="other-1"))
+        (_b / "coordinator/other-r2-coordinator.md").write_text(_hdr.format(n=2, c="other-2"))
+        case("the subject argument SELECTS — a second subject in the same tree is separate",
+             _try(lambda: [r["findings"][0]["component"]
+                           for r in rounds_for("other", base=_b)]), ["other-1", "other-2"])
+        case("...and 's' is unaffected by it, so the filter is not reading everything",
+             _try(lambda: len(rounds_for("s", writers=("codex", "claude"), base=_b))), 2)
+    with _tf.TemporaryDirectory() as _d2:
+        _b2 = Path(_d2)
+        for _w in ("coordinator", "codex", "claude"):
+            (_b2 / _w).mkdir()
+        (_b2 / "claude/s-r1-claude.md").write_text(_hdr.format(n=1, c="half-only"))
+        case("a SECOND base directory is read, so `base` is not a constant either",
+             _try(lambda: [r["source"] for r in rounds_for("s", base=_b2)]),
+             ["claude/s-r1-claude.md"])
 
     # --- Q4a convergence --------------------------------------------------
     inst = {"severity": "Low", "aim": "instrument", "fix_induced": False, "component": "t"}
@@ -722,6 +946,10 @@ def main(argv: list[str]) -> int:
     print(f"{decision} — {why}")
     print(f"  branch={branch}  scope={scope}  rounds={len(rounds)}  "
           f"tree_reviewed={tree_reviewed}")
+    # ⛔ THE RANKER HAD NO READER. Until 2026-10-20 `review_scope` was called only by this
+    # file's own self-test, while `dev-process.md` said running this script computes it.
+    for line in scope_lead_lines(scope_lead(rounds)):
+        print(line)
     for r in rounds:
         aims = ",".join(f.get("aim", "?") for f in r["findings"]) or "none"
         print(f"    r{r['round']}: {len(r['findings'])} finding(s) [{aims}]")

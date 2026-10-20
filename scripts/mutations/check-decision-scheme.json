@@ -1,0 +1,147 @@
+[
+  {
+    "name": "the ratchet reads the FIRST round instead of the second, so a new subject counts too early",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        second = sorted(rounds)[1]",
+        "        second = sorted(rounds)[0]"
+      ]
+    ],
+    "expect": [
+      "a first round arriving since arming does not count; the SECOND one does"
+    ]
+  },
+  {
+    "name": "the ratchet excludes TWO-round subjects, where the procedure first applies",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if len(rounds) < 2:",
+        "        if len(rounds) <= 2:"
+      ]
+    ],
+    "expect": [
+      "HISTORY IS NOT STARVED \u2014 only the subject whose SECOND round arrived since arming",
+      "every second round arriving since arming is named, not just the first found"
+    ],
+    "_rejected_variant": "`< 2` -> `< 1` was REJECTED: a one-round subject then indexes sorted(rounds)[1] and the suite dies by IndexError with ZERO [FAIL] lines. It is a kill, but not via the case it names, and a crash names nothing \u2014 check-plan-code's contract is red VIA THE NAMED CASE."
+  },
+  {
+    "name": "the ladder is walked from the MOST expensive route, inverting the whole bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for route in LADDER:",
+        "    for route in reversed(LADDER):"
+      ]
+    ],
+    "expect": [
+      "an untried unit starts at the CHEAPEST route"
+    ]
+  },
+  {
+    "name": "a retried route is accepted as a step, which is how the loop runs forever",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if len(set(tried)) != len(tried):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a retried route is refused by the validator too"
+    ]
+  },
+  {
+    "name": "non-termination needs MORE routes than exist, so the primary falsifier cannot fire",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "           if len(set(r.get(\"routes_tried\", []))) >= len(LADDER)",
+        "           if len(set(r.get(\"routes_tried\", []))) > len(LADDER)"
+      ]
+    ],
+    "expect": [
+      "every route tried and findings still arriving REFUTES the design"
+    ]
+  },
+  {
+    "name": "the collapse floor moves to six, so a five-row collapse passes",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if len(scored) < 5:",
+        "    if len(scored) < 6:"
+      ]
+    ],
+    "expect": [
+      "five scored rows on one route is a collapse"
+    ]
+  },
+  {
+    "name": "equalling the pinned baseline counts as an improvement",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if med < baseline_median:",
+        "    if med <= baseline_median:"
+      ]
+    ],
+    "expect": [
+      "a median at the pinned baseline is NOT an improvement \u2014 >= fails, not >"
+    ]
+  },
+  {
+    "name": "ANY single miss fires trigger 5, making one lost bet look like a broken instrument",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not marks[i] and not marks[i + 1]:",
+        "        if not marks[i] or not marks[i + 1]:"
+      ]
+    ],
+    "expect": [
+      "one miss is a bet losing, not a broken instrument"
+    ]
+  },
+  {
+    "name": "the row validator stops borrowing the sequence rule and re-states nothing",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    err = route_sequence_error(row[\"routes_tried\"])",
+        "    err = None"
+      ]
+    ],
+    "expect": [
+      "the row validator borrows the SEQUENCE rule rather than re-stating it"
+    ]
+  },
+  {
+    "name": "the re-evaluation sample drops to nine",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "def t7_sample_reached(rows: list[dict], floor: int = 10) -> str | None:",
+        "def t7_sample_reached(rows: list[dict], floor: int = 9) -> str | None:"
+      ]
+    ],
+    "expect": [
+      "nine scored rows is below the re-evaluation sample"
+    ]
+  },
+  {
+    "name": "the drift tolerance widens to 500%, so no denominator move is ever material",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5) -> str | None:",
+        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 5.0) -> str | None:"
+      ]
+    ],
+    "expect": [
+      "a denominator that doubled warns"
+    ]
+  }
+]

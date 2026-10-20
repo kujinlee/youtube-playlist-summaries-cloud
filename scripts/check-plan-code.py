@@ -1101,7 +1101,18 @@ EXPECTED_MUTATIONS = {
     # Two of the twelve are the r11 Blocking and High, which are ONE expression pulling opposite
     # ways: the union (a reverted overlay must still be compared) and the intersection (the base's
     # commits must not be charged to this branch).
-    "scripts/check-review-decision.py": 10,
+    # ⟳ 2026-10-20: 10 -> 17. SEVEN added for `scope_lead`/`scope_tally`/`scope_lead_lines`:
+    # the ranker shipped on 2026-10-20 named a rank-1 component on 5 of 10 readable subjects
+    # where the counts TIE, resolved by `kv[0]` — the alphabet. It also had NO READER, being
+    # called only from this file's own self-test while dev-process.md said running the script
+    # computes it. ⛔ ONE candidate mutation was REJECTED as equivalent rather than added:
+    # `if v == n1` -> `if v >= n1` cannot die, because n1 is the maximum by construction, and a
+    # manifest entry that can never redden is a false coverage claim.
+    "scripts/check-review-decision.py": 21,
+    # NEW 2026-10-20: the route-escalation promise. 11 mutations, 0 survivors, each red via the
+    # case it names. ⛔ ONE REJECTED and recorded in the manifest itself: `len(rounds) < 2` ->
+    # `< 1` kills by IndexError with ZERO [FAIL] lines, and a crash names nothing.
+    "scripts/check-decision-scheme.py": 11,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
@@ -1552,6 +1563,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
     # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six, then r2 CLAUDE's six over the
+    # ⟳ 2026-10-20: check-review-decision 10 -> 17, declared sum 1573 -> 1580. SEVEN for the
+    # ranker's margin/abstention and its reader; the ranker named a rank-1 component on 5 of 10
+    # readable subjects where the counts TIE, chosen by the alphabet, and had no caller outside
+    # its own self-test.
     # facts/render REDESIGN (22 -> 28, 1567 -> 1573) —
     # seven mutations the two halves found SURVIVING that I had not written,
     # SURVIVING that I had not written, three of which let the guard measure the WRONG FILE. It guards the
@@ -3476,6 +3491,7 @@ def _self_test() -> int:
                                       "scripts/check-ci-watched.py",
                                       "scripts/check-closing-table.py",
                                       "scripts/check-dashboard-entry.py",
+                                      "scripts/check-decision-scheme.py",
                                       "scripts/check-doc-citations.py",
                                       "scripts/check-docs.py",
                                       # ⟳ 2026-09-06: the FIRST payment against the R4 manifest
@@ -5188,7 +5204,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1573)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1595)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
