@@ -18,6 +18,14 @@ findings:
   - {id: YL8, severity: Low, aim: instrument, fix_induced: true, component: coverage, disposition: filed}
 ```
 
+**REVIEW GAP:** claude — rounds 2+ ALTERNATE by `docs/plugins.md`, because a concurrent pair never
+reviews the FIXES and the fixes are this round's subject. ⛔ **This is not a "Codex was down"
+fallback and not a skip — it is the opposite shape, and saying so is the point of the marker.** The
+Claude half is OWED and is r3's dispatch. The gap is also stated in this document's `halves` field,
+but the machine reads THIS line: `check-review-rounds.py` refused the round until it was written in
+its own grammar, which is correct — a reason recorded only where a human will read it is not a
+recorded reason.
+
 **Codex half only, by the alternation rule.** Verdict: **NOT CONVERGED** — 2 High, 4 Medium, 2 Low.
 
 ## ⛔ YM5 is fixed first because it refutes a claim I made about my own measurements
