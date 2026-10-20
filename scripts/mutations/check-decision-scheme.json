@@ -196,8 +196,9 @@
     ],
     "expect": [
       "group_by_unit keeps each unit's rows in file order",
-      "unit_key partitions on (subject, unit), not on either alone"
-    ]
+      "group_by_unit over a single row gives one group, not an empty one"
+    ],
+    "_attribution_correction": "r2 finding 5. This entry declared 'unit_key partitions on (subject, unit), not on either alone', and the mutation changes group_by_unit, NOT unit_key \u2014 so that label never reddens and check-plan-code's contract (EVERY expect entry must equal exactly one red case) refuses the entry. My own probe accepted it because it used any() + substring where the harness uses all() + equality: a weaker stand-in passing what the real rule refuses, inside the apparatus doing the measuring. The two labels here were DERIVED by running the mutation and reading the red case names, not chosen."
   },
   {
     "name": "non-termination needs MORE routes than the ladder holds, so it cannot fire",
