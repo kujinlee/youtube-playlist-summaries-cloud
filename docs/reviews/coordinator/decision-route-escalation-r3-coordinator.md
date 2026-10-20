@@ -108,10 +108,25 @@ argument.** r2's adjudication is the precedent: there, I wrote a route change ci
 as though it were a count, ran the tool, and it refused to confirm me. The same restraint applies
 here and the consequence is larger — a Phase 6 review whose scope is *the composition*, not a unit.
 
-## ⚠ THE QUESTION THIS DOCUMENT CANNOT ANSWER, and the process says to ask it
+## ⟳ CORRECTION, SAME DAY — I CITED AN OBLIGATION THAT HAS NOT TRIGGERED
 
-`dev-process.md`: reaching four rounds **OBLIGES ASKING**. Three facts the owner needs, stated
-without spin:
+This section originally read *"`dev-process.md`: reaching four rounds **OBLIGES ASKING**"* and
+concluded that the document must choose nothing and wait. ⛔ **We are at THREE rounds.** The spine's
+line is *"Reaching four rounds OBLIGES ASKING, and does not fire"* — and `check-review-decision.py`
+prints `rounds=3`. Thrashing arms the **architecture review**, which `dev-process.md` Phase 6 lists
+as the prescribed artifact and which is **not** a human gate; the Human-in-the-Loop policy's rule
+for a non-converging loop is *"notify and continue"*.
+
+So: notified, and continuing. The architecture review is convened autonomously. ⚠ I have a recorded
+instance of exactly this error — citing an owner's gate that a grep could not find, and folding the
+work onto it. The grep is above; the obligation is not there yet.
+
+**What does NOT change:** nothing is folded in this round. That restraint comes from the arming
+condition itself — `dev-process.md` refuses fold-and-re-review once thrashing fires, because
+per-task review is structurally blind to composition defects. It was never the four-round rule that
+justified stopping the folds.
+
+## Three facts the owner needs, stated without spin
 
 1. **The gate that is supposed to assert this slice's coverage CANNOT RUN** (ZB1), and the case
    written to close the previous round's coverage gap **cannot fail**. Every coverage number in the
