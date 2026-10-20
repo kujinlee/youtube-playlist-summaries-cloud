@@ -2414,11 +2414,28 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
       epoch, so the four live rows stay valid instead of returning `rc=2` for ever; the skip's lever
       on `t4` — the figure of merit — neutralised; `units_decided` dropped for the fix #324 actually
       filed. All 25 findings mapped in the document's §8 fold table.
-- [ ] **r2 is OWED and ALTERNATES — Codex alone** (a concurrent pair never reviews the fixes)
-- [ ] ⛔ **THRASHING WATCH:** 18 of r1's 25 findings were `fix_induced` and `log-schema` carried 12.
-      If r2 returns fix-induced findings in `log-schema` again, the arming condition fires on a
-      component *inside a document written because it already fired* — which says **DEFER**, not a
-      third redesign.
+- [x] **r2 ran — Codex alone, as rounds 2+ ALTERNATE** (a concurrent pair never reviews the fixes).
+      **6 High / 3 Medium, NOT CONVERGED.** Three claims re-derived by construction before acceptance,
+      all three confirmed — including two errors of mine: the row-kind split **breaks `t3`** (a measured
+      false FAIL, `"all 5 scored rows took route None"` over four distinct routes) and T7 named the
+      **wrong module** as `component_rounds`' owner while closing the finding about naming the owner.
+      Record: [`…-r2-coordinator.md`](reviews/coordinator/decision-log-model-redesign-r2-coordinator.md).
+- [x] ⛔⛔ **THRASHING WATCH — IT FIRED.** `thrashing_component` returns **`'log-schema'`**, computed by
+      the tool rather than read by me: two consecutive rounds of fix-induced findings there, **12 of
+      r1's 19** then **4 of r2's 8**. ⟳ The r1 figure was **19**, not the 18 three artifacts of mine
+      claimed — I counted prose in a slice whose subject is a machine built to stop that. r2's reviewer
+      applied the design's own §5 condition unprompted and reached the same place.
+- [ ] 🔴 **BLOCKED ON AN OWNER DECISION — SPLIT or DEFER** (backlog **#327**, notified 2026-10-20).
+      The ladder says **SPLIT**: `log-schema` took REDESIGN at r1, its failure observation is satisfied,
+      and DEFER is the rung *after* SPLIT — §5 forbids only a third **REDESIGN**, which SPLIT is not.
+      SPLIT is also the only route in this slice with positive evidence (`relocation` 5 → 0 → 0, n=1).
+      ⚠ **But the argument for DEFER is not thrashing — it is return:** five review rounds plus an
+      architecture review, **zero measured benefit**, and the figure of merit (rounds-to-termination)
+      uncomputable because no unit has terminated. That moves the goal, so it is not mine.
+      ⛔ **No third redesign is being written: r2's nine findings are FILED, not fixed.**
+- [ ] ⭐ **#321 blocked the escalation decision itself — THIRD independent occurrence.** Recording
+      `log-schema`'s REDESIGN → SPLIT is **inexpressible** (`["redesign"]` is not a ladder prefix), so
+      the mechanism cannot record the route the mechanism prescribes for it.
 
 ⚠ **Mutation coverage of the two subjects #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
 (`43`+`19`, matching `EXPECTED_MUTATIONS` in both directions), measured by the harness over a pruned

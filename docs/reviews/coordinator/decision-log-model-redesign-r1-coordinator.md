@@ -103,7 +103,7 @@ closed that question by delegation and I reopened it.
 unreviewed code cannot converge. **Round 2 is owed and ALTERNATES — Codex alone**, per the topology
 (a concurrent pair never reviews the fixes, which is where both of 2026-09-13's surviving defects were).
 
-⛔ **Thrashing watch, stated now rather than discovered later:** 18 of these 25 findings are
+⛔ **Thrashing watch, stated now rather than discovered later:** 19 of these 25 findings are (DERIVED by `rounds_for` + the header parser; this said 18 when I counted prose)
 `fix_induced: true`, and `log-schema` carries 12 of them. If round 2 returns fix-induced findings in
 `log-schema` again, the arming condition fires on a component **inside a document written because it
 already fired** — which is the shape that would say this mechanism should be DEFERRED rather than

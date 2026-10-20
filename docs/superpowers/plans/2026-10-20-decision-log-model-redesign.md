@@ -269,7 +269,7 @@ and, with misses at 1 and 2, must name rows **1 and 2 of 4**.
 |---|---|---|
 | **t1** `not_fed` | **CHANGED** | domain = post-`armed_at` `(subject, round)` pairs from `ratchet_epoch`; component-derived unit set; `units_not_logged` escape (§2.4) |
 | **t2** `non_termination` | ⛔ **CHANGED TWICE** | (i) exhaustion must be `route_next(tried) is None`, not `len(set(tried)) < len(LADDER)` — measured: `t2` returns **None** for `[accrete, split, defer]` with `outcome: continued`, so a skipping unit's exhaustion is **skipped by the guard**. (ii) **a one-row `defer` must not read as "termination refuted" (CM4)** — DEFER *is* the answer "stop, file it", and its outcome is expected to be `continued`. t2 fires only when a unit has **≥2 attempts**, the ladder is exhausted, and the last outcome is `continued` |
-| **t3** `routes_collapsed` | unchanged | a global question over many units |
+| **t3** `routes_collapsed` | ⛔ **BROKEN BY §2.1 — r2 YH4, and v2 declared it "unchanged"** | `t3_routes_collapsed` selects rows carrying an `outcome` and then reads their `route`. After the row-kind split the outcomes are on **observation** rows and the routes on **attempt** rows, so it reports `"all 5 scored rows took route None"` over `[accrete, redesign, split, defer, accrete]` — a **false FAIL**, measured. It needs a resolved attempt/observation projection. ⚠ **This is the SECOND trigger an "all seven re-derived" claim has missed** (v1 missed t4), and this time the fix caused it |
 | **t4** `no_improvement` | ⛔ **CHANGED (CH2/XH5)** | v1 said "unchanged". It must exclude skip-bearing subjects and report the exclusion count (§2.3). ⚠ **And "terminated subject" is still undefined** — collapsing `stopped` rows by subject counts a subject with one stopped unit and others pending; that definition is **owed and listed in §6 T5** |
 | **t5** `ranker_miss` | **CHANGED** | reads `bet`; abstentions are gaps; prints log rows and the real denominator (§2.5) |
 | **t6** `denominator_moved` | unchanged | reads the corpus, not the log |
@@ -299,8 +299,17 @@ caller gets, and a case must drive `main()` rather than call `validate_row` dire
 - ⚠ **MEASURED BENEFIT REMAINS ZERO.** Four log rows, two scored, no outcome observed for any unit.
   The one datum on the other side is `relocation`'s **5 → 0 → 0** after SPLIT (n = 1) — and
   `relocation` is one of the two units whose history v1's schema **could not express**.
-- ⛔ **Retire this document if:** round 2 returns `fix_induced` findings in `log-schema` again — 18 of
-  r1's 25 findings were fix-induced and `log-schema` carried 12, so the arming condition would fire on
+- ⛔⛔ **THIS CONDITION HAS FIRED. r2 returned 4 fix-induced `log-schema` findings and
+  `thrashing_component` now returns `'log-schema'` — computed by the tool, not read by me.** The
+  route is the owner's: the ladder says **SPLIT** (REDESIGN failed; DEFER is the rung after SPLIT),
+  and §5's "not redesign again" is satisfied by SPLIT — but five rounds and an architecture review
+  have produced **zero measured benefit**, which is a cost question and therefore theirs. See
+  [`…-r2-coordinator.md`](../../reviews/coordinator/decision-log-model-redesign-r2-coordinator.md).
+  ⛔ **No third redesign is being written: r2's findings are FILED, not fixed.**
+- ⛔ *(original wording, kept so the condition is not quietly reworded after firing)* **Retire this
+  document if:** round 2 returns `fix_induced` findings in `log-schema` again — 18 of
+  r1's 25 findings were fix-induced *[⟳ the DERIVED figure is **19**; I counted prose, and the
+  wrong number is left standing here because this block's purpose is to be unreworded]* and `log-schema` carried 12, so the arming condition would fire on
   a component *inside a document written because it already fired*, which says **DEFER**, not redesign
   again. Or if `(subject, round)` readability passes ~50%, at which point §2.4's component-derivation
   should become the primary rather than the fallback.
@@ -329,8 +338,11 @@ caller gets, and a case must drive `main()` rather than call `validate_row` dire
       not rewritten and do not need to be.**
 - [ ] **T7** `docs/review-method.md` §304: the escalation table's *"escalates to"* column and the
       prefix sentence both go stale under strict increase (CM7) — update **that table**, and record
-      that `returns_after_gap`'s derivation is owned by `check-review-decision.component_rounds` and
-      imported, never retyped (CM6).
+      that `returns_after_gap`'s derivation is owned by **`check-decision-scheme.py:312`'s**
+      `component_rounds` and imported, never retyped (CM6). ⟳ **r2 YM9: v2 named
+      `check-review-decision`, which does not have the function — the wrong module, in the task
+      whose whole purpose was naming the owner.** So the relocation is part of the task: the ranker
+      lives in `check-review-decision` and the derivation does not.
 - [ ] **T8** Mutation manifest entries for every new branch. ⚠ The two subjects' current coverage is
       **62/62 killed, 62 attributed, 0 survivors** (`43`+`19`), measured 2026-10-20 by the harness over
       a pruned `HARNESS_TREE` copy. The full 1,625 sweep is **CI's**, at the PR.
