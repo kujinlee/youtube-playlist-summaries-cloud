@@ -72,7 +72,7 @@ quietly. ⛔ Refutations, none of them unique: the harness warning about truncat
 green; a controlled boundary experiment; or a published producer specification.
 
     python3 scripts/check-memory-index-budget.py
-    python3 scripts/check-memory-index-budget.py --self-test  # 43 cases
+    python3 scripts/check-memory-index-budget.py --self-test  # 51 cases
 """
 from __future__ import annotations
 
@@ -80,6 +80,7 @@ import contextlib
 import io
 import os
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -177,6 +178,16 @@ def index_chars(path: pathlib.Path) -> int | None:
          limit of 24,985 cannot produce a cut at byte 25,771; a character limit produces exactly
          this one, to within a row.
 
+    ⛔ WHAT THAT DOES AND DOES NOT ESTABLISH (r2 CODEX #4, correcting an overclaim of mine). It rules
+    out BYTES. It does NOT settle WHICH character-like count: the index contains a non-BMP character
+    (a red circle), so it is 26,930 code points but 26,931 UTF-16 units — and BOTH round to the
+    reported 26.3KB, so the warning arithmetic cannot separate them. `len()` here counts Python code
+    points. ⚠ A controlled producer boundary experiment was NOT run, so this is unresolved rather
+    than decided, and the margin it costs is at most a handful of characters against a 2,900-character
+    headroom. ⛔ Do not upgrade "not bytes" into "code points, confirmed" without running that
+    experiment: a fixture of `24,984 x "x" + one astral character` counts 24,985 here and 24,986 in
+    UTF-16, which is the input that would separate them.
+
     ⚠ THE OLD BEHAVIOUR WAS WRONG IN THE SAFE DIRECTION, WHICH IS WHY NOTHING CAUGHT IT. In UTF-8
     `len(bytes) >= len(chars)`, so counting bytes against a character limit fires EARLY: it could
     never produce a false green, only a false red, and the live margin it misstated was ~3%. ⛔ But
@@ -192,7 +203,12 @@ def index_chars(path: pathlib.Path) -> int | None:
     if not path.is_file():
         return None
     try:
-        return len(path.read_text(encoding="utf-8"))
+        # ⛔ newline="" DISABLES UNIVERSAL-NEWLINE TRANSLATION, and without it this UNDER-counted.
+        # Measured (r2 CODEX #4): 9,000 x b"x\r\n" is 27,000 characters on disk and `read_text`
+        # reported 18,000 — one character lost per line, a 33% under-count. ⚠ That is the DANGEROUS
+        # direction, unlike the byte/character error this guard was built on: under-counting reports
+        # "under budget" about an index that is over, so it fails toward good news.
+        return len(path.read_text(encoding="utf-8", newline=""))
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -257,17 +273,28 @@ def _self_test() -> int:
     check("well under budget is OK", budget_verdict(10, L)[0], OK)
     check("an OK message states the headroom", "990 under" in budget_verdict(10, L)[1], True)
     check("over budget is rc 1", budget_verdict(L + 1, L)[0], OVER_BUDGET)
-    # ⟳ r1 CLAUDE N1. This read `"1 characters…" in budget_verdict(L + 1, L)[1]` with L = 1000, so
-    # the overage was 1 and the total "1,001" — and `"1 characters…"` is a DECIMAL SUFFIX of
-    # `"1,001 characters…"`. A mutation printing the TOTAL instead of the difference therefore
-    # survived all 42 cases. The fixture was not badly chosen; the two NUMBERS stood in an
-    # arithmetic relationship that a substring assertion cannot see through.
-    # ⛔ The repair is the ADJACENT NEGATIVE — assert the total is ABSENT — at a limit where the
-    # two do not share a suffix. L=1000/2000/500 are all vacuous here; 1234 is not.
-    over_msg = budget_verdict(1241, 1234)[1]
-    check("the OVER message states the OVERAGE (7) and NOT the total (1,241)",
-          ("7 characters of its tail" in over_msg, "1,241 characters of its tail" in over_msg),
-          (True, False))
+    # ⛔ THE NUMBER IS PARSED AND COMPARED AS A VALUE. Two rounds of substring assertions failed
+    # here and the second failure is the instructive one.
+    #   r1 CLAUDE N1: `"1 characters…" in msg` at L=1000 was vacuous, because the overage `1` is a
+    #   DECIMAL SUFFIX of the total `1,001`. A mutant printing the total survived 42/42.
+    #   r2 CODEX #1: my repair — ban the literal total `1,241` — blocked ONE VALUE, NOT THE CLASS.
+    #   A mutant printing `n_chars - limit + 1000` renders `1,007`, which still ENDS IN `7`, so the
+    #   needle matched and the banned total was absent. Measured: survived 43/43.
+    # `a-filed-finding-s-proposed-fix-is-a-hypothesis` — I had treated the instance as the defect.
+    # No substring assertion can fix this, because any needle is a suffix of infinitely many
+    # renderings. Parsing the field and comparing an int is the only form that cannot be fooled.
+    def _field(msg: str, after: str) -> int | None:
+        """PURE. -> the integer in `msg` immediately after `after`, or None. Commas stripped."""
+        m = re.search(re.escape(after) + r"\s*([\d,]+)", msg)
+        return int(m.group(1).replace(",", "")) if m else None
+
+    check("the OVER message's overage is the DIFFERENCE, parsed as a value not a substring",
+          _field(budget_verdict(1241, 1234)[1], "the last"), 7)
+    check("the same field at a SECOND input, so a constant cannot satisfy it",
+          _field(budget_verdict(5000, 1234)[1], "the last"), 3766)
+    check("the OK message's headroom is parsed as a value too (r2 CODEX #1: '990 under' matched "
+          "'10,990 under')",
+          _field(budget_verdict(10, 1000)[1], "characters,"), 990)
     check("the OVER message names the remedy file",
           OVERFLOW_TARGET in budget_verdict(L + 1, L)[1], True)
 
@@ -317,6 +344,23 @@ def _self_test() -> int:
         check("index_chars counts CHARACTERS, not bytes (multi-byte glyphs)", index_chars(f), 4)
         check("the byte count genuinely differs, so this case is not a tautology",
               len(f.read_bytes()), 10)
+        # ⛔ r2 CODEX #4: CRLF. `read_text` without newline="" TRANSLATES line endings, so this
+        # file counted 18,000 instead of 27,000 — one character lost per line. ⚠ That under-counts,
+        # i.e. it reports "under budget" about an index that is over: the DANGEROUS direction, the
+        # opposite of the byte/character error this guard was built on.
+        crlf = pathlib.Path(td) / "crlf.md"
+        crlf.write_bytes(b"x\r\n" * 9)
+        check("index_chars does NOT translate CRLF away (27 chars, not 18)", index_chars(crlf), 27)
+        # r2 CODEX #5: dropping UnicodeDecodeError from the handler let invalid UTF-8 ESCAPE.
+        bad = pathlib.Path(td) / "invalid.md"
+        bad.write_bytes(b"x" * 10 + b"\xff\xfe" + b"x" * 10)
+        try:
+            rc_bad: object = main([], index=bad, limit=1000)
+        except UnicodeDecodeError:
+            rc_bad = "RAISED UnicodeDecodeError instead of returning CANNOT RUN"
+        check("an index that is not valid UTF-8 is CANNOT RUN, not a traceback", rc_bad, 2)
+        check("the translated count genuinely differs, so that case is not a tautology",
+              len(crlf.read_text(encoding="utf-8")), 18)
 
     # --- main() driven over a CONSTRUCTED index (ADR-0014 D1) -----------------------------
     with tempfile.TemporaryDirectory() as td:
@@ -343,6 +387,26 @@ def _self_test() -> int:
     check("a positional operand counts as unknown, not as an accepted operand",
           unknown_args(["junk"]), ["junk"])
     check("main() refuses a positional operand rather than ignoring it", main(["junk"]), 2)
+    # ⛔ r2 CODEX #2: extracting `unknown_args` to escape the recursion ALSO DELETED the only case
+    # that tested ORDER. Measured: moving the self-test dispatch back above the validation passes
+    # 43/43 while `main(["--self-test","--bogus"])` returns 0 again — the predicate stays correct
+    # while its CALLER violates the contract. ⛔ Driving the real suite recurses, so STUB it: the
+    # stub records invocation, which is the observation that distinguishes the two orders.
+    _selftest_calls: list[int] = []
+    _real_selftest = globals()["_self_test"]
+    globals()["_self_test"] = lambda: (_selftest_calls.append(1), OK)[1]
+    try:
+        rc_both = main(["--self-test", "--bogus"])
+    finally:
+        globals()["_self_test"] = _real_selftest
+    check("validation runs BEFORE dispatch: an unknown flag beside --self-test is refused and the "
+          "suite is NOT entered", (rc_both, _selftest_calls), (2, []))
+
+    # ── r2 CODEX #5: three branches with no witness. ──────────────────────────────────────
+    check("WARN_FRACTION is the declared 0.90, pinned so a near-miss like 0.9004 cannot slip",
+          WARN_FRACTION, 0.90)
+    check("warn_threshold TRUNCATES rather than rounding (int, not round)",
+          (warn_threshold(1001), warn_threshold(1005)), (900, 904))
 
     # --- ⟳ r1 CODEX #2a: THE SUBJECT ITSELF. Repointing INDEX at another corpus file left all
     # 26 cases green, which defeats the guard's whole purpose — it would cheerfully measure the

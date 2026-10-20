@@ -43,7 +43,7 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "        return len(path.read_text(encoding=\"utf-8\"))\n",
+        "        return len(path.read_text(encoding=\"utf-8\", newline=\"\"))\n",
         "        return len(path.read_bytes())\n"
       ]
     ],
@@ -130,19 +130,6 @@
     ]
   },
   {
-    "name": "the read-error handler is removed, so an unreadable index crashes instead of CANNOT RUN (r1 CODEX #6)",
-    "file": "scripts/check-memory-index-budget.py",
-    "edits": [
-      [
-        "    try:\n        return len(path.read_text(encoding=\"utf-8\"))\n    except (OSError, UnicodeDecodeError):\n        return None\n",
-        "    return len(path.read_text(encoding=\"utf-8\"))\n"
-      ]
-    ],
-    "expect": [
-      "a present-but-unreadable index is CANNOT RUN, not a traceback"
-    ]
-  },
-  {
     "name": "the unknown-argument predicate accepts everything, so validation is dead (r1 CODEX #7)",
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
@@ -191,7 +178,7 @@
       ]
     ],
     "expect": [
-      "the OVER message states the OVERAGE (7) and NOT the total (1,241)"
+      "the OVER message's overage is the DIFFERENCE, parsed as a value not a substring"
     ]
   },
   {
@@ -205,6 +192,97 @@
     ],
     "expect": [
       "an UNREADABLE index says it could not be read, and does NOT claim to be EMPTY"
+    ]
+  },
+  {
+    "name": "newline translation comes back, so a CRLF index UNDER-counts \u2014 the dangerous direction (r2 CODEX #4)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        ", newline=\"\"",
+        ""
+      ]
+    ],
+    "expect": [
+      "index_chars does NOT translate CRLF away (27 chars, not 18)"
+    ]
+  },
+  {
+    "name": "the overage gains a constant, which every SUBSTRING assertion let through (r2 CODEX #1)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "{n_chars - limit:,} characters",
+        "{n_chars - limit + 1000:,} characters"
+      ]
+    ],
+    "expect": [
+      "the OVER message's overage is the DIFFERENCE, parsed as a value not a substring"
+    ]
+  },
+  {
+    "name": "self-test dispatch moves back ABOVE validation, so --self-test swallows a bogus flag (r2 CODEX #2)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    unknown = unknown_args(argv)\n    if unknown:\n",
+        "    if \"--self-test\" in argv:\n        return _self_test()\n    unknown = unknown_args(argv)\n    if unknown:\n"
+      ]
+    ],
+    "expect": [
+      "validation runs BEFORE dispatch: an unknown flag beside --self-test is refused and the suite is NOT entered"
+    ]
+  },
+  {
+    "name": "WARN_FRACTION drifts by a near-miss a threshold fixture cannot see (r2 CODEX #5)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "WARN_FRACTION = 0.90\n",
+        "WARN_FRACTION = 0.9004\n"
+      ]
+    ],
+    "expect": [
+      "WARN_FRACTION is the declared 0.90, pinned so a near-miss like 0.9004 cannot slip"
+    ]
+  },
+  {
+    "name": "the warn threshold ROUNDS instead of truncating (r2 CODEX #5)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "int(limit * WARN_FRACTION)",
+        "round(limit * WARN_FRACTION)"
+      ]
+    ],
+    "expect": [
+      "warn_threshold TRUNCATES rather than rounding (int, not round)"
+    ]
+  },
+  {
+    "name": "UnicodeDecodeError leaves the handler, so an invalid-UTF-8 index crashes (r2 CODEX #5)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "(OSError, UnicodeDecodeError)",
+        "(OSError,)"
+      ]
+    ],
+    "expect": [
+      "an index that is not valid UTF-8 is CANNOT RUN, not a traceback"
+    ]
+  },
+  {
+    "name": "OSError leaves the handler, so a present-but-unreadable index crashes instead of CANNOT RUN",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "OSError, UnicodeDecodeError)",
+        "UnicodeDecodeError,)"
+      ]
+    ],
+    "expect": [
+      "a present-but-unreadable index is CANNOT RUN, not a traceback"
     ]
   }
 ]

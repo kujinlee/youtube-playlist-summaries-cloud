@@ -1551,7 +1551,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-main-drivable.py": 183,
     # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552; then
     # 7 -> 12 -> 14 -> 16 and 1552 -> 1561 folding r1 CODEX #2a/#2b/#2c/#6/#7, then r1 CLAUDE
-    # H3/L3, then r1 CLAUDE N1's two —
+    # H3/L3, then r1 CLAUDE N1's two, then r2 CODEX's six (16 -> 22, 1561 -> 1567) —
     # seven mutations the two halves found SURVIVING that I had not written,
     # SURVIVING that I had not written, three of which let the guard measure the WRONG FILE. It guards the
     # one quantity that decides whether an index row ARRIVES, and the index had been over the
@@ -1559,7 +1559,7 @@ EXPECTED_MUTATIONS = {
     # ⚠ Its 4th entry (bytes -> characters) is the reason the suite has 18 cases and not 16: run
     # against the delivered script it reddened NOTHING, because the live index is under budget on
     # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
-    "scripts/check-memory-index-budget.py": 16,
+    "scripts/check-memory-index-budget.py": 22,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,
@@ -5187,7 +5187,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1561)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1567)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
