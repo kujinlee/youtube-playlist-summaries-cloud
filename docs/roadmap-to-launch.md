@@ -2391,6 +2391,41 @@ reason is structural** — 64% of the fix-round findings are in components that 
       own history: it refuses two of the four routes this slice took
 - [ ] **#320** which round-header fields can a reviewer's own half know (the withdrawn relocation)
 
+### The escalated DESIGN review (what Phase 6 actually owed) — r1 done, NOT CONVERGED
+
+`review-method.md:178` says the escalated round is a **design review, not a defect hunt**. It ran
+2026-10-20 on `docs/superpowers/plans/2026-10-20-decision-log-model-redesign.md`; record:
+[`decision-log-model-redesign-r1-coordinator.md`](reviews/coordinator/decision-log-model-redesign-r1-coordinator.md).
+
+| half | findings | |
+|---|---|---|
+| Codex (`gpt-6.1-sol`) | 1 B · 4 H · 3 M | NOT CONVERGED |
+| Claude (independent) | 3 B · 6 H · 7 M · 1 L | NOT CONVERGED |
+
+⭐ **The halves agreed on four defects independently**, two of which refuted the document's own
+claims: that a ranker miss is inexpressible today (it is **not** — `rc=1, FAIL trigger 5`, verified
+by hand), and the `10 of 57 = 18%` readability figure (the population is `baseline.json`'s
+`corpus_ORIGINAL_WRONG`; really **11 of 82 = 13.4%**, or **46 of 395 = 11.6%** over the rule's own
+`(subject, round)` domain).
+
+- [x] **r1 folded** — the document is rewritten, not patched: #323 **split out of the unification**
+      (it ranks round documents and never touches the log, which is how its answer escaped the
+      constraint and collected two Blockings); attempt/observation row kinds and a `schema >= 2`
+      epoch, so the four live rows stay valid instead of returning `rc=2` for ever; the skip's lever
+      on `t4` — the figure of merit — neutralised; `units_decided` dropped for the fix #324 actually
+      filed. All 25 findings mapped in the document's §8 fold table.
+- [ ] **r2 is OWED and ALTERNATES — Codex alone** (a concurrent pair never reviews the fixes)
+- [ ] ⛔ **THRASHING WATCH:** 18 of r1's 25 findings were `fix_induced` and `log-schema` carried 12.
+      If r2 returns fix-induced findings in `log-schema` again, the arming condition fires on a
+      component *inside a document written because it already fired* — which says **DEFER**, not a
+      third redesign.
+
+⚠ **Mutation coverage of the two subjects #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
+(`43`+`19`, matching `EXPECTED_MUTATIONS` in both directions), measured by the harness over a pruned
+`HARNESS_TREE` copy in 57s. ⛔ The full 1,625 sweep is **CI's, at the PR** — a local full run was
+started and abandoned at 413/1,625, re-opening a question the prior session had already closed by
+delegation.
+
 ⭐ **THE ONE POSITIVE DATUM, and it is the mechanism's own:** `relocation` went **5 → 0 → 0** after
 the ladder emitted SPLIT. It is the only component to go quiet, and the only one whose route the
 ladder chose rather than a patch. ⚠ n = 1, and "quiet because removed" is weaker than "quiet because
