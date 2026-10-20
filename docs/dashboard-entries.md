@@ -16003,3 +16003,52 @@ it had become a false claim that a clause was unkillable. `empty_listing_refusal
 same reason `shallow_refusal` was: equivalent-in-environment in place. Suite **128**, green under
 `uv --python 3.12`; mutations **41** and **19**, all attributing under the REAL contract (`all()` +
 equality, not `any()` + substring — probe6), declared sum 1623.
+
+## 2026-10-20 [needs-you]
+**The review loop turned on itself and stopped the work. That is the system behaving correctly, and
+it is the clearest result of the day.**
+
+A third round found more problems than the second, not fewer — including one that matters more than
+the rest: **the tool that is supposed to prove this work is tested cannot run at all.** It checks
+code by deliberately breaking it in a scratch copy and confirming the tests notice; but one function
+insists on reading the real project folder, which the scratch copy does not have. So all 1,623 of
+those checks report **"not measured"**. They fail loudly rather than quietly, which is the good
+version of this — but it means the confidence figures in three of today's entries rest on a check I
+ran by hand rather than on the machine that is meant to assert them.
+
+Worse, and more instructive: **a test I wrote last round to close a gap cannot fail.** When the
+folder cannot be read it compares against nothing, finds nothing, and reports success. I wrote it
+specifically to catch that class of thing.
+
+At this point the process stopped me rather than letting me patch again. Two consecutive rounds of
+problems caused by the previous round's repairs trips a rule that forbids another patch and demands
+a step back to look at the shape instead. **That step back has been taken and written up.** Its
+conclusion: the thinking part of this mechanism is sound and settled; everything that touches the
+outside world is not, and **two thirds of the recent problems are in that boundary**. One repair
+unblocks four of them.
+
+⭐ **One genuinely good sign.** Earlier today the mechanism recommended cutting one piece of work out
+and dealing with it separately. That piece has produced **zero** problems in the two rounds since,
+while everything that was patched instead is still producing them. It is a single data point, but it
+is the mechanism's own recommendation being right.
+
+**Waiting on you:** nothing is merged and nothing is merge-ready. Seven pieces of follow-up work are
+filed and ordered, the first of which gates the rest. ⚠ And the honest headline: **this mechanism has
+produced no measured benefit yet** — four entries in its log, two scored, no outcome observed for
+anything. Everything claimed for it so far is about how it is built, not what it has done.
+<!--tech-->
+Phase 6 armed MECHANICALLY: `ARCHITECTURE_REVIEW — thrashing: 'corpus-cannot-run' carried fix-induced
+findings in r2 and r3`, with `scope-rank: NO LEAD — 4 tied at 3`. Review at
+`docs/reviews/architecture-review-2026-10-20-decision-route-escalation.md`. r3 = 1B/7H/6M/6L
+(`docs/reviews/claude/…-r3-claude.md`), coordinator header filed, 418 rounds parsed / 0 silent gaps.
+**F1 #322 🔴** `tree_at` resolves REPO from `__file__` so `control_is_green=False` in the staged tree
+→ `NotMeasured` for all 1,623 mutations across all 8 shards; ADR-0014 was applied to `main`,
+`_corpus_now`, `_round_docs` and `subjects_starved` and NOT to the one function that executes — a
+composition defect per-task review cannot see, and my own copy-based verification failed identically.
+**F2 #323** `review_scope` saturates at the round count (4 tied at 3 while findings ran 13/12/8/6); I
+called the forced abstention humility in two documents. **F3** `relocation` 5→0→0 after SPLIT — the
+only positive datum, n=1. **F4 #324** `t1_not_fed` is per-subject, the mechanism is per-unit: 7
+decided, 2 logged. **F5 #326** probe6 edits the live repo, and only because #322 forbids a copy.
+**#325** abstention inexpressible — `null` and `"abstained"` both refused by `validate_row`, so t5 has
+no reachable falsifier and t7 quotes a 74% bound over zero bets. Roadmap section added with all seven
+ordered; #322 gates the rest.

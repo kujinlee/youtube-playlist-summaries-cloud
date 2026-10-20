@@ -2354,6 +2354,47 @@ skill and not the hook, so the hook's refusal printed a claim and its withdrawal
       retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
       human's call, so neither is taken here.
 
+## Redesign-or-accretion mechanism — backlog #320–#326 — anchor `review-decides-itself` — 🔴 **NOT CONVERGED after THREE rounds; Phase 6 review done 2026-10-20; NOTHING MERGED**
+
+Branch `decision-route-escalation`, stacked on `baseline-surveys` (PR #380, unmerged). Built at the
+owner's instruction — *"try a most promising scheme and check outcomes, then re-evaluate the
+mechanism; create a re-evaluation promise"* — after their three steers replaced a deterministic goal
+with **a bet that corrects itself**: ACCRETE → REDESIGN → SPLIT → DEFER, no route retried, figure of
+merit **rounds-to-termination** rather than accuracy.
+
+| round | findings | what was wrong |
+|---|---|---|
+| r1 (both halves) | 3 B · 9 H · 10 M · 7 L | the design's **claims** — the 97% headline gained **zero** subjects |
+| r2 (Codex alone) | 0 B · 2 H · 4 M · 2 L | the **fixes** for r1 |
+| r3 (Claude alone) | 1 B · 7 H · 6 M · 6 L | the **fixes** for r2 — counts went UP |
+
+⛔ **THRASHING ARMED MECHANICALLY** (`ARCHITECTURE_REVIEW — 'corpus-cannot-run' carried fix-induced
+findings in r2 and r3`). Review: `docs/reviews/architecture-review-2026-10-20-decision-route-escalation.md`.
+**Its verdict: the pure core is sound and converged; the world-reading boundary is not, and the
+reason is structural** — 64% of the fix-round findings are in components that read the world.
+
+- [ ] **#322 🔴 FIRST, and it gates the rest** — `tree_at` resolves its subject from `__file__`, so
+      `control_is_green=False` in the staged tree and **all 1,623 mutations report NOT MEASURED**.
+      Three committed commit messages state coverage figures the gate asserting them cannot produce.
+- [ ] **#323** the ranker's statistic **saturates at the round count** — four components tied at 3,
+      and I reported the forced silence as humility in two review documents
+- [ ] **#324** `t1_not_fed` reads SUBJECT granularity while the mechanism reasons in UNITS: 7 units
+      decided, 2 logged — the predecessor's blind spot one level down
+- [ ] **#325** an abstention is **inexpressible as data**, so trigger 5 has no reachable falsifier
+- [ ] **#326** the mutation probe edits the live repo — exists only because #322 forbids a copy
+- [ ] **#321** is the ladder's prefix clause a law or a choice? Found by feeding the mechanism its
+      own history: it refuses two of the four routes this slice took
+- [ ] **#320** which round-header fields can a reviewer's own half know (the withdrawn relocation)
+
+⭐ **THE ONE POSITIVE DATUM, and it is the mechanism's own:** `relocation` went **5 → 0 → 0** after
+the ladder emitted SPLIT. It is the only component to go quiet, and the only one whose route the
+ladder chose rather than a patch. ⚠ n = 1, and "quiet because removed" is weaker than "quiet because
+right".
+
+⚠ **Measured benefit remains ZERO.** Four log rows, two scored, no outcome observed for any unit.
+Everything claimed is about construction. ⛔ **Merging is the owner's gate and nothing here is
+merge-ready**: r1/r2/r3 all NOT CONVERGED and #322 must land before any coverage claim is evidence.
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
