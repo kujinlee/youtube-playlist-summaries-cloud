@@ -18,11 +18,23 @@ open question is RELEVANCE RANKING, not embeddings."*
 
 ## 0. What the deferred work is, located rather than remembered
 
-Searched for, because the answer was not in my head: there is **no discussion of this newer than
-2026-09-30**. The only mentions of *relevance ranking* in any transcript since 2026-10-17 are my own
-from today, reading row 191. ⚠ So if the owner meant a conversation I have not found, **this survey
-is aimed at the wrong target and should be said so rather than quietly accepted** — the subject I
-found is row 191's, whose explainer is `docs/explainers/2026-09-27-topic-memory-recall-taxonomy.html`.
+⛔⟳ **CORRECTED 2026-10-19 BY THE OWNER. THIS SECTION CLAIMED "no discussion of this newer than
+2026-09-30" AND THAT IS FALSE** — `docs/explainers/2026-10-07-topic-retrieval-fixed-gap-open.html`
+(*"Recall went 3/20 to 20/20, and the rules were still broken"*) is twelve days newer and is about
+exactly this. **Why I missed it, measured:** I filtered explainer filenames with
+`grep -i 'memory\|recall'`, and the file is named **`retrieval`** — a third synonym matching neither.
+A search over the wrong population, which is this project's most-recurring failure
+(`measure-the-population-the-code-actually-sees`, 11 prior instances). The owner had even said an
+explainer held the findings; I found the September one and stopped.
+
+**That page is the primary inventory for this subject and this survey is subordinate to it.**
+Its §03 refutes §3 below; see the correction there.
+
+The rest of this section stands: the subject is row 191's, and its closing words name three things in
+order: **(a)** dual review before a PR, **(b)** the open question is **relevance ranking**, **(c)**
+*not* embeddings — the embedding trigger is retired by measurement, because corpus size was tested
+and is **not** the binding variable (20/20 → 19/20 → 20/20 at 300/600/1000 entries, non-monotonic,
+which cannot be degradation).
 
 Row 191's own closing words name three things in order: **(a)** dual review before a PR, **(b)** the
 open question is **relevance ranking**, **(c)** *not* embeddings — the embedding trigger is retired
@@ -127,10 +139,42 @@ the **cache outlived the entry**. That is backlog #202's shape — *a valid cach
 corpus* — in a form #202 may not cover, since here the corpus is present and only one entry is gone.
 Recorded as an open question in §4, not as a defect.
 
-## 3. The live false-negative of 2026-10-19, which is the richest single case available
+## 3. ⛔ NOT a false negative — four lessons that were IN CONTEXT and violated anyway
 
-Today's plan `phase6-chrome-instrument` armed 6 steps against a corpus of 157 and matched **`NONE`
-on all six**. During the execution of those same six steps I committed, in order:
+⛔⟳ **THIS SECTION WAS WRONG AND IS CORRECTED RATHER THAN DELETED, because the error is the finding.**
+It was headed *"the live false-negative of 2026-10-19"* and offered the four misses below as evidence
+about the **matcher**. They are not. `docs/explainers/2026-10-07-topic-retrieval-fixed-gap-open.html`
+§03 had already settled this twelve days earlier:
+
+> *"three recorded lessons were in context and were violated. Each is a row in the injected index, so
+> each was present in the model's context window for the whole session — **this is not a retrieval
+> failure in any sense**."*
+
+**Verified for today's four, by byte offset in the index against its 24,986-byte load limit:**
+
+```
+byte   2114  an-inference-stated-as-measured                       LOADED
+byte   2587  concurrent-agents-go-wrong                            LOADED
+byte  11217  after-fixing-search-for-the-class                     LOADED
+byte  17484  a-blocking-question-while-afk-costs-the-whole-night   LOADED
+```
+
+**All four were in context for the whole session.** The matcher's `NONE` is therefore irrelevant to
+whether the lesson was available — it was. So this is not a sixth measurement of recall quality; it
+is a **fourth instance of that page's thesis**, which states it more sharply than I did:
+
+> *"Recall was then fixed, to 20/20 with no false fires — and the notes still lost."*
+
+⭐ **AND THAT INVERTS WHAT THIS SURVEY IS FOR.** If availability was never the constraint, then
+relevance ranking — row 191's named next question — cannot be the lever for *fewer mistakes*. It may
+still be the lever for *less noise*. Those are different goals with different falsifiers, and
+separating them is a decision for the owner, not a measurement.
+
+---
+
+Retained below as the raw record. Today's plan `phase6-chrome-instrument` armed 6 steps against a
+corpus of 157 and matched **`NONE` on all six**. During the execution of those same six steps I
+committed, in order:
 
 | what I did | the memory entry that covers it | did it fire? |
 |---|---|---|
