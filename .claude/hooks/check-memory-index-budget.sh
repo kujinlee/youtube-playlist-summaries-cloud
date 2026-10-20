@@ -24,7 +24,7 @@ path=$(printf '%s' "$payload" | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("tool_input",{}).get("file_path",""))
 except Exception: print("")' 2>/dev/null || echo "")
 
-# ⛔ r2 CODEX #3: `*/docs/memory/MEMORY.md` REQUIRES A SLASH BEFORE `docs`, so a repository-RELATIVE
+# ⛔ r2 CODEX finding 3: `*/docs/memory/MEMORY.md` REQUIRES A SLASH BEFORE `docs`, so a repository-RELATIVE
 # `file_path` ("docs/memory/MEMORY.md") matched nothing and the hook exited silently at 0 —
 # measured against a sentinel guard that was returning OVER BUDGET. Both forms must match, and a
 # silent miss here is the whole failure this hook exists to prevent.
@@ -33,7 +33,7 @@ case "$path" in
   *) exit 0 ;;
 esac
 
-# ⛔ r2 CODEX #3, second half: `dirname "${BASH_SOURCE[0]}"` does NOT resolve symlinks, so invoking
+# ⛔ r2 CODEX finding 3, second half: `dirname "${BASH_SOURCE[0]}"` does NOT resolve symlinks, so invoking
 # this through one found the wrong root and reported CANNOT RUN about an index it never opened.
 # Resolve the script's own path first. (`-P` resolves symlinks in the cd.)
 src="${BASH_SOURCE[0]}"
