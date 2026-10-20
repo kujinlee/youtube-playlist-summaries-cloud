@@ -15767,3 +15767,64 @@ worktrees; I verified the index is intact (22,078 chars, both corrections presen
 
 Final: 43 cases, **16 mutations, 16 killed, 16 attributed, 0 survivors**. `EXPECTED_MUTATIONS` 14 → 16,
 companions 1559 → 1561. Verdict stands at **NOT CONVERGED** — r2 is owed.
+
+## 2026-10-19 [needs-you]
+The same small mistake came back four times in a row, so I stopped patching it and changed how the
+check is built. That is the main thing that happened, and it is worth a minute of your time.
+
+The check reports a number — how much of the memory index is over budget. Each review round found
+that the test for that number could be fooled, I fixed it, and the next round found the fix could be
+fooled the same way. Four times. The reason is simple once seen: the test looked for the number
+*inside a sentence*, and a short number is always hidden inside a longer one. "80" sits inside
+"1,080". So every fix closed the one case it had just been shown and left the rest open.
+
+The check now keeps the numbers as data and builds the sentence from them. The tests read the data
+directly, and one test confirms every number actually reaches the sentence — so a number added later
+is covered without anyone remembering to add a test. Eleven versions of the old mistake were tried
+against it; all eleven are now caught.
+
+A reviewer also caught me making something **worse**. I had "fixed" the small helper that watches the
+index, and in a setup with two copies of the project it went completely silent about an index that
+was badly over budget — where the version I replaced had correctly complained. The cause was that it
+looked for the project by asking where the helper itself lived, rather than where the edited file
+lived. It now asks about the file, which is the thing actually being checked.
+
+And one more: that helper was writing its warning to a channel that reaches your transcript but not
+the assistant that would have to act on it. A sibling file in the same folder had already measured
+that and written down the fix; I had not read it.
+
+**Waiting on you — a scope question, not a blocker.** The project's process says this pattern of
+repeated fixes should trigger a wider design review. I judged the cause was contained to one small
+piece and redesigned that piece instead of convening the wider pass. The reasoning is written up in
+full. If you would rather it had been the wider review, it still can be.
+<!--tech-->
+⛔ **THRASHING DETERMINED AND ANSWERED IN WRITING** —
+`docs/reviews/architecture-review-2026-10-19-memory-index-budget-thrashing.md`, per `dev-process.md`
+Phase 6's arming condition (*two consecutive rounds carrying findings caused by the previous round's
+own fix, in one component*). ⚠ Not a round count — four rounds were not reached; the SHAPE fired.
+Not a prose floor: every row of the evidence table is an executed mutation over a proved-green
+control. The chain: r1 CLAUDE N1 → r2 CODEX #1 (N1's fix) → r2 CLAUDE H2 (#1's fix, "third
+consecutive round on one function") → my own closed loop (H2's fix, vacuous at `80`/`1,080`).
+
+**REDESIGN:** `budget_verdict` splits into `budget_facts` (values) + `render` (prose). Cases compare
+the facts dict exactly; ONE loop asserts every fact reaches the message in every state; that loop's
+vacuity is a CHECKED PRECONDITION with a known positive (`["80","1,080"]`) — without it the
+precondition was correct and unexercised and the mutation SURVIVED; membership is a DELIMITED match,
+since `414` is a substring of `1,414`. The parsed-field helper is DELETED — I had claimed parsing was
+"the only form that cannot be fooled" and r2 CLAUDE falsified it with a float rendering.
+⚠ `check-fixture-variation` then refused the new block: all 7 call sites passed one label and one
+limit, so neither could be told from a constant. A second label and limit added.
+
+r2 CLAUDE **H3** is a REGRESSION of mine: hook shared by symlink across two checkouts → SILENT on a
+25,000-char over-budget index where the pre-"fix" code fired OVER BUDGET. Root now walks UP from the
+EDITED FILE; neither `BASH_SOURCE` nor its resolved form was ever the subject. Hook gains a
+`--self-test` (12 cases) and emits `additionalContext` instead of stderr, adopting
+`surface-recall.sh`'s measured finding that plain output at exit 0 reaches the transcript, not the
+model — `a-gates-channel-can-be-weaker-than-the-gate`.
+
+Verified: 59 cases · **28 mutations, 28 killed, 28 attributed, 0 survivors**, green control and
+re-control · 11/11 H1+H2 mutants killed · hook tested across shared-symlink, orphan (says NOT
+MEASURED, not silent), absolute-from-elsewhere and clean layouts · `EXPECTED_MUTATIONS` 22 → 28,
+companions 1567 → 1573 · `check-review-rounds` rc=0 with all four halves filed.
+⚠ Still NOT VERIFIED: the truncation ALGORITHM, and code points vs UTF-16 units. ⚠ The hook is
+outside the mutation population (all 1,573 entries are `.py`; no `.sh` precedent) and UNREGISTERED.

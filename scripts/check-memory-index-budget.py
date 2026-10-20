@@ -72,7 +72,7 @@ quietly. ⛔ Refutations, none of them unique: the harness warning about truncat
 green; a controlled boundary experiment; or a published producer specification.
 
     python3 scripts/check-memory-index-budget.py
-    python3 scripts/check-memory-index-budget.py --self-test  # 51 cases
+    python3 scripts/check-memory-index-budget.py --self-test  # 59 cases
 """
 from __future__ import annotations
 
@@ -119,48 +119,85 @@ def warn_threshold(limit: int) -> int:
     return int(limit * WARN_FRACTION)
 
 
-def budget_verdict(n_chars: int | None, limit: int, label: str = INDEX_LABEL) -> tuple[int, str]:
-    """PURE. -> (rc, message). Four outcomes, because they need four different responses.
+def budget_facts(n_chars: int | None, limit: int, label: str = INDEX_LABEL) -> dict[str, object]:
+    """PURE. -> the FACTS of the verdict: rc, state, and every number the message will render.
 
-    ⛔ `label` NAMES THE FILE THAT WAS ACTUALLY MEASURED, and it is a parameter because the first
-    version hardcoded `INDEX`. Driving `main()` over a temp fixture then printed "docs/memory/
-    MEMORY.md does not exist" about a file that was never opened — a CANNOT RUN that sends the
-    reader to the wrong path is worse than one that says nothing.
+    ⛔ THIS SPLIT IS A REDESIGN, NOT A REFACTOR, AND IT EXISTS BECAUSE PATCHING FAILED THREE ROUNDS
+    RUNNING ON ONE FUNCTION. The history, because it is the justification:
 
-    `n_chars is None` means the file could not be read and `0` means it is empty. Both are
-    CANNOT RUN rather than a comfortable "well under budget": a zero-byte index would sail
-    through a naive size check while meaning the corpus index had been destroyed. "Cannot
-    measure" and "measured, and it is fine" must never share an exit code.
+      r1 CLAUDE N1  `"1 characters…" in msg` was vacuous — the overage `1` is a decimal SUFFIX of
+                    the total `1,001`. A mutant printing the total survived.
+      r2 CODEX #1   my repair banned the literal total. A mutant rendering `overage + 1000` gives
+                    `1,007`, which still ends in `7`. Survived again. I had fixed the INSTANCE.
+      r2 CLAUDE H2  the three messages render TEN numeric fields and only TWO carried a value
+                    assertion. Seven more survivors, including the SAME defect in the WARNING arm.
+      r2 CLAUDE H1  `{label}` replaced by the literal `docs/memory/MEMORY.md` survives 51/51 in all
+                    three arms — so the guard can measure the WRONG FILE and NAME THE RIGHT ONE,
+                    which is precisely the composite r1 CODEX #2a was fixed for.
+
+    That is this repo's THRASHING shape: two consecutive rounds carrying findings caused by the
+    previous round's own fix, in one component. The standing lesson is `refuse, don't widen` — change
+    the KIND of fix. So the numbers stop being things a case greps out of prose and become VALUES a
+    case reads directly; `render()` turns them into the message, and one case asserts that every fact
+    reaches it. A new field is then covered by construction rather than by remembering to add a case.
     """
     if n_chars is None:
-        return CANNOT_RUN, (
-            f"CANNOT RUN — {label} could not be READ — it is absent, or present and unreadable "
-            "— so the always-loaded budget was NOT measured. Treat this as NOT RUN, never as a "
-            "pass.")
+        # ⚠ No `limit` here: the message does not show it, because a limit is meaningless when
+        # nothing was measured. The closed-loop case in the suite REFUSES a fact the reader
+        # never sees, so this set is exactly what `render` conveys.
+        return {"rc": CANNOT_RUN, "state": "unreadable", "label": label}
     if n_chars == 0:
-        return CANNOT_RUN, (
-            f"CANNOT RUN — {label} is EMPTY. That is not a small index, it is a "
-            "missing one; the budget was NOT measured. Treat this as NOT RUN, never as a pass.")
-
+        return {"rc": CANNOT_RUN, "state": "empty", "label": label}
     warn_at = warn_threshold(limit)
+    common = {"label": label, "chars": n_chars, "limit": limit}
     if n_chars > limit:
-        return OVER_BUDGET, (
-            f"OVER BUDGET — {label} is {n_chars:,} CHARACTERS against the harness's "
-            f"{limit:,}-character limit, so it is being TRUNCATED IN SILENCE and the last "
-            f"{n_chars - limit:,} characters of its tail never arrive. Nothing chose what those are. "
-            f"REMEDY: move history-shaped rows into {OVERFLOW_TARGET}, which is a TRIGGERED corpus "
-            "entry — they still arrive, on demand, instead of being loaded every turn.")
+        return {"rc": OVER_BUDGET, "state": "over", **common, "overage": n_chars - limit}
     if n_chars >= warn_at:
-        return OK, (
-            f"WARNING: {label} is {n_chars:,} characters, within "
-            f"{limit - n_chars:,} characters of the harness's {limit:,}-character limit "
-            f"({100 * n_chars // limit}% of budget). Nothing is being dropped YET. Move "
-            f"history-shaped rows into {OVERFLOW_TARGET} before it is. (Advisory.)")
-    return OK, (
-        f"ok — {label} is {n_chars:,} characters, {limit - n_chars:,} under the harness's "
-        f"{limit:,}-character limit, so nothing is being dropped. ⚠ 'Every row arrives' would "
-        f"overclaim: the limit is DECLARED to one decimal place (r1 CODEX #5), so treat this as "
-        f"within the budget as measured, not as a proof of delivery.")
+        return {"rc": OK, "state": "warn", **common, "headroom": limit - n_chars,
+                "percent": 100 * n_chars // limit}
+    return {"rc": OK, "state": "ok", **common, "headroom": limit - n_chars}
+
+
+def render(f: dict[str, object]) -> str:
+    """PURE. -> the reader-facing message for `f`. Every value comes FROM `f`, never recomputed.
+
+    ⚠ Recomputing anything here would re-open the defect the split closes: a case asserting the
+    facts would then be silent about what the reader is shown.
+    """
+    label = f["label"]
+    state = f["state"]
+    if state == "unreadable":
+        return (f"CANNOT RUN — {label} could not be READ — it is absent, or present and unreadable "
+                "— so the always-loaded budget was NOT measured. Treat this as NOT RUN, never as a "
+                "pass.")
+    if state == "empty":
+        return (f"CANNOT RUN — {label} is EMPTY. That is not a small index, it is a missing one; the "
+                "budget was NOT measured. Treat this as NOT RUN, never as a pass.")
+    limit = f["limit"]
+    if state == "over":
+        return (f"OVER BUDGET — {label} is {f['chars']:,} CHARACTERS against the harness's "
+                f"{limit:,}-character limit, so it is being TRUNCATED IN SILENCE and the last "
+                f"{f['overage']:,} characters of its tail never arrive. Nothing chose what those "
+                f"are. REMEDY: move history-shaped rows into {OVERFLOW_TARGET}, which is a TRIGGERED "
+                "corpus entry — they still arrive, on demand, instead of being loaded every turn.")
+    if state == "warn":
+        return (f"WARNING: {label} is {f['chars']:,} characters, within {f['headroom']:,} characters "
+                f"of the harness's {limit:,}-character limit ({f['percent']}% of budget). Nothing is "
+                f"being dropped YET. Move history-shaped rows into {OVERFLOW_TARGET} before it is. "
+                "(Advisory.)")
+    return (f"ok — {label} is {f['chars']:,} characters, {f['headroom']:,} under the harness's "
+            f"{limit:,}-character limit, so nothing is being dropped. ⚠ 'Every row arrives' would "
+            f"overclaim: the limit is DECLARED to one decimal place (r1 CODEX #5), so treat this as "
+            f"within the budget as measured, not as a proof of delivery.")
+
+
+def budget_verdict(n_chars: int | None, limit: int, label: str = INDEX_LABEL) -> tuple[int, str]:
+    """PURE. -> (rc, message). A thin composition of `budget_facts` and `render`, kept because
+    `main` and every existing case read a pair. The two outcomes it must keep distinct are
+    "cannot measure" and "measured, and it is fine" — they must never share an exit code.
+    """
+    f = budget_facts(n_chars, limit, label)
+    return int(f["rc"]), render(f)  # type: ignore[arg-type]
 
 
 def index_chars(path: pathlib.Path) -> int | None:
@@ -273,28 +310,13 @@ def _self_test() -> int:
     check("well under budget is OK", budget_verdict(10, L)[0], OK)
     check("an OK message states the headroom", "990 under" in budget_verdict(10, L)[1], True)
     check("over budget is rc 1", budget_verdict(L + 1, L)[0], OVER_BUDGET)
-    # ⛔ THE NUMBER IS PARSED AND COMPARED AS A VALUE. Two rounds of substring assertions failed
-    # here and the second failure is the instructive one.
-    #   r1 CLAUDE N1: `"1 characters…" in msg` at L=1000 was vacuous, because the overage `1` is a
-    #   DECIMAL SUFFIX of the total `1,001`. A mutant printing the total survived 42/42.
-    #   r2 CODEX #1: my repair — ban the literal total `1,241` — blocked ONE VALUE, NOT THE CLASS.
-    #   A mutant printing `n_chars - limit + 1000` renders `1,007`, which still ENDS IN `7`, so the
-    #   needle matched and the banned total was absent. Measured: survived 43/43.
-    # `a-filed-finding-s-proposed-fix-is-a-hypothesis` — I had treated the instance as the defect.
-    # No substring assertion can fix this, because any needle is a suffix of infinitely many
-    # renderings. Parsing the field and comparing an int is the only form that cannot be fooled.
-    def _field(msg: str, after: str) -> int | None:
-        """PURE. -> the integer in `msg` immediately after `after`, or None. Commas stripped."""
-        m = re.search(re.escape(after) + r"\s*([\d,]+)", msg)
-        return int(m.group(1).replace(",", "")) if m else None
+    # ⛔ THE PARSED-FIELD CASES THAT STOOD HERE ARE DELETED, NOT WEAKENED, AND THAT IS THE POINT.
+    # Three rounds of string assertions on ONE function — r1 CLAUDE N1, r2 CODEX #1, r2 CLAUDE H2 —
+    # each covered the single field the previous round had found. I had written that parsing "is the
+    # only form that cannot be fooled"; r2 CLAUDE falsified that with a float rendering. The facts
+    # split above supersedes all of it: numbers are asserted as VALUES and one loop proves each
+    # reaches the reader. A superseded mechanism kept "just in case" is one more thing to be wrong.
 
-    check("the OVER message's overage is the DIFFERENCE, parsed as a value not a substring",
-          _field(budget_verdict(1241, 1234)[1], "the last"), 7)
-    check("the same field at a SECOND input, so a constant cannot satisfy it",
-          _field(budget_verdict(5000, 1234)[1], "the last"), 3766)
-    check("the OK message's headroom is parsed as a value too (r2 CODEX #1: '990 under' matched "
-          "'10,990 under')",
-          _field(budget_verdict(10, 1000)[1], "characters,"), 990)
     check("the OVER message names the remedy file",
           OVERFLOW_TARGET in budget_verdict(L + 1, L)[1], True)
 
@@ -306,6 +328,96 @@ def _self_test() -> int:
     check("one byte BELOW the warn threshold does not warn",
           budget_verdict(warn_at - 1, L)[1].startswith("ok"), True)
     check("a warning is ADVISORY — it must not block", budget_verdict(warn_at, L)[0], OK)
+
+    # --- THE FACTS, AND THE RENDERING, AS A CLOSED LOOP (r2 CLAUDE H1 + H2) ---------------
+    # ⛔ This block is why the split exists. Three rounds of string assertions each covered the ONE
+    # field the previous round had found; ten fields were rendered and two were asserted. Here the
+    # facts are asserted as VALUES, and then ONE loop asserts every fact REACHES the reader — so a
+    # field added later is covered without anyone remembering to add a case.
+    LBL = "fixture/INDEX.md"  # deliberately NOT the module literal, so H1's mutation cannot hide
+
+    def _shown(v: object) -> str:
+        return f"{v:,}" if isinstance(v, int) else str(v)
+
+    def _shows(msg: str, val: str) -> bool:
+        """-> True when `val` appears in `msg` as a WHOLE number, not inside a longer one.
+
+        ⛔ A BARE `in` CANNOT DO THIS, and that is the fifth appearance of one defect. `414` IS a
+        substring of `1,414`, so a mutant adding 1000 to the headroom survived the closed loop even
+        after its pairwise precondition — the vacuity there is between a value and its OWN mutated
+        rendering, which comparing facts to each other can never see. The lookarounds reject a
+        digit or comma on either side, so `414` does not match inside `1,414` while `within 414 `
+        still does.
+        """
+        return re.search(r"(?<![\d,])" + re.escape(val) + r"(?![\d,])", msg) is not None
+
+    def _vacuous_pairs(vals: list[str]) -> list[str]:
+        """-> renderings that are SUBSTRINGS of one another, which makes an `in` test vacuous.
+
+        ⛔ THIS PRECONDITION IS THE POINT. My first closed loop used chars=920/limit=1000, giving
+        headroom 80 and percent 92 — and `"80"` is a substring of `"1,080"` while `"92"` hides
+        inside `"920"`. Two mutants survived the very loop written to catch them: the FOURTH
+        consecutive appearance of the suffix defect on this one function. A fixture whose values
+        can contain each other cannot witness anything, so the suite REFUSES such a fixture
+        instead of trusting that someone chose well.
+        """
+        return [f"{a!r} is inside {b!r}" for a in vals for b in vals if a != b and a in b]
+
+    OVER_F = budget_facts(9876, 8191, LBL)   # overage 1,685
+    WARN_F = budget_facts(7777, 8191, LBL)   # headroom 414, percent 94
+    OK_F = budget_facts(123, 8191, LBL)      # headroom 8,068
+    check("the OVER facts are exact", OVER_F,
+          {"rc": 1, "state": "over", "label": LBL, "chars": 9876, "limit": 8191, "overage": 1685})
+    check("the WARN facts are exact", WARN_F,
+          {"rc": 0, "state": "warn", "label": LBL, "chars": 7777, "limit": 8191,
+           "headroom": 414, "percent": 94})
+    check("the OK facts are exact", OK_F,
+          {"rc": 0, "state": "ok", "label": LBL, "chars": 123, "limit": 8191, "headroom": 8068})
+    check("the CANNOT RUN facts name the state and keep the label",
+          (budget_facts(None, 8191, LBL), budget_facts(0, 8191, LBL)),
+          ({"rc": 2, "state": "unreadable", "label": LBL},
+           {"rc": 2, "state": "empty", "label": LBL}))
+
+    # ⛔ THE CLOSED LOOP, with its own vacuity guarded. Every fact must REACH the message, and no
+    # fact's rendering may be a substring of another's — otherwise the `in` below proves nothing.
+    # This kills r2 CLAUDE H1 (a literal label) and H2 (any numeric field replaced or shifted) in
+    # EVERY arm at once, which is what three rounds of one-field-per-round patches could not do.
+    _missing: list[str] = []
+    _vacuous: list[str] = []
+    for _f in (OVER_F, WARN_F, OK_F, budget_facts(None, 8191, LBL), budget_facts(0, 8191, LBL)):
+        _msg = render(_f)
+        _vals = [_shown(v) for k, v in _f.items() if k not in ("rc", "state")]
+        _vacuous += [f"{_f['state']}: {d}" for d in _vacuous_pairs(_vals)]
+        _missing += [f"{_f['state']}.{k}={_shown(v)!r}" for k, v in _f.items()
+                     if k not in ("rc", "state") and not _shows(_msg, _shown(v))]
+    check("no fact's rendering hides inside another's, so the membership test is not vacuous",
+          _vacuous, [])
+    # ⛔ A KNOWN POSITIVE FOR THE PRECONDITION ITSELF. Without this the rule above is correct and
+    # UNEXERCISED — the shipped fixture has no concealing pair, so neutering `_vacuous_pairs` to
+    # `return []` changed nothing and the mutation SURVIVED. A guard that never fires on its own
+    # fixture is indistinguishable from one that does nothing; these are the exact values that
+    # defeated the first closed loop.
+    check("_vacuous_pairs DETECTS a concealing pair (the 80-inside-1,080 that defeated the first "
+          "loop)", _vacuous_pairs(["80", "1,080"]), ["'80' is inside '1,080'"])
+    check("_vacuous_pairs is silent on values that cannot conceal each other",
+          _vacuous_pairs(["414", "9,876"]), [])
+
+    # ⛔ A SECOND LABEL AND A SECOND LIMIT, because `check-fixture-variation` REFUSED the block
+    # above: every call passed the same two values, so no case could tell either parameter from a
+    # constant. `exercise-the-producer-at-two-distinct-inputs`, caught by the guard rather than by
+    # me, in the very block written to fix a coverage defect.
+    ALT = "other/PLACE.md"
+    check("the label and the limit are both THREADED, not read from module state",
+          budget_facts(500, 400, ALT),
+          {"rc": 1, "state": "over", "label": ALT, "chars": 500, "limit": 400, "overage": 100})
+    check("render() is called on an independently built fact set too, not only the loop's",
+          render({"state": "ok", "label": ALT, "chars": 7, "limit": 400, "headroom": 393})
+          .startswith(f"ok — {ALT} is 7 characters, 393 under"), True)
+    # The delimited matcher, exercised at the exact input that defeated the bare `in`.
+    check("a number is matched as a WHOLE token: 414 is NOT found inside 1,414",
+          (_shows("within 414 characters", "414"), _shows("within 1,414 characters", "414")),
+          (True, False))
+    check("EVERY fact reaches the rendered message, in every state", _missing, [])
 
     # --- CANNOT RUN is never a pass -------------------------------------------------------
     # ⛔ LITERALS, NOT THE SYMBOLS. These two compared against `CANNOT_RUN` and a mutation setting
@@ -415,7 +527,9 @@ def _self_test() -> int:
     check("INDEX is the always-loaded index, not some other corpus file", INDEX.name, "MEMORY.md")
     check("INDEX is built from the repo root, so it survives a cwd change",
           INDEX, ROOT / "docs" / "memory" / "MEMORY.md")
-    check("INDEX is the file the harness symlink actually serves", INDEX.is_file(), True)
+    # ⟳ r2 CLAUDE medium: this was named "the file the harness symlink actually serves" while
+    # asserting only `is_file()`, which says nothing about the symlink. Named for what it checks.
+    check("INDEX exists as a regular file in this checkout", INDEX.is_file(), True)
 
     # --- ⟳ r1 CODEX #2b: THE EXACT BOUNDARY, end to end. The coarse 2000-vs-1000 pair below let a
     # `size - 1` mutation in main() survive: a real 24,986-byte index then passed. An integration
