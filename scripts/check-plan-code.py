@@ -1120,7 +1120,7 @@ EXPECTED_MUTATIONS = {
     # [FAIL] lines, and one equivalent-in-environment (a shallow-clone branch on a full clone,
     # since replaced by the drivable `shallow_refusal`).
     "scripts/check-review-decision.py": 19,
-    "scripts/check-decision-scheme.py": 34,
+    "scripts/check-decision-scheme.py": 41,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
@@ -5213,7 +5213,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1616)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1623)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

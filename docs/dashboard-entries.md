@@ -15959,3 +15959,47 @@ were initially unattributable (killed by traceback, zero `[FAIL]` lines) until `
 BOTH layouts: 105/81/392, median **4** unchanged, original figures preserved under `*_ORIGINAL_WRONG`.
 r1 coordinator document written with a 22-finding header — the procedure had printed `rounds=0` on
 the branch whose subject is that gap.
+
+## 2026-10-20 [needs-you]
+**A third review round found that the second round's repairs had three doors into the same room —
+and the fix was to change what the tool treats as a thing's identity.**
+
+The watchdog needs to know which pieces of work are new, so it can ask for a record of them without
+demanding records for everything that came before. It was deciding that by **file name**. File names
+move when someone reorganises a folder, and the system that stores them rewrites accented letters —
+so a reorganisation or an accent made old work look brand new, which is exactly the false alarm that
+gets a check switched off. It now identifies a piece of work by **what it is** — the subject and the
+round number — which survives both.
+
+Three smaller repairs with the same character. A folder it could not read was being **silently
+skipped**, so it counted part of the evidence and reported confidence; it now refuses. A list meant
+to hold *"the five most recent"* actually held the five **earliest**, because of a detail of how the
+underlying structure works — so a check that should have failed stayed quiet. And a calculation was
+comparing *how many times* something appeared against *which round it appeared in*, which made a
+problem that recurred in round five read as resolved after round four.
+
+⚠ **Two mistakes of my own in this stretch, both worth recording.** I rewrote a block of tests and
+the rewrite **deleted a neighbouring block** — the test count fell from 127 to 119 and I wrote a
+sentence explaining that away. Five checks silently stopped being checked, and the thing that
+noticed was the deliberate-sabotage suite, not me. And the tool that verifies that suite was
+**weaker than the real rule** it stood in for, so a number I reported as 34-out-of-34 was really
+33-out-of-34.
+
+**Waiting on you:** still a pull request. The next round is dispatched — the human-side reviewer this
+time, which was owed from the last round and recorded as owed rather than skipped.
+<!--tech-->
+r2 fold. **starvation identity REDESIGNED (r2 YH2/YM3/YM6, one cause):** `rounds_in_paths` parses the
+historical tree through the SAME `SHAPES` grammar, so membership is `(subject, round)` not path —
+immune to a move; `git ls-tree -r -z` so `core.quotePath` cannot mangle `é`; and the tree assertion
+is now about the INSTANT (a post-arming file must be ABSENT) rather than the set's size — the old
+case left a `sha`→`HEAD` substitution green. **YH1:** `os.walk(onerror=…)` refuses a traversal that
+skipped an unreadable subtree — `rglob` skipped it silently and the r1 fix keyed on an `error` key
+that was never set, so the fail-open had MOVED rather than closed. **YM4:** `per_subject.pop()`
+before insert, because a dict update does not reorder — reproduced with 9 rows where the code read
+median 1 and the correct answer was 9. **YL7:** `component_rounds` added; `derive_outcome` reads
+POSITIONS from a round set, not `scope_tally`'s counts — still deliberately unwired, which r2 called
+prudent. **YL8:** the `IndexError` rejection note is WITHDRAWN — the r1 fold deleted its subject, so
+it had become a false claim that a clause was unkillable. `empty_listing_refusal` extracted for the
+same reason `shallow_refusal` was: equivalent-in-environment in place. Suite **128**, green under
+`uv --python 3.12`; mutations **41** and **19**, all attributing under the REAL contract (`all()` +
+equality, not `any()` + substring — probe6), declared sum 1623.

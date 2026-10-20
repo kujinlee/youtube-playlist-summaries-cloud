@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 113 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 128 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -196,6 +196,12 @@ def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
     per_subject: dict[str, int] = {}
     for r in rows:
         if r.get("outcome") == "stopped" and isinstance(r.get("rounds_at_termination"), int):
+            # ⛔ r2 YM4: a dict UPDATE does not move a key to the end, so `list(...)[-5:]` was
+            # NOT "the last five subjects" — it was the last five by FIRST appearance. Measured
+            # with nine rows: the latest five by occurrence had median 9 and the code read a
+            # median of 1, so trigger 4 stayed quiet over a run that should have failed it.
+            # Popping first re-inserts at the end, which is what "latest" has to mean.
+            per_subject.pop(r.get("subject"), None)
             per_subject[r.get("subject")] = r["rounds_at_termination"]
     if len(per_subject) < 5:
         return None
@@ -215,6 +221,13 @@ def t5_ranker_miss(rows: list[dict]) -> str | None:
     `consecutive` is correct HERE (unlike in the arming condition it replaced) because this
     measures the instrument's own run of errors, not a component's recurrence.
     """
+    # ⛔ AN ABSTENTION IS NOT A PREDICTION, SO IT IS NOT SCOREABLE — found by writing the
+    # scheme's FIRST REAL ROWS. The ranker abstained on both of this slice's rounds (every
+    # recurring component tied on appearances), I recorded `ranker_hit: false`, and this trigger
+    # fired "two consecutive ranker misses" — punishing the ranker for declining to guess, which
+    # is the exact incentive the abstention exists to create. `ranker_hit` is written ONLY when
+    # the ranker named a component; a row without it made no bet and is skipped, which this line
+    # was accidentally already doing and now does deliberately.
     marks = [bool(r.get("ranker_hit")) for r in rows if "ranker_hit" in r]
     for i in range(len(marks) - 1):
         if not marks[i] and not marks[i + 1]:
@@ -296,27 +309,47 @@ def derive_routes_tried(prior: list[dict]) -> list[str]:
     return [r["route"] for r in prior if r.get("route")]
 
 
-def derive_outcome(subject: str, unit: str, after_round: int,
-                   tally: dict[str, int] | None) -> str | None:
-    """PURE. Did the stream stop for `unit`, read from the component tally? None = NOT DERIVABLE.
+def component_rounds(rounds: list[dict]) -> dict[str, set[int]]:
+    """PURE. component -> the SET of round numbers it appeared in.
 
-    r1 Claude: `outcome: continued` is derivable from whether a later round named the same
-    component, "which `scope_tally` already computes". True — and bounded, which is why this
-    returns None rather than guessing:
-
-      * the subject's coordinator documents must be READABLE. Measured 2026-10-20: 10 of the 57
-        subjects where the procedure applies. So for 47 subjects this cannot answer, and
-        `None` is the honest answer rather than a default.
-      * `unit` must name a component the tally knows. A unit the tally has never seen is not
-        evidence of a stopped stream; it is evidence of a naming mismatch.
-
-    ⚠ A derived answer OVERRIDES an authored one — that is the direction of trust the whole
-    redesign turns on — but an UNDERIVABLE row keeps its authored outcome and is counted as
-    authored, so the authored share is reportable instead of invisible.
+    ⛔ r2 YL7: `derive_outcome` used `scope_tally`, which returns how MANY rounds a component
+    appeared in — and compared that COUNT to a ROUND NUMBER. A component in rounds 1 and 5 has
+    a count of 2, so "did it appear after round 4?" was answered `2 > 4` = no, i.e. "stopped",
+    when round 5 proves the opposite. A count cannot answer a question about position.
     """
-    if not tally or unit not in tally:
+    out: dict[str, set[int]] = {}
+    for r in rounds:
+        n = r.get("round")
+        if not isinstance(n, int):
+            continue
+        for c in {f.get("component") for f in r.get("findings", []) if f.get("component")}:
+            out.setdefault(c, set()).add(n)
+    return out
+
+
+def derive_outcome(subject: str, unit: str, after_round: int,
+                   seen: dict[str, set[int]] | None) -> str | None:
+    """PURE. Did the stream stop for `unit` after `after_round`? None = NOT DERIVABLE.
+
+    r1 Claude's closing argument: `outcome` is derivable from whether a LATER round named the
+    same component. True, and the observation model took two attempts to get right — see
+    `component_rounds` for why a count could not answer it.
+
+    ⛔ IT IS DELIBERATELY NOT WIRED INTO `main()`, and r2 called that prudent in the same
+    finding that showed the model was wrong: wiring it as written would have OVERWRITTEN an
+    authored `continued` with an incorrect `stopped`. The order is model first, evidence that
+    the model is right second, wiring third. Bounds that keep it unwired for now:
+
+      * the subject's coordinator documents must be READABLE — measured, 10 of 81 subjects
+      * `unit` must name a component the rounds know; an unknown unit is a naming mismatch,
+        not evidence of a stopped stream
+      * both make `None` the honest answer far more often than not, and a derivation that is
+        usually unavailable must not silently become a default.
+    """
+    if not seen or unit not in seen:
         return None
-    return "continued" if tally[unit] > after_round else "stopped"
+    later = {n for n in seen[unit] if n > after_round}
+    return "continued" if later else "stopped"
 
 
 def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
@@ -440,18 +473,55 @@ def parse_armed_at(raw: object) -> "tuple[int | None, str | None]":
     return int(when.timestamp()), None
 
 
+def round_shapes():
+    """The filename grammar, imported from `check-review-rounds.py`. One rule, one place."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_crr", REPO / "scripts" / "check-review-rounds.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.SHAPES
+
+
+def rounds_in_paths(paths, shapes=None) -> "set[tuple[str, int]]":
+    """PURE. The (subject, round) pairs a set of paths represents.
+
+    ⭐⭐ THIS IS THE r2 REDESIGN, AND THE CHANGE OF IDENTITY IS THE WHOLE REPAIR. The previous
+    rule asked whether a round's PATH was in the historical tree, and r2 found three doors into
+    the same room, all of them the same cause — **a path is not a stable identity**:
+
+      * YH2 a document MOVED since arming (flat -> `codex/`) matches nothing in `before`, so an
+        entirely historical subject is named as newly starved — backlog #56's death.
+      * YM3 `git ls-tree --name-only` honours `core.quotePath`, so `é` comes back as
+        `\303\251` and an unchanged subject is named.
+      * YM6 nothing asserted the tree being listed was the HISTORICAL one; substituting `HEAD`
+        left 113/113 green.
+
+    A `(subject, round)` pair survives a move, survives quoting once the bytes are read
+    correctly, and is exactly the identity the procedure already reasons in. Only the directory
+    changes under a move; the basename grammar does not.
+    """
+    shapes = round_shapes() if shapes is None else shapes
+    out = set()
+    for path in paths:
+        name = path.rsplit("/", 1)[-1]
+        for pat in shapes:
+            m = pat.match(name)
+            if m:
+                out.add((m.group("subject"), int(m.group("round"))))
+                break
+    return out
+
+
 def shallow_refusal(flag: str) -> str | None:
     """PURE. Why a shallow clone cannot answer "what did the tree hold at arming", else None.
 
     ⛔ EXTRACTED BECAUSE THE BRANCH WAS UNKILLABLE IN PLACE. `if shallow == "true"` can only
-    behave differently on a shallow clone, so mutating it to `if False` was an EQUIVALENT
-    mutation on any normal checkout — it survived with rc=0 and zero findings, which looks
-    identical to a coverage gap. Pulling the decision out makes it a function a case can drive
-    with either string, so the rule is covered rather than merely present.
+    behave differently on a shallow clone, so mutating it was an EQUIVALENT mutation on any
+    normal checkout — it survived with rc=0, which looks identical to a coverage gap.
 
     r1 Claude M6: a shallow clone has no history before arming, so every tracked round document
-    looks new and the ratchet would name the entire corpus — backlog #56's death, from the one
-    input nobody tests on.
+    looks new and the ratchet would name the entire corpus.
     """
     if flag.strip() == "true":
         return ("this is a SHALLOW clone, so history before arming is absent and every tracked "
@@ -459,18 +529,35 @@ def shallow_refusal(flag: str) -> str | None:
     return None
 
 
+def empty_listing_refusal(paths: set, sha: str) -> str | None:
+    """PURE. Why an EMPTY tree listing is git not having been read, not a real answer.
+
+    ⛔ EXTRACTED FOR THE SAME REASON AS `shallow_refusal`, and r2 made the point twice: in place
+    (`if not paths:`) this branch can only behave differently on an input a real repository never
+    produces, so mutating it survived with rc=0 — indistinguishable from a coverage gap. A rule
+    that cannot be driven is not covered, however correct it looks.
+
+    A commit with no paths at all cannot be true; reading it as "the tree held nothing" would
+    make every subject look post-arming, which is backlog #56's death by a different door.
+    """
+    if not paths:
+        return (f"the tree at {sha[:8]} lists no paths at all, which cannot be true of a commit "
+                f"— treat this as git not having been read")
+    return None
+
+
 def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
     """(paths that existed at `epoch`, None) or (None, why this cannot be answered).
 
-    ⭐ THIS REPLACES `paths_added_since`, AND THE CHANGE OF QUESTION IS THE REPAIR. The old rule
-    asked git which paths were ADDED since arming (`--diff-filter=A`), which r1 showed has at
-    least three doors: a relocated short document is an `A` rather than an `R`; `--since`
-    filters on COMMITTER date, so a rebase or squash re-dates an old add into the window; and a
-    shallow clone makes every tracked file look added.
+    ⭐ A LISTING, NOT A DIFF. The first version asked which paths were ADDED since arming
+    (`--diff-filter=A`), which r1 showed has three doors: a relocated short document is an `A`
+    not an `R`; `--since` filters on COMMITTER date so a rebase re-dates an old add into the
+    window; and a shallow clone makes everything look added. Asking what the tree HELD removes
+    all three — there is no add/rename classification to get wrong.
 
-    This asks instead: **what did the tree CONTAIN at arming?** A listing, not a diff — so
-    there is no add/rename classification to get wrong, no committer-date sensitivity, and a
-    shallow clone is detected rather than silently answered.
+    ⟳ r2 YM3: the output is read with `-z`, NUL-delimited and UNQUOTED. `--name-only` alone
+    honours `core.quotePath`, so a path containing `é` came back as `\303\251` and matched
+    nothing — naming an unchanged subject as new.
     """
     import subprocess
     try:
@@ -484,12 +571,10 @@ def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
         if not sha:
             return None, (f"no commit exists at or before the arming instant (@{epoch}), so "
                           f"'what the tree held at arming' has no answer")
-        # ⛔ MEASURED 2026-10-20, AND I HAD ASSUMED OTHERWISE: `git rev-list -1 --before=@1 HEAD`
-        # returns the repository's FIRST commit, not nothing. So an ISO-parseable but absurd
-        # arming instant resolves to a tiny tree, nearly every subject looks post-arming, and
-        # trigger 1 names almost all of them — red from birth, the backlog #56 death this whole
-        # design is shaped to avoid. The resolved commit's own date is therefore checked against
-        # the instant it is supposed to answer for.
+        # ⛔ MEASURED, AND I HAD ASSUMED OTHERWISE: `git rev-list -1 --before=@1 HEAD` returns
+        # the repository's FIRST commit, not nothing. An ISO-parseable but absurd instant would
+        # resolve to a tiny tree, nearly every subject would look post-arming, and trigger 1
+        # would name almost all of them — red from birth, backlog #56.
         when = subprocess.run(["git", "show", "-s", "--format=%ct", sha], cwd=REPO,
                               capture_output=True, text=True, check=True).stdout.strip()
         if not when.isdigit() or int(when) > epoch:
@@ -497,47 +582,52 @@ def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
                           f"{when or 'unreadable'} — git resolved outside the window, so the "
                           f"arming instant predates this history and the tree at arming is "
                           f"not knowable")
-        out = subprocess.run(["git", "ls-tree", "-r", "--name-only", sha], cwd=REPO,
+        # ⟳ r2 YM3: `-z` so paths arrive as raw bytes between NULs, never quoted.
+        out = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", sha], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout
     except (subprocess.CalledProcessError, OSError) as exc:
         return None, f"git could not be read: {exc}"
-    return {line.strip() for line in out.splitlines() if line.strip()}, None
+    paths = {part for part in out.split("\0") if part}
+    refusal = empty_listing_refusal(paths, sha)
+    if refusal:
+        return None, refusal
+    return paths, None
 
 
 def subjects_starved(armed: object, docs: dict | None = None,
-                     before: set[str] | None = None) -> "tuple[list[str], str | None]":
-    """(subjects that came into scope AFTER arming with no log row, None) | ([], why not).
+                     before_rounds: "set[tuple[str, int]] | None" = None,
+                     ) -> "tuple[list[str], str | None]":
+    """(subjects that came into scope AFTER arming, None) | ([], why this cannot be answered).
 
-    ⭐ THE RULE IS NOW A SET DIFFERENCE OVER MEMBERSHIP, not a question about one filename:
+    ⭐ THE RULE IS A SET DIFFERENCE OVER (subject, round) MEMBERSHIP:
 
         a subject is newly in scope  iff  rounds it had BEFORE arming < 2 <= rounds it has NOW
 
-    ⟳ Both r1 halves broke the old form, from opposite ends. Codex: `sorted(rounds)[1]` names
-    the second ROUND NUMBER, not the document whose arrival established two rounds — so a
-    historical r2 with a newly back-filled r1 returned `[]` and MISSED a subject that genuinely
-    crossed into scope. Claude: two measured doors let it NAME HISTORICAL subjects, which is the
-    backlog #56 shape the ratchet exists to avoid. Counting membership answers both, because it
-    never asks which document arrived.
+    ⟳ r2 YH2: `before` used to be a set of PATHS and this intersected filenames, so a document
+    moved since arming counted as absent and an entirely historical subject was named. It is now
+    a set of `(subject, round)` pairs, derived from the historical tree through the SAME
+    filename grammar the live corpus is read with — so a move changes the directory and not the
+    identity.
 
-    ⛔ IT RETURNS A REASON, NOT AN EMPTY LIST, WHEN IT CANNOT ANSWER. An unparseable `armed_at`
-    or an unreadable history is CANNOT RUN; silence there is indistinguishable from "nothing is
-    starved", which is exactly how the predecessor died.
+    ⛔ IT RETURNS A REASON, NOT AN EMPTY LIST, WHEN IT CANNOT ANSWER. Silence is
+    indistinguishable from "nothing is starved", which is how the predecessor died.
     """
     if armed is None:
-        return [], None                      # not armed yet; `main()` says so in its own words
+        return [], None
     epoch, why = parse_armed_at(armed)
     if why:
         return [], why
     docs = _round_docs() if docs is None else docs
-    if before is None:
-        before, why = tree_at(epoch)
+    if before_rounds is None:
+        paths, why = tree_at(epoch)
         if why:
             return [], why
+        before_rounds = rounds_in_paths(paths)
     out = []
     for subject, rounds in docs.items():
         if len(rounds) < 2:
-            continue                         # the procedure does not apply yet
-        rounds_before = sum(1 for paths in rounds.values() if any(p in before for p in paths))
+            continue
+        rounds_before = sum(1 for n in rounds if (subject, n) in before_rounds)
         if rounds_before < 2:
             out.append(subject)
     return sorted(out), None
@@ -692,6 +782,18 @@ def _corpus_now(reviews: Path | None = None) -> dict:
         seen: dict[str, set[int]] = {}
         if not reviews.is_dir():
             raise OSError(f"the review corpus is not a directory: {reviews}")
+        # ⛔ r2 YH1 — THE FAIL-OPEN MOVED RATHER THAN CLOSING. `Path.rglob` SILENTLY SKIPS a
+        # directory it cannot read, so a chmod-000 `reviews/claude/` produced a PARTIAL
+        # measurement with NO `error` key at all — and the r1 fix keys on `error`, so `main()`
+        # printed `all triggers quiet`, rc=0. A traversal that omitted data is not a
+        # measurement. `os.walk`'s `onerror` is the only way to hear about it.
+        import os as _os
+        walk_errors: list[str] = []
+        for _ in _os.walk(reviews, onerror=lambda e: walk_errors.append(str(e))):
+            pass
+        if walk_errors:
+            raise OSError(f"the review corpus could not be fully traversed, so any count over "
+                          f"it omits data: {walk_errors[0]}")
         for p in reviews.rglob("*.md"):
             # BOTH layouts — see `_round_docs` for why the subdir-only filter was wrong.
             if p.parent.name not in ("codex", "claude", "coordinator", reviews.name):
@@ -783,47 +885,40 @@ def _self_test() -> int:
     case("...and the message says WHY it matters, because 81% is the whole reason",
          "81%" in (_t1 or ""), True)
 
-    # ── the ratchet: membership BEFORE arming, not which filename arrived ────────────────────
-    # ⛔ REWRITTEN AFTER r1, WHERE BOTH HALVES BROKE THE OLD RULE FROM OPPOSITE ENDS. Codex:
-    # `sorted(rounds)[1]` named the second ROUND NUMBER, so a historical r2 with a back-filled
-    # r1 returned [] and MISSED a subject that crossed into scope. Claude: two measured doors
-    # let it NAME HISTORICAL subjects, the backlog #56 shape it exists to avoid. The rule is now
-    # a set difference: rounds held BEFORE arming < 2 <= rounds held NOW.
+    # ── the ratchet: (subject, round) membership before arming ───────────────────────────────
+    # ⛔ REDESIGNED TWICE, AND THE SECOND TIME IS THE IDENTITY. r1 broke "which path ARRIVED";
+    # r2 broke "which path EXISTED" through three doors that are one cause — a path is not a
+    # stable identity. It moves, git quotes it, and the listed tree was unverified. A
+    # (subject, round) pair survives all three.
     _ARM = "2026-10-20T10:00:00-07:00"
-    _D = {
-        "old":  {1: {"docs/reviews/coordinator/old-r1-coordinator.md"},
-                 2: {"docs/reviews/coordinator/old-r2-coordinator.md"}},
-        "new":  {1: {"docs/reviews/coordinator/new-r1-coordinator.md"},
-                 2: {"docs/reviews/coordinator/new-r2-coordinator.md"}},
-        "one":  {1: {"docs/reviews/coordinator/one-r1-coordinator.md"}},
-    }
-    _ALL_OLD = {p for r in _D["old"].values() for p in r}
+    _D = {"old": {1: {"docs/reviews/coordinator/old-r1-coordinator.md"},
+                  2: {"docs/reviews/coordinator/old-r2-coordinator.md"}},
+          "new": {1: {"docs/reviews/coordinator/new-r1-coordinator.md"},
+                  2: {"docs/reviews/coordinator/new-r2-coordinator.md"}},
+          "one": {1: {"docs/reviews/coordinator/one-r1-coordinator.md"}}}
     case("HISTORY IS NOT STARVED — a subject whose rounds BOTH predate arming is out of scope",
-         subjects_starved(_ARM, {"old": _D["old"]}, _ALL_OLD), ([], None))
+         subjects_starved(_ARM, {"old": _D["old"]}, {("old", 1), ("old", 2)}), ([], None))
     case("a subject whose rounds BOTH postdate arming is named",
          subjects_starved(_ARM, {"new": _D["new"]}, set()), (["new"], None))
     case("a subject that had ONE round before arming and two now has crossed into scope",
-         subjects_starved(_ARM, {"new": _D["new"]},
-                          {"docs/reviews/coordinator/new-r1-coordinator.md"}), (["new"], None))
-    # ⭐⭐ THE r1 CODEX CASE THE OLD RULE FAILED: the newly arrived document is r1, not r2. The
-    # old form asked "is the SECOND round's path new?" and answered no; membership answers yes.
-    case("⭐ a HISTORICAL r2 with a newly BACK-FILLED r1 is in scope — the old rule missed it",
-         subjects_starved(_ARM, {"new": _D["new"]},
-                          {"docs/reviews/coordinator/new-r2-coordinator.md"}), (["new"], None))
-    # ⭐ TRAVERSAL ORDER CANNOT MATTER NOW: a round holds a SET of paths, and the round counts as
-    # pre-existing if ANY of them did. The old form kept one path per round and `rglob` decided.
-    case("a round with two documents counts as pre-existing when EITHER predates arming",
+         subjects_starved(_ARM, {"new": _D["new"]}, {("new", 1)}), (["new"], None))
+    case("a HISTORICAL r2 with a newly BACK-FILLED r1 is in scope — r1's rule missed it",
+         subjects_starved(_ARM, {"new": _D["new"]}, {("new", 2)}), (["new"], None))
+    # ⭐⭐ r2 YH2, THE CASE THAT MATTERS MOST: the documents MOVED since arming. Under the old
+    # path-set rule neither current path was in `before`, so an entirely historical subject was
+    # named as newly starved — backlog #56's death, from a file reorganisation.
+    case("⭐ a subject whose documents MOVED since arming is still historical",
          subjects_starved(_ARM,
-                          {"s": {1: {"a-r1-codex.md", "a-r1-coordinator.md"},
-                                 2: {"a-r2-codex.md", "a-r2-coordinator.md"}}},
-                          {"a-r1-codex.md", "a-r2-coordinator.md"}), ([], None))
+                          {"old": {1: {"docs/reviews/codex/old-r1-codex.md"},
+                                   2: {"docs/reviews/codex/old-r2-codex.md"}}},
+                          rounds_in_paths({"docs/reviews/old-r1-codex.md",
+                                           "docs/reviews/old-r2-codex.md"})), ([], None))
     case("a subject with one round is not yet in scope, however recent",
          subjects_starved(_ARM, {"one": _D["one"]}, set()), ([], None))
     case("every subject that crossed is named, not just the first found",
          subjects_starved(_ARM, _D, set()), (["new", "old"], None))
     case("no arming date means nothing is starved, and the promise says so instead",
          subjects_starved(None, _D, set()), ([], None))
-    # ⛔ A REASON, NEVER AN EMPTY LIST (r1 Claude H1): an unparseable armed_at is CANNOT RUN.
     case("a BARE DATE is refused — git's approxidate would match nothing, silently",
          ("no timezone" in (subjects_starved("2026-10-20", _D, set())[1] or ""),
           subjects_starved("2026-10-20", _D, set())[0]), (True, []))
@@ -831,10 +926,26 @@ def _self_test() -> int:
          ("not an ISO-8601 instant" in (subjects_starved("on merge", _D, set())[1] or "")), True)
     case("a full ISO instant with an offset is accepted",
          subjects_starved(_ARM, {"one": _D["one"]}, set()), ([], None))
-    # TWO DISTINCT arming instants, so the parameter is not a constant.
     case("the arming instant is parsed, not pattern-matched — a second valid form works too",
          subjects_starved("2026-01-02T03:04:05+00:00", {"new": _D["new"]}, set()),
          (["new"], None))
+
+    # ── rounds_in_paths: the identity itself ─────────────────────────────────────────────────
+    _SH = round_shapes()
+    case("a path yields the (subject, round) its BASENAME grammar names",
+         rounds_in_paths({"docs/reviews/coordinator/s-r3-coordinator.md"}, _SH), {("s", 3)}),
+    case("⭐ the DIRECTORY is irrelevant, which is what survives a move",
+         (rounds_in_paths({"docs/reviews/s-r3-codex.md"}, _SH)
+          == rounds_in_paths({"docs/reviews/codex/s-r3-codex.md"}, _SH)), True)
+    case("a non-ASCII subject parses, so a quoted-path defeat is a READING bug not a rule bug",
+         rounds_in_paths({"docs/reviews/codex/é-r1-codex.md"}, _SH), {("é", 1)})
+    case("a path that is not a round document contributes nothing",
+         rounds_in_paths({"docs/reviews/architecture-review-2026-07-30.md"}, _SH), set())
+    case("both filename shapes are honoured, because SHAPES is imported not retyped",
+         rounds_in_paths({"docs/reviews/a-r1-codex.md", "docs/reviews/b-codex-r2.md"}, _SH),
+         {("a", 1), ("b", 2)})
+    case("an empty path set yields no rounds rather than raising",
+         rounds_in_paths(set(), _SH), set())
 
     # ── parse_armed_at and tree_at, the two inputs trigger 1 stands on ───────────────────────
     case("a full instant parses to an epoch", parse_armed_at(_ARM)[0] is not None, True)
@@ -844,9 +955,25 @@ def _self_test() -> int:
          parse_armed_at("2026-13-45T99:00:00")[0], None)
     case("a non-string is refused by type, not by regex",
          parse_armed_at(20261020)[0], None)
+    # ⛔ r2 YM6: the old case asserted only that the set was LARGE, so replacing the resolved
+    # `sha` with "HEAD" left 113/113 green while production would have listed TODAY'S tree and
+    # suppressed starvation entirely. The assertion is now about the INSTANT, not the size: a
+    # file committed after the arming instant must NOT be in the tree at that instant, and one
+    # committed before it must be.
+    _ep = parse_armed_at(_ARM)[0]
+    _tree, _twhy = tree_at(_ep)
     case("tree_at answers from a LISTING of the real repository, not from a diff",
-         (lambda r: (isinstance(r[0], set) and len(r[0]) > 100, r[1]))(
-             tree_at(parse_armed_at(_ARM)[0])), (True, None))
+         (isinstance(_tree, set) and len(_tree) > 100, _twhy), (True, None))
+    case("⭐ and it lists the HISTORICAL tree — a post-arming file is NOT in it",
+         ("docs/reviews/coordinator/decision-route-escalation-r1-coordinator.md" in (_tree or set())),
+         False)
+    case("...while a long-standing file IS, so the listing is not simply empty of reviews",
+         ("scripts/check-review-rounds.py" in (_tree or set())), True)
+    case("an EMPTY listing is git not having been read, not a tree that held nothing",
+         "cannot be true of a commit" in (empty_listing_refusal(set(), "abcdef1234") or ""), True)
+    case("...and a non-empty one is accepted — two DISTINCT inputs, so the set is read",
+         (empty_listing_refusal({"a"}, "abcdef1234"),
+          empty_listing_refusal(set(), "beef0000") is not None), (None, True))
     case("tree_at refuses an instant that predates the repository rather than returning {}",
          tree_at(1)[0], None)
     case("a shallow clone is REFUSED, because history before arming is absent",
@@ -916,6 +1043,18 @@ def _self_test() -> int:
     case("a stopped row with no round count cannot be scored and is excluded",
          t4_no_improvement([{"subject": f"s{i}", "unit": "u", "route": "accrete",
                              "outcome": "stopped"} for i in range(9)], 4), None)
+    # ⭐⭐ r2 YM4, THE EXACT INPUT. A dict UPDATE does not move a key to the end, so
+    # `list(...)[-5:]` took the last five by FIRST appearance. Measured: the latest five by
+    # occurrence had median 9 and the code read 1, so trigger 4 stayed quiet over a run it
+    # should have failed. Six subjects, then three of them repeat — the orders disagree.
+    _ym4 = ([_done(sub, n) for sub, n in zip("ABCDEF", [9, 9, 9, 1, 1, 1])]
+            + [_done(sub, 9) for sub in "ABC"])
+    case("⭐ the LAST five subjects is by occurrence, not by first insertion",
+         "is 9," in (t4_no_improvement(_ym4, 4) or ""), True)
+    # ⛔ A CASE ASSERTING ARITHMETIC ABOUT A LIST LITERAL WAS WRITTEN HERE AND DELETED. Its
+    # subject was a constant this suite wrote itself, not the code under test — it could only
+    # ever report whether I can take a median by hand. The mutation entry below is what proves
+    # the ordering clause is load-bearing.
     case("the comparator is the PINNED baseline, not the literal 4",
          (t4_no_improvement([_done(f"s{i}", 6) for i in range(5)], 7),
           "fires" if t4_no_improvement([_done(f"s{i}", 6) for i in range(5)], 6) else "quiet"),
@@ -1025,29 +1164,34 @@ def _self_test() -> int:
     case("a non-object row is NAMED rather than raising",
          _try(lambda: validate_row(None)), "a row is NoneType, not an object")
 
-    # ── derive_outcome: derivable, and HONEST about when it is not ───────────────────────────
-    case("an unknown unit is NOT DERIVABLE rather than assumed stopped",
-         derive_outcome("s", "u", 2, {"other": 5}), None)
-    case("no tally at all is NOT DERIVABLE — 47 of 57 subjects are unreadable",
-         derive_outcome("s", "u", 2, None), None)
-    case("a component appearing in a LATER round means the stream continued",
-         derive_outcome("s", "parse-header", 2, {"parse-header": 5}), "continued")
-    case("a component not appearing after that round means it stopped",
-         derive_outcome("s", "parse-header", 5, {"parse-header": 5}), "stopped")
-    # TWO DISTINCT inputs for after_round, so the parameter is not a constant.
-    case("the round boundary is read, not assumed",
-         (derive_outcome("s", "c", 1, {"c": 2}), derive_outcome("s", "c", 2, {"c": 2})),
-         ("continued", "stopped"))
-    # ⚠ A SECOND SUBJECT. With one value at every call site no case can tell `subject` from a
-    # constant, so a clause reading it would be unguarded — `check-fixture-variation` caught it.
-    # ⭐ And the case states the real bound: `subject` is carried for the MESSAGE and the tally
-    # is already scoped to one subject by the caller, so the same unit in another subject reads
-    # the same tally. That is deliberate, and saying so is better than exempting it.
-    case("the subject is carried, and the tally it is given is what decides",
-         (derive_outcome("other-subject", "c", 1, {"c": 2}),
-          derive_outcome("s", "c", 1, {"c": 2})), ("continued", "continued"))
+    def _r2(n, *comps):
+        return {"round": n, "findings": [{"component": c} for c in comps]}
 
-    # ── _corpus_now: the handler and the empty path, which had NO case at all (r1 B2/L1) ─────
+    # ── derive_outcome: POSITION, not count (r2 YL7) ─────────────────────────────────────────
+    case("component_rounds gives the SET of rounds, which is what a position question needs",
+         component_rounds([_r2(1, "a", "b"), _r2(5, "a")]), {"a": {1, 5}, "b": {1}})
+    case("a round with no usable number contributes nothing rather than a None key",
+         component_rounds([{"round": "x", "findings": [{"component": "a"}]}]), {})
+    # ⭐⭐ r2 YL7, THE EXACT INPUT: rounds 1 and 5, asking about round 4. The count-based version
+    # computed `2 > 4` and answered "stopped" while round 5 proves continuation.
+    case("⭐ a component in rounds 1 and 5 CONTINUED past round 4 — a count said stopped",
+         derive_outcome("s", "a", 4, {"a": {1, 5}}), "continued")
+    case("...and after round 5 it has stopped, so the boundary is read from the SET",
+         derive_outcome("s", "a", 5, {"a": {1, 5}}), "stopped")
+    case("an unknown unit is NOT DERIVABLE rather than assumed stopped",
+         derive_outcome("s", "u", 2, {"other": {5}}), None)
+    case("no evidence at all is NOT DERIVABLE — 10 of 81 subjects are readable",
+         derive_outcome("s", "u", 2, None), None)
+    case("the subject is carried, and the evidence it is given is what decides",
+         (derive_outcome("other-subject", "a", 1, {"a": {2}}),
+          derive_outcome("s", "a", 1, {"a": {2}})), ("continued", "continued"))
+
+    # ── _corpus_now: the handler, the empty path, and the partial traversal ──────────────────
+    # ⛔ THIS BLOCK WAS DELETED BY A MECHANICAL EDIT AND RESTORED. A replacement keyed on the
+    # markers either side of the derive_outcome cases took these with it; the case count fell
+    # 127 -> 119 and I wrote a sentence explaining that away. Five mutations then SURVIVED,
+    # which is how it surfaced. The lesson is not "be careful" — it is that a region replacement
+    # must assert what it is NOT supposed to remove, and the mutation probe is what noticed.
     with _tf.TemporaryDirectory() as _cd:
         _missing = Path(_cd) / "nope"
         _err = _corpus_now(_missing)
@@ -1055,36 +1199,73 @@ def _self_test() -> int:
              (_err.get("median"), bool(_err.get("error"))), (None, True))
         case("...and the message NAMES the path, so the remedy is not guessed at",
              "nope" in _err.get("error", ""), True)
+        # ⛔ WHY THE is_dir GUARD IS NOT REDUNDANT, and a surviving mutation is what showed it.
+        # For a MISSING directory the `os.walk` check also refuses. For a path that is a FILE,
+        # walk yields nothing and calls `onerror` not at all — so without `is_dir` it reads as
+        # an EMPTY CORPUS, a different remedy entirely.
+        _file = Path(_cd) / "a-file.md"
+        _file.write_text("not a directory")
+        _ferr = _corpus_now(_file)
+        case("a corpus path that is a FILE says so, rather than reading as an empty corpus",
+             ("not a directory" in _ferr.get("error", ""),
+              "no subject" in _ferr.get("error", "")), (True, False))
         (Path(_cd) / "empty").mkdir()
         _empty = _corpus_now(Path(_cd) / "empty")
-        # ⚠ r1 Claude L1: this path is reached with NO EXCEPTION AT ALL, and it returns the
-        # same shape as the handler — which is why `main()` keys on `error`, not on the handler.
+        # ⚠ r1 Claude L1: this path is reached with NO EXCEPTION AT ALL and returns the same
+        # shape as the handler, which is why `main()` keys on `error` and not on the handler.
         case("a corpus with no qualifying subject is an ERROR too, reached with no exception",
              (_empty.get("median"), _empty.get("error")),
              (None, "no subject has >=2 rounds"))
-        (Path(_cd) / "real" / "coordinator").mkdir(parents=True)
-        for _n in (1, 2):
-            (Path(_cd) / "real" / "coordinator" / f"x-r{_n}-coordinator.md").write_text("x")
-        _ok = _corpus_now(Path(_cd) / "real")
+        # ⭐⭐ r2 YH1: `Path.rglob` SILENTLY SKIPS a directory it cannot read, so a partial
+        # traversal produced a count with NO error key and `main()` printed `all triggers
+        # quiet`, rc=0. ⚠ Running as root reads it anyway, so this accepts either the refusal
+        # or the full count and asserts only that a PARTIAL count is impossible.
+        import os as _os2
+        (Path(_cd) / "part" / "codex").mkdir(parents=True)
+        (Path(_cd) / "part" / "claude").mkdir()
+        for _n in (1, 2, 3, 4):
+            (Path(_cd) / "part" / "codex" / f"a-r{_n}-codex.md").write_text("x")
+        for _n in range(1, 9):
+            (Path(_cd) / "part" / "claude" / f"b-r{_n}-claude.md").write_text("x")
+        _os2.chmod(Path(_cd) / "part" / "claude", 0o000)
+        _part = _corpus_now(Path(_cd) / "part")
+        _os2.chmod(Path(_cd) / "part" / "claude", 0o700)
+        case("an unreadable SUBTREE refuses, or reads fully — never a partial count",
+             (bool(_part.get("error")) or _part.get("subjects") == 2), True)
+        case("...and a partial count with NO error is exactly what must not happen",
+             (_part.get("subjects") == 1 and not _part.get("error")), False)
+    with _tf.TemporaryDirectory() as _cd2:
+        (Path(_cd2) / "real2" / "coordinator").mkdir(parents=True)
+        for _n in (1, 2, 3):
+            (Path(_cd2) / "real2" / "coordinator" / f"z-r{_n}-coordinator.md").write_text("x")
         case("a corpus with one two-round subject reports figures and NO error",
-             (_ok.get("median"), _ok.get("subjects"), _ok.get("error")), (2, 1, None))
-        # TWO DISTINCT corpora, so the parameter is not a constant.
+             (_corpus_now(Path(_cd2) / "real2").get("median"),
+              _corpus_now(Path(_cd2) / "real2").get("subjects"),
+              _corpus_now(Path(_cd2) / "real2").get("error")), (3, 1, None))
+        # TWO DISTINCT corpora yielding DIFFERENT figures, so the parameter is not a constant.
+        # ⚠ The first attempt pointed the second read at `real2/coordinator`, which still holds
+        # the documents and still parses — so both reads returned the same answer and the case
+        # could not tell the parameter from a constant. Two corpora with different CONTENT is
+        # what the rule actually needs.
+        (Path(_cd2) / "two" / "coordinator").mkdir(parents=True)
+        for _n in (1, 2):
+            (Path(_cd2) / "two" / "coordinator" / f"y-r{_n}-coordinator.md").write_text("x")
         case("the corpus it is GIVEN is the one it reads",
-             (_corpus_now(Path(_cd) / "real").get("subjects"),
-              _corpus_now(Path(_cd) / "empty").get("subjects")), (1, None))
+             (_corpus_now(Path(_cd2) / "real2").get("median"),
+              _corpus_now(Path(_cd2) / "two").get("median")), (3, 2))
 
     # ── read_log: an unreadable file is CANNOT RUN, not an empty log ──────────────────────────
     with _tf.TemporaryDirectory() as _pd:
         _noperm = Path(_pd) / "locked.jsonl"
         _noperm.write_text('{"a": 1}\n')
-        import os as _os
-        _os.chmod(_noperm, 0o000)
+        import os as _os3
+        _os3.chmod(_noperm, 0o000)
         _res = _try(lambda: read_log(_noperm))
-        _os.chmod(_noperm, 0o600)
+        _os3.chmod(_noperm, 0o600)
         # ⛔ r1 Codex M7: a PermissionError escaped main()'s `except ValueError` and gave a
         # traceback with rc=1 — a process failure dressed as a verdict. Running as root reads
-        # the file anyway, so the case accepts either the raise or the successful read, and
-        # asserts only that it is NOT a silently-empty log.
+        # the file anyway, so this accepts either outcome and asserts only that it is NOT a
+        # silently-empty log.
         case("an unreadable log raises ValueError (or reads) — never a silent empty log",
              _res in ("RAISED ValueError", [{"a": 1}]), True)
 

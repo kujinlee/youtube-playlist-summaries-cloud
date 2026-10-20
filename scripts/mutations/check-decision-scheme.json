@@ -1,21 +1,5 @@
 [
   {
-    "name": "the ratchet excludes TWO-round subjects, where the procedure first applies",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        if len(rounds) < 2:",
-        "        if len(rounds) <= 2:"
-      ]
-    ],
-    "expect": [
-      "a subject whose rounds BOTH postdate arming is named",
-      "a subject that had ONE round before arming and two now has crossed into scope"
-    ],
-    "_rejected_variant": "`< 2` -> `< 1` was REJECTED: a one-round subject then indexes sorted(rounds)[1] and the suite dies by IndexError with ZERO [FAIL] lines. It is a kill, but not via the case it names, and a crash names nothing \u2014 check-plan-code's contract is red VIA THE NAMED CASE.",
-    "_why_this_label": "The original labels named cases the starvation REDESIGN replaced. Excluding two-round subjects now reddens the two cases that assert a two-round subject IS in scope, which is the claim the clause carries."
-  },
-  {
     "name": "the ladder is walked from the MOST expensive route, inverting the whole bet",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -267,35 +251,7 @@
     ]
   },
   {
-    "name": "derive_outcome guesses instead of reporting NOT DERIVABLE",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if not tally or unit not in tally:\n        return None",
-        "    if not tally or unit not in tally:\n        return \"stopped\""
-      ]
-    ],
-    "expect": [
-      "an unknown unit is NOT DERIVABLE rather than assumed stopped",
-      "no tally at all is NOT DERIVABLE \u2014 47 of 57 subjects are unreadable"
-    ]
-  },
-  {
-    "name": "derive_outcome reads the wrong side of the round boundary",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    return \"continued\" if tally[unit] > after_round else \"stopped\"",
-        "    return \"continued\" if tally[unit] >= after_round else \"stopped\""
-      ]
-    ],
-    "expect": [
-      "a component not appearing after that round means it stopped",
-      "the round boundary is read, not assumed"
-    ]
-  },
-  {
-    "name": "_corpus_now swallows a missing corpus as an empty one",
+    "name": "the is_dir guard is dropped, so a corpus path that is a FILE reads as empty",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
@@ -304,9 +260,9 @@
       ]
     ],
     "expect": [
-      "...and the message NAMES the path, so the remedy is not guessed at"
+      "a corpus path that is a FILE says so, rather than reading as an empty corpus"
     ],
-    "_why_this_label": "Removing the is_dir guard does NOT reach the handler: Path.rglob on a missing directory yields nothing and raises nothing, so it falls through to the empty-corpus error. The first case (median is None AND error is truthy) still PASSES \u2014 it was too weak, checking that there IS an error rather than that it is the RIGHT one. The message case is what distinguishes 'the corpus is not there' from 'the corpus is empty', which are different remedies."
+    "_why_this_label": "The original label was the missing-directory message, and that mutation SURVIVED: the os.walk check added in the r2 fold also refuses a missing directory, so dropping is_dir changes nothing there. The clause is only load-bearing for a path that is a FILE \u2014 walk yields nothing and reports no error, so without is_dir it reads as an EMPTY CORPUS, which is a different remedy. Derived by running the mutation."
   },
   {
     "name": "_corpus_now reads the module global instead of the corpus it is GIVEN",
@@ -346,33 +302,6 @@
     ],
     "expect": [
       "an unreadable log raises ValueError (or reads) \u2014 never a silent empty log"
-    ]
-  },
-  {
-    "name": "the ratchet counts rounds held NOW instead of rounds held BEFORE arming, naming history",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        rounds_before = sum(1 for paths in rounds.values() if any(p in before for p in paths))",
-        "        rounds_before = 0"
-      ]
-    ],
-    "expect": [
-      "HISTORY IS NOT STARVED \u2014 a subject whose rounds BOTH predate arming is out of scope",
-      "a round with two documents counts as pre-existing when EITHER predates arming"
-    ]
-  },
-  {
-    "name": "membership requires EVERY path of a round to predate arming, so traversal order returns",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "if any(p in before for p in paths))",
-        "if all(p in before for p in paths))"
-      ]
-    ],
-    "expect": [
-      "a round with two documents counts as pre-existing when EITHER predates arming"
     ]
   },
   {
@@ -456,5 +385,170 @@
     "expect": [
       "an unreadable baseline is CANNOT RUN rather than a traceback"
     ]
+  },
+  {
+    "name": "the identity reverts to the FULL PATH, so a moved document makes history look new",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        name = path.rsplit(\"/\", 1)[-1]",
+        "        name = path"
+      ]
+    ],
+    "expect": [
+      "\u2b50 a subject whose documents MOVED since arming is still historical",
+      "\u2b50 the DIRECTORY is irrelevant, which is what survives a move"
+    ]
+  },
+  {
+    "name": "the ratchet compares round NUMBERS without their subject, so nothing ever matches",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        rounds_before = sum(1 for n in rounds if (subject, n) in before_rounds)",
+        "        rounds_before = sum(1 for n in rounds if n in before_rounds)"
+      ]
+    ],
+    "expect": [
+      "HISTORY IS NOT STARVED \u2014 a subject whose rounds BOTH predate arming is out of scope",
+      "\u2b50 a subject whose documents MOVED since arming is still historical"
+    ]
+  },
+  {
+    "name": "the ratchet excludes TWO-round subjects, where the procedure first applies",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if len(rounds) < 2:\n            continue\n        rounds_before",
+        "        if len(rounds) <= 2:\n            continue\n        rounds_before"
+      ]
+    ],
+    "expect": [
+      "a subject whose rounds BOTH postdate arming is named",
+      "a subject that had ONE round before arming and two now has crossed into scope"
+    ]
+  },
+  {
+    "name": "tree_at lists TODAY'S tree instead of the historical one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "[\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", sha]",
+        "[\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", \"HEAD\"]"
+      ]
+    ],
+    "expect": [
+      "\u2b50 and it lists the HISTORICAL tree \u2014 a post-arming file is NOT in it"
+    ]
+  },
+  {
+    "name": "the NUL-delimited output is split on newlines, so every path is mangled",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    paths = {part for part in out.split(\"\\0\") if part}",
+        "    paths = {part.strip() for part in out.splitlines() if part.strip()}"
+      ]
+    ],
+    "expect": [
+      "tree_at answers from a LISTING of the real repository, not from a diff",
+      "...while a long-standing file IS, so the listing is not simply empty of reviews"
+    ],
+    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names, not chosen. The first draft named the historical-tree case, which this mutation does not redden."
+  },
+  {
+    "name": "an empty tree listing is accepted as a real answer rather than git not being read",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not paths:\n        return (f\"the tree at {sha[:8]} lists no paths",
+        "    if False:\n        return (f\"the tree at {sha[:8]} lists no paths"
+      ]
+    ],
+    "expect": [
+      "an EMPTY listing is git not having been read, not a tree that held nothing",
+      "...and a non-empty one is accepted \u2014 two DISTINCT inputs, so the set is read"
+    ],
+    "_why_extracted": "In place the branch could only differ on an input a real repository never produces, so the mutation was equivalent-in-environment and survived with rc=0. Extracted as empty_listing_refusal so a case drives both inputs \u2014 the same remedy shallow_refusal needed."
+  },
+  {
+    "name": "trigger 4 reads the last five by FIRST insertion again, so the latest runs are ignored",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            per_subject.pop(r.get(\"subject\"), None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "\u2b50 the LAST five subjects is by occurrence, not by first insertion"
+    ]
+  },
+  {
+    "name": "a traversal that silently skipped an unreadable subtree is accepted as a measurement",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if walk_errors:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...and a partial count with NO error is exactly what must not happen"
+    ]
+  },
+  {
+    "name": "derive_outcome counts appearances again instead of reading positions",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    later = {n for n in seen[unit] if n > after_round}\n    return \"continued\" if later else \"stopped\"",
+        "    return \"continued\" if len(seen[unit]) > after_round else \"stopped\""
+      ]
+    ],
+    "expect": [
+      "\u2b50 a component in rounds 1 and 5 CONTINUED past round 4 \u2014 a count said stopped"
+    ]
+  },
+  {
+    "name": "derive_outcome guesses instead of reporting NOT DERIVABLE",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not seen or unit not in seen:\n        return None",
+        "    if not seen or unit not in seen:\n        return \"stopped\""
+      ]
+    ],
+    "expect": [
+      "an unknown unit is NOT DERIVABLE rather than assumed stopped",
+      "no evidence at all is NOT DERIVABLE \u2014 10 of 81 subjects are readable"
+    ]
+  },
+  {
+    "name": "component_rounds accepts a non-integer round, so a bad header poisons the positions",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(n, int):\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a round with no usable number contributes nothing rather than a None key"
+    ]
+  },
+  {
+    "name": "component_rounds collapses the round set to a count, losing position entirely",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            out.setdefault(c, set()).add(n)",
+        "            out.setdefault(c, set()).add(0)"
+      ]
+    ],
+    "expect": [
+      "component_rounds gives the SET of rounds, which is what a position question needs"
+    ],
+    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names. The draft also named the rounds-1-and-5 case, which this mutation does NOT redden: replacing the added round with 0 makes component_rounds return {'a': {0}}, and that case feeds derive_outcome a hand-written set rather than component_rounds' output, so it never sees the collapse. \u26a0 That is worth stating: derive_outcome's cases are INDEPENDENT of component_rounds by construction, which is why each needs its own entry."
   }
 ]

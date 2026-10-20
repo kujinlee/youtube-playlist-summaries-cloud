@@ -604,12 +604,22 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # asks what the tree HELD before arming, so the parameters are `armed` and `before`.
     # `derive_routes_tried`, `derive_outcome`, `group_by_unit`, `unit_key`,
     # `parse_armed_at`, `tree_at` and `shallow_refusal` joined with it.
+    # ⟳ 2026-10-20 r2 FOLD: `derive_outcome.tally` -> `seen` and `subjects_starved.before`
+    # -> `before_rounds`, both RENAMED BY THE REDESIGN rather than dropped.
+    # `derive_outcome` stopped taking scope_tally's COUNTS and now takes a round SET
+    # (r2 YL7 — a count cannot answer a question about position); `subjects_starved`
+    # stopped taking a set of PATHS and now takes (subject, round) pairs (r2 YH2 — a path
+    # is not a stable identity). `component_rounds`, `rounds_in_paths`, `round_shapes`
+    # and `empty_listing_refusal` joined with them.
     'check-decision-scheme.py': (
+        'component_rounds.rounds',
         'derive_outcome.after_round',
+        'derive_outcome.seen',
         'derive_outcome.subject',
-        'derive_outcome.tally',
         'derive_outcome.unit',
         'derive_routes_tried.prior',
+        'empty_listing_refusal.paths',
+        'empty_listing_refusal.sha',
         'group_by_unit.rows',
         'main.argv',
         'main.baseline_path',
@@ -618,11 +628,13 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'main.starved',
         'parse_armed_at.raw',
         'read_log.path',
+        'rounds_in_paths.paths',
+        'rounds_in_paths.shapes',
         'route_next.tried',
         'route_sequence_error.tried',
         'shallow_refusal.flag',
         'subjects_starved.armed',
-        'subjects_starved.before',
+        'subjects_starved.before_rounds',
         'subjects_starved.docs',
         't1_not_fed.rows',
         't1_not_fed.subjects_since_arming',
