@@ -16,7 +16,7 @@
 # mid-edit. The CI step stays the one that fails.
 #
 # ⚠ WHAT IT CANNOT DO: it fires on writes THROUGH THE TOOL. An edit by any other route — another
-# agent, an editor, a script — is unobserved, which is exactly how the #309 instance arrived.
+# agent, an editor, a script — is unobserved, which is exactly how the backlog #309 instance arrived.
 set -uo pipefail
 
 payload=$(cat)
