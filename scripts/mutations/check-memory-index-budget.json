@@ -1,0 +1,93 @@
+[
+  {
+    "name": "the limit becomes inclusive, so an index exactly at the cliff is reported as over",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_bytes > limit:\n",
+        "    if n_bytes >= limit:\n"
+      ]
+    ],
+    "expect": [
+      "exactly AT the limit is not over"
+    ]
+  },
+  {
+    "name": "the EMPTY-index arm is severed, so a destroyed index reads as comfortably under budget",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_bytes == 0:\n",
+        "    if False:\n"
+      ]
+    ],
+    "expect": [
+      "an EMPTY index exits 2 too \u2014 not a comfortable zero"
+    ]
+  },
+  {
+    "name": "the warn threshold becomes a second literal instead of deriving from the limit",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    return int(limit * WARN_FRACTION)\n",
+        "    return 900\n"
+      ]
+    ],
+    "expect": [
+      "the warn threshold tracks the limit it is given"
+    ]
+  },
+  {
+    "name": "the size is counted in CHARACTERS, which under-reports a glyph-dense index by ~1KB",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    return len(path.read_bytes())\n",
+        "    return len(path.read_text())\n"
+      ]
+    ],
+    "expect": [
+      "index_size counts BYTES, not characters (multi-byte glyphs)"
+    ]
+  },
+  {
+    "name": "CANNOT RUN collapses onto OK, so an unmeasurable index reports success",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "OK, OVER_BUDGET, CANNOT_RUN = 0, 1, 2\n",
+        "OK, OVER_BUDGET, CANNOT_RUN = 0, 1, 0\n"
+      ]
+    ],
+    "expect": [
+      "the three exit codes are the DECLARED values and are pairwise distinct"
+    ]
+  },
+  {
+    "name": "the advisory WARN band starts blocking, which is how a gate gets switched off (#56)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_bytes >= warn_at:\n        return OK, (\n",
+        "    if n_bytes >= warn_at:\n        return OVER_BUDGET, (\n"
+      ]
+    ],
+    "expect": [
+      "a warning is ADVISORY \u2014 it must not block"
+    ]
+  },
+  {
+    "name": "the declared limit drifts away from the harness warning it was read from",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "LIMIT_BYTES = int(24.4 * 1024)  # 24,985\n",
+        "LIMIT_BYTES = int(32 * 1024)\n"
+      ]
+    ],
+    "expect": [
+      "LIMIT_BYTES matches the 24.4KB the harness reported"
+    ]
+  }
+]

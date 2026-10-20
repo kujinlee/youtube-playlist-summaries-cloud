@@ -431,6 +431,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
     # it. Its `tracked` parameter was flagged here as never-varied and two cases were added
     # rather than an exemption taken — the comparison that reads it is now guarded.
+    # ⟳ 2026-10-19: the memory-index injection budget, pinned in the commit that creates it
+    # — this guard REFUSED the file until it was. DERIVED by running `analyse()` on the frozen
+    # source, not transcribed: 8 keys, `findings = []`. ⚠ It reported FOUR keys on the first
+    # draft; `main.index`, `main.limit` and `budget_verdict.label` exist because
+    # `check-main-drivable.py` (ADR-0014 D1) demanded main() take its world as parameters, and
+    # driving it that way immediately printed a CANNOT RUN naming `docs/memory/MEMORY.md`
+    # about a temp fixture it had never opened. The pin and that defect have the same cause.
+    "check-memory-index-budget.py": ('budget_verdict.label', 'budget_verdict.limit', 'budget_verdict.n_bytes', 'index_size.path', 'main.argv', 'main.index', 'main.limit', 'warn_threshold.limit'),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script

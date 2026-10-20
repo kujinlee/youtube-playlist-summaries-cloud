@@ -1549,6 +1549,13 @@ EXPECTED_MUTATIONS = {
     # callee-scope substitution no input distinguished. Every `expect` below was derived by
     # RUNNING its mutation against a green control, never written from the finding.
     "scripts/check-main-drivable.py": 183,
+    # ⟳ 2026-10-19: check-memory-index-budget joins at 7, declared sum 1545 -> 1552. It guards the
+    # one quantity that decides whether an index row ARRIVES, and the index had been over the
+    # harness's injection limit — truncated in silence — with every other memory signal green.
+    # ⚠ Its 4th entry (bytes -> characters) is the reason the suite has 18 cases and not 16: run
+    # against the delivered script it reddened NOTHING, because the live index is under budget on
+    # either count. The docstring argued bytes-vs-chars was load-bearing and no case witnessed it.
+    "scripts/check-memory-index-budget.py": 7,
     "scripts/check-memory-link.py": 8,
     # ⛔ 2026-09-02: `explainer-serve.py` and `gen-backlog-page.py` STILL HAVE NO MUTATION
     # COVERAGE, and this slice tried and failed to give them some. Manifests were written,

@@ -240,6 +240,20 @@ jobs:
       - name: check-memory-link self-test
         run: python3 scripts/check-memory-link.py --self-test
 
+      # ⛔ THE SIBLING ABOVE ASKS WHETHER THE CORPUS IS REACHABLE; THIS ASKS WHETHER THE INDEX
+      # ACTUALLY ARRIVES, which is a different question and was the one nothing asked. Measured
+      # 2026-10-19: `MEMORY.md` stood at 27,805 bytes against the harness's 24,985-byte injection
+      # limit, so ~30 of its 118 rows were silently dropped before any of it was read — while the
+      # link guard, `corpus_verdict` and `check-docs.py`'s line budget were all green. ⚠ Unlike
+      # the link, this one is NOT advisory on a runner: `docs/memory/MEMORY.md` is committed, so
+      # CI measures exactly the file a session loads. A CANNOT RUN here (rc 2) means the index is
+      # missing or empty, which is never a pass.
+      - name: Memory index injection budget
+        run: python3 scripts/check-memory-index-budget.py
+
+      - name: check-memory-index-budget self-test
+        run: python3 scripts/check-memory-index-budget.py --self-test
+
       # ⛔ THE ONLY GATE THAT READS BOTH SIDES OF THE MATCHER/HOOK SEAM, and it exists because two
       # LIVE defects lived there with 188 self-test cases and 91 mutations on the python side alone
       # (backlog #201, #202). The matcher defines the exit codes; `.claude/hooks/surface-recall.sh`

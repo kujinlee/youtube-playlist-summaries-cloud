@@ -15564,3 +15564,51 @@ cannot reach the target — 70-char caps land at 21,587 against 17,100; the row 
 
 ⚠ **`docs/dev-process.md` is at 219/220 lines and `docs/plugins.md` at 259/260** — one line of
 runway each. The next rule added to either BLOCKS.
+
+## 2026-10-19
+Your memory index had quietly stopped fitting. The file that gets loaded at the start of every
+session — the one-line-per-lesson list — had grown past the size the harness is willing to inject,
+so roughly thirty of its lines were being thrown away before I ever read them. Nothing failed and
+nothing warned: the list simply arrived short, and which lines survived was not a choice anybody
+made. It had been happening for at least a day.
+
+Two things changed. The twenty-eight rows of shipped-slice history moved into their own file, which
+brings the index back under the limit with room to spare. Those rows are not parked or lost — they
+now surface when something is actually asked about them, which is what the rest of the memory system
+already does, so they went from costing something every single turn to costing nothing until needed.
+
+And because this will happen again every time history accumulates, it is now a check rather than a
+habit. It goes red when the index is over budget and warns at ninety percent, and it names the fix
+in the message, so nobody has to remember the rule or re-derive where the rows belong.
+
+One thing worth knowing: the size limit is written down from what the harness reported, because
+nothing in the project can ask it directly. If that limit is ever lowered, this check goes quiet
+while the truncation starts again. That is recorded in the check itself alongside the only
+observation that can disprove it — the harness complaining about truncation while the check is green.
+<!--tech-->
+`docs/memory/MEMORY.md` 27,805 -> 22,333 bytes against a 24,985-byte limit (`int(24.4 * 1024)`,
+read verbatim from the harness warning). The 28 slice-history rows move to
+`docs/memory/slice-history.md` VERBATIM as corpus entry 163, with a `FIRES-WHEN:` trigger, following
+`m4-superseded-trail`. ⛔ The destination had to be INSIDE `docs/memory/`: the corpus is
+`glob("*.md")` minus `MEMORY.md`, so a file outside it is invisible to recall and a file inside it
+without frontmatter is backlog #309 again.
+
+Ships `scripts/check-memory-index-budget.py` (19 cases, 7 mutations, rc 0/1/2 with CANNOT RUN on a
+missing or empty index) and its CI wiring. Its sibling `check-memory-link.py` asks whether the
+corpus is REACHABLE; this asks whether the index ARRIVES, and that second question had no owner —
+the link guard, `corpus_verdict` and `check-docs.py`'s line budget were all green throughout.
+
+⚠ Two findings from building it, both from the mutation harness rather than from reading. A
+`CANNOT_RUN = 0` mutation SURVIVED because the cases compared results against the very symbol under
+mutation — the exit codes are now pinned as literals. And a `read_bytes` -> `read_text` mutation
+reddened nothing, because the live index is under budget on either count; the docstring argued
+bytes-vs-characters was load-bearing and no case witnessed it. Final: 7 killed, 7 attributed, 0
+survivors.
+
+⚠ NOT enforced, deliberately: the harness also blames row length (~200 chars). Measured, 32 of 118
+rows (27%) already exceed it and the longest is 620 — a gate red from birth on a quarter of its
+subject gets switched off (#56).
+
+Also repairs two citations of `check-claim-propagation.py` to `refs/pull/376/head:<path>`. The
+proposed `<sha>:path` was NOT durable: `d06da80c` is unreachable from `master` and lives only on the
+open `marketplace-inventory` branch, so a bare path and a branch sha die together with it.
