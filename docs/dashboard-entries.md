@@ -15664,3 +15664,106 @@ reported this index as fitting" — false, 26,930 > 24,985.
 
 Corpus, re-measured through `parse_trigger`: 163 files, 161 descriptions, **159 parsed triggers, 4
 without** — backlog #309's original 4 was right; my "2" tested the wrong predicate.
+
+## 2026-10-19
+The second reviewer measured something I had written down as impossible, and it changed what the
+check measures.
+
+I had said the limit was in bytes, and recorded in the check itself that there was no way to find
+out for certain — nothing in the project can ask the system that does the truncating. That was wrong,
+and the way it was wrong is the interesting part. A reviewer reading this project IS one of the
+things being truncated. It looked at where its own copy of the index had been cut off, and the cut
+landed 27 characters under the stated limit and 786 bytes over it. The limit is counted in
+characters. The system's own warning says the same thing once you check the arithmetic: the "26.3KB"
+it reported is the character count divided by 1024, not the byte count.
+
+Counting the wrong unit was harmless in practice — it made the check fire slightly early rather than
+slightly late, so nothing could ever have slipped past it. What was not harmless is that the tests
+and the mutation list had been written to *defend* the wrong unit. One of them would have failed if
+someone had later corrected it. A test that protects a mistake is worse than a missing test, because
+it argues back.
+
+Also corrected: the number of rows that were actually being lost. I had written "roughly 30"; it was
+8. The reviewer counted them from its own context rather than estimating. "Roughly 30" came from
+dividing the overflow by an average row length, which is wrong here because the rows at the end of
+the file were the longest ones. That figure had already been copied into four places, two of them
+inside the memory notes themselves, where it would have been read back and believed.
+
+And the check is now listed in the project's own register of what is enforced. I wrote the script and
+never added the row, which is the one step that makes it findable by anyone who did not watch it
+being built.
+<!--tech-->
+r1 CLAUDE, 15 findings, `docs/reviews/claude/memory-index-budget-r1-claude.md`. **NOT CONVERGED.** Its
+B1/B2 and its worst mutation were already fixed (`bc165e93`, `9e3dbe62`) and it recorded that as
+corroboration — the Codex half reached the `INDEX`-retarget finding independently from the other
+direction.
+
+**H1 — the unit.** `LIMIT_BYTES` → `LIMIT_CHARS`, `index_size` → `index_chars` reading `read_text`.
+Two independent measurements, both reproducible from any session that gets the warning: the
+harness's reported `26.3KB` = 26,930/1024 (bytes would render 27.2KB), and the observed cut at
+char 24,958 / byte 25,771. Since UTF-8 bytes ≥ chars, the old behaviour could only ever fire EARLY —
+no false green was possible — but case `:291` and manifest entry 4 had pinned BYTES as the invariant,
+so the entry would have killed the correct behaviour. Both inverted.
+⛔ The docstring's *"nothing in the repo can interrogate the harness"* is deleted as false; the UNIT is
+now measured and only the ALGORITHM (strict prefix vs row-wise) remains NOT VERIFIED.
+
+**H2 — "~30 of 118 rows"** wrong on both halves: the overflowing index had **145** rows (118 was
+counted after the fix) and **8** were dropped. Corrected at all four sites plus the pointer row.
+**L2**: 6,232 was the whole section in bytes; the rows are 4,985 chars. **L1**: the row-length
+exclusion was itself stated in bytes against a char rule — same error, so a class.
+**M5**: pointer row added to `docs/dev-process.md`, whose own rule is "write the script and add a
+pointer row". **M1**: `PermissionError` is caught at the tip — that clause was stale; `is_file`→`exists`
+is now an EQUIVALENT mutant (a directory routes through the same `OSError` arm to rc 2), recorded as
+such rather than contorted into a kill.
+
+⚠ The renames ORPHANED 6 of 12 mutation anchors — `a-mutation-anchor-is-unbound-by-any-edit-nearby`,
+caught by checking bind counts mechanically rather than by eye. And my first L3 mutation emitted
+INVALID PYTHON (`if True:` … `except:`), so the suite went red with no `[FAIL]` line and the kill was
+unattributable; the manifest is now checked with `ast.parse` over every mutant before the harness
+runs. Final: **14 mutations, 14 killed, 14 attributed, 0 survivors**, green control and re-control.
+Suite 42 cases. `EXPECTED_MUTATIONS` 12 → 14, companions 1557 → 1559.
+
+## 2026-10-19 [needs-you]
+Addendum to the entry above. The reviewer came back twice more, and the second pass found the
+mutation I had specifically asked it to look for — plus one decision that is yours.
+
+The check's own test for "how much is being lost" could not tell the difference between the amount
+lost and the total size of the file. With the numbers the test happened to use, the smaller number
+read as the tail end of the bigger one, so a version that reported the wrong figure passed anyway.
+Three separate problems shared that one shape. Fixed with different numbers and a test that now also
+checks the wrong answer is absent, not just that the right one is present.
+
+**Waiting on you:** the check catches the case that actually matters — an index that has grown on
+disk but not been committed, which is the state a live session reads — but nothing calls it at that
+moment. It only runs in CI, which sees the committed version. The reviewer proved this with two
+copies of the repo at the same commit: one said over budget, the other said fine.
+
+The fix is a small advisory script that runs the check whenever the index is edited. It is written,
+tested, and deliberately **not switched on**, because switching it on edits session configuration and
+the suggestion came from a review agent rather than from you. It warns and never blocks. Say the word
+and it takes one line; leave it and CI remains the only caller, which means a session can still be
+reading a truncated index with nothing to say so.
+<!--tech-->
+r1 CLAUDE second pass. **N1:** `budget_verdict`'s overage → the bare total (`{n_chars - limit:,}` →
+`{n_chars:,}`) SURVIVED 42/42 in all three versions. Cause: at `L=1000` the overage `1` is a decimal
+SUFFIX of the total `1,001`, so `"1 characters…" in msg` is vacuous — measured vacuous at
+L=1000/2000/500, reddens at L=1234. Repaired with the adjacent negative (overage present AND total
+absent). Two siblings of the same message-identity class also fixed: the merged `is None`/`== 0` arms,
+and `except OSError: return 0` making an unreadable index report EMPTY at the same rc.
+
+**N2:** two worktrees, same HEAD — uncommitted working-tree growth → **rc=1**, fresh checkout of that
+same HEAD → **rc=0**. So the guard is NOT structurally blind to backlog #309's class; it reads the
+path the harness symlink resolves to. It had no local caller. `ci.yml`'s claim that *"MEMORY.md is
+committed, so CI measures exactly the file a session loads"* is deleted as false.
+⛔ `.claude/hooks/check-memory-index-budget.sh` ships UNREGISTERED pending the owner — advisory,
+always rc 0, path-filtered. Verified in a throwaway tree across four states: silent on a small index,
+warns OVER BUDGET, warns in the 90% band, silent on an unrelated path. ⚠ Even registered it sees only
+writes made THROUGH THE TOOL; the #309 instance arrived by another route.
+
+Also: it reported M5 and H2/M1 as still live from `grep -c` without reading the matches, which were
+my retractions — `measure-the-population-the-code-actually-sees`, self-corrected. And it grew the live
+`MEMORY.md` in the main working tree to build the N2 experiment, restored it, and redid it in
+worktrees; I verified the index is intact (22,078 chars, both corrections present, no padding).
+
+Final: 43 cases, **16 mutations, 16 killed, 16 attributed, 0 survivors**. `EXPECTED_MUTATIONS` 14 → 16,
+companions 1559 → 1561. Verdict stands at **NOT CONVERGED** — r2 is owed.

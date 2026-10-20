@@ -235,7 +235,11 @@ not the file**, dropped the timestamps, and then — on being corrected — re-d
 and wrote *that* into the durable spec. The index is the always-loaded surface; the file is the
 matched one; the stale copy won.
 
-**And the index is over its read limit**, which is how the question arose: 27.8 KB against a 24.4 KB
+**And the index is over its read limit**, which is how the question arose: 26.3 KB against a 24.4 KB
+⟳ **CORRECTED 2026-10-19 (r1 CLAUDE H1): the unit is CHARACTERS, not bytes.** This said 27.8 KB,
+which is the BYTE figure; the harness's own warning reports 26.3 KB = 26,930 chars / 1024. A byte
+reading cannot be reconciled with it (27,805/1024 = 27.2). Enforced by
+`scripts/check-memory-index-budget.py`. The rest of this line stands:
 load limit, so the last **2.8 KB is silently dropped on every load** — 30 pointer rows invisible.
 
 ⚠ **Nothing is lost, and the reason matters for the remedy.** Measured: **0** entries are

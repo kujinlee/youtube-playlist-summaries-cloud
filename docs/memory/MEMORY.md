@@ -136,9 +136,11 @@
 ## Slice history
 
 > ⛔ **NEW SLICE ROWS GO IN THAT FILE, NOT IN THIS INDEX.** This index is injected WHOLE on
-> every turn and the harness truncates it in silence once it passes 24,985 bytes — measured
-> 2026-10-19, it stood at 27,805 and ~30 rows had stopped arriving, with every other memory
-> signal green. `scripts/check-memory-index-budget.py` now fails on that, so this is enforced
+> every turn and the harness truncates it in silence once it passes 24,985 CHARACTERS — measured
+> 2026-10-19, it stood at 26,930 and **8 rows** had stopped arriving, with every other memory
+> signal green. ⟳ Both the unit and the count are corrections: this said "bytes" and "~30 rows",
+> and the real figures were established by reading the cut point out of a consuming agent's own
+> injected context. `scripts/check-memory-index-budget.py` now fails on that, so this is enforced
 > rather than remembered; a convention only catches what someone happens to read.
 
-- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19: it was 6,232 of the 27,805 bytes that overflowed the 24,985-byte limit. Reached by TRIGGER now, not always-loaded — ask for a PR number or SHA and it fires
+- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19. ⛔ Reached by TRIGGER now, not always-loaded — verified by firing: ask for a PR number or SHA and it returns. The index was 26,930 of a 24,985-CHARACTER budget; the rows themselves were 4,985 chars (the whole section 5,990). ⚠ An earlier version said "6,232 of 27,805 bytes" — wrong unit, and it charged the rows with the whole section's cost

@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-> Split out of [[MEMORY.md]] on 2026-10-19 because the index had grown to **27,805 bytes against the
-> harness's 24,985-byte limit** and was being silently truncated mid-session — roughly 30 index rows
-> were dropped before any of it was read, and *which* rows survived was not a choice anyone made.
+> Split out of [[MEMORY.md]] on 2026-10-19 because the index had grown to **26,930 characters
+> against the harness's 24,985-CHARACTER limit** and was being silently truncated mid-session —
+> **8 index rows** were dropped before any of it was read, and *which* rows survived was not a
+> choice anyone made. ⟳ This first said "27,805 bytes" and "roughly 30 rows"; the unit was wrong and
+> the count was a mean-row-size estimate dressed as a measurement.
 > Rows below are **VERBATIM**; they carry PR numbers and SHAs that cannot be re-derived.
 >
 > ⛔ **This is history, not current state.** Following the pattern of [[m4-superseded-trail]], these

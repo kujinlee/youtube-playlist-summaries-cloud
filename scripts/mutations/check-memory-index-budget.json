@@ -4,8 +4,8 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "    if n_bytes > limit:\n",
-        "    if n_bytes >= limit:\n"
+        "    if n_chars > limit:\n",
+        "    if n_chars >= limit:\n"
       ]
     ],
     "expect": [
@@ -17,7 +17,7 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "    if n_bytes == 0:\n",
+        "    if n_chars == 0:\n",
         "    if False:\n"
       ]
     ],
@@ -39,16 +39,16 @@
     ]
   },
   {
-    "name": "the size is counted in CHARACTERS, which under-reports a glyph-dense index by ~1KB",
+    "name": "the size is counted in BYTES, the WRONG unit \u2014 it is the harness's own character limit (r1 CLAUDE H1); this entry was INVERTED, it used to defend bytes",
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "    return len(path.read_bytes())\n",
-        "    return len(path.read_text())\n"
+        "        return len(path.read_text(encoding=\"utf-8\"))\n",
+        "        return len(path.read_bytes())\n"
       ]
     ],
     "expect": [
-      "index_size counts BYTES, not characters (multi-byte glyphs)"
+      "index_chars counts CHARACTERS, not bytes (multi-byte glyphs)"
     ]
   },
   {
@@ -69,8 +69,8 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "    if n_bytes >= warn_at:\n        return OK, (\n",
-        "    if n_bytes >= warn_at:\n        return OVER_BUDGET, (\n"
+        "    if n_chars >= warn_at:\n        return OK, (\n",
+        "    if n_chars >= warn_at:\n        return OVER_BUDGET, (\n"
       ]
     ],
     "expect": [
@@ -82,12 +82,12 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "LIMIT_BYTES = int(24.4 * 1024)  # 24,985\n",
-        "LIMIT_BYTES = int(32 * 1024)\n"
+        "LIMIT_CHARS = int(24.4 * 1024)  # 24,985\n",
+        "LIMIT_CHARS = int(32 * 1024)\n"
       ]
     ],
     "expect": [
-      "LIMIT_BYTES matches the 24.4KB the harness reported"
+      "LIMIT_CHARS matches the 24.4KB the harness reported"
     ]
   },
   {
@@ -108,8 +108,8 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "    rc, msg = budget_verdict(index_size(index), limit, shown)\n",
-        "    rc, msg = budget_verdict((index_size(index) or 1) - 1, limit, shown)\n"
+        "    rc, msg = budget_verdict(index_chars(index), limit, shown)\n",
+        "    rc, msg = budget_verdict((index_chars(index) or 1) - 1, limit, shown)\n"
       ]
     ],
     "expect": [
@@ -126,7 +126,7 @@
       ]
     ],
     "expect": [
-      "an OK verdict NAMES the file too, repo-relative \u2014 not just the CANNOT RUN arms"
+      "an OK verdict names the file REPO-RELATIVE, with no absolute prefix"
     ]
   },
   {
@@ -134,8 +134,8 @@
     "file": "scripts/check-memory-index-budget.py",
     "edits": [
       [
-        "    try:\n        return len(path.read_bytes())\n    except OSError:\n        return None\n",
-        "    return len(path.read_bytes())\n"
+        "    try:\n        return len(path.read_text(encoding=\"utf-8\"))\n    except (OSError, UnicodeDecodeError):\n        return None\n",
+        "    return len(path.read_text(encoding=\"utf-8\"))\n"
       ]
     ],
     "expect": [
@@ -153,6 +153,58 @@
     ],
     "expect": [
       "a positional operand counts as unknown, not as an accepted operand"
+    ]
+  },
+  {
+    "name": "the two CANNOT RUN arms are merged, so EMPTY and ABSENT become indistinguishable (r1 CLAUDE H3 mutation G)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    if n_chars is None:\n",
+        "    if n_chars is None or n_chars == 0:\n"
+      ]
+    ],
+    "expect": [
+      "an EMPTY index says EMPTY and an ABSENT one does not"
+    ]
+  },
+  {
+    "name": "relative_to is dropped, so the verdict names an ABSOLUTE path (r1 CLAUDE L3)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    try:\n        shown = str(index.relative_to(ROOT))\n    except ValueError:\n        shown = str(index)  # a fixture outside the repo, as the suite's driving cases pass\n",
+        "    shown = str(index)\n"
+      ]
+    ],
+    "expect": [
+      "an OK verdict names the file REPO-RELATIVE, with no absolute prefix"
+    ]
+  },
+  {
+    "name": "the OVER message prints the TOTAL instead of the overage, which a suffix-vacuous case could not see (r1 CLAUDE N1)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "            f\"{n_chars - limit:,} characters of its tail never arrive. Nothing chose what those are. \"\n",
+        "            f\"{n_chars:,} characters of its tail never arrive. Nothing chose what those are. \"\n"
+      ]
+    ],
+    "expect": [
+      "the OVER message states the OVERAGE (7) and NOT the total (1,241)"
+    ]
+  },
+  {
+    "name": "an unreadable index reports EMPTY instead of unreadable \u2014 same rc, wrong remedy (r1 CLAUDE N1, same class)",
+    "file": "scripts/check-memory-index-budget.py",
+    "edits": [
+      [
+        "    except (OSError, UnicodeDecodeError):\n        return None\n",
+        "    except (OSError, UnicodeDecodeError):\n        return 0\n"
+      ]
+    ],
+    "expect": [
+      "an UNREADABLE index says it could not be read, and does NOT claim to be EMPTY"
     ]
   }
 ]

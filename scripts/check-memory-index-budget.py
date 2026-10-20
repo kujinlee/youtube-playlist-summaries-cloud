@@ -4,24 +4,26 @@ TRUNCATES IT IN SILENCE.
 
 WHY THIS EXISTS — measured 2026-10-19, and no gate in this repo could see it.
 -----------------------------------------------------------------------------
-The index reached **27,805 bytes against the harness's 24,985-byte limit**, so **2,820 bytes of
-its tail did not arrive**. Every signal available in the repo was green:
-`check-memory-link.py` verified the symlink, `recall-llm.py`'s `corpus_verdict` counted a healthy
-corpus, `check-docs.py` enforced its line budget. None of them measures the one quantity that
-decides whether a row ARRIVES — the byte size of the always-loaded file.
+The index reached **26,930 characters against the harness's 24,985-character limit**, and **8 rows
+of its tail did not arrive** — counted out of a consuming agent's own context, not modelled. Every
+signal available in the repo was green: `check-memory-link.py` verified the symlink,
+`recall-llm.py`'s `corpus_verdict` counted a healthy corpus, `check-docs.py` enforced its line
+budget. None of them measures the one quantity that decides whether a row ARRIVES — the length of
+the always-loaded file.
 
-⟳ r1 CODEX #4 CORRECTED THE ROW FIGURE, AND THE ERROR WAS A POPULATION ERROR OF THE USUAL KIND.
-This said "roughly 30 of its 118 rows". **146** lines began `- ` in the index that overflowed; my
-118 was counted AFTER the rows had already been moved out, then written here as though it described
-the file that failed. And the dropped amount is **2,820 bytes = 24 newlines of tail, beginning
-MID-ROW** — so "30 rows" was never established by anything.
+⟳ THE ROW FIGURE WAS WRONG ON BOTH HALVES AND TOOK TWO ROUNDS TO SETTLE (r1 CODEX #4, then
+r1 CLAUDE H2). It read "roughly 30 of its 118 rows". The denominator was counted AFTER the rows had
+been moved out and then written up as though it described the file that failed — the overflowing
+index had **145** rows. The numerator was `(27,805 − 24,985) / mean-row-size`, an estimate dressed
+as a count, and it is wrong because the overflow falls in the slice-history TAIL whose rows are the
+longest in the file. **Measured, 8 rows.** The `a-retrospective-number-needs-provenance` tell was
+present throughout: a round figure supporting a sound argument.
 
-⛔ AND THE TRUNCATION ALGORITHM IS **NOT VERIFIED**, STATED PLAINLY BECAUSE IT BOUNDS THIS GUARD.
-Nothing here can interrogate the injection harness. A quoted warning establishes that truncation
-was REPORTED; it does not establish that the cut is a byte prefix rather than per-row, nor where it
-lands. The byte total is the quantity the warning itself reports, which is why it is the quantity
-enforced — but if the harness drops whole rows, or budgets after some transformation, this guard
-measures a correlate rather than the cause.
+⛔ THE TRUNCATION UNIT IS NOW MEASURED, AND THIS DOCSTRING USED TO SAY IT COULD NOT BE — see
+`index_chars`. What is STILL unverified is narrower: whether the cut is a strict prefix at that
+character count, or whether whole rows are dropped, or whether framing is counted too. The observed
+cut sat 27 characters under the declared limit, i.e. one row short of it, which is consistent with a
+prefix cut and with a row-wise cut alike. So the UNIT is established and the ALGORITHM is not.
 
 ⛔ THE FAILURE MODE IS THE ONE THIS REPO KEEPS PAYING FOR: a producer and its consumer disagreeing
 with nothing in between to notice. The index's own header says *"all rows arrive every session,
@@ -44,19 +46,24 @@ loaded on every turn. Rows moved there still arrive — they just stop being a t
 ⛔ WHAT IT DELIBERATELY DOES NOT CHECK, and the measurement that settles it
 --------------------------------------------------------------------------
 The harness's warning blames row LENGTH (*"keep index entries to one line under ~200 chars"*). That
-is not a rule here: measured 2026-10-19 over the index that ACTUALLY overflowed (`dff6a3f0^`), of
-**146** `- ` lines, **35 exceed 200 characters and 38 exceed 200 bytes**, the longest being **602
-characters / 620 bytes**. A gate red from birth on a quarter of its subject gets switched off —
-#56's measured verdict — and the rows are long because they carry evidence. ⚠ Byte total is the
-quantity the harness's own warning REPORTS, which is why it is enforced; see the NOT VERIFIED note
-above for what that does and does not license.
+is not a rule here: measured over the index that ACTUALLY overflowed (`dff6a3f0^`), **35 of its 145
+rows exceed 200 characters**, the longest being **602**. A gate red from birth on a quarter of its
+subject gets switched off — #56's measured verdict — and the rows are long because they carry
+evidence. ⟳ r1 CLAUDE L1: this exclusion was itself stated in BYTES (38 over 200) against a rule the
+harness states in CHARACTERS — the same unit error as H1, which makes it a CLASS and not an
+instance. Both are now characters.
 
-⚠ THE FAILURE DIRECTION, STATED RATHER THAN HIDDEN. `LIMIT_BYTES` is a DECLARED constant read from
-the harness's own warning text, not derived — nothing in the repo can interrogate the harness. So
-if the harness ever LOWERS its limit, this guard goes quiet while truncation silently resumes: it
-fails toward good news, which is the direction that gets believed. Two mitigations, both partial:
-the WARN band fires at 90% so there is a signal before the cliff, and the constant carries the
-verbatim warning it came from so a reader can compare it against what the harness says today.
+⚠ THE FAILURE DIRECTION, STATED RATHER THAN HIDDEN. `LIMIT_CHARS` is a DECLARED constant read from
+the harness's own warning text. So if the harness ever LOWERS its limit, this guard goes quiet while
+truncation silently resumes: it fails toward good news, which is the direction that gets believed.
+Two mitigations, both partial: the WARN band fires at 90% so there is a signal before the cliff, and
+the constant carries the verbatim warning it came from.
+⛔ AND THE SENTENCE THAT USED TO SIT HERE — *"nothing in the repo can interrogate the harness"* — IS
+FALSE, which is the most useful thing this guard has learned. A session that RECEIVES the truncated
+index is itself an observation of the producer: the cut point in its own context measures both the
+unit and the limit directly. I had treated the harness as external to the system rather than as
+something a reader of this repo IS. The check is reproducible by anyone who gets the warning, and
+it is the refutation route to prefer over the other two below.
 ⟳ r1 CODEX #5: the constant can be wrong in MORE ways than a lowered limit, and an earlier version
 of this note called one observation "the ONLY" refutation, which was itself an overclaim. It can
 also be wrong through the KB unit (1000 vs 1024), a harness or version change, or budgeting applied
@@ -65,7 +72,7 @@ quietly. ⛔ Refutations, none of them unique: the harness warning about truncat
 green; a controlled boundary experiment; or a published producer specification.
 
     python3 scripts/check-memory-index-budget.py
-    python3 scripts/check-memory-index-budget.py --self-test  # 40 cases
+    python3 scripts/check-memory-index-budget.py --self-test  # 43 cases
 """
 from __future__ import annotations
 
@@ -95,23 +102,23 @@ INDEX_LABEL = str(INDEX.relative_to(ROOT))
 #   "WARNING: MEMORY.md is 26.3KB (limit: 24.4KB) — index entries are too long. Only part of it
 #    was loaded. Keep index entries to one line under ~200 chars; move detail into topic files."
 #
-# 24.4KB is reported to one decimal place, so this is the limit to within ~51 bytes. The WARN band
+# 24.4KB is reported to one decimal place, so this is the limit to within ~51 CHARACTERS. The band
 # below is what covers that imprecision: a file inside 90% of the limit cannot be near the cliff
 # whichever way the rounding went.
-LIMIT_BYTES = int(24.4 * 1024)  # 24,985
+LIMIT_CHARS = int(24.4 * 1024)  # 24,985
 WARN_FRACTION = 0.90
 
 
 def warn_threshold(limit: int) -> int:
-    """PURE. -> the byte count at which the index is close enough to the cliff to say so.
+    """PURE. -> the character count at which the index is close enough to the cliff to say so.
 
     DERIVED from the limit on purpose. A second literal here would be a constant that agrees with
-    `LIMIT_BYTES` only until someone edits one of them — this repo's most-measured defect class.
+    `LIMIT_CHARS` only until someone edits one of them — this repo's most-measured defect class.
     """
     return int(limit * WARN_FRACTION)
 
 
-def budget_verdict(n_bytes: int | None, limit: int, label: str = INDEX_LABEL) -> tuple[int, str]:
+def budget_verdict(n_chars: int | None, limit: int, label: str = INDEX_LABEL) -> tuple[int, str]:
     """PURE. -> (rc, message). Four outcomes, because they need four different responses.
 
     ⛔ `label` NAMES THE FILE THAT WAS ACTUALLY MEASURED, and it is a parameter because the first
@@ -119,53 +126,63 @@ def budget_verdict(n_bytes: int | None, limit: int, label: str = INDEX_LABEL) ->
     MEMORY.md does not exist" about a file that was never opened — a CANNOT RUN that sends the
     reader to the wrong path is worse than one that says nothing.
 
-    `n_bytes is None` means the file could not be read and `0` means it is empty. Both are
+    `n_chars is None` means the file could not be read and `0` means it is empty. Both are
     CANNOT RUN rather than a comfortable "well under budget": a zero-byte index would sail
     through a naive size check while meaning the corpus index had been destroyed. "Cannot
     measure" and "measured, and it is fine" must never share an exit code.
     """
-    if n_bytes is None:
+    if n_chars is None:
         return CANNOT_RUN, (
             f"CANNOT RUN — {label} could not be READ — it is absent, or present and unreadable "
             "— so the always-loaded budget was NOT measured. Treat this as NOT RUN, never as a "
             "pass.")
-    if n_bytes == 0:
+    if n_chars == 0:
         return CANNOT_RUN, (
             f"CANNOT RUN — {label} is EMPTY. That is not a small index, it is a "
             "missing one; the budget was NOT measured. Treat this as NOT RUN, never as a pass.")
 
     warn_at = warn_threshold(limit)
-    if n_bytes > limit:
+    if n_chars > limit:
         return OVER_BUDGET, (
-            f"OVER BUDGET — {label} is {n_bytes:,} bytes against the harness's "
-            f"{limit:,}-byte limit, so it is being TRUNCATED IN SILENCE and roughly the last "
-            f"{n_bytes - limit:,} bytes of rows never arrive. Nothing chose which rows those are. "
+            f"OVER BUDGET — {label} is {n_chars:,} CHARACTERS against the harness's "
+            f"{limit:,}-character limit, so it is being TRUNCATED IN SILENCE and the last "
+            f"{n_chars - limit:,} characters of its tail never arrive. Nothing chose what those are. "
             f"REMEDY: move history-shaped rows into {OVERFLOW_TARGET}, which is a TRIGGERED corpus "
             "entry — they still arrive, on demand, instead of being loaded every turn.")
-    if n_bytes >= warn_at:
+    if n_chars >= warn_at:
         return OK, (
-            f"WARNING: {label} is {n_bytes:,} bytes, within "
-            f"{limit - n_bytes:,} bytes of the harness's {limit:,}-byte limit "
-            f"({100 * n_bytes // limit}% of budget). Nothing is being dropped YET. Move "
+            f"WARNING: {label} is {n_chars:,} characters, within "
+            f"{limit - n_chars:,} characters of the harness's {limit:,}-character limit "
+            f"({100 * n_chars // limit}% of budget). Nothing is being dropped YET. Move "
             f"history-shaped rows into {OVERFLOW_TARGET} before it is. (Advisory.)")
     return OK, (
-        f"ok — {label} is {n_bytes:,} bytes, {limit - n_bytes:,} under the harness's "
-        f"{limit:,}-byte limit, so nothing is being dropped. ⚠ 'Every row arrives' would "
+        f"ok — {label} is {n_chars:,} characters, {limit - n_chars:,} under the harness's "
+        f"{limit:,}-character limit, so nothing is being dropped. ⚠ 'Every row arrives' would "
         f"overclaim: the limit is DECLARED to one decimal place (r1 CODEX #5), so treat this as "
         f"within the budget as measured, not as a proof of delivery.")
 
 
-def index_size(path: pathlib.Path) -> int | None:
-    """-> the file's size in BYTES, or None when it cannot be read.
+def index_chars(path: pathlib.Path) -> int | None:
+    """-> the file's length in CHARACTERS, or None when it cannot be read.
 
-    Bytes, not characters: the index is dense with multi-byte glyphs (⭐ ⛔ ⟳) and the two counts
-    differ by nearly a kilobyte at this size — measured 27,805 bytes against 26,930 characters.
-    ⟳ r1 CODEX #4 CORRECTED A FALSE CLAIM HERE. This said "a character count would have reported
-    this index as fitting when it did not", and that is arithmetically wrong: 26,930 still exceeds
-    24,985, so a character count would ALSO have caught this instance. The real argument is
-    narrower and is the one that holds — the two counts diverge by ~3%, so a character count
-    mis-measures the margin and would miss an index between 24,985 characters and 24,985 bytes.
-    It is the wrong unit, not a unit that happened to fail here.
+    ⛔ CHARACTERS, AND THIS WAS BYTES UNTIL r1 CLAUDE H1 MEASURED THE PRODUCER I HAD CALLED
+    UNREACHABLE. The docstring above used to argue for bytes, and the argument was false twice over.
+    Two independent measurements, both reproducible from any session that receives the warning:
+
+      1. The harness's own reported figure. It printed `MEMORY.md is 26.3KB` about a file that is
+         26,930 characters and 27,805 bytes. 26,930/1024 = 26.30 -> "26.3KB". 27,805/1024 = 27.15
+         -> would have printed "27.2KB". The number it chose is the CHARACTER count.
+      2. The truncation point, read out of a consuming agent's own injected context. The cut fell
+         at character 24,958 (27 UNDER the declared 24,985) and byte 25,771 (786 OVER it). A byte
+         limit of 24,985 cannot produce a cut at byte 25,771; a character limit produces exactly
+         this one, to within a row.
+
+    ⚠ THE OLD BEHAVIOUR WAS WRONG IN THE SAFE DIRECTION, WHICH IS WHY NOTHING CAUGHT IT. In UTF-8
+    `len(bytes) >= len(chars)`, so counting bytes against a character limit fires EARLY: it could
+    never produce a false green, only a false red, and the live margin it misstated was ~3%. ⛔ But
+    the SUITE AND THE MANIFEST had pinned bytes as the invariant to protect — a manifest entry whose
+    job is to forbid the right answer, which is the `a-guard-can-mandate-the-duplication-it-audits`
+    shape and cannot be reworded out of.
 
     ⟳ r1 CODEX #6: `read_bytes()` raised straight through, so an unreadable index produced a
     TRACEBACK instead of a named CANNOT RUN at rc 2 — the exit contract this guard advertises.
@@ -175,8 +192,8 @@ def index_size(path: pathlib.Path) -> int | None:
     if not path.is_file():
         return None
     try:
-        return len(path.read_bytes())
-    except OSError:
+        return len(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -193,7 +210,7 @@ def unknown_args(argv: list[str]) -> list[str]:
     return [a for a in argv if a != "--self-test"]
 
 
-def main(argv: list[str], index: pathlib.Path = INDEX, limit: int = LIMIT_BYTES) -> int:
+def main(argv: list[str], index: pathlib.Path = INDEX, limit: int = LIMIT_CHARS) -> int:
     """ADR-0014 D1: the world arrives as defaulted parameters BEYOND `argv`, so cases can drive
     this over a constructed index instead of only over the repo's real one.
 
@@ -217,7 +234,7 @@ def main(argv: list[str], index: pathlib.Path = INDEX, limit: int = LIMIT_BYTES)
         shown = str(index.relative_to(ROOT))
     except ValueError:
         shown = str(index)  # a fixture outside the repo, as the suite's driving cases pass
-    rc, msg = budget_verdict(index_size(index), limit, shown)
+    rc, msg = budget_verdict(index_chars(index), limit, shown)
     print(msg)
     return rc
 
@@ -240,8 +257,17 @@ def _self_test() -> int:
     check("well under budget is OK", budget_verdict(10, L)[0], OK)
     check("an OK message states the headroom", "990 under" in budget_verdict(10, L)[1], True)
     check("over budget is rc 1", budget_verdict(L + 1, L)[0], OVER_BUDGET)
-    check("the OVER message states the overage, not just the size",
-          "1 bytes of rows never arrive" in budget_verdict(L + 1, L)[1], True)
+    # ⟳ r1 CLAUDE N1. This read `"1 characters…" in budget_verdict(L + 1, L)[1]` with L = 1000, so
+    # the overage was 1 and the total "1,001" — and `"1 characters…"` is a DECIMAL SUFFIX of
+    # `"1,001 characters…"`. A mutation printing the TOTAL instead of the difference therefore
+    # survived all 42 cases. The fixture was not badly chosen; the two NUMBERS stood in an
+    # arithmetic relationship that a substring assertion cannot see through.
+    # ⛔ The repair is the ADJACENT NEGATIVE — assert the total is ABSENT — at a limit where the
+    # two do not share a suffix. L=1000/2000/500 are all vacuous here; 1234 is not.
+    over_msg = budget_verdict(1241, 1234)[1]
+    check("the OVER message states the OVERAGE (7) and NOT the total (1,241)",
+          ("7 characters of its tail" in over_msg, "1,241 characters of its tail" in over_msg),
+          (True, False))
     check("the OVER message names the remedy file",
           OVERFLOW_TARGET in budget_verdict(L + 1, L)[1], True)
 
@@ -265,22 +291,32 @@ def _self_test() -> int:
           (OK, OVER_BUDGET, CANNOT_RUN), (0, 1, 2))
     check("both CANNOT RUN messages say to treat it as NOT RUN",
           all("NOT RUN, never as a pass" in budget_verdict(v, L)[1] for v in (None, 0)), True)
+    # ⟳ r1 CLAUDE H3 mutation G: merging the two arms (`is None or == 0`) left 40/40 GREEN, because
+    # every case here read only the rc and the shared tail. The two states need DIFFERENT remedies —
+    # a missing file is a path problem, an empty one is a destroyed index — so the messages must be
+    # distinguishable, not merely both rc 2.
+    check("an EMPTY index says EMPTY and an ABSENT one does not",
+          ("EMPTY" in budget_verdict(0, L)[1], "EMPTY" in budget_verdict(None, L)[1]), (True, False))
+    check("an ABSENT index says it could not be read, and the EMPTY one does not claim that",
+          ("could not be READ" in budget_verdict(None, L)[1],
+           "could not be READ" in budget_verdict(0, L)[1]), (True, False))
 
     # --- the warn band is DERIVED, exercised at two DISTINCT inputs -----------------------
     # One input could be satisfied by a constant that happens to equal it; two cannot.
     check("the warn threshold tracks the limit it is given",
           (warn_threshold(1000), warn_threshold(2000)), (900, 1800))
 
-    # --- bytes, NOT characters. The docstring calls this load-bearing, so a case must pin it ---
-    # Found by running the mutation that swaps read_bytes() for read_text(): no case reddened,
-    # because the live index is under budget either way. An argument in a docstring that no case
-    # witnesses is a bound I asserted rather than measured.
+    # --- CHARACTERS, not bytes (r1 CLAUDE H1). ⛔ THIS CASE WAS INVERTED. It pinned BYTES, and the
+    # manifest entry guarding it would therefore have killed the CORRECT behaviour once the unit was
+    # established — a mutation whose job was to forbid the right answer, which is the
+    # `a-guard-can-mandate-the-duplication-it-audits` shape. The unit is the harness's own, measured
+    # two independent ways from a consuming agent's context; see `index_chars`.
     with tempfile.TemporaryDirectory() as td:
         f = pathlib.Path(td) / "glyphs.md"
-        f.write_text("⭐⛔⟳\n")  # 3 glyphs x 3 bytes + newline = 10 bytes, but 4 characters
-        check("index_size counts BYTES, not characters (multi-byte glyphs)", index_size(f), 10)
-        check("a character count would have disagreed, which is why this case exists",
-              len(f.read_text()), 4)
+        f.write_text("⭐⛔⟳\n")  # 3 glyphs x 3 bytes + newline = 10 BYTES but 4 CHARACTERS
+        check("index_chars counts CHARACTERS, not bytes (multi-byte glyphs)", index_chars(f), 4)
+        check("the byte count genuinely differs, so this case is not a tautology",
+              len(f.read_bytes()), 10)
 
     # --- main() driven over a CONSTRUCTED index (ADR-0014 D1) -----------------------------
     with tempfile.TemporaryDirectory() as td:
@@ -294,7 +330,7 @@ def _self_test() -> int:
               main([], index=over, limit=1000), 1)
         # The SAME file, two limits: proves main threads `limit` through rather than reading the
         # module constant. One input could be satisfied by a constant; two cannot.
-        check("main() reads the limit it is given, not LIMIT_BYTES",
+        check("main() reads the limit it is given, not LIMIT_CHARS",
               (main([], index=over, limit=1000), main([], index=over, limit=5000)), (1, 0))
         check("main() CANNOT RUNs on a missing index rather than passing",
               main([], index=pathlib.Path(td) / "absent.md", limit=1000), 2)
@@ -341,9 +377,13 @@ def _self_test() -> int:
               (rc_absent, "gone.md" in printed), (2, True))
         buf2 = io.StringIO()
         with contextlib.redirect_stdout(buf2):
-            main([], index=INDEX, limit=LIMIT_BYTES)
-        check("an OK verdict NAMES the file too, repo-relative — not just the CANNOT RUN arms",
-              "docs/memory/MEMORY.md" in buf2.getvalue(), True)
+            main([], index=INDEX, limit=LIMIT_CHARS)
+        # ⟳ r1 CLAUDE L3: this was `"docs/memory/MEMORY.md" in ...`, which an ABSOLUTE path also
+        # satisfies as a substring — so dropping `relative_to` survived at 40/40. Assert the
+        # absolute form is ABSENT, which is the property that actually distinguishes them.
+        printed_ok = buf2.getvalue()
+        check("an OK verdict names the file REPO-RELATIVE, with no absolute prefix",
+              ("docs/memory/MEMORY.md" in printed_ok, str(ROOT) in printed_ok), (True, False))
 
     # --- ⟳ r1 CODEX #6: present but UNREADABLE must be rc 2, not a traceback.
     with tempfile.TemporaryDirectory() as td:
@@ -364,6 +404,17 @@ def _self_test() -> int:
             except OSError as exc:
                 rc_locked = f"RAISED {type(exc).__name__} instead of returning CANNOT RUN"
             check("a present-but-unreadable index is CANNOT RUN, not a traceback", rc_locked, 2)
+            # ⟳ r1 CLAUDE N1, same class: `except OSError: return 0` also yields rc 2, so the rc
+            # alone cannot tell "unreadable" from "empty" — and they need different remedies.
+            buf3 = io.StringIO()
+            with contextlib.redirect_stdout(buf3):
+                try:
+                    main([], index=locked, limit=1000)
+                except OSError:
+                    pass
+            locked_msg = buf3.getvalue()
+            check("an UNREADABLE index says it could not be read, and does NOT claim to be EMPTY",
+                  ("could not be READ" in locked_msg, "EMPTY" in locked_msg), (True, False))
         finally:
             locked.chmod(0o600)
     check("a CANNOT RUN names the file it ACTUALLY examined, not the module default",
@@ -374,11 +425,11 @@ def _self_test() -> int:
           INDEX_LABEL, str(INDEX.relative_to(ROOT)))
 
     # --- the declared constant, and the live file -----------------------------------------
-    check("LIMIT_BYTES matches the 24.4KB the harness reported", LIMIT_BYTES, 24985)
-    live = index_size(INDEX)
+    check("LIMIT_CHARS matches the 24.4KB the harness reported", LIMIT_CHARS, 24985)
+    live = index_chars(INDEX)
     check("the LIVE index is measurable and within budget "
           f"(it is {live if live is not None else 'UNREADABLE'} bytes)",
-          budget_verdict(live, LIMIT_BYTES)[0], OK)
+          budget_verdict(live, LIMIT_CHARS)[0], OK)
 
     print(f"self-test: {ok}/{ok + fail} cases passed")
     return OK if fail == 0 else OVER_BUDGET

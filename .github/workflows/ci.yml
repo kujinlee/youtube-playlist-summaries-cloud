@@ -242,12 +242,30 @@ jobs:
 
       # ⛔ THE SIBLING ABOVE ASKS WHETHER THE CORPUS IS REACHABLE; THIS ASKS WHETHER THE INDEX
       # ACTUALLY ARRIVES, which is a different question and was the one nothing asked. Measured
-      # 2026-10-19: `MEMORY.md` stood at 27,805 bytes against the harness's 24,985-byte injection
-      # limit, so ~30 of its 118 rows were silently dropped before any of it was read — while the
-      # link guard, `corpus_verdict` and `check-docs.py`'s line budget were all green. ⚠ Unlike
-      # the link, this one is NOT advisory on a runner: `docs/memory/MEMORY.md` is committed, so
-      # CI measures exactly the file a session loads. A CANNOT RUN here (rc 2) means the index is
-      # missing or empty, which is never a pass.
+      # 2026-10-19: `MEMORY.md` stood at 26,930 CHARACTERS against the harness's 24,985-character
+      # injection limit, so 8 of its 145 rows were silently dropped before any of it was read. ⟳ The
+      # unit and the row count are both r1-CLAUDE corrections; the first version of this comment said
+      # "~30 of its 118 rows" and "bytes", and all three numbers were wrong. The 8 was counted out of
+      # a consuming agent's own context, which is also what established the unit — while the
+      # link guard, `corpus_verdict` and `check-docs.py`'s line budget were all green. A CANNOT RUN
+      # here (rc 2) means the index is missing or empty, which is never a pass.
+      #
+      # ⛔ WHAT THIS STEP DOES **NOT** COVER, and the sentence that used to claim it did. This said
+      # *"`docs/memory/MEMORY.md` is committed, so CI measures exactly the file a session loads"* —
+      # FALSE, and r1 CLAUDE N2 measured it over two worktrees at the same HEAD: a working tree
+      # grown past the limit with NOTHING COMMITTED gives **rc=1 OVER BUDGET**, while a fresh
+      # checkout of that same HEAD — what this runner sees — gives **rc=0 ok**. A session loads the
+      # WORKING TREE (`INDEX` is the path the harness symlink resolves to, same inode), so the
+      # overflow that actually degrades a session is invisible here by construction.
+      # ⚠ This is backlog #309's class, and the guard is NOT structurally blind to it — it reads the
+      # right file. It is simply only CALLED from here. ⛔ A leading caller EXISTS AS A SCRIPT AND IS
+      # NOT REGISTERED: `.claude/hooks/check-memory-index-budget.sh` (advisory, PostToolUse on writes
+      # to the index). Registering it edits `.claude/settings.json`, i.e. session config, and the
+      # finding that prompted it came from a review agent rather than from the owner — so it waits on
+      # their decision rather than being wired in on a peer's suggestion. UNTIL IT IS REGISTERED THIS
+      # STEP IS THE ONLY CALLER and catches committed growth only; a working-tree overflow that
+      # degrades a live session is still unobserved. ⚠ And even registered it would only see writes
+      # made THROUGH THE TOOL — the #309 instance arrived by another route.
       - name: Memory index injection budget
         run: python3 scripts/check-memory-index-budget.py
 
