@@ -237,15 +237,27 @@ def index_chars(path: pathlib.Path) -> int | None:
     Narrow `OSError`, and the returned None is a FAILING state, never a pass, so this is not the
     fail-open handler `check-ratchet-contract` R2 forbids.
     """
-    if not path.is_file():
-        return None
+    # ⛔ `is_file()` IS INSIDE THE TRY, and that is not tidiness — r3 CLAUDE High. On Python < 3.13
+    # it RAISES `OSError` (ENAMETOOLONG) for an over-long path instead of returning False, which
+    # `ci.yml`'s own python-pin comment documents as the divergence that cost PR #315 a day.
     try:
-        # ⛔ newline="" DISABLES UNIVERSAL-NEWLINE TRANSLATION, and without it this UNDER-counted.
-        # Measured (r2 CODEX #4): 9,000 x b"x\r\n" is 27,000 characters on disk and `read_text`
-        # reported 18,000 — one character lost per line, a 33% under-count. ⚠ That is the DANGEROUS
-        # direction, unlike the byte/character error this guard was built on: under-counting reports
-        # "under budget" about an index that is over, so it fails toward good news.
-        return len(path.read_text(encoding="utf-8", newline=""))
+        if not path.is_file():
+            return None
+        # ⛔ `read_bytes().decode()`, NEVER `read_text()`. Two separate reasons, and the SECOND one
+        # broke CI:
+        #   1. `read_text` applies UNIVERSAL-NEWLINE TRANSLATION. Measured (r2 CODEX #4):
+        #      9,000 x b"x\r\n" is 27,000 characters on disk and it reported 18,000 — one character
+        #      lost per line. That UNDER-counts, i.e. reports "under budget" about an index that is
+        #      over: the direction that fails toward good news.
+        #   2. ⛔ MY FIX FOR (1) WAS `read_text(newline="")`, AND THAT PARAMETER IS PYTHON 3.13+.
+        #      `ci.yml` pins 3.12, so the guard died with a TypeError IN THE REQUIRED `verify` JOB —
+        #      measured on run 39375344140: `verify` failed AT THIS STEP, 47 of its 77 steps never
+        #      ran, and every mutation shard reported NOT MEASURED because one red control voids the
+        #      whole run. A guard that crashes takes down far more than itself.
+        # ⚠ AND THIS REPO ALREADY HAD THE ANSWER UNDER A NAME I DID NOT SEARCH FOR:
+        # `check-doc-citations.py:536` — "`read_bytes().decode(...)`, NEVER `read_text(...)`" — for
+        # reason (1), recorded there as the second half of a fix that also shipped incomplete.
+        return len(path.read_bytes().decode("utf-8"))
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -604,10 +616,17 @@ def _self_test() -> int:
 
     # --- the declared constant, and the live file -----------------------------------------
     check("LIMIT_CHARS matches the 24.4KB the harness reported", LIMIT_CHARS, 24985)
-    live = index_chars(INDEX)
-    check("the LIVE index is measurable and within budget "
-          f"(it is {live if live is not None else 'UNREADABLE'} bytes)",
-          budget_verdict(live, LIMIT_CHARS)[0], OK)
+    # ⛔ THE "LIVE INDEX IS WITHIN BUDGET" CASE IS DELETED — r3 CLAUDE High, and the blast radius is
+    # why. It asserted `budget_verdict(index_chars(INDEX), …) == OK`, which coupled THIS SUITE'S
+    # RESULT TO THE LENGTH OF `MEMORY.md`. The mutation harness treats one red control as
+    # `NotMeasured` for the WHOLE RUN, so an index merely growing past budget would have made all
+    # 1,573 manifest entries report NO COVERAGE VERDICT — a repo-wide false alarm triggered by a
+    # document. ⚠ And it bought nothing: `ci.yml`'s "Memory index injection budget" step runs the
+    # guard against the live index three lines above the step that runs this suite, so the property
+    # was already enforced where it belongs — in a CALLER, not inside the suite that must stay
+    # measurable. A suite case should assert the RULE; a caller asserts the WORLD.
+    check("INDEX is measurable at all here, which is the only live property this suite needs",
+          index_chars(INDEX) is not None, True)
 
     print(f"self-test: {ok}/{ok + fail} cases passed")
     return OK if fail == 0 else OVER_BUDGET
