@@ -15868,3 +15868,94 @@ coordinator precedence and strict-coordinator/best-effort-half are both pinned b
 over 57 subjects, derived at `5d957db8`, before the scheme existed). Suites 87/87 and 51/51, both also
 green under `uv run --python 3.12` — the CI pin, not this machine's 3.14. Mutation manifest 1573 →
 1595 declared. Backlog #315–#319 filed. Full `--mutate .` not yet verdicted locally.
+
+## 2026-10-20 [needs-you]
+**Correction to this morning's entry, and the correction is the more useful half.** That entry said
+the review loop had gained a way to read its own records from the documents reviewers always write,
+and put the figure at 97% against 35%. A review round the same afternoon **refuted that by running
+it**: the change reads **zero** additional subjects. Of 435 reviewer documents on disk, **none**
+carries the structured block the tool needs. 97% was the rate at which those documents *exist*, and
+it was reported as the rate at which records become *readable* — a different thing, and the gap
+between them is the whole claim.
+
+There is a reason none of them carries the block, and it is not carelessness. Two of the seven
+fields describe what happened **after** the round — whether a problem was fixed, filed or dismissed,
+and whether the repair was substantial. A reviewer writing up findings cannot know either yet. So
+that part has been **taken back out** and written up as its own piece of work: decide which fields a
+reviewer can honestly fill in, and which must wait for the person adjudicating. Keeping it would
+have meant shipping something that reads better than it works.
+
+Two smaller corrections to the same entry: it stated test counts of 51 and 87 where the suites
+actually run 64 and 91, and it described a count as checked that the review found undeclared in one
+of the two places that state it. The counts in the code were right; the prose about them was not.
+
+**What survives, and it is the part worth having.** The ranking now says **"no lead"** instead of
+naming something when the evidence does not favour one — measured, that is half the cases, and it
+had been picking alphabetically. The watchdog that says when the whole mechanism has stopped earning
+its place is still in, and its loudest alarm is still *nobody is using it*.
+
+**Waiting on you:** still a pull request, not a merge, and now for a better reason — two independent
+reviews both say **not converged**, with three blocking problems between them. One of those is that
+the "it cannot run forever" promise was enforced by a function nothing actually calls. That is being
+fixed by making the bad state **impossible to write down** rather than by adding a check for it.
+<!--tech-->
+r1 BOTH halves filed and committed: codex 4H/4M, claude 3B/5H/6M/7L, both NOT CONVERGED.
+`docs/reviews/{codex,claude}/decision-route-escalation-r1-*.md`. Routes per component: relocation →
+**SPLIT** (backlog #320; delta measured ZERO, and `disposition`/`fixes_nontrivial` are post-fold so a
+half structurally cannot carry them); log schema → **REDESIGN** (derive `routes_tried` from prior
+rows and `outcome` from `scope_tally`, so a retry is inexpressible rather than guarded — B3's
+`route_next` had no caller, the same no-reader class as the `review_scope` defect repaired this
+morning); CANNOT-RUN paths, starvation ratchet and accounting → **ACCRETE**. Corrections landed:
+`check-review-decision` 91 → 81 cases and its manifest 21 → 17 (four entries RETIRED WITH THEIR
+SUBJECT), declared sum 1595 → 1591, `check-plan-code`'s comment reconciled with its own code.
+⚠ Corpus error acknowledged: 294 flat round documents were excluded, so the real corpus is 81
+subjects / 392 rounds and three pinned rates move (coordinator 34.9 → 29.3%, both-halves 65.5 →
+71.4%, over-four tail 33.3 → 38.3%); median 4 survives and is re-derived in step 5 of the fold.
+
+## 2026-10-20 [needs-you]
+**The review's three blocking problems are fixed, and the most useful one was fixed by making the
+bad state impossible to write down rather than by adding a check for it.**
+
+The promise that the loop "cannot go round forever" was being kept by a piece of code that nothing
+ever ran. A log could say *"tried the cheap repair"* five times over and the watchdog would report
+everything fine. The repair is not a new check: the log no longer records what has been tried at all.
+It works that out from the earlier entries, so writing down a repeat is no longer possible — there is
+nothing to lie about. The same applies to a bet placed after every option is spent.
+
+Two more: a failure to read the review records used to print a reassuring *"all quiet"* and succeed,
+which is the one thing this watchdog exists to prevent — it now refuses. And the date that switches
+the watchdog on had to be written in one exact format, with any other spelling silently turning it
+off; the file itself demonstrated the wrong spelling two lines higher. Both are now refused with the
+reason stated.
+
+**A correction to this morning's numbers that is worth reading.** The figures were computed over the
+wrong set of records — 294 older files were left out, which moved three of the percentages. The
+headline one survives: the typical piece of work still takes **four** review rounds, which is the
+number the whole mechanism has to beat. ⚠ The reason for the wrong set is the part worth keeping: it
+was the set that reproduced a figure from a previous day's notes. I picked the records that matched a
+number I already had, rather than the ones the tool actually reads.
+
+**Waiting on you:** still a pull request, not a merge. One more review round is dispatched — alone
+this time, not in parallel, because a pair reviewing at the same moment never sees each other's
+fixes, and the fixes are where the remaining risk is.
+<!--tech-->
+r1 fold complete. **log-schema REDESIGN:** `routes_tried` DERIVED from prior rows per (subject,unit);
+`validate_row` refuses any row whose route is not `route_next(derived)`; `t2` now reads units over
+derived history; `group_by_unit` added. All four r1 Blocking/High inputs that exited 0 now exit 2,
+verified by construction, plus the happy path and the exhausted-then-stopped success path.
+**relocation SPLIT → backlog #320** (`rounds_for` restored to coordinator-only; 4 mutations RETIRED
+WITH THEIR SUBJECT). **CANNOT RUN:** corpus error → rc=2 on the default path, the false "NOT a
+fail-open" comment DELETED not reworded, `read_log` OSError → ValueError, baseline median no longer
+defaults to a literal. **starvation re-derived** as pre-arming membership (`tree_at` LISTS the tree
+instead of diffing adds — no A-vs-R classification, no committer-date sensitivity, shallow clone
+refused); `parse_armed_at` requires a full ISO instant with an offset. ⚠ Measured and unexpected:
+`git rev-list -1 --before=@1` returns the FIRST commit, not nothing, so `tree_at` verifies the
+resolved commit is inside the window. **review_scope now has a production caller** via `scope_lead`,
+and the reader prints its ranking. Suites **111** and **85**, both green under `uv --python 3.12`.
+Mutations **34** and **19**, every one red via the case it names, 0 survivors, 0 unmeasured — four
+were initially unattributable (killed by traceback, zero `[FAIL]` lines) until `_try` and two inline
+`try` wrappers were added; one was REJECTED as equivalent-in-environment and replaced by extracting
+`shallow_refusal` as a drivable pure function. Declared sum 1591 → 1616. Baseline re-derived over
+BOTH layouts: 105/81/392, median **4** unchanged, original figures preserved under `*_ORIGINAL_WRONG`.
+r1 coordinator document written with a 22-finding header — the procedure had printed `rounds=0` on
+the branch whose subject is that gap.

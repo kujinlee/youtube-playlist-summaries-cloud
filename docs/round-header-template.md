@@ -1,18 +1,25 @@
 # Round-document header
 
-Every **coordinator** round document carries this block immediately after its title — and ⟳
-**since 2026-10-20 a HALF may carry it instead**, which is where it is actually produced.
+Every **coordinator** round document carries this block immediately after its title.
 
-⭐ **MEASURED, per round, over the 57 subjects where the procedure applies (261 rounds): at least
-one half 254 = 97%; both halves 171 = 66%; a coordinator document 91 = 35%.** Reading only
-coordinator documents capped feedability at a third of rounds, and the procedure saw `rounds=0` on
-81% of its subjects. The grammar is unchanged — the same `yaml` block, the same fields — so this is
-relocation, not a second format. ⚠ **Precedence: a coordinator header still WINS the round it
-carries**, because it adjudicates the two halves and a half speaks only for its own reviewer. ⚠ And
-strictness is keyed to the writer: a malformed header in a coordinator document RAISES (a missing
-input is a failure, never a pass), while a half is best-effort and skipped — which is how 254
-existing halves stay silent instead of going red from birth. `rounds_for`'s docstring in
-`scripts/check-review-decision.py` owns both rules.
+⟳ **2026-10-20: A RELOCATION TO THE HALVES WAS PROPOSED HERE, BUILT, AND WITHDRAWN THE SAME DAY —
+and the withdrawn claim is recorded because it is the instructive part.** This paragraph said that
+**97%** of rounds carry at least one half against **35%** carrying a coordinator document, and
+concluded that moving the fields into the halves lifts feedability to 97%.
+
+⛔ **Round 1 refuted the inference by running it.** Readable subjects went **10 → 10, zero gained**,
+because **0 of 435 half documents carry a parseable header**. 97% was the rate at which half
+documents **EXIST**, reported as the rate at which rounds become **READABLE**. The three rates
+themselves re-derive correctly; the inference drawn from them did not. ⚠ And the corpus was wrong
+too: it excluded 294 flat round documents, so the real figures over both layouts are **81 subjects /
+392 rounds**, which moves the coordinator share to **29.3%** and both-halves to **71.4%**.
+
+⛔ **THE STRUCTURAL REASON, which is why this is a design question and not a corrected sentence:**
+`disposition` and `fixes_nontrivial` are **post-fold facts**. A reviewer writing its half does not
+yet know whether its own finding will be fixed, filed or declined, nor whether the fold will be
+non-trivial. **A half structurally cannot carry two of the seven fields**, which is why 0 of 435 do.
+Deciding which fields a half CAN know — `severity`, `aim`, `component` are candidates — is a grammar
+split that wants a spec. Filed as its own slice; see the backlog row that names this paragraph.
 
 **Why it exists.** The decision procedure needs two counters — *consecutive fix-induced rounds* and
 *rounds since a finding in the deliverable*. On PR #302 nobody kept either, which is why four rounds

@@ -1,15 +1,61 @@
 {
-  "_what": "The PRE-SCHEME baseline for the route-escalation mechanism's trigger 3 (\"no better than doing nothing\"). Pinned BEFORE the scheme shipped, because after it ships every number here is contaminated by it.",
+  "_what": "The PRE-SCHEME baseline for the route-escalation mechanism's trigger 4 (\"no better than doing nothing\"). Pinned BEFORE the scheme shipped, because after it ships every number here is contaminated by it.",
   "_why_pinned_and_not_computed_at_read_time": "A comparator recomputed on every run cannot detect that the thing it compares against has moved. Pinned so drift is visible; scripts/check-decision-scheme.py --rederive recomputes and reports the delta.",
-  "derived_at": "2026-10-20",
-  "derived_from_head": "5d957db8b5e62e288460dbae3df8e2aadc1e4282",
+  "derived_at": "2026-10-20T00:00:00-07:00",
+  "derived_from_head": "ffeb2a2c86c98b99dc39c0dcf494158b178f8404",
   "derivation": "subjects = basename(docs/reviews/{codex,claude,coordinator}/*.md) parsed by check-review-rounds.SHAPES; a subject counts when it has >=2 distinct round numbers; rounds_to_termination = count of distinct round numbers",
   "corpus": {
+    "subjects_with_any_round": 105,
+    "subjects_with_ge2_rounds": 81,
+    "rounds_total": 392,
+    "_layouts": "flat AND docs/reviews/{codex,claude,coordinator}"
+  },
+  "rounds_to_termination": {
+    "min": 2,
+    "median": 4,
+    "mean": 4.84,
+    "max": 17,
+    "distribution": {
+      "2": 17,
+      "3": 20,
+      "4": 13,
+      "5": 10,
+      "6": 4,
+      "7": 4,
+      "8": 4,
+      "9": 1,
+      "10": 2,
+      "11": 2,
+      "12": 1,
+      "15": 1,
+      "17": 2
+    },
+    "over_four_rounds": 31,
+    "over_four_rounds_share": 0.383
+  },
+  "capture_rates_per_round": {
+    "_denominator": 392,
+    "at_least_one_half": 0.982,
+    "both_halves": 0.714,
+    "coordinator_document": 0.293
+  },
+  "_the_number_that_matters": "median 4 \u2014 and dev-process.md's Phase 6 says reaching four rounds OBLIGES ASKING, so the pre-scheme process put half of all subjects at that threshold. The scheme earns its keep by moving the median below 4 and shrinking the 33% tail above it, not by any accuracy figure.",
+  "armed_at": "2026-10-20T10:00:00-07:00",
+  "_armed_at_means": "Trigger 1 (NOT FED) counts only subjects whose SECOND round document was added after this instant. History is the pinned baseline and is never retro-filled: a gate red from birth over 57 historical subjects gets switched off, which backlog #56 measured.",
+  "ladder": [
+    "accrete",
+    "redesign",
+    "split",
+    "defer"
+  ],
+  "_why_both_are_full_instants": "r1 Claude H1: `derived_at` was a BARE DATE two lines above `armed_at`, and a maintainer re-arming the ratchet copies the neighbouring style. A bare date made git's approxidate match nothing and the loudest trigger went silently quiet. Both are full ISO instants now, and parse_armed_at refuses anything less \u2014 so the hazard is closed by the parser, and this file no longer models the wrong form.",
+  "_corpus_correction_2026_10_20": "\u26d4 RE-DERIVED IN THE r1 FOLD. The first derivation restricted the corpus to the WRITER SUBDIRECTORIES and so excluded 294 flat round documents that check-review-rounds.py reads. It reported 63 subjects / 57 with >=2 rounds / 261 rounds; the real corpus over BOTH layouts is 105 / 81 / 392. \u26a0 The reason I chose that filter is the instructive part: it reproduced a PREVIOUS SESSION'S denominator, so I picked the corpus that matched a number rather than the one the code reads (r1 Claude M1). \u2b50 THE COMPARATOR trigger 4 USES IS UNCHANGED: the median is still 4. \u26a0 Re-deriving a PINNED baseline is normally contamination; it is legitimate here because the scheme has produced ZERO log rows, so no round count in this corpus has been influenced by it. The original (wrong) figures are kept above and in this note rather than overwritten.",
+  "corpus_ORIGINAL_WRONG": {
     "subjects_with_any_round": 63,
     "subjects_with_ge2_rounds": 57,
     "rounds_total": 261
   },
-  "rounds_to_termination": {
+  "rounds_to_termination_ORIGINAL_WRONG": {
     "min": 2,
     "median": 4,
     "mean": 4.58,
@@ -30,19 +76,10 @@
     "over_four_rounds": 19,
     "over_four_rounds_share": 0.333
   },
-  "capture_rates_per_round": {
+  "capture_rates_per_round_ORIGINAL_WRONG": {
     "_denominator": 261,
     "at_least_one_half": 0.973,
     "both_halves": 0.655,
     "coordinator_document": 0.349
-  },
-  "_the_number_that_matters": "median 4 \u2014 and dev-process.md's Phase 6 says reaching four rounds OBLIGES ASKING, so the pre-scheme process put half of all subjects at that threshold. The scheme earns its keep by moving the median below 4 and shrinking the 33% tail above it, not by any accuracy figure.",
-  "armed_at": "2026-10-20T10:00:00-07:00",
-  "_armed_at_means": "Trigger 1 (NOT FED) counts only subjects whose SECOND round document was added after this instant. History is the pinned baseline and is never retro-filled: a gate red from birth over 57 historical subjects gets switched off, which backlog #56 measured.",
-  "ladder": [
-    "accrete",
-    "redesign",
-    "split",
-    "defer"
-  ]
+  }
 }

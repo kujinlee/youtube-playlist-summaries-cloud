@@ -227,8 +227,8 @@
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "    return [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']} \"\n            f\"(n1={lead['n1']} n2={lead['n2']})\"]",
-        "    return [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']}\"]"
+        "    out = [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']} \"\n           f\"(n1={lead['n1']} n2={lead['n2']})\"]",
+        "    out = [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']}\"]"
       ]
     ],
     "expect": [
@@ -236,55 +236,30 @@
     ]
   },
   {
-    "name": "relocation reads only the coordinator, restoring the 35% ceiling",
+    "name": "scope_lead re-sorts instead of carrying review_scope's order, so the named symbol is bypassed",
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "def rounds_for(subject: str, writers: tuple[str, ...] = (\"coordinator\", \"codex\", \"claude\"),",
-        "def rounds_for(subject: str, writers: tuple[str, ...] = (\"coordinator\",),"
+        "        \"order\": review_scope(rounds),",
+        "        \"order\": sorted(tally),"
       ]
     ],
     "expect": [
-      "a HALF supplies a round the coordinator never wrote \u2014 97% vs 35% is the point"
+      "...and the order it prints IS review_scope's RANKING, not an alphabetical re-sort",
+      "the reader shows that ranking, so rank order reaches a human"
     ]
   },
   {
-    "name": "a HALF outranks the coordinator, so one reviewer's view beats the adjudication",
+    "name": "the reader stops printing the ranking, so review_scope is computed and discarded",
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "            if h[\"round\"] in by_round:\n                continue                      # earlier writer in `writers` already spoke",
-        "            if False:\n                continue                      # earlier writer in `writers` already spoke"
+        "    if lead.get(\"order\"):\n        out.append(f\"              ranking: {' > '.join(lead['order'][:4])}\")\n    return out",
+        "    return out"
       ]
     ],
     "expect": [
-      "...and the COORDINATOR still wins the round it does carry, because it adjudicates"
-    ]
-  },
-  {
-    "name": "a malformed header is swallowed for the coordinator too, making a missing input a pass",
-    "file": "scripts/check-review-decision.py",
-    "edits": [
-      [
-        "                if writer == \"coordinator\":\n                    raise",
-        "                if False:\n                    raise"
-      ]
-    ],
-    "expect": [
-      "a MALFORMED coordinator header still raises, so a missing input is not a pass"
-    ]
-  },
-  {
-    "name": "every writer is strict, so a half quoting yaml in prose fails its whole subject",
-    "file": "scripts/check-review-decision.py",
-    "edits": [
-      [
-        "                if writer == \"coordinator\":\n                    raise\n                continue",
-        "                raise"
-      ]
-    ],
-    "expect": [
-      "PROSE in a half that quotes a yaml block is skipped, NOT raised"
+      "the reader prints review_scope's ORDER, giving the named symbol a reader"
     ]
   }
 ]

@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 91 cases
+    python3 scripts/check-review-decision.py --self-test  # 85 cases
 
 WHY THIS EXISTS
 ---------------
@@ -162,14 +162,18 @@ def scope_lead(rounds: list[dict]) -> dict:
     """
     tally = scope_tally(rounds)
     if not tally:
-        return {"top": [], "n1": 0, "n2": 0, "margin": 0, "tied": 0, "abstain": True,
-                "why": "no component appeared in any round"}
+        return {"top": [], "order": [], "n1": 0, "n2": 0, "margin": 0, "tied": 0,
+                "abstain": True, "why": "no component appeared in any round"}
     counts = sorted(tally.values(), reverse=True)
     n1 = counts[0]
     n2 = counts[1] if len(counts) > 1 else 0
     tied = [c for c, v in sorted(tally.items()) if v == n1]
     abstain = len(tied) > 1
     return {
+        # ⛔ r1 Claude M4: `review_scope` had NO non-test caller, and it is the symbol BOTH
+        # `dev-process.md` and `review-method.md` name as what computes the ranking. Carrying
+        # its order here gives it the reader the docs already promised it has.
+        "order": review_scope(rounds),
         "top": tied, "n1": n1, "n2": n2, "margin": n1 - n2, "tied": len(tied),
         "abstain": abstain,
         "why": (f"{len(tied)} components tied at {n1} appearance(s) — first place is the "
@@ -189,9 +193,14 @@ def scope_lead_lines(lead: dict) -> list[str]:
         out = [f"  scope-rank: NO LEAD — {lead['why']}"]
         if lead["top"]:
             out.append(f"              tied: {', '.join(lead['top'])}")
+        if lead.get("order"):
+            out.append(f"              ranking: {' > '.join(lead['order'][:4])}")
         return out
-    return [f"  scope-rank: {lead['top'][0]} — {lead['why']} "
-            f"(n1={lead['n1']} n2={lead['n2']})"]
+    out = [f"  scope-rank: {lead['top'][0]} — {lead['why']} "
+           f"(n1={lead['n1']} n2={lead['n2']})"]
+    if lead.get("order"):
+        out.append(f"              ranking: {' > '.join(lead['order'][:4])}")
+    return out
 
 
 def thrashing_component(rounds: list[dict]) -> str | None:
@@ -446,59 +455,36 @@ def _block_findings(body: str) -> list[dict]:
     return [f for f in out if f]
 
 
-def rounds_for(subject: str, writers: tuple[str, ...] = ("coordinator", "codex", "claude"),
-               base: Path | None = None) -> list[dict]:
-    """Every readable round document for `subject`, ordered by round number.
+def rounds_for(subject: str) -> list[dict]:
+    """Every coordinator round document for `subject`, ordered by round number.
 
-    ⭐ RELOCATION, 2026-10-20 — and the measurement is the whole argument. Per ROUND, across
-    the 57 subjects where the procedure applies (261 rounds):
+    A document without a header propagates its ValueError — the caller turns that into
+    CANNOT RUN rather than a decision.
 
-        at least one HALF (codex|claude) .... 254 of 261 = 97%
-        a COORDINATOR document .............. 91 of 261 = 35%
+    ⟳ 2026-10-20: A RELOCATION TO THE HALVES WAS BUILT HERE AND THEN REMOVED, ROUTE **SPLIT**.
+    It read `("coordinator", "codex", "claude")` in precedence order so a half could supply a
+    round no coordinator document carried, on the measurement that 97% of rounds carry a half
+    against 35% a coordinator document. Round 1 refuted the inference by running it: readable
+    subjects went **10 -> 10, zero gained**, because **0 of 435 half documents carry a parseable
+    header**. 97% was the rate at which half documents EXIST, reported as the rate at which
+    rounds become READABLE.
 
-    Reading only `coordinator/` capped feedability at 35% of rounds, and the procedure saw
-    `rounds=0` on 81% of its subjects. The fields are the SAME grammar in the SAME `yaml`
-    block; what changes is that they may live in the artifact the gate already forces to
-    exist, rather than in a second one that is written a third of the time.
-
-    ⚠ IT IS ADDITIVE, AND THE ORDER OF `writers` IS THE PRECEDENCE. A coordinator document
-    still wins when it carries a header, because it ADJUDICATES the two halves and a half
-    speaks only for its own reviewer. The halves are the fallback, not the replacement —
-    reversing that would let one reviewer's unadjudicated view outrank the adjudication.
-
-    ⚠ A header that is present but MALFORMED propagates its ValueError; the caller turns that
-    into CANNOT RUN rather than a decision. A document with NO header block is skipped, which
-    is how 254 existing halves stay silent instead of going red from birth.
+    ⛔ AND IT CANNOT REACH THAT CEILING WITHOUT A GRAMMAR CHANGE, which is why this is SPLIT
+    rather than a corrected claim: `disposition` and `fixes_nontrivial` are POST-FOLD facts. A
+    reviewer writing its half does not yet know whether its finding was fixed, filed or
+    declined, so a half structurally cannot carry two of the seven fields. Deciding which
+    fields a half CAN know is a design question, not a patch — filed as its own slice. The
+    second cost of keeping it: reading one document per round silently discarded the other
+    half's findings in 171 of 261 rounds, which turned a tree holding an unaddressed High into
+    a recorded STOP.
     """
-    # INJECTABLE so the PRECEDENCE and STRICTNESS rules are testable without the repository's
-    # own 718-file review directory standing in as a fixture.
-    base = (REPO / "docs" / "reviews") if base is None else base
-    by_round: dict[int, dict] = {}
-    for writer in writers:
-        for f in sorted((base / writer).glob(f"{subject}-r*-{writer}.md")):
-            try:
-                h = parse_header(f.read_text())
-            except ValueError:
-                # ⛔ PRECEDENCE DECIDES STRICTNESS, AND A SUBSTRING TEST DOES NOT.
-                # The COORDINATOR document is what the procedure has always depended on, so a
-                # malformed header there still RAISES — a missing input is a failure, never a
-                # pass. A HALF is best-effort: it is skipped, which is how 254 existing halves
-                # stay silent instead of going red from birth.
-                #
-                # ⟳ The first version of this tested `"```yaml" in text` to tell "no header"
-                # from "broken header". MEASURED, it dropped coordinator-only readability from
-                # 10 subjects to 5: review prose DISCUSSES the header and quotes a yaml block,
-                # so the substring matched documents that were never carrying one. That is the
-                # same class `check-plan-file-tags.py` records — "prose ABOUT a tag must keep
-                # passing; a bare substring test breaks every one of them."
-                if writer == "coordinator":
-                    raise
-                continue
-            if h["round"] in by_round:
-                continue                      # earlier writer in `writers` already spoke
-            h["source"] = f"{writer}/{f.name}"
-            by_round[h["round"]] = h
-    return sorted(by_round.values(), key=lambda r: r["round"])
+    d = REPO / "docs" / "reviews" / "coordinator"
+    out = []
+    for f in sorted(d.glob(f"{subject}-r*-coordinator.md")):
+        h = parse_header(f.read_text())
+        h["source"] = f.name
+        out.append(h)
+    return sorted(out, key=lambda r: r["round"])
 
 
 def _git(*args: str) -> str:
@@ -666,14 +652,34 @@ def _self_test() -> int:
          scope_lead(_five)["top"],
          ["cron-comment", "doc-row", "drift-window", "merge-readiness", "schedule-durability"])
     case("the reader says NO LEAD and lists the tied names on a second line",
-         scope_lead_lines(scope_lead(_five)),
+         scope_lead_lines(scope_lead(_five))[:2],
          ["  scope-rank: NO LEAD — 5 components tied at 1 appearance(s) — first place is the "
           "tie-break, not evidence",
           "              tied: cron-comment, doc-row, drift-window, merge-readiness, "
           "schedule-durability"])
     case("the reader names the winner and its margin when there IS a lead",
-         scope_lead_lines(scope_lead(_real)),
-         ["  scope-rank: parse-header — parse-header leads by 1 (n1=5 n2=4)"])
+         scope_lead_lines(scope_lead(_real))[0],
+         "  scope-rank: parse-header — parse-header leads by 1 (n1=5 n2=4)")
+    # ⛔ r1 Claude M4: `review_scope` is the symbol both process docs name and it had NO
+    # non-test caller. It is now reached through `scope_lead`, and the reader PRINTS its order,
+    # so the claim in those docs is true of a run rather than only of the self-test.
+    case("the reader prints review_scope's ORDER, giving the named symbol a reader",
+         _try(lambda: scope_lead_lines(scope_lead(_real))[1]),
+         "              ranking: parse-header > scope-for")
+    # ⛔ THE FIXTURE MUST MAKE RANK AND ALPHABET DISAGREE. The first version used `_real`,
+    # where parse-header(5) and scope-for(4) happen to be in alphabetical order too, so
+    # `sorted(tally)` returned the same list and the mutation survived with rc=0. A fixture
+    # that cannot distinguish the right answer from a wrong one is not a case.
+    _rank_vs_alpha = [_r(1, "zeta", "alpha"), _r(2, "zeta"), _r(3, "zeta")]
+    case("...and the order it prints IS review_scope's RANKING, not an alphabetical re-sort",
+         (scope_lead(_rank_vs_alpha)["order"], sorted(scope_tally(_rank_vs_alpha))),
+         (["zeta", "alpha"], ["alpha", "zeta"]))
+    case("the reader shows that ranking, so rank order reaches a human",
+         _try(lambda: scope_lead_lines(scope_lead(_rank_vs_alpha))[1]),
+         "              ranking: zeta > alpha")
+    case("an abstention still shows the ranking, so the tie is visible beside the order",
+         _try(lambda: scope_lead_lines(scope_lead(_five))[2].startswith(
+             "              ranking: ")), True)
     case("the reader does not emit a tied line when there is nothing to tie",
          scope_lead_lines(scope_lead([])), ["  scope-rank: NO LEAD — no component appeared in "
                                            "any round"])
@@ -709,67 +715,6 @@ def _self_test() -> int:
     # show that the tally computes anything.
     case("...and a different shape gives a different tally, not the same one",
          scope_tally([_r(1, "x", "y"), _r(2, "y")]), {"x": 1, "y": 2})
-
-    # ── rounds_for: relocation to the halves ─────────────────────────────────────────────────
-    import tempfile as _tf
-    _hdr = ("# r{n}\n\n```yaml\nround: {n}\nfixes_nontrivial: false\nsubject: s\n"
-            "findings:\n  - {{id: X, severity: Low, aim: instrument, fix_induced: false, "
-            "component: {c}, disposition: fixed}}\n```\n")
-    with _tf.TemporaryDirectory() as _d:
-        _b = Path(_d)
-        for _w in ("coordinator", "codex", "claude"):
-            (_b / _w).mkdir()
-        (_b / "coordinator/s-r1-coordinator.md").write_text(_hdr.format(n=1, c="from-coord"))
-        (_b / "codex/s-r1-codex.md").write_text(_hdr.format(n=1, c="from-codex"))
-        (_b / "codex/s-r2-codex.md").write_text(_hdr.format(n=2, c="from-codex"))
-        case("a HALF supplies a round the coordinator never wrote — 97% vs 35% is the point",
-             _try(lambda: [r["round"] for r in rounds_for("s", base=_b)]), [1, 2])
-        case("...and the COORDINATOR still wins the round it does carry, because it adjudicates",
-             _try(lambda: rounds_for("s", base=_b)[0]["findings"][0]["component"]),
-             "from-coord")
-        case("the source names the writer, so a reader can see where a round came from",
-             _try(lambda: [r["source"] for r in rounds_for("s", base=_b)]),
-             ["coordinator/s-r1-coordinator.md", "codex/s-r2-codex.md"])
-        # ⭐ THE IDENTITY CASE for the regression this file already caused once: a half that
-        # DISCUSSES the header quotes a yaml block, and a substring test read that as a broken
-        # header — dropping coordinator-only readability from 10 subjects to 5.
-        (_b / "claude/s-r3-claude.md").write_text(
-            "# r3\n\nThe template says to write ```yaml\nround: 3\n``` which is prose, not a "
-            "header.\n")
-        # ⛔ `_try`, NOT a bare call. A mutation making this raise would otherwise kill the
-        # suite and report ZERO [FAIL] lines — the helper's own docstring records that exact
-        # miss, and this case reproduced it before being wrapped.
-        case("PROSE in a half that quotes a yaml block is skipped, NOT raised",
-             _try(lambda: [r["round"] for r in rounds_for("s", base=_b)]), [1, 2])
-        (_b / "claude/s-r4-claude.md").write_text("# r4\n\nno header at all here\n")
-        case("a half with no header block is skipped rather than failing the subject",
-             _try(lambda: [r["round"] for r in rounds_for("s", base=_b)]), [1, 2])
-        # ⛔ STRICTNESS IS KEYED TO THE WRITER. The coordinator document is what the procedure
-        # has always depended on, so a broken header THERE is a failure, never a pass.
-        (_b / "coordinator/s-r5-coordinator.md").write_text(
-            "# r5\n\n```yaml\nsubject: s\nfindings: []\n```\n")
-        case("a MALFORMED coordinator header still raises, so a missing input is not a pass",
-             _raises(lambda: rounds_for("s", base=_b)), True)
-        case("...while the same malformed block in a HALF is skipped",
-             _raises(lambda: rounds_for("s", writers=("codex", "claude"), base=_b)), False)
-        # ⚠ A SECOND SUBJECT IN A SECOND DIRECTORY. With one `subject` and one `base` across
-        # every call, no case could tell either parameter from a constant — a subject filter
-        # that ignored its argument would pass. `check-fixture-variation.py` caught it here.
-        (_b / "coordinator/other-r1-coordinator.md").write_text(_hdr.format(n=1, c="other-1"))
-        (_b / "coordinator/other-r2-coordinator.md").write_text(_hdr.format(n=2, c="other-2"))
-        case("the subject argument SELECTS — a second subject in the same tree is separate",
-             _try(lambda: [r["findings"][0]["component"]
-                           for r in rounds_for("other", base=_b)]), ["other-1", "other-2"])
-        case("...and 's' is unaffected by it, so the filter is not reading everything",
-             _try(lambda: len(rounds_for("s", writers=("codex", "claude"), base=_b))), 2)
-    with _tf.TemporaryDirectory() as _d2:
-        _b2 = Path(_d2)
-        for _w in ("coordinator", "codex", "claude"):
-            (_b2 / _w).mkdir()
-        (_b2 / "claude/s-r1-claude.md").write_text(_hdr.format(n=1, c="half-only"))
-        case("a SECOND base directory is read, so `base` is not a constant either",
-             _try(lambda: [r["source"] for r in rounds_for("s", base=_b2)]),
-             ["claude/s-r1-claude.md"])
 
     # --- Q4a convergence --------------------------------------------------
     inst = {"severity": "Low", "aim": "instrument", "fix_induced": False, "component": "t"}

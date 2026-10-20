@@ -1,18 +1,5 @@
 [
   {
-    "name": "the ratchet reads the FIRST round instead of the second, so a new subject counts too early",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        second = sorted(rounds)[1]",
-        "        second = sorted(rounds)[0]"
-      ]
-    ],
-    "expect": [
-      "a first round arriving since arming does not count; the SECOND one does"
-    ]
-  },
-  {
     "name": "the ratchet excludes TWO-round subjects, where the procedure first applies",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -22,10 +9,11 @@
       ]
     ],
     "expect": [
-      "HISTORY IS NOT STARVED \u2014 only the subject whose SECOND round arrived since arming",
-      "every second round arriving since arming is named, not just the first found"
+      "a subject whose rounds BOTH postdate arming is named",
+      "a subject that had ONE round before arming and two now has crossed into scope"
     ],
-    "_rejected_variant": "`< 2` -> `< 1` was REJECTED: a one-round subject then indexes sorted(rounds)[1] and the suite dies by IndexError with ZERO [FAIL] lines. It is a kill, but not via the case it names, and a crash names nothing \u2014 check-plan-code's contract is red VIA THE NAMED CASE."
+    "_rejected_variant": "`< 2` -> `< 1` was REJECTED: a one-round subject then indexes sorted(rounds)[1] and the suite dies by IndexError with ZERO [FAIL] lines. It is a kill, but not via the case it names, and a crash names nothing \u2014 check-plan-code's contract is red VIA THE NAMED CASE.",
+    "_why_this_label": "The original labels named cases the starvation REDESIGN replaced. Excluding two-round subjects now reddens the two cases that assert a two-round subject IS in scope, which is the claim the clause carries."
   },
   {
     "name": "the ladder is walked from the MOST expensive route, inverting the whole bet",
@@ -51,19 +39,6 @@
     ],
     "expect": [
       "a retried route is refused by the validator too"
-    ]
-  },
-  {
-    "name": "non-termination needs MORE routes than exist, so the primary falsifier cannot fire",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "           if len(set(r.get(\"routes_tried\", []))) >= len(LADDER)",
-        "           if len(set(r.get(\"routes_tried\", []))) > len(LADDER)"
-      ]
-    ],
-    "expect": [
-      "every route tried and findings still arriving REFUTES the design"
     ]
   },
   {
@@ -106,19 +81,6 @@
     ]
   },
   {
-    "name": "the row validator stops borrowing the sequence rule and re-states nothing",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    err = route_sequence_error(row[\"routes_tried\"])",
-        "    err = None"
-      ]
-    ],
-    "expect": [
-      "the row validator borrows the SEQUENCE rule rather than re-stating it"
-    ]
-  },
-  {
     "name": "the re-evaluation sample drops to nine",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -142,6 +104,356 @@
     ],
     "expect": [
       "a denominator that doubled warns"
+    ]
+  },
+  {
+    "name": "the per-unit history is read from the WRONG rows, so a retry validates again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return [r[\"route\"] for r in prior if r.get(\"route\")]",
+        "    return []"
+      ]
+    ],
+    "expect": [
+      "\u2b50 a RETRY of the same route is refused BY NAME, not merely flagged",
+      "exhaustion is DERIVED, so it cannot be hidden by never writing routes_tried"
+    ]
+  },
+  {
+    "name": "validate_row stops relating `route` to the derived history \u2014 the r1 Blocking, restored",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if row[\"route\"] != expected:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "\u2b50 a RETRY of the same route is refused BY NAME, not merely flagged"
+    ]
+  },
+  {
+    "name": "a bet after exhaustion is accepted instead of named",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if expected is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a bet after the ladder is EXHAUSTED says so, rather than naming a next route"
+    ]
+  },
+  {
+    "name": "ranker_hit is coerced again, so a string 'false' erases a miss",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"ranker_hit\" in row and not isinstance(row[\"ranker_hit\"], bool):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a non-bool ranker_hit is refused rather than coerced"
+    ]
+  },
+  {
+    "name": "a non-object row raises out of the validator instead of being named",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(row, dict):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a non-object row is NAMED rather than raising"
+    ]
+  },
+  {
+    "name": "an authored routes_tried may contradict history again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"routes_tried\" in row and list(row[\"routes_tried\"]) != tried:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an authored routes_tried that contradicts this unit's history is refused"
+    ]
+  },
+  {
+    "name": "rows are grouped by SUBJECT only, so two units of one subject merge",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        out.setdefault(unit_key(r), []).append(r)",
+        "        out.setdefault(r.get(\"subject\"), []).append(r)"
+      ]
+    ],
+    "expect": [
+      "group_by_unit keeps each unit's rows in file order",
+      "unit_key partitions on (subject, unit), not on either alone"
+    ]
+  },
+  {
+    "name": "non-termination needs MORE routes than the ladder holds, so it cannot fire",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if len(set(tried)) < len(LADDER):",
+        "        if len(set(tried)) <= len(LADDER):"
+      ]
+    ],
+    "expect": [
+      "a unit that exhausted every route and still carries findings REFUTES the design",
+      "exhaustion is DERIVED, so it cannot be hidden by never writing routes_tried"
+    ]
+  },
+  {
+    "name": "a STOPPED unit that exhausted the ladder is reported as non-terminating",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if unit_rows[-1].get(\"outcome\") == \"continued\":",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "the SAME unit reaching the last route and STOPPING is the success path"
+    ]
+  },
+  {
+    "name": "trigger 4 counts ROWS again, so five units of one subject are five subjects",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            per_subject[r.get(\"subject\")] = r[\"rounds_at_termination\"]",
+        "            per_subject[(r.get(\"subject\"), r.get(\"unit\"))] = r[\"rounds_at_termination\"]"
+      ]
+    ],
+    "expect": [
+      "five UNITS of one subject do not make five subjects"
+    ]
+  },
+  {
+    "name": "a corpus that could not be read is quiet again on the default path",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if now.get(\"error\") and not args.rederive:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a corpus that could not be read is CANNOT RUN on the DEFAULT path, not quiet"
+    ]
+  },
+  {
+    "name": "main() validates each row ALONE, so it cannot see a retry",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        prior = seen.get(unit_key(r), []) if isinstance(r, dict) else []",
+        "        prior = None"
+      ]
+    ],
+    "expect": [
+      "main() validates each row against ITS UNIT'S history, so a retry is caught"
+    ]
+  },
+  {
+    "name": "derive_outcome guesses instead of reporting NOT DERIVABLE",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not tally or unit not in tally:\n        return None",
+        "    if not tally or unit not in tally:\n        return \"stopped\""
+      ]
+    ],
+    "expect": [
+      "an unknown unit is NOT DERIVABLE rather than assumed stopped",
+      "no tally at all is NOT DERIVABLE \u2014 47 of 57 subjects are unreadable"
+    ]
+  },
+  {
+    "name": "derive_outcome reads the wrong side of the round boundary",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return \"continued\" if tally[unit] > after_round else \"stopped\"",
+        "    return \"continued\" if tally[unit] >= after_round else \"stopped\""
+      ]
+    ],
+    "expect": [
+      "a component not appearing after that round means it stopped",
+      "the round boundary is read, not assumed"
+    ]
+  },
+  {
+    "name": "_corpus_now swallows a missing corpus as an empty one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not reviews.is_dir():\n            raise OSError(f\"the review corpus is not a directory: {reviews}\")",
+        "        if False:\n            raise OSError(f\"the review corpus is not a directory: {reviews}\")"
+      ]
+    ],
+    "expect": [
+      "...and the message NAMES the path, so the remedy is not guessed at"
+    ],
+    "_why_this_label": "Removing the is_dir guard does NOT reach the handler: Path.rglob on a missing directory yields nothing and raises nothing, so it falls through to the empty-corpus error. The first case (median is None AND error is truthy) still PASSES \u2014 it was too weak, checking that there IS an error rather than that it is the RIGHT one. The message case is what distinguishes 'the corpus is not there' from 'the corpus is empty', which are different remedies."
+  },
+  {
+    "name": "_corpus_now reads the module global instead of the corpus it is GIVEN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    reviews = (REPO / \"docs\" / \"reviews\") if reviews is None else reviews\n    counts = []",
+        "    reviews = REPO / \"docs\" / \"reviews\"\n    counts = []"
+      ]
+    ],
+    "expect": [
+      "the corpus it is GIVEN is the one it reads",
+      "a corpus with one two-round subject reports figures and NO error"
+    ]
+  },
+  {
+    "name": "an empty corpus returns a figure instead of an error, so zero over nothing is a pass",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        return {\"median\": None, \"mean\": None, \"error\": \"no subject has >=2 rounds\"}",
+        "        return {\"median\": 0, \"mean\": 0.0, \"subjects\": 0}"
+      ]
+    ],
+    "expect": [
+      "a corpus with no qualifying subject is an ERROR too, reached with no exception"
+    ]
+  },
+  {
+    "name": "an unreadable log reads as an EMPTY log rather than CANNOT RUN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    except OSError as exc:\n        raise ValueError(f\"{path.name} could not be read: {exc}\") from exc",
+        "    except OSError:\n        return []"
+      ]
+    ],
+    "expect": [
+      "an unreadable log raises ValueError (or reads) \u2014 never a silent empty log"
+    ]
+  },
+  {
+    "name": "the ratchet counts rounds held NOW instead of rounds held BEFORE arming, naming history",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        rounds_before = sum(1 for paths in rounds.values() if any(p in before for p in paths))",
+        "        rounds_before = 0"
+      ]
+    ],
+    "expect": [
+      "HISTORY IS NOT STARVED \u2014 a subject whose rounds BOTH predate arming is out of scope",
+      "a round with two documents counts as pre-existing when EITHER predates arming"
+    ]
+  },
+  {
+    "name": "membership requires EVERY path of a round to predate arming, so traversal order returns",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "if any(p in before for p in paths))",
+        "if all(p in before for p in paths))"
+      ]
+    ],
+    "expect": [
+      "a round with two documents counts as pre-existing when EITHER predates arming"
+    ]
+  },
+  {
+    "name": "an unparseable armed_at becomes an empty set again instead of CANNOT RUN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    epoch, why = parse_armed_at(armed)\n    if why:\n        return [], why",
+        "    epoch, why = parse_armed_at(armed)\n    if why:\n        return [], None"
+      ]
+    ],
+    "expect": [
+      "a BARE DATE is refused \u2014 git's approxidate would match nothing, silently",
+      "...and so is free text, with the remedy named"
+    ]
+  },
+  {
+    "name": "a naive instant is accepted, so the window depends on the reading machine",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if when.tzinfo is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a naive instant is refused, because the window would depend on the reader's machine",
+      "a BARE DATE is refused \u2014 git's approxidate would match nothing, silently"
+    ]
+  },
+  {
+    "name": "tree_at stops checking that git resolved INSIDE the window",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not when.isdigit() or int(when) > epoch:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "tree_at refuses an instant that predates the repository rather than returning {}"
+    ]
+  },
+  {
+    "name": "the shallow-clone refusal is dropped, so every tracked document looks new",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if flag.strip() == \"true\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a shallow clone is REFUSED, because history before arming is absent",
+      "...and a full clone is not \u2014 two DISTINCT inputs, so the flag is read"
+    ],
+    "_why_extracted": "In place the branch read `if shallow == \"true\"`, which can only behave differently on a shallow clone \u2014 so mutating it was EQUIVALENT on any normal checkout and survived with rc=0, indistinguishable from a coverage gap. The decision is now `shallow_refusal`, a pure function a case drives with both inputs."
+  },
+  {
+    "name": "the comparator defaults to a literal again, attributing a figure to a baseline without it",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(pinned_rounds.get(\"median\"), (int, float)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a baseline with no median is CANNOT RUN, not a defaulted comparator"
+    ]
+  },
+  {
+    "name": "an unreadable baseline raises instead of reporting CANNOT RUN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    except (json.JSONDecodeError, OSError) as exc:",
+        "    except (KeyError,) as exc:"
+      ]
+    ],
+    "expect": [
+      "an unreadable baseline is CANNOT RUN rather than a traceback"
     ]
   }
 ]

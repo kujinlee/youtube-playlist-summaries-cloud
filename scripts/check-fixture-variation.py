@@ -599,18 +599,31 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # every parameter is varied by at least two call sites, including `main()`'s world,
     # which is built inline per case because a helper's return is opaque to
     # `check-main-drivable.py` and one wrapper is one call site to THIS guard.
+    # ⟳ 2026-10-20 r1 FOLD: `subjects_starved.added` and `.since` are GONE — the
+    # starvation rule was REDESIGNED, not patched. It asked which path ARRIVED; it now
+    # asks what the tree HELD before arming, so the parameters are `armed` and `before`.
+    # `derive_routes_tried`, `derive_outcome`, `group_by_unit`, `unit_key`,
+    # `parse_armed_at`, `tree_at` and `shallow_refusal` joined with it.
     'check-decision-scheme.py': (
+        'derive_outcome.after_round',
+        'derive_outcome.subject',
+        'derive_outcome.tally',
+        'derive_outcome.unit',
+        'derive_routes_tried.prior',
+        'group_by_unit.rows',
         'main.argv',
         'main.baseline_path',
         'main.corpus',
         'main.log_path',
         'main.starved',
+        'parse_armed_at.raw',
         'read_log.path',
         'route_next.tried',
         'route_sequence_error.tried',
-        'subjects_starved.added',
+        'shallow_refusal.flag',
+        'subjects_starved.armed',
+        'subjects_starved.before',
         'subjects_starved.docs',
-        'subjects_starved.since',
         't1_not_fed.rows',
         't1_not_fed.subjects_since_arming',
         't2_non_termination.rows',
@@ -623,8 +636,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         't6_denominator_moved.tol',
         't7_sample_reached.floor',
         't7_sample_reached.rows',
+        'tree_at.epoch',
+        'unit_key.row',
+        'validate_row.prior',
         'validate_row.row',
     ),
+    # ⟳ 2026-10-20 r1 FOLD: `rounds_for.base`, `.subject` and `.writers` are GONE, not
+    # unexamined — the halves-relocation they belonged to was removed by route SPLIT
+    # (backlog #320), so `rounds_for` is back to one parameter. Retired with their
+    # subject, which is the one permitted kind of fall. `scope_lead`/`scope_tally`/
+    # `scope_lead_lines` joined for the margin and abstention.
     'check-review-decision.py': (
         'converged.rounds',
         'converged.scope',
@@ -634,9 +655,6 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'exit_code_for.decision',
         'parse_header.text',
         'review_scope.rounds',
-        'rounds_for.base',
-        'rounds_for.subject',
-        'rounds_for.writers',
         'scope_for.is_prose',
         'scope_for.paths',
         'scope_lead.rounds',
