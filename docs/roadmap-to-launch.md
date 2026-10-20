@@ -2373,15 +2373,20 @@ findings in r2 and r3`). Review: `docs/reviews/architecture-review-2026-10-20-de
 **Its verdict: the pure core is sound and converged; the world-reading boundary is not, and the
 reason is structural** — 64% of the fix-round findings are in components that read the world.
 
-- [ ] **#322 🔴 FIRST, and it gates the rest** — `tree_at` resolves its subject from `__file__`, so
-      `control_is_green=False` in the staged tree and **all 1,623 mutations report NOT MEASURED**.
-      Three committed commit messages state coverage figures the gate asserting them cannot produce.
+- [x] **#322 ✅ FIXED 2026-10-20, same day** — `tree_at` takes a defaulted `repo`; the cases now
+      BUILD a git repository instead of asserting against this one. **Falsifier run:
+      `control_is_green=True` in a staged tree with no `.git`**, where it was False. It also removed
+      a case that could not fail and made two mutations reachable for the first time.
+      ⚠ The coverage figures in the three earlier commit messages are still only as good as the
+      sweep that now runs — re-stated, not retro-corrected.
 - [ ] **#323** the ranker's statistic **saturates at the round count** — four components tied at 3,
       and I reported the forced silence as humility in two review documents
 - [ ] **#324** `t1_not_fed` reads SUBJECT granularity while the mechanism reasons in UNITS: 7 units
       decided, 2 logged — the predecessor's blind spot one level down
 - [ ] **#325** an abstention is **inexpressible as data**, so trigger 5 has no reachable falsifier
-- [ ] **#326** the mutation probe edits the live repo — exists only because #322 forbids a copy
+- [x] **#326 ✅ CLOSED BY #322**, exactly as the review predicted — `probe7.py` stages a copy and
+      mutates there, and matches the harness contract (`expect` EQUALS one red case) which the old
+      probe did not
 - [ ] **#321** is the ladder's prefix clause a law or a choice? Found by feeding the mechanism its
       own history: it refuses two of the four routes this slice took
 - [ ] **#320** which round-header fields can a reviewer's own half know (the withdrawn relocation)

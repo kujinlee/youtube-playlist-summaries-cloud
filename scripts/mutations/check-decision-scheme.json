@@ -342,8 +342,9 @@
       ]
     ],
     "expect": [
-      "tree_at refuses an instant that predates the repository rather than returning {}"
-    ]
+      "an instant before the first commit is refused, not answered with an empty tree"
+    ],
+    "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
   },
   {
     "name": "the shallow-clone refusal is dropped, so every tracked document looks new",
@@ -438,8 +439,9 @@
       ]
     ],
     "expect": [
-      "\u2b50 and it lists the HISTORICAL tree \u2014 a post-arming file is NOT in it"
-    ]
+      "\u2b50 a file committed AFTER the instant is absent from the tree at that instant"
+    ],
+    "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
   },
   {
     "name": "the NUL-delimited output is split on newlines, so every path is mangled",
@@ -451,10 +453,11 @@
       ]
     ],
     "expect": [
-      "tree_at answers from a LISTING of the real repository, not from a diff",
-      "...while a long-standing file IS, so the listing is not simply empty of reviews"
+      "...and one committed BEFORE it is present, so absence is not emptiness",
+      "at a LATER instant the same file IS present \u2014 two distinct epochs, one repo"
     ],
-    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names, not chosen. The first draft named the historical-tree case, which this mutation does not redden."
+    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names, not chosen. The first draft named the historical-tree case, which this mutation does not redden.",
+    "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
   },
   {
     "name": "an empty tree listing is accepted as a real answer rather than git not being read",
@@ -550,5 +553,34 @@
       "component_rounds gives the SET of rounds, which is what a position question needs"
     ],
     "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names. The draft also named the rounds-1-and-5 case, which this mutation does NOT redden: replacing the added round with 0 makes component_rounds return {'a': {0}}, and that case feeds derive_outcome a hand-written set rather than component_rounds' output, so it never sees the collapse. \u26a0 That is worth stating: derive_outcome's cases are INDEPENDENT of component_rounds by construction, which is why each needs its own entry."
+  },
+  {
+    "name": "tree_at ignores the repo it is GIVEN and reads whatever filesystem it sits in \u2014 #322 restored",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    repo = REPO if repo is None else repo",
+        "    repo = REPO"
+      ]
+    ],
+    "expect": [
+      "tree_at reads a repository it is GIVEN, so the suite needs no repo of its own",
+      "an instant before the repo's history REFUSES, and names no subject"
+    ],
+    "_reachable_since": "backlog #322 \u2014 before the repo was injectable these clauses could not be driven from a case at all"
+  },
+  {
+    "name": "the ls-tree call reaches past its subject to the module global",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "out = subprocess.run([\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", sha], cwd=repo,",
+        "out = subprocess.run([\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", sha], cwd=REPO,"
+      ]
+    ],
+    "expect": [
+      "...and one committed BEFORE it is present, so absence is not emptiness"
+    ],
+    "_reachable_since": "backlog #322 \u2014 before the repo was injectable these clauses could not be driven from a case at all"
   }
 ]

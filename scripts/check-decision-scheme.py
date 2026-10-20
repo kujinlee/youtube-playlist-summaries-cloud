@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 128 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 133 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -546,7 +546,8 @@ def empty_listing_refusal(paths: set, sha: str) -> str | None:
     return None
 
 
-def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
+def tree_at(epoch: int, repo: Path | None = None,
+            ) -> "tuple[set[str] | None, str | None]":
     """(paths that existed at `epoch`, None) or (None, why this cannot be answered).
 
     ⭐ A LISTING, NOT A DIFF. The first version asked which paths were ADDED since arming
@@ -560,13 +561,23 @@ def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
     nothing — naming an unchanged subject as new.
     """
     import subprocess
+    # ⛔⛔ THE SUBJECT IS A PARAMETER BECAUSE ITS ABSENCE MADE THE WHOLE FILE UNMEASURABLE
+    # (backlog #322). `REPO` is `Path(__file__).resolve().parent.parent`, so inside the mutation
+    # harness's staged copy it resolves to a temp directory with no `.git` — every git call here
+    # failed, the three cases driving this went red, `control_is_green` was False, and
+    # `mutate_delivered` returned NotMeasured for ALL 1,623 mutations across all 8 shards.
+    # ⭐ Every other world-taker in this file already took its subject as a defaulted parameter
+    # (ADR-0014): `main`, `_corpus_now`, `_round_docs`, `subjects_starved`. This one executes a
+    # subprocess and was the one left reaching for whatever filesystem it sat in. One member
+    # anchoring the file is the composition defect the Phase 6 review names.
+    repo = REPO if repo is None else repo
     try:
-        shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"], cwd=REPO,
+        shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"], cwd=repo,
                                  capture_output=True, text=True, check=True).stdout.strip()
         refusal = shallow_refusal(shallow)
         if refusal:
             return None, refusal
-        sha = subprocess.run(["git", "rev-list", "-1", f"--before=@{epoch}", "HEAD"], cwd=REPO,
+        sha = subprocess.run(["git", "rev-list", "-1", f"--before=@{epoch}", "HEAD"], cwd=repo,
                              capture_output=True, text=True, check=True).stdout.strip()
         if not sha:
             return None, (f"no commit exists at or before the arming instant (@{epoch}), so "
@@ -575,7 +586,7 @@ def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
         # the repository's FIRST commit, not nothing. An ISO-parseable but absurd instant would
         # resolve to a tiny tree, nearly every subject would look post-arming, and trigger 1
         # would name almost all of them — red from birth, backlog #56.
-        when = subprocess.run(["git", "show", "-s", "--format=%ct", sha], cwd=REPO,
+        when = subprocess.run(["git", "show", "-s", "--format=%ct", sha], cwd=repo,
                               capture_output=True, text=True, check=True).stdout.strip()
         if not when.isdigit() or int(when) > epoch:
             return None, (f"the newest commit at or before @{epoch} is {sha[:8]}, dated "
@@ -583,7 +594,7 @@ def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
                           f"arming instant predates this history and the tree at arming is "
                           f"not knowable")
         # ⟳ r2 YM3: `-z` so paths arrive as raw bytes between NULs, never quoted.
-        out = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", sha], cwd=REPO,
+        out = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", sha], cwd=repo,
                              capture_output=True, text=True, check=True).stdout
     except (subprocess.CalledProcessError, OSError) as exc:
         return None, f"git could not be read: {exc}"
@@ -596,7 +607,7 @@ def tree_at(epoch: int) -> "tuple[set[str] | None, str | None]":
 
 def subjects_starved(armed: object, docs: dict | None = None,
                      before_rounds: "set[tuple[str, int]] | None" = None,
-                     ) -> "tuple[list[str], str | None]":
+                     repo: Path | None = None) -> "tuple[list[str], str | None]":
     """(subjects that came into scope AFTER arming, None) | ([], why this cannot be answered).
 
     ⭐ THE RULE IS A SET DIFFERENCE OVER (subject, round) MEMBERSHIP:
@@ -619,7 +630,7 @@ def subjects_starved(armed: object, docs: dict | None = None,
         return [], why
     docs = _round_docs() if docs is None else docs
     if before_rounds is None:
-        paths, why = tree_at(epoch)
+        paths, why = tree_at(epoch, repo)
         if why:
             return [], why
         before_rounds = rounds_in_paths(paths)
@@ -838,6 +849,7 @@ def _try(fn):
 
 
 def _self_test() -> int:
+    import os as _os
     import tempfile as _tf
     cases = failures = 0
 
@@ -955,20 +967,86 @@ def _self_test() -> int:
          parse_armed_at("2026-13-45T99:00:00")[0], None)
     case("a non-string is refused by type, not by regex",
          parse_armed_at(20261020)[0], None)
-    # ⛔ r2 YM6: the old case asserted only that the set was LARGE, so replacing the resolved
-    # `sha` with "HEAD" left 113/113 green while production would have listed TODAY'S tree and
-    # suppressed starvation entirely. The assertion is now about the INSTANT, not the size: a
-    # file committed after the arming instant must NOT be in the tree at that instant, and one
-    # committed before it must be.
-    _ep = parse_armed_at(_ARM)[0]
-    _tree, _twhy = tree_at(_ep)
-    case("tree_at answers from a LISTING of the real repository, not from a diff",
-         (isinstance(_tree, set) and len(_tree) > 100, _twhy), (True, None))
-    case("⭐ and it lists the HISTORICAL tree — a post-arming file is NOT in it",
-         ("docs/reviews/coordinator/decision-route-escalation-r1-coordinator.md" in (_tree or set())),
-         False)
-    case("...while a long-standing file IS, so the listing is not simply empty of reviews",
-         ("scripts/check-review-rounds.py" in (_tree or set())), True)
+    # ── tree_at, driven over a git repository THE CASE BUILDS (backlog #322) ─────────────────
+    # ⛔⛔ THESE CASES USED TO ASSERT AGAINST *THIS* REPOSITORY, and that cost the whole file its
+    # mutation coverage: `tree_at` resolved its repo from `__file__`, so in the harness's staged
+    # copy (no `.git`) every git call failed, the control went red, and `mutate_delivered`
+    # returned NotMeasured for all 1,623 mutations. They also had two defects of their own:
+    #   * r3 L19 — they named two real repository paths, one of which is a moving target;
+    #   * and the headline one passed VACUOUSLY. `file in (_tree or set())` with `_tree = None`
+    #     is a membership test over nothing: assertion False, expectation False, PASS. The case
+    #     written to prove the historical instant is read COULD NOT FAIL.
+    # A constructed repository fixes all three: it exists wherever the suite runs, its paths are
+    # ours, and `_tree` is never None, so the instant assertion is real.
+    import subprocess as _sub
+
+    def _git_repo(d: Path, commits):
+        """A real repo with one commit per (epoch, filename). Returns {filename: epoch}."""
+        env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+               "PATH": _os.environ.get("PATH", ""), "HOME": str(d)}
+        def g(*a, **kw):
+            return _sub.run(["git", "-c", "user.name=t", "-c", "user.email=t@e", *a],
+                            cwd=d, capture_output=True, text=True, check=True,
+                            env={**env, **kw.get("extra", {})})
+        g("init", "-q", "-b", "main")
+        for epoch, fname in commits:
+            (d / fname).write_text("x")
+            g("add", fname)
+            g("commit", "-q", "-m", fname,
+              extra={"GIT_AUTHOR_DATE": f"@{epoch} +0000",
+                     "GIT_COMMITTER_DATE": f"@{epoch} +0000"})
+        return d
+
+    with _tf.TemporaryDirectory() as _gd:
+        _gr = _git_repo(Path(_gd), [(1_700_000_000, "old-r1-codex.md"),
+                                    (1_900_000_000, "new-r1-codex.md")])
+        _T_MID, _T_LATE = 1_800_000_000, 1_950_000_000
+        _mid, _mid_why = tree_at(_T_MID, _gr)
+        case("tree_at reads a repository it is GIVEN, so the suite needs no repo of its own",
+             (_mid_why, isinstance(_mid, set)), (None, True))
+        # ⭐ THE INSTANT, ASSERTED BOTH WAYS over history the case controls.
+        case("⭐ a file committed AFTER the instant is absent from the tree at that instant",
+             "new-r1-codex.md" in (_mid or set()), False)
+        case("...and one committed BEFORE it is present, so absence is not emptiness",
+             "old-r1-codex.md" in (_mid or set()), True)
+        _late, _ = tree_at(_T_LATE, _gr)
+        case("at a LATER instant the same file IS present — two distinct epochs, one repo",
+             ("new-r1-codex.md" in (_late or set()), "old-r1-codex.md" in (_late or set())),
+             (True, True))
+        case("an instant before the first commit is refused, not answered with an empty tree",
+             tree_at(1, _gr)[0], None)
+        # ⭐ AND THE RATCHET END-TO-END over a built repo: the late file's subject crossed into
+        # scope after _T_MID; the early one did not. No real-repository path appears anywhere.
+        _docs = {"old": {1: {"old-r1-codex.md"}, 2: {"old-r2-codex.md"}},
+                 "new": {1: {"new-r1-codex.md"}, 2: {"new-r2-codex.md"}}}
+        _gr2 = None
+        with _tf.TemporaryDirectory() as _gd2:
+            _gr2 = _git_repo(Path(_gd2), [(1_700_000_000, "old-r1-codex.md"),
+                                          (1_700_000_100, "old-r2-codex.md"),
+                                          (1_900_000_000, "new-r1-codex.md"),
+                                          (1_900_000_100, "new-r2-codex.md")])
+            # ⭐ END TO END over a repository the case built, with the membership DERIVED from
+            # it: at this instant the early subject's rounds exist and the late one's do not.
+            case("⭐ end to end on a BUILT repo: only the subject that crossed is named",
+                 subjects_starved("2027-01-01T00:00:00+00:00", _docs, repo=_gr2),
+                 (["new"], None))
+            # The SAME answer with membership SUPPLIED rather than derived — so the two halves
+            # of the set difference are checked independently, which is what r3 found missing:
+            # `rounds_in_paths` gained six cases and `_round_docs`, its counterpart, got none.
+            case("...and supplying the membership directly gives the same answer",
+                 subjects_starved("2027-01-01T00:00:00+00:00", _docs,
+                                  before_rounds=rounds_in_paths({"old-r1-codex.md",
+                                                                 "old-r2-codex.md"}))[0],
+                 ["new"])
+            # ⛔ AND AN INSTANT BEFORE THE REPOSITORY'S HISTORY REFUSES, rather than reporting
+            # that everything is new. I expected the latter writing this case and the code was
+            # right: "nothing predates the instant" is not evidence that every subject crossed
+            # into scope — it is evidence the question cannot be answered here. The refusal has
+            # to PROPAGATE through subjects_starved, which is what this checks.
+            _pre = subjects_starved("2023-01-01T00:00:00+00:00", _docs, repo=_gr2)
+            case("an instant before the repo's history REFUSES, and names no subject",
+                 (_pre[0], "no commit exists at or before" in (_pre[1] or "")), ([], True))
+
     case("an EMPTY listing is git not having been read, not a tree that held nothing",
          "cannot be true of a commit" in (empty_listing_refusal(set(), "abcdef1234") or ""), True)
     case("...and a non-empty one is accepted — two DISTINCT inputs, so the set is read",
