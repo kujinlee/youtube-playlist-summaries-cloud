@@ -113,6 +113,12 @@ the product.
 - **One behaviour** — the decision (2026-08-30) that every page renders inline markup identically,
   rather than each declaring its own feature subset. The behaviour is the *union* of what the four
   supported at the time, carried by the *single left-to-right scan* that only one of them had.
+- **The common look** — the explainer family's two colour ROLES, each a light/dark pair. Decided by the owner **2026-10-19**, and written here because until that day they existed **only as repeated literals in the pages themselves** and a session that needed one invented a third value instead (backlog #308).
+  * **`--accent` — headings.** `#8a5a2b` light, `#cb9a68` dark — the gold. Consumed by `page_chrome.text_style_css()` as `--head`, so it colours `h1`–`h4` inside the `.ex-body` scope.
+  * **`--link` — body links.** `#1f5d8c` light, `#8cbde0` dark — the light blue, with `a{color:var(--link);text-decoration-thickness:1px;text-underline-offset:2.5px}`.
+  * ⛔ **The two are SEPARATE ROLES and that separation is the decision.** Links were gold on 52 of 68 pages because they reused `--accent`; the owner's verdict was *"gold is too strong for the purpose"* for links while gold stays correct for titles. A page that spends one token on both jobs cannot express that.
+  * ⚠ **NEITHER IS A SEMANTIC COLOUR.** `--verified`/`--cool` mean *measured* and `--hot` means *defect* on these pages; `text_style_css`'s own docstring records that spending either on emphasis would make every styled phrase assert something it does not mean.
+  * ⚠ **The DEFAULT is not the convention, which is why this entry exists.** `brief-compose`'s shim supplies `--accent: var(--structure, …)` — the *border* colour — and supplies no link rule at all, so a page that declares neither gets a heading at **1.29:1** and links at the user agent's **1.92:1**. Both measured on one page, 2026-10-19, after passing every guard.
 
 ## Verification Stack (Repo Tooling)
 
