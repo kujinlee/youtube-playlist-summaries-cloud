@@ -11,7 +11,9 @@ It can then detect drift between the copies and simultaneously forbid the only f
 it.** The fix for a drifted copy is to delete it and cite the source; that deletion is exactly what
 such a guard refuses.
 
-**MEASURED 2026-10-17, `marketplace-inventory` / backlog #297.**
+**MEASURED 2026-10-17, `marketplace-inventory` / backlog #297.** ⚠ A BRANCH NAME IS A MOVING
+LOCATOR and this one is still open (PR #376). Durable:
+`refs/pull/376/head:scripts/check-claim-propagation.py` — the script is NOT on `master`.
 `scripts/check-claim-propagation.py`'s `LIVE` registry registered `d5-ship-plus-argued` and
 `d8-corrections-land-here` at `[SPEC, PAGE]`. Its rule: a token present at some declared sites and
 absent at others is a problem (*"reached only some of its sites"*). So:

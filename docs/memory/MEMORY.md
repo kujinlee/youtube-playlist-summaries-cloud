@@ -133,43 +133,6 @@
 - [backlog.md stays Markdown](backlog-md-stays-markdown.md) — decided 2026-09-10; don't re-derive the JSON question
 - [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation
 
-## Slice history (all MERGED unless noted — open the file for PR/SHA)
+## Slice history
 
-- [⭐⭐ chrome-bar + Phase 6 — #378 MERGED](chrome-bar-reachable-378-merged.md) — `11c1d5db`, NOT CONVERGED, 1 Blocking FILED. ⭐⭐ The suite is **monotone**: 17 added bytes kill the feature, all gates green (manifests 2.0% additive). The 8-round gate cleared on a **prose-only** round — `is_prose()` · #300/#304/#305/#306 OPEN
-- [⭐⭐ recall fold — PR #360 MERGED](recall-fold-360-merged.md) — `5128b99b`, **merged NOT CONVERGED with 3 Highs open**. 9 rounds; each fix CREATED the next instance. ⭐⭐ The fix was already in the repo at `check-ci-watched.py:860` and reached **zero** siblings → ADR-0014
-- [⭐⭐ backlog #154 — PR #331 READY](backlog-154-dash-scalar-ready-331.md) — `0791ca6f`, **not merged**. EIGHT rounds, each a NEW GRANULARITY (line→node→document→key-depth). Fix changed KIND: **refuse, don't widen**. ⭐ My class-fix made 6 mutations UNKILLABLE, suite green — only the sweep saw it
-- [⭐ arch review #153 — PR #329 READY](arch-review-153-workflow-readers.md) — `ccff9878`, **not merged**. Verdict: extract `_structural()`, NOT parse. Found a **LIVE false green** → #154 first. 4 rounds; #155 SIZE NOT KNOWN → size by ATTEMPTING
-- [M4 superseded trail](m4-superseded-trail.md) — history only, split out of the RESUME file when it outgrew the read limit. Fork (a), `0028` cannot be a migration, Phase 6 ran TWICE
-- [⭐⭐ pin-python — #317](pin-python-317-merged.md) — `e7ed8c1a`. **TEN defects, ONE function, 7 rounds**, all one root cause. ⭐ I tested the CONTAINER's shape not its CONTENTS (2×); a fix landed at the WRONG LAYER (2×); my pre-committed falsifier FIRED
-- [⭐⭐ closing-table r7–r11 — #327 + #328](closing-table-r7-r8-merged-327.md) — the independent read #325 shipped without. 16 findings/5 rounds. Marker fired on **96.7%→49%**, false-sentence firings **372→0**. ⛔ `check-review-recorded` keys on CODEX VERDICTS, not commit order — 2 of 5 reds
-- [⭐ merge-ready + budget slack — #324](merge-ready-slice-merged-324.md) — `af4d9033`. `check-merge-ready.py` runs the **PR-only** gates a local run can't reach; relay its verdict VERBATIM. ⭐ **2026-09-26: I skipped it and put TWO PRs red** — run it, not a gate subset; `NO-ENTRY:` ≠ `NO-REVIEW:`; and it reads the COMMITTED diff, so an uncommitted entry is a vacuous rc=0. 3 rounds, 4 silent misses, ONE parser. `--tick` REFUSES while `paused:`
-- [⭐ Wake-on-visit — #322](wake-on-visit-merged-322.md) — `e693f36a`. Worker sleeps/wakes, own Fly app NO public IP. INERT except the drain-key fix
-- [Lease-sweep cadence — #318](lease-sweep-merged-318.md) — ⭐ `35cf44c6`. Idle worker was **100%** of prod DB traffic. Found 🔴 **#139**; `fly.toml` drift reverts it
-- [#137 schema-gates REQUIRED — #315+#316](schema-gates-required-137-merged.md) — ⭐ `[verify, schema-gates]` live. The deleted filter had a SECOND CONSUMER (#138)
-- [peer-sites — #313](peer-sites-merged-pr-313.md) — `14063fe5`. Ships with NO caller by design (#134). ⛔ `NO-REVIEW:` must start the line
-- [#122 manifest seeded — #311](seed-manifest-122-merged.md) — 42 entries, 7 live defects. ⛔ Codex timed out ALL 3 rounds; #129/#130 open
-- [Split #295: /src/ half — #310](split-295-src-root-merged.md) — ⛔ #295 STILL OPEN, do NOT merge as-is; restart half parked
-- [Guard-ratchet scope — #298](guard-coverage-scope-merged.md) — ⭐ saw 41 guards, ignored 14 on tables it BUILDS; now has a falsifier
-- [Schema gates in CI — #297](schema-gates-in-ci-merged.md) — ⭐ 15 gates, 93s, zero added wall clock. ⛔ nightly cron UNARMED
-- [#91 coverage-verdict union — #269](coverage-verdict-union-91-merged.md) — ⭐ 374 mutations / 0 survivors
-- [Selection-card guard LIVE](selection-card-guard-built.md) — ⭐ a hook REFUSES a malformed card. Its 2 rounds found **4 Blockings**
-- [#110 parser completeness](backlog-110-parser-completeness-merged.md) — ⭐⭐ BOTH Blockings were the row's own defect, reintroduced by its fix
-- [Retire plan mode — #270+#271](retire-plan-mode-merged.md) — ⭐ 3,607 → 2,013 lines. The only sanctioned ratchet FALL
-- [Ask-choices — #186](dashboard-ask-choices-merged.md) — ⭐⭐ **CONSENSUS IS NOT VERIFICATION**: all three agreed, `git diff` refuted
-- [Page chrome seam — #185](page-chrome-seam-merged.md) — ⭐ theme+provenance on all five page producers
-- [HOME-redirect — #181](mutation-harness-home-redirect-state.md) — ⭐ `$HOME` governs `Path.home()` and a bare `~`, **NOTHING else**
-- [Inline renderer seam](inline-renderer-seam-merged.md) — ⭐ ONE renderer, four pages; the sum HELD at 73
-- [Fixing a PREMISE ≠ covering the BRANCH](fixing-a-premise-is-not-covering-the-branch.md) — ⭐⭐ **12 unfalsifiable cases across 8 guards**
-- [Mutation-manifest retarget](mutation-manifest-retarget-merged.md) — ⭐ `--mutate .` mutates DELIVERED scripts
-- [Link-contrast slice](link-contrast-slice-merged.md) — ⭐ shipped UNREVIEWED; 2 rounds then found 6 defects
-- [Integration suite skips migrations](integration-suite-does-not-apply-migrations.md) — ✅ FIXED (#46). A GREEN gate on the wrong schema is worse than none
-- **Older slices, all MERGED unless marked:**
-  [Stage 3 cloud-sync](stage3-cloud-sync-branch-state.md) (honest-blob-read open) ·
-  [Blob addressing](blob-addressing-spec-state.md) ⏸ PARKED, round 10 mandatory if unparked ·
-  [Worker-vs-sync fencing](worker-vs-sync-fencing-gap.md) · [Serial coherence](serial-coherence-slice-state.md) ·
-  [Reservation release](reservation-release-slice-state.md) · [Section timestamps](summary-section-timestamp-guarantee-state.md) ·
-  [Dig frontend](cloud-dig-deeper-frontend-state.md) · [Dig serving](cloud-dig-serving-branch-state.md) ·
-  [Sidebar UX](playlist-sidebar-ux-branch-state.md) · [Summary PDF](cloud-summary-pdf-slice-state.md) ·
-  [Frontend sub-project](frontend-subproject-design-state.md) · [Stage 2 autonomy](stage-2-batch-autonomy-plan.md) ·
-  [1G](stage-1g-design-state.md) · [1F-c](stage-1f-c-design-state.md) · [1F-b](stage-1f-b-design-state.md) ·
-  [1F-a](stage-1f-a-design-state.md) · [1D](stage-1d-merged-followups.md)
+- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19: it was 6,232 of the 27,805 bytes that overflowed the 24,985-byte limit. Reached by TRIGGER now, not always-loaded — ask for a PR number or SHA and it fires

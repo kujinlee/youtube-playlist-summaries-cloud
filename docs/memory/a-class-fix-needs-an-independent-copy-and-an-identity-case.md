@@ -9,7 +9,10 @@ metadata:
 **Generalising a case by deriving its inputs from the code under test produces a case that cannot
 fail.** The obvious class fix is the wrong one, and it fails silently in the direction of good news.
 
-**MEASURED 2026-10-17, r5 CLAUDE H1, `check-claim-propagation.py`.** A case pinned one void element;
+**MEASURED 2026-10-17, r5 CLAUDE H1, `check-claim-propagation.py` — ⚠ the script is NOT on
+`master` and never has been. Durable locator: `refs/pull/376/head:scripts/check-claim-propagation.py`
+(verified fetchable 2026-10-19). ⛔ NOT a bare path and NOT a branch sha: the commit that version
+lives on is unreachable from `master`, so both die with the branch; GitHub retains the pull ref.** A case pinned one void element;
 the fix was supposed to pin all fourteen. Three versions:
 
 | version | drop `area` from `VOID` | verdict |
