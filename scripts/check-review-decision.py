@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 61 cases
+    python3 scripts/check-review-decision.py --self-test  # 68 cases
 
 WHY THIS EXISTS
 ---------------
@@ -93,6 +93,46 @@ def scope_for(paths: list[str], is_prose) -> str:
 
 
 # ----------------------------------------------------------- Q5: thrashing
+def review_scope(rounds: list[dict]) -> list[str]:
+    """PURE. -> the component(s) a convened review should EXAMINE, most-recurrent first.
+
+    ⛔ THIS IS NOT `thrashing_component`, AND KEEPING THEM APART IS THE WHOLE POINT. That function
+    answers WHETHER to convene — the arming condition, phrased on two CONSECUTIVE rounds. This
+    answers WHICH component to examine. **They can disagree, and when they disagreed the arming
+    statistic was wrong.**
+
+    MEASURED 2026-10-20 over the 11 subjects whose coordinator documents carry a parseable header,
+    against the 3 whose architecture review names the component it convened on (`src-caller`,
+    `number-populations`, `parse-header`):
+
+        total appearances        3 of 3   <- this function
+        longest CONSECUTIVE run  2 of 3   <- what the arming condition encodes
+        returns-after-a-gap      1 of 3
+        total + 2x returns       3 of 3   rejected: a free parameter buying nothing
+
+    ⭐ THE CASE THAT DECIDES IT is `review-decision-procedure`, whose own review convened on
+    `parse-header` (backlog #117). Consecutive-run ranks `scope-for` first (rounds 1,2,3,4 — run 4);
+    `parse-header` appeared in rounds **1,2,3 then 6,7** — total 5, longest run 3. It was fixed,
+    went quiet for two rounds, and CAME BACK. **Consecutiveness is exactly what blinds a ranker to
+    that shape**, and a component that returns after being apparently fixed is the stronger signal
+    of a design problem.
+
+    ⚠ BOUNDS, STATED RATHER THAN HIDDEN. **n = 3**, and it is a FIT not a validation. It is also a
+    cap in the data rather than a shortfall in effort: of 19 architecture reviews, the three that
+    would have extended the set land on subjects whose coordinator documents carry no header, so
+    there is nothing to rank (backlog #314). ⛔ **And this is a RANKER, never a TRIGGER** — no
+    threshold on this quantity separated labelled from unlabelled subjects, raw or normalised by
+    round count, so it must not be read as "convene". `thrashing_component` keeps that job.
+    """
+    tally: dict[str, int] = {}
+    for r in rounds:
+        # a component counts ONCE per round, however many findings it carried: the signal is
+        # "this component came back", not "this round was noisy".
+        for c in {f.get("component") for f in r.get("findings", []) if f.get("component")}:
+            tally[c] = tally.get(c, 0) + 1
+    return [c for c, _ in sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
 def thrashing_component(rounds: list[dict]) -> str | None:
     """PURE. The component carrying fix-induced findings in BOTH of the last two rounds.
 
@@ -480,6 +520,32 @@ def _self_test() -> int:
          thrashing_component([fix_a1, fix_a2, clean3]), None)
     case("a single round can never be thrashing",
          thrashing_component([fix_a1]), None)
+
+    # ── review_scope: WHICH component a convened review examines ─────────────────────────────
+    def _r(n, *comps):
+        return {"round": n, "findings": [{"component": c, "fix_induced": True} for c in comps]}
+
+    case("review_scope ranks by TOTAL appearances",
+         review_scope([_r(1, "a", "b"), _r(2, "a"), _r(3, "a")]), ["a", "b"])
+    # ⭐ THE IDENTITY CASE — the real measured disagreement, from `review-decision-procedure`,
+    # whose own architecture review convened on `parse-header` (backlog #117). Consecutive-run
+    # ranks `scope-for` first; total appearances ranks `parse-header` first, and it is right.
+    _real = [_r(n, *( (["parse-header"] if n in (1,2,3,6,7) else [])
+                    + (["scope-for"]    if n in (1,2,3,4)   else []) )) for n in range(1, 8)]
+    case("a component that RETURNS AFTER A GAP outranks a longer consecutive run "
+         "(parse-header 1,2,3,6,7 over scope-for 1,2,3,4)",
+         review_scope(_real)[0], "parse-header")
+    case("and the arming function still names the OTHER one, which is why they are separate "
+         "functions rather than one",
+         thrashing_component(_real[-2:]), "parse-header")
+    case("a component counts ONCE per round however many findings it carried",
+         review_scope([{"round": 1, "findings": [{"component": "a", "fix_induced": True}] * 5},
+                       _r(2, "b"), _r(3, "b")]), ["b", "a"])
+    case("ties break by name, so the order is deterministic",
+         review_scope([_r(1, "zeta", "alpha")]), ["alpha", "zeta"])
+    case("no rounds -> no scope, rather than a guess", review_scope([]), [])
+    case("findings with no component are ignored rather than counted as one",
+         review_scope([{"round": 1, "findings": [{"fix_induced": True}, {"component": "a"}]}]), ["a"])
 
     # --- Q4a convergence --------------------------------------------------
     inst = {"severity": "Low", "aim": "instrument", "fix_induced": False, "component": "t"}

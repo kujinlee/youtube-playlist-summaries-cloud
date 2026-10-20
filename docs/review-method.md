@@ -214,6 +214,43 @@ document:
 
 Both matched a listed symptom. Only the second is a mechanism defect. **Quote the test, not the list.**
 
+### Which component a convened review examines — ranked, and the arming statistic is the wrong one
+
+**The component that ARMS a review need not be the one it should EXAMINE**, and when the two
+disagreed the arming statistic was wrong. Measured 2026-10-20 over the 11 subjects whose coordinator
+documents carry a parseable header, scored against the 3 whose architecture review names the
+component it convened on (`src-caller`, `number-populations`, `parse-header`):
+
+| statistic | ranks the right component first |
+|---|---|
+| **total appearances across the subject's rounds** | **3 of 3** |
+| longest CONSECUTIVE run — what the arming condition encodes | 2 of 3 |
+| returns-after-a-gap alone | 1 of 3 (ties with everything at zero) |
+| total + 2×returns | 3 of 3 — rejected, a free parameter buying nothing |
+
+⭐ **The case that decides it** is `review-decision-procedure`, whose own review convened on
+`parse-header` (backlog #117). Consecutive-run ranks `scope-for` first (rounds 1,2,3,4 — run 4);
+`parse-header` appeared in rounds **1,2,3 then 6,7** — total 5, longest run 3. **It was fixed, went
+quiet for two rounds, and came back.** Consecutiveness is precisely what blinds a ranker to that
+shape, and a component that returns after being apparently fixed is the stronger signal.
+
+⛔ **A RANKER, NEVER A TRIGGER.** No threshold on this quantity separated labelled from unlabelled
+subjects — `total >= 3` captures all three but fires on 8 of 11; `total >= 4` is selective and
+MISSES `src-caller` at 3; normalising by round count interleaves them at share 1.00. So it answers
+*which*, and `thrashing_component` keeps *whether*.
+
+⚠ **n = 3, a FIT and not a validation — and that is a cap in the data, not a shortfall in effort.**
+Of 19 architecture reviews the three that would have extended the set land on subjects whose
+coordinator documents carry no header, so there is nothing to rank. ⛔ **The trap is circular: the
+mechanism that would replace the authored `fix_induced` field cannot be validated on history,
+because validating it requires that field.** Validation must therefore be forward-looking — the plan
+and the falsifier are in backlog #314. Computed by `scripts/check-review-decision.py:review_scope`.
+
+⚠ **AND `fix_induced` ITSELF IS NOT DERIVABLE**, which is why this ranker avoids it entirely.
+Measured: of 314 labelled findings, 27 carried both a cited path and the commit anchors, git-blame
+could run on 8, and it agreed with the author on 2. Causation is not an observable — *caused by the
+previous fix* requires knowing WHY a defect exists.
+
 **A third outcome the two-way split does not cover: STALE CROSS-REFERENCE.** *"A decision changed and
 some sentences still state the old one."* Round 13 produced four. It is neither mechanism nor
 branch-coverage, and its remedy is neither a redesign nor an exhaustiveness pass — it is:

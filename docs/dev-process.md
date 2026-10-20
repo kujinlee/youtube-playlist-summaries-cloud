@@ -111,16 +111,16 @@ A one-line change can be the most dangerous thing in the repo.
 - Merging stays a **human gate**: open the PR, notify, do not merge.
 
 **⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT (corrected 2026-09-14).** It fires when **two
-consecutive rounds carry findings caused by the previous round's own fix, in one component** — the
-shape that bought it: the stable-blob-addressing reservation produced a Blocking or High in six
-consecutive rounds, four of them introduced by the previous fix, while every other component of the
-same spec converged. **The inventory was right; the arming condition was wrong** — and a count was
-the wrong repair for it. ⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer
-*thrashing or prose floor?* in the round document, with per-finding evidence. Measured 2026-08-28:
-Blocking totals ran 4→5→4 while the character shifted entirely, so a count would have convened this
-over prose that was improving — and on a document rounds can be right forever, which is a signal to
-go build. Both shapes, the test *can a redesign remove it?* and the stop condition are in
-[`review-method.md`](review-method.md); the full account is in that retrospective's review doc.
+consecutive rounds carry findings caused by the previous round's own fix, in one component**. A
+count was the wrong repair: measured 2026-08-28, Blocking totals ran 4→5→4 while the character
+shifted entirely, and on a document rounds can be right forever — go build, do not convene.
+⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer *thrashing or prose floor?* in
+the round document, with per-finding evidence. ⟳ **2026-10-20: THE COMPONENT A CONVENED REVIEW
+EXAMINES IS NOT NECESSARILY THE ONE THAT ARMED IT** — rank by TOTAL appearances, not consecutive
+run, because one fixed, gone quiet and COME BACK beats a longer unbroken run. A ranker, never a
+trigger. `check-review-decision.py:review_scope` computes it; the measurement is in
+[`review-method.md`](review-method.md), which also holds both shapes, the test *can a redesign
+remove it?* and the stop condition. The full account is in that retrospective's review doc.
 
 **The architecture review — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
