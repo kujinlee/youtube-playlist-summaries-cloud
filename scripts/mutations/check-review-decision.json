@@ -365,5 +365,18 @@
       "the `disposition` rendering is pinned"
     ],
     "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "⭐⭐ r6 CLAUDE H1 — THE FIFTH EVASION: a BODY LITERAL of `render_unreachable` is edited to blame the implementation. The lookup table is untouched, so every table identity case still passes — and before the OUTPUT pin this left the suite at 111/111 while `decide()` told the reader the code was broken and must be rewritten. The pin on the renderer's INPUTS could not see its OUTPUT; this entry exists so that can never be true again.",
+    "edits": [
+      [
+        "    return (\"no round recorded for this subject is clean, so convergence is \"",
+        "    return (\"the implementation on this branch is defective, so delivery is \""
+      ]
+    ],
+    "expect": [
+      "⭐ THE SHIPPED DIAGNOSTIC IS PINNED IN FULL — body literals included, not just the table"
+    ],
+    "file": "scripts/check-review-decision.py"
   }
 ]

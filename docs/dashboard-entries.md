@@ -16172,3 +16172,58 @@ a None reason), truncating the run and breaking other mutations' attribution —
 it. Decision tool: `ARCHITECTURE_REVIEW — thrashing: 'sweep-skip' r4+r5`. Answered in the r5
 coordinator half: thrashing mechanically, prose floor by evidence (4/4 in the reporting layer, 0 in
 the verdict logic across 3 rounds), DECLINED to convene, falsifier pre-committed.
+
+## 2026-10-21 [needs-you]
+A third correction, and this one is about how the checking itself was being done.
+
+**There has never been an automated check run on this branch.** The checks run when a change is
+proposed for merge, and no proposal has been opened — so every "it is all green" today, mine and the
+note I inherited, came from running *some* of the checks by hand and picking which ones.
+
+I ran the real list this time — sixty-two commands, taken from the configuration file rather than
+from memory — and **six were failing.** Two were mine and real: a test of mine could have been
+satisfied by a function that ignores its input, and committing one of this morning's review
+documents broke a rule about where things are allowed to be defined, because the reviewer had pasted
+a line of its own evidence that happened to contain the exact text the rule watches for.
+
+That second one turned out to be a flaw in the checker, not in the review. The checker already says
+in writing that review documents are frozen records and exempt — and one of its two rules honoured
+that while the other never read it. So it was punishing a reviewer for showing its work. Fixed, with
+a test that proves the exemption is *scoped* rather than switched off.
+
+⚠ And while writing the fix I immediately caused the same problem again, by pasting the watched text
+into the comment explaining it. A checker that cannot quote its own subject is about as clear a
+demonstration as you could ask for.
+
+Of the remaining four: one is *supposed* to be failing (a deliberate signal, not a fault), one was
+only failing because of the first one, and two cannot be judged until a merge proposal exists.
+
+**Waiting on you:** the merge, the design-review call from this morning, and now a third thing worth
+knowing before you decide — **this branch is not passing its own checks**, and the reason that was
+invisible is that nothing has ever run them end to end. One of the two remaining checks says, in its
+own words, that the way out is either another review round or a written declaration in the merge
+proposal. That is a choice I should not make quietly on your behalf.
+<!--tech-->
+⛔ NO CI RUN HAS EVER EXISTED ON `decision-route-escalation` — `ci.yml` triggers on `pull_request`
+to master and `push` to master, and this branch has no PR, so `gh run list --branch` returns empty.
+Every green claim today, including the inherited handoff's "58 guards", was a hand-picked SUBSET.
+Ran the FULL list extracted from `ci.yml` (62 commands, `docs/CLAUDE.md` rule 1): **6 failing**.
+FIXED: (1) `check-fixture-variation` — `round_blocker(r=…)` called at ONE value, so "any clause that
+reads that parameter is unguarded"; now exercised at two differently-blocking inputs plus a case
+asserting they yield different sentences (115/115). (2) `check-canonical-source` — the r4 Codex
+review became a second canon site because it pasted the `[FAIL]` line proving a mutation worked.
+⭐ A GUARD DEFECT, not a workaround: the module's docstring states `docs/reviews/**` is exempt
+frozen testimony and the CITING rule applies `EXEMPT`; the DUPLICATION rule never did. Now applied to
+both, +3 cases (both exempt paths AND a non-exempt second holder that must still be caught, so the
+rule is scoped not disabled), +1 mutation entry; 28/28 cases, 6/6 mutations killed and attributed.
+⚠ The first draft of that fix pasted the literal marker into its own comment and reproduced the
+defect in `scripts/check-canonical-source.py` — removed, described instead, with a deliberate typo
+so the block cannot be grepped into a third site. REMAINING: `check-decision-scheme` red BY DESIGN
+(trigger 1 NOT FED — `decision-log-model-redesign` at >=2 rounds with no log row; plus a new
+trigger-6 WARN, `rounds_total` 392→423 +7.9%, because this session added three rounds);
+`check-plan-code --mutate` was DOWNSTREAM of (2) — verified by scoped sweeps now returning real
+verdicts (6/6 and 28/28, 0 survivors); `check-doc-citations` and `check-reference-namespace --base`
+need `$GITHUB_BASE_REF`. `check-review-recorded`: 10 rounds ran and guarded code was committed after
+each — the r6 fixes are unreviewed by construction, and it names the escape itself (`NO-REVIEW:
+<reason>` in the PR body, or another round). r6 CLAUDE H1/H2/M1/M2/L1/L2 all fixed; suites 206/206 ·
+115/115 · 28/28; manifests 1,655, 0 orphans, 0 refusals.

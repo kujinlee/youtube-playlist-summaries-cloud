@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 111 cases
+    python3 scripts/check-review-decision.py --self-test  # 115 cases
 
 WHY THIS EXISTS
 ---------------
@@ -932,6 +932,31 @@ def _self_test() -> int:
     # NOT establish that the strings are correct — see `render_unreachable`'s docstring for the bound
     # that is actually claimed. An INDEPENDENT COPY, not a loop over `_UNREACHABLE_PROSE`: looping
     # would let the table be emptied silently, which is r5 CLAUDE H1's defect exactly.
+    # ⛔⛔ r6 CLAUDE H1 — THE FIFTH EVASION, AND THE IDENTITY CASES BELOW DID NOT CATCH IT.
+    # They pin `_UNREACHABLE_PROSE`, which is the renderer's INPUT. `render_unreachable` also
+    # concatenates THREE BODY LITERALS that no case touched, so editing only those left the suite
+    # at 111/111 while `decide()` told the reader *"the implementation on this branch is defective
+    # … the code it delivers is broken and must be rewritten"*. Verified. A `.replace()` on the
+    # returned string passes the same way.
+    # ⭐ SO THE PIN MOVES TO THE OUTPUT — the artifact a reader actually sees — and that is what
+    # "change detection" had to mean all along. This is NOT a sixth proxy: a proxy stands in for
+    # the thing, and this IS the thing. The table pins below are kept as the LOCALISERS: they say
+    # WHICH part moved when this case reddens, which a single 551-char diff does not.
+    # ⚠ AND THE ARCHITECTURE REVIEW'S FRAMING WAS PART OF THE CAUSE (r6 CLAUDE M2): concluding
+    # "the property is untestable, so narrow the claim" excused stopping at the inputs. Change
+    # detection on the OUTPUT is entirely testable; the previous round simply did not do it.
+    case("⭐ THE SHIPPED DIAGNOSTIC IS PINNED IN FULL — body literals included, not just the table",
+         render_unreachable({"about": "record", "remedy": "disposition", "blockers": []}),
+         "no round recorded for this subject is clean, so convergence is UNREACHABLE from this "
+         "record rather than merely unmet: every recorded round still carries an OPEN Blocking/High "
+         "finding, an open deliverable-aimed finding, or fixes it declared non-trivial. ⚠ What "
+         "reaches convergence is recording a disposition — `fixed` or `declined` — on each of them, "
+         "which is evidence this workflow already produces. `filed` does not count: a backlog "
+         "deferral is not an answer about THIS branch. See backlog #329 for why the record, not the "
+         "work, is what this is about")
+    case("...and what `decide` hands a reader is that same rendered string, not a paraphrase",
+         render_unreachable({"about": "record", "remedy": "disposition", "blockers": []})
+         in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1], True)
     case("the `record` rendering is pinned — an edit must come HERE",
          _UNREACHABLE_PROSE["about"]["record"],
          "UNREACHABLE from this record rather than merely unmet")
@@ -983,9 +1008,22 @@ def _self_test() -> int:
                           "findings": [{"severity": "High", "aim": "instrument",
                                         "disposition": "declined"}]}])
              if converged(rs, "one-round")[0]), True)
-    case("round_blocker is the owner — converged's refusal IS its sentence",
-         converged([{"round": 7, "fixes_nontrivial": True, "findings": []}], "one-round")[1] ==
-         round_blocker({"round": 7, "fixes_nontrivial": True, "findings": []}), True)
+    # ⛔ TWO DISTINCT INPUTS, AND THAT IS THE POINT — `check-fixture-variation.py` caught this
+    # calling `round_blocker` at ONE value, so *"any clause that reads that parameter is
+    # unguarded"*: the case was satisfiable by a function ignoring its argument. ⚠ Found 2026-10-21
+    # only by running the FULL `ci.yml` guard list; my own subset reported green. The two inputs
+    # block for DIFFERENT reasons — non-trivial fixes, and an open Blocking — so the asserted
+    # property (converged's refusal IS round_blocker's sentence) is tested across both arms rather
+    # than once. See `exercise-the-producer-at-two-distinct-inputs`.
+    _nt = {"round": 7, "fixes_nontrivial": True, "findings": []}
+    _open = {"round": 2, "fixes_nontrivial": False,
+             "findings": [{"severity": "Blocking", "aim": "instrument", "disposition": "filed"}]}
+    case("round_blocker is the owner — converged's refusal IS its sentence (non-trivial fixes)",
+         converged([_nt], "one-round")[1] == round_blocker(_nt), True)
+    case("...and at a SECOND, differently-blocking input (an open Blocking)",
+         converged([_open], "one-round")[1] == round_blocker(_open), True)
+    case("...and those two inputs really do produce DIFFERENT sentences",
+         round_blocker(_nt) != round_blocker(_open), True)
     case("a High blocks convergence even when aimed at the instrument",
          converged([_R(1, [inst]), _R(2, [high])], "full-loop")[0], False)
     case("a deliverable finding blocks convergence",

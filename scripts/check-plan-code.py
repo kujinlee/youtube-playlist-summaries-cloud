@@ -324,6 +324,13 @@ def changed_from_nul(raw: str) -> "list[str] | None":
     the sweep — rather than silently resurrecting this defect. *"Cannot run is a failure, never a
     pass"* applies to parsing the input exactly as it applies to the measurement.
 
+    ⚠ ENCODING, stated because r6 CLAUDE L1 found the bound missing: the subject is BYTES and this
+    takes a `str`, so a filename that is not valid UTF-8 raises in the caller's `read_text()` before
+    reaching here. That FAILS THE STEP rather than skipping the gate — loud, not silent, which is
+    the right direction — but it is a crash and not a diagnosed refusal, and no case covers it
+    because the harness cannot create such a name portably. Reading bytes and decoding with
+    `surrogateescape` would turn it into a refusal; not done, and recorded rather than implied.
+
     ⚠ WHAT IS NOT CLAIMED: that every mangling is detectable. This catches the newline-delimited and
     C-quoted shapes, which are the ones `git` actually produces. A path containing a literal newline
     under `-z` is handled correctly (NUL is the only separator); one crafted to contain a NUL is not
@@ -1244,7 +1251,9 @@ EXPECTED_MUTATIONS = {
     # (`unreachable_message_sound`, deleted), THREE added on the tokens and the renderer,
     # and one RE-POINTED rather than retired because its rule moved rather than died.
     # ⟳ 2026-10-21 ARCH F1: 25 -> 27. The two SHIPPED renderings, pinned.
-    "scripts/check-review-decision.py": 27,
+    # ⟳ 2026-10-21 r6: 27 -> 28. The OUTPUT pin — r6 edited three unpinned body
+    # literals and the suite stayed 111/111 while the reader was told the opposite.
+    "scripts/check-review-decision.py": 28,
     "scripts/check-decision-scheme.py": 42,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -1581,7 +1590,8 @@ EXPECTED_MUTATIONS = {
     # the prev_was_row flag a split table depends on.
     "scripts/check-docs.py": 5,
     "scripts/check-explainer-delivery.py": 5,
-    "scripts/check-canonical-source.py": 5,   # r6 redesign: the inverted-restatement mutation
+    # ⟳ 2026-10-21: 5 -> 6. EXEMPT reaching the duplication rule.
+    "scripts/check-canonical-source.py": 6,   # r6 redesign: the inverted-restatement mutation
     # ⟳ 2026-09-19, the feature hub. SEVENTEEN, one per rule `check_nodes`/`check_cross`/
     # `backlog_areas` decide — the plan's own draft said five, which left both cross-file anchor
     # directions, the claimed-twice rules, the wrapped-line refusal, the `now` exclusion, the area
@@ -5476,7 +5486,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1653)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1655)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

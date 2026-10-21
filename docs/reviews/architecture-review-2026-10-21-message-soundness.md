@@ -66,11 +66,35 @@ The property every design tried to establish was:
 > *this refusal is a statement about the RECORD, not about the work, and the remedy it names is
 > DISPOSITIONING findings.*
 
-That is a claim about **what an English sentence means**. No test can assert it. Every design
-therefore reduced it to something testable-but-adjacent — a token's presence, a phrase's absence, a
-dictionary key — and each reduction admitted a sentence that satisfied the proxy while asserting the
-opposite. **The implementations were not the defect; the GOAL was.** Four rounds, ~12 cases and 5
-mutation entries were spent on a property that cannot hold.
+That is a claim about **what an English sentence means**. No test can assert it.
+
+⟳⟳ **CORRECTED THE SAME DAY BY r6 CLAUDE M2, AND THE CORRECTION MATTERS MORE THAN THE ORIGINAL
+FINDING.** This section first read *"The implementations were not the defect; the GOAL was"*, over
+all four designs. **That is true of two of them and it is what let a FIFTH evasion through.**
+
+| Design | Chased an untestable property? | Or an ordinary construction defect? |
+|---|---|---|
+| (1) token `RECORDED` present | ✅ yes — a proxy for meaning | |
+| (2) remedy phrase + forbidden list | ✅ yes — a proxy for meaning | |
+| (3) the forbidden list had no falsifier | | ⛔ a case LOOPING OVER THE SET UNDER TEST |
+| (4) identity cases on `_UNREACHABLE_PROSE` | | ⛔ pinned the renderer's INPUT, not its OUTPUT |
+
+Designs 3 and 4 are **entirely testable and were simply done wrong.** Concluding *"no test can hold
+this"* across all four is the rationalisation that excused stopping at the inputs — and r6 then
+edited three unpinned body literals in `render_unreachable`, leaving the suite at **111/111** while
+`decide()` told the reader *"the implementation on this branch is defective … the code it delivers
+is broken and must be rewritten"*.
+
+⛔ **THE HONEST SPLIT, which is what this finding should have said:** the SOUNDNESS claim is
+unachievable, and abandoning it was right. The CHANGE-DETECTION claim is achievable and was botched
+twice — once by looping over the guarded set, once by pinning inputs. **Fixed by pinning the
+OUTPUT**: one identity case over the whole 551-character rendered string, with the table pins kept
+as localisers. Both evasion shapes now redden by name.
+
+⚠ **AND THIS IS THE SECOND TIME TODAY A SWEEPING CONCLUSION OF MINE EXCUSED INCOMPLETE WORK** — the
+first was declining this very review on "4 of 4 in the reporting layer", which r6 also refuted. Both
+had the same shape: a generalisation that happened to end the work early. Four rounds, ~12 cases and
+5 mutation entries were spent here, and only part of that was unavoidable.
 
 ⛔ **AND THE REPOSITORY ALREADY OWNS THE RIGHT IDEA, BUILT FOR THE WRONG POPULATION.**
 `scripts/check-gate-falsifiability.py` exists for precisely this class, and says so:
@@ -128,10 +152,12 @@ r6** regardless of whether anything was answered. The prose pre-commitment outpe
 
 ---
 
-## F3 — The thing we decided this round that was not written down
+## F3 — The thing we decided this round that was not written down (n=1, and labelled so)
 
 *dev-process.md's* required question. Answer: **"declined to convene" became a reviewable decision
-with a falsifier attached, and that is now the pattern rather than a one-off.** Nothing in
+with a falsifier attached.** ⚠ r6 CLAUDE L2: this first said *"that is now the pattern"*, which
+overstates a single instance — backlog #334 says n=1 and the row is right; this sentence was not.
+One observation is a candidate, not a pattern. Nothing in
 `review-method.md` says a declined escalation must pre-commit the observation that would reverse it.
 It worked — r6 reversed it on evidence, with no argument about whether the reversal was warranted.
 ⚠ And the reason it worked is worth stating: the party declining was the party whose work armed the

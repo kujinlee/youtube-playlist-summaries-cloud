@@ -900,7 +900,12 @@ jobs:
           changed = (mod.changed_from_nul(pathlib.Path("/tmp/changed.txt").read_text())
                      if os.environ["DIFF_TAKEN"] == "1" else None)
           need = mod.sweep_needed(changed)
-          print("RUN" if need else "SKIP")
+          # ⛔ THREE STATES, NOT TWO (r6 CLAUDE M1). `changed_from_nul` can REFUSE input it cannot
+          # trust, and the shell had no way to say so — the RUN arm then asserted "a staged path
+          # changed" with an empty evidence list, which is the FOURTH instance on this branch of a
+          # log line claiming more than the step knows. `RUN-UNPARSED` is that third state.
+          print("RUN-UNPARSED" if (need and changed is None and os.environ["DIFF_TAKEN"] == "1")
+                else ("RUN" if need else "SKIP"))
           # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
           # paths that forced it; for SKIP, the staged-but-unswept paths that fell in the measured
           # hole (r5 CLAUDE M1). Both come from the module, so the shell owns no copy of either set.
@@ -942,6 +947,20 @@ jobs:
                 echo "nothing in the skipped set either — the sweep would mutate unchanged code"
                 echo "against unchanged suites, so it can only reproduce the previous result."
               fi
+              ;;
+            RUN-UNPARSED)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::the diff was taken but its paths could not be trusted —"
+              # ⛔ NO BACKTICKS IN A DOUBLE-QUOTED STRING. The first version of this line wrote
+              # the flag as `-z` in backticks and bash ran it as COMMAND SUBSTITUTION: the log read
+              # "-z: command not found" and the sentence lost the very word it was about. That is
+              # the exact footgun docs/dev-process.md records ("any backtick inside a double-quoted
+              # bash string is command substitution, and it has silently skipped a review gate"),
+              # committed by the person citing it, in a warning about dishonest log lines.
+              echo "::warning::not NUL-delimited, so the -z flag is missing or git quoted a path."
+              echo "the changed-file set is UNDETERMINED, so the sweep runs rather than"
+              echo "skipping a gate on an unanswered question. No path list is shown"
+              echo "BECAUSE THERE IS NONE — saying otherwise is what r6 CLAUDE M1 caught."
               ;;
             RUN)
               echo "changed=true" >> "$GITHUB_OUTPUT"
