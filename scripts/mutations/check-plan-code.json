@@ -1393,5 +1393,44 @@
       "⛔ a C-quoted path that arrives anyway is REFUSED, never mis-prefixed"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "⭐ r6 CLAUDE M1: the RUN-UNPARSED arm is removed, so a diff that was TAKEN but whose paths could not be TRUSTED reports as an ordinary RUN — the reader is told a staged path changed when the step could not read one, which is the fourth instance on this branch of a log line claiming more than its step knows",
+    "edits": [
+      [
+        "    if untrusted:\n        return \"RUN-UNPARSED\"",
+        "    if False:\n        return \"RUN-UNPARSED\""
+      ]
+    ],
+    "expect": [
+      "⭐ a diff that was TAKEN but could not be TRUSTED is RUN-UNPARSED, not RUN"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "⛔ the verdict INVERTS for a parsed diff, so a branch touching a staged path SKIPS the whole mutation gate and a docs-only branch pays for it — the property every case in this family exists to protect",
+    "edits": [
+      [
+        "    return \"RUN\" if sweep_needed(changed) else \"SKIP\"",
+        "    return \"SKIP\" if sweep_needed(changed) else \"RUN\""
+      ]
+    ],
+    "expect": [
+      "a staged path changed -> RUN"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "r6 CLAUDE M1: the `diff_taken` half is dropped, so a diff that FAILED is reported as UNPARSEABLE. Both still RUN the sweep — an unanswered question must never skip a gate — but the two causes of a None change-set are conflated and the warning names the wrong one. ⚠ Its own anchor, because a shared one is refused as measuring nothing new.",
+    "edits": [
+      [
+        "    untrusted = diff_taken and changed is None",
+        "    untrusted = changed is None"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and a diff that FAILED is plain RUN — the two causes of None report differently"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]

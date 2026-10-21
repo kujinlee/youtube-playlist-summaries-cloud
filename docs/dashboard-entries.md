@@ -16227,3 +16227,45 @@ need `$GITHUB_BASE_REF`. `check-review-recorded`: 10 rounds ran and guarded code
 each — the r6 fixes are unreviewed by construction, and it names the escape itself (`NO-REVIEW:
 <reason>` in the PR body, or another round). r6 CLAUDE H1/H2/M1/M2/L1/L2 all fixed; suites 206/206 ·
 115/115 · 28/28; manifests 1,655, 0 orphans, 0 refusals.
+
+## 2026-10-21 [needs-you]
+The last piece before this goes up for merge, and it was a rule I had broken an hour earlier.
+
+Yesterday's fix added a third outcome to the step that decides whether the expensive test suite
+runs — "the file list was read but cannot be trusted", as distinct from "could not be read at all".
+Both run the suite; a reader needs to know which. I put that decision in the workflow file, twenty
+lines below a comment **in that same file** explaining why decisions must never live there: nothing
+in a workflow file can be tested, so logic put there is unmeasurable by construction.
+
+It is now a small function in the tested code, with nine tests and three deliberate breakages that
+each have to be caught by the test naming them. The workflow now collects the facts and reports
+what the function decides.
+
+That matters for what happens next: the merge request carries a written declaration that no review
+has seen the current tree, and such a declaration is only honest if it points at a measurement that
+actually exists. For every other changed file one does. For the workflow file it does not, and never
+will — so moving the decision out was the difference between a declaration that defers to evidence
+and one that defers to nothing.
+
+**Waiting on you:** the merge. The request is open with everything named — what six rounds found,
+what is still not claimed, the one gap that no checker will ever cover, and the fact that merging
+this also closes the other open request (#380) and its twenty-six commits. ⚠ It explicitly does
+**not** claim the work has converged; it says the opposite, and why.
+<!--tech-->
+`sweep_verdict(changed, diff_taken) -> RUN | SKIP | RUN-UNPARSED` extracted from `ci.yml`'s `run:`
+block into `check-plan-code.py`, 20 lines under that file's own ⛔ *"THE DECISION IS NOT MADE HERE …
+that is exactly how the shard rule shipped wrong in three consecutive rounds with every gate green"*.
+⭐ MEASURED JUSTIFICATION: all **1,658** mutation entries target `scripts/`; `.github/` and
+`.claude/hooks/` have **ZERO**, and every significant finding this session landed in those unmeasured
+areas (`|| true`, the transcript guard's call site, the C-quoted path, the RUN-arm log line) while
+case-and-mutation-covered code held under three rounds. +9 cases (incl. an independent copy of the
+state set and "no undetermined answer can SKIP a gate" over every shape producing one), +3 entries:
+losing the RUN-UNPARSED state, conflating the two causes of a None change-set, and inverting the
+parsed verdict. All killed via their named case over a green control; re-control green. ⚠ The
+condition is TWO lines because one line put two defects behind one anchor and the harness refused the
+second as *"measuring nothing new"* — second instance today after `SWEEP_SKIP_ROOTS`, so it is a
+design rule: a decision that cannot be mutated independently of its neighbour cannot be guarded
+independently. ⚠ Case D failed first run on a STALE FIXTURE (my docs shim predated `-z` and ignored
+it, so the parser correctly refused its newline output) — fixture fixed, not code. Five CI shapes
+executed end to end. Suites 215/215 · 113/113 · 28/28; 56 declared counts verified BY RUNNING THEM;
+full `ci.yml` list **1 failing of 57** (`check-decision-scheme`, red BY DESIGN, trigger 1).

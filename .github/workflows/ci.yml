@@ -899,13 +899,16 @@ jobs:
           # cannot trust, returning None, which `sweep_needed` answers by running the sweep.
           changed = (mod.changed_from_nul(pathlib.Path("/tmp/changed.txt").read_text())
                      if os.environ["DIFF_TAKEN"] == "1" else None)
-          need = mod.sweep_needed(changed)
-          # ⛔ THREE STATES, NOT TWO (r6 CLAUDE M1). `changed_from_nul` can REFUSE input it cannot
-          # trust, and the shell had no way to say so — the RUN arm then asserted "a staged path
-          # changed" with an empty evidence list, which is the FOURTH instance on this branch of a
-          # log line claiming more than the step knows. `RUN-UNPARSED` is that third state.
-          print("RUN-UNPARSED" if (need and changed is None and os.environ["DIFF_TAKEN"] == "1")
-                else ("RUN" if need else "SKIP"))
+          # ⛔⛔ THE DECISION IS NOT MADE HERE — AND FOR AN HOUR IT WAS. The three-way
+          # classification was written inline in this block, twenty lines under the comment above
+          # that forbids exactly that, and it is now `check-plan-code.sweep_verdict`: pure, nine
+          # cases, three mutation entries. The rule is not a style point — ALL 1,655 mutation
+          # entries in this repository target `scripts/`, and `.github/` has ZERO, so logic living
+          # here is unmeasurable by construction. Every significant finding on this branch landed
+          # in the unmeasured areas while the covered code held under three rounds.
+          verdict = mod.sweep_verdict(changed, os.environ["DIFF_TAKEN"] == "1")
+          print(verdict)
+          need = verdict != "SKIP"
           # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
           # paths that forced it; for SKIP, the staged-but-unswept paths that fell in the measured
           # hole (r5 CLAUDE M1). Both come from the module, so the shell owns no copy of either set.

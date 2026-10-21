@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 206 cases
+    python3 scripts/check-plan-code.py --self-test          # 215 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -344,6 +344,48 @@ def changed_from_nul(raw: str) -> "list[str] | None":
     if any(p.startswith('"') for p in parts):
         return None          # C-quoted survived anyway — refuse rather than mis-prefix
     return parts
+
+
+SWEEP_VERDICTS = ("RUN", "SKIP", "RUN-UNPARSED")
+
+
+def sweep_verdict(changed: "list[str] | None", diff_taken: bool) -> str:
+    """PURE. The whole three-way decision: `RUN`, `SKIP`, or `RUN-UNPARSED`.
+
+    ⛔ THIS EXISTS BECAUSE I PUT THE THIRD STATE IN `ci.yml`'s `run:` BLOCK, TWENTY LINES UNDER THE
+    COMMENT IN THAT SAME FILE FORBIDDING IT: *"THE DECISION IS NOT MADE HERE … A `run:` block has
+    none of those, and that is exactly how the shard rule shipped wrong in three consecutive rounds
+    with every gate green."* Measured, and it is not a style point — ALL 1,655 mutation entries in
+    this repository target `scripts/`; `.github/` and `.claude/hooks/` have **ZERO**. So logic in a
+    workflow is unmeasurable by construction, and every significant finding on this branch landed in
+    exactly those unmeasured areas (`|| true`, the transcript guard's call site, the C-quoted path,
+    the RUN-arm log line) while the case-and-mutation-covered code held under three rounds.
+
+    ⭐ THE TWO INPUTS ARE NOT INTERCHANGEABLE, and conflating them is the bug this shape prevents.
+    `changed is None` has TWO causes that need OPPOSITE reporting:
+
+        diff_taken=False, changed=None  -> the diff itself failed      -> RUN
+        diff_taken=True,  changed=None  -> the diff was taken but its
+                                           paths could not be trusted -> RUN-UNPARSED
+
+    Both RUN the sweep — an unanswered question must never skip a gate — but a reader needs to know
+    WHICH, and the shell had no way to say so (r6 CLAUDE M1: the RUN arm asserted "a staged path
+    changed" with an empty evidence list, the fourth instance on this branch of a log line claiming
+    more than its step knows).
+
+    ⚠ NO STATE RETURNS A SKIP ON AN UNDETERMINED ANSWER. `SKIP` is reachable only from a parsed,
+    trusted path list that contains nothing under `SWEEP_RELEVANT_ROOTS`.
+    """
+    # ⛔ TWO LINES, NOT ONE, AND THE HARNESS IS WHY — the same constraint that gave
+    # `SWEEP_SKIP_ROOTS` its own name. Written as a single `if diff_taken and changed is None`,
+    # the two distinct defects (losing the state entirely; conflating the two causes of a None
+    # change-set) share one anchor, and the mutation harness refuses a second entry that repeats
+    # an earlier one's anchors — *"it measures nothing new"*. A decision that cannot be mutated
+    # independently of its neighbour cannot be GUARDED independently of it.
+    untrusted = diff_taken and changed is None
+    if untrusted:
+        return "RUN-UNPARSED"
+    return "RUN" if sweep_needed(changed) else "SKIP"
 
 
 def sweep_skipped_hole(changed: "list[str] | None") -> list[str]:
@@ -1182,7 +1224,11 @@ EXPECTED_MUTATIONS = {
     # WHICH of two different situations produced the same `changed=false` (r5 CLAUDE M1).
     # ⟳ 2026-10-21 r6: 112 -> 114. `changed_from_nul`, both arms — the parse that let a
     # C-quoted path skip the whole gate (r6 CODEX finding 2, a VERDICT defect).
-    "scripts/check-plan-code.py": 114,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-10-21: 114 -> 117. `sweep_verdict` — the three-way decision moved OUT of
+    # ci.yml's run: block, where it was unmeasurable (ZERO mutation entries target .github/).
+    # Three entries: losing the RUN-UNPARSED state, conflating the two causes of a None
+    # change-set, and inverting the parsed verdict outright.
+    "scripts/check-plan-code.py": 117,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -5469,6 +5515,29 @@ def _self_test() -> int:
     # control before I measured why. A case with no reachable mutation is coverage on paper.
     case("a path merely CONTAINING a skipped root is not a hole — it must be the prefix",
          sweep_skipped_hole(["app/docs/readme.md", "x/docs/y.sql"]), [])
+    # ── `sweep_verdict`: the THREE-WAY decision, moved out of ci.yml's run: block ──────────────
+    # ⛔ The third state lived in YAML for an hour, under that file's own rule forbidding it. All
+    # 1,655 mutation entries target `scripts/`; `.github/` has ZERO — so the decision was
+    # unmeasurable where it was. These cases are what a `NO-REVIEW:` declaration can defer to.
+    case("⭐ a diff that was TAKEN but could not be TRUSTED is RUN-UNPARSED, not RUN",
+         sweep_verdict(None, True), "RUN-UNPARSED")
+    case("⭐ ...and a diff that FAILED is plain RUN — the two causes of None report differently",
+         sweep_verdict(None, False), "RUN")
+    case("a staged path changed -> RUN", sweep_verdict(["scripts/a.py"], True), "RUN")
+    case("a non-staged path changed -> SKIP", sweep_verdict(["docs/a.md"], True), "SKIP")
+    case("an empty parsed diff -> SKIP", sweep_verdict([], True), "SKIP")
+    case("a staged NON-scripts path still runs it", sweep_verdict([".agents/skills/x.md"], True),
+         "RUN")
+    # ⛔ NO UNDETERMINED INPUT MAY EVER YIELD `SKIP` — the property the whole step exists for,
+    # asserted over every shape that can produce one rather than at a single input.
+    case("⛔ no undetermined answer can SKIP a gate",
+         [sweep_verdict(c, d) for c, d in ((None, True), (None, False))], ["RUN-UNPARSED", "RUN"])
+    # An INDEPENDENT copy of the state set — a loop over SWEEP_VERDICTS would shrink, not redden.
+    case("the three verdicts are exactly these", SWEEP_VERDICTS, ("RUN", "SKIP", "RUN-UNPARSED"))
+    case("every verdict the function can return is a declared one",
+         sorted({sweep_verdict(c, d)
+                 for c in (None, [], ["scripts/a.py"], ["docs/a.md"], [".claude/hooks/h.sh"])
+                 for d in (True, False)}) == sorted(set(SWEEP_VERDICTS)), True)
     # ── r6 CODEX finding 2: git C-QUOTES non-ASCII paths without `-z`, and the quoted form
     # does not start with a staged root, so the gate was SKIPPED while scripts/ had changed.
     # Measured in a real repo: `"scripts/\303\251.py"` -> sweep_needed False. A VERDICT defect.
@@ -5486,7 +5555,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1655)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1658)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
