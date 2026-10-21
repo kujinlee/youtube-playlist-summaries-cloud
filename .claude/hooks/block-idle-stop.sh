@@ -78,11 +78,35 @@ BANNER_RC=$?
 # ── Bare `#N` shown to the reader, added 2026-10-20 (owner decision) ────────────────────────
 # `check-reference-namespace.py` covers 14 reader-facing FILES; the transcript was excluded by
 # OMISSION, not by a decision. Measured on the session that prompted this: 64 bare references
-# against 10 qualified, on the surface the human reads live. WARN-ONLY and non-blocking — its rc
-# is deliberately NOT captured into the stop decision, because this guard must never be the reason
-# a turn cannot end. The channel is hook stdout, which reaches the ASSISTANT, and here that is the
-# actor who must change.
-printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-transcript-references.py" --decide || true
+# against 10 qualified, on the surface the human reads live. WARN-ONLY and non-blocking.
+#
+# ⟳ 2026-10-21, r4 CLAUDE H1 — THIS CALL SITE MADE THE WHOLE GUARD INERT, and the comment it
+# replaces is the record of how. It read: *"its rc is deliberately NOT captured into the stop
+# decision, because this guard must never be the reason a turn cannot end. The channel is hook
+# stdout, which reaches the ASSISTANT."* Both halves of that were wrong, in opposite directions:
+#
+#   (a) IT CONFLATED "CAPTURED" WITH "BLOCKING", avoiding a consequence the mechanism never had.
+#       `exit 1` is defined in this file's own contract header as *"allows the stop, shows stderr,
+#       does not block"* — the code the three sibling observers already use. Capturing the rc
+#       preserves warn-only exactly; NOT capturing it chose `exit 0`, the code the same header
+#       defines as *"allows the stop SILENTLY"*.
+#   (b) THE SCRIPT WRITES TO STDERR, NOT STDOUT. Every print in its `run_decide` carries
+#       `file=sys.stderr`; there is no stdout print in the module outside `--self-test`. So the
+#       claim named a channel the code does not use, and `|| true` then muted the one it does.
+#
+# MEASURED, by running this wrapper over a transcript with two bare `#N` and the sibling observers
+# stubbed to 0: `exit 0`, stdout 0 bytes, the warning stranded on stderr. Four distinct states —
+# quiet, FIRED, CANNOT RUN, and an uncaught crash (1,440 bytes of AttributeError) — all collapsed
+# onto `exit 0`. The guard was audible only by ACCIDENT, when an unrelated observer happened to
+# fail and forced `exit 1`; on the first real run that was `BANNER_RC=2`, which is plausibly why
+# it looked like it worked while being written.
+#
+# ⛔ THE CHANNEL IS NOW DESCRIBED AS THE ONE THAT EXISTS: stderr, surfaced by `exit 1`, read by
+# the HUMAN. No claim is made that hook stdout reaches the assistant — that claim is what failed
+# here, and replacing it with a second unverified one would repeat the defect in better prose.
+# See `a-gates-channel-can-be-weaker-than-the-gate`, which this guard's docstring cited as answered.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-transcript-references.py" --decide
+TRANSCRIPT_RC=$?
 
 # ── Fourth question, added 2026-09-20 (user decision) ───────────────────────────────────────
 # Did the previous turn CLOSE A JOB — commit, push, merge, tick — and then report it in prose
@@ -167,7 +191,13 @@ CI_RC=$?
 # What this arithmetic guarantees is that the HOOK never surfaces a 2 on their behalf: a detector
 # that only observes must not be able to wedge a turn it has no stake in. An earlier version of
 # this comment said "neither may return 2", which was false about both scripts (code review r2).
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$TABLE_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
+# ⟳ 2026-10-21, r4 CLAUDE H1: `TRANSCRIPT_RC` JOINS THIS CONDITION. It was the one observer whose
+# rc never reached here, which made every one of its outcomes `exit 0` — silent. It is listed with
+# the others and not specially, because it warns exactly as they do; its CANNOT-RUN 2 surfaces as
+# `exit 1` under the same guarantee stated above (the hook never surfaces a 2 on an observer's
+# behalf). FALSIFIER: stub the three siblings to 0, feed a transcript carrying a bare `#N`, and the
+# wrapper must exit 1 with the warning on stderr — it exited 0 with stdout empty before this line.
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$TABLE_RC" != "0" || "$TRANSCRIPT_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0

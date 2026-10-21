@@ -1304,16 +1304,42 @@
     ]
   },
   {
-    "name": "backlog #173: the prefix test becomes a substring test, so a docs path merely mentioning scripts/ forces the sweep and the saving disappears",
+    "name": "backlog #173: the prefix test becomes a SUBSTRING test, so a docs path merely mentioning a staged root forces the sweep and the saving disappears — ANCHOR RE-POINTED 2026-10-21, when r4 replaced the literal \"scripts/\" with SWEEP_RELEVANT_ROOTS and orphaned this entry (count=0). The RULE it tests is unchanged: prefix, never substring.",
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return any(path.startswith(\"scripts/\") for path in changed if path.strip())",
-        "    return any(\"scripts/\" in path for path in changed if path.strip())"
+        "    return any(path.startswith(SWEEP_RELEVANT_ROOTS) for path in changed if path.strip())",
+        "    return any(any(r in path for r in SWEEP_RELEVANT_ROOTS) for path in changed if path.strip())"
       ]
     ],
     "expect": [
       "a path merely CONTAINING scripts/ does not count — it must be the prefix"
     ]
+  },
+  {
+    "name": "⭐ r4 CODEX finding 2: SWEEP_RELEVANT_ROOTS collapses back to scripts/ only, so a branch changing a STAGED non-scripts path silently loses its whole mutation gate — the hole proved by execution with .agents/skills/shared/handoff-path.md (25/25 -> 24/25)",
+    "edits": [
+      [
+        "SWEEP_RELEVANT_ROOTS = tuple(f\"{root}/\" for root in HARNESS_TREE\n                             if root not in SWEEP_SKIP_ROOTS)",
+        "SWEEP_RELEVANT_ROOTS = (\"scripts/\",)"
+      ]
+    ],
+    "expect": [
+      "⭐ `.agents/skills/shared/handoff-path.md` alone RUNS the sweep — a manifested suite reads it, measured 25/25 -> 24/25"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "r4: the `docs` exclusion is dropped, so every docs-only PR runs the 8-shard sweep and backlog #173's measured saving disappears — its PINNED decision, reverted",
+    "edits": [
+      [
+        "SWEEP_SKIP_ROOTS = (\"docs\",)",
+        "SWEEP_SKIP_ROOTS = ()"
+      ]
+    ],
+    "expect": [
+      "⛔ `docs/` is EXCLUDED — backlog #173's pinned decision, and the whole saving"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]

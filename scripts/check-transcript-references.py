@@ -47,11 +47,26 @@ gate *"WHERE does the failure land, and does a human read that place?"* — its 
 refusal printed to hook stdout, which `CLAUDE.md` states is "shown to the assistant and not reliably
 to the user", so eight defects accumulated while a HARD gate fired into silence.
 
-⭐ HERE THE ANSWER INVERTS, AND THAT IS WHY STDOUT IS THE RIGHT CHANNEL. In that case the HUMAN had
-to act, so reaching only the assistant made the gate useless. In this one the human is already the
-detector — they read the bare reference in the message and asked which namespace it was. **The actor
-who must change is the ASSISTANT**, and hook stdout reaches exactly the assistant. The channel is
-matched to the actor rather than merely loud.
+⛔⛔ WHAT THIS SECTION CLAIMED WAS FALSE OF BOTH THE CODE AND THE CALLER, AND IT MADE THE WHOLE
+GUARD INERT FOR A DAY — r4 CLAUDE H1, 2026-10-21. It read: *"HERE THE ANSWER INVERTS, AND THAT IS
+WHY STDOUT IS THE RIGHT CHANNEL. […] The actor who must change is the ASSISTANT, and hook stdout
+reaches exactly the assistant."* Two measured refutations:
+
+  * THIS MODULE NEVER WRITES TO STDOUT. Both prints in `run_decide` carry `file=sys.stderr`, and
+    there is no stdout print anywhere outside `--self-test`. The section argued for a channel the
+    code does not use — so it was a claim about intent, read as a claim about behaviour.
+  * THE CALLER THEN MUTED THE CHANNEL THAT DOES EXIST. `block-idle-stop.sh` invoked this with
+    `|| true` and never captured the rc, so quiet, FIRED, CANNOT RUN and an uncaught crash all
+    produced `exit 0` — the code that wrapper's own contract header defines as *"allows the stop
+    SILENTLY"*. Executed with the sibling observers stubbed to 0: `exit 0`, stdout 0 bytes, the
+    warning stranded on stderr where nothing surfaced it.
+
+⛔ THE HONEST STATEMENT, WHICH IS ALL THAT IS CLAIMED NOW: the channel is **stderr**, surfaced by
+the wrapper as `exit 1` (*"allows the stop, shows stderr, does not block"*), and the reader there is
+the HUMAN — the same auditor the sibling observers reach, by the same mechanism. ⚠ NO CLAIM IS MADE
+THAT HOOK STDOUT REACHES THE ASSISTANT. It may; it is not measured here, and an unverified channel
+claim is precisely what failed above. The actor-vs-channel question this section was named for is
+therefore OPEN, not answered: the human still relays the correction. Warn-only is unchanged.
 
 Two consequences are still real and are not hidden:
   * ONE TURN OF LATENCY, inherited from the reader: the nudge arrives after the human has already

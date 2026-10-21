@@ -848,27 +848,77 @@ jobs:
           # skipped on EVERY run while the job stayed green. Printing the verdict separates "the
           # answer is no" from "the question could not be asked" — the distinction the exit code
           # silently collapsed.
-          git diff --name-only "$BASE"...HEAD > /tmp/changed.txt || true
-          VERDICT=$(python3 - <<'PYEOF' || echo "ERROR"
-          import importlib.util, pathlib, sys
+          # ⛔⛔ THE DIFF'S EXIT STATUS IS CHECKED, AND `|| true` IS GONE — r4, found independently
+          # by BOTH review halves and the coordinator, the only three-way overlap of the round.
+          # `|| true` made "the diff could not be taken" indistinguishable from "nothing changed":
+          # the redirect had already truncated the file, so Python read `[]`, and `sweep_needed([])`
+          # is False -> SKIP. MEASURED with a `git` shim that resolves `rev-parse --verify` and
+          # fails `diff` (the shape of a missing merge base): `changed=false`, exit 0, and a log
+          # line asserting *"no scripts/ file changed"* — a FALSE STATEMENT ABOUT THE WORLD rather
+          # than an error, so the `::warning::` arm below was never reached and nothing in the log
+          # told a reader the gate had been skipped.
+          #
+          # ⛔ `[]` IS NOT `None`, AND THAT WAS THE WHOLE BUG. `sweep_needed` has always had a
+          # `None` arm for exactly this condition, with a case pinning it — but the shell could
+          # express "no paths changed" and had NO WAY to express "I could not find out", so that
+          # arm was UNREACHABLE FROM ITS ONLY CALL SITE. The callee was correct and the guarantee
+          # was still absent: *unit coverage does not compose — mutate the CALL SITE*.
+          # ⚠ The only thing protecting this today is `fetch-depth: 0` on this job's checkout, and
+          # that setting's own comment says it is there "for parity with `verify`, not because the
+          # sweep reads history" — an incidental guard that invites its own removal.
+          if git diff --name-only "$BASE"...HEAD > /tmp/changed.txt; then
+            DIFF_TAKEN=1
+          else
+            DIFF_TAKEN=0
+            echo "::warning::git diff against $BASE failed — the changed-file set is UNDETERMINED,"
+            echo "::warning::so the sweep RUNS. An unanswered question must never skip a gate."
+          fi
+          # ⛔ THE VERDICT AND THE EVIDENCE COME FROM THE SAME OWNER. The first version of the log
+          # line below re-listed the staged roots as a `grep -E` alternation here in YAML, which is
+          # a SECOND IMPLEMENTATION of `SWEEP_RELEVANT_ROOTS` — the drift class this repo has paid
+          # for 17 times, and one a weaker stand-in passes what the real rule would refuse. So the
+          # module prints the verdict on line 1 and the matching paths after it; the shell reports
+          # what it is given and decides nothing.
+          VERDICT_OUT=$(DIFF_TAKEN="$DIFF_TAKEN" python3 - <<'PYEOF' || echo "ERROR"
+          import importlib.util, os, pathlib, sys
           spec = importlib.util.spec_from_file_location("cpc", "scripts/check-plan-code.py")
           mod = importlib.util.module_from_spec(spec)
           sys.modules["cpc"] = mod                     # a frozen dataclass needs this
           spec.loader.exec_module(mod)
-          changed = pathlib.Path("/tmp/changed.txt").read_text().splitlines()
-          print("RUN" if mod.sweep_needed(changed) else "SKIP")
+          # `None` means the diff could not be taken, which `sweep_needed` answers with True.
+          # This is the line that makes that arm reachable; before it, nothing could produce None.
+          changed = (pathlib.Path("/tmp/changed.txt").read_text().splitlines()
+                     if os.environ["DIFF_TAKEN"] == "1" else None)
+          need = mod.sweep_needed(changed)
+          print("RUN" if need else "SKIP")
+          if need and changed is not None:
+              for p in [c for c in changed
+                        if c.strip() and c.startswith(mod.SWEEP_RELEVANT_ROOTS)][:20]:
+                  print(p)
           PYEOF
           )
+          VERDICT=$(printf '%s\n' "$VERDICT_OUT" | head -1)
+          MATCHED=$(printf '%s\n' "$VERDICT_OUT" | tail -n +2)
           case "$VERDICT" in
             SKIP)
               echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "no scripts/ file changed against $BASE — the sweep would mutate unchanged"
-              echo "code against unchanged suites, which can only reproduce the previous result."
+              echo "nothing the harness stages changed against $BASE — the sweep would mutate"
+              echo "unchanged code against unchanged suites, which can only reproduce the previous"
+              echo "result. The staged roots are check-plan-code.SWEEP_RELEVANT_ROOTS."
               ;;
             RUN)
               echo "changed=true" >> "$GITHUB_OUTPUT"
-              echo "scripts/ changed, so the sweep runs:"
-              grep '^scripts/' /tmp/changed.txt | head -20
+              # ⛔ THE REASON IS REPORTED, NOT ASSUMED. This arm used to print "scripts/ changed"
+              # unconditionally, so on the undetermined-diff path it asserted a changed file set it
+              # had just failed to read — a smaller instance of the very defect above, where the
+              # SKIP arm's "no scripts/ file changed" was a false statement rather than an error.
+              # A log line must never claim to know something this step could not determine.
+              if [ "$DIFF_TAKEN" = "0" ]; then
+                echo "the diff could not be taken, so the sweep runs without a changed-file list."
+              else
+                echo "a staged path changed, so the sweep runs:"
+                printf '%s\n' "$MATCHED"
+              fi
               ;;
             *)
               echo "changed=true" >> "$GITHUB_OUTPUT"

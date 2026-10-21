@@ -16052,3 +16052,66 @@ decided, 2 logged. **F5 #326** probe6 edits the live repo, and only because #322
 **#325** abstention inexpressible — `null` and `"abstained"` both refused by `validate_row`, so t5 has
 no reachable falsifier and t7 quotes a 74% bound over zero bets. Roadmap section added with all seven
 ordered; #322 gates the rest.
+
+## 2026-10-21 [needs-you]
+The review round you asked for ran, and it is the reason this is not already merged.
+
+Three reviewers looked at the seventeen files that went in yesterday — files that, it turns out, no
+review had ever seen. They found four serious problems. All four are now fixed, and each fix was
+checked by running it rather than by reading it.
+
+Two of the four are worth knowing about in plain terms. A guard written yesterday to catch a small
+writing mistake was **completely inert** — it did its job, printed its warning, and the thing that
+called it threw the answer away, so the message reached nobody. It only ever looked like it worked
+because an unrelated check happened to be failing at the same time. Separately, the shortcut added
+yesterday to make the test suite cheaper could **switch that suite off entirely and still report
+success**, in two different ways: one where a failed lookup was read as "nothing changed", and one
+where it simply did not know about five of the seven places it was supposed to watch.
+
+The round also found something nobody was looking for: **a review that the system had decided was
+owed can be made to disappear by doing the next obvious thing.** Two reviewers ran the same tool
+minutes apart and got different answers, and the difference turned out to be caused by one of them
+filing their own report. Nothing was actually missed this time — the review in question did happen
+yesterday — but the mechanism forgets, and that is written down now.
+
+**Waiting on you:** the merge. The branch's own gate says another round is owed, for two honest
+reasons: a problem from round three is still only filed rather than answered, and the fixes just
+made are substantial — and a fix is code nobody has reviewed. Two of today's four problems came from
+yesterday's fixes, and one came from a fix made this morning, so that rule keeps earning its place.
+The handoff recorded that you had already decided to merge after one round. That decision was made
+before the round existed and before it found a guard that reached nobody, so it is being put back to
+you rather than assumed. ⚠ One thing to know first: merging this branch also carries the twenty-six
+commits of PR #380 into master and closes it implicitly — verified from git, not from a note.
+
+Two optimisation ideas you raised are recorded with what is already true of them: sharding the test
+suite across parallel jobs is **already done** (eight jobs, sized by arithmetic), and the local
+shortcut you remembered **exists and takes four seconds**. The one genuinely new idea — running only
+the tests whose subject changed — is filed with the measurement that bounds it.
+<!--tech-->
+Branch `decision-route-escalation` @ r4. `check-review-recorded.py` exited 1 over 17 files in
+`ea119c82..c8c3f226`; dual+coordinator round filed under `docs/reviews/{codex,claude,coordinator}/
+decision-route-escalation-r4-*.md`. FIXED: (1) `ci.yml`'s `mutated_code` step — `|| true` removed,
+diff exit status checked, sentinel makes `sweep_needed(None)` reachable (3-way finding; reproduced
+with a `git` shim that resolves `rev-parse` and fails `diff` → was `changed=false`, now `changed=true`
++ 2 `::warning::`); (2) `SWEEP_RELEVANT_ROOTS = HARNESS_TREE − SWEEP_SKIP_ROOTS` — the predicate
+tested `startswith("scripts/")` against a 7-root staged tree, proved by Codex with
+`.agents/skills/shared/handoff-path.md` (control 25/25 → 24/25); all 7 pinned cases preserved, `docs`
+still excluded per backlog #173's pinned decision; (3) `TRANSCRIPT_RC` captured in
+`block-idle-stop.sh` and the docstring's false stdout claim corrected to stderr-via-`exit 1` —
+negative control: pre-fix `exit 0`/0B stdout, post-fix `exit 1`, same inputs; (4) `round_blocker`
+extracted as sole owner of the clean-round rule, resolving `converged` vs `convergence_unreachable`
+disagreeing from birth (backlog #329 added the `disposition` clause to one copy only). Ratchet: +15
+cases (194/194, 99/99), +3 mutation entries, **5 orphaned anchors re-pointed** (4 orphaned by my own
+`round_blocker` extraction), `EXPECTED_MUTATIONS` 1641→1644, 0 orphans across every manifest, 0
+refusals, 56/56 declared counts verified by running them. Scoped sweep `check-review-decision` 22/22
+killed/attributed in 8.4s; `check-plan-code` is self-referentially unscopeable (its suite asserts the
+full manifest population) so its 3 entries were verified individually over a green 194/194 control —
+first attempt discarded for a red control (staged `scripts` only). FILED: backlog #330 (diff-scoped
+per-manifest selection; bounded by backlog #109 — the orphaned-anchor class only a FULL sweep sees;
+and backlog #173's 79% figure has EXPIRED, the sweep moved to its own parallel 8-shard job so the
+saving is ~48 runner-minutes, not wall-clock), #331 (transcript guard: corrupt transcript still rc=0,
+duplicated reference predicate disagreeing on `**request**`, incomplete surface list, `AskUserQuestion`
+false negative, measured 4.6% ordinal FP class), #332 (`thrashing_component` is `rounds[-2] & rounds[-1]`,
+so filing r4 disarmed an `ARCHITECTURE_REVIEW`; measured by moving one file in and out; the instance
+WAS answered by `architecture-review-2026-10-20-decision-route-escalation.md:6,24,96`). Decision tool:
+`ROUND_OWED` (r3 Blocking `filed`; `fixes_nontrivial: true`). r5 owed, subject = the fixes.

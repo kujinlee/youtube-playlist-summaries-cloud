@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 94 cases
+    python3 scripts/check-review-decision.py --self-test  # 99 cases
 
 WHY THIS EXISTS
 ---------------
@@ -233,31 +233,57 @@ def converged(rounds: list[dict], scope: str) -> tuple[bool, str]:
     if len(rounds) < need:
         return False, f"{len(rounds)} round(s) recorded; a {scope} change needs {need}"
     for r in rounds[-need:]:
-        for f in r.get("findings", []):
-            # ⟳ 2026-10-20, owner decision, backlog #329. This used to refuse on the mere
-            # PRESENCE of a Blocking/High or a deliverable-aimed finding, which asked for a round
-            # that found nothing — an artifact the workflow does not produce, because a round
-            # document is only written when a round FINDS something. MEASURED over every readable
-            # round: 48 rounds, ONE clean, and 0 of 12 subjects converging. A predicate that
-            # cannot be satisfied reports the same thing about good work and bad.
-            # ⭐ What it asks now is whether the finding is still OPEN. `disposition` is required
-            # on every finding and already filled in, so this reads evidence that EXISTS instead
-            # of demanding evidence nobody writes. `filed` counts as open on purpose: a finding
-            # moved to the backlog is deferred, not answered, and convergence is a claim about
-            # THIS branch.
-            if f.get("disposition") in ("fixed", "declined"):
-                continue
-            if f.get("severity") in ("Blocking", "High"):
-                return False, (f"r{r.get('round')}'s {f.get('severity')} is still open "
-                               f"(disposition {f.get('disposition')!r})")
-            if f.get("aim") == "deliverable":
-                return False, (f"r{r.get('round')} left a defect open in the deliverable "
-                               f"(disposition {f.get('disposition')!r})")
-        if r.get("fixes_nontrivial"):
-            return False, (f"r{r.get('round')}'s fixes were non-trivial — the card makes "
-                           f"that a CONTINUE, and a fix is unreviewed code")
+        why = round_blocker(r)
+        if why:
+            return False, why
     return True, (f"{need} round(s) with every Blocking/High and every deliverable finding "
                   f"dispositioned, and trivial fixes")
+
+
+def round_blocker(r: dict) -> str | None:
+    """PURE. Why this ONE round is not clean, else None. **The only owner of that rule.**
+
+    ⛔ EXTRACTED 2026-10-21, r4 — found by BOTH halves (CLAUDE H3, CODEX finding 5), and it is
+    the 18th instance of `a-second-implementation-of-one-rule-drifts` in this repository. The
+    rule lived in `converged`'s loop AND, separately, in `convergence_unreachable`'s `clean`
+    filter. backlog #329 then added the `disposition` clause to one of them, in the same commit
+    that created the other — so the copies disagreed from birth:
+
+        converged([one round, a Blocking with disposition 'fixed'])  -> (True, '...')
+        convergence_unreachable(same)                                -> 'UNREACHABLE ...'
+
+    and the contradiction ESCAPED TO A READER through `decide`, which printed a demand for
+    "rounds with no Blocking/High" — precisely the demand backlog #329 measured as unsatisfiable
+    and removed. A diagnostic telling the reader to produce an artifact the workflow does not
+    make is worse than silence, because they try.
+
+    ⚠ The de-duplication is why this returns the REASON rather than a bool: `converged` needs the
+    sentence for its refusal and `convergence_unreachable` needs only `is None`. A bool here would
+    have forced one caller to re-derive the message, which is how the rule split the first time.
+
+    ⭐ `filed` counts as OPEN on purpose: a finding moved to the backlog is deferred, not
+    answered, and convergence is a claim about THIS branch.
+    """
+    for f in r.get("findings", []):
+        # ⟳ 2026-10-20, owner decision, backlog #329. This used to refuse on the mere PRESENCE of
+        # a Blocking/High or a deliverable-aimed finding, which asked for a round that found
+        # nothing — an artifact the workflow does not produce, because a round document is only
+        # written when a round FINDS something. MEASURED over every readable round: 48 rounds, ONE
+        # clean, and 0 of 12 subjects converging. A predicate that cannot be satisfied reports the
+        # same thing about good work and bad. What it asks now is whether the finding is still
+        # OPEN, reading `disposition` — evidence that EXISTS — instead of evidence nobody writes.
+        if f.get("disposition") in ("fixed", "declined"):
+            continue
+        if f.get("severity") in ("Blocking", "High"):
+            return (f"r{r.get('round')}'s {f.get('severity')} is still open "
+                    f"(disposition {f.get('disposition')!r})")
+        if f.get("aim") == "deliverable":
+            return (f"r{r.get('round')} left a defect open in the deliverable "
+                    f"(disposition {f.get('disposition')!r})")
+    if r.get("fixes_nontrivial"):
+        return (f"r{r.get('round')}'s fixes were non-trivial — the card makes "
+                f"that a CONTINUE, and a fix is unreviewed code")
+    return None
 
 
 def convergence_unreachable(rounds: list[dict]) -> str | None:
@@ -277,18 +303,21 @@ def convergence_unreachable(rounds: list[dict]) -> str | None:
     """
     if not rounds:
         return None
-    clean = [r for r in rounds
-             if not r.get("fixes_nontrivial")
-             and not any(f.get("severity") in ("Blocking", "High")
-                         or f.get("aim") == "deliverable"
-                         for f in r.get("findings", []))]
+    # ⛔ `round_blocker` IS THE RULE — this filter used to re-derive it and omitted the
+    # `disposition` clause, so it called records UNREACHABLE that `converged` already accepted
+    # (r4 CLAUDE H3 / CODEX finding 5). One owner, asked here for nothing but "is it clean".
+    clean = [r for r in rounds if round_blocker(r) is None]
     if clean:
         return None
     return ("no round recorded for this subject is clean, so convergence is UNREACHABLE from "
-            "this record, not merely unmet: it needs rounds with no Blocking/High, nothing "
-            "aimed at the deliverable, and fixes_nontrivial false. ⚠ A round that found "
-            "nothing still has to be RECORDED (`findings: []`) to count — an unwritten round "
-            "is indistinguishable from one that never ran (backlog #329)")
+            "this record, not merely unmet: every recorded round still carries an OPEN "
+            "Blocking/High or an open deliverable-aimed finding, or declared its fixes "
+            "non-trivial. ⚠ What reaches it is DISPOSITIONING those findings — `fixed` or "
+            "`declined` on each, which is evidence the workflow already produces — NOT a round "
+            "that found nothing. Asking for a finding-free round is the demand backlog #329 "
+            "measured as unsatisfiable (48 rounds, 1 clean, 0 of 12 subjects converging) and "
+            "removed; a round whose findings are all dispositioned counts, and `filed` does not "
+            "count because a backlog deferral is not an answer about THIS branch")
 
 
 # ------------------------------------------------------- Q4b: tree identity
@@ -782,8 +811,19 @@ def _self_test() -> int:
          convergence_unreachable(two_inst), None)
     case("a subject whose every round is dirty IS reported unreachable",
          "UNREACHABLE" in (convergence_unreachable([_R(1, [deliv]), _R(2, [high])]) or ""), True)
+    # ⟳ 2026-10-21, r4: THIS PAIR USED TO ASSERT THE LITERAL TOKEN `RECORDED`, and that token was
+    # carrying superseded ADVICE rather than the property. The old message told the reader a
+    # finding-free round "still has to be RECORDED (`findings: []`) to count" — but backlog #329
+    # measured that demand as unsatisfiable (48 rounds, 1 clean, 0 of 12 subjects converging) and
+    # REMOVED it; what reaches convergence is DISPOSITIONING. So a case pinning that word was
+    # pinning the wrong instruction, and `convergence_unreachable` could not be corrected without
+    # reddening it. ⛔ RE-POINTED AT THE PROPERTY AND MADE STRICTER, NOT WEAKER: the refusal must
+    # still be about the RECORD rather than the work, AND must now also name the remedy that
+    # actually exists. Asserting a message's own tokens defends only its deletion.
     case("...and the reason names the RECORD, not the work",
-         "RECORDED" in (convergence_unreachable([_R(1, [deliv])]) or ""), True)
+         "record" in (convergence_unreachable([_R(1, [deliv])]) or "").lower(), True)
+    case("...and it names DISPOSITIONING as what reaches convergence, not a finding-free round",
+         "DISPOSITION" in (convergence_unreachable([_R(1, [deliv])]) or "").upper(), True)
     # ⛔ fixes_nontrivial alone makes a findings-clean round dirty — 39 of the corpus's 48
     # rounds carry it, so a case that varied only `findings` would miss the dominant cause.
     case("a findings-clean round flagged fixes_nontrivial does not count as clean",
@@ -791,7 +831,34 @@ def _self_test() -> int:
     case("no rounds at all is not 'unreachable' — it is simply unstarted",
          convergence_unreachable([]), None)
     case("the ROUND_OWED reason carries the missing evidence",
-         "RECORDED" in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1], True)
+         "DISPOSITION" in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1].upper(),
+         True)
+    # ── r4 CLAUDE H3 / CODEX finding 5: the two convergence readers must not disagree ──────────
+    # ⛔ THE REGRESSION CASE FOR THE DRIFT ITSELF, at the input that exhibited it: one round whose
+    # Blocking+deliverable finding is DISPOSITIONED `fixed`, with trivial fixes. `converged` said
+    # True while `convergence_unreachable` called the same record UNREACHABLE, and the
+    # contradiction escaped to a reader through `decide`. Now both read `round_blocker`.
+    _fixed = {"id": "B1", "severity": "Blocking", "aim": "deliverable", "disposition": "fixed"}
+    case("⭐ a dispositioned round is NOT unreachable — the two readers agree",
+         convergence_unreachable([{"round": 1, "fixes_nontrivial": False,
+                                   "findings": [_fixed]}]), None)
+    case("...and converged() accepts that same record, which is what made them contradict",
+         converged([{"round": 1, "fixes_nontrivial": False, "findings": [_fixed]}],
+                   "one-round")[0], True)
+    # ⛔ AND THE PROPERTY, OVER INPUTS THE PAIR ABOVE DOES NOT COVER: a record that converges can
+    # never be unreachable, whatever the findings look like. This is the invariant the duplicate
+    # rule broke; a case naming one input would be satisfied by re-breaking it differently.
+    case("INVARIANT: if converged() is True then convergence_unreachable() is None",
+         all(convergence_unreachable(rs) is None
+             for rs in ([{"round": 1, "fixes_nontrivial": False, "findings": [_fixed]}],
+                        [{"round": 1, "fixes_nontrivial": False, "findings": []}],
+                        [{"round": 1, "fixes_nontrivial": False,
+                          "findings": [{"severity": "High", "aim": "instrument",
+                                        "disposition": "declined"}]}])
+             if converged(rs, "one-round")[0]), True)
+    case("round_blocker is the owner — converged's refusal IS its sentence",
+         converged([{"round": 7, "fixes_nontrivial": True, "findings": []}], "one-round")[1] ==
+         round_blocker({"round": 7, "fixes_nontrivial": True, "findings": []}), True)
     case("a High blocks convergence even when aimed at the instrument",
          converged([_R(1, [inst]), _R(2, [high])], "full-loop")[0], False)
     case("a deliverable finding blocks convergence",

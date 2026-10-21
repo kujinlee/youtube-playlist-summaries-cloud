@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 185 cases
+    python3 scripts/check-plan-code.py --self-test          # 194 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -254,6 +254,44 @@ HARNESS_TREE = (
     # ⚠ `.agents/skills`, not `.agents`: only the skills are a subject here.
     ".agents/skills",
 )
+
+# ── Which changed paths can move a mutation verdict? (backlog #173; FIXED 2026-10-21, r4) ───────
+# ⛔ DERIVED FROM `HARNESS_TREE`, NEVER RE-TYPED. `sweep_needed` tested `startswith("scripts/")`,
+# and `HARNESS_TREE` is the list of what the harness actually STAGES — so the predicate disagreed
+# with the tree it was predicting about, for six of its seven roots.
+#
+# ⛔⛔ THE DEFECT THIS CLOSES WAS PROVED BY EXECUTION, not argued (r4 CODEX finding 2). A branch
+# changing ONLY `.agents/skills/shared/handoff-path.md` skipped the whole sweep, while a manifested
+# suite reads that file: staged tree, control green at `25/25`, then that canon's contents replaced
+# -> `24/25` with a real `[FAIL]` the skip would have hidden. So *"unchanged scripts/ means the
+# sweep can only reproduce the previous result"* was FALSE. ⚠ A dozen-odd guards resolve their
+# subject from the repo root — `check-handoff-path` reads `.agents/skills/handoff/SKILL.md`,
+# `check-python-pin` reads `.github/workflows/`, `check-banner-armed` reads `.claude/hooks/` — and
+# `CLAUDE.md` already records this exact class from 2026-09-07: *"the harness stages HARNESS_TREE,
+# not scripts/ alone — four guards resolve their SUBJECT from the repo root, so a scripts-only tree
+# gave each a red control and left them unmanifested for weeks."* The scripts-only assumption that
+# cost four guards once was reintroduced here, with the correct tuple in the same module.
+# ⭐ AND THE CHANGE THAT INTRODUCED IT IS AN INSTANCE OF IT: this branch touched
+# `.github/workflows/ci.yml` and `.claude/hooks/block-idle-stop.sh`, both staged, neither matched.
+#
+# ⛔ `docs` IS DELIBERATELY EXCLUDED, AND THAT IS A PINNED DECISION, NOT AN OVERSIGHT. backlog #173
+# exists because three of five PRs merged that week changed no code; a starred case (*"⭐ a docs-only
+# branch SKIPS"*) and a mutation entry written to forbid the opposite both guard it. Deriving the
+# predicate from the whole tuple would revert that decision and redden the case and the entry that
+# protect it — this repo's recorded trap of a guard MANDATING what it audits.
+# ⚠ THE RESIDUAL IS STATED RATHER THAN HIDDEN, AT THE STRENGTH IT WAS MEASURED: 12+ guards read
+# `docs/` paths, and `check-anon-exposure` reads two concrete ones whose absence makes its suite
+# exit 2 before case 1. So docs files ARE read. Whether a docs CONTENT change can flip a mutation
+# verdict is **NOT MEASURED** — no claim either way is made here. backlog #330 owns that
+# measurement and the per-manifest selector that would make the whole all-or-nothing shape moot.
+# ⛔ THE EXCLUSION HAS ITS OWN NAME BECAUSE IT IS A DECISION, NOT AN EXPRESSION. It was written
+# inline as `if root != "docs"`, and the mutation harness then REFUSED the entry guarding it —
+# *"repeats the edit anchors of an earlier entry — it measures nothing new"* — because the collapse
+# to `scripts/` only and the dropping of the exclusion are two different defects on one line. A
+# decision that cannot be mutated independently of its neighbour cannot be guarded independently.
+SWEEP_SKIP_ROOTS = ("docs",)
+SWEEP_RELEVANT_ROOTS = tuple(f"{root}/" for root in HARNESS_TREE
+                             if root not in SWEEP_SKIP_ROOTS)
 
 
 def stage_tree(root: pathlib.Path, dest: pathlib.Path) -> list[str]:
@@ -1068,7 +1106,11 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 108,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 110,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
+    # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
+    # exclusion, which would revert backlog #173's pinned decision and its whole saving.
+    # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1119,7 +1161,12 @@ EXPECTED_MUTATIONS = {
     # one equivalent by construction (n1 is the maximum), one killing by IndexError with zero
     # [FAIL] lines, and one equivalent-in-environment (a shallow-clone branch on a full clone,
     # since replaced by the drivable `shallow_refusal`).
-    "scripts/check-review-decision.py": 21,
+    # ⟳ 2026-10-21 r4: 21 -> 22. ONE added (convergence_unreachable re-deriving the clean-round
+    # rule instead of calling `round_blocker`, the drift that made the two readers contradict
+    # each other from birth). The r4 extraction also ORPHANED FOUR anchors by moving the rule's
+    # indentation out of `converged`; those were RE-POINTED, not retired, so they do not change
+    # this count — a re-point must be invisible here, and a fall would mean coverage was lost.
+    "scripts/check-review-decision.py": 22,
     "scripts/check-decision-scheme.py": 42,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -1724,11 +1771,21 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     THREE consecutive rounds with every gate green. The workflow collects the diff and calls this;
     it decides nothing.
 
-    WHY IT IS SAFE TO SKIP, and it is by construction rather than by judgement: with no `scripts/`
-    file changed the sweep mutates UNCHANGED code against UNCHANGED suites, so it can only
-    reproduce the previous result. Measured cost of not skipping (run 35889056587): 8m12s of a
-    10m22s job — 79% of the gate — paid by three of the five pull requests merged that week, none
-    of which changed any code.
+    WHY IT IS SAFE TO SKIP: with nothing the harness STAGES changed, the sweep mutates unchanged
+    code against unchanged suites, so it can only reproduce the previous result. ⛔ THE SET IS
+    `SWEEP_RELEVANT_ROOTS`, DERIVED FROM `HARNESS_TREE` — read that constant's note before touching
+    this. It used to read `startswith("scripts/")`, which was FALSE for six of the seven staged
+    roots and was proved so by execution (r4 CODEX finding 2: `.agents/skills/shared/handoff-path.md`
+    alone took a staged suite from `25/25` to `24/25`, a real `[FAIL]` the skip hid). `docs` is
+    excluded by a PINNED decision, with its residual stated in that note.
+
+    ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON HAS EXPIRED, and quoting it would now mislead.
+    backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
+    sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
+    `needs: null` and `matrix: {shard: [1..8]}`, so it runs CONCURRENTLY with `verify` at ~353s per
+    shard (`ci.yml:729`, measured). What skipping saves is therefore ~48 RUNNER-MINUTES and close to
+    ZERO wall-clock — a real saving, but not the latency one the 79% implies. The three of five PRs
+    that week which changed no code still skip, which is the population the row was filed for.
 
     ⛔ `None` MEANS THE DIFF COULD NOT BE TAKEN, AND THAT RUNS THE SWEEP. An undetermined answer
     must not silently skip a gate: "cannot run is a failure, never a pass" applies to the DECISION
@@ -1736,7 +1793,7 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     """
     if changed is None:
         return True
-    return any(path.startswith("scripts/") for path in changed if path.strip())
+    return any(path.startswith(SWEEP_RELEVANT_ROOTS) for path in changed if path.strip())
 
 
 def parse_shard(spec: str, *, zero_based: bool = False,
@@ -5254,7 +5311,37 @@ def _self_test() -> int:
     case("a blank path is not a change", sweep_needed(["", "  "]), False)
     case("a path merely CONTAINING scripts/ does not count — it must be the prefix",
          sweep_needed(["docs/explainers/about-scripts/x.md"]), False)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1641)
+    # ── r4 CODEX finding 2: the predicate must cover what the harness STAGES, not `scripts/` ──
+    # ⛔ THE FIRST CASE IS THE ONE CODEX PROVED BY EXECUTION — staged tree, control green at
+    # `25/25`, that canon's contents replaced -> `24/25` and a real `[FAIL]` the skip hid. It is
+    # named for the FILE rather than for the root, because the file is what was measured.
+    case("⭐ `.agents/skills/shared/handoff-path.md` alone RUNS the sweep — a manifested suite "
+         "reads it, measured 25/25 -> 24/25",
+         sweep_needed([".agents/skills/shared/handoff-path.md"]), True)
+    case("a hook change runs it — `check-banner-armed` resolves its subject from the repo root",
+         sweep_needed([".claude/hooks/block-idle-stop.sh"]), True)
+    case("a workflow change runs it — `check-ratchet-contract` reads ci.yml for ratchet callers",
+         sweep_needed([".github/workflows/ci.yml"]), True)
+    case("a migration runs it — `check-storage-grant-pin`'s whole subject is under supabase/",
+         sweep_needed(["supabase/migrations/0027_x.sql"]), True)
+    case("the typescript oracle runs it — 20 of check-paid-caller-arrival's 32 cases need it",
+         sweep_needed(["node_modules/typescript/lib/typescript.js"]), True)
+    case("PRODUCT code still skips — it is staged by nothing and mutated by nothing",
+         sweep_needed(["app/page.tsx", "lib/gemini.ts", "components/Pane.tsx"]), False)
+    # ⛔ AN INDEPENDENT COPY, NOT A LOOP OVER THE SET UNDER TEST. Asserting membership by iterating
+    # `HARNESS_TREE` would make this case LIST SHRINK when a root is dropped rather than REDDEN —
+    # the shape `a-class-fix-needs-an-independent-copy-and-an-identity-case` records. So the roots
+    # are written out here, and adding or removing one must come here and be DECIDED.
+    case("SWEEP_RELEVANT_ROOTS is HARNESS_TREE minus `docs`, written out independently",
+         SWEEP_RELEVANT_ROOTS,
+         ("scripts/", "supabase/", "node_modules/typescript/", ".claude/hooks/",
+          ".github/workflows/", ".agents/skills/"))
+    case("⛔ `docs/` is EXCLUDED — backlog #173's pinned decision, and the whole saving",
+         "docs/" in SWEEP_RELEVANT_ROOTS, False)
+    case("every relevant root is a real HARNESS_TREE member — no root invented here",
+         sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
+         sorted(set(HARNESS_TREE) - {"docs"}), True)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1644)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
