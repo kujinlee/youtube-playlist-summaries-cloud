@@ -2408,11 +2408,11 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
 `corpus_ORIGINAL_WRONG`; really **11 of 82 = 13.4%**, or **46 of 395 = 11.6%** over the rule's own
 `(subject, round)` domain).
 
-- [x] **r1 folded** — the document is rewritten, not patched: #323 **split out of the unification**
+- [x] **r1 folded** — the document is rewritten, not patched: backlog #323 **split out of the unification**
       (it ranks round documents and never touches the log, which is how its answer escaped the
       constraint and collected two Blockings); attempt/observation row kinds and a `schema >= 2`
       epoch, so the four live rows stay valid instead of returning `rc=2` for ever; the skip's lever
-      on `t4` — the figure of merit — neutralised; `units_decided` dropped for the fix #324 actually
+      on `t4` — the figure of merit — neutralised; `units_decided` dropped for the fix backlog #324 actually
       filed. All 25 findings mapped in the document's §8 fold table.
 - [x] **r2 ran — Codex alone, as rounds 2+ ALTERNATE** (a concurrent pair never reviews the fixes).
       **6 High / 3 Medium, NOT CONVERGED.** Three claims re-derived by construction before acceptance,
@@ -2437,24 +2437,24 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
 ⛔ **AND THE REASON IS NOT THE THRASHING CONDITION — both signals this slice leaned on are BASE RATES.**
 Measured 2026-10-20 over the readable corpus: `thrashing_component` arms on **8 of 12** subjects (67%),
 and `converged()` is false for **12 of 12** because the corpus holds **1 clean round in 48** against a
-predicate needing two consecutive (#329). ⭐ **The mechanism CONSUMES those signals**, so a decision
+predicate needing two consecutive (backlog #329). ⭐ **The mechanism CONSUMES those signals**, so a decision
 layer over non-discriminating inputs cannot work however well it is built. The measurement layer is
 the work now:
 
-- [ ] **#328** — one `corpus()` owner every reader imports, plus a guard refusing a denominator that
+- [ ] **backlog #328** — one `corpus()` owner every reader imports, plus a guard refusing a denominator that
       does not match it. Replaces **five** live derivation sites with different filters.
-- [ ] **#329** — make `converged()` satisfiable: decide whether a no-findings round must be RECORDED,
+- [ ] **backlog #329** — make `converged()` satisfiable: decide whether a no-findings round must be RECORDED,
       and whether `aim` needs a third value for a subject whose deliverable IS an instrument (measured:
       the two decision subjects carry the corpus's lowest instrument share, **4%** and **12%**, against
       a mean of 32%).
 
-⚠ **#321's FOURTH occurrence, on the decision that ends the slice:** the mechanism cannot record its own
+⚠ **backlog #321's FOURTH occurrence, on the decision that ends the slice:** the mechanism cannot record its own
 deferral — for `log-schema`, `tried=["redesign"]`, so `route_next` still demands `accrete`.
-- [ ] ⭐ **#321 blocked the escalation decision itself — THIRD independent occurrence.** Recording
+- [ ] ⭐ **backlog #321 blocked the escalation decision itself — THIRD independent occurrence.** Recording
       `log-schema`'s REDESIGN → SPLIT is **inexpressible** (`["redesign"]` is not a ladder prefix), so
       the mechanism cannot record the route the mechanism prescribes for it.
 
-⚠ **Mutation coverage of the two subjects #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
+⚠ **Mutation coverage of the two subjects backlog #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
 (`43`+`19`, matching `EXPECTED_MUTATIONS` in both directions), measured by the harness over a pruned
 `HARNESS_TREE` copy in 57s. ⛔ The full 1,625 sweep is **CI's, at the PR** — a local full run was
 started and abandoned at 413/1,625, re-opening a question the prior session had already closed by

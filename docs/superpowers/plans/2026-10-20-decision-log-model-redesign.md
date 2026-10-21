@@ -7,16 +7,16 @@
 >
 > Both signals this slice relied on are **base rates**, measured over the readable corpus:
 > `thrashing_component` arms on **8 of 12** subjects (67%) and `converged()` is false for **12 of 12**,
-> because the corpus holds **1 clean round in 48** against a predicate needing two consecutive (#329).
+> because the corpus holds **1 clean round in 48** against a predicate needing two consecutive (backlog #329).
 > ⭐ **The mechanism CONSUMES those signals**, so a decision layer over non-discriminating inputs cannot
-> work however well it is built. The work moved one level down — **#328** (one `corpus()` owner + a
-> denominator guard) and **#329** (make convergence satisfiable).
+> work however well it is built. The work moved one level down — **backlog #328** (one `corpus()` owner + a
+> denominator guard) and **backlog #329** (make convergence satisfiable).
 >
 > ⛔ **DEFER is terminal on the ladder — *stop, file it*.** r2's nine findings are **filed, not fixed**;
 > §6's tasks are **not** being implemented. The design below stands as the record of what was learned,
 > and §1's diagnosis and §1.1's measurements were independently re-derived and hold.
 > ⚠ The mechanism cannot record its own deferral: `tried=["redesign"]` for `log-schema`, so `route_next`
-> still demands `accrete` — **#321's fourth occurrence**, on the decision that ends the slice.
+> still demands `accrete` — **backlog #321's fourth occurrence**, on the decision that ends the slice.
 
 **This is a DESIGN REVIEW document, not a fold of code.** `review-method.md:178`, quoted rather than
 recalled:
@@ -36,24 +36,24 @@ corrected below rather than softened; the fold table in §8 maps all 25 findings
 > **The mechanism reasons over `(unit, bet)`. The log records `(subject, prediction)`. Every trigger
 > then reads the projection as if it were the thing projected.**
 
-⟳ **THE UNIFICATION IS THREE OF FOUR, NOT FOUR OF FOUR (r1 Claude, structural).** v1 folded #323 in.
+⟳ **THE UNIFICATION IS THREE OF FOUR, NOT FOUR OF FOUR (r1 Claude, structural).** v1 folded backlog #323 in.
 It does not belong, and the reason is checkable: `review_scope` ranks components over **round
 documents**, never touches the decision log, and has no `unit`, no `bet` and no row — §3's own table
 says it *"reads the corpus, not the log"*. **Including it is what let its answer escape the constraint
 the rest of this document observes, and that answer collected two of the three Claude Blockings.**
-#323 is answered in **§7, outside the model**, and is not evidence for or against the unification.
+backlog #323 is answered in **§7, outside the model**, and is not evidence for or against the unification.
 
 | # | filed as | the projection that causes it |
 |---|---|---|
-| **#321** | is the ladder's prefix clause a law or a choice? | the row cannot express a **skip**, so two real routes are unwritable |
-| **#324** | `t1_not_fed` is per-SUBJECT while the mechanism reasons in UNITS | the starvation ratchet's domain is the **subject** |
-| **#325** | an abstention is inexpressible as data | the bet is projected onto a **boolean**, which has no value for *no bet* |
-| ~~#323~~ | ranker saturates at the round count | **NOT this shape** — no unit, no bet, no row. See §7 |
+| **backlog #321** | is the ladder's prefix clause a law or a choice? | the row cannot express a **skip**, so two real routes are unwritable |
+| **backlog #324** | `t1_not_fed` is per-SUBJECT while the mechanism reasons in UNITS | the starvation ratchet's domain is the **subject** |
+| **backlog #325** | an abstention is inexpressible as data | the bet is projected onto a **boolean**, which has no value for *no bet* |
+| ~~backlog #323~~ | ranker saturates at the round count | **NOT this shape** — no unit, no bet, no row. See §7 |
 
 ### 1.1 The measurement, not the argument
 
 Driving the real `main()` over a temp copy of the log (ADR-0014 makes `log_path` a parameter, so no
-instrument edits its own subject — #326), with the slice's **true** seven-unit history and routes
+instrument edits its own subject — backlog #326), with the slice's **true** seven-unit history and routes
 parsed out of the r1 coordinator document's own table rather than transcribed. ✅ **Every line below
 was independently re-derived to the character by the r1 Claude half.**
 
@@ -71,11 +71,11 @@ alone give `rc=0, all triggers quiet`.
 > **The log contains exactly the units whose history the schema can express.** `all triggers quiet`
 > is not a verdict about the work; it is *caused by* the omission of the decisions the schema refused.
 
-- **#324** — `t1_not_fed` returns `None` at **1, 2 and 7** of 7 logged units; loud **only** at 0. And
+- **backlog #324** — `t1_not_fed` returns `None` at **1, 2 and 7** of 7 logged units; loud **only** at 0. And
   the live domain is one subject (`subjects_starved(armed_at)` → `['decision-route-escalation']`),
   which has a row — so *"the loudest trigger, because it is how the predecessor died at 81%"* is
   bought off by **one row**.
-- **#325** — ⟳ **CORRECTED, and the correction is the sharper finding (r1 Codex XM7 + Claude CM5,
+- **backlog #325** — ⟳ **CORRECTED, and the correction is the sharper finding (r1 Codex XM7 + Claude CM5,
   verified by hand before acceptance).** v1 claimed *"today no log can make t5 FAIL."* **That is
   false.** Two rows on distinct units with `ranker_hit: false` both validate, and the real `main()`
   returns **`rc=1, FAIL trigger 5 RANKER MISS`**. ⚠ My own probe had printed `ranker_hit=False ->
@@ -153,7 +153,7 @@ names already exists, so the bet is on disk before the scoring is. ⚠ **BOUND:*
 *records*, not *reality*. A late import can still append both in sequence, so §6 T6 marks imported
 rows `imported: true` and **t5/t7 score only non-imported rows**.
 
-### 2.2 #321 — the prefix clause is a CHOICE, replaced by strict increase
+### 2.2 backlog #321 — the prefix clause is a CHOICE, replaced by strict increase
 
 **Why this is not the owner's decision.** Their recorded steers (`review-method.md:304-307`) are *"goal
 to make it deterministic may be too strict. Maybe probabilistic ranking and betting on higher side?"*
@@ -175,7 +175,7 @@ function, which cannot express *"any strictly greater index is admissible"*. Con
 
 - **The predicate lives in `validate_row` as an INEQUALITY.** `validate_row:478` compares for
   **equality** against `route_next`; v1's §6 T1 never touched it, so implemented as written
-  `relocation`'s SPLIT still failed and **#321 stayed open while T1's own first case went red**.
+  `relocation`'s SPLIT still failed and **backlog #321 stayed open while T1's own first case went red**.
 - **`route_next` is demoted to advice** — the cheapest admissible route, used in *messages* and never
   as an admissibility test.
 - **The empty history is defined** (`i(∅) = -1`), because **both** histories this design exists to
@@ -204,7 +204,7 @@ is what §2.2 changes.
 citation. Today they lower the median and t4 goes quiet; under the rule t4 must report
 `0 comparable subjects, 5 excluded` and **not** claim improvement.
 
-### 2.4 #324 — the ratchet's domain, on the fix that was actually filed
+### 2.4 backlog #324 — the ratchet's domain, on the fix that was actually filed
 
 ⟳ **v1 REFUTED A FIX NOBODY PROPOSED, ON A CORPUS THIS SLICE ITSELF CORRECTED (CB3 + XM6, both halves).**
 Three corrections, all measured:
@@ -219,7 +219,7 @@ already extracts and what the architecture review used to produce 13/12/8/6. On 
 7 routed units
 ```
 
-so the derivation is **available and over-approximates by exactly one** — and #324's *second* option
+so the derivation is **available and over-approximates by exactly one** — and backlog #324's *second* option
 exists to absorb that.
 
 **(b) The population figures were from the superseded corpus.** `baseline.json` carries `57` under the
@@ -240,7 +240,7 @@ answer to it. And its only mechanical firing was defeated by the same omission i
 > **RULE.** The ratchet's domain is `(subject, round)` pairs **that came into scope after
 > `armed_at`** — the existing `subjects_starved` restriction, preserved and now stated, because
 > `baseline.json` records why: *"a gate red from birth over 57 historical subjects gets switched off"*
-> (#56). A pair fires when it has **no attempt rows** and its round document names at least one
+> (backlog #56). A pair fires when it has **no attempt rows** and its round document names at least one
 > `component`, unless a row declares `units_not_logged: [{unit, reason}]` covering the gap.
 
 ⛔ **THE DOMAIN IS NOW PINNED, BECAUSE BOTH READINGS WERE DEFENSIBLE AND OPPOSITE (CH6).** Literal
@@ -251,7 +251,7 @@ and carry no `round`, so they would fire on day one and return `rc=1` in CI. **S
 additionally starts at a declared `ratchet_epoch` — the first round for which epoch-2 rows exist** —
 and the rounds that predate expressible rows are out of domain by construction, not by exception.
 
-### 2.5 #325 — an abstention becomes a value, and t5 stops misreporting (CH5)
+### 2.5 backlog #325 — an abstention becomes a value, and t5 stops misreporting (CH5)
 
 > **RULE.** `bet` is required on every **attempt** and is exactly one of `{"named": <component>}` or
 > `{"abstained": <why>}`. `hit` lives on the **observation**, required iff the attempt named, refused
@@ -290,7 +290,7 @@ and, with misses at 1 and 2, must name rows **1 and 2 of 4**.
 | **t6** `denominator_moved` | unchanged | reads the corpus, not the log |
 | **t7** `sample_reached` | **CHANGED** | real denominator; refuses the bound under the floor (§2.5) |
 
-⭐ **t2 is why this had to be a design review.** Fixing #321 alone — the handoff's recommendation and
+⭐ **t2 is why this had to be a design review.** Fixing backlog #321 alone — the handoff's recommendation and
 the obvious next move — **disarms the mechanism's primary falsifier** while every gate stays green.
 
 ## 4. Termination, and a falsifier that tests the PROPERTY (CM3)
@@ -364,9 +364,9 @@ caller gets, and a case must drive `main()` rather than call `validate_row` dire
 - [ ] **T9** (Low, CL1) delete `route_sequence_error` rather than trim it — the inequality in
       `validate_row` subsumes every branch it has left.
 
-## 7. #323 — outside the model, and it is answered on the terms it set
+## 7. backlog #323 — outside the model, and it is answered on the terms it set
 
-⛔ **#323's own ⛔, which v1 did not quote and then contradicted (B2 + XM8):** *"Do NOT simply switch
+⛔ **backlog #323's own ⛔, which v1 did not quote and then contradicted (B2 + XM8):** *"Do NOT simply switch
 the ranker to finding counts: that is the noise-sensitivity the once-per-round rule exists to prevent
 … The honest output is a ranking plus its saturation state"* — *"4 tied at the ceiling, N=3"* is a
 different message from *"no component recurred"*.
@@ -380,9 +380,9 @@ refutation:
 | subjects reporting NO LEAD | **6 of 11** | **2 of 11** |
 | `decision-route-escalation` | `NO LEAD — 4 tied at 3` | `log-schema` leads, by **13 vs 12** |
 
-So four subjects **lose** the saturation message #323 asks to have *reported*, and the decider's
+So four subjects **lose** the saturation message backlog #323 asks to have *reported*, and the decider's
 margin is **one authored `component` field** in a subject whose per-round volumes ran **22 / 8 / 20**.
-Ties at the top are the **majority case** (6 of 11), so in the saturated regime — the one #323 is
+Ties at the top are the **majority case** (6 of 11), so in the saturated regime — the one backlog #323 is
 about — `total_findings` is not a tie-break, it is the decider.
 
 > **RULE.** Keep the tuple as the **order**. Print the **saturation state as a first-class line**
@@ -409,7 +409,7 @@ baseline was also stale: **6 of 11**, not 5 of 10.
 | id | half | what changed |
 |---|---|---|
 | XB1, CB1 | both | §2.1 row kinds + `schema >= 2` epoch; §6 T2/T6 — the live rows stay valid |
-| CB2, XM8 | both | §7: tuple kept as order, saturation state reported as a first-class line, #323's ⛔ quoted |
+| CB2, XM8 | both | §7: tuple kept as order, saturation state reported as a first-class line, backlog #323's ⛔ quoted |
 | CB3 | Claude | §2.4(a) the filed fix (component fields); (b) 82 / 11 / 46-of-395; (c) `units_decided` dropped |
 | XH2 | Codex | §2.4 counts **attempt rows per pair**, not rows; the arithmetic is gone with `units_decided` |
 | XH3 | Codex | §2.4: a pair fires only if its round document names a `component`; a clean round is out of domain |
