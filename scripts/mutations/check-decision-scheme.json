@@ -48,7 +48,7 @@
       ]
     ],
     "expect": [
-      "a median at the pinned baseline is NOT an improvement \u2014 >= fails, not >"
+      "a median at the pinned baseline is NOT an improvement — >= fails, not >"
     ]
   },
   {
@@ -78,12 +78,12 @@
     ]
   },
   {
-    "name": "the drift tolerance widens to 500%, so no denominator move is ever material",
+    "name": "the drift tolerance widens to 500%, so no denominator move is ever material — ⟳ anchor re-pointed 2026-10-20 when the signature gained the count parameters; the SUBJECT is unchanged",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5) -> str | None:",
-        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 5.0) -> str | None:"
+        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5,",
+        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 5.0,"
       ]
     ],
     "expect": [
@@ -100,12 +100,12 @@
       ]
     ],
     "expect": [
-      "\u2b50 a RETRY of the same route is refused BY NAME, not merely flagged",
+      "⭐ a RETRY of the same route is refused BY NAME, not merely flagged",
       "exhaustion is DERIVED, so it cannot be hidden by never writing routes_tried"
     ]
   },
   {
-    "name": "validate_row stops relating `route` to the derived history \u2014 the r1 Blocking, restored",
+    "name": "validate_row stops relating `route` to the derived history — the r1 Blocking, restored",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
@@ -114,7 +114,7 @@
       ]
     ],
     "expect": [
-      "\u2b50 a RETRY of the same route is refused BY NAME, not merely flagged"
+      "⭐ a RETRY of the same route is refused BY NAME, not merely flagged"
     ]
   },
   {
@@ -182,7 +182,7 @@
       "group_by_unit keeps each unit's rows in file order",
       "group_by_unit over a single row gives one group, not an empty one"
     ],
-    "_attribution_correction": "r2 finding 5. This entry declared 'unit_key partitions on (subject, unit), not on either alone', and the mutation changes group_by_unit, NOT unit_key \u2014 so that label never reddens and check-plan-code's contract (EVERY expect entry must equal exactly one red case) refuses the entry. My own probe accepted it because it used any() + substring where the harness uses all() + equality: a weaker stand-in passing what the real rule refuses, inside the apparatus doing the measuring. The two labels here were DERIVED by running the mutation and reading the red case names, not chosen."
+    "_attribution_correction": "r2 finding 5. This entry declared 'unit_key partitions on (subject, unit), not on either alone', and the mutation changes group_by_unit, NOT unit_key — so that label never reddens and check-plan-code's contract (EVERY expect entry must equal exactly one red case) refuses the entry. My own probe accepted it because it used any() + substring where the harness uses all() + equality: a weaker stand-in passing what the real rule refuses, inside the apparatus doing the measuring. The two labels here were DERIVED by running the mutation and reading the red case names, not chosen."
   },
   {
     "name": "non-termination needs MORE routes than the ladder holds, so it cannot fire",
@@ -251,34 +251,6 @@
     ]
   },
   {
-    "name": "the is_dir guard is dropped, so a corpus path that is a FILE reads as empty",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        if not reviews.is_dir():\n            raise OSError(f\"the review corpus is not a directory: {reviews}\")",
-        "        if False:\n            raise OSError(f\"the review corpus is not a directory: {reviews}\")"
-      ]
-    ],
-    "expect": [
-      "a corpus path that is a FILE says so, rather than reading as an empty corpus"
-    ],
-    "_why_this_label": "The original label was the missing-directory message, and that mutation SURVIVED: the os.walk check added in the r2 fold also refuses a missing directory, so dropping is_dir changes nothing there. The clause is only load-bearing for a path that is a FILE \u2014 walk yields nothing and reports no error, so without is_dir it reads as an EMPTY CORPUS, which is a different remedy. Derived by running the mutation."
-  },
-  {
-    "name": "_corpus_now reads the module global instead of the corpus it is GIVEN",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    reviews = (REPO / \"docs\" / \"reviews\") if reviews is None else reviews\n    counts = []",
-        "    reviews = REPO / \"docs\" / \"reviews\"\n    counts = []"
-      ]
-    ],
-    "expect": [
-      "the corpus it is GIVEN is the one it reads",
-      "a corpus with one two-round subject reports figures and NO error"
-    ]
-  },
-  {
     "name": "an empty corpus returns a figure instead of an error, so zero over nothing is a pass",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -301,7 +273,7 @@
       ]
     ],
     "expect": [
-      "an unreadable log raises ValueError (or reads) \u2014 never a silent empty log"
+      "an unreadable log raises ValueError (or reads) — never a silent empty log"
     ]
   },
   {
@@ -314,7 +286,7 @@
       ]
     ],
     "expect": [
-      "a BARE DATE is refused \u2014 git's approxidate would match nothing, silently",
+      "a BARE DATE is refused — git's approxidate would match nothing, silently",
       "...and so is free text, with the remedy named"
     ]
   },
@@ -329,7 +301,7 @@
     ],
     "expect": [
       "a naive instant is refused, because the window would depend on the reader's machine",
-      "a BARE DATE is refused \u2014 git's approxidate would match nothing, silently"
+      "a BARE DATE is refused — git's approxidate would match nothing, silently"
     ]
   },
   {
@@ -357,9 +329,9 @@
     ],
     "expect": [
       "a shallow clone is REFUSED, because history before arming is absent",
-      "...and a full clone is not \u2014 two DISTINCT inputs, so the flag is read"
+      "...and a full clone is not — two DISTINCT inputs, so the flag is read"
     ],
-    "_why_extracted": "In place the branch read `if shallow == \"true\"`, which can only behave differently on a shallow clone \u2014 so mutating it was EQUIVALENT on any normal checkout and survived with rc=0, indistinguishable from a coverage gap. The decision is now `shallow_refusal`, a pure function a case drives with both inputs."
+    "_why_extracted": "In place the branch read `if shallow == \"true\"`, which can only behave differently on a shallow clone — so mutating it was EQUIVALENT on any normal checkout and survived with rc=0, indistinguishable from a coverage gap. The decision is now `shallow_refusal`, a pure function a case drives with both inputs."
   },
   {
     "name": "the comparator defaults to a literal again, attributing a figure to a baseline without it",
@@ -397,8 +369,8 @@
       ]
     ],
     "expect": [
-      "\u2b50 a subject whose documents MOVED since arming is still historical",
-      "\u2b50 the DIRECTORY is irrelevant, which is what survives a move"
+      "⭐ a subject whose documents MOVED since arming is still historical",
+      "⭐ the DIRECTORY is irrelevant, which is what survives a move"
     ]
   },
   {
@@ -411,8 +383,8 @@
       ]
     ],
     "expect": [
-      "HISTORY IS NOT STARVED \u2014 a subject whose rounds BOTH predate arming is out of scope",
-      "\u2b50 a subject whose documents MOVED since arming is still historical"
+      "HISTORY IS NOT STARVED — a subject whose rounds BOTH predate arming is out of scope",
+      "⭐ a subject whose documents MOVED since arming is still historical"
     ]
   },
   {
@@ -439,7 +411,7 @@
       ]
     ],
     "expect": [
-      "\u2b50 a file committed AFTER the instant is absent from the tree at that instant"
+      "⭐ a file committed AFTER the instant is absent from the tree at that instant"
     ],
     "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
   },
@@ -454,7 +426,7 @@
     ],
     "expect": [
       "...and one committed BEFORE it is present, so absence is not emptiness",
-      "at a LATER instant the same file IS present \u2014 two distinct epochs, one repo"
+      "at a LATER instant the same file IS present — two distinct epochs, one repo"
     ],
     "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names, not chosen. The first draft named the historical-tree case, which this mutation does not redden.",
     "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
@@ -470,9 +442,9 @@
     ],
     "expect": [
       "an EMPTY listing is git not having been read, not a tree that held nothing",
-      "...and a non-empty one is accepted \u2014 two DISTINCT inputs, so the set is read"
+      "...and a non-empty one is accepted — two DISTINCT inputs, so the set is read"
     ],
-    "_why_extracted": "In place the branch could only differ on an input a real repository never produces, so the mutation was equivalent-in-environment and survived with rc=0. Extracted as empty_listing_refusal so a case drives both inputs \u2014 the same remedy shallow_refusal needed."
+    "_why_extracted": "In place the branch could only differ on an input a real repository never produces, so the mutation was equivalent-in-environment and survived with rc=0. Extracted as empty_listing_refusal so a case drives both inputs — the same remedy shallow_refusal needed."
   },
   {
     "name": "trigger 4 reads the last five by FIRST insertion again, so the latest runs are ignored",
@@ -484,20 +456,7 @@
       ]
     ],
     "expect": [
-      "\u2b50 the LAST five subjects is by occurrence, not by first insertion"
-    ]
-  },
-  {
-    "name": "a traversal that silently skipped an unreadable subtree is accepted as a measurement",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        if walk_errors:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "...and a partial count with NO error is exactly what must not happen"
+      "⭐ the LAST five subjects is by occurrence, not by first insertion"
     ]
   },
   {
@@ -510,7 +469,7 @@
       ]
     ],
     "expect": [
-      "\u2b50 a component in rounds 1 and 5 CONTINUED past round 4 \u2014 a count said stopped"
+      "⭐ a component in rounds 1 and 5 CONTINUED past round 4 — a count said stopped"
     ]
   },
   {
@@ -524,7 +483,7 @@
     ],
     "expect": [
       "an unknown unit is NOT DERIVABLE rather than assumed stopped",
-      "no evidence at all is NOT DERIVABLE \u2014 10 of 81 subjects are readable"
+      "no evidence at all is NOT DERIVABLE — 10 of 81 subjects are readable"
     ]
   },
   {
@@ -552,10 +511,10 @@
     "expect": [
       "component_rounds gives the SET of rounds, which is what a position question needs"
     ],
-    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names. The draft also named the rounds-1-and-5 case, which this mutation does NOT redden: replacing the added round with 0 makes component_rounds return {'a': {0}}, and that case feeds derive_outcome a hand-written set rather than component_rounds' output, so it never sees the collapse. \u26a0 That is worth stating: derive_outcome's cases are INDEPENDENT of component_rounds by construction, which is why each needs its own entry."
+    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names. The draft also named the rounds-1-and-5 case, which this mutation does NOT redden: replacing the added round with 0 makes component_rounds return {'a': {0}}, and that case feeds derive_outcome a hand-written set rather than component_rounds' output, so it never sees the collapse. ⚠ That is worth stating: derive_outcome's cases are INDEPENDENT of component_rounds by construction, which is why each needs its own entry."
   },
   {
-    "name": "tree_at ignores the repo it is GIVEN and reads whatever filesystem it sits in \u2014 #322 restored",
+    "name": "tree_at ignores the repo it is GIVEN and reads whatever filesystem it sits in — #322 restored",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
@@ -567,7 +526,7 @@
       "tree_at reads a repository it is GIVEN, so the suite needs no repo of its own",
       "an instant before the repo's history REFUSES, and names no subject"
     ],
-    "_reachable_since": "backlog #322 \u2014 before the repo was injectable these clauses could not be driven from a case at all"
+    "_reachable_since": "backlog #322 — before the repo was injectable these clauses could not be driven from a case at all"
   },
   {
     "name": "the ls-tree call reaches past its subject to the module global",
@@ -581,6 +540,32 @@
     "expect": [
       "...and one committed BEFORE it is present, so absence is not emptiness"
     ],
-    "_reachable_since": "backlog #322 \u2014 before the repo was injectable these clauses could not be driven from a case at all"
+    "_reachable_since": "backlog #322 — before the repo was injectable these clauses could not be driven from a case at all"
+  },
+  {
+    "name": "backlog #328: trigger 6 stops comparing the pinned COUNTS, returning to the state where a corpus that grew 392 -> 420 rounds reported no drift at all",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for key in (\"rounds_total\", \"subjects_with_any_round\", \"subjects_with_ge2_rounds\"):",
+        "    for key in ():"
+      ]
+    ],
+    "expect": [
+      "⭐ a corpus that GREW past the count tolerance now fires — it did not before"
+    ]
+  },
+  {
+    "name": "backlog #328: the corpus producer stops emitting the pinned key names, so trigger 6 compares nothing and is inert while every fixture-built case still passes",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            \"subjects\": len(counts), **extra}",
+        "            \"subjects\": len(counts)}"
+      ]
+    ],
+    "expect": [
+      "⭐ _corpus_now emits the keys baseline.json pins, or trigger 6 compares nothing"
+    ]
   }
 ]

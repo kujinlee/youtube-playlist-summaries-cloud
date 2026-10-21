@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 133 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 140 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -236,8 +236,29 @@ def t5_ranker_miss(rows: list[dict]) -> str | None:
     return None
 
 
-def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5) -> str | None:
-    """WARN. A finding expires when its denominator moves; say so before trusting the rest."""
+def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5,
+                         now_corpus: dict | None = None, pinned_corpus: dict | None = None,
+                         count_tol: float = 0.05) -> str | None:
+    """WARN. A finding expires when its denominator moves; say so before trusting the rest.
+
+    ⟳ 2026-10-20, owner decision, backlog #328. It used to compare ONLY `median` and `mean` — the
+    two RATE statistics — and so could not see the thing its name promises. MEASURED: the corpus
+    went **392 -> 420 rounds, 105 -> 106 subjects, 81 -> 83 with >=2 rounds** while this returned
+    `None`, because the median held at 4 and the mean moved 4.84 -> 4.78, well inside `tol`. The
+    trigger whose entire job is noticing a moved denominator was blind to the denominator.
+
+    ⭐ The counts it needs were ALREADY PINNED, in the same `baseline.json` the caller already
+    reads — under `corpus`, beside the `rounds_to_termination` block this function was handed.
+    Nothing had to be collected; it simply was not looked at.
+
+    ⛔ WHY COUNTS GET A TIGHTER TOLERANCE THAN RATES, stated because the number is a JUDGEMENT and
+    not a measurement. A rate drifting a few percent is noise — that is what `tol = 0.5` is for. A
+    COUNT drifting means the pinned rate was computed over a materially different population, so
+    the comparison itself is aging rather than the value. `count_tol = 0.05` is where "the median
+    over 81 subjects" stops being a safe proxy for today's. ⚠ It was NOT chosen to make today's
+    figures fire: at +7.1% `rounds_total` does fire and at +2.5% `subjects_with_ge2_rounds` does
+    not, and both are reported together so the reader sees which moved.
+    """
     out = []
     for key in ("median", "mean"):
         a, b = now.get(key), pinned.get(key)
@@ -245,6 +266,13 @@ def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5) -> str | Non
             continue
         if abs(a - b) / b > tol:
             out.append(f"{key} rounds/subject {b} -> {a}")
+    nc, pc = now_corpus or {}, pinned_corpus or {}
+    for key in ("rounds_total", "subjects_with_any_round", "subjects_with_ge2_rounds"):
+        a, b = nc.get(key), pc.get(key)
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)) or not b:
+            continue
+        if abs(a - b) / b > count_tol:
+            out.append(f"{key} {b} -> {a} ({(a - b) / b:+.1%})")
     return ("the corpus moved under the pinned baseline: " + "; ".join(out)) if out else None
 
 
@@ -697,7 +725,8 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         if now.get("error"):
             print(f"    CANNOT RUN — the corpus could not be read: {now['error']}")
             return 2
-        drift = t6_denominator_moved(now, pinned_rounds)
+        drift = t6_denominator_moved(now, pinned_rounds,
+                                     now_corpus=now, pinned_corpus=pinned.get("corpus", {}))
         print(f"    {'DRIFT: ' + drift if drift else 'no material drift'}")
         return 0
 
@@ -750,7 +779,8 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         if result:
             fails.append((name, result))
     for name, result in (
-        ("6 DENOMINATOR MOVED", t6_denominator_moved(now, pinned_rounds)),
+        ("6 DENOMINATOR MOVED", t6_denominator_moved(
+            now, pinned_rounds, now_corpus=now, pinned_corpus=pinned.get("corpus", {}))),
         ("7 SAMPLE REACHED", t7_sample_reached(rows)),
     ):
         if result:
@@ -790,7 +820,16 @@ def _corpus_now(reviews: Path | None = None) -> dict:
         rows, why = mod.corpus(reviews)
         if why:
             raise OSError(why)
-        counts = [len(r) for r in mod.by_subject_rounds(rows).values() if len(r) >= 2]
+        by_subject = mod.by_subject_rounds(rows)
+        counts = [len(r) for r in by_subject.values() if len(r) >= 2]
+        # ⛔ EMITTED UNDER THE NAMES `baseline.json` PINS, not under new ones. Trigger 6 compares
+        # these to the pinned `corpus` block, and a key that does not match is skipped SILENTLY —
+        # measured 2026-10-20, the first wiring of that comparison was inert for exactly this
+        # reason and the cases did not catch it, because a fixture built with the right key names
+        # proves what the function does to the FIXTURE, not what the caller hands it.
+        extra = {"rounds_total": sum(len(r) for r in by_subject.values()),
+                 "subjects_with_any_round": len(by_subject),
+                 "subjects_with_ge2_rounds": len(counts)}
     except (OSError, AttributeError, ImportError) as exc:
         # ⟳ THE COMMENT THAT WAS HERE WAS FALSE AND IS DELETED RATHER THAN REWORDED. It said
         # "⛔ NOT a fail-open: the caller prints these as None and trigger 6 is skipped, which is
@@ -805,7 +844,7 @@ def _corpus_now(reviews: Path | None = None) -> dict:
     if not counts:
         return {"median": None, "mean": None, "error": "no subject has >=2 rounds"}
     return {"median": st.median(counts), "mean": round(st.mean(counts), 2),
-            "subjects": len(counts)}
+            "subjects": len(counts), **extra}
 
 
 def _try(fn):
@@ -1125,6 +1164,41 @@ def _self_test() -> int:
          t5_ranker_miss([{}, {}, {}]), None)
 
     # ── triggers 6 and 7: warnings ───────────────────────────────────────────────────────────
+    # ⛔ THE CASE THAT WOULD HAVE CAUGHT THE INERT WIRING, AND DID NOT EXIST. The first wiring of
+    # the count comparison passed `now_corpus=now` where `now` is `_corpus_now()`'s dict — which
+    # emitted `subjects`, not the names `baseline.json` pins. A key that does not match is skipped
+    # SILENTLY, so the new arms were dead code while five fixture-built cases passed, because a
+    # fixture with the right key names proves what the function does to the FIXTURE. This asserts
+    # the INTERFACE between the two instead: the producer must speak the pinned vocabulary.
+    _pinned_keys = {"rounds_total", "subjects_with_any_round", "subjects_with_ge2_rounds"}
+    case("⭐ _corpus_now emits the keys baseline.json pins, or trigger 6 compares nothing",
+         _pinned_keys <= set(_try(lambda: _corpus_now()) or {}), True)
+    # ── backlog #328: the COUNTS, which this trigger could not see until 2026-10-20 ──
+    _pc = {"rounds_total": 392, "subjects_with_any_round": 105, "subjects_with_ge2_rounds": 81}
+    case("⭐ a corpus that GREW past the count tolerance now fires — it did not before",
+         "rounds_total 392 -> 420" in (t6_denominator_moved(
+             {"median": 4}, {"median": 4},
+             now_corpus={"rounds_total": 420}, pinned_corpus=_pc) or ""), True)
+    case("...and the RATES alone would still have been quiet, which is the defect",
+         t6_denominator_moved({"median": 4, "mean": 4.78}, {"median": 4, "mean": 4.84}), None)
+    case("a count inside the tolerance stays quiet — +2 of 81 is not a moved population",
+         t6_denominator_moved({"median": 4}, {"median": 4},
+                              now_corpus={"subjects_with_ge2_rounds": 83},
+                              pinned_corpus=_pc), None)
+    case("the direction and size are REPORTED, so the reader judges rather than guesses",
+         "+7.1%" in (t6_denominator_moved({"median": 4}, {"median": 4},
+                                          now_corpus={"rounds_total": 420},
+                                          pinned_corpus=_pc) or ""), True)
+    # ⛔ `count_tol` VARIED, because a threshold no case can distinguish from a constant is a
+    # threshold nothing guards — and this one is a stated JUDGEMENT rather than a measurement, so
+    # it is exactly the kind that must be shown to be read.
+    case("a tighter count tolerance fires on a drift the default tolerates",
+         "subjects_with_ge2_rounds 81 -> 83" in (t6_denominator_moved(
+             {"median": 4}, {"median": 4}, now_corpus={"subjects_with_ge2_rounds": 83},
+             pinned_corpus=_pc, count_tol=0.01) or ""), True)
+    case("a missing pinned count is skipped, not read as zero drift",
+         t6_denominator_moved({"median": 4}, {"median": 4},
+                              now_corpus={"rounds_total": 420}, pinned_corpus={}), None)
     case("a stable denominator is quiet", t6_denominator_moved({"median": 4}, {"median": 4}),
          None)
     case("a denominator that doubled warns",

@@ -99,7 +99,7 @@
       ]
     ],
     "expect": [
-      "r1 + r3 does NOT read as converged \u2014 it CANNOT RUN",
+      "r1 + r3 does NOT read as converged — it CANNOT RUN",
       "r1 + r3 with one fix-induced component does NOT arm an architecture review"
     ]
   },
@@ -139,7 +139,7 @@
       ]
     ],
     "expect": [
-      "CANNOT_RUN exits 2 \u2014 a refusal is not an ordinary failure"
+      "CANNOT_RUN exits 2 — a refusal is not an ordinary failure"
     ]
   },
   {
@@ -178,7 +178,7 @@
       ]
     ],
     "expect": [
-      "a margin of ONE is a lead, not a tie \u2014 the adjacent case to abstention",
+      "a margin of ONE is a lead, not a tie — the adjacent case to abstention",
       "a WIDE margin is reported as its own value, not as a boolean"
     ]
   },
@@ -214,8 +214,8 @@
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "    if lead[\"abstain\"]:\n        out = [f\"  scope-rank: NO LEAD \u2014 {lead['why']}\"]",
-        "    if True:\n        out = [f\"  scope-rank: NO LEAD \u2014 {lead['why']}\"]"
+        "    if lead[\"abstain\"]:\n        out = [f\"  scope-rank: NO LEAD — {lead['why']}\"]",
+        "    if True:\n        out = [f\"  scope-rank: NO LEAD — {lead['why']}\"]"
       ]
     ],
     "expect": [
@@ -227,8 +227,8 @@
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "    out = [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']} \"\n           f\"(n1={lead['n1']} n2={lead['n2']})\"]",
-        "    out = [f\"  scope-rank: {lead['top'][0]} \u2014 {lead['why']}\"]"
+        "    out = [f\"  scope-rank: {lead['top'][0]} — {lead['why']} \"\n           f\"(n1={lead['n1']} n2={lead['n2']})\"]",
+        "    out = [f\"  scope-rank: {lead['top'][0]} — {lead['why']}\"]"
       ]
     ],
     "expect": [
@@ -260,6 +260,32 @@
     ],
     "expect": [
       "the reader prints review_scope's ORDER, giving the named symbol a reader"
+    ]
+  },
+  {
+    "name": "backlog #329: convergence ignores `disposition` again, so a Blocking that was FIXED with trivial fixes still blocks and the predicate returns to demanding a round that found nothing",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "            if f.get(\"disposition\") in (\"fixed\", \"declined\"):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "⭐ the same High, FIXED with trivial fixes, DOES converge — backlog #329"
+    ]
+  },
+  {
+    "name": "backlog #329: a FILED finding counts as answered, so deferring everything to the backlog would converge a branch that resolved nothing",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "            if f.get(\"disposition\") in (\"fixed\", \"declined\"):",
+        "            if f.get(\"disposition\") in (\"fixed\", \"declined\", \"filed\"):"
+      ]
+    ],
+    "expect": [
+      "a block-style High that is still OPEN does NOT reach STOP"
     ]
   }
 ]

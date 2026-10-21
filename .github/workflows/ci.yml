@@ -804,7 +804,81 @@ jobs:
       # not a canonical ASCII `I/N` (bounded to four digits, no Unicode digits, no leading zeros, no
       # surrounding whitespace), refuses `0 <= I < N` violations, and refuses an empty value — each
       # with a CANNOT RUN sentence and a case in `check-plan-code.py`'s own suite.
+      # ── backlog #173, raised by the owner TWICE and measured rather than estimated ──────
+      # "this sweep time become quite a drag as it happens every merge even for small changes".
+      # MEASURED on run 35889056587: the sweep was 8m12s of a 10m22s job — 79% of the gate — and
+      # three of the five pull requests merged that week changed no code at all. When no
+      # `scripts/**` file changed, the sweep mutates UNCHANGED code against UNCHANGED suites, so
+      # it can only reproduce the previous result: skipping it loses nothing BY CONSTRUCTION.
+      #
+      # ⛔⛔ A STEP-LEVEL `if:`, NEVER A WORKFLOW-LEVEL `paths:` FILTER — backlog #137 already paid
+      # for that distinction. A `paths:` filter means the context never appears on a docs-only pull
+      # request, and *a required check that never reports leaves a pull request pending for ever*.
+      # A step conditional keeps the job running and reporting, so the check stays required.
+      #
+      # ⛔ AND IT FAILS TOWARD RUNNING. If the base ref cannot be resolved the answer is `true`,
+      # because an undetermined diff must not silently skip a gate — "cannot run is a failure,
+      # never a pass" applies to the DECISION to skip just as much as to the sweep itself.
+      - name: Did any mutated code or manifest change?
+        id: mutated_code
+        run: |
+          set -u
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="HEAD^"
+          fi
+          if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+            echo "base '$BASE' does not resolve — running the sweep rather than guessing"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # `scripts/` covers both the delivered guards and `scripts/mutations/**`, which is the
+          # whole of what the sweep reads. Anything else cannot change a mutation verdict.
+          # ⛔ THE DECISION IS NOT MADE HERE. This block collects the diff and calls
+          # `check-plan-code.sweep_needed`, which is pure, has seven cases and a mutation entry.
+          # A `run:` block has none of those, and that is exactly how the shard rule shipped wrong
+          # in three consecutive rounds with every gate green — see the comment on that step.
+          #
+          # ⛔⛔ AND THE ANSWER IS READ FROM STDOUT, NOT FROM AN EXIT CODE — MEASURED, because the
+          # first version of this block used `if python3 - <<EOF` and would have DISABLED THE GATE
+          # ENTIRELY. `check-plan-code.py` cannot be imported under a custom module name: a frozen
+          # dataclass needs the module registered in `sys.modules`, so `exec_module` raises. A
+          # raise is a non-zero exit, `if` reads that as false, and the sweep would have been
+          # skipped on EVERY run while the job stayed green. Printing the verdict separates "the
+          # answer is no" from "the question could not be asked" — the distinction the exit code
+          # silently collapsed.
+          git diff --name-only "$BASE"...HEAD > /tmp/changed.txt || true
+          VERDICT=$(python3 - <<'PYEOF' || echo "ERROR"
+          import importlib.util, pathlib, sys
+          spec = importlib.util.spec_from_file_location("cpc", "scripts/check-plan-code.py")
+          mod = importlib.util.module_from_spec(spec)
+          sys.modules["cpc"] = mod                     # a frozen dataclass needs this
+          spec.loader.exec_module(mod)
+          changed = pathlib.Path("/tmp/changed.txt").read_text().splitlines()
+          print("RUN" if mod.sweep_needed(changed) else "SKIP")
+          PYEOF
+          )
+          case "$VERDICT" in
+            SKIP)
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "no scripts/ file changed against $BASE — the sweep would mutate unchanged"
+              echo "code against unchanged suites, which can only reproduce the previous result."
+              ;;
+            RUN)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "scripts/ changed, so the sweep runs:"
+              grep '^scripts/' /tmp/changed.txt | head -20
+              ;;
+            *)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::could not decide whether the sweep is needed ($VERDICT) —"
+              echo "::warning::running it rather than skipping a gate on an unanswered question"
+              ;;
+          esac
+
       - name: Mutation manifest against the delivered scripts (one shard)
+        if: steps.mutated_code.outputs.changed == 'true'
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}

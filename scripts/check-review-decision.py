@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 91 cases
+    python3 scripts/check-review-decision.py --self-test  # 94 cases
 
 WHY THIS EXISTS
 ---------------
@@ -234,14 +234,30 @@ def converged(rounds: list[dict], scope: str) -> tuple[bool, str]:
         return False, f"{len(rounds)} round(s) recorded; a {scope} change needs {need}"
     for r in rounds[-need:]:
         for f in r.get("findings", []):
+            # ⟳ 2026-10-20, owner decision, backlog #329. This used to refuse on the mere
+            # PRESENCE of a Blocking/High or a deliverable-aimed finding, which asked for a round
+            # that found nothing — an artifact the workflow does not produce, because a round
+            # document is only written when a round FINDS something. MEASURED over every readable
+            # round: 48 rounds, ONE clean, and 0 of 12 subjects converging. A predicate that
+            # cannot be satisfied reports the same thing about good work and bad.
+            # ⭐ What it asks now is whether the finding is still OPEN. `disposition` is required
+            # on every finding and already filled in, so this reads evidence that EXISTS instead
+            # of demanding evidence nobody writes. `filed` counts as open on purpose: a finding
+            # moved to the backlog is deferred, not answered, and convergence is a claim about
+            # THIS branch.
+            if f.get("disposition") in ("fixed", "declined"):
+                continue
             if f.get("severity") in ("Blocking", "High"):
-                return False, f"r{r.get('round')} produced a {f.get('severity')}"
+                return False, (f"r{r.get('round')}'s {f.get('severity')} is still open "
+                               f"(disposition {f.get('disposition')!r})")
             if f.get("aim") == "deliverable":
-                return False, f"r{r.get('round')} found a defect in the deliverable"
+                return False, (f"r{r.get('round')} left a defect open in the deliverable "
+                               f"(disposition {f.get('disposition')!r})")
         if r.get("fixes_nontrivial"):
             return False, (f"r{r.get('round')}'s fixes were non-trivial — the card makes "
                            f"that a CONTINUE, and a fix is unreviewed code")
-    return True, (f"{need} round(s) with no Blocking/High and nothing in the deliverable")
+    return True, (f"{need} round(s) with every Blocking/High and every deliverable finding "
+                  f"dispositioned, and trivial fixes")
 
 
 def convergence_unreachable(rounds: list[dict]) -> str | None:
@@ -852,13 +868,33 @@ def _self_test() -> int:
          _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nsubject: s\n```")), True)
     # r1 Blocking (Codex): block-style YAML parsed to ZERO findings, so a recorded High
     # reached STOP. Executed by the reviewer, not reasoned about.
+    # ⟳ 2026-10-20, backlog #329: the fixture's disposition moved `fixed` -> `filed`. The CASE'S
+    # PURPOSE IS UNCHANGED and so is its falsifying power — it exists because block-style YAML once
+    # parsed to ZERO findings, making a recorded High invisible, and a parser that drops findings
+    # still makes this reach STOP. What changed is `converged`, which now asks whether a finding is
+    # still OPEN rather than whether it exists; `filed` is open (deferred to the backlog is not
+    # answered), so an open High still blocks and this case still measures the parser.
     _block = ("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - id: H1\n    severity: High\n"
               "    aim: deliverable\n    fix_induced: false\n    component: c\n"
-              "    disposition: fixed\n```")
+              "    disposition: filed\n```")
     case("an ordinary BLOCK-style finding is parsed, not silently dropped",
          parse_header(_block)["findings"][0]["severity"], "High")
-    case("a block-style High does NOT reach STOP",
+    case("a block-style High that is still OPEN does NOT reach STOP",
          decide([parse_header(_block)], "one-round", True)[0], "ROUND_OWED")
+    # ⭐ THE DELIBERATE CHANGE, PINNED SO IT CANNOT HAPPEN BY ACCIDENT. The same High, FIXED and
+    # with trivial fixes, now converges. That is the whole of backlog #329: the old rule refused on
+    # a finding's PRESENCE and so demanded a round that found nothing — 1 clean round in 48, and
+    # 0 of 12 subjects converging. ⚠ `fixes_nontrivial: false` is still required and still blocks,
+    # so a SUBSTANTIVE fix cannot converge unreviewed; only a reworded-line fix can.
+    _fixed = _block.replace("disposition: filed", "disposition: fixed")
+    case("⭐ the same High, FIXED with trivial fixes, DOES converge — backlog #329",
+         decide([parse_header(_fixed)], "one-round", True)[0], "STOP")
+    _fixed_big = _fixed.replace("fixes_nontrivial: false", "fixes_nontrivial: true")
+    case("...but a NON-TRIVIAL fix still blocks, because a fix is unreviewed code",
+         decide([parse_header(_fixed_big)], "one-round", True)[0], "ROUND_OWED")
+    _declined = _block.replace("disposition: filed", "disposition: declined")
+    case("a DECLINED finding converges too — declining is an answer, filing is not",
+         decide([parse_header(_declined)], "one-round", True)[0], "STOP")
     case("a list item that parses to nothing REFUSES rather than shrinking the round",
          _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - \n```")), True)
     # r2 Blocking (Codex): parity proved a dict appeared, not that it SAYS anything. A

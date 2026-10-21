@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 178 cases
+    python3 scripts/check-plan-code.py --self-test          # 185 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1068,7 +1068,7 @@ EXPECTED_MUTATIONS = {
     # the partition itself (stride, offset, the empty-shard refusal in both of its two callers),
     # because a partition that drops an entry makes N green jobs report success over work
     # nobody did — strictly worse than the slow sweep they replace.
-    "scripts/check-plan-code.py": 106,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
+    "scripts/check-plan-code.py": 108,   # ⟳ 2026-09-08 r2 M1: +3, then r3: +8. The r2 fold
     # added THREE behaviours and ZERO manifest entries — cases guarded them, nothing in CI
     # did, and a case is held only by the self-test COUNT ratchet, which sees the number
     # move rather than the coverage leave.
@@ -1119,8 +1119,8 @@ EXPECTED_MUTATIONS = {
     # one equivalent by construction (n1 is the maximum), one killing by IndexError with zero
     # [FAIL] lines, and one equivalent-in-environment (a shallow-clone branch on a full clone,
     # since replaced by the drivable `shallow_refusal`).
-    "scripts/check-review-decision.py": 19,
-    "scripts/check-decision-scheme.py": 43,
+    "scripts/check-review-decision.py": 21,
+    "scripts/check-decision-scheme.py": 42,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
@@ -1712,6 +1712,31 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
 # produced three disagreeing definitions of "a decimal integer" across two files. The workflow
 # no longer spells it at all and calls `--shard0` instead.
 SHARD_SPEC = re.compile(r"^(0|[1-9][0-9]{0,3})/(0|[1-9][0-9]{0,3})$")
+
+
+def sweep_needed(changed: "list[str] | None") -> bool:
+    """PURE. Should the mutation sweep run, given the paths a branch changed? Backlog #173.
+
+    ⛔ THIS LIVES HERE AND NOT IN `ci.yml` FOR THE REASON THAT FILE RECORDS ABOUT ITSELF: a `run:`
+    block has no self-test, no mutation entry and no caller, and `check-ratchet-contract`'s
+    population is `scripts/*.{py,sh}` plus `.claude/hooks/*` — never `.github/workflows/`. Every
+    version of the shard rule written in YAML was unmeasurable by construction and shipped wrong in
+    THREE consecutive rounds with every gate green. The workflow collects the diff and calls this;
+    it decides nothing.
+
+    WHY IT IS SAFE TO SKIP, and it is by construction rather than by judgement: with no `scripts/`
+    file changed the sweep mutates UNCHANGED code against UNCHANGED suites, so it can only
+    reproduce the previous result. Measured cost of not skipping (run 35889056587): 8m12s of a
+    10m22s job — 79% of the gate — paid by three of the five pull requests merged that week, none
+    of which changed any code.
+
+    ⛔ `None` MEANS THE DIFF COULD NOT BE TAKEN, AND THAT RUNS THE SWEEP. An undetermined answer
+    must not silently skip a gate: "cannot run is a failure, never a pass" applies to the DECISION
+    to skip exactly as it applies to the measurement.
+    """
+    if changed is None:
+        return True
+    return any(path.startswith("scripts/") for path in changed if path.strip())
 
 
 def parse_shard(spec: str, *, zero_based: bool = False,
@@ -5215,7 +5240,21 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1638)
+    # ── backlog #173: should the sweep run at all? ──────────────────────────────────────
+    case("a branch touching a guard runs the sweep",
+         sweep_needed(["scripts/check-docs.py", "docs/backlog.md"]), True)
+    case("a branch touching a MANIFEST runs it too — a manifest changes verdicts",
+         sweep_needed(["scripts/mutations/check-docs.json"]), True)
+    case("⭐ a docs-only branch SKIPS — unchanged code against unchanged suites",
+         sweep_needed(["docs/backlog.md", "docs/roadmap-to-launch.md"]), False)
+    case("an empty diff skips", sweep_needed([]), False)
+    # ⛔ the fail-toward-running arm: an undetermined diff must never skip a gate.
+    case("⛔ a diff that could NOT be taken runs the sweep rather than guessing",
+         sweep_needed(None), True)
+    case("a blank path is not a change", sweep_needed(["", "  "]), False)
+    case("a path merely CONTAINING scripts/ does not count — it must be the prefix",
+         sweep_needed(["docs/explainers/about-scripts/x.md"]), False)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1641)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
