@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 77 cases
+    python3 scripts/check-review-rounds.py --self-test # 87 cases
 
 WHY THIS EXISTS
 ---------------
@@ -75,6 +75,73 @@ SHAPES = (
     re.compile(r"^(?P<subject>.+)-r(?P<round>\d+)-(?P<who>codex|claude|coordinator)\.md$"),
     re.compile(r"^(?P<subject>.+)-(?P<who>codex|claude|coordinator)-r(?P<round>\d+)\.md$"),
 )
+
+# ── THE CORPUS: ONE OWNER, BECAUSE FIVE DERIVATION SITES CANNOT AGREE ──────────────────
+# Backlog #328. Before this, "the review corpus" had FIVE live answers, each an accident of
+# which reader a caller happened to call: `check-decision-scheme._round_docs` and
+# `_corpus_now` (two copies of ONE walk), `check-review-decision:483` (coordinator files
+# only), this module's own `audit` walk, and a `git ls-tree` for the historical tree — plus
+# `baseline.json`, a population FROZEN at 5d957db8. Any two measurements disagreed silently,
+# which is why five review rounds each reported a different denominator.
+#
+# ⭐ IT IS NOT HYGIENE, AND THE MOTIVATING CASE IS MEASURED. r2 finding YH1 fixed `_corpus_now`
+# because `Path.rglob` SILENTLY SKIPS a directory it cannot read, so a partial measurement
+# carried no error. The OTHER copy of that walk, `_round_docs`, never got the fix: over one
+# temp tree with two 2-round subjects and one subtree at `chmod 000`, `_corpus_now` refused
+# with "the review corpus could not be fully traversed" while `_round_docs` returned ONE
+# subject with no error at all. `_round_docs` feeds `subjects_starved`, which feeds trigger 1,
+# so an unreadable subtree makes subjects VANISH from the starvation check — exactly how its
+# predecessor died at 81%. The completeness check lives HERE so every consumer inherits the
+# refusal instead of each caller remembering it.
+#
+# This module owns `SHAPES`, the filename grammar, so the corpus belongs beside it: a reader
+# that needs the population already imports this file.
+def corpus(reviews: pathlib.Path | None = None):
+    """PURE given a directory. -> (rows, why). `why` non-None is CANNOT RUN, never an empty corpus.
+
+    A row is `(subject, round, writer, path)` — one per round document, in both layouts.
+    Every historical derivation site is a PROJECTION of these rows; see `by_subject_rounds`.
+    """
+    import os
+    reviews = REVIEWS if reviews is None else reviews
+    if not reviews.is_dir():
+        return [], (f"{reviews} is not a directory, so the corpus cannot be read — "
+                    f"treat every count over it as NOT MEASURED")
+
+    # ⛔ THE COMPLETENESS CHECK COMES FIRST, AND IT IS THE REASON THIS FUNCTION EXISTS.
+    # `Path.rglob` returns what it could read and says nothing about what it could not, so a
+    # short count is indistinguishable from a small corpus. `os.walk`'s `onerror` is the only
+    # way to hear about it. A caller that never asks inherits the refusal anyway.
+    walk_errors: list[str] = []
+    for _ in os.walk(reviews, onerror=lambda e: walk_errors.append(str(e))):
+        pass
+    if walk_errors:
+        return [], (f"the review corpus could not be fully traversed, so any count over it "
+                    f"omits data: {walk_errors[0]}")
+
+    rows = []
+    for path in sorted(reviews.rglob("*.md")):
+        # BOTH layouts: the flat root and the per-writer subdirectories (backlog #92). A
+        # subject-looking file under any OTHER directory is not part of the corpus — the
+        # filter that, applied as a corpus definition rather than a half-finder, once
+        # excluded 294 flat documents.
+        if path.parent.name not in ("codex", "claude", "coordinator", reviews.name):
+            continue
+        hit = parse(path.name)
+        if hit is None:
+            continue
+        subject, number, writer = hit
+        rows.append((subject, number, writer, str(path)))
+    return rows, None
+
+
+def by_subject_rounds(rows):
+    """PURE. rows -> {subject: {round numbers}}. The projection `_corpus_now` re-derives."""
+    out: dict[str, set[int]] = {}
+    for subject, number, _, _ in rows:
+        out.setdefault(subject, set()).add(number)
+    return out
+
 
 # A coordinator file ADJUDICATES the two halves; it is not itself a half. Counting it would let a
 # round pass with one reviewer and its own summary — the shape this check exists to catch.
@@ -550,6 +617,7 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
 
 # ---------------------------------------------------------------- self-test
 def self_test() -> int:
+    import os
     import tempfile
     cases = failures = 0
 
@@ -568,6 +636,73 @@ def self_test() -> int:
     check("gap line needs a reason", has_gap_line("REVIEW GAP: codex —") is None, True)
     check("prose mentioning a gap is not a gap line",
           has_gap_line("there was a review gap: codex was slow") is None, True)
+
+    # ── corpus(): ONE owner for the population (backlog #328) ────────────────────────
+    with tempfile.TemporaryDirectory() as ctd:
+        def ctree(files):
+            d = pathlib.Path(ctd) / f"c{len(list(pathlib.Path(ctd).iterdir()))}"
+            d.mkdir()
+            for n, body in files.items():
+                (d / n).parent.mkdir(parents=True, exist_ok=True)
+                (d / n).write_text(body)
+            return d
+
+        d = ctree({"flat-r1-coordinator.md": "x",
+                   "coordinator/nested-r2-coordinator.md": "y",
+                   "claude/nested-r2-claude.md": "z",
+                   "notes.md": "not a round document",
+                   "unrelated/also-r9-codex.md": "wrong parent dir"})
+        rows, why = corpus(d)
+        check("corpus: a readable tree gives no refusal AND returns rows",
+              why is None and len(rows) == 3, True)
+        check("corpus: BOTH layouts are read",
+              {(s, n) for s, n, _, _ in rows} == {("flat", 1), ("nested", 2)}, True)
+        check("corpus: the writer is carried on every row",
+              sorted({w for _, _, w, _ in rows}) == ["claude", "coordinator"], True)
+        # ⛔ `rows and` is load-bearing: `all(... for ... in [])` is TRUE, so without it an
+        # empty corpus satisfies every exclusion case — the vacuous pass this repo has
+        # measured repeatedly. Verified: all four exclusion cases pass against a `[]` stub.
+        check("corpus: a non-round file is excluded",
+              bool(rows) and all("notes" not in str(q) for _, _, _, q in rows), True)
+        check("corpus: a round doc under an UNRELATED directory is excluded",
+              bool(rows) and all("unrelated" not in str(q) for _, _, _, q in rows), True)
+        check("corpus: by_subject_rounds projects what _corpus_now re-derived",
+              by_subject_rounds(rows) == {"flat": {1}, "nested": {2}}, True)
+        # ⛔ A SECOND, DISTINCT input — not decoration. With one call site the
+        # parameter is indistinguishable from a constant, so no case could tell
+        # whether any clause actually reads it (check-fixture-variation caught
+        # exactly that here). This input also exercises the UNION the first does
+        # not: one subject carrying two rounds from two different writers.
+        check("corpus: by_subject_rounds UNIONS rounds across writers",
+              by_subject_rounds([("s", 1, "claude", "a"), ("s", 2, "codex", "b"),
+                                 ("t", 7, "coordinator", "c")])
+              == {"s": {1, 2}, "t": {7}}, True)
+
+        # ⭐ THE MOTIVATING CASE (#328). `Path.rglob` SILENTLY SKIPS a directory it cannot read,
+        # so a partial corpus carries no error — r2 YH1, fixed in `_corpus_now` and NOT in the
+        # other copy of that walk. Measured over this exact shape: the unfixed reader returned
+        # ONE subject of two, with no error, feeding trigger 1.
+        locked = ctree({"seen-r1-coordinator.md": "x",
+                        "claude/hidden-r1-claude.md": "y",
+                        "claude/hidden-r2-claude.md": "z"})
+        os.chmod(locked / "claude", 0o000)
+        try:
+            lrows, lwhy = corpus(locked)
+            check("corpus: an UNREADABLE subtree is CANNOT RUN, not a quiet short count",
+                  lwhy is not None, True)
+            check("corpus: and it does not return the readable remainder as if complete",
+                  lrows == [] and lwhy is not None, True)
+        finally:
+            os.chmod(locked / "claude", 0o755)
+
+        # ⛔ THIS ASSERTS THE MESSAGE, NOT JUST "some refusal" — and a MUTATION is why.
+        # `why is not None` could not fail: with the `is_dir()` guard removed, the walk
+        # check below refuses a missing directory too, so BOTH worlds returned a non-None
+        # `why` and the mutation SURVIVED. The branch is masked for the refusal and not
+        # for the WORDS, and the words are what a reader who typo'd a path needs.
+        check("corpus: a MISSING directory is CANNOT RUN, in its OWN words not the walk's",
+              "is not a directory" in (corpus(pathlib.Path(ctd) / "does-not-exist")[1] or ""),
+              True)
 
     with tempfile.TemporaryDirectory() as td:
         def tree(files: dict[str, str]) -> pathlib.Path:

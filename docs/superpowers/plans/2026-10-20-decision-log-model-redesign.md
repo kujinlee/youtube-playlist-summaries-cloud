@@ -3,6 +3,21 @@
 > **Anchor:** `review-decides-itself` — **ADR:** 0014
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
+> ## ⏸️ DEFERRED 2026-10-20 BY THE OWNER — read this before the design below
+>
+> Both signals this slice relied on are **base rates**, measured over the readable corpus:
+> `thrashing_component` arms on **8 of 12** subjects (67%) and `converged()` is false for **12 of 12**,
+> because the corpus holds **1 clean round in 48** against a predicate needing two consecutive (#329).
+> ⭐ **The mechanism CONSUMES those signals**, so a decision layer over non-discriminating inputs cannot
+> work however well it is built. The work moved one level down — **#328** (one `corpus()` owner + a
+> denominator guard) and **#329** (make convergence satisfiable).
+>
+> ⛔ **DEFER is terminal on the ladder — *stop, file it*.** r2's nine findings are **filed, not fixed**;
+> §6's tasks are **not** being implemented. The design below stands as the record of what was learned,
+> and §1's diagnosis and §1.1's measurements were independently re-derived and hold.
+> ⚠ The mechanism cannot record its own deferral: `tried=["redesign"]` for `log-schema`, so `route_next`
+> still demands `accrete` — **#321's fourth occurrence**, on the decision that ends the slice.
+
 **This is a DESIGN REVIEW document, not a fold of code.** `review-method.md:178`, quoted rather than
 recalled:
 

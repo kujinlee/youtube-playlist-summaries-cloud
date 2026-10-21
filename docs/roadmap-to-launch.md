@@ -2425,7 +2425,7 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
       r1's 19** then **4 of r2's 8**. ⟳ The r1 figure was **19**, not the 18 three artifacts of mine
       claimed — I counted prose in a slice whose subject is a machine built to stop that. r2's reviewer
       applied the design's own §5 condition unprompted and reached the same place.
-- [ ] 🔴 **BLOCKED ON AN OWNER DECISION — SPLIT or DEFER** (backlog **#327**, notified 2026-10-20).
+- [x] ⏸️ **DECIDED 2026-10-20 — DEFER** (backlog **#327**). The owner ruled *defer it, fix the signals first*.
       The ladder says **SPLIT**: `log-schema` took REDESIGN at r1, its failure observation is satisfied,
       and DEFER is the rung *after* SPLIT — §5 forbids only a third **REDESIGN**, which SPLIT is not.
       SPLIT is also the only route in this slice with positive evidence (`relocation` 5 → 0 → 0, n=1).
@@ -2433,6 +2433,23 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
       architecture review, **zero measured benefit**, and the figure of merit (rounds-to-termination)
       uncomputable because no unit has terminated. That moves the goal, so it is not mine.
       ⛔ **No third redesign is being written: r2's nine findings are FILED, not fixed.**
+
+⛔ **AND THE REASON IS NOT THE THRASHING CONDITION — both signals this slice leaned on are BASE RATES.**
+Measured 2026-10-20 over the readable corpus: `thrashing_component` arms on **8 of 12** subjects (67%),
+and `converged()` is false for **12 of 12** because the corpus holds **1 clean round in 48** against a
+predicate needing two consecutive (#329). ⭐ **The mechanism CONSUMES those signals**, so a decision
+layer over non-discriminating inputs cannot work however well it is built. The measurement layer is
+the work now:
+
+- [ ] **#328** — one `corpus()` owner every reader imports, plus a guard refusing a denominator that
+      does not match it. Replaces **five** live derivation sites with different filters.
+- [ ] **#329** — make `converged()` satisfiable: decide whether a no-findings round must be RECORDED,
+      and whether `aim` needs a third value for a subject whose deliverable IS an instrument (measured:
+      the two decision subjects carry the corpus's lowest instrument share, **4%** and **12%**, against
+      a mean of 32%).
+
+⚠ **#321's FOURTH occurrence, on the decision that ends the slice:** the mechanism cannot record its own
+deferral — for `log-schema`, `tried=["redesign"]`, so `route_next` still demands `accrete`.
 - [ ] ⭐ **#321 blocked the escalation decision itself — THIRD independent occurrence.** Recording
       `log-schema`'s REDESIGN → SPLIT is **inexpressible** (`["redesign"]` is not a ladder prefix), so
       the mechanism cannot record the route the mechanism prescribes for it.

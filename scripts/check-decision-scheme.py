@@ -409,40 +409,32 @@ def group_by_unit(rows: list[dict]) -> dict[tuple, list[dict]]:
 
 
 def _round_docs(reviews: Path | None = None) -> dict[str, dict[int, set[str]]]:
-    """subject -> {round: ALL paths for that round}, via check-review-rounds' OWN grammar.
+    """subject -> {round: ALL paths for that round}. A PROJECTION of `check-review-rounds.corpus`.
 
-    ⟳ r1 Claude H2a / Codex H2: this used to be `dict[round] = path`, keeping ONE path per
-    round. A coordinator and a half for the same round mapped to the same key, so WHICH path
-    survived depended on `rglob` order — and whether a subject looked newly starved depended on
-    that. Rounds now hold a SET of paths and nothing is overwritten.
+    ⟳ 2026-10-20, backlog #328. This used to carry its OWN `rglob` walk — the second copy of a
+    rule this module already had, and the copies had DRIFTED. r2's finding YH1 gave `_corpus_now`
+    an `os.walk(onerror=...)` completeness check because `Path.rglob` silently skips a directory
+    it cannot read; this copy never got it. Measured over one temp tree with two 2-round subjects
+    and one subtree at `chmod 000`: `_corpus_now` refused, and this function returned ONE subject
+    of two **with no error**, feeding `subjects_starved` and therefore trigger 1 — the starvation
+    ratchet going quiet about a subject it could not see, which is how its predecessor died at 81%.
 
-    One rule, one place: `SHAPES` is imported rather than retyped — the 17-instance drift.
+    The walk now lives once, in the module that owns the filename grammar. A refusal becomes
+    `ValueError`, which `main()` already treats as CANNOT RUN — `read_log` set that convention.
     """
     import importlib.util
-    reviews = (REPO / "docs" / "reviews") if reviews is None else reviews
     spec = importlib.util.spec_from_file_location(
         "_crr", REPO / "scripts" / "check-review-rounds.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    rows, why = mod.corpus(reviews)
+    if why:
+        raise ValueError(why)
     seen: dict[str, dict[int, set[str]]] = {}
-    # ⛔ r1 Claude M1: this filtered to the WRITER SUBDIRECTORIES and so excluded 294 flat round
-    # documents, which `check-review-rounds.py` reads — so the ratchet measured a corpus the
-    # procedure does not use. ⚠ And the reason I chose that filter is the instructive part: it
-    # reproduced a PREVIOUS SESSION'S denominator (63/57). I picked the corpus that matched a
-    # number instead of the one the code reads. BOTH layouts now.
-    for path in reviews.rglob("*.md"):
-        if path.parent.name not in ("codex", "claude", "coordinator", reviews.name):
-            continue
-        for pat in mod.SHAPES:
-            m = pat.match(path.name)
-            if m:
-                rel = str(path.relative_to(REPO)) if REPO in path.parents or path.is_relative_to(
-                    REPO) else str(path)
-                seen.setdefault(m.group("subject"), {}).setdefault(
-                    int(m.group("round")), set()).add(rel)
-                break
+    for subject, number, _writer, path in rows:
+        rel = str(Path(path).relative_to(REPO)) if Path(path).is_relative_to(REPO) else str(path)
+        seen.setdefault(subject, {}).setdefault(number, set()).add(rel)
     return seen
-
 
 def parse_armed_at(raw: object) -> "tuple[int | None, str | None]":
     """PURE-ish. (epoch seconds, None) or (None, why it is unusable).
@@ -781,8 +773,13 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
 
 
 def _corpus_now(reviews: Path | None = None) -> dict:
-    """Today's corpus figures, for trigger 6. Derived, never recalled."""
-    reviews = (REPO / "docs" / "reviews") if reviews is None else reviews
+    """Today's corpus figures, for trigger 6. Derived, never recalled.
+
+    ⟳ 2026-10-20, backlog #328: the walk MOVED to `check-review-rounds.corpus`, the module that
+    owns the filename grammar, because this file carried TWO copies of it and they had drifted —
+    this one had r2 YH1's completeness check and `_round_docs` did not. The refusal text and the
+    `error` contract are unchanged; only the duplication is gone.
+    """
     counts = []
     try:
         import importlib.util
@@ -790,31 +787,10 @@ def _corpus_now(reviews: Path | None = None) -> dict:
             "_crr2", REPO / "scripts" / "check-review-rounds.py")
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        seen: dict[str, set[int]] = {}
-        if not reviews.is_dir():
-            raise OSError(f"the review corpus is not a directory: {reviews}")
-        # ⛔ r2 YH1 — THE FAIL-OPEN MOVED RATHER THAN CLOSING. `Path.rglob` SILENTLY SKIPS a
-        # directory it cannot read, so a chmod-000 `reviews/claude/` produced a PARTIAL
-        # measurement with NO `error` key at all — and the r1 fix keys on `error`, so `main()`
-        # printed `all triggers quiet`, rc=0. A traversal that omitted data is not a
-        # measurement. `os.walk`'s `onerror` is the only way to hear about it.
-        import os as _os
-        walk_errors: list[str] = []
-        for _ in _os.walk(reviews, onerror=lambda e: walk_errors.append(str(e))):
-            pass
-        if walk_errors:
-            raise OSError(f"the review corpus could not be fully traversed, so any count over "
-                          f"it omits data: {walk_errors[0]}")
-        for p in reviews.rglob("*.md"):
-            # BOTH layouts — see `_round_docs` for why the subdir-only filter was wrong.
-            if p.parent.name not in ("codex", "claude", "coordinator", reviews.name):
-                continue
-            for pat in mod.SHAPES:
-                m = pat.match(p.name)
-                if m:
-                    seen.setdefault(m.group("subject"), set()).add(int(m.group("round")))
-                    break
-        counts = [len(r) for r in seen.values() if len(r) >= 2]
+        rows, why = mod.corpus(reviews)
+        if why:
+            raise OSError(why)
+        counts = [len(r) for r in mod.by_subject_rounds(rows).values() if len(r) >= 2]
     except (OSError, AttributeError, ImportError) as exc:
         # ⟳ THE COMMENT THAT WAS HERE WAS FALSE AND IS DELETED RATHER THAN REWORDED. It said
         # "⛔ NOT a fail-open: the caller prints these as None and trigger 6 is skipped, which is

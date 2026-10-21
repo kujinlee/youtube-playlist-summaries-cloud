@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 85 cases
+    python3 scripts/check-review-decision.py --self-test  # 91 cases
 
 WHY THIS EXISTS
 ---------------
@@ -244,6 +244,37 @@ def converged(rounds: list[dict], scope: str) -> tuple[bool, str]:
     return True, (f"{need} round(s) with no Blocking/High and nothing in the deliverable")
 
 
+def convergence_unreachable(rounds: list[dict]) -> str | None:
+    """PURE. Why this subject can NEVER converge on the rounds recorded, else None.
+
+    ⛔ BACKLOG #329, AND THE PREDICATE IS NOT THE DEFECT — the EVIDENCE IS MISSING.
+    `converged` needs consecutive rounds carrying no Blocking/High, nothing aimed at the
+    deliverable, and `fixes_nontrivial` false. Measured 2026-10-20 over every readable round
+    in the corpus: **48 rounds, 1 of them clean, 39 flagged `fixes_nontrivial`, and 0 of 12
+    subjects converging.** The cause is structural rather than a quality problem: a round
+    document is only written when a round FINDS something, so "a clean round" is an artifact
+    the workflow does not produce — and `converged` asks for two in a row.
+
+    So the refusal must name the missing evidence instead of only the round that failed.
+    A gate that cannot be reached, and does not say what would reach it, reads as a verdict
+    about the work when it is a verdict about the record.
+    """
+    if not rounds:
+        return None
+    clean = [r for r in rounds
+             if not r.get("fixes_nontrivial")
+             and not any(f.get("severity") in ("Blocking", "High")
+                         or f.get("aim") == "deliverable"
+                         for f in r.get("findings", []))]
+    if clean:
+        return None
+    return ("no round recorded for this subject is clean, so convergence is UNREACHABLE from "
+            "this record, not merely unmet: it needs rounds with no Blocking/High, nothing "
+            "aimed at the deliverable, and fixes_nontrivial false. ⚠ A round that found "
+            "nothing still has to be RECORDED (`findings: []`) to count — an unwritten round "
+            "is indistinguishable from one that never ran (backlog #329)")
+
+
 # ------------------------------------------------------- Q4b: tree identity
 TREE_ANSWERS = (
     "land the editorial fixes AHEAD of the final round",
@@ -294,7 +325,12 @@ def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, st
                 f"r{rounds[-2].get('round')} and r{rounds[-1].get('round')}")
     ok, why = converged(rounds, scope)
     if not ok:
-        return "ROUND_OWED", why
+        # ⛔ #329: say WHAT EVIDENCE IS MISSING, not only which round failed. Measured over
+        # the corpus, 0 of 12 subjects converge and only 1 round in 48 is clean, because a
+        # round that finds nothing is never written up. Without this line the refusal reads
+        # as a verdict about the work when it is a verdict about the record.
+        unreachable = convergence_unreachable(rounds)
+        return "ROUND_OWED", (f"{why} — ⚠ {unreachable}" if unreachable else why)
     if not tree_reviewed:
         return "TREE", "converged, but no round saw the merging tree; cheapest first: " + \
                        "; ".join(f"({i}) {a}" for i, a in enumerate(TREE_ANSWERS, 1))
@@ -724,6 +760,22 @@ def _self_test() -> int:
     two_inst = [_R(1, [inst]), _R(2, [inst])]
     case("two consecutive instrument-only rounds converge",
          converged(two_inst, "full-loop")[0], True)
+
+    # --- #329: an unreachable gate must say what evidence is missing ------
+    case("a subject with a clean round is NOT reported unreachable",
+         convergence_unreachable(two_inst), None)
+    case("a subject whose every round is dirty IS reported unreachable",
+         "UNREACHABLE" in (convergence_unreachable([_R(1, [deliv]), _R(2, [high])]) or ""), True)
+    case("...and the reason names the RECORD, not the work",
+         "RECORDED" in (convergence_unreachable([_R(1, [deliv])]) or ""), True)
+    # ⛔ fixes_nontrivial alone makes a findings-clean round dirty — 39 of the corpus's 48
+    # rounds carry it, so a case that varied only `findings` would miss the dominant cause.
+    case("a findings-clean round flagged fixes_nontrivial does not count as clean",
+         "UNREACHABLE" in (convergence_unreachable([_R(1, [], nt=True)]) or ""), True)
+    case("no rounds at all is not 'unreachable' — it is simply unstarted",
+         convergence_unreachable([]), None)
+    case("the ROUND_OWED reason carries the missing evidence",
+         "RECORDED" in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1], True)
     case("a High blocks convergence even when aimed at the instrument",
          converged([_R(1, [inst]), _R(2, [high])], "full-loop")[0], False)
     case("a deliverable finding blocks convergence",

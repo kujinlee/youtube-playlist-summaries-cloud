@@ -941,7 +941,7 @@ EXPECTED_MUTATIONS = {
     #   unkillable entry to make the count look fuller is the shape this table exists to refuse.
     #   SIX anchors in these two files were RE-TARGETED in the same commit because the fix moved
     #   their text; the sweep is what found them, and it is still in no local suite.
-    "scripts/check-review-rounds.py": 29,
+    "scripts/check-review-rounds.py": 34,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -5213,7 +5213,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1625)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1630)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
