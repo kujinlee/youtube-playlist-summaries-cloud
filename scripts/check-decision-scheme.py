@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 140 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 162 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -21,6 +21,23 @@ same unit — a second attempt IS the escalation trigger, which is what stops th
 forever. The figure of merit is therefore ROUNDS-TO-TERMINATION, not accuracy: a loop that
 corrects itself does not need to be right first time, and accuracy was the quantity that could
 not be validated (n = 3, capped by the circularity in backlog #314).
+
+⭐ A RUNG MAY BE SKIPPED, BUT ONLY WITH A REASON (backlog #321, the owner's decision 2026-10-21).
+The first version refused every non-prefix route, and the measured consequence was that the two
+units of seven whose history deviated — `relocation` took SPLIT, `log-schema` took REDESIGN —
+were the only two it could not express. `all triggers quiet` was therefore CAUSED by the
+omission of the highest-information decisions in the slice: the ones where a human judged a
+rung futile. A row may now name the rungs it skipped in `skipped` with a non-empty
+`why_skipped`; both are required together and an empty reason is refused, exactly as
+`check-review-recorded.py` refuses an empty `NO-REVIEW:`.
+
+⛔ WHY THIS IS A RECORD, NOT A NEW ROUTE. Forcing ACCRETE first is the only thing that produces
+the label "accrete was tried on this shape and failed", which is the training data the
+long-term route-predictor needs; a `start -> split` jump route would destroy that counterfactual
+for nothing. So the linearity is kept and deviations are RECORDED rather than legalised — a
+skip is a labelled example (shape X, human judged A/R futile, went to S, outcome Y), which is
+precisely what the old schema threw away. A RETRY stays inexpressible and a WALK-BACK down the
+ladder is refused; neither is a skip, and no reason declares one into one.
 
 WHY THIS FILE EXISTS RATHER THAN A NOTE IN A PROCESS DOC
 -------------------------------------------------------
@@ -145,14 +162,27 @@ def t2_non_termination(rows: list[dict]) -> str | None:
     ⛔ REWRITTEN AFTER r1 (Claude B3 + Codex H4, one cause). The first version read ONE ROW at a
     time and asked whether that row's AUTHORED `routes_tried` held four distinct routes. An
     author who never grew the field made exhaustion invisible, and five rows retrying one route
-    exited 0 with `all triggers quiet`. Now the history is DERIVED per (subject, unit) by
-    `derive_routes_tried`, so it cannot be understated by omission, and the question is asked of
-    the unit rather than of a row.
+    exited 0 with `all triggers quiet`. Now the history is DERIVED per (subject, unit), so it
+    cannot be understated by omission, and the question is asked of the unit rather than of a row.
+
+    ⛔ EXHAUSTION IS A LADDER POSITION, ASKED THROUGH `routes_accounted` + `route_next`, not a
+    count of four distinct attempts. Once a rung is skippable with a reason, a unit can reach
+    DEFER having attempted ONCE — so an attempt-counting test would stop firing exactly where a
+    skip is used, switching the primary falsifier off through the door that was just opened. A
+    case covers the skipped-to-terminal unit and an adjacent one that is still escalating.
     """
     bad = []
     for key, unit_rows in group_by_unit(rows).items():
-        tried = derive_routes_tried(unit_rows)
-        if len(set(tried)) < len(LADDER):
+        # ⛔ EXHAUSTION IS "NOTHING LEFT TO ESCALATE TO", NOT "FOUR ATTEMPTS MADE". A unit that
+        # reached DEFER by declaring a skip has an exhausted ladder with one attempt in it, so
+        # counting attempts would switch the primary falsifier off exactly where a skip is used.
+        exhausted = route_next(routes_accounted(unit_rows)) is None
+        # ⚠ TWO DECISIONS, TWO LINES, DELIBERATELY. Which producer answers "where is the
+        # ladder" and whether an exhausted unit fires are separate choices, and the mutation
+        # harness refuses a second entry on one anchor as "measuring nothing new" — so the
+        # off-by-one entry that used to sit on the attempt-count comparison has a line to bind
+        # to rather than being retired with the expression it named.
+        if not exhausted:
             continue
         if unit_rows[-1].get("outcome") == "continued":
             bad.append(key)
@@ -337,6 +367,33 @@ def derive_routes_tried(prior: list[dict]) -> list[str]:
     return [r["route"] for r in prior if r.get("route")]
 
 
+def routes_accounted(prior: list[dict]) -> list[str]:
+    """PURE. Every rung the ladder has PASSED on ONE unit — routes taken AND declared skips.
+
+    ⛔ THIS IS NOT `derive_routes_tried`, AND THE DIFFERENCE IS THE WHOLE POINT OF THE SKIP.
+    A declared skip says a rung was NOT attempted, which is the counterfactual label the
+    route-predictor needs ("accrete was judged futile on this shape and never tried"). Folding
+    skips into `derive_routes_tried` would record them as failed attempts and destroy exactly
+    that label. So there are two producers with two readers: the VALIDATOR asks where the
+    ladder has got to (here), the TRIGGERS ask what was actually tried (there).
+
+    Without this, a declared skip would be accepted and then make its own unit UNAPPENDABLE —
+    the next row's history would read as a non-prefix and be refused — which is the same class
+    of defect as the omission this change removes. A case covers it.
+
+    A non-list `skipped` contributes nothing; `validate_row` is what refuses it, because a
+    producer that also judges is a producer whose refusal nobody can read.
+    """
+    out: list[str] = []
+    for r in prior:
+        skipped = r.get("skipped")
+        if isinstance(skipped, list):
+            out.extend(str(s) for s in skipped)
+        if r.get("route"):
+            out.append(r["route"])
+    return out
+
+
 def component_rounds(rounds: list[dict]) -> dict[str, set[int]]:
     """PURE. component -> the SET of round numbers it appeared in.
 
@@ -406,16 +463,55 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
     if prior is None:
         return None
     tried = derive_routes_tried(prior)
-    err = route_sequence_error(tried)
+    # ⛔ THE LADDER POSITION IS `accounted`, THE ATTEMPTS ARE `tried`, AND THEY ARE NOT THE SAME
+    # QUESTION once a skip is declarable. The prefix rule and the next route are about where the
+    # ladder has got to; the messages say "tried" of real attempts only.
+    accounted = routes_accounted(prior)
+    err = route_sequence_error(accounted)
     if err:
         return f"this unit's history is not a ladder prefix: {err}"
-    expected = route_next(tried)
+    expected = route_next(accounted)
     if expected is None:
         return (f"the ladder is EXHAUSTED for {unit_key(row)} (tried {tried}) — there is no "
                 f"route left to bet on, so this row is a retry after exhaustion")
     if row["route"] != expected:
-        return (f"route {row['route']!r} is not the next route for {unit_key(row)}: tried "
+        base = (f"route {row['route']!r} is not the next route for {unit_key(row)}: tried "
                 f"{tried}, so the only route left to bet on is {expected!r}")
+        # ⛔⛔ A RETRY IS NOT A SKIP, AND NO REASON LEGALISES ONE. `LADDER[:index('accrete')]`
+        # is empty, so without this branch a repeat is declarable with `skipped: []` and any
+        # sentence — and the design calls a repeat the escalation TRIGGER, not a step. This is
+        # the door the new field would otherwise re-open for the r1 Blocking.
+        if row["route"] in tried:
+            return (f"{base} — and {row['route']!r} is ALREADY TRIED, so this is a RETRY, not a "
+                    f"skip: a repeat is the escalation trigger, not a step, and no reason "
+                    f"declares it into one")
+        # A rung that was declared-skipped was never attempted, but the ladder has PASSED it.
+        # Betting on it now is a walk-back, which is the backtracking §3.4 does not authorise.
+        if row["route"] in accounted:
+            return (f"{base} — and {row['route']!r} was already PASSED by a declared skip, so "
+                    f"this is a WALK-BACK down the ladder, which escalation does not do")
+        # The gap is the UNTRIED rungs before this route. It cannot be empty here: `expected` is
+        # the first unaccounted rung and this route is neither it nor accounted, so the route
+        # sits strictly above `expected` and `expected` itself is in the gap.
+        gap = [r for r in LADDER[:LADDER.index(row["route"])] if r not in accounted]
+        declared, why = row.get("skipped"), row.get("why_skipped")
+        if declared is None and why is None:
+            return (f"{base} — a deliberate skip is recordable: declare skipped {gap!r} with a "
+                    f"non-empty why_skipped")
+        if not isinstance(declared, list) or [str(x) for x in declared] != gap:
+            return (f"skipped {declared!r} does not name the rungs this row skips: {gap!r} — "
+                    f"the declaration must match the ladder gap, not assert one")
+        # ⭐ AN EMPTY REASON IS REFUSED, exactly as `check-review-recorded.py` refuses an empty
+        # `NO-REVIEW:`. The reason IS the deliverable here — a skip without one is an
+        # unlabelled deviation, which is the thing the old schema was right to refuse.
+        if not isinstance(why, str) or not why.strip():
+            return (f"why_skipped is {why!r} — a declared skip needs a NON-EMPTY reason, the "
+                    f"same refusal check-review-recorded makes of an empty NO-REVIEW:")
+    elif "skipped" in row or "why_skipped" in row:
+        # A skip CLAIMED where none happened is a false label in the dataset the skips exist to
+        # build, so it is refused rather than ignored as harmless surplus.
+        return (f"skipped {row.get('skipped')!r} / why_skipped claim a skip, but "
+                f"{row['route']!r} IS the next route for {unit_key(row)} — nothing was skipped")
     # An AUTHORED routes_tried may not contradict the derived one. It is redundant now, and a
     # redundant field that disagrees with history is how the r1 Blocking was expressible.
     if "routes_tried" in row and list(row["routes_tried"]) != tried:
@@ -1093,6 +1189,16 @@ def _self_test() -> int:
     # ⚠ ADJACENT: three routes, not four. The boundary is where the error lives.
     case("three routes tried is still escalating, not exhausted",
          t2_non_termination(_exhausted[:3]), None)
+    # ⛔ THE PRIMARY FALSIFIER MUST NOT BE BLINDED BY THE NEW DOOR. A unit that reaches the
+    # terminal rung by declaring a skip has an exhausted ladder with ONE attempt in it, so an
+    # exhaustion test that counts ATTEMPTS stops firing exactly where the skip is used.
+    case("⭐ a unit that reached the terminal rung BY SKIP and still carries findings REFUTES it",
+         "refuted" in (_try(lambda: t2_non_termination(
+             [_u("u", "defer", "continued", skipped=["accrete", "redesign", "split"],
+                 why_skipped="x")])) or ""), True)
+    case("...and a declared skip that has NOT reached the terminal rung is still escalating",
+         t2_non_termination([_u("u", "split", "continued", skipped=["accrete", "redesign"],
+                                why_skipped="x")]), None)
     # ⭐ THE CASE FOR THE BLOCKING ITSELF: the old version read one row's AUTHORED field, so a
     # history that was never written looked unexhausted. Derivation makes that unreachable.
     case("exhaustion is DERIVED, so it cannot be hidden by never writing routes_tried",
@@ -1253,6 +1359,22 @@ def _self_test() -> int:
          ["accrete", "redesign"])
     case("a row with no route contributes nothing rather than a None",
          derive_routes_tried([{"route": "accrete"}, {}]), ["accrete"])
+    # ⛔ A PASSED RUNG IS NOT AN ATTEMPT, and the two questions have different readers: the
+    # validator asks where the ladder has got to, the triggers ask what was actually tried.
+    # Conflating them would record a skipped rung as a failed attempt and destroy the very
+    # counterfactual the skip exists to label.
+    case("routes_accounted folds a declared skip into the rungs the ladder has passed",
+         routes_accounted([{"route": "split", "skipped": ["accrete", "redesign"]}]),
+         ["accrete", "redesign", "split"])
+    case("...and a row with no skip contributes only its own route",
+         routes_accounted([{"route": "accrete"}, {"route": "redesign"}]),
+         ["accrete", "redesign"])
+    case("⛔ an ATTEMPT is not a passed rung — the two producers disagree, by design",
+         (derive_routes_tried([{"route": "split", "skipped": ["accrete", "redesign"]}]),
+          routes_accounted([{"route": "split", "skipped": ["accrete", "redesign"]}])),
+         (["split"], ["accrete", "redesign", "split"]))
+    case("a non-list skipped contributes no rungs rather than its characters",
+         routes_accounted([{"route": "split", "skipped": "accrete"}]), ["split"])
     case("unit_key partitions on (subject, unit), not on either alone",
          (unit_key({"subject": "a", "unit": "x"}) == unit_key({"subject": "a", "unit": "y"}),
           unit_key({"subject": "a", "unit": "x"}) == unit_key({"subject": "b", "unit": "x"})),
@@ -1291,6 +1413,107 @@ def _self_test() -> int:
     # ⚠ r1 Codex M7: a `null` JSONL line decoded, then raised TypeError out of main().
     case("a non-object row is NAMED rather than raising",
          _try(lambda: validate_row(None)), "a row is NoneType, not an object")
+
+    # ── the DECLARED SKIP (backlog #321) ─────────────────────────────────────────────────────
+    # ⭐ THE OWNER'S CHANGE. The log used to refuse every non-prefix route, so the two units
+    # whose history deviated from the ladder — the two where a human judged a rung futile — were
+    # the only ones it could not express, and `all triggers quiet` was CAUSED by their omission.
+    # A skip is now recordable WITH A REASON, which is what turns a deviation into a labelled
+    # example: shape X, human judged accrete/redesign futile, went to S, outcome Y.
+    _skip = {"subject": "s", "unit": "u", "route": "defer",
+             "skipped": ["accrete", "redesign", "split"],
+             "why_skipped": "the owner deferred the unit (backlog #327)"}
+    case("⭐ a declared skip with a non-empty reason is ACCEPTED — the truth is recordable",
+         validate_row(_skip, []), None)
+    # ⛔ THE DISCRIMINATING NEGATIVE. Without it this change is indistinguishable from deleting
+    # the prefix rule: the same route on the same history must STILL be refused undeclared.
+    case("⛔ ...and the SAME route on the SAME history is still refused UNDECLARED",
+         validate_row({k: v for k, v in _skip.items()
+                       if k not in ("skipped", "why_skipped")}, []),
+         "route 'defer' is not the next route for ('s', 'u'): tried [], so the only route left "
+         "to bet on is 'accrete' — a deliberate skip is recordable: declare skipped "
+         "['accrete', 'redesign', 'split'] with a non-empty why_skipped")
+    case("an EMPTY reason is refused, exactly as an empty NO-REVIEW: is",
+         validate_row({**_skip, "why_skipped": ""}, []),
+         "why_skipped is '' — a declared skip needs a NON-EMPTY reason, the same refusal "
+         "check-review-recorded makes of an empty NO-REVIEW:")
+    # ⚠ ADJACENT, not absurd: whitespace is the near-miss a `not why` test passes and a
+    # `len(why)` test does not.
+    case("...and a WHITESPACE reason is refused too, not read as present",
+         "NON-EMPTY reason" in (validate_row({**_skip, "why_skipped": "   "}, []) or ""), True)
+    case("...and an ABSENT reason is refused by its own repr, a separate state from empty",
+         validate_row({k: v for k, v in _skip.items() if k != "why_skipped"}, []),
+         "why_skipped is None — a declared skip needs a NON-EMPTY reason, the same refusal "
+         "check-review-recorded makes of an empty NO-REVIEW:")
+    case("a skipped list that does not name the rungs actually skipped is refused",
+         validate_row({**_skip, "skipped": ["accrete"]}, []),
+         "skipped ['accrete'] does not name the rungs this row skips: "
+         "['accrete', 'redesign', 'split'] — the declaration must match the ladder gap, "
+         "not assert one")
+    case("a skipped STRING is refused rather than read character by character",
+         "does not name the rungs" in (
+             validate_row({**_skip, "skipped": "accrete"}, []) or ""), True)
+    # ⭐ The gap is the UNTRIED rungs before the route, not the whole prefix — a unit that
+    # really tried accrete and then skipped redesign declares ONE rung, not two.
+    _tried_a = [{"subject": "s", "unit": "u", "route": "accrete", "outcome": "continued"}]
+    case("the gap a skip declares is the UNTRIED rungs before it, not the whole prefix",
+         validate_row({"subject": "s", "unit": "u", "route": "split",
+                       "skipped": ["redesign"], "why_skipped": "a seam was already present"},
+                      _tried_a), None)
+    case("...so re-declaring a rung that WAS tried is refused",
+         "does not name the rungs" in (validate_row(
+             {"subject": "s", "unit": "u", "route": "split",
+              "skipped": ["accrete", "redesign"], "why_skipped": "x"}, _tried_a) or ""), True)
+    # ⚠ A SECOND, DISTINCT INPUT to the gap computation: with an EARLIER skip in the history
+    # the two producers disagree, which is the only input that can show which one it reads.
+    case("the gap excludes rungs an EARLIER skip already passed, not only the tried ones",
+         validate_row({"subject": "s", "unit": "u", "route": "defer", "skipped": ["split"],
+                       "why_skipped": "no separable parts left to split"},
+                      [{"subject": "s", "unit": "u", "route": "redesign",
+                        "skipped": ["accrete"], "why_skipped": "no case handler could fit",
+                        "outcome": "continued"}]), None)
+    # ⛔⛔ A RETRY IS NOT A SKIP. `LADDER[:index('accrete')]` is empty, so a naive implementation
+    # accepts `skipped: []` with any reason and the repeat — which the design calls the
+    # escalation TRIGGER, not a step — becomes expressible again through the new door.
+    case("⛔ a RETRY is not a skip: no reason declares a repeat into a step",
+         validate_row({"subject": "s", "unit": "u", "route": "accrete", "skipped": [],
+                       "why_skipped": "I would like to try that again"}, _tried_a),
+         "route 'accrete' is not the next route for ('s', 'u'): tried ['accrete'], so the only "
+         "route left to bet on is 'redesign' — and 'accrete' is ALREADY TRIED, so this is a "
+         "RETRY, not a skip: a repeat is the escalation trigger, not a step, and no reason "
+         "declares it into one")
+    case("a skip claimed on a row that skips NOTHING is refused rather than ignored",
+         validate_row({"subject": "s", "unit": "u", "route": "accrete",
+                       "skipped": ["redesign"], "why_skipped": "x"}, []),
+         "skipped ['redesign'] / why_skipped claim a skip, but 'accrete' IS the next route for "
+         "('s', 'u') — nothing was skipped")
+    # ⛔ THE APPENDABILITY CASE. A declared skip that poisoned the unit's own future rows would
+    # reproduce the defect this change exists to remove: the row would be accepted and then
+    # nothing could ever follow it, because the history would read as a non-prefix.
+    _after_skip = [{"subject": "s", "unit": "u", "route": "split",
+                    "skipped": ["accrete", "redesign"], "why_skipped": "x",
+                    "outcome": "continued"}]
+    case("⭐ the unit stays APPENDABLE after a declared skip — the history is still a prefix",
+         validate_row({"subject": "s", "unit": "u", "route": "defer"}, _after_skip), None)
+    # ⛔ THIS CASE WAS TOO WEAK AND A MUTATION SURVIVED IT: with the walk-back branch removed
+    # the refusal still CONTAINED "is not the next route", because the row fell through to the
+    # declaration message. Identity on the whole string is what distinguishes the two.
+    case("...and the rung BELOW a declared skip cannot be walked back to",
+         validate_row({"subject": "s", "unit": "u", "route": "redesign"}, _after_skip),
+         "route 'redesign' is not the next route for ('s', 'u'): tried ['split'], so the only "
+         "route left to bet on is 'defer' — and 'redesign' was already PASSED by a declared "
+         "skip, so this is a WALK-BACK down the ladder, which escalation does not do")
+    # ⭐ AND A WALK-BACK IS NOT DECLARABLE. Its gap is EMPTY, so without the branch above a
+    # `skipped: []` with any reason would match and the row would be ACCEPTED — backtracking
+    # through the new door, which §3.4 of the approved change rules out.
+    case("...and no declaration makes a walk-back expressible, because its gap is empty",
+         "WALK-BACK" in (validate_row(
+             {"subject": "s", "unit": "u", "route": "redesign", "skipped": [],
+              "why_skipped": "I would rather restructure after all"}, _after_skip) or ""), True)
+    # ⛔ AN INDEPENDENT COPY, NOT A LOOP OVER THE SUBJECT. A case that iterates LADDER shrinks
+    # when a rung is removed instead of reddening (memory: a class fix needs an independent copy).
+    case("the ladder is PINNED to a literal, so reordering or extending it reddens by name",
+         LADDER, ("accrete", "redesign", "split", "defer"))
 
     def _r2(n, *comps):
         return {"round": n, "findings": [{"component": c} for c in comps]}

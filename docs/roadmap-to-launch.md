@@ -2400,8 +2400,12 @@ reason is structural** — 64% of the fix-round findings are in components that 
 - [x] **backlog #326 ✅ CLOSED BY backlog #322**, exactly as the review predicted — `probe7.py` stages a copy and
       mutates there, and matches the harness contract (`expect` EQUALS one red case) which the old
       probe did not
-- [ ] **backlog #321** is the ladder's prefix clause a law or a choice? Found by feeding the mechanism its
-      own history: it refuses two of the four routes this slice took
+- [x] **backlog #321 ✅ CLOSED 2026-10-21 — it is a CHOICE, and the choice is option (b):** a skip is
+      recordable with a REQUIRED non-empty `why_skipped`, refused when absent or whitespace. The ladder
+      is unchanged and no jump route was added — forcing ACCRETE first is what produces the label
+      *accrete was tried on this shape and failed*, so deviations are RECORDED, not legalised.
+      Measured: guard `rc=1` (starved) → `rc=0` with the real history written; 140 → 162 cases,
+      42 → 55 mutations, 55/55 killed and 55/55 ATTRIBUTED, 0 survivors
 - [ ] **backlog #320** which round-header fields can a reviewer's own half know (the withdrawn relocation)
 
 ### The escalated DESIGN review (what Phase 6 actually owed) — r1 done, NOT CONVERGED
@@ -2483,11 +2487,20 @@ the work now:
       and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
 - [ ] **backlog #334** — a declined escalation must pre-commit the observation that would reverse it.
 
-⚠ **backlog #321's FOURTH occurrence, on the decision that ends the slice:** the mechanism cannot record its own
-deferral — for `log-schema`, `tried=["redesign"]`, so `route_next` still demands `accrete`.
-- [ ] ⭐ **backlog #321 blocked the escalation decision itself — THIRD independent occurrence.** Recording
-      `log-schema`'s REDESIGN → SPLIT is **inexpressible** (`["redesign"]` is not a ladder prefix), so
-      the mechanism cannot record the route the mechanism prescribes for it.
+⟳ **backlog #321's FOURTH occurrence — the decision that ends the slice — IS NOW RECORDED (2026-10-21).**
+The deferral is written as the two rows the evidence supports: `redesign` (skipping `accrete`, which
+`review-method.md:178` had closed BY RULE — so that label is explicitly NOT evidence of accrete's
+futility) then `defer` (skipping `split`, because the measured cause is one level down in backlog #328 and backlog #329).
+- [x] ⭐ **backlog #321 blocked the escalation decision itself — THIRD independent occurrence — CLOSED.**
+      `["redesign"]` is a ladder prefix again once the skipped rung is named, so the mechanism can now
+      record the route the mechanism prescribes for it. ⛔ Trigger 1 was fed with the TRUTH, not with a
+      fabricated `accrete` and not with `continue-on-error` — both were explicitly refused.
+- [ ] 🟠 **backlog #337 — found by writing that row, within the half hour:** `outcome: "stopped"` cannot
+      distinguish a stream that stopped because the defect was REPAIRED from one that stopped because
+      the work was DEFERRED, so `t4_no_improvement` reads this abandonment as the log's fastest success
+      — 2 rounds against a pinned median of 4. Quiet today (t4 needs 5 terminated subjects, the log has
+      2), so it is a seeded hazard, which is when it is cheapest to fix. The row records the hazard in
+      its own `observed` field rather than being distorted to protect the metric.
 
 ⚠ **Mutation coverage of the two subjects backlog #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
 (`43`+`19`, matching `EXPECTED_MUTATIONS` in both directions), measured by the harness over a pruned

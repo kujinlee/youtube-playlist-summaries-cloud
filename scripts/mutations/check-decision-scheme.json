@@ -91,7 +91,7 @@
     ]
   },
   {
-    "name": "the per-unit history is read from the WRONG rows, so a retry validates again",
+    "name": "the ATTEMPT history is read from the WRONG rows, so a RETRY is misreported as a walk-back",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
@@ -100,8 +100,8 @@
       ]
     ],
     "expect": [
-      "⭐ a RETRY of the same route is refused BY NAME, not merely flagged",
-      "exhaustion is DERIVED, so it cannot be hidden by never writing routes_tried"
+      "⛔ a RETRY is not a skip: no reason declares a repeat into a step",
+      "history is DERIVED from the unit's own rows, in file order"
     ]
   },
   {
@@ -189,8 +189,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "        if len(set(tried)) < len(LADDER):",
-        "        if len(set(tried)) <= len(LADDER):"
+        "        if not exhausted:",
+        "        if True:"
       ]
     ],
     "expect": [
@@ -566,6 +566,176 @@
     ],
     "expect": [
       "⭐ _corpus_now emits the keys baseline.json pins, or trigger 6 compares nothing"
+    ]
+  },
+  {
+    "name": "a RETRY is declarable as a skip, re-opening the r1 Blocking through the new door",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if row[\"route\"] in tried:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a RETRY is not a skip: no reason declares a repeat into a step"
+    ]
+  },
+  {
+    "name": "a rung passed by an earlier skip can be walked back down to",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if row[\"route\"] in accounted:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...and the rung BELOW a declared skip cannot be walked back to",
+      "...and no declaration makes a walk-back expressible, because its gap is empty"
+    ]
+  },
+  {
+    "name": "any non-prefix route is accepted, so the skip needs no declaration at all",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if declared is None and why is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and the SAME route on the SAME history is still refused UNDECLARED"
+    ]
+  },
+  {
+    "name": "skipped need only be a list, so it may name rungs this row did not skip",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(declared, list) or [str(x) for x in declared] != gap:",
+        "        if not isinstance(declared, list):"
+      ]
+    ],
+    "expect": [
+      "a skipped list that does not name the rungs actually skipped is refused"
+    ]
+  },
+  {
+    "name": "a whitespace reason counts as a reason, which is the near-miss of an empty one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(why, str) or not why.strip():",
+        "        if not isinstance(why, str) or not why:"
+      ]
+    ],
+    "expect": [
+      "...and a WHITESPACE reason is refused too, not read as present"
+    ]
+  },
+  {
+    "name": "the reason is not read from the row, so an absent one can never be empty",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        declared, why = row.get(\"skipped\"), row.get(\"why_skipped\")",
+        "        declared, why = row.get(\"skipped\"), \"a placeholder reason\""
+      ]
+    ],
+    "expect": [
+      "...and an ABSENT reason is refused by its own repr, a separate state from empty"
+    ]
+  },
+  {
+    "name": "a skip CLAIMED where none happened is ignored as harmless surplus",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    elif \"skipped\" in row or \"why_skipped\" in row:",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "a skip claimed on a row that skips NOTHING is refused rather than ignored"
+    ]
+  },
+  {
+    "name": "the validator reads attempts as the ladder position, so a skip makes its unit unappendable",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    accounted = routes_accounted(prior)",
+        "    accounted = tried"
+      ]
+    ],
+    "expect": [
+      "⭐ the unit stays APPENDABLE after a declared skip — the history is still a prefix"
+    ]
+  },
+  {
+    "name": "the gap is measured against attempts, so an earlier skip's rungs are demanded again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        gap = [r for r in LADDER[:LADDER.index(row[\"route\"])] if r not in accounted]",
+        "        gap = [r for r in LADDER[:LADDER.index(row[\"route\"])] if r not in tried]"
+      ]
+    ],
+    "expect": [
+      "the gap excludes rungs an EARLIER skip already passed, not only the tried ones"
+    ]
+  },
+  {
+    "name": "the primary falsifier counts ATTEMPTS again, so a skip to DEFER switches it off",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        exhausted = route_next(routes_accounted(unit_rows)) is None",
+        "        exhausted = route_next(derive_routes_tried(unit_rows)) is None"
+      ]
+    ],
+    "expect": [
+      "⭐ a unit that reached the terminal rung BY SKIP and still carries findings REFUTES it"
+    ]
+  },
+  {
+    "name": "a declared skip contributes no passed rungs, so the fold is a no-op",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            out.extend(str(s) for s in skipped)",
+        "            out.extend([])"
+      ]
+    ],
+    "expect": [
+      "routes_accounted folds a declared skip into the rungs the ladder has passed"
+    ]
+  },
+  {
+    "name": "a truthy non-list skipped is folded character by character",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if isinstance(skipped, list):",
+        "        if skipped:"
+      ]
+    ],
+    "expect": [
+      "a non-list skipped contributes no rungs rather than its characters"
+    ]
+  },
+  {
+    "name": "the ladder order is changed under the cases that are written against it",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "LADDER = (\"accrete\", \"redesign\", \"split\", \"defer\")",
+        "LADDER = (\"accrete\", \"redesign\", \"defer\", \"split\")"
+      ]
+    ],
+    "expect": [
+      "the ladder is PINNED to a literal, so reordering or extending it reddens by name"
     ]
   }
 ]

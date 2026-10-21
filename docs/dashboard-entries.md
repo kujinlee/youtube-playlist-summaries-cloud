@@ -16269,3 +16269,91 @@ independently. ⚠ Case D failed first run on a STALE FIXTURE (my docs shim pred
 it, so the parser correctly refused its newline output) — fixture fixed, not code. Five CI shapes
 executed end to end. Suites 215/215 · 113/113 · 28/28; 56 declared counts verified BY RUNNING THEM;
 full `ci.yml` list **1 failing of 57** (`check-decision-scheme`, red BY DESIGN, trigger 1).
+
+## 2026-10-21 [needs-you]
+The decision log can now record a decision it was refusing to record, and the one failing check
+that was blocking this branch passes because of it.
+
+Some background, because the failure looked like a bug and was not one. The project keeps a small
+log of how each problem got repaired, choosing from four increasingly drastic options: patch it,
+restructure it, split it apart, or defer it. The rule is that you have to try them in order — you
+cannot jump to "split it apart" without first showing a patch failed. That rule exists for a good
+reason: only by trying the cheap option first do you learn that the cheap option does not work on
+problems of that shape, and that knowledge is the whole point of keeping the log.
+
+The trouble was that real decisions sometimes skip a step for a good reason, and the log had no way
+to say so. Of the seven problems this branch worked through, two skipped a step — and those two were
+the only ones the log physically could not hold. So the log quietly contained exactly the decisions
+that followed the rule, and the mechanism that reads it was reporting "nothing to see here" while
+being blind to the most interesting cases.
+
+What changed is that a skip is now recordable, but only with a written reason — an empty reason is
+refused, the same way this project refuses an empty excuse anywhere else. The step order is
+unchanged and no shortcut was added: the log now RECORDS that someone skipped a step, which is quite
+different from permitting it. Each skip becomes a worked example of a human judging a cheap repair
+futile, which is the kind of record that could eventually let the cheap step be skipped safely.
+
+With that, the real history of the deferred piece of work could finally be written down, and the
+check that was failing went green on its own merits — not by being switched off, and not by writing
+a convenient falsehood into the log.
+
+**Waiting on you:** merging, which has not been given and is not being taken. The branch's one
+failing required check now passes, so the decision is no longer blocked on a red check — but it is
+still the same three judgements as before, and one new consideration: a review round is owed on
+today's change, and it has not run yet.
+<!--tech-->
+Implements the owner's 2026-10-21 decision on **backlog #321** (now ✅): the ladder's prefix clause
+is a CHOICE, resolved as that row's own option (b). `validate_row` accepts a non-prefix route only
+with `skipped` (the rungs not taken) and a non-empty `why_skipped`; `""`, whitespace and absent are
+each refused, with the empty-reason refusal borrowed from `check-review-recorded`'s `NO-REVIEW:`.
+
+⛔ **The guard went `rc=1` → `rc=0` by being FED, not by being patched.** Trigger 1 (starvation) was
+correct. No `continue-on-error`, no fabricated `accrete` row, no jump route, no backtracking — all
+four were explicitly refused per the approved design.
+
+⚠ **CORRECTION to the entry above this one, which said `check-decision-scheme` was *"red BY DESIGN,
+trigger 1"*. That was wrong**, and inherited from a handoff that asserted it. The trigger was
+reporting a real starvation created on this branch (`decision-log-model-redesign`'s r1/r2 docs), and
+believing "by design" would have meant the branch could never merge.
+
+⚠ **The record needed TWO rows, not the one the handoff specified.** Its proposed single `defer` row
+skipping all three lower rungs would have asserted REDESIGN was never taken, which contradicts the
+plan document's own deferral note (`tried=["redesign"]`). Written instead: `redesign` skipping
+`accrete` — and that skip is labelled as rule-imposed, because `review-method.md:178` MANDATED the
+escalation, so it is explicitly NOT evidence that accrete is futile on that shape — then `defer`
+skipping `split`. Both marked retroactive in prose: the outcomes were known when they were written,
+so they are not scoreable bets.
+
+`derive_routes_tried` (attempts) and the new `routes_accounted` (rungs PASSED, taken or skipped) are
+deliberately two producers for two readers. Folding skips into the former would record a skipped
+rung as a failed attempt and destroy the counterfactual the skip exists to label. `t2` — the primary
+falsifier — now asks exhaustion through `routes_accounted`, because a unit can reach DEFER with ONE
+attempt and an attempt-counting test would switch the falsifier off exactly where the new door is
+used. A RETRY and a WALK-BACK are separate refusals: `LADDER[:index("accrete")]` is empty, so
+without the retry branch a repeat is declarable with `skipped: []`.
+
+140 → 162 cases, 42 → 55 mutation entries, **55/55 killed and 55/55 ATTRIBUTED** over a re-proved
+green control (scoped `HARNESS_TREE` copy, 7 paths derived not quoted). 56 declared counts verified
+BY RUNNING THEM. Full `ci.yml` list: **62 steps, 58 `rc=0`, 4 `rc=2` CANNOT RUN** — all four PR-only
+and needing `$GITHUB_BASE_REF`.
+
+⭐ **Those four gates had never run anywhere, and running them found two real things.** With
+`GITHUB_BASE_REF=master`: `check-reference-namespace` caught bare `#328/#329` I had just written
+into the roadmap (qualified, now `rc=0` over 14 surfaces); `check-doc-citations` passes but was
+VACUOUS until the change was staged, which its own message says; `check-review-recorded` reports
+**10 rounds ran and guarded code was committed after every one**, the closest never having seen
+`scripts/check-plan-code.py` — so an r7 round is owed on the current tree, not waived.
+
+Three mutation-harness repairs the scoped sweep forced, recorded because each was a wrong belief of
+mine: my pre-flight matched `expect` by SUBSTRING while the harness requires EQUALITY (round 6
+tightened it precisely because cardinality-only certified unrelated cases); my t2 rewrite ORPHANED a
+pre-existing anchor, repaired by SPLITTING the condition into two lines so the entry had a binding
+site instead of being retired with its subject; and one of my own mutations SURVIVED because the
+walk-back case asserted a substring both the correct and the broken message contained — it is now an
+identity assertion on the whole string.
+
+Filed: **backlog #337** — `outcome: "stopped"` cannot distinguish a stream that stopped because the
+defect was REPAIRED from one that stopped because the work was DEFERRED, so `t4_no_improvement`
+reads this deferral as the log's fastest termination (2 rounds against a pinned median of 4). Found
+by writing the row; the row records the hazard in its own `observed` field rather than being bent to
+protect the metric. Quiet today — t4 needs 5 terminated subjects and the log holds 2.
