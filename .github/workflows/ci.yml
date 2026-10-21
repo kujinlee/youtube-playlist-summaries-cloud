@@ -866,7 +866,14 @@ jobs:
           # ⚠ The only thing protecting this today is `fetch-depth: 0` on this job's checkout, and
           # that setting's own comment says it is there "for parity with `verify`, not because the
           # sweep reads history" — an incidental guard that invites its own removal.
-          if git diff --name-only "$BASE"...HEAD > /tmp/changed.txt; then
+          # ⛔ `-z` IS LOAD-BEARING (r6 CODEX finding 2). Without it `git` C-QUOTES any non-ASCII
+          # path — measured in a real repo: `"scripts/\303\251.py"` — which does not start with a
+          # staged root, so `sweep_needed` returned False and the WHOLE GATE was skipped while a
+          # `scripts/` file had changed. That is a VERDICT defect, and it refutes three rounds of
+          # my own claim that this component's logic was undented while only its log was wrong.
+          # ⚠ `changed_from_nul` REFUSES newline-delimited input, so dropping `-z` here produces
+          # `None` and RUNS the sweep rather than silently reinstating the bug.
+          if git diff --name-only -z "$BASE"...HEAD > /tmp/changed.txt; then
             DIFF_TAKEN=1
           else
             DIFF_TAKEN=0
@@ -887,7 +894,10 @@ jobs:
           spec.loader.exec_module(mod)
           # `None` means the diff could not be taken, which `sweep_needed` answers with True.
           # This is the line that makes that arm reachable; before it, nothing could produce None.
-          changed = (pathlib.Path("/tmp/changed.txt").read_text().splitlines()
+          # ⛔ NOT `splitlines()` — that is what passed C-quoted paths straight into the
+          # predicate (r6 CODEX finding 2). `changed_from_nul` owns the parse and REFUSES input it
+          # cannot trust, returning None, which `sweep_needed` answers by running the sweep.
+          changed = (mod.changed_from_nul(pathlib.Path("/tmp/changed.txt").read_text())
                      if os.environ["DIFF_TAKEN"] == "1" else None)
           need = mod.sweep_needed(changed)
           print("RUN" if need else "SKIP")

@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 200 cases
+    python3 scripts/check-plan-code.py --self-test          # 206 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -302,6 +302,41 @@ HARNESS_TREE = (
 SWEEP_SKIP_ROOTS = ("docs",)
 SWEEP_RELEVANT_ROOTS = tuple(f"{root}/" for root in HARNESS_TREE
                              if root not in SWEEP_SKIP_ROOTS)
+
+
+def changed_from_nul(raw: str) -> "list[str] | None":
+    """PURE. Parse `git diff --name-only -z` output. **None means the paths could not be trusted.**
+
+    ⛔ r6 CODEX finding 2 — A VERDICT DEFECT, NOT A REPORTING ONE, and it refutes three rounds of my
+    own argument that `sweep-skip`'s logic was undented. `git diff --name-only` WITHOUT `-z`
+    C-QUOTES any path that is not plain ASCII. Measured in a real throwaway repository:
+
+        $ git diff --name-only HEAD~1 HEAD      ->  "scripts/\303\251.py"
+        $ git diff --name-only -z HEAD~1 HEAD   ->  scripts/é.py
+
+    The quoted form does not start with `scripts/` — it starts with a double quote — so
+    `sweep_needed(['"scripts/\\303\\251.py"'])` returned **False** and the entire mutation gate was
+    skipped while a `scripts/` file had genuinely changed. Verified both directions.
+
+    ⛔ SO THE FIX IS TWO-SIDED, and the second side is the one that matters. `ci.yml` now passes
+    `-z`, AND this parser REFUSES input that is not NUL-delimited instead of trusting it. A `-z`
+    dropped in a later edit must therefore produce `None` — which `sweep_needed` answers by RUNNING
+    the sweep — rather than silently resurrecting this defect. *"Cannot run is a failure, never a
+    pass"* applies to parsing the input exactly as it applies to the measurement.
+
+    ⚠ WHAT IS NOT CLAIMED: that every mangling is detectable. This catches the newline-delimited and
+    C-quoted shapes, which are the ones `git` actually produces. A path containing a literal newline
+    under `-z` is handled correctly (NUL is the only separator); one crafted to contain a NUL is not
+    representable in a POSIX filename at all.
+    """
+    if not raw or not raw.strip():
+        return []
+    if "\0" not in raw:
+        return None          # `-z` was not used: paths may be C-quoted and cannot be trusted
+    parts = [p for p in raw.split("\0") if p.strip()]
+    if any(p.startswith('"') for p in parts):
+        return None          # C-quoted survived anyway — refuse rather than mis-prefix
+    return parts
 
 
 def sweep_skipped_hole(changed: "list[str] | None") -> list[str]:
@@ -1138,7 +1173,9 @@ EXPECTED_MUTATIONS = {
     # nobody did — strictly worse than the slow sweep they replace.
     # ⟳ 2026-10-21 r5: 110 -> 112. `sweep_skipped_hole`, so the CI SKIP message can say
     # WHICH of two different situations produced the same `changed=false` (r5 CLAUDE M1).
-    "scripts/check-plan-code.py": 112,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-10-21 r6: 112 -> 114. `changed_from_nul`, both arms — the parse that let a
+    # C-quoted path skip the whole gate (r6 CODEX finding 2, a VERDICT defect).
+    "scripts/check-plan-code.py": 114,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -1206,7 +1243,8 @@ EXPECTED_MUTATIONS = {
     # its own list had no falsifier. Net +2: ONE entry RETIRED WITH ITS SUBJECT
     # (`unreachable_message_sound`, deleted), THREE added on the tokens and the renderer,
     # and one RE-POINTED rather than retired because its rule moved rather than died.
-    "scripts/check-review-decision.py": 25,
+    # ⟳ 2026-10-21 ARCH F1: 25 -> 27. The two SHIPPED renderings, pinned.
+    "scripts/check-review-decision.py": 27,
     "scripts/check-decision-scheme.py": 42,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5421,10 +5459,24 @@ def _self_test() -> int:
     # control before I measured why. A case with no reachable mutation is coverage on paper.
     case("a path merely CONTAINING a skipped root is not a hole — it must be the prefix",
          sweep_skipped_hole(["app/docs/readme.md", "x/docs/y.sql"]), [])
+    # ── r6 CODEX finding 2: git C-QUOTES non-ASCII paths without `-z`, and the quoted form
+    # does not start with a staged root, so the gate was SKIPPED while scripts/ had changed.
+    # Measured in a real repo: `"scripts/\303\251.py"` -> sweep_needed False. A VERDICT defect.
+    case("NUL-delimited output parses to the real paths",
+         changed_from_nul("scripts/a.py\0docs/b.md\0"), ["scripts/a.py", "docs/b.md"])
+    case("an empty diff is an empty list, not an unparseable one", changed_from_nul(""), [])
+    case("⛔ NEWLINE-delimited output is REFUSED — `-z` was dropped and paths may be C-quoted",
+         changed_from_nul("scripts/a.py\n"), None)
+    case("⛔ a C-quoted path that arrives anyway is REFUSED, never mis-prefixed",
+         changed_from_nul('"scripts/\\303\\251.py"\0'), None)
+    case("...and a refusal RUNS the sweep rather than guessing — the two compose",
+         sweep_needed(changed_from_nul("scripts/a.py\n")), True)
+    case("⭐ the quoted form would otherwise SKIP the sweep — the defect, pinned",
+         sweep_needed(['"scripts/\\303\\251.py"']), False)
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1649)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1653)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

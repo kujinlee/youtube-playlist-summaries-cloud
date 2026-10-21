@@ -1367,5 +1367,31 @@
       "a path merely CONTAINING a skipped root is not a hole — it must be the prefix"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "⭐ r6 CODEX finding 2: newline-delimited git output is TRUSTED instead of refused, so dropping `-z` silently reinstates the skipped gate — git C-quotes non-ASCII paths, the quoted form misses every staged root, and the sweep was skipped while scripts/ changed",
+    "edits": [
+      [
+        "    if \"\\0\" not in raw:\n        return None          # `-z` was not used: paths may be C-quoted and cannot be trusted",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⛔ NEWLINE-delimited output is REFUSED — `-z` was dropped and paths may be C-quoted"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "r6 CODEX finding 2: a C-quoted path that arrives despite `-z` is passed through instead of refused, so it is mis-prefixed against the staged roots and skips the gate",
+    "edits": [
+      [
+        "    if any(p.startswith('\"') for p in parts):\n        return None          # C-quoted survived anyway — refuse rather than mis-prefix",
+        "    if False:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⛔ a C-quoted path that arrives anyway is REFUSED, never mis-prefixed"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]

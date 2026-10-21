@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 107 cases
+    python3 scripts/check-review-decision.py --self-test  # 111 cases
 
 WHY THIS EXISTS
 ---------------
@@ -339,8 +339,29 @@ def unreachable_reason(rounds: list[dict]) -> dict | None:
 def render_unreachable(reason: dict) -> str:
     """PURE. The ONE place this diagnostic's prose exists, built from `unreachable_reason`.
 
-    ⚠ A KeyError here is DELIBERATE and is the falsifier: a token with no rendering must fail
-    loudly rather than silently emit a sentence that does not match the structure.
+    ⛔⛔ WHAT IS GUARDED HERE IS **CHANGE DETECTION, NOT SOUNDNESS**, and the distinction is the whole
+    conclusion of `docs/reviews/architecture-review-2026-10-21-message-soundness.md`. Four designs
+    tried to assert that this diagnostic MEANS the right thing and all four were defeated, because
+    *"the sentence a reader acts on says X"* is not a testable property — every design reduced it to
+    a testable proxy (a token's presence, a phrase's absence, a dictionary key) and each proxy
+    admitted a sentence that satisfied it while asserting the opposite. r6 defeated even the
+    structured version by editing a rendering below: tokens and tests untouched, suite 107/107, and
+    the reader told *"UNREACHABLE because this implementation is faulty"*.
+
+    ⭐ SO THE CLAIM IS NARROWED TO ONE THAT HOLDS: **an edit to any rendering below cannot pass
+    unnoticed**, because each string is pinned by an identity case. A reword must come to the suite
+    and be decided. ⚠ THAT IS NOT A CLAIM THAT THE RENDERINGS ARE CORRECT — a human changing a
+    pinned string and updating its case can still ship nonsense. The guard makes the change VISIBLE;
+    judging it remains human judgment, which is the bound `check-gate-falsifiability.py` states
+    about itself for the same reason.
+
+    ⚠ The identity cases are DELIBERATELY BRITTLE. I rejected them at r5 as "brittle to rewording";
+    that was the wrong reason — the brittleness IS the mechanism.
+
+    ⚠ A KeyError here is DELIBERATE: a token with no rendering must fail loudly rather than silently
+    emit a sentence that does not match the structure. r6 confirmed no ordinary record input can
+    select an unknown token (the tokens are module constants), so this is a programming-error guard,
+    not a reachable input path.
     """
     return ("no round recorded for this subject is clean, so convergence is "
             + _UNREACHABLE_PROSE["about"][reason["about"]]
@@ -905,6 +926,26 @@ def _self_test() -> int:
     case("so the SHIPPED reason renders neither of those",
          ("work is defective" not in (convergence_unreachable([_R(1, [deliv])]) or "")
           and "finds nothing" not in (convergence_unreachable([_R(1, [deliv])]) or "")), True)
+    # ── ARCHITECTURE REVIEW 2026-10-21 F1: IDENTITY CASES ON EVERY RENDERING ─────────────────
+    # ⛔ r6 edited a rendering and the suite stayed 107/107 while the reader was told the opposite of
+    # the property. These pin each string EXACTLY, so an edit reddens and must be decided. They do
+    # NOT establish that the strings are correct — see `render_unreachable`'s docstring for the bound
+    # that is actually claimed. An INDEPENDENT COPY, not a loop over `_UNREACHABLE_PROSE`: looping
+    # would let the table be emptied silently, which is r5 CLAUDE H1's defect exactly.
+    case("the `record` rendering is pinned — an edit must come HERE",
+         _UNREACHABLE_PROSE["about"]["record"],
+         "UNREACHABLE from this record rather than merely unmet")
+    case("the `work` rendering is pinned too — it is the one that must never be SHIPPED",
+         _UNREACHABLE_PROSE["about"]["work"],
+         "UNREACHABLE because the work is defective")
+    case("the `disposition` rendering is pinned",
+         _UNREACHABLE_PROSE["remedy"]["disposition"],
+         "What reaches convergence is recording a disposition — `fixed` or `declined` — on each of "
+         "them, which is evidence this workflow already produces. `filed` does not count: a backlog "
+         "deferral is not an answer about THIS branch")
+    case("the `clean-round` rendering is pinned — the demand backlog #329 abolished",
+         _UNREACHABLE_PROSE["remedy"]["clean-round"],
+         "What reaches convergence is a round that finds nothing")
     case("a clean round yields NO reason at all", unreachable_reason([_R(1, [])]), None)
     case("no rounds yields no reason either", unreachable_reason([]), None)
     # rounds carry it, so a case that varied only `findings` would miss the dominant cause.

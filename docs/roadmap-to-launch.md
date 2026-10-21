@@ -654,7 +654,20 @@ that fires anyway, so it resurfaces without anyone remembering it exists.
 error, no report, no cleanup. Divergence was routine, not hypothetical: both replicas allocate
 `max + 1` in their own ingestion order and no migration constrains uniqueness.
 
-**Status: implemented, dual review in progress (round 3 dispatched). NOT merged. No PR yet.**
+**Status (2026-10-21): SIX ROUNDS RUN, NOT CONVERGED, NOT MERGED, NO PR YET.** r4 reviewed the
+implementation that r1–r3's design document never covered (`check-review-recorded.py` exited 1 over
+17 files) and found 4 High; r5 found 8 more, **all 8 against r4/r5 fixes**; r6 fired a pre-committed
+falsifier and an **architecture review was convened** —
+`docs/reviews/architecture-review-2026-10-21-message-soundness.md`. `check-review-decision.py`
+returns `ROUND_OWED` (r3's Blocking still `filed`; `fixes_nontrivial: true`). ⛔ **Merging is the
+human gate and is OUTSTANDING; it also carries PR #380's 26 commits into master and closes it
+implicitly** (verified from git: `origin/baseline-surveys` is an ancestor of HEAD).
+
+- [ ] ⛔ **r6's Claude half** — the only thing `check-review-rounds.py` is red on right now.
+- [ ] ⛔ **The merge decision, and the owner's view of a call I made about my own work:** the tool
+      armed `ARCHITECTURE_REVIEW` on `sweep-skip` at r5, the r5 coordinator half DECLINED it with a
+      written falsifier, and r6 reversed that on evidence. The declining party was the party whose
+      fixes armed it (backlog #334).
 
 - [x] **A0** behaviors table (33 rows) + Codex review of the table
 - [x] **A4** `copy` at the `BlobStore` seam — ONE shared `copyBlob`, all three adapters delegate.
@@ -2447,6 +2460,28 @@ the work now:
       and whether `aim` needs a third value for a subject whose deliverable IS an instrument (measured:
       the two decision subjects carry the corpus's lowest instrument share, **4%** and **12%**, against
       a mean of 32%).
+
+⤳ **DISCOVERED 2026-10-21 across r4–r6 and the architecture review — filed in the same turn, per
+`dev-process.md`'s rule that a discovery living only in chat is lost at `/compact`:**
+
+- [x] **backlog #335** — the convergence diagnostic's guarantee NARROWED to change detection after
+      four designs each tried to assert what an English sentence means and each was defeated by the
+      next round. Renderings pinned by independent identity cases; r6's exact attack now reddens.
+- [ ] ⭐ **backlog #336** — the CLASS behind it: nothing interrogates a guard's own property claim at
+      design time. `check-gate-falsifiability.py` exists for exactly this shape but its population
+      is gate checklist items, not guard docstrings. Cost measured: 4 designs, 3 rounds, ~12 cases.
+- [ ] **backlog #330** — diff-scoped per-manifest mutation selection (the owner's idea). Bounded by
+      backlog #109: only a FULL sweep sees an orphaned anchor, so it is a fast path WITH a full
+      sweep behind it, never a replacement.
+- [ ] **backlog #331** — the transcript guard's remainder: a corrupt transcript still passes quiet, a
+      duplicated reference predicate that already disagrees, an incomplete surface list, and a FALSE
+      NEGATIVE on `AskUserQuestion` inputs — the surface the owner most reads.
+- [ ] **backlog #332** — an armed `ARCHITECTURE_REVIEW` is disarmed by the next round, and nothing
+      checks that anyone answered it. Measured by moving one review file in and out.
+- [ ] **backlog #333** — the sweep's shards are imbalanced ~2x in wall-clock against a predicted
+      1.15x, and the sweep IS the critical path: verify→`mutation-sweep-complete` is **19–23 min**
+      and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
+- [ ] **backlog #334** — a declined escalation must pre-commit the observation that would reverse it.
 
 ⚠ **backlog #321's FOURTH occurrence, on the decision that ends the slice:** the mechanism cannot record its own
 deferral — for `log-schema`, `tried=["redesign"]`, so `route_next` still demands `accrete`.

@@ -339,5 +339,31 @@
       "INVARIANT: if converged() is True then convergence_unreachable() is None"
     ],
     "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "⭐⭐ ARCH 2026-10-21 F1 / r6 CODEX finding 1: the `record` rendering is edited to blame the IMPLEMENTATION — r6's EXACT attack. Tokens and every other test untouched, and before the identity cases it left the suite at 107/107 while the reader was told the opposite of the property. What is guarded is CHANGE DETECTION, never soundness.",
+    "edits": [
+      [
+        "\"record\": \"UNREACHABLE from this record rather than merely unmet\"",
+        "\"record\": \"UNREACHABLE because this implementation is faulty\""
+      ]
+    ],
+    "expect": [
+      "the `record` rendering is pinned — an edit must come HERE"
+    ],
+    "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "ARCH 2026-10-21 F1: the `disposition` rendering is replaced by the demand backlog #329 abolished, so the diagnostic tells a reader to produce an artifact the workflow cannot make — the fourth evasion shape, now pinned",
+    "edits": [
+      [
+        "\"disposition\": (\"What reaches convergence is recording a disposition — `fixed` or \"\n                               \"`declined` — on each of them, which is evidence this workflow \"\n                               \"already produces. `filed` does not count: a backlog deferral is \"\n                               \"not an answer about THIS branch\"),",
+        "\"disposition\": \"produce a review with ZERO FINDINGS\","
+      ]
+    ],
+    "expect": [
+      "the `disposition` rendering is pinned"
+    ],
+    "file": "scripts/check-review-decision.py"
   }
 ]
