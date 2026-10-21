@@ -2495,12 +2495,26 @@ futility) then `defer` (skipping `split`, because the measured cause is one leve
       `["redesign"]` is a ladder prefix again once the skipped rung is named, so the mechanism can now
       record the route the mechanism prescribes for it. ⛔ Trigger 1 was fed with the TRUTH, not with a
       fabricated `accrete` and not with `continue-on-error` — both were explicitly refused.
-- [ ] 🟠 **backlog #337 — found by writing that row, within the half hour:** `outcome: "stopped"` cannot
-      distinguish a stream that stopped because the defect was REPAIRED from one that stopped because
-      the work was DEFERRED, so `t4_no_improvement` reads this abandonment as the log's fastest success
-      — 2 rounds against a pinned median of 4. Quiet today (t4 needs 5 terminated subjects, the log has
-      2), so it is a seeded hazard, which is when it is cheapest to fix. The row records the hazard in
-      its own `observed` field rather than being distorted to protect the metric.
+- [ ] 🟠 **backlog #337 — found by writing that row, within the half hour; INSTANCE FIXED at r7, CLASS
+      STILL OPEN:** `outcome: "stopped"` cannot distinguish a stream that stopped because the defect was
+      REPAIRED from one that stopped because the work was DEFERRED. ⟳ r7 Codex measured the symptom as
+      worse than filed — it does not merely flatter, it **turns a FIRING trigger QUIET by displacing a
+      subject out of t4's last-five window** (`[4,4,4,1,1]` median 4 → `[4,4,1,1,2]` median 2). Fixed
+      for the retroactive case: provenance is a FIELD now and t3/t4/t7 read `prospective()` only. ⛔ Still
+      open for a FUTURE PROSPECTIVE defer row, which the reviewer named explicitly — that is a real bet
+      whose termination is still indistinguishable from a repair.
+- [x] ⭐ **r7 FOLDED — one cause, three doors, and a prose disclaimer was none of them.** The two
+      retroactive rows entered the population of every trigger that treats a SCORED row as a bet placed
+      in advance: t3 fired → quiet, t4 fired → quiet, t7 quoted an accuracy bound over a sample of 10
+      when 8 predictions existed. Fix: `retroactive` is a type-checked field, `prospective()` owns the
+      filter, and t7's population became ranker PREDICTIONS — `t5`'s own rule, which it had failed to
+      borrow. Also fixed: a malformed `routes_tried` crashed the validator instead of being named, and
+      `"!!!"` / a zero-width space passed as a reason (`strip()` does not remove U+200B). 162 → 179
+      cases, 55 → 64 mutations, **64/64 killed and 64/64 ATTRIBUTED**, 0 survivors.
+- [ ] 🟡 **backlog #338 — a declared skip does not record WHY the rung was unavailable**, so the
+      rule-imposed skip (`review-method.md:178` closed `accrete`) and a judgement-imposed one are the
+      same datum — while the stated purpose of recording skips is to be training data. Deliberately NOT
+      built yet: r7 found no training consumer, so a field for it would be speculative.
 
 ⚠ **Mutation coverage of the two subjects backlog #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
 (`43`+`19`, matching `EXPECTED_MUTATIONS` in both directions), measured by the harness over a pruned

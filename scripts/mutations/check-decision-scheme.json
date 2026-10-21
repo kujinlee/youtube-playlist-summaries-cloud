@@ -74,7 +74,7 @@
       ]
     ],
     "expect": [
-      "nine scored rows is below the re-evaluation sample"
+      "nine ranker predictions is below the re-evaluation sample"
     ]
   },
   {
@@ -736,6 +736,124 @@
     ],
     "expect": [
       "the ladder is PINNED to a literal, so reordering or extending it reddens by name"
+    ]
+  },
+  {
+    "name": "prospective() stops filtering, so a retroactive row is scored as a bet placed in advance",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return [r for r in rows if not r.get(\"retroactive\")]",
+        "    return list(rows)"
+      ]
+    ],
+    "expect": [
+      "prospective() drops a retroactive row and keeps the rest, in order"
+    ]
+  },
+  {
+    "name": "the route-collapse trigger counts retroactive rows, so history buys off a live collapse",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    scored = [r for r in prospective(rows) if r.get(\"outcome\") in OUTCOMES]",
+        "    scored = [r for r in rows if r.get(\"outcome\") in OUTCOMES]"
+      ]
+    ],
+    "expect": [
+      "⭐ t3 cannot be bought off by a retroactive row on another route"
+    ]
+  },
+  {
+    "name": "the improvement trigger counts retroactive terminations, so a deferral displaces a subject",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for r in prospective(rows):",
+        "    for r in rows:"
+      ]
+    ],
+    "expect": [
+      "⭐ a retroactive termination cannot DISPLACE a subject out of t4's last-five window"
+    ]
+  },
+  {
+    "name": "the sample trigger counts retroactive rows toward the prediction sample",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    sample = [r for r in prospective(rows)",
+        "    sample = [r for r in rows"
+      ]
+    ],
+    "expect": [
+      "a retroactive row does not enter t7's sample either"
+    ]
+  },
+  {
+    "name": "the sample trigger treats outcome availability as prediction eligibility again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "              if r.get(\"outcome\") in OUTCOMES and isinstance(r.get(\"ranker_hit\"), bool)]",
+        "              if r.get(\"outcome\") in OUTCOMES]"
+      ]
+    ],
+    "expect": [
+      "⭐ ten scored rows that made NO ranker prediction do not reach t7's floor"
+    ]
+  },
+  {
+    "name": "every prediction in the sample is counted as a HIT, so a miss cannot lower the rate",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hits = sum(1 for r in sample if r[\"ranker_hit\"])",
+        "    hits = len(sample)"
+      ]
+    ],
+    "expect": [
+      "...and the hit count is of PREDICTIONS, so a miss is not read as a hit"
+    ]
+  },
+  {
+    "name": "a retroactive flag is coerced rather than type-checked, dropping a real bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"retroactive\" in row and not isinstance(row[\"retroactive\"], bool):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a retroactive flag must be a bool — a string coerces to True and hides a real bet"
+    ]
+  },
+  {
+    "name": "a malformed routes_tried crashes the validator instead of being named",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"routes_tried\" in row and not isinstance(row[\"routes_tried\"], (list, tuple, str)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a malformed routes_tried is NAMED rather than raising"
+    ]
+  },
+  {
+    "name": "a reason need only be non-empty, so punctuation and a zero-width space pass as explanation",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not any(ch.isalnum() for ch in why):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a punctuation-only reason is refused — non-empty is not the same as explanatory",
+      "...and a zero-width space is refused too, which strip() does NOT remove"
     ]
   }
 ]

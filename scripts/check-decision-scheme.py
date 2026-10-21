@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 162 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 179 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -139,6 +139,27 @@ def route_sequence_error(tried: list[str]) -> str | None:
     return None
 
 
+def prospective(rows: list[dict]) -> list[dict]:
+    """PURE. The rows that are scoreable BETS — the retroactive ones removed.
+
+    ⛔⛔ PROVENANCE IS A FIELD BECAUSE A TRIGGER CANNOT READ PROSE (r7 Codex H1/M2/M3, one
+    cause, three doors). Writing the deferral's real history needed rows whose outcomes were
+    ALREADY KNOWN when they were written. Those rows say exactly that in `prediction` — and
+    MEASURED before this existed: `t3` went from firing to QUIET, `t4` went from firing to QUIET
+    by DISPLACING a subject out of its last-five window, and `t7` quoted an accuracy bound over
+    a sample of 10 when only 8 predictions had been made. A disclaimer a human can read is not a
+    population a predicate can compute over.
+
+    ⚠ WHAT THIS DELIBERATELY DOES NOT FILTER, because these are OBSERVATIONS rather than bets:
+    `t1_not_fed` (a retroactive row is still a row, and feeding the starvation trigger with real
+    history is the whole point of the schema change — it proves coverage, not timely use, which
+    is a different complaint); `t2_non_termination` (whether a unit exhausted the ladder and
+    still carried findings is observed, not predicted); `t5_ranker_miss` (already keyed on the
+    presence of `ranker_hit`, which a retroactive row does not carry).
+    """
+    return [r for r in rows if not r.get("retroactive")]
+
+
 # ------------------------------------------------------------------ pure: the triggers
 def t1_not_fed(rows: list[dict], subjects_since_arming: list[str]) -> str | None:
     """FAIL. Subjects that reached >=2 rounds after arming and never appear in the log.
@@ -202,7 +223,10 @@ def t3_routes_collapsed(rows: list[dict]) -> str | None:
     all. What remains here is the GLOBAL question — many units, every one taking the same route —
     which is a different claim and still worth asking.
     """
-    scored = [r for r in rows if r.get("outcome") in OUTCOMES]
+    # ⛔ PROSPECTIVE ONLY (r7 Codex H1). Measured: five collapsed ACCRETE rows fired this
+    # trigger, and appending the two RETROACTIVE rows — whose routes are redesign and defer —
+    # turned it QUIET. The collapse was untouched; history supplied the apparent discrimination.
+    scored = [r for r in prospective(rows) if r.get("outcome") in OUTCOMES]
     if len(scored) < 5:
         return None
     routes = {r.get("route") for r in scored}
@@ -224,7 +248,11 @@ def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
     of one. Rows are now collapsed to subjects, taking each subject's LAST terminated row.
     """
     per_subject: dict[str, int] = {}
-    for r in rows:
+    # ⛔ PROSPECTIVE ONLY (r7 Codex M3, the sharper form of backlog #337). A retroactive
+    # termination does not merely LOOK like a fast success — measured, it DISPLACES a subject out
+    # of the last-five window: [4,4,4,1,1] fired at median 4, and appending the deferral's
+    # retroactive stopped-at-2 row made the window [4,4,1,1,2], median 2, and the trigger QUIET.
+    for r in prospective(rows):
         if r.get("outcome") == "stopped" and isinstance(r.get("rounds_at_termination"), int):
             # ⛔ r2 YM4: a dict UPDATE does not move a key to the end, so `list(...)[-5:]` was
             # NOT "the last five subjects" — it was the last five by FIRST appearance. Measured
@@ -307,13 +335,25 @@ def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5,
 
 
 def t7_sample_reached(rows: list[dict], floor: int = 10) -> str | None:
-    """WARN. Enough rows to re-score the bet: 10/10 lifts the accuracy bound 37% -> 74%."""
-    scored = [r for r in rows if r.get("outcome") in OUTCOMES]
-    if len(scored) < floor:
+    """WARN. Enough RANKER PREDICTIONS to re-score the bet: 10/10 lifts the bound 37% -> 74%.
+
+    ⛔ THE POPULATION IS PREDICTIONS, NOT SCORED ROWS — `t5_ranker_miss`'s own rule, which this
+    trigger failed to borrow (r7 Codex M2). The bound it quotes is about the RANKER's accuracy,
+    so a row that made no prediction cannot be in its denominator; measured, eight predictions
+    plus two rows carrying none reported a sample of 10. An abstention is not a prediction, and
+    `ranker_hit` is written ONLY when the ranker named a component — so presence of an explicit
+    BOOL is the eligibility test, exactly as t5 has it. One rule, one place.
+
+    ⛔ AND PROSPECTIVE ONLY, for the same reason the other two scoring triggers are: a bet whose
+    outcome was known when it was written cannot be scored.
+    """
+    sample = [r for r in prospective(rows)
+              if r.get("outcome") in OUTCOMES and isinstance(r.get("ranker_hit"), bool)]
+    if len(sample) < floor:
         return None
-    hits = sum(1 for r in scored if r.get("ranker_hit"))
-    return (f"{len(scored)} scored rows ({hits} ranker hits) — re-evaluate now; at {floor}/"
-            f"{floor} the one-sided 95% accuracy bound reaches 74%, against a ~7% coin")
+    hits = sum(1 for r in sample if r["ranker_hit"])
+    return (f"{len(sample)} ranker predictions ({hits} ranker hits) — re-evaluate now; at "
+            f"{floor}/{floor} the one-sided 95% accuracy bound reaches 74%, against a ~7% coin")
 
 
 # ------------------------------------------------------------------ IO
@@ -460,6 +500,11 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
     if "ranker_hit" in row and not isinstance(row["ranker_hit"], bool):
         return (f"ranker_hit is {type(row['ranker_hit']).__name__}, not a bool — a string "
                 f"coerces to True and erases a miss")
+    # ⛔ SAME COERCION TRAP, AND A WORSE CONSEQUENCE: `bool("false")` is True, so a STRING here
+    # would quietly remove a real prospective bet from every scoring trigger's population.
+    if "retroactive" in row and not isinstance(row["retroactive"], bool):
+        return (f"retroactive is {type(row['retroactive']).__name__}, not a bool — a string "
+                f"coerces to True and would drop a real bet from every scoring trigger")
     if prior is None:
         return None
     tried = derive_routes_tried(prior)
@@ -507,6 +552,14 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
         if not isinstance(why, str) or not why.strip():
             return (f"why_skipped is {why!r} — a declared skip needs a NON-EMPTY reason, the "
                     f"same refusal check-review-recorded makes of an empty NO-REVIEW:")
+        # ⛔ NON-EMPTY IS NOT EXPLANATORY (r7 Codex). `"!!!"` passed, and so did a ZERO-WIDTH
+        # SPACE — `str.strip()` does not remove U+200B, so the whitespace rule could never have
+        # reached it. The reason IS the deliverable of this schema change, so it must carry at
+        # least some content. ⚠ This tests for CONTENT, not meaning: no check here can establish
+        # that a reason is true or useful, and claiming otherwise would be the stronger lie.
+        if not any(ch.isalnum() for ch in why):
+            return (f"why_skipped {why!r} has no alphanumeric content — non-empty is not the "
+                    f"same as explanatory, and strip() does not remove a zero-width space")
     elif "skipped" in row or "why_skipped" in row:
         # A skip CLAIMED where none happened is a false label in the dataset the skips exist to
         # build, so it is refused rather than ignored as harmless surplus.
@@ -514,6 +567,12 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
                 f"{row['route']!r} IS the next route for {unit_key(row)} — nothing was skipped")
     # An AUTHORED routes_tried may not contradict the derived one. It is redundant now, and a
     # redundant field that disagrees with history is how the r1 Blocking was expressible.
+    # ⚠ r7 Codex M4: `list(None)` / `list(7)` raised TypeError straight out of the validator, so
+    # malformed log data escaped the unusable-row diagnostic as a crash. A type is named, never
+    # coerced — the same posture as `ranker_hit` two checks above.
+    if "routes_tried" in row and not isinstance(row["routes_tried"], (list, tuple, str)):
+        return (f"routes_tried is {type(row['routes_tried']).__name__}, not a list — it is "
+                f"DERIVED now and need not be written")
     if "routes_tried" in row and list(row["routes_tried"]) != tried:
         return (f"routes_tried {row['routes_tried']!r} contradicts this unit's history {tried!r} "
                 f"— the field is DERIVED now and need not be written at all")
@@ -1317,14 +1376,27 @@ def _self_test() -> int:
     case("a tighter tolerance fires on a move the default ignores",
          ("fires" if t6_denominator_moved({"median": 5}, {"median": 4}, tol=0.1) else "quiet",
           t6_denominator_moved({"median": 5}, {"median": 4})), ("fires", None))
-    case("nine scored rows is below the re-evaluation sample",
-         t7_sample_reached([{"outcome": "stopped"}] * 9), None)
-    case("ten scored rows asks for re-evaluation and quotes the bound",
-         "74%" in (t7_sample_reached([{"outcome": "stopped"}] * 10) or ""), True)
+    # ⟳ REWRITTEN AFTER r7 (Codex M2): these three read `[{"outcome": "stopped"}] * N`, which
+    # carries NO ranker prediction. Two went red when the population became predictions — but
+    # the nine-row case stayed GREEN while testing nothing it names: with no prediction in it,
+    # it would pass at any N. A case that passes for an ambient reason is the shape this repo
+    # keeps paying for, so all three now supply what they are about.
+    def _hit(n, v=True):
+        return [{"subject": f"q{i}", "unit": "u", "route": "accrete", "outcome": "continued",
+                 "ranker_hit": v} for i in range(n)]
+    case("nine ranker predictions is below the re-evaluation sample",
+         t7_sample_reached(_hit(9)), None)
+    # ⭐ IDENTITY on the whole message, not a substring of it: the bound, the counts and the
+    # baseline are all reader-facing numbers, and r6 cost five rounds to a property asserted
+    # five ways and defeated five times until it was pinned whole.
+    case("ten ranker predictions asks for re-evaluation and quotes the bound EXACTLY",
+         t7_sample_reached(_hit(10)),
+         "10 ranker predictions (10 ranker hits) — re-evaluate now; at 10/10 the one-sided 95% "
+         "accuracy bound reaches 74%, against a ~7% coin")
     # An EXPLICIT floor, distinct from the default, so the parameter is not a constant.
-    case("the sample floor is a parameter, so three rows reach a floor of three",
-         ("fires" if t7_sample_reached([{"outcome": "stopped"}] * 3, 3) else "quiet",
-          t7_sample_reached([{"outcome": "stopped"}] * 3)), ("fires", None))
+    case("the sample floor is a parameter, so three predictions reach a floor of three",
+         ("fires" if t7_sample_reached(_hit(3), 3) else "quiet",
+          t7_sample_reached(_hit(3))), ("fires", None))
 
     # ── row validation ───────────────────────────────────────────────────────────────────────
     _good = {"subject": "s", "unit": "u", "route": "accrete", "routes_tried": [],
@@ -1413,6 +1485,77 @@ def _self_test() -> int:
     # ⚠ r1 Codex M7: a `null` JSONL line decoded, then raised TypeError out of main().
     case("a non-object row is NAMED rather than raising",
          _try(lambda: validate_row(None)), "a row is NoneType, not an object")
+
+    # ── PROVENANCE: a retroactive row is not a scoreable bet (r7 Codex H1/M2/M3) ─────────────
+    # ⛔⛔ ONE CAUSE, THREE DOORS, AND THE PROSE DISCLAIMER WAS NOT ONE OF THEM. Writing the
+    # deferral's real history required rows whose outcomes were ALREADY KNOWN. Those rows say so
+    # in `prediction`, and r7 proved a trigger cannot read prose: they entered the population of
+    # every trigger that treats a SCORED row as a bet placed in advance. Measured before the fix
+    # — t3 went from firing to QUIET, t4 from firing to QUIET, and t7 reported an accuracy bound
+    # over a sample of 10 when only 8 predictions existed. So provenance is a FIELD now.
+    _retro = {"subject": "r", "unit": "u", "route": "accrete", "outcome": "continued",
+              "retroactive": True}
+    case("a retroactive flag must be a bool — a string coerces to True and hides a real bet",
+         "not a bool" in (validate_row({**_good, "retroactive": "false"}) or ""), True)
+    case("...and a real bool is accepted", validate_row({**_good, "retroactive": True}), None)
+    case("prospective() drops a retroactive row and keeps the rest, in order",
+         [r["subject"] for r in prospective(
+             [{"subject": "a"}, _retro, {"subject": "b"}])], ["a", "b"])
+    # A SECOND, DISTINCT input: an explicit false is a PROSPECTIVE row, not a missing flag.
+    case("...and an explicit retroactive: false is prospective, like an absent flag",
+         len(prospective([{"subject": "a", "retroactive": False}, {"subject": "b"}])), 2)
+
+    _collapsed = [{"subject": f"c{i}", "unit": "u", "route": "accrete", "outcome": "continued"}
+                  for i in range(5)]
+    case("⭐ t3 cannot be bought off by a retroactive row on another route",
+         "not discriminating" in (t3_routes_collapsed(
+             _collapsed + [{**_retro, "route": "defer", "outcome": "stopped",
+                            "rounds_at_termination": 2}]) or ""), True)
+    # ⚠ ADJACENT: the SAME row, prospective. The fix must exclude retroactive rows, NOT ignore
+    # every late row — a real second route is the discrimination t3 exists to find.
+    case("...while a PROSPECTIVE row on another route does quiet it, which is the real signal",
+         t3_routes_collapsed(_collapsed + [{"subject": "p", "unit": "u", "route": "redesign",
+                                            "outcome": "stopped",
+                                            "rounds_at_termination": 2}]), None)
+
+    _t4base = [{"subject": f"x{i}", "unit": "u", "route": "accrete", "outcome": "stopped",
+                "rounds_at_termination": r} for i, r in enumerate([4, 4, 4, 1, 1])]
+    case("⭐ a retroactive termination cannot DISPLACE a subject out of t4's last-five window",
+         "ceremony" in (t4_no_improvement(_t4base + [
+             {**_retro, "route": "defer", "outcome": "stopped",
+              "rounds_at_termination": 2}], 4) or ""), True)
+    case("...while a prospective termination DOES enter that window",
+         t4_no_improvement(_t4base + [{"subject": "p", "unit": "u", "route": "accrete",
+                                       "outcome": "stopped",
+                                       "rounds_at_termination": 1}], 4), None)
+
+    # ⛔ t7's SAMPLE IS RANKER PREDICTIONS, NOT SCORED ROWS — t5's own rule, which t7 failed to
+    # borrow. The bound it quotes (37% -> 74%) is about the RANKER's accuracy, so a row that
+    # made no prediction cannot be in its denominator. One rule, one place.
+    _pred = [{"subject": f"p{i}", "unit": "u", "route": "accrete", "outcome": "continued",
+              "ranker_hit": True} for i in range(10)]
+    # ⛔ _try IS LOAD-BEARING HERE, and the sweep proved it: with the eligibility test removed,
+    # `hits = sum(... r["ranker_hit"])` raises KeyError on these deliberately prediction-free
+    # rows, the suite died by TRACEBACK, and the harness reported "RED but nothing could see the
+    # kill". A crash names nothing — the contract is red VIA THE NAMED CASE.
+    case("⭐ ten scored rows that made NO ranker prediction do not reach t7's floor",
+         _try(lambda: t7_sample_reached([{"outcome": "stopped"}] * 10)), None)
+    case("...and ten explicit ranker predictions do",
+         "74%" in (t7_sample_reached(_pred) or ""), True)
+    case("...and the hit count is of PREDICTIONS, so a miss is not read as a hit",
+         "(9 ranker hits)" in (t7_sample_reached(
+             _pred[:9] + [{**_pred[0], "subject": "miss", "ranker_hit": False}]) or ""), True)
+    case("a retroactive row does not enter t7's sample either",
+         t7_sample_reached(_pred[:9] + [{**_retro, "ranker_hit": True}]), None)
+
+    # ⚠ r7 Codex M4: an existing boundary defect in the function this change touched.
+    case("a malformed routes_tried is NAMED rather than raising",
+         _try(lambda: validate_row({**_good, "routes_tried": None}, [])),
+         "routes_tried is NoneType, not a list — it is DERIVED now and need not be written")
+    case("...and every malformed shape reports rather than crashing the caller",
+         [("RAISED" in str(_try(lambda rt=rt: validate_row(
+             {**_good, "routes_tried": rt}, [])))) for rt in (None, False, 7, "accrete")],
+         [False, False, False, False])
 
     # ── the DECLARED SKIP (backlog #321) ─────────────────────────────────────────────────────
     # ⭐ THE OWNER'S CHANGE. The log used to refuse every non-prefix route, so the two units
@@ -1514,6 +1657,17 @@ def _self_test() -> int:
     # when a rung is removed instead of reddening (memory: a class fix needs an independent copy).
     case("the ladder is PINNED to a literal, so reordering or extending it reddens by name",
          LADDER, ("accrete", "redesign", "split", "defer"))
+    # ⚠ r7 Codex: `"!!!"` and a zero-width space satisfied "non-empty". `strip()` does not
+    # remove U+200B, so the whitespace rule could never have caught it. NON-EMPTY IS NOT
+    # EXPLANATORY — the reason is the deliverable, so it must carry at least some content.
+    case("a punctuation-only reason is refused — non-empty is not the same as explanatory",
+         "no alphanumeric content" in (validate_row(
+             {**_skip, "why_skipped": "!!!"}, []) or ""), True)
+    case("...and a zero-width space is refused too, which strip() does NOT remove",
+         "no alphanumeric content" in (validate_row(
+             {**_skip, "why_skipped": "\u200b"}, []) or ""), True)
+    case("...while a short but real reason is accepted — the rule is content, not length",
+         validate_row({**_skip, "why_skipped": "zero measured benefit"}, []), None)
 
     def _r2(n, *comps):
         return {"round": n, "findings": [{"component": c} for c in comps]}
