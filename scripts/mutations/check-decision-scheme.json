@@ -1087,7 +1087,7 @@
       ]
     ],
     "expect": [
-      "⭐ the LAST five subjects is by occurrence, not by first insertion"
+      "only the LAST five subjects count, so early bad ones do not pin it forever"
     ]
   }
 ]

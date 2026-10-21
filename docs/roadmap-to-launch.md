@@ -2520,8 +2520,10 @@ futility) then `defer` (skipping `split`, because the measured cause is one leve
       caveat had not named), t5/t7 shipped TWO eligibility rules under a "one rule, one place" claim
       (M6, now one `is_prediction`), the summary line a human reads was un-split (M7), the 74% bound
       was quoted at floors it is false for (M8), and the docstring asserted hindsight labels *cannot*
-      be scored while the schema now accepts them (M9). 179 → 203 cases, 64 → 82 mutations,
-      **80/80 killed and 80/80 ATTRIBUTED**, 0 survivors.
+      be scored while the schema now accepts them (M9). 179 → 201 cases, 64 → 80 mutations,
+      **80/80 killed and 80/80 ATTRIBUTED**, 0 survivors. ⟳ (r8 Claude M2: an earlier correction of
+      a stale count was applied to THIS bullet, which describes r7 — making a different number wrong.
+      r8's own figures are in its bullet above.)
 - [x] ⭐ **r8 (Codex) — 3 Medium, 1 Low, NO Blocking and NO High: the first round that did not find
       a Blocking since r3, which is what convergence looks like rather than being asserted.** All four
       folded, and two were about my own discipline rather than the code's difficulty. **M1: both new

@@ -16430,7 +16430,7 @@ H5 → `t9_deferral_composed`, mechanising backlog #337's cheap half. ⛔ NOT th
 reviewer warned that dropping deferral rows would let a mechanism which defers everything starve t4
 into permanent silence — B1's own family. Option (b), a third `OUTCOMES` value, stays the owner's.
 
-179 → 203 cases, 64 → 82 mutations, **82/82 killed, 82/82 ATTRIBUTED**, 0 survivors, control
+179 → 201 cases, 64 → 80 mutations, **80/80 killed, 80/80 ATTRIBUTED**, 0 survivors, control
 re-proved green. ⚠ Seven pre-existing manifest entries were damaged by this fold — 5 orphaned or
 made ambiguous by duplicating t4's fold into t9 and by three changed lines, 2 more by a RENAME — and
 `prospective()`, `t4`'s window and the H3 condition were each SPLIT INTO TWO LINES so their two
@@ -16516,3 +16516,71 @@ inherited handoff had recorded it as a pass by reading the `6ca7abc0` run.
 ⚠ `verify` green includes `check-review-recorded`, which the PR body's `NO-REVIEW:` SATISFIES rather
 than answers — the gate's own words are "the final-tree question is WAIVED, not passed". That
 declaration predates r7 and r8. Being updated to describe the tree it now covers.
+
+## 2026-10-21
+Correcting the entry above: I said the automated checks on the pushed branch were passing. They
+were not, and the commit that said so is the one that broke them.
+
+A review caught it within the hour. The rule is that each review round has two halves; I ran the
+second half of the eighth round but filed it under the ninth, which left round eight looking
+half-finished to the check that enforces the pairing. The work was done — only the label was wrong —
+so the fix was to file it under the round it belongs to, not to declare an exemption saying the half
+had been skipped. That would have been a false record.
+
+There is a real problem underneath it, now written down: three separate rules in this project
+combine so that a round whose halves run one-after-the-other — which is what they are supposed to
+do — looks incomplete to the checker, and the only escape the checker offers is one another document
+forbids. Nothing anywhere states the resolution, which is why I got it wrong. Filed.
+
+I also overstated the earlier green. Two of the three required checks did pass on the previous
+commit, but the third — the long one that re-tests every guard — never finished, because my own next
+push cancelled it. Calling that "green" is the same mistake as reporting a partial run in the
+language of a full one, which this project has caught me doing twice today already.
+
+**Waiting on you:** merging, unchanged. The reviews are converging — the last two rounds found no
+new defect in the mechanism itself, only in my bookkeeping about it — but the branch is not waiting
+on more work from me, it is waiting on your decision.
+<!--tech-->
+⚠ **CORRECTION to `docs/dashboard-entries.md` above, where I wrote "the automated checks on the
+pushed branch are now passing".** FALSE as of `afe3b7cd`: CI `verify` FAILS at step 22, *"Review
+rounds have both halves"* — `check-review-rounds.py` rc=1, *"decision-route-escalation round 8: only
+codex — claude neither ran nor recorded a `REVIEW GAP:` line"*. **The commit asserting the pass is
+the commit that caused the red.** Found by r8 Claude as its Blocking.
+
+⛔ **NOT a code defect — a NUMBERING error, and the resolution is a reading of the rules.**
+*"Rounds 2+ ALTERNATE"* means the two halves of ONE round run SEQUENTIALLY (the second sees the
+first's fold), not one half per round — which is exactly what r7 did. I dispatched r8's second half
+as "r9". Refiled as `decision-route-escalation-r8-claude.md`, with the renumber recorded inside the
+document; `check-review-rounds.py` now rc=0. ⛔ A `REVIEW GAP: claude` was NOT written: the half
+RAN, so it would be a false record, and `plugins.md` forbids that declaration regardless.
+⭐ VERIFIED against the corpus rather than assumed — `main-drivable` and `shard-mutation-sweep` each
+carry both halves for every one of r7/r8/r9. **backlog #339** files the rule conflict itself: the
+pairing gate, the alternation rule and the forbidden escape cannot all three be satisfied by a
+genuinely alternating round, and nothing writes down the resolution.
+
+⚠ **CORRECTION 2, the High: "REAL CI IS GREEN on `e72ccc2b`: schema-gates pass, verify pass" is a
+hand-picked subset**, and it is in `afe3b7cd`'s commit message where it cannot be edited. Those two
+jobs did pass — but the `CI` workflow's conclusion is **cancelled**: 6 of 8 `mutation-sweep` shards
+cancelled and `mutation-sweep-complete` **failure**, because my own next push superseded it
+(`cancel-in-progress`). So the sweep — this work's central evidence — is **NOT RUN in CI** on that
+commit. ⛔ And that is the defect one commit after `6499cf57` made the same thing its headline.
+⚠ **CORRECTION 3:** my run-history table said `6ca7abc0 success`. Measured: `6ca7abc0` **CI was a
+failure**; only `Schema gates` succeeded there. True of the job, stated of the run.
+
+M1 (the M3 class recurring INSIDE M3's fix): manifest entry 82 (`[-size:]`→`[:size]`) was attributed
+to the case that witnesses entry 34's decision (the pop/reinsert recency rule), while the case named
+for its OWN decision — *"only the LAST five subjects count"* — was named by no entry at all.
+Re-pointed; verified distinguishable (entry 34 alone reddens 1 case, entry 82 reddens 3 including
+its own). M2: the L4 count correction had been applied to the **r7** bullet and entry, which describe
+the r7 fold — so they read `64 → 82 mutations` beside `80/80 killed`. I fixed a stale number by
+making a different one wrong; both restored to r7's own figures (201 cases, 80 entries).
+
+⭐ **What the review could NOT refute, with its measurements, recorded because a clean attack is
+evidence too:** the `termination_window` extraction is behaviour-identical to the pre-refactor
+functions over **40,000 random inputs × both triggers** (old version loaded from `e72ccc2b`
+alongside the new); the "no window where both are silent" claim holds with **0 violations in
+135,322 non-empty windows**; both new `main()` cases redden when the trigger body is neutered with
+the call site left intact (200/203 each), so they are not wiring-only; `size` is protected (defaults
+3/4/6/7 → 201/200/195/195); and the retirement is sound. It also recorded a near-miss of its own: it
+nearly published *"the window size is unprotected"* off four `203/203` runs in which the mutation
+had silently never been written, and now prints the mutated line before every probe.
