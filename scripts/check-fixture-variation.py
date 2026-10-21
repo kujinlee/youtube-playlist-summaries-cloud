@@ -310,6 +310,17 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-10-20, the transcript reference guard (backlog #328's sibling, owner-requested).
+    # Ten parameters, every one varied by a case rather than exempted — the guard's first run
+    # reported four unvaried (`transcript_for.td`, `.second`, `main.argv`, `main.log`) and each
+    # was fixed by supplying a SECOND REAL INPUT, not by writing an exemption: a second temp
+    # directory, a different closing message, the no-action argv branch, and a second log path
+    # that must stay UNWRITTEN on a quiet turn.
+    "check-transcript-references.py": (
+        "assistant.text", "bare_references.text", "judge.payload", "main.argv", "main.log",
+        "main.stdin", "transcript_for.first", "transcript_for.second", "transcript_for.td",
+        "user.text",
+    ),
     # ⟳ 2026-10-14, the round-6 one-canonical-source redesign. ⟳⟳ r6 CLAUDE M5: **FOUR**
     # parameters, all varied by cases — the word "Three" stood here while the enumeration below it
     # listed four and this guard reported "4 parameter(s) examined", the third instance on this

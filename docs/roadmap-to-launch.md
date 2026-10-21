@@ -2354,7 +2354,7 @@ skill and not the hook, so the hook's refusal printed a claim and its withdrawal
       retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
       human's call, so neither is taken here.
 
-## Redesign-or-accretion mechanism — backlog #320–#326 — anchor `review-decides-itself` — 🔴 **NOT CONVERGED after THREE rounds; Phase 6 review done 2026-10-20; NOTHING MERGED**
+## Redesign-or-accretion mechanism — backlog #320–326 — anchor `review-decides-itself` — 🔴 **NOT CONVERGED after THREE rounds; Phase 6 review done 2026-10-20; NOTHING MERGED**
 
 Branch `decision-route-escalation`, stacked on `baseline-surveys` (PR #380, unmerged). Built at the
 owner's instruction — *"try a most promising scheme and check outcomes, then re-evaluate the
@@ -2373,23 +2373,23 @@ findings in r2 and r3`). Review: `docs/reviews/architecture-review-2026-10-20-de
 **Its verdict: the pure core is sound and converged; the world-reading boundary is not, and the
 reason is structural** — 64% of the fix-round findings are in components that read the world.
 
-- [x] **#322 ✅ FIXED 2026-10-20, same day** — `tree_at` takes a defaulted `repo`; the cases now
+- [x] **backlog #322 ✅ FIXED 2026-10-20, same day** — `tree_at` takes a defaulted `repo`; the cases now
       BUILD a git repository instead of asserting against this one. **Falsifier run:
       `control_is_green=True` in a staged tree with no `.git`**, where it was False. It also removed
       a case that could not fail and made two mutations reachable for the first time.
       ⚠ The coverage figures in the three earlier commit messages are still only as good as the
       sweep that now runs — re-stated, not retro-corrected.
-- [ ] **#323** the ranker's statistic **saturates at the round count** — four components tied at 3,
+- [ ] **backlog #323** the ranker's statistic **saturates at the round count** — four components tied at 3,
       and I reported the forced silence as humility in two review documents
-- [ ] **#324** `t1_not_fed` reads SUBJECT granularity while the mechanism reasons in UNITS: 7 units
+- [ ] **backlog #324** `t1_not_fed` reads SUBJECT granularity while the mechanism reasons in UNITS: 7 units
       decided, 2 logged — the predecessor's blind spot one level down
-- [ ] **#325** an abstention is **inexpressible as data**, so trigger 5 has no reachable falsifier
-- [x] **#326 ✅ CLOSED BY #322**, exactly as the review predicted — `probe7.py` stages a copy and
+- [ ] **backlog #325** an abstention is **inexpressible as data**, so trigger 5 has no reachable falsifier
+- [x] **backlog #326 ✅ CLOSED BY backlog #322**, exactly as the review predicted — `probe7.py` stages a copy and
       mutates there, and matches the harness contract (`expect` EQUALS one red case) which the old
       probe did not
-- [ ] **#321** is the ladder's prefix clause a law or a choice? Found by feeding the mechanism its
+- [ ] **backlog #321** is the ladder's prefix clause a law or a choice? Found by feeding the mechanism its
       own history: it refuses two of the four routes this slice took
-- [ ] **#320** which round-header fields can a reviewer's own half know (the withdrawn relocation)
+- [ ] **backlog #320** which round-header fields can a reviewer's own half know (the withdrawn relocation)
 
 ### The escalated DESIGN review (what Phase 6 actually owed) — r1 done, NOT CONVERGED
 
@@ -2467,7 +2467,7 @@ right".
 
 ⚠ **Measured benefit remains ZERO.** Four log rows, two scored, no outcome observed for any unit.
 Everything claimed is about construction. ⛔ **Merging is the owner's gate and nothing here is
-merge-ready**: r1/r2/r3 all NOT CONVERGED and #322 must land before any coverage claim is evidence.
+merge-ready**: r1/r2/r3 all NOT CONVERGED and backlog #322 must land before any coverage claim is evidence.
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all

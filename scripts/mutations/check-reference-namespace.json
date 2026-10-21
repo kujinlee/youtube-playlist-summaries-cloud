@@ -76,5 +76,44 @@
     "expect": [
       "⛔ an unresolvable base is CANNOT RUN, never a pass"
     ]
+  },
+  {
+    "name": "docs/backlog.md drops out of scope again, so the file with the densest bare references is the one nothing reads — the premise that it 'owns the namespace' restored",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    \"docs/backlog.md\",\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ a bare #N in docs/backlog.md is IN scope — PR numbers occupy the same integers"
+    ]
+  },
+  {
+    "name": "the roadmap drops out of scope, so a bare #N in the document that states what is left to do goes unread",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "    \"docs/roadmap-to-launch.md\",\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the roadmap too, for the same reason"
+    ]
+  },
+  {
+    "name": "`deliverable` leaves the qualifier vocabulary, so a genuine qualified reference fires as a violation and the guard starts crying wolf",
+    "file": "scripts/check-reference-namespace.py",
+    "edits": [
+      [
+        "|mutation|deliverable)",
+        "|mutation)"
+      ]
+    ],
+    "expect": [
+      "`deliverable #2` is a QUALIFIED reference, not a bare one"
+    ]
   }
 ]

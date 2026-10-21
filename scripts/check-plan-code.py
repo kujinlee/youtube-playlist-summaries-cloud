@@ -1534,7 +1534,8 @@ EXPECTED_MUTATIONS = {
     # out-of-range, ambiguous-suffix, two scope clauses, the CANNOT-RUN code and the
     # injected reader each have a case that names them.
     "scripts/check-doc-citations.py": 37,
-    "scripts/check-reference-namespace.py": 6,
+    "scripts/check-reference-namespace.py": 9,
+    "scripts/check-transcript-references.py": 5,
     "scripts/check-rc-contract.py": 17,
     # ⟳ 2026-10-01 — THE HOOK'S OWN GUARD, pinned in the commit that creates it. R3 moved here
     # from `check-rc-contract` because its subject is the HOOK'S RENDERED TEXT, not the cross-file
@@ -3549,6 +3550,7 @@ def _self_test() -> int:
                                       "scripts/check-surface-recall.py",
                                       "scripts/check-test-counts.py",
                                       "scripts/check-theme-token-coverage.py",
+                                      "scripts/check-transcript-references.py",
                                       "scripts/check-vocabulary-collisions.py",
                                       # ⟳ 2026-09-14, r11. A LIVE inventory entry, added with the
                                       # manifest — and it is NOT a `check-*` guard, so this list is
@@ -5213,7 +5215,7 @@ def _self_test() -> int:
     # citation that resolves cleanly (0) paired with one that fails (1). Verified: both of Codex's
     # degenerate substitutions now redden 5 and 13 cases respectively.
     # ⚠ 1456 is the GUARD'S OWN FIGURE, read from `got 1456 want 0` against the wrong sentinel.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1630)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1638)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

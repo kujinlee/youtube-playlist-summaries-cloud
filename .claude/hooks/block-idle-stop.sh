@@ -75,6 +75,15 @@ ARGS=(--decide)
 printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-banner-armed.py" --decide
 BANNER_RC=$?
 
+# ── Bare `#N` shown to the reader, added 2026-10-20 (owner decision) ────────────────────────
+# `check-reference-namespace.py` covers 14 reader-facing FILES; the transcript was excluded by
+# OMISSION, not by a decision. Measured on the session that prompted this: 64 bare references
+# against 10 qualified, on the surface the human reads live. WARN-ONLY and non-blocking — its rc
+# is deliberately NOT captured into the stop decision, because this guard must never be the reason
+# a turn cannot end. The channel is hook stdout, which reaches the ASSISTANT, and here that is the
+# actor who must change.
+printf '%s' "$INPUT" | python3 "$REPO_ROOT/scripts/check-transcript-references.py" --decide || true
+
 # ── Fourth question, added 2026-09-20 (user decision) ───────────────────────────────────────
 # Did the previous turn CLOSE A JOB — commit, push, merge, tick — and then report it in prose
 # instead of the CHECK / RESULT table `docs/process-checklists.md` requires?

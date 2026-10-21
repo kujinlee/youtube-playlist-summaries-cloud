@@ -93,6 +93,13 @@ POPULATION: frozenset[str] = frozenset({
     # real reason (a surviving mutation, ADR-0014 D2, then five r1 CODEX findings), so an
     # unverified docstring number would have been wrong SIX times in one evening.
     "check-memory-index-budget.py",
+    # ⟳ 2026-10-20: pinned in the commit that creates it, for the reason the two entries above
+    # record — this guard REFUSED it otherwise ("declares a case count but is not in POPULATION,
+    # so nothing checks it"). Earned the same way: its suite went 13 → 17 → 18 while it was being
+    # written, each step forced by another guard rather than chosen — ADR-0014's drivable `main`,
+    # then `check-fixture-variation` finding four parameters no case could tell from a constant.
+    # A docstring count nothing verified would have been wrong three times in twenty minutes.
+    "check-transcript-references.py",
     "check-memory-link.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the
