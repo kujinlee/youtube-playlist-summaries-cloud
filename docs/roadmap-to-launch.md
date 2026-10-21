@@ -2503,7 +2503,26 @@ futility) then `defer` (skipping `split`, because the measured cause is one leve
       for the retroactive case: provenance is a FIELD now and t3/t4/t7 read `prospective()` only. ⛔ Still
       open for a FUTURE PROSPECTIVE defer row, which the reviewer named explicitly — that is a real bet
       whose termination is still indistinguishable from a repair.
-- [x] ⭐ **r7 FOLDED — one cause, three doors, and a prose disclaimer was none of them.** The two
+- [x] ⭐⭐ **r7 BOTH HALVES FOLDED. The CLAUDE half found 13 (2 Blocking, 3 High, 5 Medium, 3 Low)
+      and ZERO overlapped with Codex's four — the non-redundancy this project measured in 2026-09-13
+      is holding at 17 findings and 0 overlap across one round.** ⛔ **B1 corrected the branch's own
+      headline.** `1c5376e2` said *"trigger 1 goes green by being FED, not patched"*; measured, t1 is
+      silent over all 6 rows and FIRES over the 4 prospective ones — so after the fold the claim read
+      *fed with rows that are not bets*. My written defence ("coverage, not timely use, a different
+      complaint") was only sound if some trigger owned timely use, and the reviewer enumerated all
+      seven and none did: the only detector of non-use was satisfiable by backfill. `t8_hindsight_only`
+      now WARNS by name (WARN, not FAIL — a prospective row for finished work is unsatisfiable, and a
+      gate red from birth gets switched off, backlog #56). ⛔ **B2: two mutations survived 179/179
+      against the fold's own t7 message**, one restoring Codex M2 verbatim (`13 ranker predictions`
+      over 10), because every t7 fixture had `len(rows) == len(sample)` at the message site — the
+      "passes at ANY N" defect the fold itself had just named, recurring in its replacement. Also
+      fixed: hindsight after a real bet CLOSED a unit's ladder irreversibly (H3 door c, which my
+      caveat had not named), t5/t7 shipped TWO eligibility rules under a "one rule, one place" claim
+      (M6, now one `is_prediction`), the summary line a human reads was un-split (M7), the 74% bound
+      was quoted at floors it is false for (M8), and the docstring asserted hindsight labels *cannot*
+      be scored while the schema now accepts them (M9). 179 → 200 cases, 64 → 80 mutations,
+      **80/80 killed and 80/80 ATTRIBUTED**, 0 survivors.
+- [x] ⭐ **r7 Codex half folded — one cause, three doors, and a prose disclaimer was none of them.** The two
       retroactive rows entered the population of every trigger that treats a SCORED row as a bet placed
       in advance: t3 fired → quiet, t4 fired → quiet, t7 quoted an accuracy bound over a sample of 10
       when 8 predictions existed. Fix: `retroactive` is a type-checked field, `prospective()` owns the

@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 179 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 201 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -32,9 +32,12 @@ rung futile. A row may now name the rungs it skipped in `skipped` with a non-emp
 `check-review-recorded.py` refuses an empty `NO-REVIEW:`.
 
 ⛔ WHY THIS IS A RECORD, NOT A NEW ROUTE. Forcing ACCRETE first is the only thing that produces
-the label "accrete was tried on this shape and failed", which is the training data the
-long-term route-predictor needs; a `start -> split` jump route would destroy that counterfactual
-for nothing. So the linearity is kept and deviations are RECORDED rather than legalised — a
+the label "accrete was tried on this shape and failed"; a `start -> split` jump route would
+destroy that counterfactual for nothing. ⟳ r7 Claude M10 is right that the predictor this label
+is FOR does not exist — the only reader of the log is this file — so the claim that earns the
+cost TODAY is the smaller one: the HUMAN RECORD of why a rung was skipped. The predictor is a
+bet on top of it, and backlog #338 is deferred on COST and the owner's priority, NOT on the
+"no consumer yet" principle, which would equally undercut `why_skipped` one paragraph up. So the linearity is kept and deviations are RECORDED rather than legalised — a
 skip is a labelled example (shape X, human judged A/R futile, went to S, outcome Y), which is
 precisely what the old schema threw away. A RETRY stays inexpressible and a WALK-BACK down the
 ladder is refused; neither is a skip, and no reason declares one into one.
@@ -59,6 +62,28 @@ more code — it is the measured consequence of causation not being observable. 
 buy, and the reason it is append-only with `outcome: null` on arrival, is that the PREDICTION
 is written before the outcome is known. A bet placed in advance can be scored; a label written
 with hindsight cannot, which is exactly what backlog #314 records.
+
+⟳ CORRECTED 2026-10-21 (r7 Claude M9): the paragraph above read as a guarantee about the DATA
+and it is only a statement of intent. A hindsight label is now EXPRESSIBLE, because recording
+the deferral's real history required it — so the honest form is that a hindsight label is
+recordable, FLAGGED, and excluded from scoring, never that it cannot exist.
+
+    retroactive: true   the outcome was ALREADY KNOWN when the row was written.
+
+⛔ IT IS AUTHORED AND NOTHING VERIFIES IT, and it buys THREE things at once — all three stated
+here because the first version of this caveat named only the first:
+  1. the row leaves every SCORING population (`t3`, `t4`, `t7` read `prospective()`), because a
+     bet whose outcome was known cannot be scored;
+  2. the row still counts toward `t1_not_fed`, so it satisfies the starvation trigger — which is
+     coverage, not timely use. `t8_hindsight_only` exists to say so out loud, because r7
+     measured that NO trigger owned that complaint and backfill therefore silenced the only
+     detector of non-use;
+  3. it may fill a unit's PAST and never follow a real bet. `validate_row` refuses hindsight
+     after a prospective row, because a unit backfilled to `defer` has a terminal ladder and
+     every later prospective row is refused as a retry after exhaustion — IRREVERSIBLE in an
+     append-only log. That refusal is the only bound; nothing limits how many rows carry the
+     flag, and deriving it from git (a row whose write commit post-dates its subject's last
+     round document) is possible and is NOT built.
 
 ITS CALLER: `.github/workflows/ci.yml`, two steps — the triggers and the self-test. ⛔ It does
 NOT take the `NO-CALLER:` escape, deliberately. Its predecessor declares that escape with a
@@ -157,7 +182,29 @@ def prospective(rows: list[dict]) -> list[dict]:
     still carried findings is observed, not predicted); `t5_ranker_miss` (already keyed on the
     presence of `ranker_hit`, which a retroactive row does not carry).
     """
-    return [r for r in rows if not r.get("retroactive")]
+    # ⚠ TWO STATEMENTS, TWO DECISIONS. r7 Claude L11 found this helper raising on a non-dict row
+    # — the class the fold had just fixed one function away — and the dict guard and the
+    # retroactive filter are separate choices: on one line only one of them could be guarded.
+    dicts = [r for r in rows if isinstance(r, dict)]
+    return [r for r in dicts if not r.get("retroactive")]
+
+
+def is_prediction(row: dict) -> bool:
+    """PURE. Did this row make a SCOREABLE ranker prediction?
+
+    ⛔ ONE RULE, ONE PLACE, AND THIS HELPER EXISTS BECAUSE THE CLAIM SHIPPED BEFORE THE FACT.
+    The fold's own commit message said t7 had "borrowed t5's rule"; measured by r7 Claude (M6),
+    it had written a SECOND one — t5 asked `"ranker_hit" in r` and t7 asked
+    `isinstance(..., bool)`, so `ranker_hit: 0` was a MISS to one and INELIGIBLE to the other.
+    That is this repository's most-recorded defect (17 instances) arriving inside the commit
+    that claimed to remove it.
+
+    An abstention is not a prediction: `ranker_hit` is written ONLY when the ranker named a
+    component, so the presence of an explicit BOOL is the test. A non-bool is not a quiet miss —
+    `validate_row` refuses it — but these are documented pure helpers with callers of their own,
+    so the rule lives here rather than twice.
+    """
+    return isinstance(row.get("ranker_hit"), bool)
 
 
 # ------------------------------------------------------------------ pure: the triggers
@@ -175,6 +222,46 @@ def t1_not_fed(rows: list[dict], subjects_since_arming: list[str]) -> str | None
     return (f"{len(missing)} subject(s) reached >=2 rounds with no log row: "
             f"{', '.join(missing[:6])}{' …' if len(missing) > 6 else ''} — the scheme is not "
             f"being fed, which is how its predecessor failed at 81%")
+
+
+def t8_hindsight_only(rows: list[dict], subjects_since_arming: list[str]) -> str | None:
+    """WARN. Subjects whose EVERY row is retroactive — fed, but never in time.
+
+    ⛔⛔ THE COMPLAINT THAT HAD NO HOME (r7 Claude B1). `prospective()` deliberately leaves
+    `t1_not_fed` reading all rows, with the reason that a retroactive row "proves coverage, not
+    timely use, which is a different complaint". That is only sound if some trigger owns the
+    other complaint — and the reviewer enumerated all seven and found NONE did. So the only
+    detector of non-use was satisfiable by backfill, in a file whose founding concern is that
+    its predecessor "was correct and saw rounds=0 on 81% of the subjects where it applied".
+
+    MEASURED on the live log at the time this was written: `t1_not_fed` is silent over all six
+    rows and FIRES over the four prospective ones, naming `decision-log-model-redesign`. Both
+    sides of that experiment are in the record — CI's run on the pre-change commit printed the
+    firing half unprompted.
+
+    ⚠ WARN, NOT FAIL, AND THE REASON IS NOT TIMIDITY. Demanding a prospective row for a subject
+    whose work is FINISHED is unsatisfiable by construction — the deferral this schema change
+    exists to record can never acquire one — and a gate that is red from birth gets switched off
+    (backlog #56). What a FAIL-grade version needs is a CUTOVER date, so the rule can ask "armed
+    AFTER the schema could express this, and still only fed in hindsight". That is a design
+    decision about when the clock starts, and it is filed rather than guessed.
+
+    ⚠ A subject with NO row at all is trigger 1's business and is deliberately absent here: two
+    triggers naming one defect is a reader who cannot tell which is which.
+    """
+    by_subject: dict[str, list[dict]] = {}
+    for r in rows:
+        if isinstance(r, dict):
+            by_subject.setdefault(r.get("subject"), []).append(r)
+    hindsight = sorted(s for s in subjects_since_arming
+                       if by_subject.get(s) and not prospective(by_subject[s]))
+    if not hindsight:
+        return None
+    named = ", ".join(hindsight[:6]) + (" …" if len(hindsight) > 6 else "")
+    return (f"{len(hindsight)} of {len(subjects_since_arming)} subject(s) are fed ONLY in "
+            f"hindsight: {named} — every row for them is retroactive, so the mechanism is a "
+            f"historian for that subject, not a decision aid; trigger 1 is quiet because a row "
+            f"EXISTS, which is coverage, not timely use")
 
 
 def t2_non_termination(rows: list[dict]) -> str | None:
@@ -260,15 +347,60 @@ def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
             # median of 1, so trigger 4 stayed quiet over a run that should have failed it.
             # Popping first re-inserts at the end, which is what "latest" has to mean.
             per_subject.pop(r.get("subject"), None)
-            per_subject[r.get("subject")] = r["rounds_at_termination"]
+            per_subject[r.get("subject")] = (r["rounds_at_termination"], r.get("route"))
     if len(per_subject) < 5:
         return None
-    recent = list(per_subject.values())[-5:]
+    recent_pairs = list(per_subject.values())[-5:]
+    recent = [n for n, _ in recent_pairs]
     med = st.median(recent)
     if med < baseline_median:
         return None
+    # ⚠ r7 Claude H5: when this DOES fire, the reader needs to know how much of the median is
+    # deferral rather than repair, because the two are the same `outcome` today (backlog #337).
+    defers = sum(1 for _, route in recent_pairs if route == "defer")
+    note = (f" ⚠ {defers} of those 5 terminations were DEFERRALS, which are filings rather than "
+            f"repairs" if defers else "")
     return (f"median rounds-to-termination over the last 5 SUBJECTS is {med}, against a pinned "
-            f"pre-scheme median of {baseline_median} — the mechanism is ceremony, not leverage")
+            f"pre-scheme median of {baseline_median} — the mechanism is ceremony, not "
+            f"leverage{note}")
+
+
+def t9_deferral_composed(rows: list[dict], baseline_median: float) -> str | None:
+    """WARN. t4 looks like improvement, but deferrals are in the window that produced it.
+
+    ⛔ backlog #337'S CHEAP HALF, MECHANISED RATHER THAN REMEMBERED (r7 Claude H5). `outcome:
+    "stopped"` cannot distinguish a stream that stopped because the defect was REPAIRED from one
+    that stopped because the work was DEFERRED, so a deferral enters t4's sample as a short,
+    flattering termination. The expensive fix is a third `OUTCOMES` value and it is the owner's
+    call; this is the half that needs no schema change — when t4 is QUIET and the window holding
+    its median contains deferrals, say so, because that is exactly the shape in which #337's
+    hazard is invisible.
+
+    ⚠ IT FIRES ONLY WHERE t4 IS SILENT, deliberately. If t4 is already failing the reader is
+    being told the stronger thing and t4's own message now carries the composition; two warnings
+    for one window is a reader who cannot tell which to act on.
+
+    ⚠ `prospective` only, like t4 — a retroactive deferral is not a bet and r7 measured it
+    DISPLACING a real subject out of the window.
+    """
+    per_subject: dict[str, tuple] = {}
+    for r in prospective(rows):
+        if r.get("outcome") == "stopped" and isinstance(r.get("rounds_at_termination"), int):
+            per_subject.pop(r.get("subject"), None)
+            per_subject[r.get("subject")] = (r["rounds_at_termination"], r.get("route"))
+    if len(per_subject) < 5:
+        return None
+    recent_pairs = list(per_subject.values())[-5:]
+    med = st.median([n for n, _ in recent_pairs])
+    if med >= baseline_median:
+        return None                      # t4 is firing; it owns this window's verdict
+    defers = sum(1 for _, route in recent_pairs if route == "defer")
+    if not defers:
+        return None
+    return (f"the improvement signal is composed: median {med} beats the pinned "
+            f"{baseline_median}, but {defers} of those 5 terminations took route 'defer' — a "
+            f"filing, not a repair. `outcome: \"stopped\"` cannot tell the two apart "
+            f"(backlog #337), so read this median as at most {5 - defers} of 5 repairs")
 
 
 def t5_ranker_miss(rows: list[dict]) -> str | None:
@@ -286,7 +418,7 @@ def t5_ranker_miss(rows: list[dict]) -> str | None:
     # is the exact incentive the abstention exists to create. `ranker_hit` is written ONLY when
     # the ranker named a component; a row without it made no bet and is skipped, which this line
     # was accidentally already doing and now does deliberately.
-    marks = [bool(r.get("ranker_hit")) for r in rows if "ranker_hit" in r]
+    marks = [bool(r["ranker_hit"]) for r in rows if is_prediction(r)]
     for i in range(len(marks) - 1):
         if not marks[i] and not marks[i + 1]:
             return (f"two consecutive ranker misses at rows {i + 1} and {i + 2} of "
@@ -348,12 +480,18 @@ def t7_sample_reached(rows: list[dict], floor: int = 10) -> str | None:
     outcome was known when it was written cannot be scored.
     """
     sample = [r for r in prospective(rows)
-              if r.get("outcome") in OUTCOMES and isinstance(r.get("ranker_hit"), bool)]
+              if r.get("outcome") in OUTCOMES and is_prediction(r)]
     if len(sample) < floor:
         return None
     hits = sum(1 for r in sample if r["ranker_hit"])
-    return (f"{len(sample)} ranker predictions ({hits} ranker hits) — re-evaluate now; at "
-            f"{floor}/{floor} the one-sided 95% accuracy bound reaches 74%, against a ~7% coin")
+    # ⚠ r7 Claude M8: 74% is the one-sided 95% lower bound for n=10 SPECIFICALLY. `floor` is a
+    # parameter, and at floor=3 the old wording asserted a bound of 74% where it is really ~37% —
+    # a number a reader would act on, stated for a sample that cannot support it.
+    bound = (f"at {floor}/{floor} the one-sided 95% accuracy bound reaches 74%, against a ~7% "
+             f"coin" if floor == 10 else
+             f"the 74% bound is pinned to a sample of 10, so it is NOT quoted for this floor "
+             f"of {floor}")
+    return (f"{len(sample)} ranker predictions ({hits} ranker hits) — re-evaluate now; {bound}")
 
 
 # ------------------------------------------------------------------ IO
@@ -507,6 +645,21 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
                 f"coerces to True and would drop a real bet from every scoring trigger")
     if prior is None:
         return None
+    # ⛔⛔ H3 DOOR (c), WHICH IS IRREVERSIBLE IN AN APPEND-ONLY LOG. One authored boolean buys
+    # three things: it satisfies t1's starvation check, it empties every scoring population, and
+    # — if a unit is backfilled all the way to `defer` — it makes recording a real prospective
+    # bet for that unit PERMANENTLY IMPOSSIBLE, because the ladder is terminal and every later
+    # row is refused as a retry after exhaustion. Measured by r7 Claude on four backfilled rows.
+    # The cheap bound that closes the general form: you may backfill a unit's PAST, never append
+    # hindsight after a real bet. Both live rows satisfy it.
+    # ⚠ TWO LINES, TWO DECISIONS: WHICH histories count as "after a real bet", and WHETHER that
+    # is refused. One line would put both behind one anchor and the harness refuses the second as
+    # measuring nothing new — so only one of them could ever be guarded.
+    hindsight_after_bet = bool(row.get("retroactive")) and bool(prospective(prior))
+    if hindsight_after_bet:
+        return (f"a retroactive row may not follow a PROSPECTIVE bet on {unit_key(row)} — "
+                f"hindsight appended after a real bet closes that unit's ladder and empties "
+                f"its scoring population, and an append-only log cannot take it back")
     tried = derive_routes_tried(prior)
     # ⛔ THE LADDER POSITION IS `accounted`, THE ATTEMPTS ARE `tried`, AND THEY ARE NOT THE SAME
     # QUESTION once a skip is declarable. The prefix rule and the next route are about where the
@@ -570,7 +723,9 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
     # ⚠ r7 Codex M4: `list(None)` / `list(7)` raised TypeError straight out of the validator, so
     # malformed log data escaped the unusable-row diagnostic as a crash. A type is named, never
     # coerced — the same posture as `ranker_hit` two checks above.
-    if "routes_tried" in row and not isinstance(row["routes_tried"], (list, tuple, str)):
+    # ⚠ r7 Claude L12: admitting `str` made the message untrue — `list("") == []`, so
+    # `routes_tried: ""` validated as "no routes tried" while the refusal says "not a list".
+    if "routes_tried" in row and not isinstance(row["routes_tried"], (list, tuple)):
         return (f"routes_tried is {type(row['routes_tried']).__name__}, not a list — it is "
                 f"DERIVED now and need not be written")
     if "routes_tried" in row and list(row["routes_tried"]) != tried:
@@ -937,12 +1092,22 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         ("6 DENOMINATOR MOVED", t6_denominator_moved(
             now, pinned_rounds, now_corpus=now, pinned_corpus=pinned.get("corpus", {}))),
         ("7 SAMPLE REACHED", t7_sample_reached(rows)),
+        ("8 HINDSIGHT ONLY", t8_hindsight_only(rows, starved_subjects)),
+        ("9 DEFERRAL COMPOSED", t9_deferral_composed(rows, pinned_rounds["median"])),
     ):
         if result:
             warns.append((name, result))
 
+    # ⛔ THE ONE NUMBER A READER ACTUALLY SEES, AND IT WAS THE UN-SPLIT ONE (r7 Claude M7).
+    # This line said "4 scored" while every scoring trigger computed over 2 — the same
+    # substitution Codex H1/M2 found inside t3 and t7, left behind in `main()`. It matters more
+    # than a cosmetic because the provenance split is now what a reader needs in order to
+    # interpret `all triggers quiet` at all.
     scored = [r for r in rows if r.get("outcome") in OUTCOMES]
-    print(f"decision-scheme: {len(rows)} row(s), {len(scored)} scored; "
+    scoreable = [r for r in prospective(rows) if r.get("outcome") in OUTCOMES]
+    retro = len(rows) - len(prospective(rows))
+    print(f"decision-scheme: {len(rows)} row(s), {len(scored)} scored "
+          f"({retro} retroactive, so {len(scoreable)} scoreable); "
           f"pinned median {pinned_rounds.get('median')} vs now {now.get('median')}")
     for name, why in warns:
         print(f"  WARN  trigger {name}: {why}")
@@ -1318,6 +1483,41 @@ def _self_test() -> int:
           "fires" if t4_no_improvement([_done(f"s{i}", 6) for i in range(5)], 6) else "quiet"),
          (None, "fires"))
 
+    # ── trigger 8: fed, but only in HINDSIGHT (r7 Claude B1) ─────────────────────────────────
+    # ⛔⛔ THE BRANCH'S HEADLINE CLAIM WAS "trigger 1 goes green by being FED, not patched", and
+    # the very next commit added a field declaring those rows NOT PROSPECTIVE. Measured on the
+    # live log: t1 is silent over all 6 rows and FIRES over the 4 prospective ones, naming
+    # `decision-log-model-redesign`. The written defence — "it proves coverage, not timely use,
+    # which is a different complaint" — is only sound if some trigger owns timely use. The
+    # reviewer enumerated all seven and NONE did, so the only detector of non-use was being made
+    # satisfiable by backfill. That complaint now has a home, and it is a WARN rather than a FAIL
+    # because demanding a prospective row for a subject whose work is FINISHED is unsatisfiable
+    # by construction, and a gate red from birth gets switched off (backlog #56).
+    _retro_fed = [{"subject": "ghost", "unit": "u", "route": "accrete", "outcome": "continued",
+                   "retroactive": True}]
+    case("⭐ a subject fed ONLY in hindsight is NAMED, not absorbed into t1's silence",
+         t8_hindsight_only(_retro_fed, ["ghost"]),
+         "1 of 1 subject(s) are fed ONLY in hindsight: ghost — every row for them is "
+         "retroactive, so the mechanism is a historian for that subject, not a decision aid; "
+         "trigger 1 is quiet because a row EXISTS, which is coverage, not timely use")
+    # ⚠ ADJACENT: one prospective row is enough to make the subject real use.
+    case("...and one PROSPECTIVE row makes the subject genuine use, not hindsight",
+         t8_hindsight_only(_retro_fed + [{"subject": "ghost", "unit": "u", "route": "redesign"}],
+                           ["ghost"]), None)
+    # ⚠ NO DOUBLE-REPORTING: a subject with no row at all is t1's business and must not appear
+    # here too, or one defect would be counted twice and the reader cannot tell them apart.
+    case("...and a subject with NO row at all belongs to trigger 1, not to this one",
+         t8_hindsight_only([], ["nobody"]), None)
+    # ⭐ THE DISCRIMINATING PAIR THE REVIEW ASKED FOR: a hindsight-only log must NOT be
+    # indistinguishable from a prospective one. t1 alone cannot tell them apart — that is the
+    # defect — so the pair is what holds it.
+    case("⭐ a hindsight-only log is DISTINGUISHABLE from a prospective one, which t1 alone is not",
+         ((t1_not_fed(_retro_fed, ["ghost"]), bool(t8_hindsight_only(_retro_fed, ["ghost"]))),
+          (t1_not_fed([{"subject": "ghost", "unit": "u", "route": "accrete"}], ["ghost"]),
+           bool(t8_hindsight_only([{"subject": "ghost", "unit": "u", "route": "accrete"}],
+                                  ["ghost"])))),
+         ((None, True), (None, False)))
+
     # ── trigger 5: two CONSECUTIVE misses ────────────────────────────────────────────────────
     case("one miss is a bet losing, not a broken instrument",
          t5_ranker_miss([{"ranker_hit": True}, {"ranker_hit": False}, {"ranker_hit": True}]),
@@ -1327,6 +1527,21 @@ def _self_test() -> int:
              [{"ranker_hit": True}, {"ranker_hit": False}, {"ranker_hit": False}]) or ""), True)
     case("rows without the field are not counted as misses",
          t5_ranker_miss([{}, {}, {}]), None)
+    # ⛔ ONE ELIGIBILITY RULE, ONE PLACE — and r7 Claude M6 measured that the fold SHIPPED TWO
+    # while claiming to have removed the duplication: t5 asked `"ranker_hit" in r`, t7 asked
+    # `isinstance(..., bool)`, so `ranker_hit: 0` was a MISS to t5 and INELIGIBLE to t7. The
+    # second implementation arrived in the commit whose message said it had borrowed the first.
+    case("is_prediction is the ONE eligibility rule, over every value that has diverged",
+         [is_prediction({"ranker_hit": v}) for v in
+          (True, False, 0, 1, None, "false", "", [])] + [is_prediction({})],
+         [True, True, False, False, False, False, False, False, False])
+    # ⭐ THE UNIFICATION'S OWN FALSIFIER: the value the two rules disagreed about, asked of BOTH.
+    # Without a shared helper this pair cannot agree, which is what makes it a guard and not a
+    # restatement.
+    case("...so t5 and t7 agree about the value they used to disagree about",
+         (t5_ranker_miss([{"ranker_hit": 0}, {"ranker_hit": 0}]),
+          t7_sample_reached([{"outcome": "continued", "ranker_hit": 0}] * 2, 2)),
+         (None, None))
 
     # ── triggers 6 and 7: warnings ───────────────────────────────────────────────────────────
     # ⛔ THE CASE THAT WOULD HAVE CAUGHT THE INERT WIRING, AND DID NOT EXIST. The first wiring of
@@ -1397,6 +1612,33 @@ def _self_test() -> int:
     case("the sample floor is a parameter, so three predictions reach a floor of three",
          ("fires" if t7_sample_reached(_hit(3), 3) else "quiet",
           t7_sample_reached(_hit(3))), ("fires", None))
+    # ⛔⛔ THE FIXTURE THAT WAS MISSING, AND TWO MUTATIONS SURVIVED 179/179 BECAUSE OF IT (r7
+    # Claude B2). Every t7 fixture above has len(rows) == len(sample) AT THE MESSAGE SITE, so an
+    # identity case over them cannot tell the two populations apart: `len(sample)` -> `len(rows)`
+    # reported "13 ranker predictions" over 10 — Codex M2's exact defect, restored inside its own
+    # fix — and counting hits over `rows` with `.get()` read a coerced `"yes"` as a hit again.
+    # ⚠ This is the "passes at ANY N" defect the fold itself named, recurring on a new axis.
+    _mixed = _hit(6) + _hit(4, False) + [
+        {"subject": "no-pred", "unit": "u", "route": "accrete", "outcome": "continued"},
+        {"subject": "coerced", "unit": "u", "route": "accrete", "outcome": "continued",
+         "ranker_hit": "yes"},
+        {"subject": "retro", "unit": "u", "route": "accrete", "outcome": "continued",
+         "ranker_hit": True, "retroactive": True}]
+    # ⛔ _try, FOR THE THIRD TIME IN THIS ROUND. `_mixed` deliberately holds a row with NO
+    # `ranker_hit`, so under a mutation that drops the eligibility test `r["ranker_hit"]` raises
+    # KeyError — and an unprotected case here killed the suite before a LATER case the manifest
+    # names was ever reached, costing that entry its attribution. A crash names nothing, and it
+    # also hides every case after it.
+    case("⭐ t7 names the ELIGIBLE count and the TRUE hit count, not the row count",
+         _try(lambda: t7_sample_reached(_mixed)),
+         "10 ranker predictions (6 ranker hits) — re-evaluate now; at 10/10 the one-sided 95% "
+         "accuracy bound reaches 74%, against a ~7% coin")
+    # ⚠ r7 Claude M8: the 74% is the Clopper-Pearson bound for n=10 SPECIFICALLY, while `floor`
+    # is a parameter — at floor=3 the old message asserted a bound that is really ~37%.
+    case("the quoted bound belongs to the floor it was computed for, and a different floor says so",
+         t7_sample_reached(_hit(3), 3),
+         "3 ranker predictions (3 ranker hits) — re-evaluate now; the 74% bound is pinned to a "
+         "sample of 10, so it is NOT quoted for this floor of 3")
 
     # ── row validation ───────────────────────────────────────────────────────────────────────
     _good = {"subject": "s", "unit": "u", "route": "accrete", "routes_tried": [],
@@ -1657,6 +1899,69 @@ def _self_test() -> int:
     # when a rung is removed instead of reddening (memory: a class fix needs an independent copy).
     case("the ladder is PINNED to a literal, so reordering or extending it reddens by name",
          LADDER, ("accrete", "redesign", "split", "defer"))
+
+    # ── H3: hindsight may fill a unit's PAST, never follow a real bet ─────────────────────────
+    _live_first = [{"subject": "s", "unit": "u", "route": "accrete", "outcome": "continued"}]
+    case("⭐ a retroactive row may NOT follow a prospective bet — door (c) is irreversible",
+         validate_row({"subject": "s", "unit": "u", "route": "redesign", "retroactive": True},
+                      _live_first),
+         "a retroactive row may not follow a PROSPECTIVE bet on ('s', 'u') — hindsight appended "
+         "after a real bet closes that unit's ladder and empties its scoring population, and an "
+         "append-only log cannot take it back")
+    # ⚠ ADJACENT, and this is the shape the LIVE log has: backfilling a unit whose history is
+    # entirely hindsight is exactly what the schema change exists to permit.
+    case("...while hindsight after hindsight is a BACKFILL, which is the permitted case",
+         validate_row({"subject": "s", "unit": "u", "route": "redesign", "retroactive": True},
+                      [{"subject": "s", "unit": "u", "route": "accrete", "outcome": "continued",
+                        "retroactive": True}]), None)
+    case("...and a PROSPECTIVE row after a prospective bet is untouched by the rule",
+         validate_row({"subject": "s", "unit": "u", "route": "redesign"}, _live_first), None)
+    # ⚠ r7 Claude L11: the fold re-introduced, in the function it ADDED, the class it had just
+    # fixed one function away — `prospective([None])` raised AttributeError.
+    case("prospective() NAMES nothing and raises nothing on a non-dict row",
+         _try(lambda: len(prospective([None, {"subject": "a"}, 7]))), 1)
+    # ⚠ r7 Claude L12: `list("") == []`, so a string validated as "no routes tried" while the
+    # refusal message said "not a list".
+    case("a routes_tried STRING is refused, so the message it prints is true",
+         validate_row({**_good, "routes_tried": ""}, []),
+         "routes_tried is str, not a list — it is DERIVED now and need not be written")
+
+    # ── t4 composition + t9: backlog #337's cheap half, mechanised ────────────────────────────
+    def _term(sub, rounds, route="accrete"):
+        return {"subject": sub, "unit": "u", "route": route, "outcome": "stopped",
+                "rounds_at_termination": rounds}
+    case("⭐ when t4 fires, its message says how much of the median was DEFERRAL",
+         "⚠ 2 of those 5 terminations were DEFERRALS, which are filings rather than repairs" in
+         (t4_no_improvement([_term(f"a{i}", 9) for i in range(3)]
+                            + [_term("d1", 9, "defer"), _term("d2", 9, "defer")], 4) or ""), True)
+    case("...and with no deferral in the window it says nothing extra",
+         "DEFERRALS" in (t4_no_improvement([_term(f"b{i}", 9) for i in range(5)], 4) or ""),
+         False)
+    # ⭐ THE MASKING SHAPE #337 IS ABOUT: t4 is QUIET because the median looks good, and the
+    # reason it looks good is that deferrals are in the window.
+    case("⭐ t9 names a median composed of deferrals, which is where #337 is invisible",
+         "read this median as at most 3 of 5 repairs" in (t9_deferral_composed(
+             [_term(f"c{i}", 1) for i in range(3)]
+             + [_term("d1", 1, "defer"), _term("d2", 1, "defer")], 4) or ""), True)
+    case("...and it stays quiet when t4 is already FIRING, so one window has one verdict",
+         t9_deferral_composed([_term(f"e{i}", 9) for i in range(3)]
+                              + [_term("d1", 9, "defer"), _term("d2", 9, "defer")], 4), None)
+    case("...and quiet when the good median is made of real repairs",
+         t9_deferral_composed([_term(f"f{i}", 1) for i in range(5)], 4), None)
+    case("...and a RETROACTIVE deferral cannot compose the window either",
+         t9_deferral_composed([_term(f"g{i}", 1) for i in range(5)]
+                              + [{**_term("rd", 1, "defer"), "retroactive": True}], 4), None)
+    # ⛔ THE BASELINE IS A PARAMETER, NOT A CONSTANT, and `check-fixture-variation` caught that
+    # all four call sites above pass `4` — so no case could tell the comparator apart from a
+    # literal and every clause reading it was unguarded. A SECOND, DISTINCT value, chosen so the
+    # verdict FLIPS on it: the same window is composed-and-quiet at a baseline of 7 and owned by
+    # t4 at a baseline of 1.
+    _mixed_window = [_term(f"h{i}", 2) for i in range(3)] + [_term("d1", 2, "defer"),
+                                                             _term("d2", 2, "defer")]
+    case("the baseline is a COMPARATOR: the same window flips verdict when it moves",
+         ("composed" if t9_deferral_composed(_mixed_window, 7) else "quiet",
+          "composed" if t9_deferral_composed(_mixed_window, 1) else "quiet"),
+         ("composed", "quiet"))
     # ⚠ r7 Codex: `"!!!"` and a zero-width space satisfied "non-empty". `strip()` does not
     # remove U+200B, so the whitespace rule could never have caught it. NON-EMPTY IS NOT
     # EXPLANATORY — the reason is the deliverable, so it must carry at least some content.
@@ -1825,6 +2130,45 @@ def _self_test() -> int:
         _o = _buf.getvalue()
         case("an armed, quiet world exits 0 and SAYS it is quiet",
              (_rc, "all triggers quiet" in _o), (0, True))
+        # ⛔ THE SUMMARY LINE IS THE ONE NUMBER A READER SEES, and r7 Claude M7 found it
+        # un-split: "4 scored" while every scoring trigger computed over 2. A hand-sever of the
+        # split SURVIVED the suite because the fix had no case — the fold's own recurring defect,
+        # found a third time in one round. Identity on the whole line, over a log that actually
+        # contains a retroactive row, is what holds it.
+        _bp_prov = Path(_wd) / "prov-baseline.json"
+        _bp_prov.write_text(_json.dumps(_ARMED))
+        _lp_prov = Path(_wd) / "prov-log.jsonl"
+        _lp_prov.write_text("".join(_json.dumps(r) + "\n" for r in [
+            {"subject": "live", "unit": "u", "route": "accrete", "outcome": "continued"},
+            {"subject": "hist", "unit": "u", "route": "accrete", "outcome": "stopped",
+             "rounds_at_termination": 2, "retroactive": True}]))
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = main([], baseline_path=_bp_prov, log_path=_lp_prov,
+                       corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                       starved=lambda since: ([], None))
+        _o = _buf.getvalue()
+        case("the summary line SPLITS the provenance, so `all triggers quiet` is readable",
+             (_rc, _o.splitlines()[0]),
+             (0, "decision-scheme: 2 row(s), 2 scored (1 retroactive, so 1 scoreable); "
+                 "pinned median 4 vs now 4"))
+        # ⚠ ADJACENT: with NO retroactive row the line must still read correctly — a fix that
+        # reports "0 retroactive" wrongly, or drops the clause, is caught here rather than later.
+        _bp_prov2 = Path(_wd) / "prov2-baseline.json"
+        _bp_prov2.write_text(_json.dumps(_ARMED))
+        _lp_prov2 = Path(_wd) / "prov2-log.jsonl"
+        _lp_prov2.write_text("".join(_json.dumps(r) + "\n" for r in [
+            {"subject": "live", "unit": "u", "route": "accrete", "outcome": "continued"}]))
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = main([], baseline_path=_bp_prov2, log_path=_lp_prov2,
+                       corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                       starved=lambda since: ([], None))
+        _o = _buf.getvalue()
+        case("...and a log with no retroactive row says so rather than omitting the clause",
+             _o.splitlines()[0],
+             "decision-scheme: 1 row(s), 1 scored (0 retroactive, so 1 scoreable); "
+             "pinned median 4 vs now 4")
         _bp_starved = Path(_wd) / "starved-baseline.json"
         _bp_starved.write_text(_json.dumps({"rounds_to_termination": {"median": 9}, "armed_at": "2026-01-01T00:00:00Z"}))
         _lp_starved = Path(_wd) / "starved-log.jsonl"

@@ -16357,3 +16357,84 @@ defect was REPAIRED from one that stopped because the work was DEFERRED, so `t4_
 reads this deferral as the log's fastest termination (2 rounds against a pinned median of 4). Found
 by writing the row; the row records the hazard in its own `observed` field rather than being bent to
 protect the metric. Quiet today — t4 needs 5 terminated subjects and the log holds 2.
+
+## 2026-10-21
+A correction to the entry above, and the review round that forced it.
+
+That entry said the blocked check now passes "on its own merits". That was true but incomplete, and
+a reviewer caught the gap. The check asks whether the decision log is being kept up to date. It
+passed because two records were written — but those records were written *after the fact*, describing
+a decision already made, and the same day's work added a field whose whole job is to mark records
+like that as not-a-prediction. So the check was being satisfied by exactly the kind of record the
+rest of the system had just agreed not to count.
+
+The deeper problem was that nothing anywhere asked the obvious follow-up question: *is this log being
+kept up to date, or only backfilled afterwards?* Seven different checks were examined and not one of
+them asked it. That means the log could have been filled in entirely after the fact, forever, and the
+one check meant to catch neglect would have stayed quiet — which is precisely how the previous
+version of this mechanism died.
+
+There is now a check that asks it, and it currently says: one of the two subjects is recorded only in
+hindsight. It reports rather than blocks, because demanding a live record for work that has already
+finished is impossible by construction, and a check that can never be satisfied gets switched off.
+
+Also fixed, all found by the same review: a record written after the fact could silently close off a
+piece of work so that no real decision could ever be recorded against it again — permanently, because
+the log is append-only; two parts of the code had quietly grown two different versions of the same
+rule while a comment claimed they shared one; the summary line a person actually reads showed a count
+that no check was using; and a figure quoted as a confidence bound was being printed for sample sizes
+it is false for.
+
+**Waiting on you:** merging, still. Nothing here is a reason to merge sooner — the round found two
+blocking problems in work that had already passed one full review, which is the argument for the
+process rather than against it.
+<!--tech-->
+r7 CLAUDE half: **13 findings — 2 Blocking, 3 High, 5 Medium, 3 Low — and ZERO overlap with the
+Codex half's four.** Every number in my own fold was independently re-derived by it, including that
+the scoped sweep's control needs BOTH the `EXPECTED_MUTATIONS` edit and the `sum(…)==1680` case
+re-pinned or the control is red and every verdict an artefact.
+
+⚠ **CORRECTION to the entry above: *"the one failing required check now passes on its merits"* was
+incomplete.** B1, measured: `t1_not_fed` is silent over all 6 rows and FIRES over the 4 prospective
+ones, naming `decision-log-model-redesign` — and CI's run on the pre-change commit `ea005a3e` printed
+that exact firing half unprompted. So `1c5376e2`'s headline resolved, under the very next commit's
+new field, into *trigger 1 goes green by being fed with rows that are not bets*. My written defence
+("coverage, not timely use — a different complaint") required some trigger to own timely use; the
+reviewer enumerated all seven and **none did**. Fix: `t8_hindsight_only`, a WARN (a FAIL would be
+unsatisfiable for finished work — backlog #56), plus the discriminating case pair the review asked
+for. A FAIL-grade version needs a CUTOVER date and is filed, not guessed.
+
+B2: `len(sample)` → `len(rows)` in t7's message survived 179/179 and printed `13 ranker predictions`
+over 10 — **Codex M2 restored inside its own fix** — as did counting hits over `rows` with `.get()`
+(a coerced `"yes"` back to a hit). Cause: every t7 fixture had `len(rows) == len(sample)` AT THE
+MESSAGE SITE, so the ⭐ identity case could not separate the populations. This is the "passes at ANY
+N" defect the fold had just named, recurring on a new axis in its replacement.
+
+H3 door (c), which my caveat did not name: four backfilled rows each validate, leave
+`route_next → None`, and then every later prospective row is refused as a retry after exhaustion —
+**irreversible in an append-only log**. Bound taken: hindsight may fill a unit's PAST, never follow a
+prospective bet. Deriving `retroactive` from git (write commit vs the subject's last round doc) is
+possible, costed in H3, and NOT built.
+
+M6: t5 asked `"ranker_hit" in r`, t7 asked `isinstance(..., bool)` — two rules shipped in the commit
+claiming to have removed the duplication, with the docstring then telling the next reader they agree.
+One `is_prediction()` now, with a case pinning the whole divergence table and a sever of t5's call
+site. M7: the summary line now reads `6 row(s), 4 scored (2 retroactive, so 2 scoreable)`. M8: the
+74% Clopper-Pearson bound is quoted only at the floor it was computed for. M9: the docstring's #314
+paragraph asserted a hindsight label *cannot* be scored, which the schema now contradicts — corrected
+to recordable, FLAGGED, excluded, with all three consequences of the field stated. M10: #338's
+deferral reason refuted the change it defended (both justified by a consumer that does not exist);
+resolved by moving the docstring's claim to the HUMAN RECORD and re-filing #338 on cost.
+
+H5 → `t9_deferral_composed`, mechanising backlog #337's cheap half. ⛔ NOT the naive exclusion: the
+reviewer warned that dropping deferral rows would let a mechanism which defers everything starve t4
+into permanent silence — B1's own family. Option (b), a third `OUTCOMES` value, stays the owner's.
+
+179 → 200 cases, 64 → 80 mutations, **80/80 killed, 80/80 ATTRIBUTED**, 0 survivors, control
+re-proved green. ⚠ Seven pre-existing manifest entries were damaged by this fold — 5 orphaned or
+made ambiguous by duplicating t4's fold into t9 and by three changed lines, 2 more by a RENAME — and
+`prospective()`, `t4`'s window and the H3 condition were each SPLIT INTO TWO LINES so their two
+decisions could be mutated independently. ⛔ `_try` was needed a THIRD time: an unprotected case
+crashed the suite before a later case the manifest named was reached, costing that entry its
+attribution. One entry was dropped rather than added: its line already carries a mutation, and the
+new identity case kills both wrong values (verified by hand).

@@ -216,8 +216,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "            per_subject[r.get(\"subject\")] = r[\"rounds_at_termination\"]",
-        "            per_subject[(r.get(\"subject\"), r.get(\"unit\"))] = r[\"rounds_at_termination\"]"
+        "            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    recent = [n for n, _ in recent_pairs]",
+        "            per_subject[(r.get(\"subject\"), r.get(\"unit\"))] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    recent = [n for n, _ in recent_pairs]"
       ]
     ],
     "expect": [
@@ -451,8 +451,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "            per_subject.pop(r.get(\"subject\"), None)\n",
-        ""
+        "    recent_pairs = list(per_subject.values())[-5:]\n    recent = [n for n, _ in recent_pairs]",
+        "    recent_pairs = list(per_subject.values())[:5]\n    recent = [n for n, _ in recent_pairs]"
       ]
     ],
     "expect": [
@@ -743,8 +743,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    return [r for r in rows if not r.get(\"retroactive\")]",
-        "    return list(rows)"
+        "    return [r for r in dicts if not r.get(\"retroactive\")]",
+        "    return list(dicts)"
       ]
     ],
     "expect": [
@@ -769,8 +769,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    for r in prospective(rows):",
-        "    for r in rows:"
+        "    for r in prospective(rows):\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            # ⛔ r2 YM4: a dict UPDATE does not move a key to the end",
+        "    for r in rows:\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            # ⛔ r2 YM4: a dict UPDATE does not move a key to the end"
       ]
     ],
     "expect": [
@@ -795,7 +795,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "              if r.get(\"outcome\") in OUTCOMES and isinstance(r.get(\"ranker_hit\"), bool)]",
+        "              if r.get(\"outcome\") in OUTCOMES and is_prediction(r)]",
         "              if r.get(\"outcome\") in OUTCOMES]"
       ]
     ],
@@ -834,7 +834,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if \"routes_tried\" in row and not isinstance(row[\"routes_tried\"], (list, tuple, str)):",
+        "    if \"routes_tried\" in row and not isinstance(row[\"routes_tried\"], (list, tuple)):",
         "    if False:"
       ]
     ],
@@ -854,6 +854,214 @@
     "expect": [
       "a punctuation-only reason is refused — non-empty is not the same as explanatory",
       "...and a zero-width space is refused too, which strip() does NOT remove"
+    ]
+  },
+  {
+    "name": "the hindsight trigger reports nothing, so backfill silences the only non-use detector",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not hindsight:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a subject fed ONLY in hindsight is NAMED, not absorbed into t1's silence"
+    ]
+  },
+  {
+    "name": "the hindsight trigger names every fed subject, prospective or not",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hindsight = sorted(s for s in subjects_since_arming\n                       if by_subject.get(s) and not prospective(by_subject[s]))",
+        "    hindsight = sorted(s for s in subjects_since_arming if by_subject.get(s))"
+      ]
+    ],
+    "expect": [
+      "...and one PROSPECTIVE row makes the subject genuine use, not hindsight"
+    ]
+  },
+  {
+    "name": "the sample message reports the ROW count again, restoring Codex M2 inside its own fix",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "return (f\"{len(sample)} ranker predictions",
+        "return (f\"{len(rows)} ranker predictions"
+      ]
+    ],
+    "expect": [
+      "⭐ t7 names the ELIGIBLE count and the TRUE hit count, not the row count"
+    ]
+  },
+  {
+    "name": "the eligibility rule admits a non-bool, so an abstention becomes a prediction",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return isinstance(row.get(\"ranker_hit\"), bool)",
+        "    return \"ranker_hit\" in row"
+      ]
+    ],
+    "expect": [
+      "is_prediction is the ONE eligibility rule, over every value that has diverged"
+    ]
+  },
+  {
+    "name": "the ranker-miss trigger keeps its OWN second eligibility rule",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    marks = [bool(r[\"ranker_hit\"]) for r in rows if is_prediction(r)]",
+        "    marks = [bool(r.get(\"ranker_hit\")) for r in rows if \"ranker_hit\" in r]"
+      ]
+    ],
+    "expect": [
+      "...so t5 and t7 agree about the value they used to disagree about"
+    ]
+  },
+  {
+    "name": "the summary line drops the provenance split a reader needs to read `all triggers quiet`",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "f\"({retro} retroactive, so {len(scoreable)} scoreable); \"",
+        "f\"\""
+      ]
+    ],
+    "expect": [
+      "the summary line SPLITS the provenance, so `all triggers quiet` is readable"
+    ]
+  },
+  {
+    "name": "the retroactive count is hardcoded to zero in the one line a reader sees",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    retro = len(rows) - len(prospective(rows))",
+        "    retro = 0"
+      ]
+    ],
+    "expect": [
+      "the summary line SPLITS the provenance, so `all triggers quiet` is readable"
+    ]
+  },
+  {
+    "name": "the n=10 accuracy bound is quoted at every floor, including floors it is false for",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "f\"coin\" if floor == 10 else",
+        "f\"coin\" if True else"
+      ]
+    ],
+    "expect": [
+      "the quoted bound belongs to the floor it was computed for, and a different floor says so"
+    ]
+  },
+  {
+    "name": "hindsight after a real bet is accepted, closing the unit's ladder irreversibly",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if hindsight_after_bet:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a retroactive row may NOT follow a prospective bet — door (c) is irreversible"
+    ]
+  },
+  {
+    "name": "any prior row blocks a backfill, so the permitted case is refused too",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hindsight_after_bet = bool(row.get(\"retroactive\")) and bool(prospective(prior))",
+        "    hindsight_after_bet = bool(row.get(\"retroactive\")) and bool(prior)"
+      ]
+    ],
+    "expect": [
+      "...while hindsight after hindsight is a BACKFILL, which is the permitted case"
+    ]
+  },
+  {
+    "name": "the prospective filter raises on a non-dict row, the class it was fixed beside",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    dicts = [r for r in rows if isinstance(r, dict)]",
+        "    dicts = list(rows)"
+      ]
+    ],
+    "expect": [
+      "prospective() NAMES nothing and raises nothing on a non-dict row"
+    ]
+  },
+  {
+    "name": "the routes_tried type check admits a string, making its own message untrue",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(list, tuple)):",
+        "(list, tuple, str)):"
+      ]
+    ],
+    "expect": [
+      "a routes_tried STRING is refused, so the message it prints is true"
+    ]
+  },
+  {
+    "name": "a firing improvement trigger hides how much of its median was deferral",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "f\"repairs\" if defers else \"\"",
+        "\"\""
+      ]
+    ],
+    "expect": [
+      "⭐ when t4 fires, its message says how much of the median was DEFERRAL"
+    ]
+  },
+  {
+    "name": "the deferral-composition warning never fires, so #337's hazard stays invisible",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not defers:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ t9 names a median composed of deferrals, which is where #337 is invisible"
+    ]
+  },
+  {
+    "name": "the deferral warning fires over a window t4 already owns, giving one window two verdicts",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if med >= baseline_median:\n        return None",
+        "    if med > 10 ** 9:\n        return None"
+      ]
+    ],
+    "expect": [
+      "...and it stays quiet when t4 is already FIRING, so one window has one verdict"
+    ]
+  },
+  {
+    "name": "the deferral warning counts retroactive terminations, which r7 measured displacing a subject",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for r in prospective(rows):\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            per_subject.pop(r.get(\"subject\"), None)\n            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    med = st.median([n for n, _ in recent_pairs])",
+        "    for r in rows:\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            per_subject.pop(r.get(\"subject\"), None)\n            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    med = st.median([n for n, _ in recent_pairs])"
+      ]
+    ],
+    "expect": [
+      "...and a RETROACTIVE deferral cannot compose the window either"
     ]
   }
 ]
