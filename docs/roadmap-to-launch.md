@@ -2520,8 +2520,29 @@ futility) then `defer` (skipping `split`, because the measured cause is one leve
       caveat had not named), t5/t7 shipped TWO eligibility rules under a "one rule, one place" claim
       (M6, now one `is_prediction`), the summary line a human reads was un-split (M7), the 74% bound
       was quoted at floors it is false for (M8), and the docstring asserted hindsight labels *cannot*
-      be scored while the schema now accepts them (M9). 179 → 200 cases, 64 → 80 mutations,
+      be scored while the schema now accepts them (M9). 179 → 203 cases, 64 → 82 mutations,
       **80/80 killed and 80/80 ATTRIBUTED**, 0 survivors.
+- [x] ⭐ **r8 (Codex) — 3 Medium, 1 Low, NO Blocking and NO High: the first round that did not find
+      a Blocking since r3, which is what convergence looks like rather than being asserted.** All four
+      folded, and two were about my own discipline rather than the code's difficulty. **M1: both new
+      WARNs could be disconnected while 201/201 stayed GREEN** — I added two triggers and wire-tested
+      neither, in a file that carries the comment *"THE CASE THAT WOULD HAVE CAUGHT THE INERT WIRING,
+      AND DID NOT EXIST"*. Now two `main()`-driven cases assert each verdict REACHES the CLI, and both
+      call-site severs are killed by name. **M2: t9 duplicated t4's window, and deleting t9's recency
+      rule left BOTH triggers silent on a deferral-composed window with the suite green** — the
+      two-guard silence hazard r7 had warned about. Fixed STRUCTURALLY, not with another guard: one
+      `termination_window` producer with two readers, so severing the single recency rule moves t4 and
+      t9 TOGETHER and no window exists where both are quiet. **M3: one of my seven r7 re-points
+      measured a DIFFERENT decision than its name claims** — `[-5:]`→`[:5]` is first-five-vs-last-five,
+      not first-insertion-vs-latest-occurrence — which is exactly the failure I had asked the reviewer
+      to look for in my own work. Re-pointed to the pop rule; the `[:5]` off-by-end kept as its own
+      entry. **L4: the published records said 200 cases where the suite said 201** (the commit message
+      was right); corrected to the final 203. One entry was RETIRED WITH ITS SUBJECT — t9's duplicate
+      retroactive filter, removed by M2's fix rather than orphaned. 201 → 203 cases, 80 → 82 mutations,
+      **82/82 killed and 82/82 ATTRIBUTED**, 0 survivors. ⭐ **REAL CI IS GREEN on `e72ccc2b`** —
+      `schema-gates: pass`, `verify: pass`; the earlier schema-gates red was a transient registry
+      `Data limit exceeded` (CANNOT RUN, rc=2), cleared by one re-run, and it had broken at `ea005a3e`
+      — one commit BEFORE this work, which the inherited handoff had read as a pass.
 - [x] ⭐ **r7 Codex half folded — one cause, three doors, and a prose disclaimer was none of them.** The two
       retroactive rows entered the population of every trigger that treats a SCORED row as a bet placed
       in advance: t3 fired → quiet, t4 fired → quiet, t7 quoted an accuracy bound over a sample of 10

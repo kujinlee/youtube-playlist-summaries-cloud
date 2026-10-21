@@ -216,8 +216,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    recent = [n for n, _ in recent_pairs]",
-        "            per_subject[(r.get(\"subject\"), r.get(\"unit\"))] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    recent = [n for n, _ in recent_pairs]"
+        "            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))",
+        "            per_subject[(r.get(\"subject\"), r.get(\"unit\"))] = (r[\"rounds_at_termination\"], r.get(\"route\"))"
       ]
     ],
     "expect": [
@@ -451,8 +451,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    recent_pairs = list(per_subject.values())[-5:]\n    recent = [n for n, _ in recent_pairs]",
-        "    recent_pairs = list(per_subject.values())[:5]\n    recent = [n for n, _ in recent_pairs]"
+        "            per_subject.pop(r.get(\"subject\"), None)\n",
+        ""
       ]
     ],
     "expect": [
@@ -769,8 +769,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    for r in prospective(rows):\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            # ⛔ r2 YM4: a dict UPDATE does not move a key to the end",
-        "    for r in rows:\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            # ⛔ r2 YM4: a dict UPDATE does not move a key to the end"
+        "    for r in prospective(rows):",
+        "    for r in rows:"
       ]
     ],
     "expect": [
@@ -1052,16 +1052,42 @@
     ]
   },
   {
-    "name": "the deferral warning counts retroactive terminations, which r7 measured displacing a subject",
+    "name": "the hindsight trigger is computed and then DISCARDED before it reaches a reader",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    for r in prospective(rows):\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            per_subject.pop(r.get(\"subject\"), None)\n            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    med = st.median([n for n, _ in recent_pairs])",
-        "    for r in rows:\n        if r.get(\"outcome\") == \"stopped\" and isinstance(r.get(\"rounds_at_termination\"), int):\n            per_subject.pop(r.get(\"subject\"), None)\n            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))\n    if len(per_subject) < 5:\n        return None\n    recent_pairs = list(per_subject.values())[-5:]\n    med = st.median([n for n, _ in recent_pairs])"
+        "(\"8 HINDSIGHT ONLY\", t8_hindsight_only(rows, starved_subjects)),",
+        "(\"8 HINDSIGHT ONLY\", None),"
       ]
     ],
     "expect": [
-      "...and a RETROACTIVE deferral cannot compose the window either"
+      "⭐ trigger 8's verdict REACHES the CLI as a WARN, and does not fail the run"
+    ]
+  },
+  {
+    "name": "the deferral warning is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"9 DEFERRAL COMPOSED\", t9_deferral_composed(rows, pinned_rounds[\"median\"])),",
+        "(\"9 DEFERRAL COMPOSED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 9's verdict REACHES the CLI too, naming how many were deferrals"
+    ]
+  },
+  {
+    "name": "the window takes the FIRST `size` terminations instead of the last, a distinct off-by-end",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return list(per_subject.values())[-size:]",
+        "    return list(per_subject.values())[:size]"
+      ]
+    ],
+    "expect": [
+      "⭐ the LAST five subjects is by occurrence, not by first insertion"
     ]
   }
 ]

@@ -16430,7 +16430,7 @@ H5 → `t9_deferral_composed`, mechanising backlog #337's cheap half. ⛔ NOT th
 reviewer warned that dropping deferral rows would let a mechanism which defers everything starve t4
 into permanent silence — B1's own family. Option (b), a third `OUTCOMES` value, stays the owner's.
 
-179 → 200 cases, 64 → 80 mutations, **80/80 killed, 80/80 ATTRIBUTED**, 0 survivors, control
+179 → 203 cases, 64 → 82 mutations, **82/82 killed, 82/82 ATTRIBUTED**, 0 survivors, control
 re-proved green. ⚠ Seven pre-existing manifest entries were damaged by this fold — 5 orphaned or
 made ambiguous by duplicating t4's fold into t9 and by three changed lines, 2 more by a RENAME — and
 `prospective()`, `t4`'s window and the H3 condition were each SPLIT INTO TWO LINES so their two
@@ -16438,3 +16438,81 @@ decisions could be mutated independently. ⛔ `_try` was needed a THIRD time: an
 crashed the suite before a later case the manifest named was reached, costing that entry its
 attribution. One entry was dropped rather than added: its line already carries a mutation, and the
 new identity case kills both wrong values (verified by hand).
+
+## 2026-10-21
+A second review of the same work found four smaller things, and two of them were about how I check
+rather than about the code.
+
+The first: I added two new warnings and never tested that either one actually reaches the person
+reading the output. Both could be unplugged entirely and all 201 checks still passed — they proved
+the warnings were *calculated*, never that they were *shown*. This file even carries a note from a
+previous occasion saying exactly that mistake had happened before and no test had caught it.
+
+The second is the better fix. Two warnings were each working out "the last five finished pieces of
+work" separately, and they are supposed to hand off to each other — one speaks when the other stays
+quiet. Because each did its own arithmetic, a small error in one made *both* go silent on the same
+case, with every test still green. They now share a single piece of code that works the window out
+once, so the two can no longer disagree about what they are looking at. That makes the gap
+impossible rather than merely watched for.
+
+The third was mine too: when I repaired a damaged test earlier today, one of the repairs ended up
+measuring a slightly different thing than its own name said — it still failed when it should, but
+for the wrong reason. Repointed. And a count published in these notes said 200 where the real figure
+was 201, now 203.
+
+Good news on the other side: the automated checks on the pushed branch are now passing, including
+the database checks that had been failing. That failure turned out to be a download limit on a
+public image registry and nothing to do with this work — it started one commit before any of it.
+
+**Waiting on you:** merging. The branch now passes its checks, but one of those checks passes
+because of a note in the pull request saying "no review needed", which was written before these last
+two review rounds existed. I am updating that note to say what is actually true rather than leaving
+a stale exemption to carry the decision.
+<!--tech-->
+r8 (Codex, against the r7 fold `022f4108..e72ccc2b`): **3 Medium + 1 Low, NO Blocking and NO High —
+the first round since r3 without a Blocking.** All folded.
+
+M1 — ⛔ **INERT WIRING, in a file that documents the same defect.** Replacing either
+`("8 HINDSIGHT ONLY", …)` or `("9 DEFERRAL COMPOSED", …)` with `None` left **201/201 green**: the
+pure-function cases proved the triggers compute, never that a verdict reaches a reader. Two
+`main()`-driven cases now assert the emitted WARN text and rc=0 (world built in the case's own scope
+for `check-main-drivable`); both call-site severs are killed by name.
+
+M2 — ⛔ **THE TWO-GUARD SILENCE HAZARD, REPRODUCED.** t4 and t9 each built the termination window
+themselves. Deleting t9's `per_subject.pop(...)` left 201/201 green and made BOTH silent on
+`a9 b9 c9 d1 e1 f9 a1(defer)` at baseline 4 — t9 read median 9 from first-insertion order and
+concluded t4 owned a window t4 was not firing on. ⭐ Fixed STRUCTURALLY: one `termination_window()`
+producer, two readers, carrying the prospective-only rule (r7 Codex M3) and the pop-then-reinsert
+recency rule (r2 YM4). Verified: severing the single pop is killed by name AND moves t4 and t9
+together (t4 fires, t9 quiets), so no window exists where both are quiet. Unreachable, not watched.
+
+M3 — ⛔ **ONE OF MY SEVEN r7 RE-POINTS MEASURED A DIFFERENT DECISION THAN ITS NAME**, which is
+precisely what I had asked the reviewer to check for in my own work. The entry named "reads the last
+five by FIRST insertion" had been re-pointed to `[-5:]`→`[:5]`, i.e. first-five-vs-last-five, leaving
+the pop/reinsert logic intact — it killed the named case for the wrong reason. Now bound to deleting
+the pop; the `[:5]` off-by-end is its own entry with its own name.
+
+L4 — the published figures said `179 → 200 cases` where the suite said 201 (the commit message was
+correct). Corrected to the final **203**.
+
+One entry RETIRED WITH ITS SUBJECT rather than orphaned: t9's duplicate retroactive filter, removed
+by M2's structural fix. Four more were orphaned by the refactor and re-pointed. 201 → 203 cases,
+80 → 82 mutations, **82/82 killed, 82/82 ATTRIBUTED**, 0 survivors, control re-proved green.
+`check-fixture-variation` rc=0 (960 params/70 files), `check-main-drivable` OK, 56 declared counts
+verified by running them, `check-plan-code --self-test` 215/215.
+
+⚠ **AND I REPRODUCED A RECORDED LESSON INSIDE MY OWN VERIFICATION SCRIPT:** it read `rc=$?` after a
+pipe to `head`, so the "rc=0" it printed for the guard was `head`'s status. Re-checked without the
+pipe: guard rc=0, self-test rc=0. The lesson is in memory as *never read `$?` after a pipe* and it
+still caught me in the harness I was using to confirm the fix.
+
+⭐ **REAL CI GREEN on `e72ccc2b`: `schema-gates: pass`, `verify: pass`.** The earlier schema-gates red
+was `Data limit exceeded` pulling `public.ecr.aws/supabase/postgres:17.6.1.147` — rc=2 CANNOT RUN,
+whose own message says *"this is NOT a schema failure … treat it as NOT RUN, never as a pass"*. One
+re-run cleared it, so it is transient and NOT filed as structural. Run history: `6ca7abc0` success,
+`ea005a3e` failure, `e72ccc2b` failure-then-pass — it broke ONE COMMIT BEFORE this work, and the
+inherited handoff had recorded it as a pass by reading the `6ca7abc0` run.
+
+⚠ `verify` green includes `check-review-recorded`, which the PR body's `NO-REVIEW:` SATISFIES rather
+than answers — the gate's own words are "the final-tree question is WAIVED, not passed". That
+declaration predates r7 and r8. Being updated to describe the tree it now covers.

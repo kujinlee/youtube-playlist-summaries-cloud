@@ -1300,7 +1300,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-21 r6: 27 -> 28. The OUTPUT pin — r6 edited three unpinned body
     # literals and the suite stayed 111/111 while the reader was told the opposite.
     "scripts/check-review-decision.py": 28,
-    "scripts/check-decision-scheme.py": 80,
+    "scripts/check-decision-scheme.py": 82,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
     # because a workflow-level filter is what made the `schema-gates` check unrequireable. TWO
@@ -5555,7 +5555,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1696)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1698)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

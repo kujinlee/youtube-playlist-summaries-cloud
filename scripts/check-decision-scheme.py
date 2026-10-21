@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 201 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 203 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -323,6 +323,38 @@ def t3_routes_collapsed(rows: list[dict]) -> str | None:
             f"discriminating, so this is a conveyor wearing a decision's clothes")
 
 
+def termination_window(rows: list[dict], size: int = 5) -> list[tuple]:
+    """PURE. The last `size` terminated SUBJECTS as (rounds, route) — latest occurrence last.
+
+    ⛔⛔ ONE PRODUCER, TWO READERS (r8 Codex M2). `t4_no_improvement` and
+    `t9_deferral_composed` each built this window themselves, and the duplicate WAS the hazard:
+    MEASURED, deleting t9's `per_subject.pop(...)` left 201/201 GREEN and made BOTH triggers
+    silent on a deferral-composed window — t9 computed its median from first-insertion order and
+    concluded t4 owned a window t4 was not firing on. Two guards, one hazard, nobody covering it.
+    Sharing the producer makes that UNREACHABLE rather than guarded, which is the difference
+    between a fix and a patch.
+
+    ⛔ POP-THEN-REINSERT IS THE RECENCY RULE (r2 YM4): a dict UPDATE does not move a key to the
+    end, so `list(...)[-size:]` over a plain assignment is "the last five by FIRST APPEARANCE",
+    not the latest five. Measured then with nine rows: a median of 9 was read as 1.
+
+    ⛔ PROSPECTIVE ONLY (r7 Codex M3): a retroactive termination does not merely LOOK like a fast
+    success — it DISPLACES a real subject out of the window. [4,4,4,1,1] fires at median 4, and
+    appending the deferral's retroactive stopped-at-2 row made it [4,4,1,1,2], median 2, QUIET.
+
+    Returns [] when fewer than `size` subjects have terminated — the sample is not reached, which
+    both callers treat as "no verdict" rather than as a verdict of zero.
+    """
+    per_subject: dict[str, tuple] = {}
+    for r in prospective(rows):
+        if r.get("outcome") == "stopped" and isinstance(r.get("rounds_at_termination"), int):
+            per_subject.pop(r.get("subject"), None)
+            per_subject[r.get("subject")] = (r["rounds_at_termination"], r.get("route"))
+    if len(per_subject) < size:
+        return []
+    return list(per_subject.values())[-size:]
+
+
 def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
     """FAIL. The last 5 terminated SUBJECTS are no shorter than the pre-scheme median.
 
@@ -334,23 +366,12 @@ def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
     SUBJECT. Five units of ONE subject fired it, reporting "the last 5 subjects" over a sample
     of one. Rows are now collapsed to subjects, taking each subject's LAST terminated row.
     """
-    per_subject: dict[str, int] = {}
-    # ⛔ PROSPECTIVE ONLY (r7 Codex M3, the sharper form of backlog #337). A retroactive
-    # termination does not merely LOOK like a fast success — measured, it DISPLACES a subject out
-    # of the last-five window: [4,4,4,1,1] fired at median 4, and appending the deferral's
-    # retroactive stopped-at-2 row made the window [4,4,1,1,2], median 2, and the trigger QUIET.
-    for r in prospective(rows):
-        if r.get("outcome") == "stopped" and isinstance(r.get("rounds_at_termination"), int):
-            # ⛔ r2 YM4: a dict UPDATE does not move a key to the end, so `list(...)[-5:]` was
-            # NOT "the last five subjects" — it was the last five by FIRST appearance. Measured
-            # with nine rows: the latest five by occurrence had median 9 and the code read a
-            # median of 1, so trigger 4 stayed quiet over a run that should have failed it.
-            # Popping first re-inserts at the end, which is what "latest" has to mean.
-            per_subject.pop(r.get("subject"), None)
-            per_subject[r.get("subject")] = (r["rounds_at_termination"], r.get("route"))
-    if len(per_subject) < 5:
+    # ⛔ THE WINDOW IS PRODUCED ONCE AND SHARED WITH t9 — `termination_window` carries the
+    # prospective-only rule and the pop-then-reinsert recency rule, so the two triggers cannot
+    # disagree about which window they are judging.
+    recent_pairs = termination_window(rows)
+    if not recent_pairs:
         return None
-    recent_pairs = list(per_subject.values())[-5:]
     recent = [n for n, _ in recent_pairs]
     med = st.median(recent)
     if med < baseline_median:
@@ -383,14 +404,11 @@ def t9_deferral_composed(rows: list[dict], baseline_median: float) -> str | None
     ⚠ `prospective` only, like t4 — a retroactive deferral is not a bet and r7 measured it
     DISPLACING a real subject out of the window.
     """
-    per_subject: dict[str, tuple] = {}
-    for r in prospective(rows):
-        if r.get("outcome") == "stopped" and isinstance(r.get("rounds_at_termination"), int):
-            per_subject.pop(r.get("subject"), None)
-            per_subject[r.get("subject")] = (r["rounds_at_termination"], r.get("route"))
-    if len(per_subject) < 5:
+    # ⛔ THE SAME PRODUCER t4 READS, DELIBERATELY (r8 Codex M2). A second copy here went silent
+    # with its recency rule deleted while the suite stayed green, and took t4's coverage with it.
+    recent_pairs = termination_window(rows)
+    if not recent_pairs:
         return None
-    recent_pairs = list(per_subject.values())[-5:]
     med = st.median([n for n, _ in recent_pairs])
     if med >= baseline_median:
         return None                      # t4 is firing; it owns this window's verdict
@@ -2169,6 +2187,51 @@ def _self_test() -> int:
              _o.splitlines()[0],
              "decision-scheme: 1 row(s), 1 scored (0 retroactive, so 1 scoreable); "
              "pinned median 4 vs now 4")
+        # ⛔⛔ THE INERT-WIRING DEFECT, FOUND IN MY OWN WORK BY r8 Codex M1 — and this file
+        # already carries a comment reading "THE CASE THAT WOULD HAVE CAUGHT THE INERT WIRING,
+        # AND DID NOT EXIST". I added two triggers and wire-tested neither: MEASURED, replacing
+        # either call site with `None` left 201/201 GREEN, so the pure-function cases proved only
+        # that the functions compute, never that their verdict REACHES A READER.
+        _bp_hind = Path(_wd) / "hind-baseline.json"
+        _bp_hind.write_text(_json.dumps(_ARMED))
+        _lp_hind = Path(_wd) / "hind-log.jsonl"
+        _lp_hind.write_text("".join(_json.dumps(r) + "\n" for r in [
+            {"subject": "ghost", "unit": "u", "route": "accrete", "outcome": "continued",
+             "retroactive": True}]))
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = main([], baseline_path=_bp_hind, log_path=_lp_hind,
+                       corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                       starved=lambda since: (["ghost"], None))
+        _o = _buf.getvalue()
+        case("⭐ trigger 8's verdict REACHES the CLI as a WARN, and does not fail the run",
+             (_rc, "WARN  trigger 8 HINDSIGHT ONLY" in _o, "fed ONLY in hindsight: ghost" in _o),
+             (0, True, True))
+        _bp_comp = Path(_wd) / "comp-baseline.json"
+        _bp_comp.write_text(_json.dumps(_ARMED))
+        _lp_comp = Path(_wd) / "comp-log.jsonl"
+        _lp_comp.write_text("".join(_json.dumps(r) + "\n" for r in [
+            {"subject": "p1", "unit": "u", "route": "accrete", "outcome": "stopped",
+             "rounds_at_termination": 1},
+            {"subject": "p2", "unit": "u", "route": "accrete", "outcome": "stopped",
+             "rounds_at_termination": 1},
+            {"subject": "p3", "unit": "u", "route": "accrete", "outcome": "stopped",
+             "rounds_at_termination": 1},
+            {"subject": "p4", "unit": "u", "route": "defer", "outcome": "stopped",
+             "rounds_at_termination": 1, "skipped": ["accrete", "redesign", "split"],
+             "why_skipped": "filed rather than repaired"},
+            {"subject": "p5", "unit": "u", "route": "defer", "outcome": "stopped",
+             "rounds_at_termination": 1, "skipped": ["accrete", "redesign", "split"],
+             "why_skipped": "filed rather than repaired"}]))
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = main([], baseline_path=_bp_comp, log_path=_lp_comp,
+                       corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                       starved=lambda since: ([], None))
+        _o = _buf.getvalue()
+        case("⭐ trigger 9's verdict REACHES the CLI too, naming how many were deferrals",
+             (_rc, "WARN  trigger 9 DEFERRAL COMPOSED" in _o,
+              "at most 3 of 5 repairs" in _o), (0, True, True))
         _bp_starved = Path(_wd) / "starved-baseline.json"
         _bp_starved.write_text(_json.dumps({"rounds_to_termination": {"median": 9}, "armed_at": "2026-01-01T00:00:00Z"}))
         _lp_starved = Path(_wd) / "starved-log.jsonl"
