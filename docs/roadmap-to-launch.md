@@ -2553,6 +2553,14 @@ futility) then `defer` (skipping `split`, because the measured cause is one leve
       borrow. Also fixed: a malformed `routes_tried` crashed the validator instead of being named, and
       `"!!!"` / a zero-width space passed as a reason (`strip()` does not remove U+200B). 162 → 179
       cases, 55 → 64 mutations, **64/64 killed and 64/64 ATTRIBUTED**, 0 survivors.
+- [ ] 🟠 **backlog #340 — a REQUIRED check is gated on an anonymous public-registry pull with a data
+      cap, hit 3× in 90 minutes** (`ea005a3e`, `afe3b7cd`, `70e4ead3`): `start-schema-db.sh` exits
+      2 = CANNOT RUN on *"error from registry: Data limit exceeded"*. The script's refusal to fail
+      open is CORRECT; the dependency is the fragility. ⟳ I first called it transient and declined to
+      file it after one re-run cleared it — the third occurrence refuted that within the hour.
+- [ ] 🟠 **backlog #339 — three rules make every alternating round structurally red**, and the only
+      escape the gate offers is one `plugins.md` forbids. I hit it, put a required check red, and
+      renumbered around it; nothing writes the resolution down.
 - [ ] 🟡 **backlog #338 — a declared skip does not record WHY the rung was unavailable**, so the
       rule-imposed skip (`review-method.md:178` closed `accrete`) and a judgement-imposed one are the
       same datum — while the stated purpose of recording skips is to be training data. Deliberately NOT
