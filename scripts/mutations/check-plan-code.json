@@ -1341,5 +1341,31 @@
       "⛔ `docs/` is EXCLUDED — backlog #173's pinned decision, and the whole saving"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "r5 CLAUDE M1: the skipped-hole reporter reads SWEEP_RELEVANT_ROOTS instead of SWEEP_SKIP_ROOTS, so the CI log reports the SWEPT paths as the hole and a reader is told the opposite of what was skipped",
+    "edits": [
+      [
+        "    roots = tuple(f\"{root}/\" for root in SWEEP_SKIP_ROOTS)\n    return [p for p in changed if p.strip() and p.startswith(roots)]",
+        "    roots = SWEEP_RELEVANT_ROOTS\n    return [p for p in changed if p.strip() and p.startswith(roots)]"
+      ]
+    ],
+    "expect": [
+      "a docs-only change names the measured hole it fell into"
+    ],
+    "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "r5 CLAUDE M1: the hole reporter's prefix test becomes a SUBSTRING test, so `app/docs/readme.md` is reported to a CI reader as a staged-but-unswept path when it is neither. ⟳ THIS ENTRY REPLACES TWO DEAD ONES: both earlier attempts aimed at the blank-path guard and SURVIVED over a green control, because `p.strip()` is redundant — a whitespace-only path fails `startswith` anyway. Measured, not assumed; a mutation that changes no behaviour is fake coverage and was removed rather than relabelled.",
+    "edits": [
+      [
+        "    return [p for p in changed if p.strip() and p.startswith(roots)]",
+        "    return [p for p in changed if p.strip() and any(r in p for r in roots)]"
+      ]
+    ],
+    "expect": [
+      "a path merely CONTAINING a skipped root is not a hole — it must be the prefix"
+    ],
+    "file": "scripts/check-plan-code.py"
   }
 ]

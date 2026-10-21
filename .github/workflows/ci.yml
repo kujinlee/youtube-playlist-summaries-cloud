@@ -891,20 +891,47 @@ jobs:
                      if os.environ["DIFF_TAKEN"] == "1" else None)
           need = mod.sweep_needed(changed)
           print("RUN" if need else "SKIP")
+          # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
+          # paths that forced it; for SKIP, the staged-but-unswept paths that fell in the measured
+          # hole (r5 CLAUDE M1). Both come from the module, so the shell owns no copy of either set.
           if need and changed is not None:
               for p in [c for c in changed
                         if c.strip() and c.startswith(mod.SWEEP_RELEVANT_ROOTS)][:20]:
+                  print(p)
+          elif not need:
+              for p in mod.sweep_skipped_hole(changed)[:20]:
                   print(p)
           PYEOF
           )
           VERDICT=$(printf '%s\n' "$VERDICT_OUT" | head -1)
           MATCHED=$(printf '%s\n' "$VERDICT_OUT" | tail -n +2)
+          # On the SKIP path the same lines are the skipped-set paths, not the matched ones.
+          HOLE=""
+          [ "$VERDICT" = "SKIP" ] && HOLE="$MATCHED"
           case "$VERDICT" in
             SKIP)
               echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "nothing the harness stages changed against $BASE — the sweep would mutate"
-              echo "unchanged code against unchanged suites, which can only reproduce the previous"
-              echo "result. The staged roots are check-plan-code.SWEEP_RELEVANT_ROOTS."
+              # ⛔⛔ THIS MESSAGE HAS BEEN WRONG TWICE, AND BOTH WORDINGS ARE RECORDED BECAUSE THE
+              # SHAPE REPEATS. v1 claimed "no scripts/ file changed" on a path where the diff had
+              # FAILED — a false statement about the world rather than an error. v2 claimed
+              # "nothing the harness stages changed" while `docs` IS staged, and asserted
+              # "unchanged suites" one line above its own warning that a docs change can alter a
+              # suite result (r5 CLAUDE M1: self-contradicting in adjacent lines, and byte-identical
+              # whether the hole was crossed or not). v3 DISCRIMINATES, and the discrimination is
+              # computed by `check-plan-code.sweep_skipped_hole` — not by a grep alternation here,
+              # which would be a second implementation of SWEEP_SKIP_ROOTS.
+              if [ -n "$HOLE" ]; then
+                echo "no path under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE,"
+                echo "⚠ BUT these changed paths are STAGED and NOT swept — the measured hole:"
+                printf '%s\n' "$HOLE"
+                echo "⚠ So this skip is NOT free: a change in that set CAN alter a suite result"
+                echo "(measured — check-anon-exposure 74/74 -> exit 1). backlog #173 pinned the"
+                echo "decision to skip it; backlog #330 is the selector that would remove the trade."
+              else
+                echo "nothing under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE, and"
+                echo "nothing in the skipped set either — the sweep would mutate unchanged code"
+                echo "against unchanged suites, so it can only reproduce the previous result."
+              fi
               ;;
             RUN)
               echo "changed=true" >> "$GITHUB_OUTPUT"

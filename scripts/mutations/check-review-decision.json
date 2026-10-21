@@ -289,11 +289,50 @@
     ]
   },
   {
-    "name": "⭐ r4: convergence_unreachable re-derives the clean-round rule instead of calling its owner, which is the 18th instance of a-second-implementation-of-one-rule-drifts and exactly how the two readers contradicted each other from birth",
+    "name": "⭐ r5 CLAUDE H2: the remedy token flips to `clean-round`, so the refusal demands the finding-free round backlog #329 measured as unproducible. ⛔ THIS IS THE MUTATION BOTH PROSE-MATCHING VERSIONS SURVIVED — r4's `RECORDED` substring and r5a's forbidden list each passed a message asserting the opposite; a TOKEN cannot be negated.",
     "edits": [
       [
-        "    clean = [r for r in rounds if round_blocker(r) is None]",
-        "    clean = [r for r in rounds\n             if not r.get(\"fixes_nontrivial\")\n             and not any(f.get(\"severity\") in (\"Blocking\", \"High\")\n                         or f.get(\"aim\") == \"deliverable\"\n                         for f in r.get(\"findings\", []))]"
+        "UNREACHABLE_REMEDY = \"disposition\"  # not a finding-free round — what reaches convergence",
+        "UNREACHABLE_REMEDY = \"clean-round\""
+      ]
+    ],
+    "expect": [
+      "...and the remedy is DISPOSITIONING — likewise a value"
+    ],
+    "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "r5 CLAUDE H2: the `about` token flips to `work`, so the refusal blames the WORK when it is a statement about the RECORD — the distinction backlog #329 exists for",
+    "edits": [
+      [
+        "UNREACHABLE_ABOUT = \"record\"        # not \"work\" — what the refusal is a statement about",
+        "UNREACHABLE_ABOUT = \"work\""
+      ]
+    ],
+    "expect": [
+      "the refusal is about the RECORD — asserted as a VALUE, not found in prose"
+    ],
+    "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "⭐ r5 CLAUDE H1: a renderable token loses its rendering, which is the SILENT-SHRINK shape that left the old forbidden list at 102/102 when emptied. Here it must produce a NAMED red before the renderer's deliberate KeyError, so the set cannot shrink unnoticed.",
+    "edits": [
+      [
+        "              \"work\": \"UNREACHABLE because the work is defective\"}",
+        "              }"
+      ]
+    ],
+    "expect": [
+      "every token the module can emit HAS a rendering — a missing one must raise, not emit"
+    ],
+    "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "⭐ r4 CLAUDE H3 / CODEX finding 5: the clean-round rule is RE-DERIVED here instead of asked of `round_blocker`, which is how `converged` and this function contradicted each other from birth (backlog #329 added the `disposition` clause to one copy only). ⟳ ANCHOR RE-POINTED 2026-10-21 at r5: the rule MOVED into `unreachable_reason` when the diagnostic was restructured, so this is a re-point, NOT a retirement — the subject is alive and only its address changed.",
+    "edits": [
+      [
+        "    if any(round_blocker(r) is None for r in rounds):\n        return None",
+        "    if any(not r.get(\"fixes_nontrivial\")\n           and not any(f.get(\"severity\") in (\"Blocking\", \"High\")\n                       or f.get(\"aim\") == \"deliverable\"\n                       for f in r.get(\"findings\", []))\n           for r in rounds):\n        return None"
       ]
     ],
     "expect": [

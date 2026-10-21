@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 99 cases
+    python3 scripts/check-review-decision.py --self-test  # 107 cases
 
 WHY THIS EXISTS
 ---------------
@@ -286,6 +286,70 @@ def round_blocker(r: dict) -> str | None:
     return None
 
 
+# ── The UNREACHABLE diagnostic's PROPERTIES, as DATA (r5 CLAUDE H1+H2) ────────────────────────
+# ⛔⛔ THIRD ATTEMPT AT ONE PROPERTY, AND THE FIRST TWO FAILED THE SAME WAY — recorded because the
+# shape is the lesson, not the fix. The property: *this refusal is about the RECORD, not the work,
+# and the remedy is DISPOSITIONING findings.*
+#
+#   r4  asserted the literal token `RECORDED` appeared.          -> r5 CODEX: a message asserting
+#       the OPPOSITE contains it too; suite passed 99/99.
+#   r5a asserted a remedy phrase present + a FORBIDDEN phrase    -> r5 CLAUDE: (H2) a ONE-TOKEN
+#       list absent.                                                 negation passes, because
+#       "NOT DISPOSITIONING those findings" CONTAINS the phrase; 4 of 4 adjacent wrong messages
+#       accepted. (H1) and the list itself had NO falsifier — emptying the tuple left the suite at
+#       102/102, because the case LOOPED OVER THE SET UNDER TEST, so both sides shrank together.
+#
+# ⚠ H1 IS THE RULE I HAD WRITTEN OUT LONGHAND IN `check-plan-code.py` THE SAME HOUR
+# ("AN INDEPENDENT COPY, NOT A LOOP OVER THE SET UNDER TEST") AND THEN BROKE HERE.
+#
+# ⭐ SO THE PROSE IS NOT PATCHED A THIRD TIME. `dual-review-what-it-catches` records the reason:
+# *use review for CLAIMS and design; use a corpus for SURFACES* — a message is an UNBOUNDED surface,
+# so each round finds another evasion and none of them is the last. The property is now carried by
+# TOKENS, and the prose is RENDERED from them. A negation cannot pass, because there is no sentence
+# to negate: `remedy` either equals `disposition` or it does not.
+UNREACHABLE_ABOUT = "record"        # not "work" — what the refusal is a statement about
+UNREACHABLE_REMEDY = "disposition"  # not a finding-free round — what reaches convergence
+
+_UNREACHABLE_PROSE = {
+    "about": {"record": "UNREACHABLE from this record rather than merely unmet",
+              "work": "UNREACHABLE because the work is defective"},
+    "remedy": {"disposition": ("What reaches convergence is recording a disposition — `fixed` or "
+                               "`declined` — on each of them, which is evidence this workflow "
+                               "already produces. `filed` does not count: a backlog deferral is "
+                               "not an answer about THIS branch"),
+               "clean-round": "What reaches convergence is a round that finds nothing"},
+}
+
+
+def unreachable_reason(rounds: list[dict]) -> dict | None:
+    """PURE. STRUCTURED: `{"about": ..., "remedy": ..., "blockers": [...]}`, else None.
+
+    This is the function the suite asserts against, by VALUE EQUALITY on `about` and `remedy`.
+    Those two tokens are the whole property, and a token cannot be negated the way a sentence can.
+    """
+    if not rounds:
+        return None
+    if any(round_blocker(r) is None for r in rounds):
+        return None
+    return {"about": UNREACHABLE_ABOUT,
+            "remedy": UNREACHABLE_REMEDY,
+            "blockers": [round_blocker(r) for r in rounds]}
+
+
+def render_unreachable(reason: dict) -> str:
+    """PURE. The ONE place this diagnostic's prose exists, built from `unreachable_reason`.
+
+    ⚠ A KeyError here is DELIBERATE and is the falsifier: a token with no rendering must fail
+    loudly rather than silently emit a sentence that does not match the structure.
+    """
+    return ("no round recorded for this subject is clean, so convergence is "
+            + _UNREACHABLE_PROSE["about"][reason["about"]]
+            + ": every recorded round still carries an OPEN Blocking/High finding, an open "
+              "deliverable-aimed finding, or fixes it declared non-trivial. ⚠ "
+            + _UNREACHABLE_PROSE["remedy"][reason["remedy"]]
+            + ". See backlog #329 for why the record, not the work, is what this is about")
+
+
 def convergence_unreachable(rounds: list[dict]) -> str | None:
     """PURE. Why this subject can NEVER converge on the rounds recorded, else None.
 
@@ -301,23 +365,8 @@ def convergence_unreachable(rounds: list[dict]) -> str | None:
     A gate that cannot be reached, and does not say what would reach it, reads as a verdict
     about the work when it is a verdict about the record.
     """
-    if not rounds:
-        return None
-    # ⛔ `round_blocker` IS THE RULE — this filter used to re-derive it and omitted the
-    # `disposition` clause, so it called records UNREACHABLE that `converged` already accepted
-    # (r4 CLAUDE H3 / CODEX finding 5). One owner, asked here for nothing but "is it clean".
-    clean = [r for r in rounds if round_blocker(r) is None]
-    if clean:
-        return None
-    return ("no round recorded for this subject is clean, so convergence is UNREACHABLE from "
-            "this record, not merely unmet: every recorded round still carries an OPEN "
-            "Blocking/High or an open deliverable-aimed finding, or declared its fixes "
-            "non-trivial. ⚠ What reaches it is DISPOSITIONING those findings — `fixed` or "
-            "`declined` on each, which is evidence the workflow already produces — NOT a round "
-            "that found nothing. Asking for a finding-free round is the demand backlog #329 "
-            "measured as unsatisfiable (48 rounds, 1 clean, 0 of 12 subjects converging) and "
-            "removed; a round whose findings are all dispositioned counts, and `filed` does not "
-            "count because a backlog deferral is not an answer about THIS branch")
+    reason = unreachable_reason(rounds)
+    return None if reason is None else render_unreachable(reason)
 
 
 # ------------------------------------------------------- Q4b: tree identity
@@ -820,19 +869,56 @@ def _self_test() -> int:
     # reddening it. ⛔ RE-POINTED AT THE PROPERTY AND MADE STRICTER, NOT WEAKER: the refusal must
     # still be about the RECORD rather than the work, AND must now also name the remedy that
     # actually exists. Asserting a message's own tokens defends only its deletion.
-    case("...and the reason names the RECORD, not the work",
-         "record" in (convergence_unreachable([_R(1, [deliv])]) or "").lower(), True)
-    case("...and it names DISPOSITIONING as what reaches convergence, not a finding-free round",
-         "DISPOSITION" in (convergence_unreachable([_R(1, [deliv])]) or "").upper(), True)
-    # ⛔ fixes_nontrivial alone makes a findings-clean round dirty — 39 of the corpus's 48
+    # ── r5 CLAUDE H1+H2: the property as VALUE EQUALITY, not prose matching ──────────────────
+    # ⛔ THE THIRD ATTEMPT, and the first two are in `unreachable_reason`'s comment. A token
+    # cannot be negated the way a sentence can, so these cases cannot be passed by a message
+    # asserting the opposite — which is exactly how both previous versions were defeated.
+    # ⛔ `or {}` IS LOAD-BEARING, NOT DEFENSIVE NOISE. Written as `unreachable_reason(...)["about"]`
+    # these two CRASHED the suite under the `aim`-arm mutation — that round becomes clean, the
+    # function correctly returns None, and the subscript raises. A suite that DIES does not redden:
+    # it truncates the run, so every later case goes unevaluated and other mutations lose their
+    # attribution (measured — the aim mutation reported ONE red and no "passed" line at all, and
+    # `check-plan-code` then refused its `expect`). `.get` turns that into a clean MISMATCH, which
+    # is a named red the harness can attribute. See `test-harness-can-launder-failures`.
+    case("the refusal is about the RECORD — asserted as a VALUE, not found in prose",
+         (unreachable_reason([_R(1, [deliv])]) or {}).get("about"), "record")
+    case("...and the remedy is DISPOSITIONING — likewise a value",
+         (unreachable_reason([_R(1, [deliv])]) or {}).get("remedy"), "disposition")
+    # ⛔ INDEPENDENT COPIES. H1's defect was a case that LOOPED OVER THE SET UNDER TEST, so
+    # emptying `UNREACHABLE_FORBIDDEN` left the suite at 102/102 — both sides shrank together.
+    # These name the tokens literally, so changing either must come HERE and be decided.
+    case("UNREACHABLE_ABOUT is the token the renderer has prose for", UNREACHABLE_ABOUT, "record")
+    case("UNREACHABLE_REMEDY is the token the renderer has prose for",
+         UNREACHABLE_REMEDY, "disposition")
+    case("every token the module can emit HAS a rendering — a missing one must raise, not emit",
+         sorted(_UNREACHABLE_PROSE["about"]) == ["record", "work"]
+         and sorted(_UNREACHABLE_PROSE["remedy"]) == ["clean-round", "disposition"], True)
+    # ⭐ THE NEGATION CASES THAT DEFEATED BOTH PREVIOUS VERSIONS, kept as the falsifier. Under the
+    # structured design they are not even expressible: the WRONG remedy renders the WRONG prose,
+    # so the two cannot disagree. This asserts that pairing, which is the whole property.
+    case("the `work` token renders prose that blames the WORK — so the tokens really do decide",
+         "work is defective" in render_unreachable(
+             {"about": "work", "remedy": "disposition", "blockers": []}), True)
+    case("...and the `clean-round` token renders the demand backlog #329 abolished, provably",
+         "finds nothing" in render_unreachable(
+             {"about": "record", "remedy": "clean-round", "blockers": []}), True)
+    case("so the SHIPPED reason renders neither of those",
+         ("work is defective" not in (convergence_unreachable([_R(1, [deliv])]) or "")
+          and "finds nothing" not in (convergence_unreachable([_R(1, [deliv])]) or "")), True)
+    case("a clean round yields NO reason at all", unreachable_reason([_R(1, [])]), None)
+    case("no rounds yields no reason either", unreachable_reason([]), None)
     # rounds carry it, so a case that varied only `findings` would miss the dominant cause.
     case("a findings-clean round flagged fixes_nontrivial does not count as clean",
          "UNREACHABLE" in (convergence_unreachable([_R(1, [], nt=True)]) or ""), True)
     case("no rounds at all is not 'unreachable' — it is simply unstarted",
          convergence_unreachable([]), None)
-    case("the ROUND_OWED reason carries the missing evidence",
-         "DISPOSITION" in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1].upper(),
-         True)
+    # ⛔ The ESCAPE PATH is what matters here: r4's drift mattered because the contradiction
+    # reached a reader THROUGH `decide`. So this asserts `decide` carries the rendered remedy —
+    # and it is checked against the RENDERER's own output rather than a quoted phrase, so a
+    # reworded remedy cannot make this case silently stop testing anything.
+    case("the ROUND_OWED reason reaches the reader carrying the rendered remedy",
+         _UNREACHABLE_PROSE["remedy"]["disposition"]
+         in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1], True)
     # ── r4 CLAUDE H3 / CODEX finding 5: the two convergence readers must not disagree ──────────
     # ⛔ THE REGRESSION CASE FOR THE DRIFT ITSELF, at the input that exhibited it: one round whose
     # Blocking+deliverable finding is DISPOSITIONED `fixed`, with trivial fixes. `converged` said
