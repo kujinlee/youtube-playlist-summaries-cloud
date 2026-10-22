@@ -16899,8 +16899,8 @@ fixed when it is first created.
 
 **Waiting on you:** merging, once the pull request is green. Two independent reviews found ten
 defects; all ten are fixed. A second review of those fixes found two more, in the fixes
-themselves; those are fixed too. A third review found only small things, now fixed, and a
-fourth checks that last set.
+themselves; those are fixed too. A third review found only small things, and the fourth found
+nothing at all.
 <!--tech-->
 `scripts/gen-work-lines.py` (NEW, 38 cases, 15 mutation entries)
 renders `~/explainers/work-lines.html` from `.claude/plans/*.md`. `scripts/begin-plan.py` records
@@ -16963,3 +16963,7 @@ anchors were the condition lines that fold rewrote. `--self-test` stayed green (
 anchors); CI's sweep would have gone red. Re-anchored; all 22 of this branch's entries are killed
 by the case each names. The decision log now carries a `work-lines` row, written late (trigger 1
 caught its absence) and stating its bet about round 4 before round 4 runs.
+
+✅ **ROUND 4 (Codex, the r3 fold) — CONVERGED, no findings at any severity**, on `664821c2`. The
+decision-log bet held and is scored: `outcome: stopped` at 4 rounds. Nothing but documentation
+changed after it.
