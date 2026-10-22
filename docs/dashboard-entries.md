@@ -17016,3 +17016,24 @@ case it names. ⚠ One r1 anchor (`if not SENTINEL.is_file(): return STARTED`) w
 change and re-anchored onto `if not LAST_PLAN.is_file()`, where that `STARTED` now lives.
 ⚠ Known limit: a hand-edited plan leaves the page stale with no `/_stale` banner (the Refresh
 button is the remedy).
+
+⟳ **ROUND 1 of the follow-up — folded (the findings that do not wait on the owner).** (a) **The
+Stop hook cannot crash on an optional step** (Codex 3): `check-plan-progress.run_optional` is ONE
+boundary — any exception is one stderr line and the caller's verdict, message, clear and rc stand.
+The Stop hook's record + page rebuild, `--finish`'s record and the arm-time branch lookup all run
+inside it; `current_branch` also treats undecodable output (`UnicodeDecodeError`) as unknown.
+(b) **The branch is recorded when the plan is ARMED** (Claude F2): `render_sentinel` writes
+`branch:` (omitted when unknown) and `record_last_plan` takes it FROM THE SENTINEL — never from git
+at clear time, so a `git checkout` before the clear no longer re-parents the plan. (c) **The open
+question is asked directly** (Codex 2): `gh_pr_line_state` asks `--state open --limit 1` first and
+`--state all --limit 1` only if none is open, because `gh pr list` returns at most 30, newest
+first — 30 newer merged PRs hid an older open one. The `_gh_world` fixture now models that default.
+(d) `gh` timeout 30s → 8s (Claude F6). (e) The banner's `Line:` words are Markdown-escaped after
+truncation (Codex 4). (f) The docstring claim that a failed rebuild "is still SAID" is corrected:
+on the Stop path stderr with rc 0 reaches nobody (Claude F5). (g) **Both suites now run in a real
+git repository on a named branch** (Claude F3), so the branch wiring is exercised. Cases:
+begin-plan 104 → 112, check-plan-progress 54 → 60. Mutations +15 (begin-plan 41 → 49,
+check-plan-progress 22 → 29; declared sum 1755 → 1770); a scoped run over both manifests killed
+78/78, each by the case it names. Six anchors orphaned by this change were re-anchored.
+⚠ NOT folded, waiting on the owner: when a `.claude/last-plan` record stops counting (Claude F1/F4,
+Codex 1).

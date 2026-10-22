@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 104 cases
+    scripts/begin-plan.py --self-test  # 112 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -113,7 +113,7 @@ def _load_plan_progress():
     # whole job is to say WHY, and it can only do that for names it knows it borrows.
     missing = [n for n in ("count_steps", "next_pending_task", "parse_sentinel", "strip_field",
                            "decide", "WARN", "record_last_plan", "current_branch",
-                           "refresh_work_lines")
+                           "refresh_work_lines", "run_optional", "make_test_repo", "test_git")
                if not hasattr(mod, n)]
     if missing:
         raise ImportError(
@@ -275,6 +275,20 @@ def render_banner(steps: list[Step], index: int, line: str | None = None) -> str
 
 
 SERVING_SHOWN = 60   # characters of the root's own words the banner line carries
+_MD_SPECIAL = "\\`*_[]<>"   # backslash FIRST in the escape order, so no escape is escaped again
+
+
+def md_literal(words: str) -> str:
+    """PURE. `words` with every Markdown metacharacter backslash-escaped, so they render LITERALLY.
+
+    ⟳ r1 Codex 4: the root's objective is the human's own text, and quoting it did not stop a
+    renderer reading `**bold**` as bold or `[x](url)` as a LINK — measured in the banner. Escaped
+    AFTER truncation, so the cut is made on the words and an escape is never split from its
+    character. CommonMark lets a backslash escape any ASCII punctuation, so this is lossless."""
+    out = words.replace("\\", "\\\\")
+    for ch in _MD_SPECIAL[1:]:
+        out = out.replace(ch, "\\" + ch)
+    return out
 
 
 def _load_work_lines():
@@ -325,7 +339,7 @@ def work_line(slug: str, plans: list[dict]) -> str:
     words = root.get("serving")
     if words and not note:
         cut = words if len(words) <= SERVING_SHOWN else words[:SERVING_SHOWN - 1].rstrip() + "…"
-        head = f'"{cut}" → '
+        head = f'"{md_literal(cut)}" → '
     elif not note:
         head = "_(no objective recorded)_ "
     else:
@@ -360,9 +374,16 @@ def tick(plan_text: str, index: int) -> str:
     return "".join(out)
 
 
-def render_sentinel(plan_rel: str, now: str) -> str:
-    """The `.claude/executing-plan` body. `plan:` is the only key the guard reads."""
-    return f"plan: {plan_rel}\narmed: {now}\nby: scripts/begin-plan.py\n"
+def render_sentinel(plan_rel: str, now: str, branch: str | None = None) -> str:
+    """The `.claude/executing-plan` body. `plan:` is the only key the guard reads.
+
+    `branch:` is the branch checked out WHEN THE PLAN WAS ARMED — what `record_last_plan` records
+    at the clear (⟳ r1 Claude F2: reading it at clear time recorded whatever the coordinator had
+    checked out by the end of that turn). OMITTED, never blank, when unknown."""
+    out = f"plan: {plan_rel}\narmed: {now}\nby: scripts/begin-plan.py\n"
+    if branch:
+        out += f"branch: {branch}\n"
+    return out
 
 
 # ── I/O shell ─────────────────────────────────────────────────────────────────────────────────
@@ -389,7 +410,11 @@ def _armed_plan() -> tuple[Path, str, dict[str, str]] | None:
 
 def _arm(plan_rel: str) -> None:
     now = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
-    SENTINEL.write_text(render_sentinel(plan_rel, now))
+    pp = _load_plan_progress()
+    # ⛔ OPTIONAL: an arm must never fail over a branch lookup (r1 Codex 3). None -> no field.
+    branch = pp.run_optional("looking up the branch to record on the sentinel",
+                             lambda: pp.current_branch(ROOT))
+    SENTINEL.write_text(render_sentinel(plan_rel, now, branch))
     STATE.unlink(missing_ok=True)
 
 
@@ -436,10 +461,17 @@ def _plan_slug(rel: str, what: str) -> str | None:
     return target.stem
 
 
+# ⟳ r1 Claude F6: was 30s. Measured: a hung `gh` held `begin` for 30.2s, and this runs before
+# every plan armed with nothing armed. Each of the (at most two) questions gets this long; a
+# timeout is an unanswerable reply — no marker, reason said — never a verdict.
+GH_TIMEOUT = 8
+
+
 def gh_pr_line_state(branch: str, run=subprocess.run) -> tuple[str | None, str]:
     """`(state, why)`: does `branch`'s work line CONTINUE? Asked of GitHub, never guessed.
 
-    `gh pr list --head <branch> --state all --json state`, and the answer needs POSITIVE evidence:
+    Two questions, each `gh pr list --head <branch> --state <s> --json state --limit 1`: first
+    `open`, and only if none is open, `all`. The answer needs POSITIVE evidence:
       * `"open"`  — some PR for the branch is OPEN: the line continues;
       * `"ended"` — PRs exist and none is open (merged, or closed without merging): it ended;
       * `"none"`  — NO PR exists for the branch at all (the default branch, a branch never
@@ -453,30 +485,45 @@ def gh_pr_line_state(branch: str, run=subprocess.run) -> tuple[str | None, str]:
     the parent of EVERY later plan, indefinitely — an invented lineage, the one thing this feature
     promises never to produce. "No merged PR" is an absence; only an OPEN PR is evidence that the
     line goes on.
+    ⛔ ⟳ r1 Codex 2 (Major): ONE `--state all` query read "no OPEN in the reply" as "none open" —
+    but `gh pr list` returns at most 30 by default, newest first, so a branch with 30 newer
+    merged PRs hid an older open one and the line was declared ENDED. So the open question is
+    asked DIRECTLY, and an absence is only ever concluded from a query that asked for it.
     """
-    try:
-        r = run(["gh", "pr", "list", "--head", branch, "--state", "all", "--json", "state"],
-                cwd=ROOT, capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        return None, "`gh` is not installed"
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f"`gh` could not be run ({type(exc).__name__})"
-    if r.returncode != 0:
-        return None, f"`gh` exited {r.returncode}: {(r.stderr or '').strip()[:160]}"
-    try:
-        got = json.loads(r.stdout)
-    except ValueError:
-        return None, "`gh` printed something that is not JSON"
-    if not isinstance(got, list):
-        return None, "`gh` printed JSON that is not a list"
-    states = [pr.get("state") if isinstance(pr, dict) else None for pr in got]
-    if any(not isinstance(st, str) for st in states):
-        return None, "`gh` listed a PR with no string `state`"
-    if not states:
-        return "none", f"no PR exists for branch `{branch}`"
+    def ask(state: str) -> tuple[list[str] | None, str]:
+        """The PR states one question returns, or `(None, why)` when `gh` could not answer."""
+        try:
+            r = run(["gh", "pr", "list", "--head", branch, "--state", state, "--json", "state",
+                     "--limit", "1"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=GH_TIMEOUT)
+        except FileNotFoundError:
+            return None, "`gh` is not installed"
+        except (OSError, subprocess.SubprocessError) as exc:
+            return None, f"`gh` could not be run ({type(exc).__name__})"
+        if r.returncode != 0:
+            return None, f"`gh` exited {r.returncode}: {(r.stderr or '').strip()[:160]}"
+        try:
+            got = json.loads(r.stdout)
+        except ValueError:
+            return None, "`gh` printed something that is not JSON"
+        if not isinstance(got, list):
+            return None, "`gh` printed JSON that is not a list"
+        found = [pr.get("state") if isinstance(pr, dict) else None for pr in got]
+        if any(not isinstance(st, str) for st in found):
+            return None, "`gh` listed a PR with no string `state`"
+        return found, ""
+
+    states, why = ask("open")
+    if states is None:
+        return None, why
     if any(st.upper() == "OPEN" for st in states):
         return "open", "an open PR exists"
-    return "ended", f"{len(states)} PR(s), none open"
+    states, why = ask("all")
+    if states is None:
+        return None, why
+    if not states:
+        return "none", f"no PR exists for branch `{branch}`"
+    return "ended", "PRs exist for it and none is open"
 
 
 PR_LINE_STATE = gh_pr_line_state   # ⚠ REPLACED by the self-test, so no case touches the network
@@ -842,9 +889,13 @@ def cmd_finish() -> int:
         # ⭐ THE SECOND CLEAR SITE, through the ONE recorder (`check-plan-progress.record_last_plan`
         # — it decides "fully ticked", so a half-done plan finished here is NOT recorded). A plan
         # that was PAUSED and is now finished reaches the record only through this line.
+        # ⛔ Inside `run_optional`, the boundary the Stop hook's clear uses too (r1 Codex 3): a
+        # recorder that raises must not stop the clear below, nor change `--finish`'s rc.
+        # The branch is the sentinel's own (r1 Claude F2) — nothing is asked of git here.
         pp = _load_plan_progress()
-        pp.record_last_plan(SENTINEL.read_text(), root=ROOT, dest=LAST_PLAN,
-                            branch=pp.current_branch(ROOT))
+        pp.run_optional("recording the last plan",
+                        lambda: pp.record_last_plan(SENTINEL.read_text(), root=ROOT,
+                                                    dest=LAST_PLAN))
     SENTINEL.unlink(missing_ok=True)
     STATE.unlink(missing_ok=True)
     print("cleared .claude/executing-plan" if existed else "nothing was armed.")
@@ -859,6 +910,9 @@ def cmd_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    # Rebound by the r1 Codex 3 cases to inject a raising recorder / branch lookup; declared
+    # first because Python refuses a `global` after the name's first use.
+    global _load_plan_progress
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -967,6 +1021,50 @@ def _self_test() -> int:
     # while the guard silently went back to being dormant — which is the exact defect this
     # project measured in check-plan-code round 6 (the function was covered; the call that made
     # it load-bearing was not). These three drive the real commands against a temp root.
+    def _gh_world(prs: list[dict]):
+        """A fake `gh pr list` over a fixed set of PRs, listed OLDEST FIRST. It models the real
+        CLI: `--state` filters (`all` keeps everything), the reply is NEWEST FIRST, at most
+        `--limit` PRs and **30 when no `--limit` is given** (`gh pr list --help`), and `--json`
+        picks fields. So the REAL query and decision run end to end with no network — and a query
+        asking the wrong question, or reading an absence from a truncated reply, gets the wrong
+        answer here exactly as it would from GitHub (⟳ r1 Codex 2: the first version returned
+        every match, so it could not see the 30-result default)."""
+        class _Res:
+            returncode, stderr = 0, ""
+
+        def run(argv, **_kw):
+            want = argv[argv.index("--state") + 1]
+            fields = argv[argv.index("--json") + 1].split(",")
+            limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 30
+            hit = [pr for pr in reversed(prs)
+                   if want == "all" or str(pr.get("state", "")).lower() == want][:limit]
+            res = _Res()
+            res.stdout = json.dumps([{f: pr[f] for f in fields if f in pr} for pr in hit])
+            return res
+        return run
+
+    # ⛔ INJECTION through the loader, which every command calls (r1 Codex 3): the returned module
+    # has the named attributes replaced, so a raising recorder or branch lookup reaches the REAL
+    # call site — and needs no seam in the code under test, so it works on the old code too.
+    _real_loader = _load_plan_progress
+
+    def _loader_with(**over):
+        def load():
+            m = _real_loader()
+            for k, v in over.items():
+                setattr(m, k, v)
+            return m
+        return load
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("injected by the self-test")
+
+    def _attempt(fn):
+        try:
+            return fn()
+        except Exception as exc:                   # noqa: BLE001 - the case reports it
+            return f"RAISED {type(exc).__name__}"
+
     global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
     real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE)
     with tempfile.TemporaryDirectory() as td:
@@ -981,25 +1079,14 @@ def _self_test() -> int:
         WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
         PR_LINE_STATE = lambda _b: (None, "the self-test never asks GitHub")  # noqa: E731
 
-        def _gh_world(prs: list[dict]):
-            """A fake `gh pr list` over a fixed set of PRs: it honours `--state` (filtering on each
-            PR's `state`, `all` keeps everything) and `--json <fields>`, so the REAL query and
-            decision run end to end with no network — and a query asking the wrong question gets
-            the wrong answer here exactly as it would from GitHub."""
-            class _Res:
-                returncode, stderr = 0, ""
-
-            def run(argv, **_kw):
-                want = argv[argv.index("--state") + 1]
-                fields = argv[argv.index("--json") + 1].split(",")
-                hit = [pr for pr in prs
-                       if want == "all" or str(pr.get("state", "")).lower() == want]
-                res = _Res()
-                res.stdout = json.dumps([{f: pr[f] for f in fields if f in pr} for pr in hit])
-                return res
-            return run
         SENTINEL.parent.mkdir(parents=True, exist_ok=True)
+        # ⛔ r1 Claude F3: a REAL repository on a named branch, so the arm path's real branch
+        # lookup runs. Every case used to run in a non-repo, where it is None — and three
+        # mutations that switched Option A off survived. A name unlike check-plan-progress's.
+        _git_err = pp.make_test_repo(ROOT, "bp/armed-here")
         try:
+            case("the test root IS a git repository on a named branch (else every branch case "
+                 "below is NOT RUN)", _git_err is None)
             # ⚠ `serving` varied here too: the CLI path must carry it into the file, not just
             # accept the flag. A flag parsed and dropped is the defect this case exists for.
             rc = cmd_begin("wiring", ["One|d1|w1", "Two|d2|w2"], serving="why this line exists")
@@ -1338,9 +1425,20 @@ def _self_test() -> int:
                  "waiting on CI before the PR" in msg_p)
             cmd_resume()
 
-            cmd_finish()
+            case("⭐ arming WRITES the branch it was armed on into the sentinel (r1 Claude F2)",
+                 pp.parse_sentinel(SENTINEL.read_text()).get("branch") == "bp/armed-here")
+            # ⛔ THE BRANCH IS FIXED AT ARM TIME. Switch branch, then finish: the record must name
+            # the branch the plan RAN on, not the one checked out at the clear.
+            _co_err = pp.test_git(ROOT, "checkout", "-q", "-b", "bp/switched-before-finish")
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_finish()
             case("cmd_finish removes the sentinel, so the guard stands down",
                  not SENTINEL.exists() and not STATE.exists())
+            case("⛔ a plan ARMED on one branch and finished after a checkout is recorded against "
+                 "the branch it was ARMED on",
+                 (_co_err, pp.parse_sentinel(LAST_PLAN.read_text()).get("branch")
+                  if LAST_PLAN.is_file() else None) == (None, "bp/armed-here"))
+            pp.test_git(ROOT, "checkout", "-q", "bp/armed-here")
 
             # ── Option A: a plan stays the PARENT while its PR is OPEN (2026-10-22) ─────────
             case("⭐ --finish on a fully-ticked plan RECORDS it as the last plan — the second clear "
@@ -1431,6 +1529,38 @@ def _self_test() -> int:
             case("⭐ a plan PAUSED and then finished goes through the same record",
                  pp.parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/parked.md")
 
+            # ── r1 Codex 3: an optional step that RAISES never changes --finish or the arm ─────
+            # Measured before the fix: a raising recorder or branch lookup escaped `cmd_finish`
+            # and left the sentinel behind; the same lookup at arm time would fail the arm.
+            for _label, _over in (("recorder", {"record_last_plan": _boom}),
+                                  ("branch lookup", {"current_branch": _boom})):
+                _load_plan_progress = _real_loader
+                with contextlib.redirect_stdout(io.StringIO()):
+                    cmd_begin("boom-finish", ["Only|d|w"])
+                    cmd_tick()
+                STATE.write_text("1")
+                _load_plan_progress = _loader_with(**_over)
+                _o, _e = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
+                    _rc_b = _attempt(cmd_finish)
+                _load_plan_progress = _real_loader
+                case(f"⛔ a {_label} that RAISES at --finish leaves its rc, its message and the "
+                     f"clear exactly as they are without it",
+                     (_rc_b, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
+                     == (OK, "cleared .claude/executing-plan", False, False))
+            _load_plan_progress = _loader_with(current_branch=_boom)
+            _o, _e = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
+                _rc_a = _attempt(lambda: cmd_begin("boom-arm", ["Only|d|w"]))
+            _load_plan_progress = _real_loader
+            _fa = pp.parse_sentinel(SENTINEL.read_text()) if SENTINEL.is_file() else {}
+            case("⛔ a branch lookup that RAISES at ARM time still arms the plan — with NO branch "
+                 "on the sentinel, and ONE stderr line saying the lookup was skipped",
+                 (_rc_a, _fa.get("plan"), "branch" in _fa,
+                  len([ln for ln in _e.getvalue().splitlines() if "was skipped" in ln]))
+                 == (OK, ".claude/plans/boom-arm.md", False, 1))
+            cmd_finish()
+
             # ── "always current": every state change rebuilds the page, and NEVER fails ─────
             PR_LINE_STATE = _line_state_in([{"state": "MERGED"}])
             with contextlib.redirect_stdout(io.StringIO()):
@@ -1460,6 +1590,7 @@ def _self_test() -> int:
             cmd_finish()
         finally:
             ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE = real
+            _load_plan_progress = _real_loader
 
     # ── the line-state check itself, through an INJECTED runner: never the network ──────────
     class _R:
@@ -1471,25 +1602,40 @@ def _self_test() -> int:
 
     def _missing(argv, **kw):
         raise FileNotFoundError("gh")
+    def _open_then(rc, out, err=""):
+        """`[]` to the OPEN question, then (rc, out) to the second — a failure on the SECOND."""
+        return lambda argv, **kw: (_R(0, "[]") if "open" in argv else _R(rc, out, err))
     _verdicts = [gh_pr_line_state(b, run=r)[0] for b, r in (
-        ("feat/a", _runner(0, '[{"state": "MERGED"}, {"state": "OPEN"}]')),
-        ("feat/b", _runner(0, '[{"state": "MERGED"}, {"state": "CLOSED"}]')),
+        ("feat/a", _gh_world([{"state": "MERGED"}, {"state": "OPEN"}])),
+        ("feat/b", _gh_world([{"state": "MERGED"}, {"state": "CLOSED"}])),
         ("feat/a", _runner(0, "[]")),
         ("feat/b", _runner(1, '[{"state": "OPEN"}]', "HTTP 401")),
         ("feat/a", _runner(0, "not json")),
         ("feat/b", _runner(0, '{}')),
         ("feat/a", _runner(0, '[{"state": "OPEN"}, {"number": 2}]')),
         ("feat/b", _runner(0, '[{"state": 1}]')),
-        ("feat/a", _missing))]
+        ("feat/a", _missing),
+        ("feat/b", _open_then(1, "", "HTTP 502")),
+        ("feat/a", _open_then(0, "not json")))]
     case("gh_pr_line_state: OPEN anywhere continues, only-ended ends, none is none, and every "
          "unanswerable reply is None (exit 1, not JSON, not a list, a PR without a string "
          "`state`, no gh)",
-         _verdicts == ["open", "ended", "none", None, None, None, None, None, None])
+         _verdicts == ["open", "ended", "none", None, None, None, None, None, None, None, None])
+    # ⛔ r1 Codex 2: 30 MERGED PRs NEWER than an open one. One `--state all` query sees only the
+    # newest 30 and concludes "none open"; the line must still CONTINUE.
+    case("⛔ an OPEN PR older than 30 merged ones still continues the line — the open question "
+         "is asked directly, never read off a truncated list",
+         gh_pr_line_state("feat/busy", run=_gh_world([{"state": "OPEN"}]
+                                                     + [{"state": "MERGED"}] * 30))[0] == "open")
     _argv: list = []
-    gh_pr_line_state("feat/asked-about", run=lambda a, **kw: (_argv.append(a), _R(0, "[]"))[1])
-    case("...and it asks about THE branch, for PRs in EVERY state, by their state",
-         _argv[:1] == [["gh", "pr", "list", "--head", "feat/asked-about", "--state", "all",
-                        "--json", "state"]])
+    _kws: list = []
+    gh_pr_line_state("feat/asked-about",
+                     run=lambda a, **kw: (_argv.append(a), _kws.append(kw), _R(0, "[]"))[2])
+    case("...and it asks about THE branch: OPEN PRs first, then PRs in ANY state, one each, by "
+         "their state — and gives each question at most 8s (r1 Claude F6: 30s held `begin`)",
+         (_argv, [kw.get("timeout") for kw in _kws])
+         == ([["gh", "pr", "list", "--head", "feat/asked-about", "--state", s, "--json", "state",
+               "--limit", "1"] for s in ("open", "all")], [8, 8]))
 
     # ── the banner's work line, pure ─────────────────────────────────────────────────────────
     _wl = _load_work_lines()
@@ -1517,6 +1663,12 @@ def _self_test() -> int:
          "not in .claude/plans/" in work_line("elsewhere", _pl))
     case("...and the root's words are TRUNCATED to the banner's width, marked with an ellipsis",
          work_line("long", _pl) == '> **Line:** "' + "w" * (SERVING_SHOWN - 1) + '…" → `long`')
+    case("⛔ the root's words are ESCAPED, so Markdown in them renders literally — emphasis, a "
+         "link, a backtick and HTML (r1 Codex 4)",
+         work_line("md", [_wl.parse_plan(
+             "md", "<!-- parent: - -->\n<!-- serving: ship **bold** [x](https://e.x) `c` <b> -->",
+             "t")])
+         == '> **Line:** "ship \\*\\*bold\\*\\* \\[x\\](https://e.x) \\`c\\` \\<b\\>" → `md`')
     _bl = render_banner(steps, 0, "> **Line:** `r` → `kid`")
     case("render_banner puts the Line row under the title and ABOVE Doing",
          -1 < _bl.find("> **Line:** `r` → `kid`") < _bl.find("> **Doing:**")

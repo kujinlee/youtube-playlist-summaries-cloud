@@ -1628,7 +1628,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-22 (work lines, always current): 17 -> 22 — the record at the Stop hook's clear
     # (Option A's first clear site), the page rebuild there, the rebuild never changing the
     # stop's verdict, the fully-ticked rule, and an unknown branch being omitted.
-    "scripts/check-plan-progress.py": 22,
+    # ⟳ 2026-10-22, work-lines-always-on r1 fold: 22 -> 29 — the optional-step boundary (its
+    # breadth, and the record running inside it), the branch taken from the SENTINEL rather than
+    # from git at clear time (asked, ignored, stripped at the clear site), an undecodable branch
+    # name, and the lookup answering None. Two r1 anchors re-anchored onto the boundary's call.
+    "scripts/check-plan-progress.py": 29,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
@@ -1641,7 +1645,11 @@ EXPECTED_MUTATIONS = {
     # "no merged PR" as "still open"; the rule now needs an OPEN PR. Three entries re-anchored
     # with the code they guard, six added — one per decision branch of `gh_pr_line_state` and its
     # caller, plus the old `--state merged` query itself.
-    "scripts/begin-plan.py": 41,
+    # ⟳ 2026-10-22, work-lines-always-on r1 fold: 41 -> 49 — the branch written at ARM time
+    # (omitted, looked up as None, stripped at --finish), both optional steps inside the boundary,
+    # the open question asked directly (gh's 30-result default), the 8s timeout, and the escaped
+    # Line words. Four anchors re-anchored onto the rewritten `gh_pr_line_state` and `cmd_finish`.
+    "scripts/begin-plan.py": 49,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5573,7 +5581,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1755)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1770)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

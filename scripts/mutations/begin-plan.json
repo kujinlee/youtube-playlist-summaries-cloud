@@ -368,7 +368,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "        pp.record_last_plan(SENTINEL.read_text(), root=ROOT, dest=LAST_PLAN,\n                            branch=pp.current_branch(ROOT))",
+        "        pp.run_optional(\"recording the last plan\",\n                        lambda: pp.record_last_plan(SENTINEL.read_text(), root=ROOT,\n                                                    dest=LAST_PLAN))",
         "        pass"
       ]
     ],
@@ -472,7 +472,7 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    return \"ended\", f\"{len(states)} PR(s), none open\"",
+        "    return \"ended\", \"PRs exist for it and none is open\"",
         "    return \"open\", \"mutated\""
       ]
     ],
@@ -511,8 +511,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if any(not isinstance(st, str) for st in states):",
-        "    states = [st for st in states if isinstance(st, str)]\n    if False:"
+        "if any(not isinstance(st, str) for st in found):",
+        "found = [st for st in found if isinstance(st, str)]\n        if False:"
       ]
     ],
     "expect": [
@@ -524,12 +524,123 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "\"--state\", \"all\", \"--json\", \"state\"]",
-        "\"--state\", \"merged\", \"--json\", \"state\"]"
+        "\"--state\", state, \"--json\", \"state\",",
+        "\"--state\", \"merged\" if state == \"open\" else state, \"--json\", \"state\","
       ]
     ],
     "expect": [
-      "...and it asks about THE branch, for PRs in EVERY state, by their state"
+      "...and it asks about THE branch: OPEN PRs first, then PRs in ANY state, one each, by their state — and gives each question at most 8s (r1 Claude F6: 30s held `begin`)"
+    ]
+  },
+  {
+    "name": "arming writes no branch into the sentinel, so the clear has none to record (r1 Claude F3)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    SENTINEL.write_text(render_sentinel(plan_rel, now, branch))",
+        "    SENTINEL.write_text(render_sentinel(plan_rel, now, None))"
+      ]
+    ],
+    "expect": [
+      "⭐ arming WRITES the branch it was armed on into the sentinel (r1 Claude F2)",
+      "⛔ a plan ARMED on one branch and finished after a checkout is recorded against the branch it was ARMED on"
+    ]
+  },
+  {
+    "name": "the arm-time branch lookup answers None, so Option A is off for every plan (r1 Claude F3)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "                             lambda: pp.current_branch(ROOT))",
+        "                             lambda: None)"
+      ]
+    ],
+    "expect": [
+      "⭐ arming WRITES the branch it was armed on into the sentinel (r1 Claude F2)",
+      "⛔ a plan ARMED on one branch and finished after a checkout is recorded against the branch it was ARMED on"
+    ]
+  },
+  {
+    "name": "--finish hands the recorder a sentinel with no branch, so that clear site records none (r1 Claude F3)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "lambda: pp.record_last_plan(SENTINEL.read_text(), root=ROOT,",
+        "lambda: pp.record_last_plan(pp.strip_field(SENTINEL.read_text(), \"branch\"), root=ROOT,"
+      ]
+    ],
+    "expect": [
+      "⛔ a plan ARMED on one branch and finished after a checkout is recorded against the branch it was ARMED on"
+    ]
+  },
+  {
+    "name": "--finish's record runs OUTSIDE the boundary again, so a raising recorder fails --finish and strands the sentinel (r1 Codex 3)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        pp.run_optional(\"recording the last plan\",\n                        lambda: pp.record_last_plan(",
+        "        (lambda: pp.record_last_plan("
+      ],
+      [
+        "                                                    dest=LAST_PLAN))",
+        "                                                    dest=LAST_PLAN))()"
+      ]
+    ],
+    "expect": [
+      "⛔ a recorder that RAISES at --finish leaves its rc, its message and the clear exactly as they are without it"
+    ]
+  },
+  {
+    "name": "the arm-time branch lookup runs OUTSIDE the boundary, so a raising lookup fails the arm (r1 Codex 3)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    branch = pp.run_optional(\"looking up the branch to record on the sentinel\",\n                             lambda: pp.current_branch(ROOT))",
+        "    branch = pp.current_branch(ROOT)"
+      ]
+    ],
+    "expect": [
+      "⛔ a branch lookup that RAISES at ARM time still arms the plan — with NO branch on the sentinel, and ONE stderr line saying the lookup was skipped"
+    ]
+  },
+  {
+    "name": "the open question is not asked directly, so an open PR behind 30 merged ones reads as an ENDED line (r1 Codex 2)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    states, why = ask(\"open\")",
+        "    states, why = ask(\"all\")"
+      ]
+    ],
+    "expect": [
+      "⛔ an OPEN PR older than 30 merged ones still continues the line — the open question is asked directly, never read off a truncated list",
+      "...and it asks about THE branch: OPEN PRs first, then PRs in ANY state, one each, by their state — and gives each question at most 8s (r1 Claude F6: 30s held `begin`)"
+    ]
+  },
+  {
+    "name": "the gh timeout goes back to 30s, so a hung gh holds every fresh begin for half a minute (r1 Claude F6)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "GH_TIMEOUT = 8\n",
+        "GH_TIMEOUT = 30\n"
+      ]
+    ],
+    "expect": [
+      "...and it asks about THE branch: OPEN PRs first, then PRs in ANY state, one each, by their state — and gives each question at most 8s (r1 Claude F6: 30s held `begin`)"
+    ]
+  },
+  {
+    "name": "the root's words reach the banner unescaped, so Markdown in them renders as bold and links (r1 Codex 4)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "head = f'\"{md_literal(cut)}\" → '",
+        "head = f'\"{cut}\" → '"
+      ]
+    ],
+    "expect": [
+      "⛔ the root's words are ESCAPED, so Markdown in them renders literally — emphasis, a link, a backtick and HTML (r1 Codex 4)"
     ]
   }
 ]

@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 54 cases
+    python3 scripts/check-plan-progress.py --self-test  # 60 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -82,7 +82,9 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import importlib.util
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -354,18 +356,42 @@ def render_last_plan(plan_rel: str, branch: str | None, when: str) -> str:
 
 
 def current_branch(root: Path) -> str | None:
-    """The checked-out branch at `root`, or None — detached HEAD and no git are both None."""
+    """The checked-out branch at `root`, or None — detached HEAD and no git are both None.
+
+    ⟳ r1 Codex 3: output that is not UTF-8 raised `UnicodeDecodeError` out of `subprocess.run`
+    (measured with a fake `git` printing `feat/\\xff`), and this runs on the arm path. An
+    undecodable name is an UNKNOWN branch, never a crash and never a guess."""
     try:
         r = subprocess.run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
                            capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return None
     b = r.stdout.strip()
     return b if r.returncode == 0 and b and b != "HEAD" else None
 
 
-def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path,
-                     branch: str | None) -> str | None:
+def run_optional(what: str, fn, default=None):
+    """Run `fn()` — a side effect the caller's verdict must NOT depend on. NEVER RAISES.
+
+    Returns `fn()`'s value, or `default` after printing ONE stderr line naming `what` and the
+    exception. ⛔ ⟳ r1 Codex 3 (Major): the record and the branch lookup ran bare inside the Stop
+    hook, so a recorder that raised (measured: `RuntimeError`) or a `git` whose output did not
+    decode turned an ALLOWED stop into a traceback — exit 1, which the wrapper treats as a
+    fail-closed BLOCK — and left the sentinel behind. ONE boundary, owned here, used by every
+    caller of an optional step: the Stop hook's clear, `begin-plan --finish`'s clear and
+    `begin-plan`'s arm. A second copy of "which failures are optional" is the drift this repo
+    has measured most.
+    ⚠ The line goes to stderr, which on the Stop path reaches NOBODY — see `refresh_work_lines`.
+    """
+    try:
+        return fn()
+    except Exception as exc:                       # noqa: BLE001 - the breadth IS the contract
+        print(f"⚠ {what} was skipped — {type(exc).__name__}: {exc}".replace("\n", " "),
+              file=sys.stderr)
+        return default
+
+
+def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path) -> str | None:
     """Record the plan `sentinel_text` names as the LAST FINISHED plan — only if fully ticked.
 
     Returns the recorded repo-relative plan path, or None when nothing was recorded.
@@ -383,13 +409,21 @@ def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path,
     measured failure. A plan that was PAUSED and then `--finish`ed comes through here too.
     ⚠ NOT FULLY TICKED -> NOT RECORDED. `--finish` on a half-done plan is an abandonment; naming it
     the parent of the next plan would claim a line continues work that was dropped.
-    ⚠ A failed WRITE is reported on stderr and returns None. This runs inside the Stop hook, where
-    a traceback is a fail-closed BLOCK — and a record that could not be written must not trap the
-    session that just finished its plan.
+    ⛔ THE BRANCH COMES FROM THE SENTINEL, written when the plan was ARMED (⟳ r1 Claude F2,
+    Major). It used to be `current_branch()` at CLEAR time, and the clear is the end of a turn in
+    which the coordinator may already have run `git checkout -b` for the next job — measured: a
+    plan armed on `feat/a`, cleared after a checkout, was recorded against `feat/b`, so its
+    lineage followed some OTHER branch's PR. A sentinel with no `branch:` (older than the field,
+    or armed where the branch was unknown) records none, and the reader says so.
+    ⚠ A failed WRITE is reported on stderr and returns None, and every caller ALSO runs this
+    inside `run_optional`: a traceback in the Stop hook is a fail-closed BLOCK, and a record that
+    could not be written must not trap the session that just finished its plan.
     """
     if sentinel_text is None:
         return None
-    rel = parse_sentinel(sentinel_text).get("plan", "")
+    fields = parse_sentinel(sentinel_text)
+    branch = fields.get("branch") or None
+    rel = fields.get("plan", "")
     if not rel:
         return None
     try:
@@ -420,7 +454,12 @@ def refresh_work_lines(plan_dir: Path, out: Path | None) -> str | None:
     human unsure whether the tick landed. So ANY exception — a missing generator, an unwritable
     output, a defect in the renderer — becomes ONE stderr line and the caller's exit code stands.
     That breadth is the contract, not a shortcut: there is no failure here worth more than the
-    command, and every one is still SAID.
+    command.
+    ⚠ ⟳ r1 Claude F5: this said "every one is still SAID", and on one of its two paths that is
+    false. From `begin-plan.py` the line reaches the caller's terminal. From the STOP HOOK it is
+    printed to stderr with rc 0, and `.claude/hooks/block-idle-stop.sh` allows an rc-0 stop
+    SILENTLY — so there a failed rebuild (or a failed record) is lost, and the visible symptom is
+    a page that did not update. The verdict is unchanged either way, which is the part that matters.
     """
     try:
         spec = importlib.util.spec_from_file_location(
@@ -439,6 +478,37 @@ def refresh_work_lines(plan_dir: Path, out: Path | None) -> str | None:
     line = f"⚠ work-lines page NOT rebuilt — {err}".replace("\n", " ")
     print(line, file=sys.stderr)
     return line
+
+
+def test_git(root: Path, *argv: str) -> str | None:
+    """SELF-TEST SUPPORT, shared with `begin-plan.py`'s suite: run one `git` command in `root`.
+    Returns None, or a reason it failed (which the caller reports as a RED case — a branch case
+    run where git did not do what it was told is NOT RUN, never a pass).
+
+    ⛔ ISOLATED FROM THE CALLER'S GIT: inherited `GIT_*` variables are dropped (a hook context
+    sets `GIT_DIR`, which `-C` does not override), and signing and hooks are off, so a developer's
+    global config cannot make the suite's result depend on whose machine it runs on."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    cfg = ["-c", "user.name=self-test", "-c", "user.email=self-test@example.invalid",
+           "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+    try:
+        r = subprocess.run(["git", *cfg, "-C", str(root), *argv], env=env,
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"git {argv[0]} could not run ({type(exc).__name__})"
+    if r.returncode != 0:
+        return f"git {argv[0]} exited {r.returncode}: {r.stderr.strip()[:120]}"
+    return None
+
+
+def make_test_repo(root: Path, branch: str) -> str | None:
+    """SELF-TEST SUPPORT: make `root` a git repository with one commit, checked out on `branch`."""
+    for argv in (["init", "-q"], ["checkout", "-q", "-b", branch],
+                 ["commit", "-q", "--allow-empty", "--no-verify", "-m", "self-test"]):
+        err = test_git(root, *argv)
+        if err:
+            return err
+    return None
 
 
 # ── I/O shell around the pure decision ────────────────────────────────────────────────────────
@@ -466,10 +536,14 @@ def run_decide(stop_hook_active: bool) -> int:
     code, message, unticked = decide(sentinel_text, plan_text, prev, stop_hook_active)
 
     if unticked == 0:
-        record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN, branch=current_branch(ROOT))
         SENTINEL.unlink(missing_ok=True)
         STATE.unlink(missing_ok=True)
-        refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)
+        # ⛔ EVERYTHING BELOW IS OPTIONAL, AND IS ONE BOUNDARY (⟳ r1 Codex 3): the verdict, the
+        # message, the clear and the rc above were decided before it and must stand whatever
+        # happens in it. `sentinel_text` was read before the unlink, so the record still has it.
+        run_optional("recording the last plan / rebuilding the work-lines page",
+                     lambda: (record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN),
+                              refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))
     elif unticked is not None:
         STATE.write_text(str(unticked))
 
@@ -507,6 +581,9 @@ def run_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
+    # declared here because Python refuses a `global` after the name's first use.
+    global record_last_plan, current_branch
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -534,6 +611,15 @@ def _self_test() -> int:
         # CONTRACT*, where "the guard did not fire" and "nothing could see it fire" are
         # indistinguishable from outside.
         print(f"  [FAIL] {name}: got {ok!r} want {True!r}")
+
+    def _attempt(fn):
+        """`fn()`, or the string `RAISED <type>` — so a case that drives real code reports RED
+        through `case()` instead of killing the suite with a traceback the mutation harness
+        cannot attribute."""
+        try:
+            return fn()
+        except Exception as exc:                   # noqa: BLE001 - the case reports it
+            return f"RAISED {type(exc).__name__}"
 
     PLAN = (
         "### Task 1: A\n\n- [x] **Step 1**\n\n- [x] **Step 2**\n\n"
@@ -709,13 +795,15 @@ def _self_test() -> int:
         _r2 = _r / "second-root"
         (_r2 / ".claude/plans").mkdir(parents=True)
         (_r2 / ".claude/plans/second.md").write_text("# second\n- [x] only\n")
-        _got1 = record_last_plan("plan: .claude/plans/fin.md\n", root=_r, dest=_d1,
-                                 branch="feat/one")
-        _got2 = record_last_plan("plan: .claude/plans/second.md\npaused: was parked\n",
-                                 root=_r2, dest=_d2, branch=None)
+        # ⟳ r1 Claude F2: the branch is the one the SENTINEL carries — written when the plan was
+        # armed — so these drive it through the sentinel text, never through a parameter.
+        _got1 = _attempt(lambda: record_last_plan(
+            "plan: .claude/plans/fin.md\nbranch: feat/one\n", root=_r, dest=_d1))
+        _got2 = _attempt(lambda: record_last_plan(
+            "plan: .claude/plans/second.md\npaused: was parked\n", root=_r2, dest=_d2))
         _f1 = parse_sentinel(_d1.read_text()) if _d1.exists() else {}
         _f2 = parse_sentinel(_d2.read_text()) if _d2.exists() else {}
-        case("⭐ a fully-ticked plan is RECORDED with the branch it finished on",
+        case("⭐ a fully-ticked plan is RECORDED with the branch its sentinel was ARMED on",
              (_got1, _f1.get("plan"), _f1.get("branch"), "finished" in _f1)
              == (".claude/plans/fin.md", ".claude/plans/fin.md", "feat/one", True))
         case("...and an UNKNOWN branch is OMITTED, never written blank — a second plan, a second "
@@ -724,12 +812,29 @@ def _self_test() -> int:
                                                           ".claude/plans/second.md", False))
         case("⛔ a HALF-ticked plan is NOT recorded — `--finish` on it is an abandonment, and "
              "naming it a parent would continue work that was dropped",
-             (record_last_plan("plan: .claude/plans/half.md\n", root=_r, dest=_d3,
-                               branch="feat/one"), _d3.exists()) == (None, False))
+             (_attempt(lambda: record_last_plan("plan: .claude/plans/half.md\nbranch: feat/one\n",
+                                                root=_r, dest=_d3)), _d3.exists()) == (None, False))
         case("...and no sentinel, or one naming no plan, records nothing",
-             (record_last_plan(None, root=_r, dest=_d3, branch=None),
-              record_last_plan("armed: x\n", root=_r, dest=_d3, branch=None),
+             (_attempt(lambda: record_last_plan(None, root=_r, dest=_d3)),
+              _attempt(lambda: record_last_plan("armed: x\n", root=_r, dest=_d3)),
               _d3.exists()) == (None, None, False))
+
+        # ── r1 F3: THE ROOT IS A REAL GIT REPOSITORY, so the real branch lookup runs ─────────
+        # Every case above had a root that was not a repo, so `current_branch` was None at every
+        # clear site and three mutations that switched Option A off survived both suites.
+        # ⚠ A branch name DIFFERENT from begin-plan's suite, so neither can pass on a constant.
+        _git_err = make_test_repo(_r, "cpp/cleared-here")
+        case("the test root IS a git repository on a named branch (else every branch case below "
+             "is NOT RUN)", _git_err is None)
+        # TWO repositories on two branches, so neither the lookup nor the fixture can pass on a
+        # constant (check-fixture-variation).
+        _other = Path(tempfile.mkdtemp())
+        _git_err2 = make_test_repo(_other, "cpp/a-second-repo")
+        case("current_branch reads the checked-out branch of a real repository",
+             (_git_err2, _attempt(lambda: current_branch(_r)),
+              _attempt(lambda: current_branch(_other)))
+             == (None, "cpp/cleared-here", "cpp/a-second-repo"))
+        shutil.rmtree(_other, ignore_errors=True)
 
         # ── THE WIRING: run_decide's clear records the plan and rebuilds the page ───────────
         # Every case above is the recorder alone. Deleting its CALL at the clear site would leave
@@ -741,13 +846,17 @@ def _self_test() -> int:
             ROOT, PLAN_DIR = _r, _r / ".claude/plans"
             SENTINEL, STATE = _r / ".claude/executing-plan", _r / ".claude/executing-plan.state"
             LAST_PLAN, WORK_LINES_OUT = _r / ".claude/last-plan", _r / "out" / "wl.html"
-            SENTINEL.write_text("plan: .claude/plans/fin.md\n")
+            # ⛔ ARMED on one branch, CLEARED on another (the repo is on `cpp/cleared-here`).
+            SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
             with contextlib.redirect_stdout(io.StringIO()):
-                _rc = run_decide(False)
+                _rc = _attempt(lambda: run_decide(False))
+            _rec = parse_sentinel(LAST_PLAN.read_text()) if LAST_PLAN.exists() else {}
             case("⭐ the Stop hook's clear RECORDS the finished plan as the last plan",
-                 (_rc, SENTINEL.exists(),
-                  parse_sentinel(LAST_PLAN.read_text()).get("plan") if LAST_PLAN.exists()
-                  else None) == (ALLOW, False, ".claude/plans/fin.md"))
+                 (_rc, SENTINEL.exists(), _rec.get("plan"))
+                 == (ALLOW, False, ".claude/plans/fin.md"))
+            case("⛔ ...against the branch the plan was ARMED on, not the one checked out when "
+                 "the Stop hook clears it",
+                 _rec.get("branch") == "cpp/armed-there")
             case("⭐ ...and REBUILDS the work-lines page, so it is current without being asked",
                  WORK_LINES_OUT.is_file() and "<code>fin</code>" in WORK_LINES_OUT.read_text())
             # ⛔ NEVER BLOCK ON A PAGE. The output's parent is a FILE, so the write must fail; the
@@ -768,6 +877,31 @@ def _self_test() -> int:
                  == (ALLOW, False, 1))
             case("...and the record is still written when the page is not",
                  parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/other.md")
+
+            # ⛔ r1 Codex 3: AN OPTIONAL STEP THAT RAISES NEVER CHANGES THE STOP. Measured before
+            # the fix: a raising recorder escaped `run_decide` (exit 1 = a fail-closed BLOCK) and
+            # left the sentinel. The verdict, the message, the clear and the rc must all be what
+            # they are with no recorder at all — compared against `decide` itself, not a literal.
+            _real_rec, _real_branch = record_last_plan, current_branch
+
+            def _boom(*_a, **_k):
+                raise RuntimeError("injected by the self-test")
+            WORK_LINES_OUT = _r / "out" / "wl.html"
+            for _label, _rec_fn, _br_fn in (("recorder", _boom, _real_branch),
+                                            ("branch lookup", _real_rec, _boom)):
+                record_last_plan, current_branch = _rec_fn, _br_fn
+                (STATE).write_text("4")
+                SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
+                _want = decide(SENTINEL.read_text(), (_r / ".claude/plans/fin.md").read_text(),
+                               4, False)
+                _o, _e = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
+                    _got = _attempt(lambda: run_decide(False))
+                record_last_plan, current_branch = _real_rec, _real_branch
+                case(f"⛔ a {_label} that RAISES at the Stop hook's clear leaves the verdict, the "
+                     f"message, the clear and the rc exactly as they are without it",
+                     (_got, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
+                     == (_want[0], _want[1].strip(), False, False))
         finally:
             ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT = _saved
 
@@ -785,8 +919,25 @@ def _self_test() -> int:
               parse_sentinel(render_last_plan(".claude/plans/b.md", None, "t2"))]
              == [{"plan": ".claude/plans/a.md", "branch": "feat/a", "finished": "t1"},
                  {"plan": ".claude/plans/b.md", "finished": "t2"}])
+        _bare = tempfile.mkdtemp()                 # NOT inside `_r`, which is a repository now
         case("current_branch outside a repository is None, not a guess",
-             current_branch(_r) is None and current_branch(_r / ".claude") is None)
+             current_branch(Path(_bare)) is None
+             and current_branch(Path(_bare) / "no-such-dir-here") is None)
+        # ⟳ r1 Codex 3: a branch name that does not DECODE raised out of `subprocess.run`. A
+        # fake `git` first on PATH prints one; the answer must be "unknown", not a traceback.
+        _fake = _r / "fake-bin"
+        _fake.mkdir()
+        (_fake / "git").write_text("#!/bin/sh\nprintf 'feat/\\377\\n'\n")
+        (_fake / "git").chmod(0o755)
+        _path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{_fake}{os.pathsep}{_path}"
+        try:
+            _undec = _attempt(lambda: current_branch(_r))
+        finally:
+            os.environ["PATH"] = _path
+        case("⛔ a branch name that is not UTF-8 is an UNKNOWN branch (None), not a crash",
+             _undec is None)
+        os.rmdir(_bare)
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
