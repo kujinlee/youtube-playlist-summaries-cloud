@@ -1637,7 +1637,11 @@ EXPECTED_MUTATIONS = {
     # parent, merged -> started, cannot-decide -> no marker, the --finish record), the rebuild
     # after a state change, the banner's Line row (printed, rendered, no invented head), and two
     # unanswerable `gh` replies.
-    "scripts/begin-plan.py": 35,
+    # ⟳ 2026-10-22, coordinator verification of 7fdd335c: 35 -> 41. The merged-only query read
+    # "no merged PR" as "still open"; the rule now needs an OPEN PR. Three entries re-anchored
+    # with the code they guard, six added — one per decision branch of `gh_pr_line_state` and its
+    # caller, plus the old `--state merged` query itself.
+    "scripts/begin-plan.py": 41,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5569,7 +5573,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1749)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1755)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

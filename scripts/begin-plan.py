@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 101 cases
+    scripts/begin-plan.py --self-test  # 104 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -436,18 +436,27 @@ def _plan_slug(rel: str, what: str) -> str | None:
     return target.stem
 
 
-def gh_pr_merged(branch: str, run=subprocess.run) -> tuple[bool | None, str]:
-    """`(merged?, why)` for `branch`, asked of GitHub — `(None, reason)` when it CANNOT be told.
+def gh_pr_line_state(branch: str, run=subprocess.run) -> tuple[str | None, str]:
+    """`(state, why)`: does `branch`'s work line CONTINUE? Asked of GitHub, never guessed.
 
-    ⛔ DERIVED, NEVER REMEMBERED, AND NEVER GUESSED. `gh pr list --head <branch> --state merged`:
-    a non-empty list is merged; an empty one is not (yet). No `gh`, no network, a non-zero exit, a
-    timeout or output that is not a JSON list is `None` — the caller then records NO parent, the
-    same three-state honesty `_derive_parent` has for an unresolvable sentinel.
+    `gh pr list --head <branch> --state all --json state`, and the answer needs POSITIVE evidence:
+      * `"open"`  — some PR for the branch is OPEN: the line continues;
+      * `"ended"` — PRs exist and none is open (merged, or closed without merging): it ended;
+      * `"none"`  — NO PR exists for the branch at all (the default branch, a branch never
+                    pushed for review): nothing says the line continues, so it cannot be told;
+      * `None`    — `gh` could not answer: missing, a non-zero exit, a timeout, not JSON, not a
+                    list, or an element without a string `state`.
+
+    ⛔ ⟳ 2026-10-22 (coordinator verification of 7fdd335c): THE FIRST VERSION ASKED THE WRONG
+    QUESTION. It queried `--state merged` and read an EMPTY answer as "not yet merged", so a plan
+    finished on master, on a branch that never got a PR, or on a PR CLOSED without merging became
+    the parent of EVERY later plan, indefinitely — an invented lineage, the one thing this feature
+    promises never to produce. "No merged PR" is an absence; only an OPEN PR is evidence that the
+    line goes on.
     """
     try:
-        r = run(["gh", "pr", "list", "--head", branch, "--state", "merged",
-                            "--json", "number"], cwd=ROOT, capture_output=True, text=True,
-                           timeout=30)
+        r = run(["gh", "pr", "list", "--head", branch, "--state", "all", "--json", "state"],
+                cwd=ROOT, capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
         return None, "`gh` is not installed"
     except (OSError, subprocess.SubprocessError) as exc:
@@ -460,22 +469,32 @@ def gh_pr_merged(branch: str, run=subprocess.run) -> tuple[bool | None, str]:
         return None, "`gh` printed something that is not JSON"
     if not isinstance(got, list):
         return None, "`gh` printed JSON that is not a list"
-    return bool(got), ("a merged PR exists" if got else "no merged PR")
+    states = [pr.get("state") if isinstance(pr, dict) else None for pr in got]
+    if any(not isinstance(st, str) for st in states):
+        return None, "`gh` listed a PR with no string `state`"
+    if not states:
+        return "none", f"no PR exists for branch `{branch}`"
+    if any(st.upper() == "OPEN" for st in states):
+        return "open", "an open PR exists"
+    return "ended", f"{len(states)} PR(s), none open"
 
 
-PR_MERGED = gh_pr_merged   # ⚠ REPLACED by the self-test, so no case ever touches the network
+PR_LINE_STATE = gh_pr_line_state   # ⚠ REPLACED by the self-test, so no case touches the network
 
 
 def _parent_from_last_finished() -> str | None:
-    """With NOTHING armed: the last finished plan if its PR has not merged, else `STARTED`.
+    """With NOTHING armed: the last finished plan while its PR is OPEN, `STARTED` once the PR has
+    ended, and NO marker when there is no PR or no answer.
 
-    ⭐ OPTION A (the owner's decision, 2026-10-22): a plan stays the PARENT until its PR merges,
-    not merely until its steps are ticked. Measured: `work-lines-page` was ticked closed when its
-    PR opened, the sentinel cleared, and a side job armed while that PR was in CI recorded
-    `parent: -` — a new line — instead of continuing the one it really branched from.
-    ⛔ CANNOT DECIDE -> NO MARKER, AND SAID WHY. A record with no branch, a record naming a file
-    that is not a plan, or a `gh` that cannot answer: guessing "merged" would start a false new
-    line, guessing "open" would attach to a finished one, and either would be believed.
+    ⭐ OPTION A (the owner's decision, 2026-10-22) — "a plan stays the PARENT until its PR
+    merges" — IMPLEMENTED AS "WHILE AN OPEN PR EXISTS FOR ITS BRANCH". Measured: `work-lines-page`
+    was ticked closed when its PR opened, the sentinel cleared, and a side job armed while that PR
+    was in CI recorded `parent: -` — a new line — instead of continuing the one it branched from.
+    ⛔ POSITIVE EVIDENCE ONLY (⟳ coordinator, on 7fdd335c): "no merged PR" read as "still open"
+    made a master-finished plan, a never-reviewed branch and a closed-unmerged PR each the parent
+    of every later plan. An OPEN PR continues the line; merged or closed ends it; no PR at all,
+    a record with no branch, or a `gh` that cannot answer records NO marker and says why — a
+    guess either way would be believed.
     """
     if not LAST_PLAN.is_file():
         return STARTED
@@ -492,22 +511,26 @@ def _parent_from_last_finished() -> str | None:
     branch = rec.get("branch", "")
     if not branch:
         print(f"⚠ no parent recorded: the last finished plan `{slug}` has no branch on record, "
-              f"so whether its PR has merged cannot be decided.", file=sys.stderr)
+              f"so whether its PR is still open cannot be decided.", file=sys.stderr)
         return None
-    merged, why = PR_MERGED(branch)
-    if merged is None:
-        print(f"⚠ no parent recorded: whether `{slug}`'s PR (branch `{branch}`) has merged "
+    state, why = PR_LINE_STATE(branch)
+    if state is None:
+        print(f"⚠ no parent recorded: whether `{slug}`'s PR (branch `{branch}`) is still open "
               f"could not be decided — {why}.", file=sys.stderr)
         return None
-    return STARTED if merged else slug
+    if state == "none":
+        print(f"⚠ no parent recorded: no PR exists for branch `{branch}`, so whether this "
+              f"continues `{slug}` cannot be told.", file=sys.stderr)
+        return None
+    return slug if state == "open" else STARTED
 
 
 def _derive_parent() -> str | None:
     """The plan being LEFT — read from the sentinel before it is overwritten, or, when nothing is
-    armed, the last finished plan whose PR has not merged — or None, said aloud.
+    armed, the last finished plan whose PR is still OPEN — or None, said aloud.
 
     Arming while another plan is armed IS the branch, so the parent is derived rather than
-    remembered. Returns a slug, `STARTED` when nothing is armed and nothing unmerged finished last,
+    remembered. Returns a slug, `STARTED` when nothing is armed and no open PR continues a line,
     or None when a parent cannot be known — and in that case says WHY on stderr, because a silent
     None is what the first version of this produced for every call while its suite stayed green.
 
@@ -944,8 +967,8 @@ def _self_test() -> int:
     # while the guard silently went back to being dormant — which is the exact defect this
     # project measured in check-plan-code round 6 (the function was covered; the call that made
     # it load-bearing was not). These three drive the real commands against a temp root.
-    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_MERGED
-    real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_MERGED)
+    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
+    real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE)
     with tempfile.TemporaryDirectory() as td:
         ROOT = Path(td)
         PLAN_DIR = ROOT / ".claude/plans"
@@ -956,7 +979,25 @@ def _self_test() -> int:
         # one that asked `gh` would pass or fail on the network.
         LAST_PLAN = ROOT / ".claude/last-plan"
         WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
-        PR_MERGED = lambda _b: (None, "the self-test never asks GitHub")  # noqa: E731
+        PR_LINE_STATE = lambda _b: (None, "the self-test never asks GitHub")  # noqa: E731
+
+        def _gh_world(prs: list[dict]):
+            """A fake `gh pr list` over a fixed set of PRs: it honours `--state` (filtering on each
+            PR's `state`, `all` keeps everything) and `--json <fields>`, so the REAL query and
+            decision run end to end with no network — and a query asking the wrong question gets
+            the wrong answer here exactly as it would from GitHub."""
+            class _Res:
+                returncode, stderr = 0, ""
+
+            def run(argv, **_kw):
+                want = argv[argv.index("--state") + 1]
+                fields = argv[argv.index("--json") + 1].split(",")
+                hit = [pr for pr in prs
+                       if want == "all" or str(pr.get("state", "")).lower() == want]
+                res = _Res()
+                res.stdout = json.dumps([{f: pr[f] for f in fields if f in pr} for pr in hit])
+                return res
+            return run
         SENTINEL.parent.mkdir(parents=True, exist_ok=True)
         try:
             # ⚠ `serving` varied here too: the CLI path must carry it into the file, not just
@@ -1301,7 +1342,7 @@ def _self_test() -> int:
             case("cmd_finish removes the sentinel, so the guard stands down",
                  not SENTINEL.exists() and not STATE.exists())
 
-            # ── Option A: a plan stays the PARENT until its PR merges (2026-10-22) ───────────
+            # ── Option A: a plan stays the PARENT while its PR is OPEN (2026-10-22) ─────────
             case("⭐ --finish on a fully-ticked plan RECORDS it as the last plan — the second clear "
                  "site, through the one recorder",
                  LAST_PLAN.is_file()
@@ -1309,12 +1350,18 @@ def _self_test() -> int:
                  == ".claude/plans/wiring.md")
             LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "feat/wiring", "t"))
             _asked: list[str] = []
-            PR_MERGED = lambda b: (_asked.append(b), (False, "no merged PR"))[1]  # noqa: E731
+
+            def _line_state_in(prs):
+                def ask(b):
+                    _asked.append(b)
+                    return gh_pr_line_state(b, run=_gh_world(prs))
+                return ask
+            PR_LINE_STATE = _line_state_in([{"state": "OPEN"}])
             _out = io.StringIO()
             with contextlib.redirect_stdout(_out):
                 cmd_begin("side-job", ["One|d1|w1", "Two|d2|w2"])
-            case("⭐ with NOTHING armed, a finished plan whose PR has NOT merged is still the "
-                 "parent — and the question was put about ITS branch",
+            case("⭐ with NOTHING armed, a finished plan whose PR is still OPEN is the parent — and "
+                 "the question was put about ITS branch",
                  ("<!-- parent: wiring -->" in (PLAN_DIR / "side-job.md").read_text(), _asked)
                  == (True, ["feat/wiring"]))
             # ⭐ THE BANNER LINE, through the real command: the chain back to the root.
@@ -1323,23 +1370,51 @@ def _self_test() -> int:
             cmd_finish()
             case("...and --finish on a HALF-done plan leaves the record naming the finished one",
                  pp.parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/wiring.md")
-            PR_MERGED = lambda b: (True, "a merged PR exists")  # noqa: E731
+            PR_LINE_STATE = _line_state_in([{"state": "MERGED"}])
             cmd_begin("fresh", ["One|d1|w1"])
             case("...and once that PR HAS merged, the next plan STARTS a line",
                  "<!-- parent: - -->" in (PLAN_DIR / "fresh.md").read_text())
             cmd_finish()
-            PR_MERGED = lambda b: (None, "`gh` is not installed")  # noqa: E731
+            # ⛔ POSITIVE EVIDENCE ONLY (⟳ coordinator, on 7fdd335c). The first version asked
+            # GitHub for MERGED PRs and read "none" as "still open", so each of the next three made
+            # the old plan the parent of every later plan, indefinitely.
+            PR_LINE_STATE = _line_state_in([{"state": "CLOSED"}])
+            cmd_begin("closed-only", ["One|d1|w1"])
+            case("⛔ a PR CLOSED without merging ENDS the line — the next plan starts one, it is "
+                 "not the old plan's child",
+                 "<!-- parent: - -->" in (PLAN_DIR / "closed-only.md").read_text())
+            cmd_finish()
+            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "master", "t"))
+            PR_LINE_STATE = _line_state_in([])
+            _err_n = io.StringIO()
+            with contextlib.redirect_stderr(_err_n):
+                cmd_begin("no-pr", ["One|d1|w1"])
+            case("⛔ NO PR at all for the branch (here `master`) records NO parent, and the stderr "
+                 "line names the branch",
+                 ("parent:" in (PLAN_DIR / "no-pr.md").read_text(),
+                  "no PR exists for branch `master`" in _err_n.getvalue()) == (False, True))
+            cmd_finish()
+            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "feat/wiring", "t"))
+            PR_LINE_STATE = _line_state_in([{"number": 3}])
+            _err_s = io.StringIO()
+            with contextlib.redirect_stderr(_err_s):
+                cmd_begin("no-state", ["One|d1|w1"])
+            case("⛔ a PR listed with no `state` is an unanswerable reply: NO parent, reason said",
+                 ("parent:" in (PLAN_DIR / "no-state.md").read_text(),
+                  "no string `state`" in _err_s.getvalue()) == (False, True))
+            cmd_finish()
+            PR_LINE_STATE = lambda b: (None, "`gh` is not installed")  # noqa: E731
             _err_u = io.StringIO()
             with contextlib.redirect_stderr(_err_u):
                 cmd_begin("undecided", ["One|d1|w1"])
-            case("⛔ when whether it merged CANNOT be decided, NO parent is recorded and the "
-                 "reason is SAID — never a guess either way",
+            case("⛔ when whether the PR is still open CANNOT be decided, NO parent is recorded "
+                 "and the reason is SAID — never a guess either way",
                  ("parent:" in (PLAN_DIR / "undecided.md").read_text(),
                   "could not be decided" in _err_u.getvalue(),
                   "`gh` is not installed" in _err_u.getvalue()) == (False, True, True))
             cmd_finish()
             LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", None, "t"))
-            PR_MERGED = lambda b: (False, "no merged PR")  # noqa: E731
+            PR_LINE_STATE = _line_state_in([{"state": "OPEN"}])
             _err_b = io.StringIO()
             with contextlib.redirect_stderr(_err_b):
                 cmd_begin("no-branch", ["One|d1|w1"])
@@ -1357,7 +1432,7 @@ def _self_test() -> int:
                  pp.parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/parked.md")
 
             # ── "always current": every state change rebuilds the page, and NEVER fails ─────
-            PR_MERGED = lambda b: (True, "a merged PR exists")  # noqa: E731
+            PR_LINE_STATE = _line_state_in([{"state": "MERGED"}])
             with contextlib.redirect_stdout(io.StringIO()):
                 _rc_m = main(["regen", "A|d|w", "B|d|w"])
             _pg = WORK_LINES_OUT.read_text() if WORK_LINES_OUT.is_file() else ""
@@ -1384,9 +1459,9 @@ def _self_test() -> int:
             WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
             cmd_finish()
         finally:
-            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_MERGED = real
+            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE = real
 
-    # ── the merged-check itself, through an INJECTED runner: never the network ──────────────
+    # ── the line-state check itself, through an INJECTED runner: never the network ──────────
     class _R:
         def __init__(self, rc, out, err=""):
             self.returncode, self.stdout, self.stderr = rc, out, err
@@ -1396,18 +1471,25 @@ def _self_test() -> int:
 
     def _missing(argv, **kw):
         raise FileNotFoundError("gh")
-    _verdicts = [gh_pr_merged(b, run=r)[0] for b, r in (
-        ("feat/a", _runner(0, '[{"number": 7}]')), ("feat/b", _runner(0, "[]")),
-        ("feat/a", _runner(1, "[]", "HTTP 401")), ("feat/b", _runner(0, "not json")),
-        ("feat/a", _runner(0, '{"number": 7}')), ("feat/b", _missing))]
-    case("gh_pr_merged: merged / not merged, and every unanswerable reply is None — never a "
-         "guess (exit 1, not JSON, not a list, no gh)",
-         _verdicts == [True, False, None, None, None, None])
+    _verdicts = [gh_pr_line_state(b, run=r)[0] for b, r in (
+        ("feat/a", _runner(0, '[{"state": "MERGED"}, {"state": "OPEN"}]')),
+        ("feat/b", _runner(0, '[{"state": "MERGED"}, {"state": "CLOSED"}]')),
+        ("feat/a", _runner(0, "[]")),
+        ("feat/b", _runner(1, '[{"state": "OPEN"}]', "HTTP 401")),
+        ("feat/a", _runner(0, "not json")),
+        ("feat/b", _runner(0, '{}')),
+        ("feat/a", _runner(0, '[{"state": "OPEN"}, {"number": 2}]')),
+        ("feat/b", _runner(0, '[{"state": 1}]')),
+        ("feat/a", _missing))]
+    case("gh_pr_line_state: OPEN anywhere continues, only-ended ends, none is none, and every "
+         "unanswerable reply is None (exit 1, not JSON, not a list, a PR without a string "
+         "`state`, no gh)",
+         _verdicts == ["open", "ended", "none", None, None, None, None, None, None])
     _argv: list = []
-    gh_pr_merged("feat/asked-about", run=lambda a, **kw: (_argv.append(a), _R(0, "[]"))[1])
-    case("...and it asks about THE branch, for MERGED PRs only",
-         _argv and _argv[0][:5] == ["gh", "pr", "list", "--head", "feat/asked-about"]
-         and "merged" in _argv[0])
+    gh_pr_line_state("feat/asked-about", run=lambda a, **kw: (_argv.append(a), _R(0, "[]"))[1])
+    case("...and it asks about THE branch, for PRs in EVERY state, by their state",
+         _argv[:1] == [["gh", "pr", "list", "--head", "feat/asked-about", "--state", "all",
+                        "--json", "state"]])
 
     # ── the banner's work line, pure ─────────────────────────────────────────────────────────
     _wl = _load_work_lines()

@@ -371,12 +371,12 @@ def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path,
     Returns the recorded repo-relative plan path, or None when nothing was recorded.
 
     ⭐ OPTION A, the owner's decision 2026-10-22: A PLAN STAYS THE PARENT UNTIL ITS PR MERGES, not
-    merely until its steps are ticked. Measured gap: `work-lines-page` was ticked closed when its
+    merely until its steps are ticked — implemented as "while an OPEN PR exists for its branch". Measured gap: `work-lines-page` was ticked closed when its
     PR opened, which cleared the sentinel, so a side job armed while that PR was still in CI
     recorded `parent: -` — a NEW line — instead of continuing the one it branched from. The
     sentinel's clear is the moment the plan's identity would otherwise be lost, so the clear is
     where it is written down. `begin-plan._derive_parent` reads it when nothing is armed and asks
-    `gh` whether the branch has merged.
+    `gh` whether the branch still has an OPEN PR (`begin-plan.gh_pr_line_state`).
 
     ⛔ ONE RECORDER, CALLED FROM BOTH CLEAR SITES — `run_decide` here (the Stop hook) and
     `begin-plan.cmd_finish` — because two copies of "what counts as finished" is this repo's most
@@ -694,7 +694,7 @@ def _self_test() -> int:
     case("parse_sentinel keeps unknown keys",
          parse_sentinel("plan: x\nfoo: bar\n") == {"plan": "x", "foo": "bar"})
 
-    # ── Option A: a finished plan is RECORDED, so it stays the parent until its PR merges ──
+    # ── Option A: a finished plan is RECORDED, so it stays the parent while its PR is open ──
     import contextlib
     import io
     import tempfile

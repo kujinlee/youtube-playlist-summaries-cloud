@@ -16899,12 +16899,13 @@ fixed when it is first created.
 
 Four follow-ups you asked for on the same day, all now in:
 
-- **A finished task stays the parent until its pull request merges.** Before, a task counted as
-  finished the moment its boxes were ticked — which is when its pull request is *opened* — so a
-  side job started while that pull request was still being checked looked like a brand-new line.
-  Now the finished task is written down, and the next task asks GitHub whether its pull request
-  has merged. If GitHub cannot be asked (no network, not signed in), no parent is recorded and the
-  reason is printed — it never guesses.
+- **A finished task stays the parent until its pull request merges** — in practice, for as long
+  as GitHub shows an *open* pull request for it. Before, a task counted as finished the moment its
+  boxes were ticked — which is when its pull request is *opened* — so a side job started while that
+  pull request was still being checked looked like a brand-new line. Now the finished task is
+  written down, and the next task asks GitHub about its pull request: still open, the line
+  continues; merged or closed, a new line starts; no pull request at all, or GitHub cannot be
+  asked, and no parent is recorded and the reason is printed — it never guesses.
 - **The page is always current.** Every time a task is started, ticked, paused, resumed or
   finished, the page is rebuilt. A rebuild that fails prints one line and never stops the command.
 - **The page has a Refresh button**, for a task file edited by hand.
@@ -16987,10 +16988,16 @@ changed after it.
 sites — `run_decide`'s clear and `begin-plan.cmd_finish`) writes `.claude/last-plan` (`plan:`,
 `branch:` omitted when unknown, `finished:`) only for a FULLY-ticked plan, so a paused-then-finished
 plan is recorded and an abandoned one is not. `begin-plan._derive_parent` with no sentinel →
-`_parent_from_last_finished`: no record → `-`; record → `PR_MERGED(branch)` (default
-`gh_pr_merged`: `gh pr list --head <b> --state merged --json number`, runner injectable) — merged
-→ `-`, not merged → the slug, **cannot decide (no branch, no `gh`, non-zero exit, not JSON, not a
-list) → NO marker and a stderr line saying why**. The sentinel and the record share one resolver,
+`_parent_from_last_finished`. The owner's Option A ("the parent until its PR merges") is
+IMPLEMENTED AS "WHILE AN OPEN PR EXISTS": no record → `-`; otherwise `PR_LINE_STATE(branch)`
+(default `gh_pr_line_state`: `gh pr list --head <b> --state all --json state`, runner injectable)
+— any OPEN → the slug; PRs exist, none open (merged or closed unmerged) → `-`; **NO PR at all
+(master included) → NO marker and a stderr line naming the branch; cannot decide (no branch, no
+`gh`, non-zero exit, not JSON, not a list, a PR without a string `state`) → NO marker and a stderr
+line saying why**. ⟳ The first cut (`7fdd335c`) queried `--state merged` and read "none merged" as
+"still open", which made a master-finished, never-reviewed or closed-unmerged plan the parent of
+every later plan — caught by the coordinator's verification; the closed, no-PR and no-`state`
+scenarios were shown RED on `7fdd335c` and green on the fix. The sentinel and the record share one resolver,
 `_plan_slug`. (2) **Always current**: `check-plan-progress.refresh_work_lines` NEVER raises —
 every failure is one stderr line and the caller's rc stands; called after every state-changing
 command in `begin-plan.main` and after the Stop hook's clear. `gen-work-lines.write_page` is the
@@ -17002,11 +17009,10 @@ set, so the file-only assertion for every other page is unchanged; the page now 
 line**: `begin-plan.work_line` (pure, over `gen-work-lines.read_plans` records — no second marker
 parser) renders `> **Line:** "<root's words, ≤60>" → root → … → this`; no marker, a missing
 parent, a cycle, or a plan outside `.claude/plans/` is SAID in the line. Cases: begin-plan 80 →
-101, check-plan-progress 43 → 54, gen-work-lines 38 → 40, explainer-serve 202 → 203. Mutations
-+18 (begin-plan 25 → 35, check-plan-progress 17 → 22, gen-work-lines 15 → 16, explainer-serve 46 →
-48; declared sum 1731 → 1749); a scoped run over the four manifests killed 121/121, each by the
+104, check-plan-progress 43 → 54, gen-work-lines 38 → 40, explainer-serve 202 → 203. Mutations
++24 (begin-plan 25 → 41, check-plan-progress 17 → 22, gen-work-lines 15 → 16, explainer-serve 46 →
+48; declared sum 1731 → 1755); a scoped run over the four manifests killed 127/127, each by the
 case it names. ⚠ One r1 anchor (`if not SENTINEL.is_file(): return STARTED`) was orphaned by this
 change and re-anchored onto `if not LAST_PLAN.is_file()`, where that `STARTED` now lives.
-⚠ Known limits: a plan finished directly on the default branch has no PR, so it stays "not merged"
-and remains the parent until another plan finishes; a hand-edited plan leaves the page stale with
-no `/_stale` banner (the Refresh button is the remedy).
+⚠ Known limit: a hand-edited plan leaves the page stale with no `/_stale` banner (the Refresh
+button is the remedy).

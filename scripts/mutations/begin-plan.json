@@ -334,33 +334,33 @@
       ]
     ],
     "expect": [
-      "⭐ with NOTHING armed, a finished plan whose PR has NOT merged is still the parent — and the question was put about ITS branch"
+      "⭐ with NOTHING armed, a finished plan whose PR is still OPEN is the parent — and the question was put about ITS branch"
     ]
   },
   {
-    "name": "an undecidable merge is treated as NOT merged, so a guess becomes a recorded parent",
+    "name": "an undecidable line state falls through to a decision, so a guess becomes a recorded marker",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if merged is None:",
+        "    if state is None:",
         "    if False:"
       ]
     ],
     "expect": [
-      "⛔ when whether it merged CANNOT be decided, NO parent is recorded and the reason is SAID — never a guess either way"
+      "⛔ when whether the PR is still open CANNOT be decided, NO parent is recorded and the reason is SAID — never a guess either way"
     ]
   },
   {
-    "name": "a MERGED PR's plan is still named the parent, so finished work never stops being a line's head",
+    "name": "an ENDED PR's plan is still named the parent, so finished work never stops being a line's head",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    return STARTED if merged else slug",
+        "    return slug if state == \"open\" else STARTED",
         "    return slug"
       ]
     ],
     "expect": [
-      "...and once that PR HAS merged, the next plan STARTS a line"
+      "⛔ a PR CLOSED without merging ENDS the line — the next plan starts one, it is not the old plan's child"
     ]
   },
   {
@@ -429,7 +429,7 @@
     ]
   },
   {
-    "name": "gh JSON that is not a list is read as merged, so a malformed reply becomes a verdict",
+    "name": "gh JSON that is not a list is read as an answer, so a malformed reply becomes a verdict",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
@@ -438,11 +438,11 @@
       ]
     ],
     "expect": [
-      "gh_pr_merged: merged / not merged, and every unanswerable reply is None — never a guess (exit 1, not JSON, not a list, no gh)"
+      "gh_pr_line_state: OPEN anywhere continues, only-ended ends, none is none, and every unanswerable reply is None (exit 1, not JSON, not a list, a PR without a string `state`, no gh)"
     ]
   },
   {
-    "name": "a non-zero gh exit is ignored, so an auth failure's empty list reads as NOT merged",
+    "name": "a non-zero gh exit is ignored, so an auth failure's output is read as a verdict",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
@@ -451,7 +451,85 @@
       ]
     ],
     "expect": [
-      "gh_pr_merged: merged / not merged, and every unanswerable reply is None — never a guess (exit 1, not JSON, not a list, no gh)"
+      "gh_pr_line_state: OPEN anywhere continues, only-ended ends, none is none, and every unanswerable reply is None (exit 1, not JSON, not a list, a PR without a string `state`, no gh)"
+    ]
+  },
+  {
+    "name": "an OPEN PR is not recognised, so a line whose PR is still in review is cut short",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if any(st.upper() == \"OPEN\" for st in states):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ with NOTHING armed, a finished plan whose PR is still OPEN is the parent — and the question was put about ITS branch"
+    ]
+  },
+  {
+    "name": "PRs that all ENDED are read as continuing the line (closed-unmerged counts as open)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    return \"ended\", f\"{len(states)} PR(s), none open\"",
+        "    return \"open\", \"mutated\""
+      ]
+    ],
+    "expect": [
+      "...and once that PR HAS merged, the next plan STARTS a line"
+    ]
+  },
+  {
+    "name": "NO PR at all is read as an ended line, so a master-finished plan silently starts a new one",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if not states:\n        return \"none\", f\"no PR exists for branch `{branch}`\"",
+        "    if False:\n        return \"none\", f\"no PR exists for branch `{branch}`\""
+      ]
+    ],
+    "expect": [
+      "⛔ NO PR at all for the branch (here `master`) records NO parent, and the stderr line names the branch"
+    ]
+  },
+  {
+    "name": "the caller ignores 'no PR at all', so it records a parent no evidence supports",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if state == \"none\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ NO PR at all for the branch (here `master`) records NO parent, and the stderr line names the branch"
+    ]
+  },
+  {
+    "name": "a PR with no string state is silently dropped instead of making the reply unanswerable",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if any(not isinstance(st, str) for st in states):",
+        "    states = [st for st in states if isinstance(st, str)]\n    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a PR listed with no `state` is an unanswerable reply: NO parent, reason said"
+    ]
+  },
+  {
+    "name": "the query asks for MERGED PRs only again, so an open PR is invisible (the 7fdd335c defect)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "\"--state\", \"all\", \"--json\", \"state\"]",
+        "\"--state\", \"merged\", \"--json\", \"state\"]"
+      ]
+    ],
+    "expect": [
+      "...and it asks about THE branch, for PRs in EVERY state, by their state"
     ]
   }
 ]
