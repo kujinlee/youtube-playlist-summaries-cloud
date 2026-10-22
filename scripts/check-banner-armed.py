@@ -117,14 +117,53 @@ WHAT IT CANNOT SEE, stated rather than hidden:
   * the hook's RUNTIME behaviour. The reachability case is STRUCTURAL — it reads the hook as text
     and proves order in the file, nothing more.
 
+THE THREAD CLASS (`unarmed-thread`, owner's decision 2026-10-22 — option A: warn first, then block)
+---------------------------------------------------------------------------------------------------
+The work-lines page (`scripts/gen-work-lines.py`) knows a thread only once `begin-plan.py` ARMED
+it. On 2026-10-22 a side job was run on banners alone, so it never reached that page, and none of
+the three classes above could notice: they ask whether a bannered job STOPPED PARTWAY, not whether
+a THREAD SWITCH was armed. The rule:
+
+    warn  <=>  the LAST judged `> **Thread:**` row of the judged turn names a READABLE slug, AND
+               that slug is not the stem of the plan `.claude/executing-plan` named when that
+               turn ended (or nothing was named).
+
+  * Judged rows are a `**Thread:**` row containing `⤳ SWITCHED` anywhere (its target is the one
+    backticked slug after a `→`), and the `**Thread:**` row inside a `## ▶ … STEP n of N` banner
+    (the slug after `plan`, or after `↳ RESUMED`, or a switch target). `**Line:**` rows are not
+    read. Fenced code blocks are skipped — CLAUDE.md's own examples of the convention are fenced.
+  * ⛔ QUIET WHEN THE NAME CANNOT BE EXTRACTED — zero or several candidate slugs, or no backticks.
+    Guessing a name would false-alarm, and this repo has switched off a gate red from birth
+    (backlog #56). So a thread written in prose ("→ the review fold") is NOT SEEN, by design.
+  * ⚠ THE LAST ROW ONLY. The sample is end-of-turn, so only the thread the turn ENDED on can be
+    compared with it; an earlier row naming a since-finished thread would fire on the correct
+    sequence. A switch-without-arming followed IN THE SAME TURN by another switch is not seen.
+  * ⚠ A PAUSED plan still counts as the thread's plan — `--pause` is a stand-down, not an
+    un-arming, and the page still shows it.
+  * ⚠ The slug is the sentinel plan's file STEM. A `--plan` arm on a file outside `.claude/plans/`
+    matches a banner naming that stem, though the page itself reads only `.claude/plans/`.
+  * ⚠ The upgrade turn: a journal written before this class has no `plan_slug`, and that turn is
+    quiet for this class rather than read as "nothing armed".
+  * ⚠ IT SEES TODAY'S STAMPED BANNERS AND THE OLDER CLASSES DO NOT. `BANNER_RE` predates the
+    `[mm-dd hh:mm]` stamp CLAUDE.md settled on 2026-10-16 and matches none of the current form;
+    this class uses `STEP_BANNER_RE`, which accepts it. See the comment there — the owner decides
+    whether to widen `BANNER_RE`, which would change when the other three classes fire.
+
+MODE: WARN through the same channel and log as the rest (`unarmed-thread`, detail `<kind> <slug>`),
+naming the command that arms the thread. BLOCK is ONE named switch, `THREAD_BLOCK`, default False;
+when True this class returns `THREAD_BLOCK_RC` (4), which `block-idle-stop.sh` maps to `exit 2`.
+⛔ THE OWNER DECIDES WHEN to flip it, from the `unarmed-thread` false-alarm count in the warn log —
+not the implementer, and not a reviewer.
+
 FAILS CLOSED ON ITS OWN BLINDNESS. No transcript, an unreadable one, or zero assistant text parsed
 -> exit 2 with CANNOT RUN. A check that cannot reach what it measures is never a pass (CLAUDE.md),
 and "no banner found" is indistinguishable from "could not read the file" unless it says so.
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 160 cases
+    python3 scripts/check-banner-armed.py --self-test  # 196 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
+                          4 = THREAD NOT ARMED, BLOCKING — only while THREAD_BLOCK is True
 """
 from __future__ import annotations
 
@@ -490,6 +529,105 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
     return best
 
 
+# ── THE FOURTH CLASS: a THREAD the work-lines page cannot know (added 2026-10-22) ─────────────
+# The banner's `> **Thread:**` row names the thread from the PLAN SLUG (CLAUDE.md), and
+# `scripts/gen-work-lines.py` knows a thread only once `begin-plan.py` armed it. A thread
+# switched to by banner alone is real work that never reaches that page. See the module
+# docstring, section THE THREAD CLASS, for the rule and its bounds.
+THREAD_RE = re.compile(r"^>\s*\*\*Thread:\*\*(.*)$")
+# ⛔ A SECOND BANNER PATTERN, DELIBERATELY, AND A FINDING RATHER THAN A STYLE CHOICE. CLAUDE.md
+# settled on 2026-10-16 that every banner PREPENDS `[mm-dd hh:mm]`: `## ▶ [10-22 09:00] STEP 2
+# of 4`. BANNER_RE above requires `▶` then `STEP` with only whitespace between, so it does NOT
+# match a single banner written in the current form — measured 2026-10-22: the warn log's last
+# `unarmed` entry is 2026-10-18. Widening BANNER_RE would change when the three older classes fire,
+# which this slice was not asked to do, so the owner decides that separately. This class must see
+# today's banners or rule 2 is dead on arrival, so it accepts the stamp. Fold the two together
+# when BANNER_RE is repaired — two patterns for one marker is the shape that drifts.
+STEP_BANNER_RE = re.compile(r"^##\s*▶\s*(?:\[[^\]\n]*\]\s*)?STEP\s+\d+\s+of\s+\d+\b")
+_SLUG = r"`([A-Za-z0-9][A-Za-z0-9._-]*)`"
+_SWITCH_TARGET_RE = re.compile(r"→\s*" + _SLUG)
+_RESUMED_RE = re.compile(r"↳\s*RESUMED\s+" + _SLUG)
+_PLAN_NAMED_RE = re.compile(r"\bplan\s+" + _SLUG)
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+SWITCHED = "⤳ SWITCHED"
+
+
+def thread_name(body: str) -> str | None:
+    """PURE. The thread slug a `**Thread:**` row names, or None when it cannot be READ.
+
+    ⛔ None IS NOT A GUESS DEFERRED, IT IS A REFUSAL TO GUESS. Every shape below needs exactly ONE
+    backticked slug in the position the convention writes it; zero or several is unreadable,
+    because picking one would make the check's verdict depend on which backtick it happened to
+    take — and a check that false-alarms from birth gets switched off (backlog #56).
+      * `⤳ SWITCHED from `a` (…) → `b``  -> the slug immediately after a `→`, after the marker
+      * `↳ RESUMED `a` …`                -> the slug after RESUMED
+      * `… · plan `a` · 2 of 5 done`      -> the slug after the word `plan`
+    """
+    if SWITCHED in body:
+        found = _SWITCH_TARGET_RE.findall(body.split(SWITCHED, 1)[1])
+    elif "↳" in body:
+        found = _RESUMED_RE.findall(body)
+    else:
+        found = _PLAN_NAMED_RE.findall(body)
+    return found[0] if len(found) == 1 else None
+
+
+def thread_rows(texts: list[str]) -> list[tuple[str, str]]:
+    """PURE. -> [(kind, row_body)] in emission order, for the rows this class judges.
+
+    kind is "switched" for a `**Thread:**` row carrying `⤳ SWITCHED` ANYWHERE, and "step" for the
+    `**Thread:**` row inside a `## ▶ … STEP n of N` banner's quote block. Text inside a fenced code
+    block is SKIPPED: prose that QUOTES the convention (CLAUDE.md's own examples are fenced) is not
+    a banner, for the same reason BANNER_RE's opener is strict.
+    """
+    rows: list[tuple[str, str]] = []
+    for text in texts:
+        fenced = False
+        in_banner = False
+        for line in text.splitlines():
+            if _FENCE_RE.match(line):
+                fenced = not fenced
+                in_banner = False
+                continue
+            if fenced:
+                continue
+            if STEP_BANNER_RE.match(line):
+                in_banner = True
+                continue
+            m = THREAD_RE.match(line)
+            if m:
+                body = m.group(1)
+                if SWITCHED in body:
+                    rows.append(("switched", body))
+                elif in_banner:
+                    rows.append(("step", body))
+                continue
+            if in_banner and line.strip() and not line.lstrip().startswith(">"):
+                in_banner = False
+    return rows
+
+
+def unarmed_thread(texts: list[str], armed_slug: str | None) -> tuple[str, str] | None:
+    """PURE. -> (kind, slug) when the turn's LAST thread row names a thread that is not armed.
+
+    ⚠ THE LAST ROW ONLY, AND THAT IS A BOUND, NOT AN OPTIMISATION. `armed_slug` is sampled at the
+    END of the turn, so it can only be compared with the thread the turn ENDED on. A turn that
+    finished `slice-a`, switched to `fold`, armed it and worked there emits an earlier row naming
+    `slice-a` — judging that row against `fold` would fire on the correct sequence. Earlier rows are
+    therefore unjudgeable here, and a switch-without-arming that is followed IN THE SAME TURN by a
+    second switch is not seen. If the last row is unreadable this is quiet: it does not fall back
+    to an earlier row, because that would be guessing which thread the turn ended on.
+    """
+    rows = thread_rows(texts)
+    if not rows:
+        return None
+    kind, body = rows[-1]
+    name = thread_name(body)
+    if name is None or name == armed_slug:
+        return None
+    return kind, name
+
+
 # The log's `reason` column. ⛔ THESE ARE RETURNED BY `decide()`, NEVER RE-DERIVED FROM ITS OUTPUT,
 # and that is a repair rather than a style choice. Until 2026-09-22 `run_decide` reconstructed the
 # class by asking "was there a banner?" — which worked only while the two classes happened to differ
@@ -500,6 +638,45 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
 REASON_UNARMED = "unarmed"          # a banner ran, nothing was armed
 REASON_UNBANNERED = "unbannered"    # a plan was armed and edits happened, no banner
 REASON_UNHERALDED = "unheralded"    # NEITHER armed NOR bannered, and the turn was large
+REASON_THREAD = "unarmed-thread"    # the turn ENDED on a thread that `.claude/executing-plan` does not name
+
+# ⛔ THE BLOCK SWITCH FOR THE THREAD CLASS — ONE LINE, DEFAULT OFF (owner's decision 2026-10-22,
+# option A: warn first, then block). The OWNER flips it, from the `unarmed-thread` false-alarm
+# count in WARN_LOG; nobody else does. When True the class returns THREAD_BLOCK_RC, which
+# `.claude/hooks/block-idle-stop.sh` maps to `exit 2` (block the stop, stderr to Claude) — the
+# only code this guard returns that the hook does not collapse to a non-blocking `exit 1`.
+THREAD_BLOCK = False
+THREAD_BLOCK_RC = 4
+
+
+def decide_thread(texts: list[str], armed_slug: str | None,
+                  block: bool = False) -> tuple[int, str, str, str]:
+    """PURE. -> (exit_code, message, reason, detail). QUIET is (0, "", "", "").
+
+    `block` is passed in rather than read from THREAD_BLOCK so both modes are testable; run_decide
+    passes the constant.
+    """
+    hit = unarmed_thread(texts, armed_slug)
+    if hit is None:
+        return QUIET, "", "", ""
+    kind, name = hit
+    armed_txt = f"`{armed_slug}`" if armed_slug else "nothing"
+    how = ("a `⤳ SWITCHED` row named it as the target" if kind == "switched"
+           else "the last step banner's `**Thread:**` row names it")
+    head = "⛔ THREAD NOT ARMED (BLOCKING)" if block else "⚠ THREAD NOT ARMED"
+    msg = (
+        f"{head} — the previous turn ended on thread `{name}` ({how}), and "
+        f".claude/executing-plan names {armed_txt}.\n"
+        "\n"
+        "   The work-lines page (scripts/gen-work-lines.py) knows a thread only once\n"
+        "   begin-plan.py has armed it, so this thread's work is invisible there. Arm it:\n"
+        "\n"
+        f"     python3 scripts/begin-plan.py {name} \"title|doing|why\" ...\n"
+        "\n"
+        + ("   This stop is BLOCKED (THREAD_BLOCK is on). " if block else
+           "   This does not block your stop (warn-only until the owner flips THREAD_BLOCK). ")
+        + f"Logged to {WARN_LOG.relative_to(ROOT)} as `{REASON_THREAD}`.")
+    return (THREAD_BLOCK_RC if block else WARN), msg, REASON_THREAD, f"{kind} {name}"
 
 
 def decide(texts: list[str] | None, armed: bool,
@@ -742,6 +919,52 @@ def _paused_from_text(text: str) -> bool:
         if line.split(":", 1)[0].strip() == "paused":
             return True
     return False
+
+
+def _slug_from_text(text: str) -> str | None:
+    """PURE. The thread slug of the plan the sentinel names — its file STEM — or None.
+
+    ⚠ A PAUSE DOES NOT CLEAR IT, unlike `_armed_from_text`. The thread class asks "does the
+    work-lines page know this thread?", and a paused plan is still on that page; `--pause` is the
+    documented stand-down, not an un-arming. Same `":" not in line` grammar as the two above.
+    ⚠ The stem is begin-plan's slug for `.claude/plans/<slug>.md`. A `--plan` arm on a file
+    elsewhere yields that file's stem, which is what a banner would have to name to match it.
+    """
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        key, value = (part.strip() for part in line.split(":", 1))
+        if key == "plan" and value:
+            return Path(value).stem
+    return None
+
+
+def _armed_slug() -> str | None:
+    """The armed plan's slug, or None (absent OR unreadable — `_armed()` reports unreadable)."""
+    try:
+        return _slug_from_text(SENTINEL.read_text())
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def slug_sample_for(journal: dict | None, turn_uuid: str | None) -> tuple[bool, str | None]:
+    """PURE. -> (held, slug) sampled at `turn_uuid`'s Stop. held=False -> no sample for the class.
+
+    ⚠ A JOURNAL WRITTEN BEFORE 2026-10-22 HAS NO `plan_slug` KEY, and that is held=False, NOT
+    "nothing armed". Reading the missing key as None would fire on the upgrade turn of every
+    session that had a plan armed — a false alarm manufactured by the reader. The cost is one
+    turn per session in which this class is silent, which is the quiet direction on purpose.
+    """
+    if not journal or not turn_uuid:
+        return False, None
+    for uuid_key, slug_key in (("sampled_turn_uuid", "plan_slug"),
+                               ("prev_turn_uuid", "prev_plan_slug")):
+        if journal.get(uuid_key) == turn_uuid:
+            if slug_key not in journal:
+                return False, None
+            raw = journal.get(slug_key)
+            return True, raw if isinstance(raw, str) else None
+    return False, None
 
 
 def _paused():
@@ -1015,6 +1238,9 @@ def run_decide(payload: str) -> int:
     # time would describe a different moment than the verdict it excuses.
     paused_now = _paused()
     steps_now = _plan_steps() if armed_now else _UNSET
+    # The THREAD class's sample, taken beside the other two for the same reason: the verdict is
+    # about the turn ENDING NOW, judged one stop later.
+    slug_now = _armed_slug()
 
     # ── 3. judge the PRIOR turn, using the sample taken at ITS stop ───────────────────────────
     already = _read_journal(session_id)
@@ -1022,6 +1248,7 @@ def run_decide(payload: str) -> int:
     code, message = QUIET, ""
     reason = ""                    # set ONLY by decide(); see REASON_* for why it is not re-derived
     steps = _UNSET                 # bound before the log block below can read it
+    t_code, t_msg, t_detail = QUIET, "", ""   # the THREAD class; set only where decide() ran
     if judged is not None:
         if already and already.get("last_judged_uuid") == judged_uuid and judged_uuid:
             code, message = QUIET, ""        # exactly one verdict per turn (§3.4b)
@@ -1054,6 +1281,10 @@ def run_decide(payload: str) -> int:
                         texts, armed_then, steps=steps_then, edited=edited,
                         tool_uses=tool_uses_of(judged.body), paused=paused_then)
                     steps = steps_then           # the log block below reads it
+                    held, slug_then = slug_sample_for(already, judged_uuid)
+                    if held:
+                        t_code, t_msg, _t_reason, t_detail = decide_thread(
+                            texts, slug_then, block=THREAD_BLOCK)
                     # ⛔ NOTE WHAT IS *NOT* HERE: the QUIET -> WARN promotion this shipped with
                     # (backlog #97). A late flush is backlog #96's own mechanism — the NORMAL case
                     # — so escalating it warned on ten consecutive turns, which is the cry-wolf
@@ -1114,6 +1345,7 @@ def run_decide(payload: str) -> int:
         # excuse, and pausing between them must not retroactively grant one.
         "paused": paused_now,
         "steps": _steps_to_json(steps_now),
+        "plan_slug": slug_now,
         "prev_turn_uuid": (already or {}).get("sampled_turn_uuid"),
         "prev_armed": (already or {}).get("armed"),
         "prev_paused": (already or {}).get("paused", False),
@@ -1138,14 +1370,38 @@ def run_decide(payload: str) -> int:
         record["prev_paused"] = (already or {}).get("prev_paused", False)
         record["prev_steps"] = (already or {}).get("prev_steps")
         record["prev_text_len"] = (already or {}).get("prev_text_len")
+        _src_slug_key = "prev_plan_slug"
     else:
         record["prev_text_len"] = (already or {}).get("sampled_text_len")
+        _src_slug_key = "plan_slug"
+    # ⚠ CARRIED ONLY WHEN PRESENT. A pre-2026-10-22 journal has no slug key, and writing None
+    # here would turn "never sampled" into "sampled: nothing armed" one stop later — see
+    # `slug_sample_for`. Absence must survive the shift as absence.
+    if _src_slug_key in (already or {}):
+        record["prev_plan_slug"] = (already or {})[_src_slug_key]
     if not _write_journal(session_id, record):
         extra = ("CANNOT RUN: the per-turn record could not be written to "
                  f"{JOURNAL_DIR.relative_to(ROOT)}, so the NEXT stop will have no sample for this "
                  "turn and cannot judge it. TREAT THAT TURN AS NOT CHECKED.")
         message = f"{message}\n\n   {extra}" if message else extra
         code = CANNOT_RUN
+
+    # ── 5. the THREAD class — logged and voiced HERE, ahead of every early return ─────────────
+    # A CANNOT RUN above is about the journal or the flush record, not about this verdict, so it
+    # must not swallow it. BLOCK outranks every other code: it is the one the owner chose to make
+    # the stop wait on, and a failed journal write is not a reason to let it through.
+    if t_code != QUIET:
+        try:
+            observer_log.append_or_raise(
+                WARN_LOG, log_line(REASON_THREAD, t_detail, observer_log.now(), session_id))
+        except OSError as e:
+            t_msg += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
+                     f"rate the BLOCK decision reads is not being recorded."
+        message = f"{message}\n\n{t_msg}" if message else t_msg
+        if t_code == THREAD_BLOCK_RC:
+            code = THREAD_BLOCK_RC
+        elif code == QUIET:
+            code = WARN
 
     if code == CANNOT_RUN:
         if message:
@@ -1160,7 +1416,10 @@ def run_decide(payload: str) -> int:
 
     texts = texts_of(judged.body) if judged is not None else []
 
-    if code == WARN:
+    if reason:
+        # ⛔ `if reason`, NOT `if code == WARN` (2026-10-22): the THREAD class can promote `code`
+        # to WARN with no decide() class firing, or to THREAD_BLOCK_RC while one did. `reason` is
+        # non-empty exactly when decide() returned WARN, which is what this block logs.
         # ⛔ `reason` COMES FROM decide(). It used to be reconstructed here by asking "was there a
         # banner?", which silently became wrong the moment a THIRD class shared `banner is None`
         # with `unbannered` — see the REASON_* constants. Only `detail` is derived, and each class
@@ -1292,6 +1551,87 @@ def _self_test() -> int:
          decide(["just some prose, no banner here"], armed=False)[0] == QUIET)
     case("a 1-of-1 job is finished, not partway",
          decide([B.format(1, 1)], armed=False)[0] == QUIET)
+
+    # ── THE THREAD CLASS (2026-10-22): pure rules ──────────────────────────────────────────
+    # ⛔ Every slug below is DISTINCT per case and none equals another case's armed slug, so no
+    # constant answer satisfies two cases at once (*two distinct inputs, in one case*).
+    _SW = "> **Thread:** ⤳ SWITCHED from `slice-a` (5/5 done, PR 223 open) → `{}`"
+    case("TH1 a SWITCHED row's target is the slug after the arrow",
+         safe(lambda: thread_name(_SW.format("fold-95")[len("> **Thread:**"):]) == "fold-95"))
+    case("TH2 a SWITCHED row with NO backticked target is UNREADABLE (None), not guessed",
+         safe(lambda: thread_name(" ⤳ SWITCHED from `slice-a` → the review fold") is None))
+    case("TH3 a SWITCHED row naming TWO targets is unreadable — picking one would be a guess",
+         safe(lambda: thread_name(" ⤳ SWITCHED from `a` → `b` → `c`") is None))
+    case("TH4 a RESUMED row names the resumed slug",
+         safe(lambda: thread_name(" ↳ RESUMED `slice-q` after the CI red · 4 of 5 done")
+              == "slice-q"))
+    case("TH5 an ordinary row names the slug after the word `plan`",
+         safe(lambda: thread_name(" comprehensibility → Slice A · plan `slice-r` · 2 of 5")
+              == "slice-r"))
+    case("TH6 an ordinary row with no `plan` slug is unreadable",
+         safe(lambda: thread_name(" comprehensibility → Slice A · 2 of 5 done") is None))
+
+    _BAN = "## ▶ [10-22 09:00] STEP 2 of 4 — do it\n\n> **Thread:** {}\n> **Doing:** x\n> **Why:** y"
+    case("TH7 a step banner's Thread row is collected as kind `step`",
+         safe(lambda: thread_rows([_BAN.format("plan `s-one` · 1 of 4")])
+              == [("step", " plan `s-one` · 1 of 4")]))
+    case("TH7b an UNSTAMPED banner (the pre-2026-10-16 form) opens a banner too",
+         safe(lambda: [k for k, _ in thread_rows(
+             ["## ▶ STEP 2 of 4 — t\n> **Thread:** plan `s-old-form`"])] == ["step"]))
+    case("TH8 a Thread row OUTSIDE a banner that is not a switch is NOT collected",
+         safe(lambda: thread_rows(["> **Thread:** plan `s-two` · 1 of 4"]) == []))
+    case("TH9 a SWITCHED row is collected even outside a banner",
+         safe(lambda: [k for k, _ in thread_rows([_SW.format("s-three")])] == ["switched"]))
+    case("TH10 a FENCED example of the convention is skipped — CLAUDE.md's own are fenced",
+         safe(lambda: thread_rows(["```\n" + _BAN.format("plan `s-four`") + "\n"
+                                   + _SW.format("s-five") + "\n```"]) == []))
+    case("TH11 the banner's quote block ends at the first non-quote line",
+         safe(lambda: thread_rows(["## ▶ STEP 1 of 2 — t\n> **Doing:** x\nprose\n"
+                                   "> **Thread:** plan `s-six`"]) == []))
+
+    case("TH12 SWITCHED to the ARMED plan is quiet",
+         safe(lambda: decide_thread([_SW.format("s-armed")], "s-armed")[0] == QUIET))
+    case("TH13 SWITCHED to an UNARMED thread WARNS, naming it and the command that arms it",
+         safe(lambda: (lambda r: r[0] == WARN and r[2] == REASON_THREAD
+                       and r[3] == "switched s-new"
+                       and "begin-plan.py s-new" in r[1])(
+             decide_thread([_SW.format("s-new")], "s-armed2"))))
+    case("TH14 SWITCHED with an UNREADABLE target is quiet BY DESIGN — never a guessed name",
+         safe(lambda: decide_thread(["> **Thread:** ⤳ SWITCHED from `a` → the fold"],
+                                    "s-armed3")[0] == QUIET))
+    case("TH15 a step banner on the ARMED thread is quiet",
+         safe(lambda: decide_thread([_BAN.format("plan `s-on` · 2 of 4")], "s-on")[0] == QUIET))
+    case("TH16 a step banner on ANOTHER thread fires, as kind `step`",
+         safe(lambda: decide_thread([_BAN.format("plan `s-off` · 2 of 4")], "s-on2")[3]
+              == "step s-off"))
+    case("TH17 NOTHING armed fires, and the message says nothing is armed",
+         safe(lambda: (lambda r: r[0] == WARN and "names nothing" in r[1])(
+             decide_thread([_BAN.format("plan `s-solo` · 2 of 4")], None))))
+    case("TH18 the BLOCK switch OFF -> WARN; ON -> THREAD_BLOCK_RC, which is neither WARN nor "
+         "CANNOT RUN (the hook collapses both of those to a non-blocking exit 1)",
+         safe(lambda: decide_thread([_SW.format("s-blk")], "x", block=False)[0] == WARN
+              and decide_thread([_SW.format("s-blk")], "x", block=True)[0] == THREAD_BLOCK_RC
+              and THREAD_BLOCK_RC not in (QUIET, WARN, CANNOT_RUN)))
+    case("TH19 the BLOCK switch ships OFF — turning it on is the owner's one reviewed line",
+         THREAD_BLOCK is False)
+    case("TH20 only the LAST row is judged: a turn that finished `s-old`, switched and armed "
+         "`s-cur` is quiet",
+         safe(lambda: decide_thread([_BAN.format("plan `s-old` · 4 of 4"),
+                                     _SW.format("s-cur")], "s-cur")[0] == QUIET))
+    case("TH21 an unreadable LAST row is quiet and does NOT fall back to an earlier one",
+         safe(lambda: decide_thread([_SW.format("s-early"),
+                                     "> **Thread:** ⤳ SWITCHED from `s-early` → the fold"],
+                                    "s-x")[0] == QUIET))
+    case("TH22 the sentinel's slug is the plan's STEM, and a PAUSE does not clear it",
+         safe(lambda: _slug_from_text("paused: waiting\nplan: .claude/plans/s-stem.md\n")
+              == "s-stem" and _slug_from_text("armed: t\n") is None))
+    case("TH23 a journal with NO `plan_slug` key holds no sample — never read as 'nothing armed'",
+         safe(lambda: slug_sample_for({"sampled_turn_uuid": "u"}, "u") == (False, None)
+              and slug_sample_for({"sampled_turn_uuid": "u", "plan_slug": None}, "u")
+              == (True, None)
+              and slug_sample_for({"prev_turn_uuid": "v", "prev_plan_slug": "s-prev"}, "v")
+              == (True, "s-prev")))
+
 
     # ── HIGHEST, not last ──────────────────────────────────────────────────────────────────
     case("the HIGHEST banner decides, not the last one printed",
@@ -2383,6 +2723,102 @@ def _self_test() -> int:
                  "constant satisfies this case and F4 at once",
                  _rcS == WARN
                  and _logtext().rstrip("\n").endswith("\tunbannered\t2 unticked"))
+            # ── THE THREAD CLASS (2026-10-22), END TO END ──────────────────────────────────
+            # Through run_decide, so the journal round trip of `plan_slug` is what is under
+            # test — not decide_thread's arithmetic, which the pure cases above own. Each plan
+            # file has one unticked step and the turns edit nothing, so `unbannered` is quiet and
+            # every verdict here is the thread class's alone.
+            for _nm in ("fold-x", "other-y"):
+                (_fx / "plans" / f"{_nm}.md").write_text("- [x] one\n- [ ] two\n")
+            _ARM_F = "plan: plans/fold-x.md\narmed: t\n"
+            _ARM_O = "plan: plans/other-y.md\narmed: t\n"
+
+            def _th_turn(uid: str, text: str) -> list:
+                return _turn(uid, [{"type": "text", "text": text}])
+
+            def _thlog() -> list:
+                return [ln for ln in _logtext().splitlines() if f"\t{REASON_THREAD}\t" in ln]
+
+            _n0 = len(_thlog())
+            _rcT1 = _drive(_fx / "th1.jsonl", _th_turn("th1", _SW.format("fold-x")),
+                           before=_ARM_F, after=_ARM_F)
+            case("TE1 SWITCHED to the plan armed when that turn ended is QUIET, and logs nothing",
+                 _rcT1 == QUIET and len(_thlog()) == _n0)
+
+            _rcT2 = _drive(_fx / "th2.jsonl", _th_turn("th2", _SW.format("other-y")),
+                           before=_ARM_F, after=_ARM_F)
+            case("TE2 SWITCHED to an UNARMED thread WARNS and logs `unarmed-thread` with its name",
+                 _rcT2 == WARN and _thlog()[-1:] != []
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tswitched other-y"))
+
+            # ⛔ THE SAMPLING PAIR. Each case's sentinel differs between the two stops, and the
+            # two cases run the SAME transcript with the states swapped — so a re-read at judging
+            # time inverts BOTH verdicts, and no constant satisfies both.
+            _rcT3 = _drive(_fx / "th3.jsonl", _th_turn("th3", _SW.format("other-y")),
+                           before=_ARM_O, after=_ARM_F)
+            case("TE3 the armed slug is SAMPLED at the judged turn's stop — armed `other-y` then, "
+                 "`fold-x` now -> QUIET",
+                 _rcT3 == QUIET)
+            _rcT4 = _drive(_fx / "th4.jsonl", _th_turn("th4", _SW.format("other-y")),
+                           before=_ARM_F, after=_ARM_O)
+            case("TE4 ...and the swap fires — armed `fold-x` then, `other-y` now -> WARN",
+                 _rcT4 == WARN)
+
+            _rcT5 = _drive(_fx / "th5.jsonl",
+                           _th_turn("th5", "## ▶ [10-22 09:00] STEP 3 of 3 — t\n\n"
+                                           "> **Thread:** plan `solo-z` · 3 of 3 done"),
+                           before=None, after=None)
+            case("TE5 NOTHING armed + a step banner on a named thread WARNS (3 of 3, so only this "
+                 "class can be what fired)",
+                 _rcT5 == WARN and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep solo-z"))
+
+            _rcT6 = _drive(_fx / "th6.jsonl",
+                           _th_turn("th6", "> **Thread:** ⤳ SWITCHED from `fold-x` → the fold"),
+                           before=None, after=None)
+            case("TE6 an UNREADABLE switch target is QUIET even with nothing armed — by design",
+                 _rcT6 == QUIET)
+
+            globals()["THREAD_BLOCK"] = True
+            try:
+                _rcT7 = _drive(_fx / "th7.jsonl", _th_turn("th7", _SW.format("other-y")),
+                               before=_ARM_F, after=_ARM_F)
+            finally:
+                globals()["THREAD_BLOCK"] = False
+            case("TE7 with THREAD_BLOCK on, the SAME input as TE2 returns THREAD_BLOCK_RC — the "
+                 "code the hook maps to exit 2",
+                 _rcT7 == THREAD_BLOCK_RC)
+
+            # A pre-2026-10-22 journal: seed, then delete the slug key, then judge.
+            for _st in JOURNAL_DIR.glob("*.json"):
+                _st.unlink()
+            _sentinel(None)
+            _subj8 = _th_turn("th8", _SW.format("other-y"))
+            (_fx / "th8.jsonl").write_text("\n".join(_subj8))
+            run_decide(json.dumps({"transcript_path": str(_fx / "th8.jsonl"), "session_id": "s"}))
+            _jp = JOURNAL_DIR / "s.json"
+            _jd = json.loads(_jp.read_text())
+            _jd.pop("plan_slug", None)
+            _jp.write_text(json.dumps(_jd))
+            (_fx / "th8.jsonl").write_text(
+                "\n".join(_subj8 + _turn("later", [{"type": "text", "text": "x"}])))
+            _rcT8 = run_decide(json.dumps({"transcript_path": str(_fx / "th8.jsonl"),
+                                           "session_id": "s"}))
+            case("TE8 a journal written before this class (no `plan_slug`) is QUIET for that turn, "
+                 "never read as 'nothing armed' — TE2's input with nothing armed would WARN",
+                 _rcT8 == QUIET)
+
+            # The PREVIOUS slot carries `plan_slug` too — through both of run_decide's shifts. The
+            # pair swaps the sentinel states again, so reading the WRONG slot inverts a verdict.
+            _swb = [{"type": "text", "text": _SW.format("other-y")}]
+            case("TE9 the slug sampled into the PREVIOUS slot is the one judged — `fold-x` then, "
+                 "`other-y` now -> WARN",
+                 _drive_prev_slot(_fx / "th9.jsonl", _swb, _ARM_F, _ARM_O, session="t9") == WARN)
+            case("TE9b ...and swapped -> QUIET",
+                 _drive_prev_slot(_fx / "th9b.jsonl", _swb, _ARM_O, _ARM_F, session="t9b")
+                 == QUIET)
+            case("TE9c ...and a CONTINUATION stop in between keeps the older slug, not its own",
+                 _drive_prev_slot(_fx / "th9c.jsonl", _swb, _ARM_F, _ARM_O, session="t9c",
+                                  continuation=True) == WARN)
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
             (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
@@ -2434,6 +2870,14 @@ def _self_test() -> int:
     # layer out. Structural, like F6.
         case("F6c BANNER_RC reaches the hook's exit arithmetic, not just the invocation",
              '"$BANNER_RC" != "0"' in _hook)
+        # F6d — THREAD_BLOCK is a switch only if the hook honours the code it returns. Without
+        # this mapping, flipping the switch would return 4, the arithmetic below would collapse
+        # it to `exit 1`, and the "blocking" mode would warn — a switch that lies. Structural,
+        # and ORDER is part of it: the mapping must follow the CI observer, the last to run.
+        _blkmap = '"$BANNER_RC" == "' + str(THREAD_BLOCK_RC) + '" ]]; then\n    exit 2'
+        case("F6d the hook maps THREAD_BLOCK_RC to exit 2, AFTER every observer has run",
+             _blkmap in _hook and 'check-ci-watched.py" --decide' in _hook
+             and _hook.index('check-ci-watched.py" --decide') < _hook.index(_blkmap))
 
 
     # ── an ATTEMPTED edit is not an edit (code review r1) ──────────────────────────────────

@@ -835,7 +835,12 @@ EXPECTED_MUTATIONS = {
     # ratchet is what proves the cases can fail* to the passthrough properties it found missing, and
     # not to the delegation it introduced in the same commit. Measured: neutering the call reds 9
     # named cases, no crash.
-    "scripts/check-banner-armed.py": 48,
+    # ⟳ 2026-10-22: 48 -> 64, the THREAD class (`unarmed-thread`). Sixteen entries, one per
+    # firing branch and per quiet rule, every `expect` read from a real run of the mutant. ⚠ The
+    # seventeenth — deleting the hook's `BANNER_RC == 4 -> exit 2` mapping — is NOT here: a
+    # manifest's entries must all target the manifest's own file, and the hook is shell. F6d
+    # covers it structurally; nothing mutates it.
+    "scripts/check-banner-armed.py": 64,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -5591,7 +5596,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1783)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1799)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

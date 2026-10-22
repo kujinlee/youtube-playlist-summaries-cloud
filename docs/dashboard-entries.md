@@ -17103,3 +17103,25 @@ recalling the rule recalls its one exception with it.
 up front, contrary to my memory note that it refuses a bad manifest in under a second (that holds
 for some manifest defects, not this one). So the rule names no command; **backlog #342** files the
 cheap pre-check, which must reuse the harness's own anchor rule rather than restate it.
+
+## 2026-10-22
+When work switches to a new thread and announces it only with a banner, without recording it as a
+plan, the Stop check now notices and says so. Until today that kind of side job never reached the
+work-lines page and nothing pointed it out. For now it only warns, and every warning is logged.
+Making it actually stop the turn is a one-line switch, and you decide when to flip it, by looking at
+how often the log shows it warning when it shouldn't have.
+
+While building it I found something you should know about: the existing banner check had stopped
+recognising banners once they began carrying a timestamp (`## ▶ [10-22 09:00] STEP …`). Its last
+warning about a banner with no plan is from 2026-10-18. The new check reads the timestamped form.
+The old one was left as it was, because fixing it changes when three other warnings fire.
+<!--tech-->
+`scripts/check-banner-armed.py` gains a fourth class, `unarmed-thread`: `thread_name`,
+`thread_rows`, `unarmed_thread`, `decide_thread`, plus `_slug_from_text` / `_armed_slug` /
+`slug_sample_for`. The journal now samples `plan_slug` (and carries `prev_plan_slug`) at each Stop.
+It judges the LAST `**Thread:**` row of the previous turn (a `⤳ SWITCHED` target, or a step
+banner's row), is quiet when no slug can be extracted, and skips fenced blocks. `THREAD_BLOCK =
+False` is the switch; when it is on the class returns 4, which `.claude/hooks/block-idle-stop.sh`
+maps to `exit 2`. Self-test 160 -> 196 cases; mutation manifest 48 -> 64, all 16 new entries killed
+and attributed in a scoped run. `STEP_BANNER_RE` is a second banner pattern, kept on purpose until
+the owner decides whether `BANNER_RE` should accept the stamp.

@@ -197,7 +197,16 @@ CI_RC=$?
 # `exit 1` under the same guarantee stated above (the hook never surfaces a 2 on an observer's
 # behalf). FALSIFIER: stub the three siblings to 0, feed a transcript carrying a bare `#N`, and the
 # wrapper must exit 1 with the warning on stderr — it exited 0 with stdout empty before this line.
-if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0" || "$TABLE_RC" != "0" || "$TRANSCRIPT_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
+# ⛔ 2026-10-22 — THE ONE OBSERVER CODE THAT BLOCKS, AND ONLY WHEN THE OWNER TURNS IT ON.
+# check-banner-armed.py returns 4 (THREAD_BLOCK_RC) for a thread that was never armed, and ONLY
+# while its `THREAD_BLOCK` switch is True — default False, so today this line is unreachable and
+# the thread class warns through `exit 1` below like every other observer. It sits AFTER every
+# observer has run, so turning it on cannot cost a sibling its verdict. 2 and 1 are unchanged:
+# an observer's CANNOT RUN still never wedges a turn.
+if [[ "$BANNER_RC" == "4" ]]; then
+    exit 2
+fi
+if [[ "$BANNER_RC" != "0" || "$CI_RC" != "0"|| "$TABLE_RC" != "0" || "$TRANSCRIPT_RC" != "0" || "$PROGRESS_RC" == "3" ]]; then
     exit 1
 fi
 exit 0
