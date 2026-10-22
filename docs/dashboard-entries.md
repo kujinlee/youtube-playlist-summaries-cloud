@@ -16584,3 +16584,79 @@ the call site left intact (200/203 each), so they are not wiring-only; `size` is
 3/4/6/7 → 201/200/195/195); and the retirement is sound. It also recorded a near-miss of its own: it
 nearly published *"the window size is unprotected"* off four `203/203` runs in which the mutation
 had silently never been written, and now prints the mutated line before every probe.
+
+## 2026-10-21
+Tidying the goals page: two of the seven threads under "a review loop decides its own next step"
+were finished or abandoned and still presented as live work, and one misdescribed itself.
+
+The owner noticed the real problem by looking at the page: seven threads, several with a design and
+no implementation, and apparent overlap between them. Checked against the code and the history,
+four of the seven turn out to concern the same mechanism at different layers — which is why it
+reads as duplication without being it.
+
+What changed here is only the labels, and only where a label was wrong:
+
+One thread shipped a year's-worth of its own purpose and never said so — the piece that decides
+what a review loop does next is live and running on every change. It now says that at the top,
+with the pull request and the file, so nobody plans it again.
+
+One thread is abandoned in fact: the document it was supposed to produce now contains only a
+forwarding table pointing elsewhere, and not one of its twelve tasks was ever started. The
+question it asked is still open and still recorded in the backlog — it is the thread that is dead,
+not the subject.
+
+And one thread claims to be paused for a reason that no longer exists. It was stopped because the
+two signals it depended on were too noisy to build on, and because that work had moved elsewhere.
+That work is now finished, and one of the thread's own findings shipped yesterday. Whether to
+restart it is still a decision for the owner; what changed is that the reason for stopping is gone,
+and the document now says so instead of implying otherwise.
+
+**Waiting on you:** three decisions, all small and none urgent. Whether to restart the paused
+thread; which of four options to take on the "why does a simple change need five reviews" design
+(its recommendation column is deliberately empty because you asked for that discussion to be had
+together); and a yes/no on whether 75 memory-recall interruptions were worth it.
+<!--tech-->
+Goals-page thread audit under anchor `review-decides-itself`, derived with the page's OWN pairing
+logic (`gen-goals-page.pair_documents`) rather than by eyeballing filenames — **7 threads**,
+matching what the page renders.
+
+**CLOSED — thread 7, `2026-09-14-review-decision-procedure` (spec+plan) → ✅ SHIPPED.** Verified
+rather than assumed: PR **#303** `state=MERGED` 2026-09-15, `scripts/check-review-decision.py` is
+1,225 lines, referenced in `ci.yml`, `--self-test` rc=0. Header now cites all three. ⚠ Records what
+shipping did NOT settle: backlog #117 (it hand-rolls a YAML parser over a safety record) is still
+🟠 and `decision-card-soundness` is PARKED behind it.
+
+**CLOSED — thread 5, `2026-09-25-development-velocity-RECONSTRUCTED` (spec+plan) → ⛔ RETIRED**, on
+three checkable grounds: its deliverable `docs/development-velocity.md` self-declares
+*"THIS IS NOT A DOCUMENT. It is a forwarding table"*; the plan is **0 of 12** ticked; and
+`RECONSTRUCTED` is in the filename because the original was destroyed by a `git reset --hard` on
+2026-09-26. ⭐ backlog **#177 stays 🟠** — the thread is retired, the question is not.
+
+**CORRECTED — thread 1, `2026-10-20-decision-log-model-redesign` (plan only).** Its ⏸️ deferral
+rests on one argument: both consumed signals are non-discriminating base rates, so the work *"moved
+one level down to backlog #328 and #329"*. **Both are now ✅ CLOSED** (2026-10-20), so the stated
+precondition is gone — and **§1.1's first finding SHIPPED**: backlog #321 is ✅ as of `ee0e461b`
+(PR #381), so *"r2's nine findings are filed, not fixed"* is no longer true of all nine. ⚠ Still
+open and named in the correction: **#314** (thrashing ranks by CONSECUTIVE rounds) governs one of
+the two signals, plus **#337**/**#338** filed by #381's own rounds. ⛔ Resuming remains the owner's
+call; the correction changes the evidence, not the call.
+
+**Also carries `14e4bffd`**, cherry-picked off the merged branch where it was stranded: `#340`'s
+severity re-assessment. Master had been left with my stronger, measured-false framing
+(*"the whole blocker"*) after `4f276f20` passed `schema-gates` on attempt 1 — final rate 5 of 8
+heads, intermittent and self-recovering.
+
+⚠ **What this does NOT do, stated because the page will look unchanged:** there is no archive
+directory and no "closed" state the generator reads — thread cards render spec/plan presence and PR
+counts only, so **the page will still show 7 cards**. Collapsing closed threads would require
+teaching `gen-goals-page.py` a status it does not have today. Not done here; it is a code change,
+not a label fix.
+
+⚠ **NOT CLOSED, deliberately:** thread 6 (`decision-card-soundness`) is correctly PARKED behind
+#117; threads 3+4 (`memory-recall-survey` + its `S1-worksheet`) are ONE judgement in two files —
+the worksheet is labelled *"Companion to"* the survey — and both explicitly decide nothing because
+row #191's standing order forbids building before the judgement; thread 2
+(`rounds-to-convergence-is-rising`) is Phase 1 awaiting the human gate, with an empty
+recommendation column by design. ⭐ Its option **B** — a budget and retirement rule for guards — is
+where #381's own proportionality question (203 cases and 82 mutation entries guarding a 6-row log)
+would be settled.

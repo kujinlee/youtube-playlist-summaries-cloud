@@ -3,6 +3,19 @@
 > **Anchor:** `review-decides-itself` — **ADR:** none
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
+**Status:** ✅ **SHIPPED — thread CLOSED 2026-10-21.** `scripts/check-review-decision.py` is live
+(1,225 lines, called from `.github/workflows/ci.yml`, `--self-test` rc=0) and merged as **PR #303**
+(*"A review loop that decides its own next step — and then told me it was not finished"*,
+2026-09-15). ⛔ **Do not re-plan this.** Kept in place rather than deleted because review documents
+and dashboard entries cite it as dated testimony.
+
+⚠ **What shipping did NOT settle, so the open questions are findable from here:** backlog **#117**
+(this script hand-rolls a YAML parser over a safety record) is still 🟠, and the
+`decision-card-soundness` spec is PARKED behind it. The successor mechanism —
+`scripts/check-decision-scheme.py`, which asks whether the route-escalation scheme still earns its
+place — is a DIFFERENT concern and its design lives in
+`docs/superpowers/plans/2026-10-20-decision-log-model-redesign.md`.
+
 ## Why this exists
 
 **Measured 2026-09-14 on PR #302.** A contained, single-file change to a page generator ran **four**

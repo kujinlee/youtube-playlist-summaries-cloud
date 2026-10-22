@@ -5,6 +5,19 @@
 > **Anchor:** `review-decides-itself` — **ADR:** none
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
+**Status:** ✅ **SHIPPED — thread CLOSED 2026-10-21.** `scripts/check-review-decision.py` is live
+(1,225 lines, called from `.github/workflows/ci.yml`, `--self-test` rc=0) and merged as **PR #303**
+(*"A review loop that decides its own next step — and then told me it was not finished"*,
+2026-09-15). ⛔ **Do not re-plan this.** Kept in place rather than deleted because review documents
+and dashboard entries cite it as dated testimony.
+
+⚠ **What shipping did NOT settle, so the open questions are findable from here:** backlog **#117**
+(this script hand-rolls a YAML parser over a safety record) is still 🟠, and the
+`decision-card-soundness` spec is PARKED behind it. The successor mechanism —
+`scripts/check-decision-scheme.py`, which asks whether the route-escalation scheme still earns its
+place — is a DIFFERENT concern and its design lives in
+`docs/superpowers/plans/2026-10-20-decision-log-model-redesign.md`.
+
 **Goal:** Consolidate every review decision into one procedure with observable inputs, so a session stops running rounds it does not owe and stops asking the human questions the rules already answer.
 
 **Architecture:** A six-question decision card becomes section 0 of `docs/review-method.md`, with the existing deep sections kept beneath as the evidence for each rule — one source per rule. Each coordinator round document gains a machine-readable header so the counters the rules need are derived rather than remembered. `scripts/check-review-decision.py` reads those headers plus the branch diff and prints the next step. Separately, "Phase 6" is renamed to *architecture review* in the three instruction files, and the contradiction between the spine's count-based trigger and the method doc's cause-based one is resolved in favour of cause.
