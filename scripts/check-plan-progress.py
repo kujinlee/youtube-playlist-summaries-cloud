@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 65 cases
+    python3 scripts/check-plan-progress.py --self-test  # 66 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -1041,6 +1041,13 @@ def _self_test() -> int:
                  "— recording happens before either file is deleted",
                  (parse_sentinel(LAST_PLAN.read_text()).get("plan") if LAST_PLAN.exists()
                   else None) == ".claude/plans/fin.md")
+            # ⟳ always-on r3 Claude F1: `_partial` was stored and never read, so the comment's
+            # promise — the clear is MANDATORY and keeps its old error behaviour — had no case;
+            # moving the state unlink inside `run_optional` left the suite green. A failed clear
+            # must still RAISE out of the hook, exactly as it did before this feature.
+            case("⛔ ...and that failed clear is NOT swallowed: it still raises out of the hook, "
+                 "as it did before the work-lines record existed",
+                 str(_partial).startswith("RAISED "))
             SENTINEL.unlink(missing_ok=True)
         finally:
             ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT = _saved

@@ -449,5 +449,18 @@
     "expect": [
       "⛔ clearing at the Stop hook never queries the current branch — ZERO calls to the lookup across both runs; the record's branch is the sentinel's"
     ]
+  },
+  {
+    "name": "the mandatory state clear is moved inside the optional boundary, so a failed clear is swallowed and the hook reports success over a half-cleared plan",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        STATE.unlink(missing_ok=True)\n        run_optional(\"rebuilding the work-lines page\",",
+        "        run_optional(\"clearing the state\", lambda: STATE.unlink(missing_ok=True))\n        run_optional(\"rebuilding the work-lines page\","
+      ]
+    ],
+    "expect": [
+      "⛔ ...and that failed clear is NOT swallowed: it still raises out of the hook, as it did before the work-lines record existed"
+    ]
   }
 ]

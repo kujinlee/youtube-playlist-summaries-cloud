@@ -1637,7 +1637,7 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 31 -> 34 — record BEFORE the clear, the
     # rebuild as its own optional step, and the clear never querying the branch. Four entries
     # re-anchored onto the split `run_optional` calls.
-    "scripts/check-plan-progress.py": 34,
+    "scripts/check-plan-progress.py": 35,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
@@ -5591,7 +5591,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1782)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1783)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
