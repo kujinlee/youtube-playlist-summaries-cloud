@@ -553,6 +553,11 @@ jobs:
       - name: gen-work-lines self-test
         run: python3 scripts/gen-work-lines.py --self-test
 
+      # The backfill replays session transcripts that exist only on a dev machine, so CI runs
+      # its constructed-transcript cases; `--ground-truth` (the real replay) is run locally.
+      - name: backfill-work-lines self-test
+        run: python3 scripts/backfill-work-lines.py --self-test
+
       # The mutation manifest runs against the DELIVERED scripts. It replaced a step that
       # required byte-identity between these files and a 3,170-line planning document —
       # backlog #70, retired 2026-08-29 once this existed and both paths were shown green

@@ -214,6 +214,7 @@ POPULATION: frozenset[str] = frozenset({
     "explainer-serve.py",
     "gen-goals-page.py",
     "gen-work-lines.py",
+    "backfill-work-lines.py",
     "page_chrome.py",
     "peer-sites.py",
     # ⟳ 2026-09-07 — THE FOURTEEN, added together, and the reason is worth more than the names.

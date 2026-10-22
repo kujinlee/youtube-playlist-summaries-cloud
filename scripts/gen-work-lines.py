@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 40 cases
+    python3 scripts/gen-work-lines.py --self-test  # 46 cases
 
 WHY THIS EXISTS
 ---------------
@@ -57,6 +57,9 @@ DEFAULT_OUT = pathlib.Path.home() / "explainers" / "work-lines.html"
 STARTED = "-"   # the `parent:` value `begin-plan` writes when nothing else was armed
 PARENT = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
 SERVING = re.compile(r"^<!--\s*serving:\s*(.+?)\s*-->\s*$", re.M)
+# ⭐ A link REBUILT from the transcripts (`backfill-work-lines.py`) carries its provenance on the
+# line below its parent. Live evidence and rebuilt history must always be told apart on the page.
+SOURCE = re.compile(r"^<!--\s*parent-source:\s*(.+?)\s*-->\s*$", re.M)
 TICKED = re.compile(r"^\s*- \[x\]", re.M)
 UNTICKED = re.compile(r"^\s*- \[ \]", re.M)
 
@@ -70,11 +73,13 @@ def parse_plan(name: str, text: str, touched: str) -> dict:
     """
     p = PARENT.search(text)
     s = SERVING.search(text)
+    src = SOURCE.search(text) if p else None
     x, o = len(TICKED.findall(text)), len(UNTICKED.findall(text))
     par = p.group(1) if p else None
     return {"slug": name, "parent": None if par == STARTED else par,
             "started": par == STARTED,
             "serving": s.group(1) if s else None,
+            "source": src.group(1) if src else None,
             "ticked": x, "total": x + o, "touched": touched,
             "done": x + o > 0 and o == 0, "empty": x + o == 0}
 
@@ -186,6 +191,9 @@ def render(roots: list[dict], orphans: list[str], generated: str) -> str:
         '<p class="lede">⚠ <strong>“not ticked closed” is not “abandoned.”</strong> A plan file is '
         'a claim about progress; work has been finished here and left unticked. The date is when '
         'the file was last touched — judge from that, not from the box.</p>',
+        '<p class="lede">⚠ A link drawn <span class="recon-key">dashed and marked '
+        '“reconstructed”</span> was rebuilt afterwards from the session transcripts, not '
+        'recorded when the plan was armed — hover it for the session and time it came from.</p>',
     ]
     if orphans:
         parts.append('<p class="warn">⛔ ' + esc(len(orphans)) +
@@ -211,7 +219,7 @@ def render(roots: list[dict], orphans: list[str], generated: str) -> str:
                          f'here to show the line</p>')
         elif r.get("started"):
             parts.append('<p class="serving absent">started this line; no objective was '
-                         'recorded</p>')
+                         'recorded' + (' (reconstructed)' if r.get("source") else '') + '</p>')
         else:
             parts.append('<p class="serving absent">no parent recorded, and no stated '
                          'objective</p>')
@@ -230,9 +238,12 @@ def _render_node(n: dict, parts: list[str]) -> None:
     else:
         badge, cls = f'{n["ticked"]}/{n["total"]} not ticked closed', "st-open"
     cyc = ' <span class="warn">⛔ cycle</span>' if n.get("cycle") else ""
-    parts.append(f'<li><span class="st {cls}">{esc(badge)}</span> '
+    rec = (f' <span class="recon" title="reconstructed from {esc(n["source"])}">reconstructed'
+           f'</span>' if n.get("source") else "")
+    li = '<li class="rebuilt">' if n.get("source") else "<li>"
+    parts.append(f'{li}<span class="st {cls}">{esc(badge)}</span> '
                  f'<code>{esc(n["slug"])}</code> '
-                 f'<span class="when">{esc(n["touched"])}</span>{cyc}')
+                 f'<span class="when">{esc(n["touched"])}</span>{cyc}{rec}')
     if n["children"]:
         parts.append('<ul>')
         # oldest first: the order the branches were taken in
@@ -270,6 +281,10 @@ h1{font-size:2rem;margin:.2rem 0 1rem}
 .serving.absent{color:var(--ink-faint);font-style:italic}
 ul.tree,ul.tree ul{list-style:none;margin:0;padding-left:1.1rem}
 ul.tree li{margin:.25rem 0;border-left:1px dotted var(--rule);padding-left:.7rem}
+ul.tree li.rebuilt{border-left:2px dashed var(--pending)}
+.recon,.recon-key{font-family:var(--mono);font-size:.66rem;color:var(--pending);
+       border:1px dashed var(--pending);border-radius:.3rem;padding:.02rem .32rem}
+.recon{cursor:help}
 code{font-family:var(--mono);font-size:.85rem}
 .when{font-family:var(--mono);font-size:.7rem;color:var(--ink-faint)}
 .st{font-family:var(--mono);font-size:.68rem;padding:.08rem .38rem;border-radius:.3rem;
@@ -524,6 +539,35 @@ def _self_test() -> int:
     case("the serving line and an orphan's name are escaped too",
          ("<i>" in _x, "&lt;i&gt;ask" in _x, "<s>" in _x, "&lt;s&gt;gone" in _x),
          (False, True, False, True))
+
+    # ── reconstructed links (`backfill-work-lines.py`) are drawn so they can be told apart ───
+    _SRC_A, _SRC_B = "transcript 11112222 2026-10-01T12:00:00Z", "transcript 9999aaaa 2026-09-30T08:00:00Z"
+    case("⭐ a `parent-source:` line is read as the link's provenance — two distinct inputs",
+         [parse_plan("k", f"# k\n<!-- parent: p -->\n<!-- parent-source: {v} -->\n- [ ] a",
+                     "t")["source"] for v in (_SRC_A, _SRC_B)], [_SRC_A, _SRC_B])
+    case("...a live marker has none, and a source with NO parent marker is not a link",
+         [parse_plan("k", t_, "t")["source"] for t_ in
+          ("# k\n<!-- parent: p -->\n- [ ] a", "# k\n<!-- parent-source: x -->\n- [ ] a")],
+         [None, None])
+    _rk = render(*build_forest([_mk("p", None),
+                                {**_mk("rebuilt-kid", "p"), "source": _SRC_A},
+                                _mk("live-kid", "p")]), "t")
+    _rl = {k: [l for l in _rk.splitlines() if f"<code>{k}</code>" in l][0]
+           for k in ("rebuilt-kid", "live-kid")}
+    case("⛔ a RECONSTRUCTED node is drawn distinctly and says where it came from; a live one is not",
+         (_rl["rebuilt-kid"].startswith('<li class="rebuilt">'),
+          f'title="reconstructed from {_SRC_A}">reconstructed<' in _rl["rebuilt-kid"],
+          "rebuilt" in _rl["live-kid"], "reconstructed" in _rl["live-kid"]),
+         (True, True, False, False))
+    case("...and the page's caveat says, once, what the dashed mark means",
+         "rebuilt afterwards from the session transcripts" in _rk, True)
+    case("a reconstructed START of a line says it was reconstructed; a live one does not",
+         [("started this line; no objective was recorded (reconstructed)" in render(
+             build_forest([{**_mk("x", None), "started": True, "source": src}])[0], [], "t"))
+          for src in (_SRC_A, None)], [True, False])
+    case("the provenance is HTML-escaped, so a transcript id cannot inject markup",
+         (lambda h: ("<b>" in h, "&lt;b&gt;" in h))(render(*build_forest(
+             [_mk("p", None), {**_mk("k", "p"), "source": "<b>x</b>"}]), "t")), (False, True))
 
     # ── main() over a constructed world ──────────────────────────────────────────────────────
     with _tf.TemporaryDirectory() as _d:

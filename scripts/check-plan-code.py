@@ -919,7 +919,13 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
-    "scripts/gen-work-lines.py": 16,
+    # ⟳ 2026-10-22 (work-lines backfill): 16 -> 21 — a reconstructed link is read only under a
+    # parent, drawn distinctly, explained by the caveat, labelled on a started line, and escaped.
+    "scripts/gen-work-lines.py": 21,
+    # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
+    # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
+    # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
+    "scripts/backfill-work-lines.py": 25,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1659,7 +1665,9 @@ EXPECTED_MUTATIONS = {
     # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
     # the full CommonMark escape set, and --finish never querying the branch.
-    "scripts/begin-plan.py": 56,
+    # ⟳ 2026-10-22, work-lines backfill: 56 -> 58 — a re-arm keeps a reconstructed link's
+    # `parent-source:` label (read on re-arm, and written by render_plan).
+    "scripts/begin-plan.py": 58,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -3764,7 +3772,8 @@ def _self_test() -> int:
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
-         sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
+         sorted(EXPECTED_MUTATIONS), ["scripts/backfill-work-lines.py",
+                                      "scripts/begin-plan.py",
                                       "scripts/brief-compose.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
@@ -5591,7 +5600,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1783)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1815)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

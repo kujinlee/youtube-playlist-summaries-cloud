@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 120 cases
+    scripts/begin-plan.py --self-test  # 123 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -165,7 +165,8 @@ def split_step(arg: str) -> tuple[str, str, str]:
 
 
 def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str,
-                parent: str | None = None, serving: str | None = None) -> str:
+                parent: str | None = None, serving: str | None = None,
+                parent_source: str | None = None) -> str:
     """The plan file. One `### Task N:` heading per step, so the guard's block message can name
     the step it is waiting on rather than a whole task's worth of work.
 
@@ -183,6 +184,10 @@ def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str,
     `serving` is the ROOT's own reason: the human's words that started the line. It cannot be
     derived from anything, so it is passed, and its absence is rendered as absent rather than
     guessed at.
+
+    `parent_source` is never derived here: it is the label `backfill-work-lines.py` writes on a
+    link REBUILT from the transcripts, and it is only ever carried through a re-arm (see
+    `cmd_begin`), so a reconstructed link can never be re-written as a live one.
     """
     n = len(steps)
     out = [
@@ -195,6 +200,8 @@ def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str,
     # exactly like a plan written before the field existed.
     if parent:
         out.append(f"<!-- parent: {parent} -->")
+    if parent and parent_source:
+        out.append(f"<!-- parent-source: {parent_source} -->")
     if serving:
         out.append(f"<!-- serving: {serving} -->")
     if parent or serving:
@@ -448,6 +455,7 @@ def _print_state(plan_abs: Path, plan_rel: str) -> int:
 
 _PARENT_LINE = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
 _SERVING_LINE = re.compile(r"^<!--\s*serving:\s*(.+?)\s*-->\s*$", re.M)
+_SOURCE_LINE = re.compile(r"^<!--\s*parent-source:\s*(.+?)\s*-->\s*$", re.M)
 STARTED = "-"   # the parent value for a plan armed with nothing else armed
 
 
@@ -681,13 +689,19 @@ def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -
         old = plan_abs.read_text()
         kept = _PARENT_LINE.search(old)
         parent = kept.group(1) if kept else None
+        # ⛔ A RECONSTRUCTED LINK STAYS LABELLED. `backfill-work-lines.py` marks a rebuilt link
+        # with `parent-source:`; dropping that line here would turn transcript evidence into what
+        # reads as a live record on the next re-arm — the one confusion the label exists to stop.
+        src = _SOURCE_LINE.search(old)
+        parent_source = src.group(1) if src else None
         if serving is None:
             was = _SERVING_LINE.search(old)
             serving = was.group(1) if was else None
     else:
-        parent = _derive_parent()
+        parent, parent_source = _derive_parent(), None
     plan_abs.write_text(render_plan(slug, steps, _dt.date.today().isoformat(),
-                                    parent=parent, serving=serving))
+                                    parent=parent, serving=serving,
+                                    parent_source=parent_source))
     plan_rel = str(plan_abs.relative_to(ROOT))
     _arm(plan_rel)
     print(f"armed: {SENTINEL.relative_to(ROOT)} -> {plan_rel} ({len(steps)} steps)\n")
@@ -982,6 +996,13 @@ def _self_test() -> int:
     # the wrong tree, silently.
     _lineage = render_plan("kid", THREE, "2026-10-22", parent="root", serving="the ask")
     _bare = render_plan("demo", THREE, "2026-09-04")
+    # `parent_source` VARIED, and the label only ever rides UNDER a parent: on its own it would
+    # be a provenance for a link that does not exist.
+    _src = [render_plan("kid", THREE, "2026-10-22", parent=par, parent_source=ps)
+            for par, ps in (("root", "transcript aaaa1111 t1"), (None, "transcript bbbb2222 t2"))]
+    case("render_plan writes `parent-source:` directly under its parent, and never without one",
+         ("<!-- parent: root -->\n<!-- parent-source: transcript aaaa1111 t1 -->" in _src[0],
+          "parent-source" in _src[1]) == (True, False))
     case("⭐ parent and serving are written as their OWN machine-readable lines",
          "<!-- parent: root -->" in _lineage and "<!-- serving: the ask -->" in _lineage)
     # ⚠ ADJACENT: absence is a VALUE here. "root" and "no parent recorded" are different claims,
@@ -1171,6 +1192,19 @@ def _self_test() -> int:
             cmd_begin("branch", ["One|d1|w1"])
             case("...and a re-armed BRANCH keeps the parent it was created with",
                  "<!-- parent: wiring -->" in (PLAN_DIR / "branch.md").read_text())
+            # ⛔ A RECONSTRUCTED LINK STAYS LABELLED THROUGH A RE-ARM. `backfill-work-lines.py`
+            # writes `parent-source:` under a rebuilt parent; a re-arm that kept the parent and
+            # dropped the label would make transcript evidence read as a live record.
+            (PLAN_DIR / "rebuilt.md").write_text(
+                "# rebuilt\n\n<!-- parent: wiring -->\n<!-- parent-source: transcript abcd1234 "
+                "2026-10-01T12:00:00Z -->\n\n- [ ] **Step 1 of 1** — x\n")
+            cmd_begin("rebuilt", ["One|d1|w1"])
+            _rb = (PLAN_DIR / "rebuilt.md").read_text()
+            case("⛔ a re-arm KEEPS a reconstructed link's `parent-source:` label, under its parent",
+                 "<!-- parent: wiring -->\n<!-- parent-source: transcript abcd1234 "
+                 "2026-10-01T12:00:00Z -->" in _rb)
+            case("...and a plan armed LIVE never gets one",
+                 "parent-source" not in (PLAN_DIR / "branch.md").read_text())
 
             # ⛔ THE SENTINEL MUST RESOLVE TO A PLAN IN PLAN_DIR. ⟳ r1 (Codex 2, Claude M3):
             # `Path(prev).stem` attached `elsewhere/real.md` to an unrelated `real.md` here.

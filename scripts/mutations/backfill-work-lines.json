@@ -1,0 +1,327 @@
+[
+  {
+    "name": "with nothing armed the new plan records NO marker instead of starting a line",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                            par, why = STARTED, \"\"",
+        "                            par, why = None, \"\""
+      ]
+    ],
+    "expect": [
+      "...and arming with NOTHING armed records `-` (a started line)"
+    ]
+  },
+  {
+    "name": "the armed plan is never taken as the parent",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                            par = _slug_of(state.rel)\n",
+        "                            par = None\n"
+      ]
+    ],
+    "expect": [
+      "⭐ arming while another plan is armed records the armed plan as the parent"
+    ]
+  },
+  {
+    "name": "a turn boundary never clears a fully-ticked plan",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            elif full:\n                state = None",
+        "            elif False:\n                state = None"
+      ]
+    ],
+    "expect": [
+      "⭐ a fully-ticked plan is CLEARED at the turn boundary, so the next arm is `-`"
+    ]
+  },
+  {
+    "name": "the boundary clears a PAUSED plan too",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if not isinstance(state, Armed) or state.paused is True:\n                continue\n            maybe_full",
+        "            if not isinstance(state, Armed):\n                continue\n            maybe_full"
+      ]
+    ],
+    "expect": [
+      "⭐ a PAUSED plan survives the boundary and stays the parent"
+    ]
+  },
+  {
+    "name": "--finish leaves the plan armed",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                state = None if oc == \"ok\" else unknown(\"the output of --finish was not readable\")",
+        "                state = state if oc == \"ok\" else unknown(\"the output of --finish was not readable\")"
+      ]
+    ],
+    "expect": [
+      "⭐ --finish clears the sentinel: the next arm starts a line"
+    ]
+  },
+  {
+    "name": "every arm re-derives the parent, so a re-arm rewrites lineage",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if slug not in seen:",
+        "                if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ re-arming an existing plan KEEPS its first parent"
+    ]
+  },
+  {
+    "name": "a refusal is read as unreadable output, so a failed call poisons the state",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if first is no:\n            out.append((\"refused\", {})); pos = no.end()",
+        "        if first is no:\n            out.append((\"unknown\", {})); pos = no.end()"
+      ]
+    ],
+    "expect": [
+      "⭐ a FAILED begin-plan call is ignored: the refused --finish cleared nothing"
+    ]
+  },
+  {
+    "name": "an unread tick is assumed NOT to have advanced the plan",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    hi = state.hi + 1 if state.n is None else min(state.n, state.hi + 1)",
+        "                    hi = state.hi"
+      ]
+    ],
+    "expect": [
+      "⛔ an unread tick that MAY have been the last makes the boundary's effect unknown"
+    ]
+  },
+  {
+    "name": "a call in another checkout is replayed against this sentinel",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                                    if k.root is None or k.root == root]",
+        "                                    if True]"
+      ]
+    ],
+    "expect": [
+      "⛔ calls in ANOTHER checkout touch another sentinel and are not replayed here"
+    ]
+  },
+  {
+    "name": "a subagent's turn end runs the Stop hook",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\" and top:",
+        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\":"
+      ]
+    ],
+    "expect": [
+      "a SUBAGENT's turn end runs no Stop hook, so it clears nothing"
+    ]
+  },
+  {
+    "name": "a heredoc body is parsed as commands",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    toks = tokenize(strip_heredocs(cmd))",
+        "    toks = tokenize(cmd)"
+      ]
+    ],
+    "expect": [
+      "⛔ a heredoc BODY that names begin-plan.py is data, not a call"
+    ]
+  },
+  {
+    "name": "any armed file is taken as a plan, wherever it lives",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    return b[:-3] if d == PLAN_REL and b.endswith(\".md\") else None",
+        "    return b[:-3]"
+      ]
+    ],
+    "expect": [
+      "⛔ a sentinel naming a non-plan file records NO parent, and says why"
+    ]
+  },
+  {
+    "name": "a hand edit of the sentinel goes unseen",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if _SENTINEL_WRITE.search(cmd):\n        return (\"sentinel\",)",
+        "    if _SENTINEL_WRITE.search(cmd):\n        return None"
+      ]
+    ],
+    "expect": [
+      "⛔ a hand edit of the sentinel makes its state unknown"
+    ]
+  },
+  {
+    "name": "another session changing state mid-arm is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        if par is not None and overlapping(e):",
+        "                        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ another session changing state WHILE the arm ran: no marker, and the reason says so"
+    ]
+  },
+  {
+    "name": "a bare state line is taken by the FIRST call that could print one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        " and idx == printers[-1] else None)",
+        " else None)"
+      ]
+    ],
+    "expect": [
+      "⭐ `--finish && begin-plan next | tail`: the bare state line is the ARM's, and the finish it got past cleared the sentinel"
+    ]
+  },
+  {
+    "name": "a --finish cut by tail is never inferred to have run",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            out[i] = (\"ok\", {})",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ `--finish && begin-plan next | tail`: the bare state line is the ARM's, and the finish it got past cleared the sentinel"
+    ]
+  },
+  {
+    "name": "a disagreeing banner is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        elif any(b != rep for b in banners if SLUG.fullmatch(b)):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a banner that DISAGREES: no marker, and the row names both witnesses"
+    ]
+  },
+  {
+    "name": "only banners naming a plan ON DISK are witnesses",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "for b in banners if SLUG.fullmatch(b)):",
+        "for b in banners if b in plans):"
+      ]
+    ],
+    "expect": [
+      "⛔ ...but a SLUG naming no plan on disk still disagrees (a thread in another checkout)"
+    ]
+  },
+  {
+    "name": "a plan that already has a marker is reconstructed over",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if PARENT_LINE.search(text):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a plan that ALREADY has a marker is untouched, whatever the replay says"
+    ]
+  },
+  {
+    "name": "a file born before its first recorded arm is still linked",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        elif births[slug] < _epoch(rec[\"ts\"]) - BIRTH_SLACK_S:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a file BORN before its first recorded arm: that arm was a re-arm, so no marker"
+    ]
+  },
+  {
+    "name": "the dry run writes",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if write:\n        n = 0",
+        "    if True:\n        n = 0"
+      ]
+    ],
+    "expect": [
+      "⛔ the DRY RUN writes nothing"
+    ]
+  },
+  {
+    "name": "--write moves every plan's date to today",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            os.utime(p, (st.st_atime, st.st_mtime))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ --write keeps the file's mtime: the page dates plans by it"
+    ]
+  },
+  {
+    "name": "--write changes the plan .claude/last-plan fingerprints",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if r[\"slug\"] == last:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ --write SKIPS the plan .claude/last-plan fingerprints, and says why"
+    ]
+  },
+  {
+    "name": "--ground-truth over transcripts with no begin-plan call is a FAIL, not CANNOT RUN",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if not any(e.kind == \"bp\" for e in events):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and with transcripts that hold no begin-plan call, also CANNOT RUN (2)"
+    ]
+  },
+  {
+    "name": "the marker drops its provenance label",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                       marker=(f\"<!-- parent: {rep} -->\\n<!-- parent-source: transcript \"",
+        "                       marker=(f\"<!-- parent: {rep} -->\\n<!-- parent-source: \""
+      ]
+    ],
+    "expect": [
+      "⭐ the marker is labelled: parent line + `parent-source: transcript <8> <ISO>`"
+    ]
+  }
+]

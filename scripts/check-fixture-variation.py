@@ -313,6 +313,14 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
+    "backfill-work-lines.py": (
+        "apply_marker.marker", "apply_marker.text", "classify.args", "decide.births",
+        "decide.plans", "decide.seen", "find_calls.cmd", "find_calls.cwd", "ground_truth.root",
+        "ground_truth.tdir", "read_transcripts.root", "read_transcripts.tdir",
+        "render_table.rows", "replay.events", "replay.root", "run.births", "run.plan_dir",
+        "run.root", "run.tdir", "run.write",
+    ),
     # The work-lines generator. Every parameter is varied by a case; none is exempt.
     "gen-work-lines.py": (
         "build_forest.plans",

@@ -206,5 +206,70 @@
     "expect": [
       "⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome"
     ]
+  },
+  {
+    "name": "a parent-source with no parent marker is read as a link",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    src = SOURCE.search(text) if p else None",
+        "    src = SOURCE.search(text)"
+      ]
+    ],
+    "expect": [
+      "...a live marker has none, and a source with NO parent marker is not a link"
+    ]
+  },
+  {
+    "name": "a reconstructed node is drawn like a live one",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    li = '<li class=\"rebuilt\">' if n.get(\"source\") else \"<li>\"",
+        "    li = \"<li>\""
+      ]
+    ],
+    "expect": [
+      "⛔ a RECONSTRUCTED node is drawn distinctly and says where it came from; a live one is not"
+    ]
+  },
+  {
+    "name": "the caveat no longer says what the mark means",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        '“reconstructed”</span> was rebuilt afterwards from the session transcripts, not '",
+        "        '“reconstructed”</span> was rebuilt, not '"
+      ]
+    ],
+    "expect": [
+      "...and the page's caveat says, once, what the dashed mark means"
+    ]
+  },
+  {
+    "name": "a reconstructed start of a line reads as live",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "'recorded' + (' (reconstructed)' if r.get(\"source\") else '') + '</p>')",
+        "'recorded</p>')"
+      ]
+    ],
+    "expect": [
+      "a reconstructed START of a line says it was reconstructed; a live one does not"
+    ]
+  },
+  {
+    "name": "the provenance is not escaped",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "title=\"reconstructed from {esc(n[\"source\"])}\">reconstructed'",
+        "title=\"reconstructed from {n[\"source\"]}\">reconstructed'"
+      ]
+    ],
+    "expect": [
+      "the provenance is HTML-escaped, so a transcript id cannot inject markup"
+    ]
   }
 ]

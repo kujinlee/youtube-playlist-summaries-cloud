@@ -17103,3 +17103,36 @@ recalling the rule recalls its one exception with it.
 up front, contrary to my memory note that it refuses a bad manifest in under a second (that holds
 for some manifest defects, not this one). So the rule names no command; **backlog #342** files the
 cheap pre-check, which must reuse the harness's own anchor rule rather than restate it.
+
+## 2026-10-22 [needs-you]
+The work-lines page can now be given back the history it was missing, rebuilt from the saved
+session transcripts. Plans written before the page existed showed up as lines of one, with no
+link to the work they branched from. A new script replays every time a plan was started, ticked,
+paused or finished, in order, using the same rule the live tool uses. From that it works out
+which plan was active when each new one began.
+
+It only links a plan when the evidence is clean. Where a step's output was cut off, the plan file
+existed before its first recorded start, or another session was changing plans at the same
+moment, it leaves the plan unlinked. It also checks the "switched from X" lines written at the
+time. If one of those names a different parent from the replay, the plan stays unlinked and is
+listed. Every rebuilt link is labelled, and the page draws it dashed and marked "reconstructed",
+so it can never be mistaken for one recorded live.
+
+Over the real transcripts it would link 56 plans. It would leave 67 unlinked, 34 of them because
+a "switched from" line disagreed. Two plans already had a recorded link and are untouched. It also
+reproduces the one link the live tool recorded today exactly.
+
+**Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the
+plan files change only when you say so.
+<!--tech-->
+`scripts/backfill-work-lines.py` — dry run by default, `--write`, `--plans DIR`, `--root`,
+`--explain SLUG`, `--ground-truth` (exit 2 CANNOT RUN when the transcripts are absent). Writes
+`<!-- parent: … -->` + `<!-- parent-source: transcript <session-8> <ISO> -->` only on plans with no
+`parent:` marker, keeps each file's mtime, and skips the plan `.claude/last-plan` fingerprints.
+`gen-work-lines.py` reads `parent-source:` (dashed connector, "reconstructed" tag, source in the
+tooltip, one caveat sentence). `begin-plan.py` carries `parent-source:` through a re-arm, so a
+rebuilt link never becomes a live-looking one.
+
+Divergence from the live rule, by the owner's decision: with nothing armed the backfill records
+`-`. It does not ask whether the last finished plan's PR was open, because no transcript holds a
+past PR state.
