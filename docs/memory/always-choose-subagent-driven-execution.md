@@ -29,3 +29,11 @@ execution accumulates context across tasks and reviews in batches, which is prec
 lets a defect introduced in task 2 survive to task 6.
 
 Related: [[putting-a-choice-to-the-user]], [[dual-review-is-the-process-not-a-request]].
+
+⟳ **2026-10-22 — REVIEW FOLDS ARE INCLUDED, with ONE written exception.** On PR #384 I made all
+four review folds in the coordinator without deciding to; the owner asked why, then ruled that the
+exception be written down with its conditions. It lives in `docs/process-checklists.md` → *Who
+writes a review fold*: the findings ARE the spec, scope is what they name, a `FOLD: coordinator —`
+line declares it BEFORE the next round, every mutation anchor is re-resolved (no cheap command yet
+— backlog #342), and the next round goes to Codex. If any of the five fails, a subagent writes it.
+Measured cost of the drift it replaces: the r2 fold orphaned two r1 mutation anchors.

@@ -93,7 +93,7 @@ must stay in sync — updated proactively, without being asked.
 | 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or on THRASHING: two consecutive rounds whose findings came from the previous round's fix** |
 
 **Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
-subagent per task. Proceed automatically; do not ask the user to choose each time.
+subagent per task, folds too. Proceed automatically; do not ask. Exception: [checklists](process-checklists.md) → *Who writes a review fold*.
 
 **Phase 5 — branch + PR is the standard path (set 2026-07-30). The axis is blast radius, not size.**
 A one-line change can be the most dangerous thing in the repo.
