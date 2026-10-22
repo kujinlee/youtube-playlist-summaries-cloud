@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 118 cases
+    scripts/begin-plan.py --self-test  # 120 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -277,7 +277,10 @@ def render_banner(steps: list[Step], index: int, line: str | None = None) -> str
 
 
 SERVING_SHOWN = 60   # characters of the root's own words the banner line carries
-_MD_SPECIAL = "\\`*_[]<>"   # backslash FIRST in the escape order, so no escape is escaped again
+# Every ASCII punctuation character CommonMark lets a backslash escape (spec §2.4), backslash
+# FIRST in the escape order so no escape is escaped again. ⟳ r2 Codex 4: the r1 set had eight,
+# and `~~x~~` still rendered as strikethrough and `&copy;` as ©.
+_MD_SPECIAL = "\\" + "!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~"
 
 
 def md_literal(words: str) -> str:
@@ -529,6 +532,10 @@ def gh_pr_line_state(branch: str, run=subprocess.run) -> tuple[str | None, str]:
     states, why = ask("all")
     if states is None:
         return None, why
+    # ⟳ r2 Codex 3: a PR can open (or reopen) BETWEEN the two questions — positive evidence in
+    # the second answer is still positive evidence.
+    if "OPEN" in (st.upper() for st in states):
+        return "open", "an open PR exists (it appeared between the two questions)"
     if not states:
         return "none", f"no PR exists for branch `{branch}`"
     return "ended", "PRs exist for it and none is open"
@@ -1652,8 +1659,16 @@ def _self_test() -> int:
             # ── r1 Codex 3: an optional step that RAISES never changes --finish or the arm ─────
             # Measured before the fix: a raising recorder or branch lookup escaped `cmd_finish`
             # and left the sentinel behind; the same lookup at arm time would fail the arm.
-            for _label, _over in (("recorder", {"record_last_plan": _boom}),
-                                  ("branch lookup", {"current_branch": _boom})):
+            # ⟳ r2 Codex 5: the branch lookup is never reached at --finish (the record's branch is
+            # the sentinel's), so it is COUNTED — zero calls — rather than claimed to be survived.
+            _finish_branch_calls: list = []
+
+            def _counting_boom(*_a, **_k):
+                _finish_branch_calls.append(1)
+                raise RuntimeError("injected by the self-test")
+            for _label, _over in (("recorder", {"record_last_plan": _boom,
+                                                "current_branch": _counting_boom}),
+                                  ("no-fault control", {"current_branch": _counting_boom})):
                 _load_plan_progress = _real_loader
                 with contextlib.redirect_stdout(io.StringIO()):
                     cmd_begin("boom-finish", ["Only|d|w"])
@@ -1664,10 +1679,14 @@ def _self_test() -> int:
                 with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
                     _rc_b = _attempt(cmd_finish)
                 _load_plan_progress = _real_loader
-                case(f"⛔ a {_label} that RAISES at --finish leaves its rc, its message and the "
-                     f"clear exactly as they are without it",
-                     (_rc_b, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
-                     == (OK, "cleared .claude/executing-plan", False, False))
+                if _label == "recorder":
+                    case("⛔ a recorder that RAISES at --finish leaves its rc, its message and the "
+                         "clear exactly as they are without it",
+                         (_rc_b, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
+                         == (OK, "cleared .claude/executing-plan", False, False))
+            case("⛔ --finish never queries the current branch — ZERO calls to the lookup across "
+                 "both runs; the record's branch is the sentinel's",
+                 _finish_branch_calls == [])
             _load_plan_progress = _loader_with(current_branch=_boom)
             _o, _e = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
@@ -1745,6 +1764,11 @@ def _self_test() -> int:
          "unanswerable reply is None (exit 1, not JSON, not a list, a PR without a string "
          "`state`, no gh)",
          _verdicts == ["open", "ended", "none", None, None, None, None, None, None, None, None])
+    # ⟳ r2 Codex 3: a PR opened BETWEEN the two questions — OPEN said `[]`, ALL says OPEN.
+    case("⛔ an OPEN PR in the SECOND answer (opened between the two questions) continues the "
+         "line, never 'ended'",
+         gh_pr_line_state("feat/raced", run=lambda argv, **kw: _R(
+             0, "[]" if "open" in argv else '[{"state": "OPEN"}]'))[0] == "open")
     # ⛔ r1 Codex 2: 30 MERGED PRs NEWER than an open one. One `--state all` query sees only the
     # newest 30 and concludes "none open"; the line must still CONTINUE.
     case("⛔ an OPEN PR older than 30 merged ones still continues the line — the open question "
@@ -1792,7 +1816,16 @@ def _self_test() -> int:
          work_line("md", [_wl.parse_plan(
              "md", "<!-- parent: - -->\n<!-- serving: ship **bold** [x](https://e.x) `c` <b> -->",
              "t")])
-         == '> **Line:** "ship \\*\\*bold\\*\\* \\[x\\](https://e.x) \\`c\\` \\<b\\>" → `md`')
+         == '> **Line:** "ship \\*\\*bold\\*\\* \\[x\\]\\(https\\:\\/\\/e\\.x\\) \\`c\\` \\<b\\>" → `md`')
+    # ⟳ r2 Codex 4: strikethrough and an entity rendered (`<s>`, ©) — every ASCII punctuation
+    # character is escaped now. Rendered by node markdown-it when this was written; the suite
+    # asserts the escaped STRING, because the mutation harness stages no renderer.
+    case("⛔ ...and EVERY ASCII punctuation character is escaped, so `~~x~~` and `&copy;` stay "
+         "literal (r2 Codex 4)",
+         (md_literal("ship ~~deleted~~ a &copy; b"),
+          md_literal("".join(chr(c) for c in range(33, 127) if not chr(c).isalnum())))
+         == ("ship \\~\\~deleted\\~\\~ a \\&copy\\; b",
+             "".join("\\" + chr(c) for c in range(33, 127) if not chr(c).isalnum())))
     _bl = render_banner(steps, 0, "> **Line:** `r` → `kid`")
     case("render_banner puts the Line row under the title and ABOVE Doing",
          -1 < _bl.find("> **Line:** `r` → `kid`") < _bl.find("> **Doing:**")

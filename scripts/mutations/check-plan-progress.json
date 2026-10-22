@@ -225,8 +225,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "lambda: (record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN),",
-        "lambda: (None,"
+        "lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))",
+        "lambda: None)"
       ]
     ],
     "expect": [
@@ -238,8 +238,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "                              refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))",
-        "                              None))"
+        "lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))",
+        "lambda: None)"
       ]
     ],
     "expect": [
@@ -303,12 +303,12 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "        run_optional(\"recording the last plan / rebuilding the work-lines page\",\n                     lambda: (record_last_plan(",
-        "        (lambda: (record_last_plan("
+        "        run_optional(\"recording the last plan\",\n                     lambda: record_last_plan(",
+        "        (lambda: record_last_plan("
       ],
       [
-        "                              refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))",
-        "                              refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))()"
+        "root=ROOT, dest=LAST_PLAN))\n        SENTINEL.unlink",
+        "root=ROOT, dest=LAST_PLAN))()\n        SENTINEL.unlink"
       ]
     ],
     "expect": [
@@ -347,8 +347,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN),\n",
-        "record_last_plan(strip_field(sentinel_text, \"branch\"), root=ROOT, dest=LAST_PLAN),\n"
+        "record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n",
+        "record_last_plan(strip_field(sentinel_text, \"branch\"), root=ROOT, dest=LAST_PLAN))\n"
       ]
     ],
     "expect": [
@@ -405,6 +405,49 @@
     ],
     "expect": [
       "⛔ a NEW record that FAILS to write removes the OLD one — an older plan can never stand in for the one that just finished — and one stderr line says so"
+    ]
+  },
+  {
+    "name": "the Stop hook clears BEFORE recording again, so a state unlink that raises loses the record and an older plan answers (r2 Codex 1)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        run_optional(\"recording the last plan\",\n                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n        SENTINEL.unlink(missing_ok=True)\n        STATE.unlink(missing_ok=True)\n",
+        "        SENTINEL.unlink(missing_ok=True)\n        STATE.unlink(missing_ok=True)\n        run_optional(\"recording the last plan\",\n                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a clear whose state unlink RAISES still leaves the record naming the NEW plan — recording happens before either file is deleted"
+    ]
+  },
+  {
+    "name": "the rebuild rides on the recorder again, so a recorder that raises also costs the page (r2 Codex 2)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n        SENTINEL",
+        "                     lambda: (record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN), refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))\n        SENTINEL"
+      ],
+      [
+        "        run_optional(\"rebuilding the work-lines page\",\n                     lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ ...and the work-lines page is STILL rebuilt — the rebuild is its own optional step, not the recorder's tail (r2 Codex 2)"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear queries the current branch again (r2 Codex 5)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if unticked == 0:\n        # ⛔ RECORD FIRST",
+        "    if unticked == 0:\n        current_branch(ROOT)\n        # ⛔ RECORD FIRST"
+      ]
+    ],
+    "expect": [
+      "⛔ clearing at the Stop hook never queries the current branch — ZERO calls to the lookup across both runs; the record's branch is the sentinel's"
     ]
   }
 ]

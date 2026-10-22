@@ -1634,7 +1634,10 @@ EXPECTED_MUTATIONS = {
     # name, and the lookup answering None. Two r1 anchors re-anchored onto the boundary's call.
     # ⟳ 2026-10-22, owner's option A (the parent holds within ONE session): 29 -> 31 — the
     # session copied into the record, and a failed new record removing the old one.
-    "scripts/check-plan-progress.py": 31,
+    # ⟳ 2026-10-22, work-lines-always-on r2 fold: 31 -> 34 — record BEFORE the clear, the
+    # rebuild as its own optional step, and the clear never querying the branch. Four entries
+    # re-anchored onto the split `run_optional` calls.
+    "scripts/check-plan-progress.py": 34,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
@@ -1654,7 +1657,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-22, owner's option A: 49 -> 53 — a different session starts a line (no `gh`),
     # an unknown session records no marker, the fingerprint check, and `session:` at arm time.
     # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
-    "scripts/begin-plan.py": 53,
+    # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
+    # the full CommonMark escape set, and --finish never querying the branch.
+    "scripts/begin-plan.py": 56,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5586,7 +5591,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1776)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1782)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

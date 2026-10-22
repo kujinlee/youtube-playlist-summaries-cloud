@@ -464,7 +464,7 @@
       ]
     ],
     "expect": [
-      "⭐ with NOTHING armed, a finished plan whose PR is still OPEN is the parent — and the question was put about ITS branch"
+      "⛔ an OPEN PR older than 30 merged ones still continues the line — the open question is asked directly, never read off a truncated list"
     ]
   },
   {
@@ -694,6 +694,45 @@
     ],
     "expect": [
       "⭐ arming WRITES the session it was armed in into the sentinel (owner's option A)"
+    ]
+  },
+  {
+    "name": "an OPEN PR in the second answer is read as ended, so a PR opened between the questions cuts the line (r2 Codex 3)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if \"OPEN\" in (st.upper() for st in states):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ an OPEN PR in the SECOND answer (opened between the two questions) continues the line, never 'ended'"
+    ]
+  },
+  {
+    "name": "md_literal escapes only the r1 eight again, so ~~x~~ and &copy; render (r2 Codex 4)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "_MD_SPECIAL = \"\\\\\" + \"!\\\"#$%&'()*+,-./:;<=>?@[]^_`{|}~\"",
+        "_MD_SPECIAL = \"\\\\`*_[]<>\""
+      ]
+    ],
+    "expect": [
+      "⛔ ...and EVERY ASCII punctuation character is escaped, so `~~x~~` and `&copy;` stay literal (r2 Codex 4)"
+    ]
+  },
+  {
+    "name": "--finish queries the current branch again (r2 Codex 5)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        pp = _load_plan_progress()\n        pp.run_optional(\"recording the last plan\",",
+        "        pp = _load_plan_progress()\n        pp.current_branch(ROOT)\n        pp.run_optional(\"recording the last plan\","
+      ]
+    ],
+    "expect": [
+      "⛔ --finish never queries the current branch — ZERO calls to the lookup across both runs; the record's branch is the sentinel's"
     ]
   }
 ]

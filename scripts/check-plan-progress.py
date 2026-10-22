@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 63 cases
+    python3 scripts/check-plan-progress.py --self-test  # 65 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -593,14 +593,19 @@ def run_decide(stop_hook_active: bool) -> int:
     code, message, unticked = decide(sentinel_text, plan_text, prev, stop_hook_active)
 
     if unticked == 0:
+        # ⛔ RECORD FIRST, THEN CLEAR (⟳ r2 Codex 1, Major). The clear used to come first, so a
+        # state file whose unlink raised (measured: a directory at that path) ended the hook
+        # after the sentinel was gone and BEFORE the record was written — the finished plan's
+        # identity vanished and an OLDER `.claude/last-plan` answered the next lookup. The record
+        # is optional and protected (r1 Codex 3); the clear is MANDATORY and stays outside the
+        # boundary with its old error behaviour. The rebuild is a SEPARATE optional step (r2
+        # Codex 2): a recorder that raises must not also cost the page.
+        run_optional("recording the last plan",
+                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))
         SENTINEL.unlink(missing_ok=True)
         STATE.unlink(missing_ok=True)
-        # ⛔ EVERYTHING BELOW IS OPTIONAL, AND IS ONE BOUNDARY (⟳ r1 Codex 3): the verdict, the
-        # message, the clear and the rc above were decided before it and must stand whatever
-        # happens in it. `sentinel_text` was read before the unlink, so the record still has it.
-        run_optional("recording the last plan / rebuilding the work-lines page",
-                     lambda: (record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN),
-                              refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))
+        run_optional("rebuilding the work-lines page",
+                     lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))
     elif unticked is not None:
         STATE.write_text(str(unticked))
 
@@ -640,7 +645,7 @@ def run_status() -> int:
 def _self_test() -> int:
     # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
     # declared here because Python refuses a `global` after the name's first use.
-    global record_last_plan, current_branch, _write_record
+    global record_last_plan, current_branch, _write_record, refresh_work_lines
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -984,9 +989,21 @@ def _self_test() -> int:
             def _boom(*_a, **_k):
                 raise RuntimeError("injected by the self-test")
             WORK_LINES_OUT = _r / "out" / "wl.html"
-            for _label, _rec_fn, _br_fn in (("recorder", _boom, _real_branch),
-                                            ("branch lookup", _real_rec, _boom)):
-                record_last_plan, current_branch = _rec_fn, _br_fn
+            # ⟳ r2 Codex 2: the REBUILD is a separate optional step, so a spy records whether it
+            # still runs after the recorder raised.
+            _real_refresh, _rebuilt = refresh_work_lines, []
+
+            def _spy(*_a, **_k):
+                _rebuilt.append(1)
+                return None
+            _branch_calls: list = []
+
+            def _counting_boom(*_a, **_k):
+                _branch_calls.append(1)
+                raise RuntimeError("injected by the self-test")
+            for _label, _rec_fn in (("recorder", _boom), ("no-fault control", _real_rec)):
+                record_last_plan, current_branch = _rec_fn, _counting_boom
+                refresh_work_lines = _spy
                 (STATE).write_text("4")
                 SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
                 _want = decide(SENTINEL.read_text(), (_r / ".claude/plans/fin.md").read_text(),
@@ -995,10 +1012,36 @@ def _self_test() -> int:
                 with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
                     _got = _attempt(lambda: run_decide(False))
                 record_last_plan, current_branch = _real_rec, _real_branch
-                case(f"⛔ a {_label} that RAISES at the Stop hook's clear leaves the verdict, the "
-                     f"message, the clear and the rc exactly as they are without it",
-                     (_got, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
-                     == (_want[0], _want[1].strip(), False, False))
+                refresh_work_lines = _real_refresh
+                if _label == "recorder":
+                    case("⛔ a recorder that RAISES at the Stop hook's clear leaves the verdict, the "
+                         "message, the clear and the rc exactly as they are without it",
+                         (_got, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
+                         == (_want[0], _want[1].strip(), False, False))
+                    case("⛔ ...and the work-lines page is STILL rebuilt — the rebuild is its own "
+                         "optional step, not the recorder's tail (r2 Codex 2)", _rebuilt == [1])
+            # ⟳ r2 Codex 5: the branch comes from the SENTINEL, so a lookup that raises cannot even
+            # be reached here — what is asserted is that it is never CALLED, over both runs above.
+            case("⛔ clearing at the Stop hook never queries the current branch — ZERO calls to the "
+                 "lookup across both runs; the record's branch is the sentinel's",
+                 _branch_calls == [])
+
+            # ⛔ r2 Codex 1 (Major): A PARTIAL CLEAR MUST NOT LOSE THE RECORD. An OLDER valid
+            # record, a fully-ticked plan armed, and a DIRECTORY at the state path so its unlink
+            # raises. Before the fix the sentinel was gone and the record never written, so the
+            # next lookup was answered by the older plan.
+            LAST_PLAN.write_text(render_last_plan(".claude/plans/other.md", "cpp/older", "t0"))
+            STATE.unlink(missing_ok=True)
+            STATE.mkdir()
+            SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _partial = _attempt(lambda: run_decide(False))
+            STATE.rmdir()
+            case("⛔ a clear whose state unlink RAISES still leaves the record naming the NEW plan "
+                 "— recording happens before either file is deleted",
+                 (parse_sentinel(LAST_PLAN.read_text()).get("plan") if LAST_PLAN.exists()
+                  else None) == ".claude/plans/fin.md")
+            SENTINEL.unlink(missing_ok=True)
         finally:
             ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT = _saved
 

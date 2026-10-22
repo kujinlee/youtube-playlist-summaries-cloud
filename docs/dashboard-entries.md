@@ -17053,3 +17053,19 @@ stands in for it. ⚠ UNVERIFIED and stated in the docstring: whether the sessio
 `/clear` or `/compact`. Cases: begin-plan 112 → 118, check-plan-progress 60 → 63. Mutations +6
 (begin-plan 49 → 53, check-plan-progress 29 → 31; declared sum 1770 → 1776); two anchors this
 change orphaned were re-anchored.
+
+⟳ **ROUND 2 (Codex) — 1 Major, 4 Minor, all folded.** (1) **Record BEFORE the clear**: the Stop
+hook deleted the sentinel first, so a state file whose unlink raised (a directory at that path)
+ended the hook before the record was written and an OLDER `.claude/last-plan` answered the next
+lookup. `run_decide` now records (optional, protected), then clears (mandatory, outside the
+boundary, error behaviour unchanged); `cmd_finish` already recorded first. (2) The page rebuild is
+its own `run_optional` call, so a recorder that raises no longer skips it. (3) An OPEN entry in
+`gh_pr_line_state`'s SECOND answer (a PR opened between the questions) returns "open". (4)
+`md_literal` escapes every ASCII punctuation character CommonMark allows (backslash first);
+checked outside the suite with the worktree's node `markdown-it`, which renders `~~deleted~~`,
+`a &copy; b` and the full punctuation set back as their literal input — the suite asserts the
+escaped string, since the mutation harness stages no renderer. (5) The two clear-site "branch
+lookup that RAISES" cases never reached the lookup; they now assert ZERO calls to it, and the
+raising lookup stays covered at arm time. Cases: begin-plan 118 → 120, check-plan-progress 63 →
+65. Mutations +6 (begin-plan 53 → 56, check-plan-progress 31 → 34; declared sum 1776 → 1782); four
+anchors re-anchored onto the split calls.
