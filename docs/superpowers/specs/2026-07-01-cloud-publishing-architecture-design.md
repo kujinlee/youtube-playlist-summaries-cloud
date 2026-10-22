@@ -4,7 +4,9 @@
 > **Goal:** Summaries are produced and published by a hosted service, not only by a local vault.
 
 **Date:** 2026-07-01
-**Status:** Draft v3 — hardened after Codex adversarial review (`docs/reviews/cloud-publishing-architecture-spec-codex.md`); yt-dlp ToS gate resolved (§2.1: hosted uses Gemini YouTube-URL, no server download; pixel slides deferred/on-device). Ready for the Stage 1A implementation plan.
+**Status:** ✅ shipped — no thread-specific PR — this design predates PR-numbered merges; the work was committed directly; the cloud app is deployed and `lib/supabase/` holds the adapters this design specified.
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: *Draft v3 — hardened after Codex adversarial review (`docs/reviews/cloud-publishing-architecture-spec-codex.md`); yt-dlp ToS gate resolved (§2.1: hosted uses Gemini YouTube-URL, no server download; pixel slides deferred/on-device). Ready for the Stage 1A implementation plan.*
 **Scope:** Turn the single-user, local-first YouTube-playlist-summary tool into a hosted web service that unregistered guests can try and registered users can use durably. Staged: **public demo first, built on the SaaS spine so Stage 1 is not throwaway.**
 
 Related memory: `cloud-multitenant-goal`, `data-corpus-state`, `project-context`.

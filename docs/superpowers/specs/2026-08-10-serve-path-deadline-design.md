@@ -3,7 +3,9 @@
 > **Anchor:** `serve-path-bounding` — **ADR:** none
 > **Goal:** The serve path's work is bounded, and its lease outlives the work it protects.
 
-**Status:** **v6** — rounds 5 and 6 applied to the v4 redesign. v1–v3 are superseded, not amended.
+**Status:** ✅ shipped — merged in PR #67 (*"fix(#46): bound the serve path's work, and stop the lease from being …"*) and 1 earlier PR(s), all MERGED; the serve-path bound is in the product.
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v6** — rounds 5 and 6 applied to the v4 redesign. v1–v3 are superseded, not amended.*
 **Proceeding to Phase 2 (writing-plans)**, where the plan carries its own dual adversarial review to
 convergence (`dev-process.md:82`). See §7.5 for why that, and not a seventh spec round.
 **Task:** #46 · **Prod issue:** yes — the unbounded awaits are live today

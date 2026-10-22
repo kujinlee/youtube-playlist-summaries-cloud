@@ -4,6 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #232 (*"The gate reads the store, not a patch — so it can finally judge a ref…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog #82.** **v1, 2026-09-06.** The referential half; the syntactic half closed 2026-09-01.
 
 **The gate can judge a header's SYNTAX and never its REFERENCES.** Measured after that fix:

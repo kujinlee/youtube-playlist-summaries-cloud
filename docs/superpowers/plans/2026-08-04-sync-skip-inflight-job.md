@@ -3,6 +3,8 @@
 > **Anchor:** `cloud-sync` — **ADR:** 0002
 > **Goal:** Sync refuses to relocate a video while a job is in flight against it.
 
+**Status:** ✅ shipped — merged in PR #45 (*"fix(sync): don't relocate a video's base while a job for it is in flight"*); the sync path is in the product (`lib/`, `worker/`) and M2 shipped.
+
 **Scope: the cheap guard, not the full fence.** Closes the *wide* window in the worker-vs-sync race —
 the minutes a job spends in transcription + Gemini. **It does not eliminate the race.** Measured, not
 assumed: the copy phase between the probe and the metadata write is N sequential blob round-trips

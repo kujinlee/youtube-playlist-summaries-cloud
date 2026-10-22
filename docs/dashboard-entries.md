@@ -16729,3 +16729,59 @@ made under the mechanism (backlog #321's own refusal), and the guard says a fail
 a bug to patch. The fix is to date the corpus from something a squash preserves — the filename
 grammar, or the verdict JSONs' own timestamps — and that changes how a gate you rely on decides,
 so it is yours.
+
+## 2026-10-22
+Every item on the goals page now shows its state. Yesterday only seven of forty-nine did.
+
+You asked why so many lines said "no status declared". The answer was that I had switched the
+check on for one goal only — the one you had asked about — so the other forty-two items were never
+touched. That was deliberate caution on my part and it left the page half-answering the question
+it exists to answer.
+
+All of them are filled in now, and each one says why it says what it says: which merged pull
+request did the work, and what is in the codebase as a result. That matters because nothing can
+check whether a status is *true* — so the only protection is that each claim carries its evidence
+where you can see it and contradict it.
+
+The result, across forty-nine items: forty-one finished, three waiting on you, one in progress,
+one parked behind another piece of work, and three dead threads whose underlying questions are
+still open and still recorded elsewhere.
+
+Three were not simply "finished" and are marked differently on purpose. One is a draft that was
+replaced by two formal decisions and never updated itself. One is a plan superseded by its own
+second version. Both are kept because other documents cite them.
+
+**Waiting on you:** the same three items as before, now visibly labelled as yours on the page —
+plus the merge blocker from last night, which is unchanged.
+<!--tech-->
+**39 blank threads declared, 12 further anchors armed — all 13 now armed, 0 of 49 cards blank.**
+
+⛔ **EVERY DECLARATION CARRIES ITS RECEIPT**, because `check-goal-status.py` cannot tell whether a
+declaration is TRUE — its docstring says so — and a page of unfalsifiable claims is worse than a
+blank one. Each status names the merged PR and what is in the tree, e.g. *"✅ shipped — merged in
+PR #155 (\"promote the stable-blob-addressing schema as migration 0027\"); ADR-0006 and ADR-0007
+are `accepted 2026-08-24`, and `supabase/migrations/0027_stable_blob_addressing.sql` is in the tree
+and live on production"*.
+
+**Evidence method, and what was discarded.** For all 39 threads: every PR that touched their
+documents, resolved through `gh pr view` — **64 thread-specific PRs, 64 MERGED, 0 open or
+closed-unmerged**. ⚠ **PR #147 was DISCOUNTED**: it is the ADR-0010 anchor backfill and touched 19
+threads' documents while saying nothing about whether their work shipped — a signal that looks
+strong and is worthless. ⚠ Plan ticks were discarded too, for the reason measured yesterday
+(wrong on 7 of 7). Tree facts were verified by looking: `lib/supabase/`, `docs/features.md`,
+`supabase/migrations/0027_*.sql`, `scripts/gen-dashboard.py`, `docs/explainers/`.
+
+**Four threads judged individually rather than by the rule**, each with the reason stated in its
+own header: `2026-08-03-stable-blob-addressing` → ⛔ obsolete (its own header still reads *"v1
+DRAFT — not reviewed, not approved"*; superseded by ADR-0006/0007, which are what shipped);
+`2026-08-25-m4-promote-the-schema` → ⛔ obsolete (superseded in place by its `-v2`);
+`2026-08-04-cas-fence-persist-summary` and `2026-08-09-render-addressing-brief` → ✅ shipped, with
+a note that their headers describe the DESIGN's review state, not the thread's.
+
+⚠ **An existing `**Status:**` line was never deleted** — 78 documents carry the design's review
+state in that slot (*"Approved"*, *"v7 — CONVERGED"*), which is dated testimony about the
+document. Where one existed it is preserved under the new declaration with a `⟳` note explaining
+the distinction.
+
+Final tally on the page: **41 shipped · 3 needs-you · 1 current · 1 parked · 3 obsolete**.
+`check-goal-status` rc=0 over 13 armed anchors; `check-anchors` rc=0; self-test 34/34.

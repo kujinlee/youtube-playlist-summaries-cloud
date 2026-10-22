@@ -4,6 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #292 (*"A goal shows the work that pursued it: spec, plan, and the pull reque…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **v4, 2026-09-11** (v1–v3 same day). **v4 retracts v3's central claim** after the Post-Plan Gate
 refuted it three independent ways — see the ⛔ in §3.2a. The per-PR tag survives; the meaning
 attached to it does not.

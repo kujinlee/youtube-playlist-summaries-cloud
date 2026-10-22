@@ -3,6 +3,8 @@
 > **Anchor:** `share-and-download` — **ADR:** 0003
 > **Goal:** A freshly minted share link serves immediately instead of returning 503 'not ready'.
 
+**Status:** ✅ shipped — merged in PR #14 (*"Cloud summary PDF generation (GET /api/pdf/[id] + View PDF menu item)"*); the share/download path is in the product.
+
 **Goal:** A freshly-minted share link serves immediately instead of returning 503 "not ready".
 
 **Approach:** When a share token is created, warm the owner's rendered "magazine" model by hitting

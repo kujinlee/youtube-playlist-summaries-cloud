@@ -5,6 +5,8 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #223 (*"Settled items look settled, and say who settled them (backlog #83, #87)"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Goal:** Work the ten open `(comprehensibility)` backlog rows to closure in an order where each
 slice ships something a returning human can actually see, and no slice waits on a decision nobody
 has been asked for.

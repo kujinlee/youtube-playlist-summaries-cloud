@@ -6,6 +6,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ⛔ obsolete — superseded in place by `2026-08-25-m4-promote-the-schema-v2`, which is the plan that ran. Kept because review documents cite it.
+
 **Milestone spine:** [`2026-08-22-append-only-generations-roadmap.md`](2026-08-22-append-only-generations-roadmap.md) → M4.
 **Source of truth:** the design spec + its `schema/`, **ADR-0006** and **ADR-0007**, accepted 2026-08-24 (M3).
 

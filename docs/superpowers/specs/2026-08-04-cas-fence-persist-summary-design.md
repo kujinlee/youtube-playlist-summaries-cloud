@@ -3,7 +3,9 @@
 > **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
 > **Goal:** Two concurrent writers cannot leave a row whose card and body came from different runs. Superseded by ADR-0007's append-only log.
 
-**Status:** v4 — all round-3 Blockings resolved; **round 4 pending** (the gate is a full round with no
+**Status:** ✅ shipped — the CAS fence is in the product; its spec converged over 5 review rounds (PR #48 is the review trail, PR #17 the work). ⚠ Its own header still reads *"v4 — round 4 pending"*, which describes the DESIGN's review state, not the thread's.
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: *v4 — all round-3 Blockings resolved; **round 4 pending** (the gate is a full round with no*
 new Blocking/High, which has not yet happened)
 **Backlog:** #17 (durable fix; partial mitigation shipped as PR #45) · **Task:** #19
 **Review trail:** round 1 [codex](../../reviews/spec-conditional-write-codex-r1.md) ·

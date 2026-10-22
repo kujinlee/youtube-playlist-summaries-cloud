@@ -5,6 +5,8 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #214 (*"The mutation harness stops reporting a coverage verdict it did not earn"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Goal:** Make `scripts/check-ratchet-contract.py` police every `scripts/*.py`, with a file leaving
 the inventory only by a module-level `NOT_A_GUARD = "<reason>"` assignment — so a guard can no longer
 escape by being named unconventionally.

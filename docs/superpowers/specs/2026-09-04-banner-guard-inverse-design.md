@@ -4,6 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #225 (*"The banner guard learns the direction that actually failed (backlog #95)"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog #95.** **v3, 2026-09-04** — folds round 2 (both halves NOT CONVERGED: 2 Blocking, 7 High,
 8 Medium, 4 Low). v1 was unreachable; v2 was reachable and delivered to the wrong reader. Round
 files: `docs/reviews/{coordinator,claude}/banner-guard-inverse-r{1,2}-*.md`.

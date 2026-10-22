@@ -79,7 +79,28 @@ REPO = Path(__file__).resolve().parent.parent
 SUBDIRS = ("superpowers/specs", "superpowers/plans")
 
 # The anchors where a missing declaration FAILS. See the docstring: widening is deliberate.
-ARMED_ANCHORS = ("review-decides-itself",)
+# ⟳ 2026-10-22: ALL THIRTEEN ARMED, the day after the first. The owner read the page and
+# asked why 39 of 49 cards said "no status declared" — the answer was that arming bounded
+# it to one anchor. Every thread under every anchor now declares a state, each carrying the
+# evidence for its claim (a merged PR, and what is in the tree), so arming the rest costs
+# nothing and makes the page answer the question it exists to answer. ⚠ A NEW anchor is
+# still not armed automatically: it joins this tuple when its threads have been audited,
+# which keeps widening a deliberate act with a visible diff.
+ARMED_ANCHORS = (
+    "cloud-blob-key-encoding",
+    "cloud-publishing",
+    "cloud-sync",
+    "corrections-in-cloud",
+    "explanation-on-demand",
+    "feature-map",
+    "prod-smoke",
+    "review-decides-itself",
+    "serve-money-guard",
+    "serve-path-bounding",
+    "share-and-download",
+    "stable-blob-addressing",
+    "status-visibility",
+)
 
 # marker -> state. ORDER IS THE READING ORDER on the page's legend, cheapest claim first.
 # ⚠ `⏸️` is the EMOJI PRESENTATION SEQUENCE (U+23F8 U+FE0F). A document written with the bare
