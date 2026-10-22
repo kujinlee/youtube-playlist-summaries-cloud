@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #155 (*"feat(M4): promote the stable-blob-addressing schema as migration 0027"*) and 4 earlier PR(s), all MERGED; ADR-0006 and ADR-0007 are `accepted 2026-08-24`, and `supabase/migrations/0027_stable_blob_addressing.sql` is in the tree and live on production.
+
 **Goal:** Promote `01_workspaces.sql`, `03_generations.sql` and `04_artifacts.sql` into a single reversible migration `0027`, applied first to a local stack and then to production, with a rollback and a behavioural gate that both actually run.
 
 **Architecture:** One migration file, one transaction. The three spec files are concatenated in dependency order; `05_assert.sql` is never a migration. A companion **rollback script** reverses it — a manual repair tool, never a migration (Task 6 Step 3). Correctness is established by six schema gates (rewritten to read a **live** catalog, not to rebuild from source), the integration suite, and a live-catalog assertion.

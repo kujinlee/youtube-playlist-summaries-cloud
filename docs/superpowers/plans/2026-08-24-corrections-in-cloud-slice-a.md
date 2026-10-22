@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #134 (*"feat(#23): corrections in the cloud, slice A — all 12 tasks, all 4 ga…"*) and 2 earlier PR(s), all MERGED; slice A's 12 tasks are all ticked (89/89) and shipped.
+
 **Goal:** A cloud user edits corrections, presses the button, and gets a corrected summary — the same behaviour as local.
 
 **Architecture:** A new store-agnostic `lib/corrections/apply-core.ts` owns the correction pipeline (strip callout → `fixSummary` → structural validation → `extractQuickView` → re-insert). `app/api/videos/[id]/regenerate/route.ts` gains a cloud branch that resolves a Supabase principal and writes the corrected body with `blobStore.put`. Magazine-model staleness is **derived** from the envelope's existing `sourceMdHash` via one new conjunct in `isFresh` — nothing is deleted and the correction path writes no envelope.

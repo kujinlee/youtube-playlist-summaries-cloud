@@ -237,6 +237,7 @@ POPULATION: frozenset[str] = frozenset({
     "check-docs.py",
     "check-function-revokes.py",
     "check-gate-falsifiability.py",
+    "check-goal-status.py",
     "check-guard-coverage.py",
     "check-live-schema.py",          # ⟳ its summary moved to LAST in the same commit: it sat
                                      # before a multi-line epilogue, and `printed_total` reads the

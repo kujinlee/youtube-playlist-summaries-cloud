@@ -57,6 +57,27 @@ import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _load_status_parser():
+    """`parse_status` from check-goal-status, so the page and the gate share ONE grammar.
+
+    ⛔ RAISES rather than falling back to a local copy. A second implementation of this parser is
+    the defect `check-vocabulary-collisions.py` exists for (17 recorded instances), and the failure
+    it would produce is specific: the gate would pass a declaration the page cannot render, so a
+    card would silently show nothing while the guard reported green. The precedent is
+    `check-review-recorded._load_declaration_parser`, which loads the dashboard entry grammar for
+    the same reason and refuses the same way.
+    """
+    import importlib.util
+    path = ROOT / "scripts" / "check-goal-status.py"
+    spec = importlib.util.spec_from_file_location("_cgs", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"CANNOT RUN — cannot load the status grammar from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_cgs"] = mod
+    spec.loader.exec_module(mod)
+    return mod.parse_status
 DOCS = ROOT / "docs"
 SUBDIRS = ("superpowers/specs", "superpowers/plans")
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "goals.html"
@@ -69,6 +90,25 @@ FRONT_STATUS = re.compile(r"^status:\s*(.+?)\s*$", re.M)
 AMENDMENT = re.compile(r"⟳[^\n]*?\b(SUPERSEDED|CORRECTED|WITHDRAWN|REVERSED|RESCOPED|RE-SCOPED)\b")
 MILESTONE = re.compile(r"^#{2,4}\s+(M\d+)\s*[—-]?\s*(.*)$", re.M)
 ROOTS_KEY = re.compile(r'^\s{4}"([a-z0-9-]+)":\s*dict\(', re.M)
+
+# state -> marker, for rendering only. ⛔ DERIVED FROM THE GRAMMAR AT IMPORT, never retyped: a
+# second copy of this table is what `check-goal-status`'s own case forbids, and it would drift the
+# moment a state is added. `needs-you` shares 🟠 with `current` by design (both are alive).
+def _state_marks() -> dict[str, str]:
+    import importlib.util
+    path = ROOT / "scripts" / "check-goal-status.py"
+    spec = importlib.util.spec_from_file_location("_cgs_marks", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"CANNOT RUN — cannot load the status grammar from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    marks = {state: marker for marker, state in mod.STATES.items()}
+    for w in mod.ALIVE_WORDS:
+        marks.setdefault(w, marks["current"])
+    return marks
+
+
+STATE_MARK = _state_marks()
 DEPENDS_ROW = re.compile(r'^\s{4}(\d+):\s*\("([a-z-]+)",\s*"([a-z0-9-]+)"', re.M)
 
 # Milestone state read off the document's OWN markers. Order matters: a heading can carry more than
@@ -402,20 +442,29 @@ def collect(docs: pathlib.Path, gen_text: str) -> list[dict]:
     stray = sorted(roots - {r['slug'] for r in registry})
 
     by_anchor: dict[str, list] = {r["slug"]: [] for r in registry}
+    # Loaded ONCE here rather than per document: it executes a module, and this generator runs
+    # from a hook on every write to any spec, plan, ADR or the registry.
+    _status_of = _load_status_parser()
     for sub in SUBDIRS:
         d = docs / sub
         if not d.is_dir():
             continue
         for f in sorted(d.glob("*.md")):
-            h = parse_header(f.read_text())
+            _text = f.read_text()
+            h = parse_header(_text)
             if h["anchor"] not in by_anchor:
                 continue
+            # ⛔ THE GRAMMAR IS IMPORTED, NOT RESTATED — see `_load_status_parser`. A malformed
+            # declaration renders as the absence it is; the GATE is what refuses it, because a
+            # generator that also judged would be a second place the rule lives.
+            _state, _why = _status_of(_text)
             dm = DATED.match(f.name)
             by_anchor[h["anchor"]].append({
                 "name": f.name, "rel": f"docs/{sub}/{f.name}", "goal": h["goal"],
                 "dated": dm.group(1) if dm else "", "touched": last_touched(f),
                 "kind": "plan" if "plans" in sub else "spec",
-                "milestones": parse_milestones(f.read_text()),
+                "milestones": parse_milestones(_text),
+                "state": _state, "state_why": _why,
             })
 
     # ⚠ MEASURED COST. This is NOT "double last_touched". `last_touched` is `git log -1`;
@@ -529,6 +578,20 @@ CSS = """
   .rung.deferred{color:var(--pending);background:var(--pending-bg);
                  border-color:color-mix(in srgb,var(--pending) 35%,transparent)}
   .absent{font-size:.86rem;color:var(--pending);font-style:italic}
+  /* ⭐ The status badge. Colours REUSE the page's existing tokens (--good/--pending/--defect),
+     which are already defined for light, dark and the OS-dark shim — `check-theme-tokens.py`
+     refuses a colour defined in only one of them, and a new palette here would have been a
+     second vocabulary for the same thing. `needs-you` is deliberately the LOUDEST of the alive
+     states, because it is the one that asks something of the reader. */
+  .st{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;padding:.1rem .4rem;
+      border-radius:.3rem;white-space:nowrap;border:1px solid transparent}
+  .st-shipped{color:var(--good);background:var(--good-bg);border-color:var(--good)}
+  .st-current{color:var(--ink-soft);background:var(--structure-bg);border-color:var(--rule)}
+  .st-needs-you{color:var(--pending);background:var(--pending-bg);border-color:var(--pending);
+                font-weight:600}
+  .st-parked{color:var(--ink-faint);background:transparent;border-color:var(--rule)}
+  .st-obsolete{color:var(--ink-faint);background:transparent;border-color:var(--rule);
+               text-decoration:line-through}
   .docs{display:flex;flex-direction:column;gap:.3rem}
   .doc{display:grid;grid-template-columns:1fr auto;gap:.3rem 1rem;align-items:baseline;
        padding:.35rem 0;border-top:1px solid var(--rule)}
@@ -597,7 +660,19 @@ def render_threads(threads: list[dict], fanout: dict[str, int]) -> str:
             flag = '<span class="absent">no pull requests</span>'
         else:
             flag = f'<span class="t">{len(t["prs"])} PR(s)</span>'
-        parts.append(f'<details class="thread"><summary>{esc(t["stem"])} {flag}</summary>')
+        # ⭐ THE STATE GOES IN THE SUMMARY, BEFORE THE STEM, because the summary is the only line
+        # visible while the card is COLLAPSED — and the owner's complaint was that they could not
+        # tell a finished thread from an abandoned one at a glance. A status inside the fold is a
+        # status nobody reads. The thread's state is its PLAN's when it has one, else its SPEC's:
+        # a plan is the later document, so it is the better witness of where the work got to.
+        _sd = t.get("plan") or t.get("spec") or {}
+        _st = _sd.get("state")
+        if _st:
+            badge = f'<span class="st st-{esc(_st)}">{esc(STATE_MARK.get(_st, ""))} {esc(_st)}</span>'
+        else:
+            badge = '<span class="absent">no status declared</span>'
+        parts.append(f'<details class="thread"><summary>{badge} {esc(t["stem"])} '
+                     f'{flag}</summary>')
         for side, missing in (("spec", "no spec"), ("plan", "no plan")):
             d = t.get(side)
             if d:

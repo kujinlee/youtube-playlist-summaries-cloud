@@ -4,7 +4,7 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
-**Status:** ⏳ **SURVEY — awaiting the human gate. ⛔ THIS DOCUMENT DECIDES NOTHING AND PROPOSES NO
+**Status:** 🟠 needs-you — one yes/no: were the 75 recall fires worth interrupting for? Judge it WITH the S1 worksheet, which is its scoring instrument. Backlog #191's standing order forbids building before the judgement.
 BUILD.** The owner asked for *"survey works … to have measurements before the work"* and said the
 work itself is **for together, when they are back at the desk**. So this is baseline only: what the
 shipped matcher did, which of `docs/backlog.md` row 191's figures reproduce, and which of its open

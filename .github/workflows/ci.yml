@@ -240,6 +240,16 @@ jobs:
       - name: check-anchors self-test
         run: python3 scripts/check-anchors.py --self-test
 
+      # Every living spec/plan under an ARMED anchor says whether it is alive, and the goals page
+      # renders it. Status cannot be derived — measured wrong on 7 of 7 threads, because a plan
+      # here ships without its boxes ticked and nothing mechanical separates ABANDONED from NOT
+      # YET STARTED. Arming is per anchor so this is never red from birth (backlog #56).
+      - name: Goal status is declared, and the page can render it
+        run: python3 scripts/check-goal-status.py
+
+      - name: check-goal-status self-test
+        run: python3 scripts/check-goal-status.py --self-test
+
       # The memory corpus moved into docs/memory/ on 2026-09-30 (backlog #194) so teammates could
       # obtain it — 146 files, measured at 86% project-or-craft knowledge against 14% personal
       # preference, previously readable on ONE machine with no remote. The harness still reads a

@@ -9,6 +9,24 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ⛔ obsolete — 0 of 12 tasks ever started; the design it implements is obsolete for the same reason. Backlog #177 stays 🟠.
+Three independent grounds, each checkable:
+
+1. the deliverable `docs/development-velocity.md` is a **self-declared TOMBSTONE** — its first line
+   reads *"THIS IS NOT A DOCUMENT. It is a forwarding table."* The content moved to the pages that
+   own each subject;
+2. the implementation plan has **0 of 12 tasks ticked** — it was never executed;
+3. `RECONSTRUCTED` is in the filename because the original was destroyed by a `git reset --hard`
+   on 2026-09-26 and rebuilt from a partial record (the warning travels in the filename because the
+   goals page renders filenames, not bodies).
+
+⭐ **backlog #177 remains 🟠 OPEN and is the live home of this question** — "the review INSTRUMENT
+is never chosen, only its dosage". Retiring this thread loses nothing: it removes two documents
+from the goals page's live inventory that no longer describe work anybody is doing.
+⚠ Its successor in substance is `docs/superpowers/specs/2026-10-19-rounds-to-convergence-is-rising-design.md`,
+which measured the trend this thread only proposed to measure, and whose option **B** is a budget
+and retirement rule for guards.
+
 **Goal:** `review-method.md` §0 chooses the review **instrument** before its **dosage**, and a branch
 that starts behaving like a seam problem is escalated from recorded evidence rather than from memory.
 

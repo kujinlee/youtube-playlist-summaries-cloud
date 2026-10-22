@@ -6,6 +6,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #269 (*"Backlog #91 — the coverage verdict becomes a type you cannot read wro…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog #91.** Spec: [`docs/superpowers/specs/2026-09-04-coverage-verdict-interface-design.md`](../specs/2026-09-04-coverage-verdict-interface-design.md) v1.1, APPROVED.
 
 **Goal:** Replace the 7-key `ev` dict in `scripts/check-plan-code.py` with a tagged union

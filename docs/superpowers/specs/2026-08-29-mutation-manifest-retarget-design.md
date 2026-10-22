@@ -3,7 +3,9 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** v1 — design approved by the user 2026-08-29, not yet reviewed.
+**Status:** ✅ shipped — merged in PR #176 (*"Retire the plan-as-CI-dependency: mutate the code that ships, not a c…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: *v1 — design approved by the user 2026-08-29, not yet reviewed.*
 **Closes:** backlog #70. **Related:** backlog #69 (an external observer for declared counts).
 
 ---

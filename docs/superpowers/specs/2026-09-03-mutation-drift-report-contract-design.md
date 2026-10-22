@@ -10,6 +10,8 @@ note *above* them pushed the declaration to line 16 and turned the gate red. **V
 BELOW the declaration**, always.
 
 > **v3 — 2026-09-03.** Rounds 1 **and 2** folded, both halves each
+
+**Status:** ✅ shipped — merged in PR #214 (*"The mutation harness stops reporting a coverage verdict it did not earn"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
 > ([r2 claude](../../reviews/spec-mutation-drift-report-contract-r2-claude.md),
 > [r2 codex](../../reviews/spec-mutation-drift-report-contract-r2-codex.md)). Round 2 returned the
 > **same Blocking from both halves for the second consecutive round**, and the user's decision was to

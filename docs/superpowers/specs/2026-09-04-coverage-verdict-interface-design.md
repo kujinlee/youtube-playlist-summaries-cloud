@@ -4,6 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #217 (*"Backlog #91 + spec v1: the coverage verdict becomes a type you cannot…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog #91.** v1.1 — §5 Q1 decided (own module). From Architecture Review #7 (`docs/reviews/architecture-review-2026-09-03b.md`),
 which fired on the four-non-converging-rounds trigger. **v1, 2026-09-04.**
 

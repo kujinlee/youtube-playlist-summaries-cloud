@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 203 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 216 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -953,6 +953,50 @@ def tree_at(epoch: int, repo: Path | None = None,
     return paths, None
 
 
+def pinned_inventory(baseline: object) -> "tuple[set[tuple[str, int]] | None, str | None]":
+    """PURE. The (subject, round) inventory pinned at arming, or (None, why not usable).
+
+    ⛔⛔ THIS EXISTS BECAUSE A SQUASH MERGE DESTROYS THE ANSWER `tree_at` DERIVES (backlog #341).
+    Every file a squash carries enters the target branch's history AT THE SQUASH COMMIT'S DATE, so
+    documents that existed before arming look newer than it. MEASURED 2026-10-22:
+    `docs/reviews/claude/memory-index-budget-r1-claude.md` was added by `49b7b267` (2026-10-19) on
+    the pre-merge branch and by `ee0e461b` (2026-10-21) on master — and trigger 1 then named
+    `memory-index-budget` as newly starved when its rounds 1, 2 AND 3 all predate arming.
+
+    ⭐ NO BETTER DATE SOURCE FIXES IT, which is why this is a pin and not a re-derivation. The
+    information is DESTROYED, not mis-stamped: master's history genuinely has no commit in which
+    those files existed before the squash. Verdict JSONs carry a `head` SHA but no timestamp, and
+    the review documents carry no date in their heads — both were checked before choosing this.
+
+    This is the posture `rounds_to_termination` already takes two fields above, for the same
+    stated reason: *"a baseline recomputed at read time cannot detect that it has moved."*
+
+    A missing key is (None, None) — ABSENT, so the caller may fall back to `tree_at`; a key of the
+    wrong SHAPE is a refusal, because a malformed pin that read as empty would make every subject
+    look post-arming and name almost all of them (backlog #56, red from birth).
+    """
+    if not isinstance(baseline, dict):
+        return None, f"the pinned baseline is {type(baseline).__name__}, not an object"
+    raw = baseline.get("rounds_at_arming")
+    if raw is None:
+        return None, None
+    if not isinstance(raw, list):
+        return None, (f"rounds_at_arming is {type(raw).__name__}, not a list of "
+                      f"[subject, round] pairs")
+    out = set()
+    for item in raw:
+        if (not isinstance(item, (list, tuple)) or len(item) != 2
+                or not isinstance(item[0], str) or not isinstance(item[1], int)
+                or isinstance(item[1], bool)):
+            return None, (f"rounds_at_arming holds {item!r}, which is not a "
+                          f"[subject, round] pair of (str, int)")
+        out.add((item[0], item[1]))
+    if not out:
+        return None, ("rounds_at_arming is EMPTY — an empty inventory makes every subject look "
+                      "post-arming, so it is refused rather than read as 'nothing existed'")
+    return out, None
+
+
 def subjects_starved(armed: object, docs: dict | None = None,
                      before_rounds: "set[tuple[str, int]] | None" = None,
                      repo: Path | None = None) -> "tuple[list[str], str | None]":
@@ -1091,7 +1135,15 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
 
     # ⛔ A REASON FROM THE RATCHET IS CANNOT RUN, NOT AN EMPTY LIST. Silence here is
     # indistinguishable from "nothing is starved", which is precisely how the predecessor died.
-    starved_subjects, starve_why = starved(armed)
+    # ⛔ THE PINNED INVENTORY IS PREFERRED OVER GIT ARCHAEOLOGY (backlog #341). `tree_at` remains
+    # the fallback for a repository that has not pinned one; a squash makes its answer wrong, not
+    # merely unavailable, so where a pin exists it wins.
+    before_rounds, pin_why = pinned_inventory(pinned)
+    if pin_why:
+        print(f"CANNOT RUN — the pinned round inventory is unusable: {pin_why}")
+        print("    Trigger 1 is the loudest one and it was NOT CHECKED. Treat this as not run.")
+        return 2
+    starved_subjects, starve_why = starved(armed, before_rounds=before_rounds)
     if starve_why:
         print(f"CANNOT RUN — the starvation ratchet could not be evaluated: {starve_why}")
         print("    Trigger 1 is the loudest one and it was NOT CHECKED. Treat this as not run.")
@@ -1267,6 +1319,49 @@ def _self_test() -> int:
          subjects_starved(_ARM, {"new": _D["new"]}, set()), (["new"], None))
     case("a subject that had ONE round before arming and two now has crossed into scope",
          subjects_starved(_ARM, {"new": _D["new"]}, {("new", 1)}), (["new"], None))
+
+    # ── the PINNED inventory (backlog #341) ──────────────────────────────────────────────────
+    # ⛔⛔ A SQUASH MERGE DESTROYS WHAT `tree_at` DERIVES. Every file a squash carries enters the
+    # target branch's history at the SQUASH COMMIT'S date, so documents that predate arming look
+    # newer than it and trigger 1 names historical subjects. Measured on this repository the day
+    # it happened: `memory-index-budget`'s rounds 1-3 all predate arming and it was named anyway.
+    case("⭐ a pinned inventory is read as (subject, round) pairs",
+         pinned_inventory({"rounds_at_arming": [["a", 1], ["a", 2]]}),
+         ({("a", 1), ("a", 2)}, None))
+    case("an ABSENT pin is absent, not an error — the caller may still fall back to git",
+         pinned_inventory({}), (None, None))
+    # ⛔ THE DISCRIMINATING REFUSAL: an EMPTY pin would make every subject look post-arming and
+    # name almost all of them. Red from birth, backlog #56 — so it is refused, not read as zero.
+    case("⛔ an EMPTY pin is REFUSED, because empty would name nearly every subject",
+         "EMPTY" in (pinned_inventory({"rounds_at_arming": []})[1] or ""), True)
+    case("a pin of the wrong SHAPE is refused rather than coerced",
+         "not a list" in (pinned_inventory({"rounds_at_arming": "a,1"})[1] or ""), True)
+    case("...and a malformed PAIR inside it is named by its own repr",
+         "is not a [subject, round] pair" in
+         (pinned_inventory({"rounds_at_arming": [["a", 1], ["b"]]})[1] or ""), True)
+    # ⚠ `bool` is an `int` in Python, so True would pass a naive isinstance check and become
+    # round 1. ADJACENT to the valid case, which is where the boundary lives.
+    case("...including a bool, which is an int and would otherwise become round 1",
+         "is not a [subject, round] pair" in
+         (pinned_inventory({"rounds_at_arming": [["a", True]]})[1] or ""), True)
+    # ⚠ THE BOOL CASE ABOVE IS HELD BY ITS OWN CLAUSE, NOT BY THE TYPE CHECK — a mutation proved
+    # it by deleting the isinstance pair and staying green. A STRING round is what the int check
+    # alone refuses, so this is the case that holds that clause.
+    case("...and a STRING round, which is what the int check alone refuses",
+         "is not a [subject, round] pair" in
+         (pinned_inventory({"rounds_at_arming": [["a", "1"]]})[1] or ""), True)
+    case("a non-object baseline is refused by its own type name",
+         "not an object" in (pinned_inventory(["a", 1])[1] or ""), True)
+    # ⭐⭐ THE BUG ITSELF, AS A CASE, with the real shape: a subject whose rounds ALL predate
+    # arming must NOT be named — and without the pin, a tree listing that has lost them does name
+    # it. The two inventories are the only difference between these two calls.
+    _hist = {"memory-index-budget": {1, 2, 3}}
+    case("⭐ a subject whose rounds ALL predate arming is NOT starved, given the pin",
+         subjects_starved(_ARM, _hist,
+                          {("memory-index-budget", n) for n in (1, 2, 3)}), ([], None))
+    case("⛔ ...and WITHOUT that history it IS named — which is what a squash does to git",
+         subjects_starved(_ARM, _hist, set()), (["memory-index-budget"], None))
+
     case("a HISTORICAL r2 with a newly BACK-FILLED r1 is in scope — r1's rule missed it",
          subjects_starved(_ARM, {"new": _D["new"]}, {("new", 2)}), (["new"], None))
     # ⭐⭐ r2 YH2, THE CASE THAT MATTERS MOST: the documents MOVED since arming. Under the old
@@ -2144,7 +2239,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_quiet, log_path=_lp_quiet,
                        corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("an armed, quiet world exits 0 and SAYS it is quiet",
              (_rc, "all triggers quiet" in _o), (0, True))
@@ -2164,7 +2259,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_prov, log_path=_lp_prov,
                        corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("the summary line SPLITS the provenance, so `all triggers quiet` is readable",
              (_rc, _o.splitlines()[0]),
@@ -2181,12 +2276,48 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_prov2, log_path=_lp_prov2,
                        corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("...and a log with no retroactive row says so rather than omitting the clause",
              _o.splitlines()[0],
              "decision-scheme: 1 row(s), 1 scored (0 retroactive, so 1 scoreable); "
              "pinned median 4 vs now 4")
+        # ⛔⛔ THE WIRING, AND THREE MUTATIONS SURVIVED WITHOUT IT. The cases above exercise
+        # `pinned_inventory` directly; none proved that `main()` READS the pin and HANDS IT to the
+        # starver. A double that records its kwarg is the only thing that can say so.
+        _seen = {}
+        def _record(since, before_rounds=None):
+            _seen["before_rounds"] = before_rounds
+            return [], None
+        _bp_pin = Path(_wd) / "pin-baseline.json"
+        _bp_pin.write_text(_json.dumps({**_ARMED, "rounds_at_arming": [["s", 1], ["s", 2]]}))
+        _lp_pin = Path(_wd) / "pin-log.jsonl"
+        _lp_pin.write_text("")
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = main([], baseline_path=_bp_pin, log_path=_lp_pin,
+                       corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                       starved=_record)
+        case("⭐ main() READS the pinned inventory and HANDS IT to the starver",
+             (_rc, _seen.get("before_rounds")), (0, {("s", 1), ("s", 2)}))
+        # ⛔ A MALFORMED pin is CANNOT RUN, not a silent fallback to git archaeology — falling
+        # back is what a squash makes wrong, so a pin that cannot be read must stop the run.
+        _bp_bad = Path(_wd) / "badpin-baseline.json"
+        _bp_bad.write_text(_json.dumps({**_ARMED, "rounds_at_arming": "s,1"}))
+        _lp_bad = Path(_wd) / "badpin-log.jsonl"
+        _lp_bad.write_text("")
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = main([], baseline_path=_bp_bad, log_path=_lp_bad,
+                       corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                       starved=_record)
+        _o = _buf.getvalue()
+        case("⛔ a MALFORMED pin is CANNOT RUN (2), never a quiet fallback to git",
+             (_rc, "NOT CHECKED" in _o), (2, True))
+        case("...and an ABSENT pin still runs, so a repo that has not pinned one is not broken",
+             main([], baseline_path=_bp_quiet, log_path=_lp_quiet,
+                  corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                  starved=_record), 0)
         # ⛔⛔ THE INERT-WIRING DEFECT, FOUND IN MY OWN WORK BY r8 Codex M1 — and this file
         # already carries a comment reading "THE CASE THAT WOULD HAVE CAUGHT THE INERT WIRING,
         # AND DID NOT EXIST". I added two triggers and wire-tested neither: MEASURED, replacing
@@ -2202,7 +2333,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_hind, log_path=_lp_hind,
                        corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
-                       starved=lambda since: (["ghost"], None))
+                       starved=lambda since, **_: (["ghost"], None))
         _o = _buf.getvalue()
         case("⭐ trigger 8's verdict REACHES the CLI as a WARN, and does not fail the run",
              (_rc, "WARN  trigger 8 HINDSIGHT ONLY" in _o, "fed ONLY in hindsight: ghost" in _o),
@@ -2227,7 +2358,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_comp, log_path=_lp_comp,
                        corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("⭐ trigger 9's verdict REACHES the CLI too, naming how many were deferrals",
              (_rc, "WARN  trigger 9 DEFERRAL COMPOSED" in _o,
@@ -2240,7 +2371,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_starved, log_path=_lp_starved,
                        corpus=lambda: {"median": 9, "mean": 9.0, "subjects": 60},
-                       starved=lambda since: (["alpha", "beta"], None))
+                       starved=lambda since, **_: (["alpha", "beta"], None))
         _o = _buf.getvalue()
         case("a STARVED world exits 1 and names trigger 1 first",
              (_rc, "FAIL  trigger 1 NOT FED" in _o, "alpha" in _o), (1, True, True))
@@ -2252,7 +2383,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_drift, log_path=_lp_drift,
                        corpus=lambda: {"median": 20, "mean": 20.0, "subjects": 57},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("a drifted denominator WARNS and still exits 0 — a warning is not a failure",
              (_rc, "WARN  trigger 6 DENOMINATOR MOVED" in _o, "FAIL" in _o), (0, True, False))
@@ -2264,7 +2395,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_badlog, log_path=_lp_badlog,
                        corpus=lambda: {"median": 5, "mean": 5.0, "subjects": 12},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("an unreadable log is CANNOT RUN and names the line",
              (_rc, "CANNOT RUN" in _o), (2, True))
@@ -2276,7 +2407,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_badrow, log_path=_lp_badrow,
                        corpus=lambda: {"median": 3, "mean": 3.0, "subjects": 9},
-                       starved=lambda since: (["delta"], None))
+                       starved=lambda since, **_: (["delta"], None))
         _o = _buf.getvalue()
         case("an unusable ROW is CANNOT RUN, so no trigger is evaluated over bad data",
              (_rc, "no trigger was evaluated" in _o), (2, True))
@@ -2288,7 +2419,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_unarmed, log_path=_lp_unarmed,
                        corpus=lambda: {"median": 4, "mean": 4.1, "subjects": 55},
-                       starved=lambda since: (["epsilon"], None))
+                       starved=lambda since, **_: (["epsilon"], None))
         _o = _buf.getvalue()
         case("an UNARMED baseline reports NOT YET FED rather than a vacuous all-quiet",
              (_rc, "NOT YET FED" in _o), (0, True))
@@ -2303,7 +2434,7 @@ def _self_test() -> int:
             with contextlib.redirect_stdout(_buf):
                 _rc = main([], baseline_path=_bp_nomed, log_path=_lp_nomed,
                            corpus=lambda: {"median": 4, "mean": 4.3, "subjects": 81},
-                           starved=lambda since: ([], None))
+                           starved=lambda since, **_: ([], None))
         except Exception as _e:                    # noqa: BLE001 - reported, not swallowed
             _rc = f"RAISED {type(_e).__name__}"
         _o = _buf.getvalue()
@@ -2318,7 +2449,7 @@ def _self_test() -> int:
             with contextlib.redirect_stdout(_buf):
                 _rc = main([], baseline_path=_bp_bad, log_path=_lp_bad,
                            corpus=lambda: {"median": 2, "mean": 2.0, "subjects": 3},
-                           starved=lambda since: ([], None))
+                           starved=lambda since, **_: ([], None))
         except Exception as _e:                    # noqa: BLE001 - reported, not swallowed
             _rc = f"RAISED {type(_e).__name__}"
         _o = _buf.getvalue()
@@ -2334,7 +2465,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_cerr, log_path=_lp_cerr,
                        corpus=lambda: {"median": None, "mean": None, "error": "SHAPES went away"},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("a corpus that could not be read is CANNOT RUN on the DEFAULT path, not quiet",
              (_rc, "CANNOT RUN" in _o, "SHAPES went away" in _o, "all triggers quiet" in _o),
@@ -2352,7 +2483,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_rtry, log_path=_lp_rtry,
                        corpus=lambda: {"median": 4, "mean": 4.2, "subjects": 57},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("main() validates each row against ITS UNIT'S history, so a retry is caught",
              (_rc, "row 2" in _o, "left to bet on is 'redesign'" in _o), (2, True, True))
@@ -2363,7 +2494,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main([], baseline_path=_bp_nobase, log_path=_lp_nobase,
                        corpus=lambda: {"median": 2, "mean": 2.0, "subjects": 1},
-                       starved=lambda since: (["gamma"], None))
+                       starved=lambda since, **_: (["gamma"], None))
         _o = _buf.getvalue()
         case("a missing pinned baseline is CANNOT RUN, not a pass",
              (_rc, "CANNOT RUN" in _o), (2, True))
@@ -2376,7 +2507,7 @@ def _self_test() -> int:
         with contextlib.redirect_stdout(_buf):
             _rc = main(["--rederive"], baseline_path=_bp_red, log_path=_lp_red,
                        corpus=lambda: {"median": 7, "mean": 7.2, "subjects": 61},
-                       starved=lambda since: ([], None))
+                       starved=lambda since, **_: ([], None))
         _o = _buf.getvalue()
         case("--rederive reports pinned vs now and does not evaluate triggers",
              (_rc, "pinned vs now" in _o, "trigger 1" in _o), (0, True, False))

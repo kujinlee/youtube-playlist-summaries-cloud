@@ -4,7 +4,7 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
-**Status:** ⏳ **UNJUDGED INSTRUMENT.** Companion to
+**Status:** 🟠 needs-you — the scoring instrument for the recall survey, and judged WITH it rather than separately: the evidence without its instrument decides nothing, and neither does the reverse.
 `2026-10-19-memory-recall-survey.md` (measurement **S1**). Committed unfilled on purpose: the
 assembly is done so that judging is the only work left, and the judging is explicitly not mine
 alone. ⚠ Derived from `.claude/recall-cache/*.json`, which is **not in git** — so this table is a

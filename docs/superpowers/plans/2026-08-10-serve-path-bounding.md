@@ -10,6 +10,8 @@
 > `check-docs.py` OK. The 429-refund money pin passes with **zero** edits to its assertions.
 >
 > ### Seven rounds, and what they actually found
+
+**Status:** ✅ shipped — merged in PR #67 (*"fix(#46): bound the serve path's work, and stop the lease from being …"*) and 1 earlier PR(s), all MERGED; the serve-path bound is in the product.
 >
 > | round | Highs | source |
 > |---|---|---|

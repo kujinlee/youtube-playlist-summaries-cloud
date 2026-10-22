@@ -4,7 +4,9 @@
 > **Goal:** The metadata store and blob store have Supabase implementations behind the same seams as local.
 
 **Date:** 2026-07-02
-**Status:** Draft v2 — hardened after grill (terminology) + Codex adversarial review (`docs/reviews/stage-1c-supabase-adapters-spec-codex.md`, 4 Blocking / 5 High / 2 Medium, all resolved below). Ready for implementation plan.
+**Status:** ✅ shipped — no thread-specific PR — this design predates PR-numbered merges; the work was committed directly; the cloud app is deployed and `lib/supabase/` holds the adapters this design specified.
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: *Draft v2 — hardened after grill (terminology) + Codex adversarial review (`docs/reviews/stage-1c-supabase-adapters-spec-codex.md`, 4 Blocking / 5 High / 2 Medium, all resolved below). Ready for implementation plan.*
 **Parent architecture:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` (§4.1, §7, §10 item 1C, §130).
 **Depends on:** Stage 1A (storage seam — `MetadataStore`), Stage 1B (auth + RLS schema + anonymous auth), both merged (PR #1).
 **Glossary:** storage-seam terms (Principal, owner, index key, output folder) live in `CONTEXT.md` → *Storage Seam*.

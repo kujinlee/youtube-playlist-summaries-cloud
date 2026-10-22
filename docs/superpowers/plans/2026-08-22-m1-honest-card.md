@@ -5,6 +5,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** ✅ shipped — merged in PR #133 (*"docs(#23): corrections in the cloud, slice A — spec and plan, both gated"*) and 1 earlier PR(s), all MERGED; ADR-0006 and ADR-0007 are `accepted 2026-08-24`, and `supabase/migrations/0027_stable_blob_addressing.sql` is in the tree and live on production.
+
 **Goal:** Make the cloud summary worker stamp `mdGeneratedAt`/`mdCorrectionsHash` **when, and only
 when, its bytes became the live body** — so a video row can never advertise one document's
 provenance beside another document's content.

@@ -16584,3 +16584,284 @@ the call site left intact (200/203 each), so they are not wiring-only; `size` is
 3/4/6/7 → 201/200/195/195); and the retirement is sound. It also recorded a near-miss of its own: it
 nearly published *"the window size is unprotected"* off four `203/203` runs in which the mutation
 had silently never been written, and now prints the mutated line before every probe.
+
+## 2026-10-21
+Tidying the goals page: two of the seven threads under "a review loop decides its own next step"
+were finished or abandoned and still presented as live work, and one misdescribed itself.
+
+The owner noticed the real problem by looking at the page: seven threads, several with a design and
+no implementation, and apparent overlap between them. Checked against the code and the history,
+four of the seven turn out to concern the same mechanism at different layers — which is why it
+reads as duplication without being it.
+
+What changed here is only the labels, and only where a label was wrong:
+
+One thread shipped a year's-worth of its own purpose and never said so — the piece that decides
+what a review loop does next is live and running on every change. It now says that at the top,
+with the pull request and the file, so nobody plans it again.
+
+One thread is abandoned in fact: the document it was supposed to produce now contains only a
+forwarding table pointing elsewhere, and not one of its twelve tasks was ever started. The
+question it asked is still open and still recorded in the backlog — it is the thread that is dead,
+not the subject.
+
+And one thread claims to be paused for a reason that no longer exists. It was stopped because the
+two signals it depended on were too noisy to build on, and because that work had moved elsewhere.
+That work is now finished, and one of the thread's own findings shipped yesterday. Whether to
+restart it is still a decision for the owner; what changed is that the reason for stopping is gone,
+and the document now says so instead of implying otherwise.
+
+**Waiting on you:** three decisions, all small and none urgent. Whether to restart the paused
+thread; which of four options to take on the "why does a simple change need five reviews" design
+(its recommendation column is deliberately empty because you asked for that discussion to be had
+together); and a yes/no on whether 75 memory-recall interruptions were worth it.
+<!--tech-->
+Goals-page thread audit under anchor `review-decides-itself`, derived with the page's OWN pairing
+logic (`gen-goals-page.pair_documents`) rather than by eyeballing filenames — **7 threads**,
+matching what the page renders.
+
+**CLOSED — thread 7, `2026-09-14-review-decision-procedure` (spec+plan) → ✅ SHIPPED.** Verified
+rather than assumed: PR **#303** `state=MERGED` 2026-09-15, `scripts/check-review-decision.py` is
+1,225 lines, referenced in `ci.yml`, `--self-test` rc=0. Header now cites all three. ⚠ Records what
+shipping did NOT settle: backlog #117 (it hand-rolls a YAML parser over a safety record) is still
+🟠 and `decision-card-soundness` is PARKED behind it.
+
+**CLOSED — thread 5, `2026-09-25-development-velocity-RECONSTRUCTED` (spec+plan) → ⛔ RETIRED**, on
+three checkable grounds: its deliverable `docs/development-velocity.md` self-declares
+*"THIS IS NOT A DOCUMENT. It is a forwarding table"*; the plan is **0 of 12** ticked; and
+`RECONSTRUCTED` is in the filename because the original was destroyed by a `git reset --hard` on
+2026-09-26. ⭐ backlog **#177 stays 🟠** — the thread is retired, the question is not.
+
+**CORRECTED — thread 1, `2026-10-20-decision-log-model-redesign` (plan only).** Its ⏸️ deferral
+rests on one argument: both consumed signals are non-discriminating base rates, so the work *"moved
+one level down to backlog #328 and #329"*. **Both are now ✅ CLOSED** (2026-10-20), so the stated
+precondition is gone — and **§1.1's first finding SHIPPED**: backlog #321 is ✅ as of `ee0e461b`
+(PR #381), so *"r2's nine findings are filed, not fixed"* is no longer true of all nine. ⚠ Still
+open and named in the correction: **#314** (thrashing ranks by CONSECUTIVE rounds) governs one of
+the two signals, plus **#337**/**#338** filed by #381's own rounds. ⛔ Resuming remains the owner's
+call; the correction changes the evidence, not the call.
+
+**Also carries `14e4bffd`**, cherry-picked off the merged branch where it was stranded: `#340`'s
+severity re-assessment. Master had been left with my stronger, measured-false framing
+(*"the whole blocker"*) after `4f276f20` passed `schema-gates` on attempt 1 — final rate 5 of 8
+heads, intermittent and self-recovering.
+
+⚠ **What this does NOT do, stated because the page will look unchanged:** there is no archive
+directory and no "closed" state the generator reads — thread cards render spec/plan presence and PR
+counts only, so **the page will still show 7 cards**. Collapsing closed threads would require
+teaching `gen-goals-page.py` a status it does not have today. Not done here; it is a code change,
+not a label fix.
+
+⚠ **NOT CLOSED, deliberately:** thread 6 (`decision-card-soundness`) is correctly PARKED behind
+#117; threads 3+4 (`memory-recall-survey` + its `S1-worksheet`) are ONE judgement in two files —
+the worksheet is labelled *"Companion to"* the survey — and both explicitly decide nothing because
+row #191's standing order forbids building before the judgement; thread 2
+(`rounds-to-convergence-is-rising`) is Phase 1 awaiting the human gate, with an empty
+recommendation column by design. ⭐ Its option **B** — a budget and retirement rule for guards — is
+where #381's own proportionality question (203 cases and 82 mutation entries guarding a 6-row log)
+would be settled.
+
+## 2026-10-21 [needs-you]
+The goals page now says what state each piece of work is in, and a checking problem turned up on
+the main branch while building it.
+
+You said you could not tell from the page which items are current, finished or obsolete. That is
+fixed: every thread now carries a small label — shipped, current, needs-you, parked or obsolete —
+visible without opening anything. The vocabulary is the one already used elsewhere in this project
+rather than a new one, so there is nothing extra to learn.
+
+Worth knowing: the status is written down, not worked out. I tried deriving it from how much of a
+plan was ticked off, and checked that against the seven items whose real state I knew. It was wrong
+on all seven. One piece of work that shipped months ago and runs on every change has none of its
+boxes ticked, and nothing in the files can tell "abandoned" apart from "not started yet". So each
+document now says what it is, and a check refuses to let the ones on this goal stay silent.
+
+**Waiting on you — two things.**
+
+The first is new and it blocks merging: a check on the main branch is failing, and the cause is that
+merging squashes a branch into a single commit, which makes every file in it look as though it was
+created today. One check asks "has anything been reviewed repeatedly without being recorded?" and
+dates its answer from that. After today's merge it now sees work from two days ago as happening
+today, and reports a problem that is not real. Every pull request from here will show that failure
+until it is fixed, and it will happen again on the next merge. I have written up the fix but not
+made it, because the check is one you rely on and changing how it decides is your call.
+
+The second is unchanged: three items on the goals page are labelled needs-you, and that label is
+accurate — they are waiting on a decision from you, not on work from me.
+<!--tech-->
+**The feature.** `scripts/check-goal-status.py` owns a status grammar — `**Status:** <marker> …`
+over `✅ shipped · 🟠 current · 🟠 needs-you · ⏸️ parked · ⛔ obsolete` — and `gen-goals-page.py`
+**IMPORTS** it (one rule, one place; a case fails if the page grows its own copy, the way
+`check-review-recorded` loads `check-dashboard-entry`'s parser). Badge colours reuse the existing
+`--good/--pending/--defect` tokens, so `check-theme-token-coverage` stays green across light, dark
+and the OS-dark shim. **Verified by looking at it in a browser**, not by reading HTML.
+
+⛔ **STATUS IS DECLARED BECAUSE DERIVATION WAS MEASURED WRONG 7 OF 7.** `review-decision-procedure`
+reads 0/36 ticks and SHIPPED (1,225 lines live in CI); `development-velocity` reads 0/12 and is
+ABANDONED; four threads have no plan at all and are variously awaiting-gate, unjudged or parked. No
+mechanical signal separates ABANDONED from NOT-STARTED, or PARKED from AWAITING-DECISION.
+
+⚠ **THE GUARD'S FIRST LIVE RUN FOUND A DEFECT IN MY OWN DESIGN.** Its first rule failed a malformed
+declaration anywhere — and 78 documents carry `**Status:** Approved` / `v7 — CONVERGED`, a
+DIFFERENT field under the same name in months of legitimate prose. That would have been red from
+birth across 40% of the corpus: **backlog #56**, the exact failure the per-anchor arming exists to
+avoid, undone one screen below the docstring claiming it. Corrected: malformed is judged only
+inside an ARMED anchor. ⚠ The mutation sweep then found **two of my cases passing for ambient
+reasons** — the variation-selector case tested nothing (`rest[0]` is one character, so the selector
+is never in it) and the unreadable-document case passed because skipping the only document emptied
+the corpus and returned the right code for the wrong reason. Both now use inputs that exercise the
+code. ⚠ And one mutation anchor was typed as `️` where the file holds the literal character —
+zero matches; anchors are now taken FROM the file.
+
+34 cases · 7 mutation entries, **7/7 killed and 7/7 attributed**, 0 survivors · registered with
+`check-plan-code` (pinned manifest list), `check-selftest-counts` (POPULATION),
+`check-fixture-variation` (EXAMINED_KEYS + one honest EXEMPT: `main.argv`'s second value is
+`--self-test`, which re-enters the suite) and `ci.yml`. `check-ratchet-contract` rc=0.
+
+⛔ **backlog #341, FILED AND NOT FIXED: a squash merge re-dates every file it carries.** Measured
+both sides — `docs/reviews/claude/memory-index-budget-r1-claude.md` was added by `49b7b267`
+(2026-10-19) on the branch and by `ee0e461b` (2026-10-21) on master. `check-decision-scheme`'s
+trigger 1 asks which subjects reached ≥2 rounds AFTER `armed_at` (2026-10-20), so three rounds that
+legitimately predate the mechanism now read as today and it reports starvation. **`rc=1` on
+unmodified `origin/master`, verified in a clean worktree** — so `verify` is red for every PR cut
+from master, including #382. ⛔ NOT cleared by writing a log row: that fabricates a decision never
+made under the mechanism (backlog #321's own refusal), and the guard says a failing trigger is not
+a bug to patch. The fix is to date the corpus from something a squash preserves — the filename
+grammar, or the verdict JSONs' own timestamps — and that changes how a gate you rely on decides,
+so it is yours.
+
+## 2026-10-22
+Every item on the goals page now shows its state. Yesterday only seven of forty-nine did.
+
+You asked why so many lines said "no status declared". The answer was that I had switched the
+check on for one goal only — the one you had asked about — so the other forty-two items were never
+touched. That was deliberate caution on my part and it left the page half-answering the question
+it exists to answer.
+
+All of them are filled in now, and each one says why it says what it says: which merged pull
+request did the work, and what is in the codebase as a result. That matters because nothing can
+check whether a status is *true* — so the only protection is that each claim carries its evidence
+where you can see it and contradict it.
+
+The result, across forty-nine items: forty-one finished, three waiting on you, one in progress,
+one parked behind another piece of work, and three dead threads whose underlying questions are
+still open and still recorded elsewhere.
+
+Three were not simply "finished" and are marked differently on purpose. One is a draft that was
+replaced by two formal decisions and never updated itself. One is a plan superseded by its own
+second version. Both are kept because other documents cite them.
+
+**Waiting on you:** the same three items as before, now visibly labelled as yours on the page —
+plus the merge blocker from last night, which is unchanged.
+<!--tech-->
+**39 blank threads declared, 12 further anchors armed — all 13 now armed, 0 of 49 cards blank.**
+
+⛔ **EVERY DECLARATION CARRIES ITS RECEIPT**, because `check-goal-status.py` cannot tell whether a
+declaration is TRUE — its docstring says so — and a page of unfalsifiable claims is worse than a
+blank one. Each status names the merged PR and what is in the tree, e.g. *"✅ shipped — merged in
+PR #155 (\"promote the stable-blob-addressing schema as migration 0027\"); ADR-0006 and ADR-0007
+are `accepted 2026-08-24`, and `supabase/migrations/0027_stable_blob_addressing.sql` is in the tree
+and live on production"*.
+
+**Evidence method, and what was discarded.** For all 39 threads: every PR that touched their
+documents, resolved through `gh pr view` — **64 thread-specific PRs, 64 MERGED, 0 open or
+closed-unmerged**. ⚠ **PR #147 was DISCOUNTED**: it is the ADR-0010 anchor backfill and touched 19
+threads' documents while saying nothing about whether their work shipped — a signal that looks
+strong and is worthless. ⚠ Plan ticks were discarded too, for the reason measured yesterday
+(wrong on 7 of 7). Tree facts were verified by looking: `lib/supabase/`, `docs/features.md`,
+`supabase/migrations/0027_*.sql`, `scripts/gen-dashboard.py`, `docs/explainers/`.
+
+**Four threads judged individually rather than by the rule**, each with the reason stated in its
+own header: `2026-08-03-stable-blob-addressing` → ⛔ obsolete (its own header still reads *"v1
+DRAFT — not reviewed, not approved"*; superseded by ADR-0006/0007, which are what shipped);
+`2026-08-25-m4-promote-the-schema` → ⛔ obsolete (superseded in place by its `-v2`);
+`2026-08-04-cas-fence-persist-summary` and `2026-08-09-render-addressing-brief` → ✅ shipped, with
+a note that their headers describe the DESIGN's review state, not the thread's.
+
+⚠ **An existing `**Status:**` line was never deleted** — 78 documents carry the design's review
+state in that slot (*"Approved"*, *"v7 — CONVERGED"*), which is dated testimony about the
+document. Where one existed it is preserved under the new declaration with a `⟳` note explaining
+the distinction.
+
+Final tally on the page: **41 shipped · 3 needs-you · 1 current · 1 parked · 3 obsolete**.
+`check-goal-status` rc=0 over 13 armed anchors; `check-anchors` rc=0; self-test 34/34.
+
+## 2026-10-22
+The merge blocker is fixed. The check that was failing on the main branch now passes, and it
+passes because it stopped asking a question that had become unanswerable.
+
+Yesterday's problem: merging squashes a branch into one commit, which makes every file it carries
+look as though it was created on the merge date. One check asks "has any piece of work been
+reviewed repeatedly without being recorded?", and it answered that by asking the version history
+what existed when the check was first switched on. After a merge, the history no longer knows.
+
+I had written up a fix that assumed the dates were merely wrong and could be read from somewhere
+else. Looking properly, they are not wrong — they are gone. Nothing in the files carries the
+original date, so no amount of looking elsewhere recovers it.
+
+So the fix is the one this check already uses for its other comparison: write the answer down once,
+rather than working it out again every time. The list of what existed when the check was armed is
+now recorded alongside it — 415 entries — taken from the branch whose history the merge had not
+yet rewritten. The check reads that list instead of interrogating git, and a future merge cannot
+disturb it.
+
+The piece of work it was wrongly accusing had in fact been reviewed three times *before* the check
+even existed.
+
+**Waiting on you:** merging, and the three goals-page items marked needs-you. Nothing else is
+outstanding from my side.
+<!--tech-->
+**backlog #341 FIXED — and the fix differs from the one I filed, because the filed diagnosis was
+wrong in a way worth recording.** #341 said: *derive the date from something a squash preserves*.
+Checked: verdict JSONs carry a `head` SHA but **no timestamp**, and review documents carry **no
+date** in their heads. The information is DESTROYED, not mis-stamped — master has no commit in
+which those files existed before the squash. A different date source cannot fix a missing fact.
+
+⭐ **So: PIN IT, which is the posture this file already takes two fields away.**
+`rounds_to_termination` is pinned for the stated reason *"a baseline recomputed at read time
+cannot detect that it has moved"* — the round inventory now is too. `baseline.json` gains
+`rounds_at_arming`: **415 (subject, round) pairs across 104 subjects**, derived from commit
+`5d957db8` (2026-10-20 08:27:49) on branch `decision-route-escalation`, whose history the squash
+did not rewrite, through the SAME `rounds_in_paths` grammar the live corpus is read with.
+
+New pure `pinned_inventory(baseline)`; `main()` prefers it over `tree_at`, which remains the
+fallback for a repo that has not pinned one. ⛔ A MALFORMED pin is **CANNOT RUN**, never a quiet
+fallback — falling back is exactly what a squash makes wrong. ⛔ An EMPTY pin is REFUSED, because
+empty would make every subject look post-arming and name nearly all of them (backlog #56).
+
+**Proof the trigger was firing on a false premise:** `memory-index-budget`'s rounds **1, 2 and 3
+all existed at the arming instant**. It never reached ≥2 rounds after arming.
+
+`check-decision-scheme` **rc=1 → rc=0**. 203 → 216 cases. 82 → 86 mutations, **86/86 killed,
+86/86 ATTRIBUTED**, 0 survivors. Full `ci.yml` list: **64 steps, 63 rc=0**.
+
+⚠ **Four defects of my own while building it, every one caught by a machine:** `pinned_rounds`
+collided with an existing local in `main()` ("'dict' object is not callable"); **16 injected test
+doubles did not match the real signature** — and a double that does not match the real contract is
+a mock of a contract I imagined, so updating them was the repair, not a workaround; I inserted a
+case block BETWEEN a `main()` call and the `case()` reading its captured `_o`, clobbering it; and
+one mutation anchored on the first line of a MULTI-LINE return, so it did not COMPILE and "killed"
+the suite with an `IndentationError` nothing could attribute.
+
+## 2026-10-22
+A note for next time, because this trap is documented in the repository and I walked into it anyway.
+
+The check that asks "has this been reviewed?" reads the pull request's description from the event
+that started the run. I pushed the code first and wrote the description afterwards, so the run was
+still holding the old, empty description and refused — correctly. Re-running does not help, because
+a re-run replays the same stale event. Only a new push picks up an edited description.
+
+The workflow file says exactly this, in a comment written after it happened to someone else on a
+previous pull request. I read the refusal, not the comment above it.
+<!--tech-->
+⚠ `check-review-recorded` FAILED in CI on #382 while passing locally with the same body via
+`--pr-body-file`. Cause: `gh pr edit` does not emit a `pull_request` event, so the run was still
+holding the pre-edit body. ⛔ **A RE-RUN DOES NOT FIX IT** — it replays the same payload; only a
+`synchronize` (a push) does. `.github/workflows/ci.yml:588-591` records the identical sequence on
+PR #336 (2026-09-22): *"the author read this step's refusal, edited the body exactly as instructed,
+spent a rerun"*. I read the step's refusal and not the comment three lines above it.
+
+⚠ Path count in the refusal grew 7 → 9 because `7bb224e6` (the #341 fix) landed between the two
+runs — the declaration is not path-scoped, so it still covers them.
+
+This commit exists to BE the push that carries the edited body into a fresh event.

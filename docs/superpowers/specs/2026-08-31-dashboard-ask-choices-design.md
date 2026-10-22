@@ -3,7 +3,9 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** **v3 — rounds 1 and 2 folded in. Both rounds NOT CONVERGED from both halves.**
+**Status:** ✅ shipped — merged in PR #187 (*"Heads-up expiry decided: no expiry, and the ask that carried it is re…"*) and 1 earlier PR(s), all MERGED; the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
+> ⟳ Its earlier status line, kept because it is dated testimony about the DESIGN rather than the thread: ***v3 — rounds 1 and 2 folded in. Both rounds NOT CONVERGED from both halves.***
 Reviews at `docs/reviews/spec-dashboard-ask-choices-r{1,2}-{codex,claude}.md`.
 Round 1: 2 Blocking each, agreeing. Round 2: 3 Blocking each — **all flagged as regressions
 introduced by round 1's own fix.**

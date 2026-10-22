@@ -4,6 +4,8 @@
 > **Goal:** A person who was away can see the current state, what changed, and what needs them —
 > without reading the chat transcript.
 
+**Status:** ✅ shipped — merged in PR #229 (*"The banner guard judges a turn that has finished being written (backl…"*); the dashboard and its guards are in the tree (`scripts/gen-dashboard.py`, `scripts/check-*.py`).
+
 **Backlog #96.** **v4, 2026-09-06.** The structural half of #96, deferred out of PR #225 when
 option B (retract the guard's precision claim in prose) shipped instead — the half the row calls
 *"a spec, not a patch"*.

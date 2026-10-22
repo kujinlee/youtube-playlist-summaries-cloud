@@ -10,6 +10,8 @@
 > because the corpus holds **1 clean round in 48** against a predicate needing two consecutive (backlog #329).
 > ⭐ **The mechanism CONSUMES those signals**, so a decision layer over non-discriminating inputs cannot
 > work however well it is built. The work moved one level down — **backlog #328** (one `corpus()` owner + a
+
+**Status:** 🟠 current — the ⏸️ deferral's precondition is LIFTED (backlog #328 and #329 both ✅ closed) and §1.1's first finding shipped as backlog #321 in `ee0e461b`. Resuming is the owner's call; backlog #314 still governs one of the two signals.
 > denominator guard) and **backlog #329** (make convergence satisfiable).
 >
 > ⛔ **DEFER is terminal on the ladder — *stop, file it*.** r2's nine findings are **filed, not fixed**;
@@ -17,6 +19,29 @@
 > and §1's diagnosis and §1.1's measurements were independently re-derived and hold.
 > ⚠ The mechanism cannot record its own deferral: `tried=["redesign"]` for `log-schema`, so `route_next`
 > still demands `accrete` — **backlog #321's fourth occurrence**, on the decision that ends the slice.
+>
+> ## ⟳ CORRECTED 2026-10-21 — THIS DEFERRAL'S STATED PRECONDITION NO LONGER HOLDS, AND PART OF THIS
+> ## DOCUMENT HAS SHIPPED. It is a RESUME candidate, not a dead thread.
+>
+> The deferral above rests on one argument: both signals the mechanism consumes are
+> non-discriminating base rates, so *"a decision layer over non-discriminating inputs cannot work
+> however well it is built"*, and the work therefore **moved one level down to backlog #328 and
+> #329**. ⭐ **Both of those are now ✅ CLOSED** — #328 *"one `corpus()` owner + t6 reads the pinned
+> counts"*, #329 *"convergence reads the disposition that already exists"* (both 2026-10-20). The
+> condition that justified stopping has been removed.
+>
+> ⛔ **AND §1.1's FIRST FINDING SHIPPED.** backlog **#321** — the ladder's prefix clause — is ✅ as
+> of `ee0e461b` (PR #381, 2026-10-21): a rung is skippable with a required non-empty reason, so the
+> two unwritable histories this document measured are now expressible, and the deferral itself is
+> recorded in `docs/reviews/decision-scheme/decision-log.jsonl` as the two retroactive rows it
+> always should have been. ⚠ So *"r2's nine findings are filed, not fixed"* is no longer true of
+> all nine.
+>
+> ⚠ **WHAT IS STILL OPEN, so this is not read as a green light:** backlog **#314** (the thrashing
+> rule ranks by CONSECUTIVE rounds, and consecutiveness is the statistic that loses) is still 🟠,
+> and it governs one of the two signals. **#337** and **#338** were filed by #381's own review
+> rounds. ⛔ Whether to resume is still the owner's call — this correction changes the EVIDENCE the
+> call rests on, not the call.
 
 **This is a DESIGN REVIEW document, not a fold of code.** `review-method.md:178`, quoted rather than
 recalled:

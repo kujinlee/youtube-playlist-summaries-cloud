@@ -2553,6 +2553,11 @@ futility) then `defer` (skipping `split`, because the measured cause is one leve
       borrow. Also fixed: a malformed `routes_tried` crashed the validator instead of being named, and
       `"!!!"` / a zero-width space passed as a reason (`strip()` does not remove U+200B). 162 → 179
       cases, 55 → 64 mutations, **64/64 killed and 64/64 ATTRIBUTED**, 0 survivors.
+- [ ] 🔴 **backlog #341 — a SQUASH MERGE re-dates every file it carries, so `check-decision-scheme`'s
+      starvation trigger armed retroactively on `memory-index-budget`, whose three rounds predate the
+      mechanism.** Measured both sides: that review doc reads 2026-10-19 on the branch and 2026-10-21
+      on master. ⛔ `check-decision-scheme` is rc=1 on unmodified `origin/master` (clean worktree), so
+      `verify` is red for every PR cut from it. ⛔ Do NOT feed the trigger to clear it.
 - [ ] 🟠 **backlog #340 — a REQUIRED check is gated on an anonymous public-registry pull with a data
       cap, hit 3× in 90 minutes** (`ea005a3e`, `afe3b7cd`, `70e4ead3`): `start-schema-db.sh` exits
       2 = CANNOT RUN on *"error from registry: Data limit exceeded"*. The script's refusal to fail
