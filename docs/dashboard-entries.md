@@ -17111,10 +17111,10 @@ work-lines page and nothing pointed it out. For now it only warns, and every war
 Making it actually stop the turn is a one-line switch, and you decide when to flip it, by looking at
 how often the log shows it warning when it shouldn't have.
 
-While building it I found something you should know about: the existing banner check had stopped
-recognising banners once they began carrying a timestamp (`## ▶ [10-22 09:00] STEP …`). Its last
-warning about a banner with no plan is from 2026-10-18. The new check reads the timestamped form.
-The old one was left as it was, because fixing it changes when three other warnings fire.
+While building it I found, and then fixed, a blind spot: the existing banner check had stopped
+recognising banners once they began carrying a timestamp (`## ▶ [10-22 09:00] STEP …`), which has
+been the required form since 2026-10-16. So for those days its three original warnings could not
+see any current banner. A quiet log over that stretch does not mean nothing was missed.
 <!--tech-->
 `scripts/check-banner-armed.py` gains a fourth class, `unarmed-thread`: `thread_name`,
 `thread_rows`, `unarmed_thread`, `decide_thread`, plus `_slug_from_text` / `_armed_slug` /
@@ -17122,6 +17122,13 @@ The old one was left as it was, because fixing it changes when three other warni
 It judges the LAST `**Thread:**` row of the previous turn (a `⤳ SWITCHED` target, or a step
 banner's row), is quiet when no slug can be extracted, and skips fenced blocks. `THREAD_BLOCK =
 False` is the switch; when it is on the class returns 4, which `.claude/hooks/block-idle-stop.sh`
-maps to `exit 2`. Self-test 160 -> 196 cases; mutation manifest 48 -> 64, all 16 new entries killed
-and attributed in a scoped run. `STEP_BANNER_RE` is a second banner pattern, kept on purpose until
-the owner decides whether `BANNER_RE` should accept the stamp.
+maps to `exit 2`.
+
+`BANNER_RE` now accepts the optional `[mm-dd hh:mm]` stamp and is the ONE banner pattern; the
+thread class's interim copy `STEP_BANNER_RE` is retired. ⚠ The guard's three original classes
+(`unarmed`, `unbannered`, `unheralded`) saw NO current banner from 2026-10-16 until this fix:
+`unarmed` could not fire on a stamped banner (its last log entry is 2026-10-18), and the other two
+read every stamped banner as no banner. So the warn log's quiet since 2026-10-16 is NOT evidence of
+no misses, and its `unbannered`/`unheralded` entries in that span may include turns that did
+banner. Self-test 160 -> 209 cases; mutation manifest 48 -> 65, every entry killed and attributed
+in a scoped run.

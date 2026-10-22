@@ -144,10 +144,9 @@ a THREAD SWITCH was armed. The rule:
     matches a banner naming that stem, though the page itself reads only `.claude/plans/`.
   * ⚠ The upgrade turn: a journal written before this class has no `plan_slug`, and that turn is
     quiet for this class rather than read as "nothing armed".
-  * ⚠ IT SEES TODAY'S STAMPED BANNERS AND THE OLDER CLASSES DO NOT. `BANNER_RE` predates the
-    `[mm-dd hh:mm]` stamp CLAUDE.md settled on 2026-10-16 and matches none of the current form;
-    this class uses `STEP_BANNER_RE`, which accepts it. See the comment there — the owner decides
-    whether to widen `BANNER_RE`, which would change when the other three classes fire.
+  * Banners are found by `BANNER_RE`, the one pattern every class uses, which accepts the
+    optional `[mm-dd hh:mm]` stamp. ⚠ It did not until 2026-10-22, so the three ORIGINAL classes
+    saw no current banner from 2026-10-16 until then — see the comment at `BANNER_RE`.
 
 MODE: WARN through the same channel and log as the rest (`unarmed-thread`, detail `<kind> <slug>`),
 naming the command that arms the thread. BLOCK is ONE named switch, `THREAD_BLOCK`, default False;
@@ -161,7 +160,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 196 cases
+    python3 scripts/check-banner-armed.py --self-test  # 209 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD NOT ARMED, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -194,10 +193,17 @@ QUIET, WARN, CANNOT_RUN = 0, 1, 2
 
 _UNSET = object()   # `steps` was not consulted. Distinct from None = "unreadable".
 
-# The banner CLAUDE.md mandates: `## ▶ STEP 3 of 6 — title`. The separator between the numbers is
-# matched loosely (`of`), but the `## ▶ STEP` opener is not — a looser opener would match prose
+# The banner CLAUDE.md mandates: `## ▶ [10-22 13:35] STEP 3 of 6 — title`. The separator between
+# the numbers is matched loosely (`of`), but the opener is not — a looser opener would match prose
 # ABOUT the convention, and this file, the skill docs and the dashboard all discuss it.
-BANNER_RE = re.compile(r"^##\s*▶\s*STEP\s+(\d+)\s+of\s+(\d+)\b", re.M)
+# ⟳ 2026-10-22 — THE `[mm-dd hh:mm]` STAMP IS OPTIONAL HERE, AND ITS ABSENCE WAS A BLINDNESS.
+# CLAUDE.md settled on PREPENDING the stamp on 2026-10-16; this pattern required `▶` then `STEP`
+# with only whitespace between, so from that day until this fix the three original classes saw
+# NO current banner — `unarmed` went quiet (its last log entry is 2026-10-18) and `unbannered` /
+# `unheralded` read every stamped banner as NO banner. The log's quiet over that span is NOT
+# evidence of no misses. The unstamped form still matches. This is the ONE banner pattern; the
+# thread class reads it too (a second copy, `STEP_BANNER_RE`, lived for one commit and is retired).
+BANNER_RE = re.compile(r"^##\s*▶\s*(?:\[[^\]\n]*\]\s*)?STEP\s+(\d+)\s+of\s+(\d+)\b", re.M)
 
 
 # ── Pure core ─────────────────────────────────────────────────────────────────────────────────
@@ -535,15 +541,6 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
 # switched to by banner alone is real work that never reaches that page. See the module
 # docstring, section THE THREAD CLASS, for the rule and its bounds.
 THREAD_RE = re.compile(r"^>\s*\*\*Thread:\*\*(.*)$")
-# ⛔ A SECOND BANNER PATTERN, DELIBERATELY, AND A FINDING RATHER THAN A STYLE CHOICE. CLAUDE.md
-# settled on 2026-10-16 that every banner PREPENDS `[mm-dd hh:mm]`: `## ▶ [10-22 09:00] STEP 2
-# of 4`. BANNER_RE above requires `▶` then `STEP` with only whitespace between, so it does NOT
-# match a single banner written in the current form — measured 2026-10-22: the warn log's last
-# `unarmed` entry is 2026-10-18. Widening BANNER_RE would change when the three older classes fire,
-# which this slice was not asked to do, so the owner decides that separately. This class must see
-# today's banners or rule 2 is dead on arrival, so it accepts the stamp. Fold the two together
-# when BANNER_RE is repaired — two patterns for one marker is the shape that drifts.
-STEP_BANNER_RE = re.compile(r"^##\s*▶\s*(?:\[[^\]\n]*\]\s*)?STEP\s+\d+\s+of\s+\d+\b")
 _SLUG = r"`([A-Za-z0-9][A-Za-z0-9._-]*)`"
 _SWITCH_TARGET_RE = re.compile(r"→\s*" + _SLUG)
 _RESUMED_RE = re.compile(r"↳\s*RESUMED\s+" + _SLUG)
@@ -591,7 +588,7 @@ def thread_rows(texts: list[str]) -> list[tuple[str, str]]:
                 continue
             if fenced:
                 continue
-            if STEP_BANNER_RE.match(line):
+            if BANNER_RE.match(line):
                 in_banner = True
                 continue
             m = THREAD_RE.match(line)
@@ -1632,6 +1629,41 @@ def _self_test() -> int:
               and slug_sample_for({"prev_turn_uuid": "v", "prev_plan_slug": "s-prev"}, "v")
               == (True, "s-prev")))
 
+
+    # ── THE STAMPED BANNER (2026-10-22): the three ORIGINAL classes see today's form ──────────
+    # CLAUDE.md settled `## ▶ [mm-dd hh:mm] STEP n of N` on 2026-10-16 and BANNER_RE matched none
+    # of it, so from then until this fix the three original classes saw NO current banner. Each
+    # pair below writes the UNSTAMPED and the STAMPED literal at its own call site: the stamp must
+    # change nothing but visibility.
+    case("ST1 `unarmed` WARNS on an unstamped partway banner, as it always has",
+         decide(["## ▶ STEP 2 of 5 — doing a thing"], armed=False)[2] == REASON_UNARMED)
+    case("ST1b ...and WARNS on the STAMPED form of the same banner",
+         decide(["## ▶ [10-22 13:35] STEP 2 of 5 — doing a thing"], armed=False)[2]
+         == REASON_UNARMED)
+    case("ST2 `unarmed` is quiet on a finished unstamped banner",
+         decide(["## ▶ STEP 4 of 4 — done"], armed=False)[0] == QUIET)
+    case("ST2b ...and quiet on the STAMPED finished banner — the stamp moves nothing else",
+         decide(["## ▶ [10-22 13:36] STEP 4 of 4 — done"], armed=False)[0] == QUIET)
+    case("ST3 `unbannered` is quiet when an unstamped banner was emitted",
+         decide(["## ▶ STEP 1 of 3 — t"], armed=True, steps=(0, 3), edited=True)[0] == QUIET)
+    case("ST3b ...and quiet when the STAMPED banner was emitted — it used to read as NO banner",
+         decide(["## ▶ [10-22 13:37] STEP 1 of 3 — t"], armed=True, steps=(0, 3),
+                edited=True)[0] == QUIET)
+    case("ST3c ...while with NO banner it still fires",
+         decide(["prose only"], armed=True, steps=(0, 3), edited=True)[2] == REASON_UNBANNERED)
+    case("ST4 `unheralded` is quiet on a large turn that emitted an unstamped finished banner",
+         decide(["## ▶ STEP 6 of 6 — t"], armed=False, tool_uses=LARGE_TURN + 3)[0] == QUIET)
+    case("ST4b ...and quiet when that banner was STAMPED — it used to fire as bannerless work",
+         decide(["## ▶ [10-22 13:38] STEP 6 of 6 — t"], armed=False,
+                tool_uses=LARGE_TURN + 4)[0] == QUIET)
+    case("ST4c ...while with NO banner it still fires",
+         decide(["prose only"], armed=False, tool_uses=LARGE_TURN + 5)[2] == REASON_UNHERALDED)
+    case("ST5 highest_banner reads the numbers out of a STAMPED banner",
+         highest_banner(["## ▶ [10-22 13:39] STEP 3 of 7 — t"]) == (3, 7))
+    case("ST6 a stamp with no STEP after it is still not a banner",
+         highest_banner(["## ▶ [10-22 13:40] — a note, not a step"]) is None)
+    case("ST7 the stamped opener is still line-anchored — mid-sentence does not count",
+         highest_banner(["as I said ## ▶ [10-22 13:41] STEP 2 of 5 — nope"]) is None)
 
     # ── HIGHEST, not last ──────────────────────────────────────────────────────────────────
     case("the HIGHEST banner decides, not the last one printed",

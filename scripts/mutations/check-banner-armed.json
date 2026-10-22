@@ -713,8 +713,8 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "            if fenced:\n                continue\n            if STEP_BANNER_RE",
-        "            if STEP_BANNER_RE"
+        "            if fenced:\n                continue\n            if BANNER_RE",
+        "            if BANNER_RE"
       ]
     ],
     "expect": [
@@ -828,17 +828,33 @@
     ]
   },
   {
-    "name": "thread class: the stamp-tolerant banner pattern reverts to BANNER_RE, blind to today's `[mm-dd hh:mm]` banners",
+    "name": "BANNER_RE reverts to the UNSTAMPED form, so the three original classes go blind to every `[mm-dd hh:mm]` banner again",
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "            if STEP_BANNER_RE.match(line):",
-        "            if BANNER_RE.match(line):"
+        "BANNER_RE = re.compile(r\"^##\\s*▶\\s*(?:\\[[^\\]\\n]*\\]\\s*)?STEP",
+        "BANNER_RE = re.compile(r\"^##\\s*▶\\s*STEP"
       ]
     ],
     "expect": [
-      "TH7 a step banner's Thread row is collected as kind `step`",
-      "TE5 NOTHING armed + a step banner on a named thread WARNS (3 of 3, so only this class can be what fired)"
+      "ST1b ...and WARNS on the STAMPED form of the same banner",
+      "ST3b ...and quiet when the STAMPED banner was emitted — it used to read as NO banner",
+      "ST4b ...and quiet when that banner was STAMPED — it used to fire as bannerless work"
+    ]
+  },
+  {
+    "name": "BANNER_RE makes the stamp MANDATORY, so the unstamped form stops counting — the stamp must change nothing else",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "(?:\\[[^\\]\\n]*\\]\\s*)?STEP\\s+(\\d+)",
+        "(?:\\[[^\\]\\n]*\\]\\s*)STEP\\s+(\\d+)"
+      ]
+    ],
+    "expect": [
+      "ST1 `unarmed` WARNS on an unstamped partway banner, as it always has",
+      "ST3 `unbannered` is quiet when an unstamped banner was emitted",
+      "ST4 `unheralded` is quiet on a large turn that emitted an unstamped finished banner"
     ]
   }
 ]

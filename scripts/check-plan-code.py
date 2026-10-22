@@ -840,7 +840,13 @@ EXPECTED_MUTATIONS = {
     # seventeenth — deleting the hook's `BANNER_RC == 4 -> exit 2` mapping — is NOT here: a
     # manifest's entries must all target the manifest's own file, and the hook is shell. F6d
     # covers it structurally; nothing mutates it.
-    "scripts/check-banner-armed.py": 64,
+    # ⟳ same day, 64 -> 65: BANNER_RE itself now accepts the `[mm-dd hh:mm]` stamp, so the
+    # thread class's private copy `STEP_BANNER_RE` is gone and its entry is RETIRED WITH ITS
+    # SUBJECT (-1). Two entries pin the one pattern instead (+2): reverting it to the unstamped
+    # form (the 2026-10-16 blindness, killed by an ORIGINAL class's stamped case) and making the
+    # stamp mandatory (killed by the unstamped cases). The fence-skip entry was RE-ANCHORED from
+    # `STEP_BANNER_RE` to `BANNER_RE`, not retired — its subject still exists.
+    "scripts/check-banner-armed.py": 65,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -5596,7 +5602,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1799)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1800)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
