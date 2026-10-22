@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 43 cases
+    python3 scripts/check-plan-progress.py --self-test  # 54 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -80,13 +80,21 @@ scalar is `docs/backlog.md` #100's subject and is deliberately NOT done here.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
+import importlib.util
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SENTINEL = ROOT / ".claude/executing-plan"
 STATE = ROOT / ".claude/executing-plan.state"
+# ⭐ THE LAST FINISHED PLAN — what `begin-plan._derive_parent` reads when NOTHING is armed. See
+# `record_last_plan`. A `key: value` file beside the sentinel, read with `parse_sentinel`.
+LAST_PLAN = ROOT / ".claude/last-plan"
+PLAN_DIR = ROOT / ".claude/plans"
+WORK_LINES_OUT: Path | None = None   # None -> gen-work-lines' own default (~/explainers/…)
 
 ALLOW, BLOCK = 0, 2
 
@@ -334,6 +342,105 @@ def decide(
     ), unticked
 
 
+# ── the work line: what a FINISHED plan leaves behind, and the page it feeds ─────────────────
+
+def render_last_plan(plan_rel: str, branch: str | None, when: str) -> str:
+    """The `.claude/last-plan` body. PURE. `branch:` is OMITTED, never blank, when unknown —
+    the reader must see "not recorded", not an empty branch name it would hand to `gh`."""
+    out = f"plan: {plan_rel}\n"
+    if branch:
+        out += f"branch: {branch}\n"
+    return out + f"finished: {when}\n"
+
+
+def current_branch(root: Path) -> str | None:
+    """The checked-out branch at `root`, or None — detached HEAD and no git are both None."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    b = r.stdout.strip()
+    return b if r.returncode == 0 and b and b != "HEAD" else None
+
+
+def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path,
+                     branch: str | None) -> str | None:
+    """Record the plan `sentinel_text` names as the LAST FINISHED plan — only if fully ticked.
+
+    Returns the recorded repo-relative plan path, or None when nothing was recorded.
+
+    ⭐ OPTION A, the owner's decision 2026-10-22: A PLAN STAYS THE PARENT UNTIL ITS PR MERGES, not
+    merely until its steps are ticked. Measured gap: `work-lines-page` was ticked closed when its
+    PR opened, which cleared the sentinel, so a side job armed while that PR was still in CI
+    recorded `parent: -` — a NEW line — instead of continuing the one it branched from. The
+    sentinel's clear is the moment the plan's identity would otherwise be lost, so the clear is
+    where it is written down. `begin-plan._derive_parent` reads it when nothing is armed and asks
+    `gh` whether the branch has merged.
+
+    ⛔ ONE RECORDER, CALLED FROM BOTH CLEAR SITES — `run_decide` here (the Stop hook) and
+    `begin-plan.cmd_finish` — because two copies of "what counts as finished" is this repo's most
+    measured failure. A plan that was PAUSED and then `--finish`ed comes through here too.
+    ⚠ NOT FULLY TICKED -> NOT RECORDED. `--finish` on a half-done plan is an abandonment; naming it
+    the parent of the next plan would claim a line continues work that was dropped.
+    ⚠ A failed WRITE is reported on stderr and returns None. This runs inside the Stop hook, where
+    a traceback is a fail-closed BLOCK — and a record that could not be written must not trap the
+    session that just finished its plan.
+    """
+    if sentinel_text is None:
+        return None
+    rel = parse_sentinel(sentinel_text).get("plan", "")
+    if not rel:
+        return None
+    try:
+        text = (root / rel).read_text()
+    except (OSError, UnicodeDecodeError):
+        return None
+    done, total = count_steps(text)
+    if not total or done != total:
+        return None
+    when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    try:
+        dest.write_text(render_last_plan(rel, branch, when))
+    except OSError as exc:
+        print(f"⚠ the finished plan {rel} was NOT recorded as the last plan ({exc}); the next "
+              f"plan armed will record no parent from it.", file=sys.stderr)
+        return None
+    return rel
+
+
+def refresh_work_lines(plan_dir: Path, out: Path | None) -> str | None:
+    """Rebuild the work-lines page. NEVER RAISES. Returns the one stderr line it printed, or None.
+
+    ⭐ "ALWAYS CURRENT" (2026-10-22). The plan files are git-ignored and written through Bash, so
+    no file hook ever fires on them; every command that changes plan state calls this instead —
+    `begin-plan.py`'s begin/plan/tick/pause/resume/finish and this Stop hook's clear.
+    ⛔ IT MUST NEVER FAIL THE COMMAND IT FOLLOWS. A page is a view; a Stop hook that raised here
+    would BLOCK the session over a rendering problem, and a `--tick` that failed would leave the
+    human unsure whether the tick landed. So ANY exception — a missing generator, an unwritable
+    output, a defect in the renderer — becomes ONE stderr line and the caller's exit code stands.
+    That breadth is the contract, not a shortcut: there is no failure here worth more than the
+    command, and every one is still SAID.
+    """
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_gen_work_lines", Path(__file__).resolve().parent / "gen-work-lines.py")
+        if spec is None or spec.loader is None:
+            raise ImportError("cannot load scripts/gen-work-lines.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        rc, msg = mod.write_page(out if out is not None else mod.DEFAULT_OUT, plan_dir)
+        err = None if rc == 0 else msg
+    except Exception as exc:                       # noqa: BLE001 - reported, never swallowed
+        err = f"{type(exc).__name__}: {exc}"
+    if err is None:
+        return None
+    line = f"⚠ work-lines page NOT rebuilt — {err}".replace("\n", " ")
+    print(line, file=sys.stderr)
+    return line
+
+
 # ── I/O shell around the pure decision ────────────────────────────────────────────────────────
 
 def _read(p: Path) -> str | None:
@@ -359,8 +466,10 @@ def run_decide(stop_hook_active: bool) -> int:
     code, message, unticked = decide(sentinel_text, plan_text, prev, stop_hook_active)
 
     if unticked == 0:
+        record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN, branch=current_branch(ROOT))
         SENTINEL.unlink(missing_ok=True)
         STATE.unlink(missing_ok=True)
+        refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)
     elif unticked is not None:
         STATE.write_text(str(unticked))
 
@@ -584,6 +693,100 @@ def _self_test() -> int:
          next_pending_task("- [ ] orphan\n").startswith("(before"))
     case("parse_sentinel keeps unknown keys",
          parse_sentinel("plan: x\nfoo: bar\n") == {"plan": "x", "foo": "bar"})
+
+    # ── Option A: a finished plan is RECORDED, so it stays the parent until its PR merges ──
+    import contextlib
+    import io
+    import tempfile
+    with tempfile.TemporaryDirectory() as _td:
+        _r = Path(_td)
+        (_r / ".claude/plans").mkdir(parents=True)
+        (_r / ".claude/plans/fin.md").write_text("# fin\n- [x] a\n- [x] b\n")
+        (_r / ".claude/plans/half.md").write_text("# half\n- [x] a\n- [ ] b\n")
+        (_r / ".claude/plans/other.md").write_text("# other\n- [x] only\n")
+        _d1, _d2, _d3 = _r / "rec1", _r / "rec2", _r / "rec3"
+        # A SECOND root, holding a plan the first does not: `root` must be what resolves `plan:`.
+        _r2 = _r / "second-root"
+        (_r2 / ".claude/plans").mkdir(parents=True)
+        (_r2 / ".claude/plans/second.md").write_text("# second\n- [x] only\n")
+        _got1 = record_last_plan("plan: .claude/plans/fin.md\n", root=_r, dest=_d1,
+                                 branch="feat/one")
+        _got2 = record_last_plan("plan: .claude/plans/second.md\npaused: was parked\n",
+                                 root=_r2, dest=_d2, branch=None)
+        _f1 = parse_sentinel(_d1.read_text()) if _d1.exists() else {}
+        _f2 = parse_sentinel(_d2.read_text()) if _d2.exists() else {}
+        case("⭐ a fully-ticked plan is RECORDED with the branch it finished on",
+             (_got1, _f1.get("plan"), _f1.get("branch"), "finished" in _f1)
+             == (".claude/plans/fin.md", ".claude/plans/fin.md", "feat/one", True))
+        case("...and an UNKNOWN branch is OMITTED, never written blank — a second plan, a second "
+             "branch value, and a sentinel that had been paused",
+             (_got2, _f2.get("plan"), "branch" in _f2) == (".claude/plans/second.md",
+                                                          ".claude/plans/second.md", False))
+        case("⛔ a HALF-ticked plan is NOT recorded — `--finish` on it is an abandonment, and "
+             "naming it a parent would continue work that was dropped",
+             (record_last_plan("plan: .claude/plans/half.md\n", root=_r, dest=_d3,
+                               branch="feat/one"), _d3.exists()) == (None, False))
+        case("...and no sentinel, or one naming no plan, records nothing",
+             (record_last_plan(None, root=_r, dest=_d3, branch=None),
+              record_last_plan("armed: x\n", root=_r, dest=_d3, branch=None),
+              _d3.exists()) == (None, None, False))
+
+        # ── THE WIRING: run_decide's clear records the plan and rebuilds the page ───────────
+        # Every case above is the recorder alone. Deleting its CALL at the clear site would leave
+        # them all green while Option A silently stopped working — so the real `run_decide` is
+        # driven over a constructed root.
+        global ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT
+        _saved = (ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT)
+        try:
+            ROOT, PLAN_DIR = _r, _r / ".claude/plans"
+            SENTINEL, STATE = _r / ".claude/executing-plan", _r / ".claude/executing-plan.state"
+            LAST_PLAN, WORK_LINES_OUT = _r / ".claude/last-plan", _r / "out" / "wl.html"
+            SENTINEL.write_text("plan: .claude/plans/fin.md\n")
+            with contextlib.redirect_stdout(io.StringIO()):
+                _rc = run_decide(False)
+            case("⭐ the Stop hook's clear RECORDS the finished plan as the last plan",
+                 (_rc, SENTINEL.exists(),
+                  parse_sentinel(LAST_PLAN.read_text()).get("plan") if LAST_PLAN.exists()
+                  else None) == (ALLOW, False, ".claude/plans/fin.md"))
+            case("⭐ ...and REBUILDS the work-lines page, so it is current without being asked",
+                 WORK_LINES_OUT.is_file() and "<code>fin</code>" in WORK_LINES_OUT.read_text())
+            # ⛔ NEVER BLOCK ON A PAGE. The output's parent is a FILE, so the write must fail; the
+            # stop is still ALLOWED and exactly ONE line says the page was not rebuilt.
+            (_r / "blocker").write_text("a file where a directory must go")
+            WORK_LINES_OUT = _r / "blocker" / "wl.html"
+            SENTINEL.write_text("plan: .claude/plans/other.md\n")
+            _err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err):
+                try:
+                    _rc2 = run_decide(True)
+                except Exception as exc:              # noqa: BLE001 - the case reports it
+                    _rc2 = f"RAISED {type(exc).__name__}"
+            case("⛔ a page that CANNOT be rebuilt never changes the stop's verdict — ONE stderr "
+                 "line says so",
+                 (_rc2, SENTINEL.exists(),
+                  [ln for ln in _err.getvalue().splitlines() if "NOT rebuilt" in ln].__len__())
+                 == (ALLOW, False, 1))
+            case("...and the record is still written when the page is not",
+                 parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/other.md")
+        finally:
+            ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT = _saved
+
+        # refresh_work_lines itself, at two DISTINCT outputs: success says nothing, failure says
+        # one line that names the cause.
+        _ok_out = _r / "ok" / "page.html"
+        with contextlib.redirect_stderr(io.StringIO()):
+            _ok = refresh_work_lines(_r / ".claude/plans", _ok_out)
+            _bad = refresh_work_lines(_r / "no-plans-here", _r / "bad.html")
+        case("refresh_work_lines is SILENT on success and returns ONE named line on failure",
+             (_ok, _ok_out.is_file(), isinstance(_bad, str) and "\n" not in _bad
+              and "CANNOT RUN" in _bad) == (None, True, True))
+        case("render_last_plan carries plan, branch and time as given — two distinct inputs",
+             [parse_sentinel(render_last_plan(".claude/plans/a.md", "feat/a", "t1")),
+              parse_sentinel(render_last_plan(".claude/plans/b.md", None, "t2"))]
+             == [{"plan": ".claude/plans/a.md", "branch": "feat/a", "finished": "t1"},
+                 {"plan": ".claude/plans/b.md", "finished": "t2"}])
+        case("current_branch outside a repository is None, not a guess",
+             current_branch(_r) is None and current_branch(_r / ".claude") is None)
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

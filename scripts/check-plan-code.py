@@ -918,7 +918,8 @@ EXPECTED_MUTATIONS = {
     # own grammar).
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
-    "scripts/gen-work-lines.py": 15,
+    # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
+    "scripts/gen-work-lines.py": 16,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1574,7 +1575,9 @@ EXPECTED_MUTATIONS = {
     # specific temp path — and couples the entry to one failure mode of the case even when it does
     # not. That still supports converting the raise to a value (the case `driving /src/ never
     # consults the environment`), which is why the decision stands and only its reason changed.
-    "scripts/explainer-serve.py": 46,
+    # ⟳ 2026-10-22 (work lines, always current): 46 -> 48 — the `work-lines` Refresh allow-list
+    # entry, and the STALE_EXEMPT set that makes its empty source list a stated decision.
+    "scripts/explainer-serve.py": 48,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1622,12 +1625,19 @@ EXPECTED_MUTATIONS = {
     # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
     # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
     # the `plan:` pointer with it.
-    "scripts/check-plan-progress.py": 17,
+    # ⟳ 2026-10-22 (work lines, always current): 17 -> 22 — the record at the Stop hook's clear
+    # (Option A's first clear site), the page rebuild there, the rebuild never changing the
+    # stop's verdict, the fully-ticked rule, and an unknown branch being omitted.
+    "scripts/check-plan-progress.py": 22,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 25,
+    # ⟳ 2026-10-22 (work lines, always current): 25 -> 35 — Option A (the last finished plan as
+    # parent, merged -> started, cannot-decide -> no marker, the --finish record), the rebuild
+    # after a state change, the banner's Line row (printed, rendered, no invented head), and two
+    # unanswerable `gh` replies.
+    "scripts/begin-plan.py": 35,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5559,7 +5569,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1731)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1749)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

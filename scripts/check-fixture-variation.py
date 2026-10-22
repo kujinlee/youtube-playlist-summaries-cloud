@@ -148,7 +148,7 @@ def population(root: pathlib.Path) -> "list[pathlib.Path]":
 # than a number nobody can act on.
 KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'begin-plan.py': (
-        'cmd_begin.slug_raw', 'pp_count_drift.actual',
+        'pp_count_drift.actual',
         'pp_count_drift.doc', 'render_banner.steps',
         'render_plan.steps', 'split_step.arg',),
     # ⟳ 2026-10-22 (work-lines r3 fold): FIVE leave the debt rather than being carried as

@@ -219,5 +219,70 @@
     "expect": [
       "paused and the plan GREW -> ALLOW and silent: more outstanding than at pause time is work ADDED, never work resumed, and the third side of the comparison had no case"
     ]
+  },
+  {
+    "name": "the Stop hook's clear does not record the finished plan, so Option A is lost at the first clear site",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN, branch=current_branch(ROOT))\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the Stop hook's clear RECORDS the finished plan as the last plan"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear no longer rebuilds the work-lines page",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ ...and REBUILDS the work-lines page, so it is current without being asked"
+    ]
+  },
+  {
+    "name": "a rebuild failure escapes refresh_work_lines, so a rendering problem changes the stop's verdict",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    except Exception as exc:                       # noqa: BLE001 - reported, never swallowed",
+        "    except ImportError as exc:"
+      ]
+    ],
+    "expect": [
+      "⛔ a page that CANNOT be rebuilt never changes the stop's verdict — ONE stderr line says so"
+    ]
+  },
+  {
+    "name": "a half-ticked plan is recorded as finished, so an abandoned plan becomes the next line's parent",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if not total or done != total:",
+        "    if not total:"
+      ]
+    ],
+    "expect": [
+      "⛔ a HALF-ticked plan is NOT recorded — `--finish` on it is an abandonment, and naming it a parent would continue work that was dropped"
+    ]
+  },
+  {
+    "name": "an unknown branch is written as a value, which the reader would hand to gh",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if branch:\n        out += f\"branch: {branch}\\n\"",
+        "    if True:\n        out += f\"branch: {branch}\\n\""
+      ]
+    ],
+    "expect": [
+      "...and an UNKNOWN branch is OMITTED, never written blank — a second plan, a second branch value, and a sentinel that had been paused"
+    ]
   }
 ]

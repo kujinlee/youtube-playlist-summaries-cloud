@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 38 cases
+    python3 scripts/gen-work-lines.py --self-test  # 40 cases
 
 WHY THIS EXISTS
 ---------------
@@ -46,6 +46,9 @@ import html
 import pathlib
 import re
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLAN_DIR = ROOT / ".claude" / "plans"
@@ -172,6 +175,10 @@ def render(roots: list[dict], orphans: list[str], generated: str) -> str:
     parts = [
         '<main>', '<p class="meta">GENERATED FROM .claude/plans/ · ', esc(generated), '</p>',
         '<h1>Work lines</h1>',
+        # ⭐ A REFRESH BUTTON (2026-10-22). `explainer-serve.py` lists `work-lines` in REGENERABLE,
+        # so the button rebuilds the page from `.claude/plans/` on demand. The writers rebuild it
+        # too (`write_page`'s docstring); the button is for a plan edited by hand.
+        page_chrome.chrome_bar("work-lines", generated),
         f'<p class="lede">{len(roots)} line(s) · '
         f'<strong>{len(open_lines)} still owe something</strong>. '
         f'A line is a chain of plans: each branch records the plan it was armed from, so the chain '
@@ -243,6 +250,12 @@ CSS = """
 @media (prefers-color-scheme:dark){:root{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;
       --ink-soft:#b4bac9;--ink-faint:#7d8496;--rule:#2e313b;--good:#5fc394;--pending:#d9a441;
       --good-bg:#16261f;--pending-bg:#262013}}
+:root[data-theme="dark"]{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;--ink-soft:#b4bac9;
+      --ink-faint:#7d8496;--rule:#2e313b;--good:#5fc394;--pending:#d9a441;--good-bg:#16261f;
+      --pending-bg:#262013}
+:root[data-theme="light"]{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--ink-soft:#4b5060;
+      --ink-faint:#838a9b;--rule:#ddd9d0;--good:#1f7a55;--pending:#8f6410;--good-bg:#e7f2ec;
+      --pending-bg:#f6efdd}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.5}
 main{max-width:62rem;margin:0 auto;padding:2rem 1rem}
 h1{font-size:2rem;margin:.2rem 0 1rem}
@@ -292,6 +305,40 @@ def read_plans(plan_dir: pathlib.Path | None = None) -> list[dict]:
     return out
 
 
+def write_page(out: pathlib.Path, plan_dir: pathlib.Path | None = None) -> tuple[int, str]:
+    """Read the plans, render the page, write it to `out`. `(rc, one-line report)`; rc 2 is
+    CANNOT RUN and NOTHING is written. Raises only on an OSError from the write itself.
+
+    ⭐ ONE WRITER, TWO KINDS OF CALLER (2026-10-22, the owner's "always current"). `main()` is the
+    command and the Refresh button; `check-plan-progress.refresh_work_lines` is every plan state
+    change — `begin-plan.py` and the Stop hook. The plan files live under the git-ignored
+    `.claude/` and are written through Bash, so no PostToolUse file hook ever sees them change; the
+    WRITERS rebuild the page instead, through this one function.
+    """
+    try:
+        plans = read_plans(plan_dir)
+    except ValueError as exc:
+        return 2, f"CANNOT RUN — {exc}"
+    if not plans:
+        return 2, "CANNOT RUN — no plan files were found, so nothing was rendered."
+    roots, orphans = build_forest(plans)
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    body = render(roots, orphans, now)
+    page = (f"<!doctype html><meta charset=utf-8>"
+            f"<meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>Work lines — how we got here</title>"
+            f"<style>{CSS}\n{page_chrome.chrome_css()}</style>{body}"
+            f"<script>{page_chrome.chrome_script()}</script>")
+    # ⛔ THE REFRESH BUTTON MUST BE WIRED OR ABSENT. `assert_wired` refuses a theme control with
+    # no palettes, no script or no pin — a button that styles nothing is worse than no button.
+    page_chrome.assert_wired(page, "gen-work-lines.py")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page)
+    open_lines = sum(1 for r in roots if line_state(r) == "open")
+    return 0, (f"work lines: {len(plans)} plan(s), {len(roots)} line(s), {open_lines} still "
+               f"owing -> {out}")
+
+
 def main(argv: list[str], *, plan_dir: pathlib.Path | None = None) -> int:
     ap = argparse.ArgumentParser(description="Render the work lines from the plan files.")
     ap.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT)
@@ -299,26 +346,9 @@ def main(argv: list[str], *, plan_dir: pathlib.Path | None = None) -> int:
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
-    try:
-        plans = read_plans(plan_dir)
-    except ValueError as exc:
-        print(f"CANNOT RUN — {exc}")
-        return 2
-    if not plans:
-        print("CANNOT RUN — no plan files were found, so nothing was rendered.")
-        return 2
-    roots, orphans = build_forest(plans)
-    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-    body = render(roots, orphans, now)
-    page = (f"<!doctype html><meta charset=utf-8>"
-            f"<meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>Work lines — how we got here</title><style>{CSS}</style>{body}")
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(page)
-    open_lines = sum(1 for r in roots if line_state(r) == "open")
-    print(f"work lines: {len(plans)} plan(s), {len(roots)} line(s), {open_lines} still owing "
-          f"-> {a.out}")
-    return 0
+    rc, msg = write_page(a.out, plan_dir)
+    print(msg)
+    return rc
 
 
 def _try(fn):
@@ -510,6 +540,23 @@ def _self_test() -> int:
         case("...and the child is nested under its parent in the output",
              (bool(re.search(r"<code>one</code>[^\n]*\n<ul>\n<li>[^\n]*<code>two</code>", _txt)),
               bool(re.search(r"<code>two</code>[^\n]*\n<ul>", _txt))), (True, False))
+        # ⭐ THE REFRESH BUTTON NAMES THE KEY THE SERVER ALLOW-LISTS. `explainer-serve.REGENERABLE`
+        # maps `work-lines` to this script; a button carrying any other key is a 400 on press.
+        case("⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome",
+             ('data-page="work-lines"' in _txt, 'id="chrome-refresh"' in _txt,
+              page_chrome.CHROME_SCRIPT_MARK in _txt), (True, True, True))
+        # ⛔ write_page IS what the writers call, so it is driven directly too — at two DISTINCT
+        # outputs and plan directories, so neither can be a constant. A CANNOT RUN writes NOTHING:
+        # a page that silently kept its old content would read as current.
+        _pd5 = pathlib.Path(_d) / "plans5"; _pd5.mkdir()
+        (_pd5 / "solo.md").write_text("# solo\n- [ ] a")
+        _o5, _o6 = pathlib.Path(_d) / "a" / "w5.html", pathlib.Path(_d) / "w6.html"
+        _r5 = write_page(_o5, _pd5)
+        _r6 = write_page(_o6, pathlib.Path(_d) / "no-such-dir")
+        case("write_page writes ITS plans to ITS output, and a CANNOT RUN writes nothing",
+             (_r5[0], "<code>solo</code>" in (_o5.read_text() if _o5.exists() else ""),
+              "<code>two</code>" in (_o5.read_text() if _o5.exists() else ""),
+              _r6[0], _o6.exists()), (0, True, False, 2, False))
     with _tf.TemporaryDirectory() as _d3:
         _pd3 = pathlib.Path(_d3) / "plans"; _pd3.mkdir()
         (_pd3 / "real.md").write_text("# real\n- [x] a")

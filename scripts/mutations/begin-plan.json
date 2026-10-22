@@ -277,8 +277,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if not SENTINEL.is_file():\n        return STARTED",
-        "    if not SENTINEL.is_file():\n        return None"
+        "    if not LAST_PLAN.is_file():\n        return STARTED",
+        "    if not LAST_PLAN.is_file():\n        return None"
       ]
     ],
     "expect": [
@@ -322,6 +322,136 @@
     ],
     "expect": [
       "⛔ --serving 'ask\\n'… is REFUSED, and no plan is written"
+    ]
+  },
+  {
+    "name": "with nothing armed, the last finished plan is ignored, so a side job off an unmerged PR starts a new line (Option A undone)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        return _parent_from_last_finished()",
+        "        return STARTED"
+      ]
+    ],
+    "expect": [
+      "⭐ with NOTHING armed, a finished plan whose PR has NOT merged is still the parent — and the question was put about ITS branch"
+    ]
+  },
+  {
+    "name": "an undecidable merge is treated as NOT merged, so a guess becomes a recorded parent",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if merged is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ when whether it merged CANNOT be decided, NO parent is recorded and the reason is SAID — never a guess either way"
+    ]
+  },
+  {
+    "name": "a MERGED PR's plan is still named the parent, so finished work never stops being a line's head",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    return STARTED if merged else slug",
+        "    return slug"
+      ]
+    ],
+    "expect": [
+      "...and once that PR HAS merged, the next plan STARTS a line"
+    ]
+  },
+  {
+    "name": "--finish clears the sentinel without recording the plan, so the second clear site loses its identity",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        pp.record_last_plan(SENTINEL.read_text(), root=ROOT, dest=LAST_PLAN,\n                            branch=pp.current_branch(ROOT))",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ --finish on a fully-ticked plan RECORDS it as the last plan — the second clear site, through the one recorder"
+    ]
+  },
+  {
+    "name": "a state change no longer rebuilds the work-lines page, so it is current only when someone asks",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    _pp.refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)\n    return rc",
+        "    return rc"
+      ]
+    ],
+    "expect": [
+      "⭐ arming a plan REBUILDS the work-lines page, without being asked"
+    ]
+  },
+  {
+    "name": "the printed banner omits the work line, so the chain exists only on a page nobody has open",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "print(render_banner(steps, idx, _banner_line(plan_abs)))",
+        "print(render_banner(steps, idx))"
+      ]
+    ],
+    "expect": [
+      "⭐ the banner a command prints carries the work LINE, root first"
+    ]
+  },
+  {
+    "name": "render_banner drops the Line row it was handed",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if line:\n        out.append(line)",
+        "    if False:\n        out.append(line)"
+      ]
+    ],
+    "expect": [
+      "render_banner puts the Line row under the title and ABOVE Doing"
+    ]
+  },
+  {
+    "name": "a root with NO parent marker is presented as a line's start, inventing a chain head",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "            if not cur[\"started\"]:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "...and a root that records NO parent is SAID, not presented as a start"
+    ]
+  },
+  {
+    "name": "gh JSON that is not a list is read as merged, so a malformed reply becomes a verdict",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if not isinstance(got, list):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "gh_pr_merged: merged / not merged, and every unanswerable reply is None — never a guess (exit 1, not JSON, not a list, no gh)"
+    ]
+  },
+  {
+    "name": "a non-zero gh exit is ignored, so an auth failure's empty list reads as NOT merged",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "gh_pr_merged: merged / not merged, and every unanswerable reply is None — never a guess (exit 1, not JSON, not a list, no gh)"
     ]
   }
 ]

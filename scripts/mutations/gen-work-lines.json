@@ -193,5 +193,18 @@
     "expect": [
       "a DIRECTORY named *.md is not a plan, and does not stop the page"
     ]
+  },
+  {
+    "name": "the page renders no Refresh button, so a hand-edited plan cannot be rebuilt from the page",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        page_chrome.chrome_bar(\"work-lines\", generated),",
+        "        page_chrome.chrome_bar(\"work-lines\", generated, refresh=False),"
+      ]
+    ],
+    "expect": [
+      "⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome"
+    ]
   }
 ]

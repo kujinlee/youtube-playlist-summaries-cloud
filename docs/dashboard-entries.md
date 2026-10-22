@@ -16897,6 +16897,20 @@ version did exactly that, and the review caught it: returning to a task recorded
 leaving as its parent, which made a loop and froze the page. A task's place in its line is now
 fixed when it is first created.
 
+Four follow-ups you asked for on the same day, all now in:
+
+- **A finished task stays the parent until its pull request merges.** Before, a task counted as
+  finished the moment its boxes were ticked — which is when its pull request is *opened* — so a
+  side job started while that pull request was still being checked looked like a brand-new line.
+  Now the finished task is written down, and the next task asks GitHub whether its pull request
+  has merged. If GitHub cannot be asked (no network, not signed in), no parent is recorded and the
+  reason is printed — it never guesses.
+- **The page is always current.** Every time a task is started, ticked, paused, resumed or
+  finished, the page is rebuilt. A rebuild that fails prints one line and never stops the command.
+- **The page has a Refresh button**, for a task file edited by hand.
+- **Every step heading now shows its line**: the original request's words, then each task back
+  down to the current one.
+
 **Waiting on you:** merging, once the pull request is green. Two independent reviews found ten
 defects; all ten are fixed. A second review of those fixes found two more, in the fixes
 themselves; those are fixed too. A third review found only small things, and the fourth found
@@ -16967,3 +16981,32 @@ caught its absence) and stating its bet about round 4 before round 4 runs.
 ✅ **ROUND 4 (Codex, the r3 fold) — CONVERGED, no findings at any severity**, on `664821c2`. The
 decision-log bet held and is scored: `outcome: stopped` at 4 rounds. Nothing but documentation
 changed after it.
+
+⭐ **FOLLOW-UP, same day (`feat/work-lines-always-on`) — the owner's four requests.**
+(1) **Option A**: `check-plan-progress.record_last_plan` (ONE recorder, called from BOTH clear
+sites — `run_decide`'s clear and `begin-plan.cmd_finish`) writes `.claude/last-plan` (`plan:`,
+`branch:` omitted when unknown, `finished:`) only for a FULLY-ticked plan, so a paused-then-finished
+plan is recorded and an abandoned one is not. `begin-plan._derive_parent` with no sentinel →
+`_parent_from_last_finished`: no record → `-`; record → `PR_MERGED(branch)` (default
+`gh_pr_merged`: `gh pr list --head <b> --state merged --json number`, runner injectable) — merged
+→ `-`, not merged → the slug, **cannot decide (no branch, no `gh`, non-zero exit, not JSON, not a
+list) → NO marker and a stderr line saying why**. The sentinel and the record share one resolver,
+`_plan_slug`. (2) **Always current**: `check-plan-progress.refresh_work_lines` NEVER raises —
+every failure is one stderr line and the caller's rc stands; called after every state-changing
+command in `begin-plan.main` and after the Stop hook's clear. `gen-work-lines.write_page` is the
+one writer behind `main()` and both. (3) **Refresh**: `explainer-serve.REGENERABLE["work-lines"]`;
+`PAGE_SOURCES["work-lines"] = []` with an explicit `STALE_EXEMPT` (source is the git-ignored
+DIRECTORY `.claude/plans/`), pinned by a case that holds the empty-source set EQUAL to the exempt
+set, so the file-only assertion for every other page is unchanged; the page now carries
+`page_chrome.chrome_bar` and both `data-theme` palettes, checked by `assert_wired`. (4) **Banner
+line**: `begin-plan.work_line` (pure, over `gen-work-lines.read_plans` records — no second marker
+parser) renders `> **Line:** "<root's words, ≤60>" → root → … → this`; no marker, a missing
+parent, a cycle, or a plan outside `.claude/plans/` is SAID in the line. Cases: begin-plan 80 →
+101, check-plan-progress 43 → 54, gen-work-lines 38 → 40, explainer-serve 202 → 203. Mutations
++18 (begin-plan 25 → 35, check-plan-progress 17 → 22, gen-work-lines 15 → 16, explainer-serve 46 →
+48; declared sum 1731 → 1749); a scoped run over the four manifests killed 121/121, each by the
+case it names. ⚠ One r1 anchor (`if not SENTINEL.is_file(): return STARTED`) was orphaned by this
+change and re-anchored onto `if not LAST_PLAN.is_file()`, where that `STARTED` now lives.
+⚠ Known limits: a plan finished directly on the default branch has no PR, so it stays "not merged"
+and remains the parent until another plan finishes; a hand-edited plan leaves the page stale with
+no `/_stale` banner (the Refresh button is the remedy).

@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 80 cases
+    scripts/begin-plan.py --self-test  # 101 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -68,6 +68,7 @@ import contextlib
 import datetime as _dt
 import importlib.util
 import io
+import json
 import re
 import subprocess
 import sys
@@ -80,6 +81,8 @@ SCRIPTS = ROOT / "scripts"
 PLAN_DIR = ROOT / ".claude/plans"
 SENTINEL = ROOT / ".claude/executing-plan"
 STATE = ROOT / ".claude/executing-plan.state"
+LAST_PLAN = ROOT / ".claude/last-plan"   # written by check-plan-progress.record_last_plan
+WORK_LINES_OUT: Path | None = None       # None -> gen-work-lines' default; the self-test redirects
 
 OK, REFUSED = 0, 1
 
@@ -109,7 +112,8 @@ def _load_plan_progress():
     # explanatory ImportError this list exists to raise. Still loud either way — but the loader's
     # whole job is to say WHY, and it can only do that for names it knows it borrows.
     missing = [n for n in ("count_steps", "next_pending_task", "parse_sentinel", "strip_field",
-                           "decide", "WARN")
+                           "decide", "WARN", "record_last_plan", "current_branch",
+                           "refresh_work_lines")
                if not hasattr(mod, n)]
     if missing:
         raise ImportError(
@@ -248,15 +252,17 @@ def first_unticked(steps: list[Step]) -> int | None:
     return None
 
 
-def render_banner(steps: list[Step], index: int) -> str:
+def render_banner(steps: list[Step], index: int, line: str | None = None) -> str:
     """The `## ▶ STEP n of N` banner, in the exact shape CLAUDE.md requires.
 
     Derived from the plan file rather than retyped, so `n of N` cannot disagree with the
     checkboxes the Stop guard counts — the drift that would otherwise let a banner claim progress
-    the guard cannot see.
+    the guard cannot see. `line` is the `> **Line:**` row from `work_line`, first under the title.
     """
     s = steps[index]
     out = ["---", "", f"## ▶ STEP {index + 1} of {len(steps)} — {s.title}", ""]
+    if line:
+        out.append(line)
     if s.doing or s.why:
         if s.doing:
             out.append(f"> **Doing:** {s.doing}")
@@ -266,6 +272,78 @@ def render_banner(steps: list[Step], index: int) -> str:
         out.append("> **Doing:** _(this plan records no Doing/Why — write them yourself)_")
     out += ["", "---"]
     return "\n".join(out)
+
+
+SERVING_SHOWN = 60   # characters of the root's own words the banner line carries
+
+
+def _load_work_lines():
+    """Import `gen-work-lines.py` by path. Its `parse_plan`/`read_plans` OWN the marker grammar;
+    this file must not grow a second parser of `<!-- parent: … -->`."""
+    spec = importlib.util.spec_from_file_location("_work_lines", SCRIPTS / "gen-work-lines.py")
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load scripts/gen-work-lines.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def work_line(slug: str, plans: list[dict]) -> str:
+    """PURE. The banner's `> **Line:**` row: the chain from `slug` back to its root.
+
+    ⭐ Asked 2026-10-22 alongside the page: the page answers "what did I never walk back to"
+    across every line; this answers "which line is THIS step on" at the moment a step starts,
+    where the reader actually is. Built from the plan files' own parent markers.
+
+    ⛔ IT NEVER INVENTS A CHAIN. Three ways a walk can stop short, and each is SAID in the line:
+    the plan is not in `.claude/plans/` (no record at all), a plan on the chain records no
+    parent (written before the field, or the parent could not be decided), or a recorded parent
+    no longer exists. A cycle (only reachable by hand-editing) is cut and named, never looped.
+    `plans` are `gen-work-lines.parse_plan` records, so "started a line" is ITS reading of `-`.
+    """
+    by = {p["slug"]: p for p in plans}
+    if slug not in by:
+        return ("> **Line:** _(this plan is not in .claude/plans/, so no line is recorded for "
+                "it)_")
+    chain, cur, note = [slug], by[slug], ""
+    while True:
+        par = cur["parent"]
+        if par is None:
+            if not cur["started"]:
+                note = f"_(no parent recorded above `{cur['slug']}`)_ "
+            break
+        if par in chain:
+            note = f"_(`{cur['slug']}`'s recorded parent `{par}` leads back into this line)_ "
+            break
+        if par not in by:
+            note = f"_(continues `{par}`, which no longer exists)_ "
+            break
+        chain.insert(0, par)
+        cur = by[par]
+    root = by[chain[0]]
+    words = root.get("serving")
+    if words and not note:
+        cut = words if len(words) <= SERVING_SHOWN else words[:SERVING_SHOWN - 1].rstrip() + "…"
+        head = f'"{cut}" → '
+    elif not note:
+        head = "_(no objective recorded)_ "
+    else:
+        head = note
+    return "> **Line:** " + head + " → ".join(f"`{c}`" for c in chain)
+
+
+def _banner_line(plan_abs: Path) -> str:
+    """`work_line` over the real plan directory — or a line SAYING it could not be read. A banner
+    is printed before every step, so a broken reader must cost one line, never the banner."""
+    try:
+        wl = _load_work_lines()
+        plans = wl.read_plans(PLAN_DIR)
+    except Exception as exc:                       # noqa: BLE001 - reported in the line itself
+        return f"> **Line:** _(the work line could not be read: {type(exc).__name__}: {exc})_"
+    if plan_abs.resolve().parent != PLAN_DIR.resolve():
+        return work_line("", plans)
+    return work_line(plan_abs.stem, plans)
 
 
 def tick(plan_text: str, index: int) -> str:
@@ -326,7 +404,7 @@ def _print_state(plan_abs: Path, plan_rel: str) -> int:
         print(f"✅ every step in {plan_rel} is ticked. The Stop guard will allow the turn to end "
               f"and clear {SENTINEL.relative_to(ROOT)}.")
         return OK
-    print(render_banner(steps, idx))
+    print(render_banner(steps, idx, _banner_line(plan_abs)))
     print(f"\n(plan: {plan_rel} — {sum(s.done for s in steps)}/{len(steps)} ticked. "
           f"`scripts/begin-plan.py --tick` when this step is done.)")
     return OK
@@ -337,42 +415,115 @@ _SERVING_LINE = re.compile(r"^<!--\s*serving:\s*(.+?)\s*-->\s*$", re.M)
 STARTED = "-"   # the parent value for a plan armed with nothing else armed
 
 
+def _plan_slug(rel: str, what: str) -> str | None:
+    """The slug of `rel` IF it is a plan file in `PLAN_DIR`, else None — said aloud on stderr.
+
+    ⛔ ONE RULE FOR BOTH SOURCES of a parent: the armed sentinel and the last finished plan.
+    ⟳ r1 (Codex 2, Claude M3): the first version took `Path(prev).stem`, so `--plan
+    docs/plans/design.md` was recorded as `design`, which the reader looks for in `.claude/plans/`
+    — rendered "no longer exists" while it existed, or ATTACHED TO AN UNRELATED
+    `.claude/plans/design.md`. A wrong parent is worse than none.
+    """
+    target = (ROOT / rel).resolve() if rel else None
+    # ⟳ r2 Codex 2 (Major): `.md` too. `--plan` can arm `real.txt`, whose stem names an
+    # UNRELATED `real.md` — the generator reads only `*.md`, so that is what the slug would mean.
+    if (target is None or target.parent != PLAN_DIR.resolve() or target.suffix != ".md"
+            or not target.is_file()):
+        print(f"⚠ no parent recorded: {what} {rel or '(none named)'!r} is not a plan "
+              f"file in {PLAN_DIR.relative_to(ROOT)}, so it cannot be named as one.",
+              file=sys.stderr)
+        return None
+    return target.stem
+
+
+def gh_pr_merged(branch: str, run=subprocess.run) -> tuple[bool | None, str]:
+    """`(merged?, why)` for `branch`, asked of GitHub — `(None, reason)` when it CANNOT be told.
+
+    ⛔ DERIVED, NEVER REMEMBERED, AND NEVER GUESSED. `gh pr list --head <branch> --state merged`:
+    a non-empty list is merged; an empty one is not (yet). No `gh`, no network, a non-zero exit, a
+    timeout or output that is not a JSON list is `None` — the caller then records NO parent, the
+    same three-state honesty `_derive_parent` has for an unresolvable sentinel.
+    """
+    try:
+        r = run(["gh", "pr", "list", "--head", branch, "--state", "merged",
+                            "--json", "number"], cwd=ROOT, capture_output=True, text=True,
+                           timeout=30)
+    except FileNotFoundError:
+        return None, "`gh` is not installed"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"`gh` could not be run ({type(exc).__name__})"
+    if r.returncode != 0:
+        return None, f"`gh` exited {r.returncode}: {(r.stderr or '').strip()[:160]}"
+    try:
+        got = json.loads(r.stdout)
+    except ValueError:
+        return None, "`gh` printed something that is not JSON"
+    if not isinstance(got, list):
+        return None, "`gh` printed JSON that is not a list"
+    return bool(got), ("a merged PR exists" if got else "no merged PR")
+
+
+PR_MERGED = gh_pr_merged   # ⚠ REPLACED by the self-test, so no case ever touches the network
+
+
+def _parent_from_last_finished() -> str | None:
+    """With NOTHING armed: the last finished plan if its PR has not merged, else `STARTED`.
+
+    ⭐ OPTION A (the owner's decision, 2026-10-22): a plan stays the PARENT until its PR merges,
+    not merely until its steps are ticked. Measured: `work-lines-page` was ticked closed when its
+    PR opened, the sentinel cleared, and a side job armed while that PR was in CI recorded
+    `parent: -` — a new line — instead of continuing the one it really branched from.
+    ⛔ CANNOT DECIDE -> NO MARKER, AND SAID WHY. A record with no branch, a record naming a file
+    that is not a plan, or a `gh` that cannot answer: guessing "merged" would start a false new
+    line, guessing "open" would attach to a finished one, and either would be believed.
+    """
+    if not LAST_PLAN.is_file():
+        return STARTED
+    pp = _load_plan_progress()
+    try:
+        rec = pp.parse_sentinel(LAST_PLAN.read_text())
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"⚠ no parent recorded: {LAST_PLAN.name} could not be read ({exc}).",
+              file=sys.stderr)
+        return None
+    slug = _plan_slug(rec.get("plan", ""), "the last finished plan")
+    if slug is None:
+        return None
+    branch = rec.get("branch", "")
+    if not branch:
+        print(f"⚠ no parent recorded: the last finished plan `{slug}` has no branch on record, "
+              f"so whether its PR has merged cannot be decided.", file=sys.stderr)
+        return None
+    merged, why = PR_MERGED(branch)
+    if merged is None:
+        print(f"⚠ no parent recorded: whether `{slug}`'s PR (branch `{branch}`) has merged "
+              f"could not be decided — {why}.", file=sys.stderr)
+        return None
+    return STARTED if merged else slug
+
+
 def _derive_parent() -> str | None:
-    """The plan being LEFT, read from the sentinel before it is overwritten — or None, said aloud.
+    """The plan being LEFT — read from the sentinel before it is overwritten, or, when nothing is
+    armed, the last finished plan whose PR has not merged — or None, said aloud.
 
     Arming while another plan is armed IS the branch, so the parent is derived rather than
-    remembered. Returns a slug, `STARTED` when nothing is armed, or None when a parent cannot be
-    known — and in that case says WHY on stderr, because a silent None is what the first version
-    of this produced for every call while its suite stayed green.
-
-    ⛔ THE SENTINEL MUST RESOLVE TO A PLAN IN `PLAN_DIR`. ⟳ r1 (Codex 2, Claude M3): the first
-    version took `Path(prev).stem`, so `--plan docs/plans/design.md` was recorded as `design`,
-    which the reader looks for in `.claude/plans/` — rendered "no longer exists" while it existed,
-    or ATTACHED TO AN UNRELATED `.claude/plans/design.md`. A wrong parent is worse than none.
+    remembered. Returns a slug, `STARTED` when nothing is armed and nothing unmerged finished last,
+    or None when a parent cannot be known — and in that case says WHY on stderr, because a silent
+    None is what the first version of this produced for every call while its suite stayed green.
 
     ⛔ ONLY THE READ IS GUARDED. ⟳ r1 (Codex 3, Claude m2): the try once also covered loading and
     parsing, and caught AttributeError/KeyError — which only a code defect raises there. Loading
     is outside now, so a typo crashes instead of quietly recording no parent.
     """
     if not SENTINEL.is_file():
-        return STARTED
+        return _parent_from_last_finished()
     pp = _load_plan_progress()
     try:
         text = SENTINEL.read_text()
     except OSError as exc:
         print(f"⚠ no parent recorded: {SENTINEL.name} could not be read ({exc}).", file=sys.stderr)
         return None
-    prev = pp.parse_sentinel(text).get("plan") or ""
-    target = (ROOT / prev).resolve() if prev else None
-    # ⟳ r2 Codex 2 (Major): `.md` too. `--plan` can arm `real.txt`, whose stem names an
-    # UNRELATED `real.md` — the generator reads only `*.md`, so that is what the slug would mean.
-    if (target is None or target.parent != PLAN_DIR.resolve() or target.suffix != ".md"
-            or not target.is_file()):
-        print(f"⚠ no parent recorded: the armed plan {prev or '(none named)'!r} is not a plan "
-              f"file in {PLAN_DIR.relative_to(ROOT)}, so it cannot be named as one.",
-              file=sys.stderr)
-        return None
-    return target.stem
+    return _plan_slug(pp.parse_sentinel(text).get("plan") or "", "the armed plan")
 
 
 def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -> int:
@@ -664,6 +815,13 @@ def cmd_resume() -> int:
 
 def cmd_finish() -> int:
     existed = SENTINEL.is_file()
+    if existed:
+        # ⭐ THE SECOND CLEAR SITE, through the ONE recorder (`check-plan-progress.record_last_plan`
+        # — it decides "fully ticked", so a half-done plan finished here is NOT recorded). A plan
+        # that was PAUSED and is now finished reaches the record only through this line.
+        pp = _load_plan_progress()
+        pp.record_last_plan(SENTINEL.read_text(), root=ROOT, dest=LAST_PLAN,
+                            branch=pp.current_branch(ROOT))
     SENTINEL.unlink(missing_ok=True)
     STATE.unlink(missing_ok=True)
     print("cleared .claude/executing-plan" if existed else "nothing was armed.")
@@ -786,13 +944,19 @@ def _self_test() -> int:
     # while the guard silently went back to being dormant — which is the exact defect this
     # project measured in check-plan-code round 6 (the function was covered; the call that made
     # it load-bearing was not). These three drive the real commands against a temp root.
-    global ROOT, PLAN_DIR, SENTINEL, STATE
-    real = (ROOT, PLAN_DIR, SENTINEL, STATE)
+    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_MERGED
+    real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_MERGED)
     with tempfile.TemporaryDirectory() as td:
         ROOT = Path(td)
         PLAN_DIR = ROOT / ".claude/plans"
         SENTINEL = ROOT / ".claude/executing-plan"
         STATE = ROOT / ".claude/executing-plan.state"
+        # ⛔ NEVER the real `.claude/last-plan`, `~/explainers/` or GitHub. A suite that wrote the
+        # first leaked a record into the checkout it ran in (measured while writing this), and
+        # one that asked `gh` would pass or fail on the network.
+        LAST_PLAN = ROOT / ".claude/last-plan"
+        WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
+        PR_MERGED = lambda _b: (None, "the self-test never asks GitHub")  # noqa: E731
         SENTINEL.parent.mkdir(parents=True, exist_ok=True)
         try:
             # ⚠ `serving` varied here too: the CLI path must carry it into the file, not just
@@ -1136,8 +1300,145 @@ def _self_test() -> int:
             cmd_finish()
             case("cmd_finish removes the sentinel, so the guard stands down",
                  not SENTINEL.exists() and not STATE.exists())
+
+            # ── Option A: a plan stays the PARENT until its PR merges (2026-10-22) ───────────
+            case("⭐ --finish on a fully-ticked plan RECORDS it as the last plan — the second clear "
+                 "site, through the one recorder",
+                 LAST_PLAN.is_file()
+                 and pp.parse_sentinel(LAST_PLAN.read_text()).get("plan")
+                 == ".claude/plans/wiring.md")
+            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "feat/wiring", "t"))
+            _asked: list[str] = []
+            PR_MERGED = lambda b: (_asked.append(b), (False, "no merged PR"))[1]  # noqa: E731
+            _out = io.StringIO()
+            with contextlib.redirect_stdout(_out):
+                cmd_begin("side-job", ["One|d1|w1", "Two|d2|w2"])
+            case("⭐ with NOTHING armed, a finished plan whose PR has NOT merged is still the "
+                 "parent — and the question was put about ITS branch",
+                 ("<!-- parent: wiring -->" in (PLAN_DIR / "side-job.md").read_text(), _asked)
+                 == (True, ["feat/wiring"]))
+            # ⭐ THE BANNER LINE, through the real command: the chain back to the root.
+            case("⭐ the banner a command prints carries the work LINE, root first",
+                 '> **Line:** "why this line exists" → `wiring` → `side-job`' in _out.getvalue())
+            cmd_finish()
+            case("...and --finish on a HALF-done plan leaves the record naming the finished one",
+                 pp.parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/wiring.md")
+            PR_MERGED = lambda b: (True, "a merged PR exists")  # noqa: E731
+            cmd_begin("fresh", ["One|d1|w1"])
+            case("...and once that PR HAS merged, the next plan STARTS a line",
+                 "<!-- parent: - -->" in (PLAN_DIR / "fresh.md").read_text())
+            cmd_finish()
+            PR_MERGED = lambda b: (None, "`gh` is not installed")  # noqa: E731
+            _err_u = io.StringIO()
+            with contextlib.redirect_stderr(_err_u):
+                cmd_begin("undecided", ["One|d1|w1"])
+            case("⛔ when whether it merged CANNOT be decided, NO parent is recorded and the "
+                 "reason is SAID — never a guess either way",
+                 ("parent:" in (PLAN_DIR / "undecided.md").read_text(),
+                  "could not be decided" in _err_u.getvalue(),
+                  "`gh` is not installed" in _err_u.getvalue()) == (False, True, True))
+            cmd_finish()
+            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", None, "t"))
+            PR_MERGED = lambda b: (False, "no merged PR")  # noqa: E731
+            _err_b = io.StringIO()
+            with contextlib.redirect_stderr(_err_b):
+                cmd_begin("no-branch", ["One|d1|w1"])
+            case("⛔ a record with NO branch cannot be asked about, so it records no parent and "
+                 "says why",
+                 ("parent:" in (PLAN_DIR / "no-branch.md").read_text(),
+                  "no branch on record" in _err_b.getvalue()) == (False, True))
+            cmd_finish()
+            # ⭐ PAUSED, THEN FINISHED — the same record. Tick to done, park, then finish.
+            cmd_begin("parked", ["Only|d|w"])
+            cmd_tick()
+            cmd_pause("waiting on CI before the PR")
+            cmd_finish()
+            case("⭐ a plan PAUSED and then finished goes through the same record",
+                 pp.parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/parked.md")
+
+            # ── "always current": every state change rebuilds the page, and NEVER fails ─────
+            PR_MERGED = lambda b: (True, "a merged PR exists")  # noqa: E731
+            with contextlib.redirect_stdout(io.StringIO()):
+                _rc_m = main(["regen", "A|d|w", "B|d|w"])
+            _pg = WORK_LINES_OUT.read_text() if WORK_LINES_OUT.is_file() else ""
+            case("⭐ arming a plan REBUILDS the work-lines page, without being asked",
+                 (_rc_m, "<code>regen</code>" in _pg, "0/2 not ticked closed" in _pg)
+                 == (OK, True, True))
+            with contextlib.redirect_stdout(io.StringIO()):
+                main(["--tick"])
+            case("⭐ ...and so does a tick: the page shows the step that just landed",
+                 "1/2 not ticked closed" in WORK_LINES_OUT.read_text())
+            (ROOT / "blocker").write_text("a file where a directory must go")
+            WORK_LINES_OUT = ROOT / "blocker" / "work-lines.html"
+            _err_r = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err_r):
+                try:
+                    _rc_r = main(["--tick"])
+                except Exception as exc:              # noqa: BLE001 - the case reports it
+                    _rc_r = f"RAISED {type(exc).__name__}"
+            case("⛔ a page that CANNOT be rebuilt never fails the command — the tick lands, the "
+                 "exit code is the tick's, and ONE stderr line says so",
+                 (_rc_r, pp.count_steps((PLAN_DIR / "regen.md").read_text()),
+                  len([ln for ln in _err_r.getvalue().splitlines() if "NOT rebuilt" in ln]))
+                 == (OK, (2, 2), 1))
+            WORK_LINES_OUT = ROOT / "explainers" / "work-lines.html"
+            cmd_finish()
         finally:
-            ROOT, PLAN_DIR, SENTINEL, STATE = real
+            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_MERGED = real
+
+    # ── the merged-check itself, through an INJECTED runner: never the network ──────────────
+    class _R:
+        def __init__(self, rc, out, err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def _runner(rc, out, err=""):
+        return lambda argv, **kw: _R(rc, out, err)
+
+    def _missing(argv, **kw):
+        raise FileNotFoundError("gh")
+    _verdicts = [gh_pr_merged(b, run=r)[0] for b, r in (
+        ("feat/a", _runner(0, '[{"number": 7}]')), ("feat/b", _runner(0, "[]")),
+        ("feat/a", _runner(1, "[]", "HTTP 401")), ("feat/b", _runner(0, "not json")),
+        ("feat/a", _runner(0, '{"number": 7}')), ("feat/b", _missing))]
+    case("gh_pr_merged: merged / not merged, and every unanswerable reply is None — never a "
+         "guess (exit 1, not JSON, not a list, no gh)",
+         _verdicts == [True, False, None, None, None, None])
+    _argv: list = []
+    gh_pr_merged("feat/asked-about", run=lambda a, **kw: (_argv.append(a), _R(0, "[]"))[1])
+    case("...and it asks about THE branch, for MERGED PRs only",
+         _argv and _argv[0][:5] == ["gh", "pr", "list", "--head", "feat/asked-about"]
+         and "merged" in _argv[0])
+
+    # ── the banner's work line, pure ─────────────────────────────────────────────────────────
+    _wl = _load_work_lines()
+    _pl = [_wl.parse_plan("r", "<!-- parent: - -->\n<!-- serving: ship the page -->\n- [x] a", "t"),
+           _wl.parse_plan("m", "<!-- parent: r -->\n- [ ] a", "t"),
+           _wl.parse_plan("t", "<!-- parent: m -->\n- [ ] a", "t"),
+           _wl.parse_plan("bare", "- [ ] a", "t"),
+           _wl.parse_plan("lost", "<!-- parent: gone -->\n- [ ] a", "t"),
+           _wl.parse_plan("x", "<!-- parent: y -->\n- [ ] a", "t"),
+           _wl.parse_plan("y", "<!-- parent: x -->\n- [ ] a", "t"),
+           _wl.parse_plan("long", "<!-- parent: - -->\n<!-- serving: " + "w" * 90 + " -->", "t")]
+    case("⭐ work_line walks from the plan back to its root, root's own words first",
+         work_line("t", _pl) == '> **Line:** "ship the page" → `r` → `m` → `t`')
+    case("...and a root that records NO parent is SAID, not presented as a start",
+         work_line("bare", _pl) == "> **Line:** _(no parent recorded above `bare`)_ `bare`")
+    case("...and a parent that no longer exists is named, not dropped",
+         work_line("lost", _pl)
+         == "> **Line:** _(continues `gone`, which no longer exists)_ `lost`")
+    case("...and a STARTED root with no stated objective says so, over a DIFFERENT corpus",
+         work_line("solo", [_wl.parse_plan("solo", "<!-- parent: - -->\n- [ ] a", "t")])
+         == "> **Line:** _(no objective recorded)_ `solo`")
+    case("...and a hand-made cycle is cut and named, never looped",
+         "leads back into this line" in work_line("x", _pl))
+    case("...and a plan outside .claude/plans/ says it has no line rather than inventing one",
+         "not in .claude/plans/" in work_line("elsewhere", _pl))
+    case("...and the root's words are TRUNCATED to the banner's width, marked with an ellipsis",
+         work_line("long", _pl) == '> **Line:** "' + "w" * (SERVING_SHOWN - 1) + '…" → `long`')
+    _bl = render_banner(steps, 0, "> **Line:** `r` → `kid`")
+    case("render_banner puts the Line row under the title and ABOVE Doing",
+         -1 < _bl.find("> **Line:** `r` → `kid`") < _bl.find("> **Doing:**")
+         and "**Line:**" not in render_banner(steps, 0))
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")
@@ -1168,7 +1469,11 @@ def pp_count_drift(doc: str | None, actual: int) -> str | None:
     return mod.count_drift(doc, actual)
 
 
-if __name__ == "__main__":
+# Every command that can change plan state. `--banner`/`--status`/`--self-test` read only.
+_CHANGES_STATE = ("tick", "pause", "resume", "finish", "plan", "slug")
+
+
+def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         description="Declare a multi-step job: write the plan, arm the Stop guard, print the "
                     "banner.")
@@ -1187,25 +1492,37 @@ if __name__ == "__main__":
                          "ultimately serving; the PARENT is derived from the sentinel and "
                          "never passed.")
     ap.add_argument("--self-test", action="store_true")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     if a.self_test:
-        sys.exit(_self_test())
-    if a.tick:
-        sys.exit(cmd_tick())
+        return _self_test()
     if a.banner:
-        sys.exit(cmd_banner())
+        return cmd_banner()
     if a.status:
-        sys.exit(cmd_status())
-    if a.pause is not None:
-        sys.exit(cmd_pause(a.pause))
-    if a.resume:
-        sys.exit(cmd_resume())
-    if a.finish:
-        sys.exit(cmd_finish())
-    if a.plan:
-        sys.exit(cmd_plan(a.plan))
-    if a.slug:
-        sys.exit(cmd_begin(a.slug, a.steps, serving=a.serving))
-    ap.print_help()
-    sys.exit(REFUSED)
+        return cmd_status()
+    if a.tick:
+        rc = cmd_tick()
+    elif a.pause is not None:
+        rc = cmd_pause(a.pause)
+    elif a.resume:
+        rc = cmd_resume()
+    elif a.finish:
+        rc = cmd_finish()
+    elif a.plan:
+        rc = cmd_plan(a.plan)
+    elif a.slug:
+        rc = cmd_begin(a.slug, a.steps, serving=a.serving)
+    else:
+        ap.print_help()
+        return REFUSED
+    # ⭐ THE PAGE IS ALWAYS CURRENT (2026-10-22): rebuilt after every command in _CHANGES_STATE,
+    # refused or not — a refusal changed nothing, and rebuilding an unchanged page is harmless.
+    # ⛔ `refresh_work_lines` NEVER RAISES and `rc` is returned untouched: a page is a view, and a
+    # rebuild failure is one stderr line, never a failed tick.
+    _pp = _load_plan_progress()
+    _pp.refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
