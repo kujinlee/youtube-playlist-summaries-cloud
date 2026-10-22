@@ -16842,3 +16842,26 @@ a mock of a contract I imagined, so updating them was the repair, not a workarou
 case block BETWEEN a `main()` call and the `case()` reading its captured `_o`, clobbering it; and
 one mutation anchored on the first line of a MULTI-LINE return, so it did not COMPILE and "killed"
 the suite with an `IndentationError` nothing could attribute.
+
+## 2026-10-22
+A note for next time, because this trap is documented in the repository and I walked into it anyway.
+
+The check that asks "has this been reviewed?" reads the pull request's description from the event
+that started the run. I pushed the code first and wrote the description afterwards, so the run was
+still holding the old, empty description and refused — correctly. Re-running does not help, because
+a re-run replays the same stale event. Only a new push picks up an edited description.
+
+The workflow file says exactly this, in a comment written after it happened to someone else on a
+previous pull request. I read the refusal, not the comment above it.
+<!--tech-->
+⚠ `check-review-recorded` FAILED in CI on #382 while passing locally with the same body via
+`--pr-body-file`. Cause: `gh pr edit` does not emit a `pull_request` event, so the run was still
+holding the pre-edit body. ⛔ **A RE-RUN DOES NOT FIX IT** — it replays the same payload; only a
+`synchronize` (a push) does. `.github/workflows/ci.yml:588-591` records the identical sequence on
+PR #336 (2026-09-22): *"the author read this step's refusal, edited the body exactly as instructed,
+spent a rerun"*. I read the step's refusal and not the comment three lines above it.
+
+⚠ Path count in the refusal grew 7 → 9 because `7bb224e6` (the #341 fix) landed between the two
+runs — the declaration is not path-scoped, so it still covers them.
+
+This commit exists to BE the push that carries the edited body into a fresh event.
