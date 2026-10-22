@@ -87,6 +87,49 @@ member behind a cast, so behavioural tests are the only net there.
 
 ---
 
+## Who writes a review fold (added 2026-10-22)
+
+**The Phase 3 default holds for folds too: a fresh implementer subagent writes the fix.** A fold
+is implementation, and nothing exempted it — the exemption below exists because one was being
+taken without being written down.
+
+**Why it happened, and why it is now a rule rather than a drift.** On PR #384 (`work-lines`), all
+four review folds were made by the coordinator, not by a subagent, and nobody had decided that.
+Asked about it, the owner ruled: write the exception down with its conditions. Both choices cost
+something, and the table is the reason this is a condition and not a preference:
+
+| | Coordinator writes the fold | Implementer subagent writes it |
+|---|---|---|
+| Context | every edit and retry accumulates in the one context that must judge later rounds | stays small |
+| Independence | the author of the fix also checks it | a separate writer |
+| Hand-off | none — the coordinator already knows the finding and the repo's traps | the brief must carry them, or the subagent rediscovers them |
+| Measured on PR #384 | the r2 fold **orphaned two r1 mutation anchors**; caught only by re-applying every entry | — (not run) |
+
+### The exception — ALL five must hold, or a subagent writes it
+
+1. **The findings ARE the spec.** Every finding being folded names its fix, and the fold makes no
+   design choice the review did not make. A finding that asks *which* behaviour is right (round-3 finding 6 on
+   PR #384: "which name is canonical?") is a decision, and is outside this exception.
+2. **Scope is what the findings name** — those files, plus their tests, mutation manifests and
+   declared counts. Anything else found while folding is a side job (named first) or a new finding.
+3. **It is DECLARED before the next round is dispatched**, in that round's coordinator document,
+   on a line that starts `FOLD: coordinator —` followed by the reason.
+4. **Every mutation anchor in every manifest is re-resolved after the fold.** This is the failure
+   the exception was measured to cause. ⚠ **There is NO cheap command for it today:** measured
+   2026-10-22, `check-plan-code.py --mutate .` does NOT refuse an unresolved anchor up front — with
+   one anchor deliberately broken it was still running at 60s — and `--self-test` never applies
+   anchors. Until backlog #342 lands, the CI `mutation-sweep` job is the only thing that sees it.
+5. **The next round goes to Codex**, the half that did not author the fold — the coordinator IS
+   the Claude side, so a Claude half reviewing a coordinator fold is not the independent reader
+   the alternation rule exists to supply.
+
+**What makes it FAIL — the observation:** a round whose preceding fold commit was authored by the
+coordinator, and whose coordinator document has no `FOLD: coordinator —` line. ⚠ **Enforced by
+nothing.** It is a convention, and a convention catches only what someone reads — the drift it
+replaces was invisible for four rounds for exactly that reason.
+
+---
+
 ## TDD Policy
 
 ### Is TDD a good fit?
