@@ -17105,30 +17105,37 @@ for some manifest defects, not this one). So the rule names no command; **backlo
 cheap pre-check, which must reuse the harness's own anchor rule rather than restate it.
 
 ## 2026-10-22
-When work switches to a new thread and announces it only with a banner, without recording it as a
-plan, the Stop check now notices and says so. Until today that kind of side job never reached the
-work-lines page and nothing pointed it out. For now it only warns, and every warning is logged.
-Making it actually stop the turn is a one-line switch, and you decide when to flip it, by looking at
-how often the log shows it warning when it shouldn't have.
+When work runs on a thread that has no plan, so the work-lines page cannot show it, the Stop
+check now notices and says so, naming the one command that creates the plan. A thread that already
+has a plan is left alone, whether it is still running, finished, or picked up again later. For now
+it only warns, and every warning is logged. Making it stop the turn is a one-line switch, and you
+decide when to flip it from how often the log shows it warning wrongly. Replayed over this
+project's last twelve days, it would have warned on up to 35 of 95 turns that carried a thread
+line (an upper bound: which plan was armed back then cannot be recovered, so turns another warning
+already covered are not taken out), mostly threads named after a branch rather than a plan. That is
+the number to watch.
 
-While building it I found, and then fixed, a blind spot: the existing banner check had stopped
-recognising banners once they began carrying a timestamp (`## ▶ [10-22 09:00] STEP …`), which has
-been the required form since 2026-10-16. So for those days its three original warnings could not
-see any current banner. A quiet log over that stretch does not mean nothing was missed.
+While building it I found and fixed a blind spot: the existing banner check could not see banners
+carrying a timestamp (`## ▶ [10-22 09:00] STEP …`), the required form since 2026-10-16. It still
+saw the older untimestamped ones, which were used until 2026-10-19. So its record for those days is
+partial, and a quiet stretch in it does not mean nothing was missed.
 <!--tech-->
-`scripts/check-banner-armed.py` gains a fourth class, `unarmed-thread`: `thread_name`,
-`thread_rows`, `unarmed_thread`, `decide_thread`, plus `_slug_from_text` / `_armed_slug` /
-`slug_sample_for`. The journal now samples `plan_slug` (and carries `prev_plan_slug`) at each Stop.
-It judges the LAST `**Thread:**` row of the previous turn (a `⤳ SWITCHED` target, or a step
-banner's row), is quiet when no slug can be extracted, and skips fenced blocks. `THREAD_BLOCK =
-False` is the switch; when it is on the class returns 4, which `.claude/hooks/block-idle-stop.sh`
-maps to `exit 2`.
+`scripts/check-banner-armed.py` gains a fourth class, `unknown-thread`: `thread_name`,
+`thread_rows`, `unknown_thread`, `decide_thread`, `known_threads`. It judges the LAST
+`**Thread:**` row that sits under a `## ▶` heading (within `BANNER_WINDOW` lines; fences closed per
+CommonMark), and fires only when `.claude/plans/<slug>.md` does not exist and no original class
+fired for that turn. The slug is read where the convention writes it — first in the row, after
+`↳`, the one target after `→` in a `⤳ SWITCHED` row, or `plan `slug`` — and an unreadable row is
+quiet. Replayed read-only over the 95 turns since 2026-10-10 that carry a banner Thread row: the
+first version read 24 of them, this one reads 91; the 4 left hold no well-formed slug.
+`THREAD_BLOCK = False` is the switch; on, the class returns 4, which
+`.claude/hooks/block-idle-stop.sh` maps to `exit 2` — and because the guard judges the PREVIOUS
+turn, that block lands once, on the NEXT turn's stop.
 
-`BANNER_RE` now accepts the optional `[mm-dd hh:mm]` stamp and is the ONE banner pattern; the
-thread class's interim copy `STEP_BANNER_RE` is retired. ⚠ The guard's three original classes
-(`unarmed`, `unbannered`, `unheralded`) saw NO current banner from 2026-10-16 until this fix:
-`unarmed` could not fire on a stamped banner (its last log entry is 2026-10-18), and the other two
-read every stamped banner as no banner. So the warn log's quiet since 2026-10-16 is NOT evidence of
-no misses, and its `unbannered`/`unheralded` entries in that span may include turns that did
-banner. Self-test 160 -> 209 cases; mutation manifest 48 -> 65, every entry killed and attributed
+`BANNER_RE` now accepts the optional `[mm-dd hh:mm]` stamp and is the one banner pattern. ⚠ From
+2026-10-16 until this fix the three original classes (`unarmed`, `unbannered`, `unheralded`) could
+not see a STAMPED banner; unstamped ones, last emitted 2026-10-19 19:07Z, were still seen.
+Measured over judgable turns since 2026-10-16: 67 carry a banner the fixed pattern matches, 21 one
+the old pattern matched. The warn log over that span is therefore partial, not evidence of no
+misses. Self-test 160 -> 219 cases; mutation manifest 48 -> 77, every entry killed and attributed
 in a scoped run.

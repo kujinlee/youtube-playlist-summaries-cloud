@@ -846,7 +846,13 @@ EXPECTED_MUTATIONS = {
     # form (the 2026-10-16 blindness, killed by an ORIGINAL class's stamped case) and making the
     # stamp mandatory (killed by the unstamped cases). The fence-skip entry was RE-ANCHORED from
     # `STEP_BANNER_RE` to `BANNER_RE`, not retired — its subject still exists.
-    "scripts/check-banner-armed.py": 65,
+    # ⟳ r1 fold, same day, 65 -> 77: the thread class was REDESIGNED by the coordinator's
+    # decision (compare against `.claude/plans/` files, read the real row shapes, rows only under
+    # a banner, CommonMark fence closing, one log row per root cause). All 15 surviving
+    # `thread class:` entries are RETIRED WITH THEIR SUBJECT — they pinned the sentinel
+    # comparison and the journalled slug, both deleted — and 27 replace them, one per decision
+    # branch, every `expect` read from a real run. Net +12. The two BANNER_RE entries are kept.
+    "scripts/check-banner-armed.py": 77,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -5602,7 +5608,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1800)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1812)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -627,207 +627,6 @@
     "expect": "F4 run_decide WARNS on the new class AND appends a line — the side effect"
   },
   {
-    "name": "thread class: a `⤳ SWITCHED` row is no longer collected, so a switch to an unarmed thread is silent",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "                if SWITCHED in body:\n                    rows.append((\"switched\", body))",
-        "                if SWITCHED in body:\n                    pass"
-      ]
-    ],
-    "expect": [
-      "TH9 a SWITCHED row is collected even outside a banner",
-      "TE2 SWITCHED to an UNARMED thread WARNS and logs `unarmed-thread` with its name"
-    ]
-  },
-  {
-    "name": "thread class: a step banner's Thread row is no longer collected, so a banner on another thread is silent",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "                elif in_banner:\n                    rows.append((\"step\", body))",
-        "                elif False:\n                    rows.append((\"step\", body))"
-      ]
-    ],
-    "expect": [
-      "TH7 a step banner's Thread row is collected as kind `step`",
-      "TE5 NOTHING armed + a step banner on a named thread WARNS (3 of 3, so only this class can be what fired)"
-    ]
-  },
-  {
-    "name": "thread class: several candidate targets are no longer unreadable — the first one is GUESSED",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "    return found[0] if len(found) == 1 else None",
-        "    return found[0] if found else None"
-      ]
-    ],
-    "expect": [
-      "TH3 a SWITCHED row naming TWO targets is unreadable — picking one would be a guess"
-    ]
-  },
-  {
-    "name": "thread class: an UNREADABLE name fires instead of staying quiet",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "    if name is None or name == armed_slug:",
-        "    if name == armed_slug:"
-      ]
-    ],
-    "expect": [
-      "TH14 SWITCHED with an UNREADABLE target is quiet BY DESIGN — never a guessed name",
-      "TH21 an unreadable LAST row is quiet and does NOT fall back to an earlier one"
-    ]
-  },
-  {
-    "name": "thread class: the armed slug is ignored, so every named thread fires",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        " or name == armed_slug:\n        return None\n    return kind, name",
-        " or False:\n        return None\n    return kind, name"
-      ]
-    ],
-    "expect": [
-      "TH12 SWITCHED to the ARMED plan is quiet",
-      "TE1 SWITCHED to the plan armed when that turn ended is QUIET, and logs nothing"
-    ]
-  },
-  {
-    "name": "thread class: the FIRST row is judged instead of the last, so an earlier finished thread fires",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "    kind, body = rows[-1]",
-        "    kind, body = rows[0]"
-      ]
-    ],
-    "expect": [
-      "TH20 only the LAST row is judged: a turn that finished `s-old`, switched and armed `s-cur` is quiet"
-    ]
-  },
-  {
-    "name": "thread class: fenced examples of the convention are read as banners",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "            if fenced:\n                continue\n            if BANNER_RE",
-        "            if BANNER_RE"
-      ]
-    ],
-    "expect": [
-      "TH10 a FENCED example of the convention is skipped — CLAUDE.md's own are fenced"
-    ]
-  },
-  {
-    "name": "thread class: block=True still returns WARN, so the BLOCK switch cannot block",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "    return (THREAD_BLOCK_RC if block else WARN), msg, REASON_THREAD, f\"{kind} {name}\"",
-        "    return WARN, msg, REASON_THREAD, f\"{kind} {name}\""
-      ]
-    ],
-    "expect": [
-      "TH18 the BLOCK switch OFF -> WARN; ON -> THREAD_BLOCK_RC, which is neither WARN nor CANNOT RUN (the hook collapses both of those to a non-blocking exit 1)"
-    ]
-  },
-  {
-    "name": "thread class: run_decide ignores THREAD_BLOCK and always warns",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "                            texts, slug_then, block=THREAD_BLOCK)",
-        "                            texts, slug_then, block=False)"
-      ]
-    ],
-    "expect": [
-      "TE7 with THREAD_BLOCK on, the SAME input as TE2 returns THREAD_BLOCK_RC — the code the hook maps to exit 2"
-    ]
-  },
-  {
-    "name": "thread class: a thread WARN is never surfaced as WARN when the other classes are quiet",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        elif code == QUIET:\n            code = WARN\n",
-        "        elif False:\n            code = WARN\n"
-      ]
-    ],
-    "expect": [
-      "TE2 SWITCHED to an UNARMED thread WARNS and logs `unarmed-thread` with its name"
-    ]
-  },
-  {
-    "name": "thread class: the journal stores no slug, so every judged turn compares against nothing",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        \"plan_slug\": slug_now,",
-        "        \"plan_slug\": None,"
-      ]
-    ],
-    "expect": [
-      "TE1 SWITCHED to the plan armed when that turn ended is QUIET, and logs nothing",
-      "TE3 the armed slug is SAMPLED at the judged turn's stop — armed `other-y` then, `fold-x` now -> QUIET"
-    ]
-  },
-  {
-    "name": "thread class: a journal with no slug key reads as 'nothing armed' and fires on the upgrade turn",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "            if slug_key not in journal:\n                return False, None\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "TH23 a journal with NO `plan_slug` key holds no sample — never read as 'nothing armed'",
-      "TE8 a journal written before this class (no `plan_slug`) is QUIET for that turn, never read as 'nothing armed' — TE2's input with nothing armed would WARN"
-    ]
-  },
-  {
-    "name": "thread class: the previous slot's slug is not carried on a window shift",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        record[\"prev_plan_slug\"] = (already or {})[_src_slug_key]",
-        "        pass"
-      ]
-    ],
-    "expect": [
-      "TE9 the slug sampled into the PREVIOUS slot is the one judged — `fold-x` then, `other-y` now -> WARN"
-    ]
-  },
-  {
-    "name": "thread class: a continuation stop carries its OWN slug into the previous slot",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        _src_slug_key = \"prev_plan_slug\"",
-        "        _src_slug_key = \"plan_slug\""
-      ]
-    ],
-    "expect": [
-      "TE9c ...and a CONTINUATION stop in between keeps the older slug, not its own"
-    ]
-  },
-  {
-    "name": "thread class: a pause clears the slug, so a paused thread reads as unarmed",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        if key == \"plan\" and value:\n            return Path(value).stem",
-        "        if key == \"paused\":\n            return None\n        if key == \"plan\" and value:\n            return Path(value).stem"
-      ]
-    ],
-    "expect": [
-      "TH22 the sentinel's slug is the plan's STEM, and a PAUSE does not clear it"
-    ]
-  },
-  {
     "name": "BANNER_RE reverts to the UNSTAMPED form, so the three original classes go blind to every `[mm-dd hh:mm]` banner again",
     "file": "scripts/check-banner-armed.py",
     "edits": [
@@ -855,6 +654,367 @@
       "ST1 `unarmed` WARNS on an unstamped partway banner, as it always has",
       "ST3 `unbannered` is quiet when an unstamped banner was emitted",
       "ST4 `unheralded` is quiet on a large turn that emitted an unstamped finished banner"
+    ]
+  },
+  {
+    "name": "thread class: the slug-FIRST row form is no longer read, so the common real step row is unreadable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    m = _LEADING_SLUG_RE.match(body) or _RETURN_RE.match(body)",
+        "    m = _RETURN_RE.match(body)"
+      ]
+    ],
+    "expect": [
+      "TN1 the slug-FIRST step row names its slug, and the later commit id is not the thread",
+      "TE1 a slug-first banner row on a thread with NO plan file WARNS while another plan is armed, and logs `unknown-thread` with its name"
+    ]
+  },
+  {
+    "name": "thread class: a `↳` row is no longer read",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        " or _RETURN_RE.match(body)\n",
+        "\n"
+      ]
+    ],
+    "expect": [
+      "TN3 a `↳` row WITHOUT `RESUMED` names its slug",
+      "TN4 a `↳ RESUMED` row names its slug"
+    ]
+  },
+  {
+    "name": "thread class: `↳` requires RESUMED again, so the `↳ `slug`` form is unreadable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "_RETURN_RE = re.compile(r\"^\\s*↳\\s*(?:RESUMED\\s+)?\" + _SLUG)",
+        "_RETURN_RE = re.compile(r\"^\\s*↳\\s*RESUMED\\s+\" + _SLUG)"
+      ]
+    ],
+    "expect": [
+      "TN3 a `↳` row WITHOUT `RESUMED` names its slug"
+    ]
+  },
+  {
+    "name": "thread class: the leading slug is searched ANYWHERE in the row, so a later commit id or PR can be read as the thread",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "_LEADING_SLUG_RE.match(body) or",
+        "re.search(_SLUG, body) or"
+      ]
+    ],
+    "expect": [
+      "TN5 a SWITCHED row's target is the one slug after `→`, never the `from` side",
+      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read"
+    ]
+  },
+  {
+    "name": "thread class: `SWITCHED to plan `x`` is no longer read",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        found = _SWITCH_ARROW_RE.findall(after) or _SWITCH_TO_RE.findall(SWITCHED + after)",
+        "        found = _SWITCH_ARROW_RE.findall(after)"
+      ]
+    ],
+    "expect": [
+      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read"
+    ]
+  },
+  {
+    "name": "thread class: several arrow targets are GUESSED (the first) instead of unreadable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            return (\"switched\", found[0]) if len(found) == 1 else None",
+        "            return (\"switched\", found[0])"
+      ]
+    ],
+    "expect": [
+      "TN11 a SWITCHED row with TWO arrow targets is unreadable — picking one is a guess"
+    ]
+  },
+  {
+    "name": "thread class: a SWITCHED row is labelled `step`, so the log loses which shape fired",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "return (\"switched\", found[0]) if",
+        "return (\"step\", found[0]) if"
+      ]
+    ],
+    "expect": [
+      "TD4 a SWITCHED target with no plan file fires as kind `switched`"
+    ]
+  },
+  {
+    "name": "thread class: a standalone quoted Thread row is read as if it were under a banner",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            if since is None:\n                continue\n            since += 1",
+        "            if since is None:\n                since = 0\n            since += 1"
+      ]
+    ],
+    "expect": [
+      "TR2 a STANDALONE quoted switch row is NOT read — Codex's quoted-example input",
+      "TE6 a STANDALONE quoted switch row is QUIET end to end, and logs nothing"
+    ]
+  },
+  {
+    "name": "thread class: prose between the heading and the row no longer ends the banner",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            elif line.strip() and not line.lstrip().startswith(\">\") and line.strip() != \"---\":\n                since = None",
+        "            elif False:\n                since = None"
+      ]
+    ],
+    "expect": [
+      "TR3 prose between the heading and the row ends the banner"
+    ]
+  },
+  {
+    "name": "thread class: the BANNER_WINDOW limit is dropped",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            if since > BANNER_WINDOW:\n                since = None\n                continue",
+        "            if False:\n                since = None\n                continue"
+      ]
+    ],
+    "expect": [
+      "TR4 a row further than BANNER_WINDOW lines below the heading is not the banner's"
+    ]
+  },
+  {
+    "name": "thread class: a second Thread row under the same heading is read too",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                rows.append(t.group(1))\n                since = None",
+        "                rows.append(t.group(1))"
+      ]
+    ],
+    "expect": [
+      "TR6 one row per banner — a second Thread row under the same heading is not read"
+    ]
+  },
+  {
+    "name": "thread class: a fence closes on ANY fence character",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                if close and close.group(1)[0] == fence[0] and len(close.group(1)) >= len(fence):",
+        "                if close and len(close.group(1)) >= len(fence):"
+      ]
+    ],
+    "expect": [
+      "TR7b ...nor does a ``` line of the SAME length close a ~~~ fence — the character matters"
+    ]
+  },
+  {
+    "name": "thread class: a fence closes on a SHORTER run",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "close.group(1)[0] == fence[0] and len(close.group(1)) >= len(fence):",
+        "close.group(1)[0] == fence[0]:"
+      ]
+    ],
+    "expect": [
+      "TR9 a SHORTER closing run does not close a longer fence"
+    ]
+  },
+  {
+    "name": "thread class: fenced lines are read as banners",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                    fence = None\n                continue\n            m = _FENCE_OPEN_RE.match(line)",
+        "                    fence = None\n            m = _FENCE_OPEN_RE.match(line)"
+      ]
+    ],
+    "expect": [
+      "TR7 a ``` line inside a ~~~~ fence does NOT close it — Codex's four-tilde input"
+    ]
+  },
+  {
+    "name": "thread class: a thread WITH a plan file still fires — the r1 false alarm on finished and resumed plans",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if hit is None or hit[1] in known:",
+        "    if hit is None:"
+      ]
+    ],
+    "expect": [
+      "TD1 a thread WITH a plan file is quiet, armed or not",
+      "TE4 a RESUMED parent with a plan file is QUIET with NOTHING armed — the false alarm r1 executed, and its remedy would have rewritten that plan"
+    ]
+  },
+  {
+    "name": "thread class: the FIRST banner row is judged instead of the last",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    hit = thread_name(rows[-1])\n    if hit is None or hit[1] in known:",
+        "    hit = thread_name(rows[0])\n    if hit is None or hit[1] in known:"
+      ]
+    ],
+    "expect": [
+      "TD5 only the LAST banner row is judged: an earlier unknown thread, then a known one, is quiet",
+      "TE3 a switch followed IN THE SAME TURN by the side job's first step banner WARNS"
+    ]
+  },
+  {
+    "name": "thread class: block=True still returns WARN, so the BLOCK switch cannot block",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return (THREAD_BLOCK_RC if block else WARN), msg, REASON_THREAD, f\"{kind} {name}\"",
+        "    return WARN, msg, REASON_THREAD, f\"{kind} {name}\""
+      ]
+    ],
+    "expect": [
+      "TD7 BLOCK off -> WARN; on -> THREAD_BLOCK_RC, which is neither WARN nor CANNOT RUN",
+      "TE8 with THREAD_BLOCK on the turn returns THREAD_BLOCK_RC, the code the hook maps to exit 2"
+    ]
+  },
+  {
+    "name": "thread class: run_decide ignores THREAD_BLOCK and always warns",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "block=THREAD_BLOCK)\n",
+        "block=False)\n"
+      ]
+    ],
+    "expect": [
+      "TE8 with THREAD_BLOCK on the turn returns THREAD_BLOCK_RC, the code the hook maps to exit 2"
+    ]
+  },
+  {
+    "name": "thread class: an unlistable plan directory is read as 'no plans' and warns",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if known is None:\n        rows = thread_rows(texts)",
+        "    if known is None:\n        known = set()\n    if False:\n        rows = thread_rows(texts)"
+      ]
+    ],
+    "expect": [
+      "TD9 an UNLISTABLE plan directory is CANNOT RUN when there is a thread to look up",
+      "TE9 an UNLISTABLE `.claude/plans/` is CANNOT RUN, not a warning about the thread"
+    ]
+  },
+  {
+    "name": "thread class: an unlistable plan directory is CANNOT RUN even with nothing to look up",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if rows and thread_name(rows[-1]) is not None:\n            return CANNOT_RUN",
+        "        if True:\n            return CANNOT_RUN"
+      ]
+    ],
+    "expect": [
+      "TD10 ...and QUIET when there is nothing to look up"
+    ]
+  },
+  {
+    "name": "thread class: known_threads swallows an unlistable directory as 'no plans'",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    except OSError:\n        return None\n",
+        "    except OSError:\n        return set()\n"
+      ]
+    ],
+    "expect": [
+      "TK3 a plan directory that exists and cannot be listed is None"
+    ]
+  },
+  {
+    "name": "thread class: a missing plan directory is reported unlistable instead of 'no plans yet'",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    except FileNotFoundError:\n        return set()\n    except OSError:\n        return None\n",
+        "    except OSError:\n        return None\n"
+      ]
+    ],
+    "expect": [
+      "TK1 no plan directory at all is the empty set, not CANNOT RUN"
+    ]
+  },
+  {
+    "name": "thread class: known_threads counts non-`.md` names and directories as plans",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "{Path(e.name).stem for e in it if e.name.endswith(\".md\") and e.is_file()}",
+        "{Path(e.name).stem for e in it}"
+      ]
+    ],
+    "expect": [
+      "TK2 the known threads are the `*.md` FILES, by stem"
+    ]
+  },
+  {
+    "name": "thread class: run_decide drops the known set, so every thread reads as unknown — finished plans included",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "known_threads(PLAN_DIR), block",
+        "set(), block"
+      ]
+    ],
+    "expect": [
+      "TE2 ...and the SAME turn is quiet once `.claude/plans/work-lines-page.md` exists",
+      "TE5 after a real `begin-plan.py --finish`, the finished thread is QUIET — the sentinel is gone and the plan file is what the page reads"
+    ]
+  },
+  {
+    "name": "thread class: it is consulted even when an original class fired, so one turn is logged twice",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                    if not reason:\n                        t_code, t_msg, _t_reason, t_detail = decide_thread(",
+        "                    if True:\n                        t_code, t_msg, _t_reason, t_detail = decide_thread("
+      ]
+    ],
+    "expect": [
+      "TE7 when `unarmed` fires for a turn, `unknown-thread` is NOT logged for it too"
+    ]
+  },
+  {
+    "name": "thread class: a thread WARN is never surfaced as WARN when the other classes are quiet",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        elif code == QUIET:\n            code = WARN\n",
+        "        elif False:\n            code = WARN\n"
+      ]
+    ],
+    "expect": [
+      "TE1 a slug-first banner row on a thread with NO plan file WARNS while another plan is armed, and logs `unknown-thread` with its name",
+      "TE3 a switch followed IN THE SAME TURN by the side job's first step banner WARNS"
+    ]
+  },
+  {
+    "name": "thread class: an unlistable plan dir's CANNOT RUN is dropped and the stop reads as quiet",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if code != THREAD_BLOCK_RC:\n            code = CANNOT_RUN",
+        "        if False:\n            code = CANNOT_RUN"
+      ]
+    ],
+    "expect": [
+      "TE9 an UNLISTABLE `.claude/plans/` is CANNOT RUN, not a warning about the thread"
     ]
   }
 ]

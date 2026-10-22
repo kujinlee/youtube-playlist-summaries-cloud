@@ -198,7 +198,7 @@ CI_RC=$?
 # behalf). FALSIFIER: stub the three siblings to 0, feed a transcript carrying a bare `#N`, and the
 # wrapper must exit 1 with the warning on stderr — it exited 0 with stdout empty before this line.
 # ⛔ 2026-10-22 — THE ONE OBSERVER CODE THAT BLOCKS, AND ONLY WHEN THE OWNER TURNS IT ON.
-# check-banner-armed.py returns 4 (THREAD_BLOCK_RC) for a thread that was never armed, and ONLY
+# check-banner-armed.py returns 4 (THREAD_BLOCK_RC) for a thread with no plan file, and ONLY
 # while its `THREAD_BLOCK` switch is True — default False, so today this line is unreachable and
 # the thread class warns through `exit 1` below like every other observer. It sits AFTER every
 # observer has run, so turning it on cannot cost a sibling its verdict. 2 and 1 are unchanged:
