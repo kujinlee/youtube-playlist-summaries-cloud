@@ -16899,13 +16899,14 @@ fixed when it is first created.
 
 **Waiting on you:** merging, once the pull request is green. Two independent reviews found ten
 defects; all ten are fixed. A second review of those fixes found two more, in the fixes
-themselves; those are fixed too, and a third round checks them.
+themselves; those are fixed too. A third review found only small things, now fixed, and a
+fourth checks that last set.
 <!--tech-->
-`scripts/gen-work-lines.py` (NEW, 36 cases, 13 mutation entries)
+`scripts/gen-work-lines.py` (NEW, 38 cases, 15 mutation entries)
 renders `~/explainers/work-lines.html` from `.claude/plans/*.md`. `scripts/begin-plan.py` records
 `<!-- parent: … -->` and `<!-- serving: … -->`; **the parent is DERIVED from
 `.claude/executing-plan` at arm time, never passed** — arming while another plan is armed IS the
-branch. 65 → 78 cases, 18 → 24 mutation entries.
+branch. 65 → 80 cases, 18 → 25 mutation entries.
 
 ⛔ **A BUG THAT WOULD HAVE MADE THE WHOLE FEATURE SILENTLY RECORD NOTHING.** The first version read
 `pp.parse_sentinel(...)` inside `cmd_begin` — but `pp` is a LOCAL in every other function and
@@ -16924,7 +16925,7 @@ with `reverse=True` flips BOTH members; two stable sorts now, held by two cases.
 still reaches main()'s "no plan files" branch and returns 2 anyway) — so the case was rewritten to
 assert the message that only the raise produces.
 
-Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1728),
+Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1731),
 `check-selftest-counts` POPULATION, `check-fixture-variation` EXAMINED_KEYS. ⚠ `parse_plan`'s
 `name` and `touched` were unvaried and are now exercised at two distinct inputs — they carry
 straight to the page, so a constant there would have made every row show one slug and one date.
@@ -16951,3 +16952,14 @@ fixing: the r1 `--serving` refusal hand-listed `\n`/`\r` while `parse_steps` rea
 `splitlines()` — a vertical tab still smuggled in a counted step, the exact shape `cmd_pause`'s
 own r2 High recorded in the same file. All three fixed; 3 mutations, each reverting the r1 code,
 each killed by the case it names.
+
+✅ **ROUND 3 (Claude, the r2 fold) — CONVERGED, 6 Minor; 5 folded, 1 recorded.** Three were caused
+by the r2 fold (a trailing separator slipped past `len(splitlines()) > 1`; one separator tested of
+ten; the cut's first-member rule untested), so the arming rule's letter is met — answered in
+`docs/reviews/coordinator/work-lines-r3-coordinator.md` as the prose floor: severity fell 1/4/5 →
+0/2/0 → 0/0/6, and the reviewer drove 200,000 random graphs through `build_forest` with no failure.
+⛔ **Re-verifying every mutation found the r2 commit had ORPHANED two of r1's entries** — their
+anchors were the condition lines that fold rewrote. `--self-test` stayed green (it does not apply
+anchors); CI's sweep would have gone red. Re-anchored; all 22 of this branch's entries are killed
+by the case each names. The decision log now carries a `work-lines` row, written late (trigger 1
+caught its absence) and stating its bet about round 4 before round 4 runs.

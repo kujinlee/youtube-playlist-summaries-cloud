@@ -251,8 +251,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if target is None or target.parent != PLAN_DIR.resolve() or not target.is_file():",
-        "    if target is None:"
+        "    if (target is None or target.parent",
+        "    if (target is None) and (target.parent"
       ]
     ],
     "expect": [
@@ -264,8 +264,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if serving is not None and (\"\\n\" in serving",
-        "    if False and serving is not None and (\"\\n\" in serving"
+        "    if serving is not None and (serving.splitlines()",
+        "    if False and (serving.splitlines()"
       ]
     ],
     "expect": [
@@ -303,12 +303,25 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if serving is not None and (len(serving.splitlines()) > 1 or \"-->\" in serving):",
-        "    if serving is not None and (\"\\n\" in serving or \"\\r\" in serving or \"-->\" in serving):"
+        "serving.splitlines() != [serving] or not serving.strip()\n",
+        "\"\\n\" in serving or \"\\r\" in serving or not serving.strip()\n"
       ]
     ],
     "expect": [
-      "⛔ --serving 'vertical tab\\x0b- [ ]'… is REFUSED, and no plan is written"
+      "⛔ EVERY separator splitlines() honours is refused in --serving (10 of them)"
+    ]
+  },
+  {
+    "name": "the --serving check counts lines again, so a TRAILING separator gets through",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "(serving.splitlines() != [serving] or",
+        "(len(serving.splitlines()) > 1 or"
+      ]
+    ],
+    "expect": [
+      "⛔ --serving 'ask\\n'… is REFUSED, and no plan is written"
     ]
   }
 ]

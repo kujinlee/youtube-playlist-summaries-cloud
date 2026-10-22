@@ -918,7 +918,7 @@ EXPECTED_MUTATIONS = {
     # own grammar).
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
-    "scripts/gen-work-lines.py": 13,
+    "scripts/gen-work-lines.py": 15,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1627,7 +1627,7 @@ EXPECTED_MUTATIONS = {
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 24,
+    "scripts/begin-plan.py": 25,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5559,7 +5559,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1728)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1731)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

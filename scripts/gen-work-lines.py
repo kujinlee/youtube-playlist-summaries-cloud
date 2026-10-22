@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 36 cases
+    python3 scripts/gen-work-lines.py --self-test  # 38 cases
 
 WHY THIS EXISTS
 ---------------
@@ -279,6 +279,10 @@ def read_plans(plan_dir: pathlib.Path | None = None) -> list[dict]:
         raise ValueError(f"{d} is not a directory, so there are no work lines to read")
     out = []
     for f in sorted(d.glob("*.md")):
+        # ⟳ r3 Claude 5: a DIRECTORY (or a broken symlink) named `x.md` is not a plan, and
+        # reading it raised — turning one stray name into CANNOT RUN for the whole page.
+        if not f.is_file():
+            continue
         try:
             text = f.read_text(errors="replace")
         except OSError as exc:
@@ -408,6 +412,12 @@ def _self_test() -> int:
     # the one ordering under which cutting "the first unplaced node" happens to hit the cycle.
     # Tails that sort BEFORE the members are the input that tells a cycle cut from a tail cut.
     _tails = build_forest([_mk("y", "z"), _mk("z", "y"), _mk("a", "y"), _mk("b", "z")])[0]
+    # ⟳ r3 Claude 4: `cut = n` (the node the walk repeated on) passed every case — the cycles
+    # above are short enough that it IS the first member. Here the walk starts at tail `a`, meets
+    # the cycle at `z`, and the alphabetically first member is `m`, not `z`.
+    _tri = build_forest([_mk("m", "z"), _mk("z", "q"), _mk("q", "m"), _mk("a", "z")])[0]
+    case("⛔ the cut is at the ALPHABETICALLY FIRST cycle member, not where the walk met it",
+         ([r["slug"] for r in _tri], _walk(_tri)), (["m"], ["a", "m", "q", "z"]))
     case("⛔ a cycle is cut ON the cycle: tails sorting before it stay attached, ONE line results",
          ([(r["slug"], r.get("cycle", False)) for r in _tails], _walk(_tails),
           sorted(c["slug"] for c in _tails[0]["children"]) if _tails else None),
@@ -500,6 +510,18 @@ def _self_test() -> int:
         case("...and the child is nested under its parent in the output",
              (bool(re.search(r"<code>one</code>[^\n]*\n<ul>\n<li>[^\n]*<code>two</code>", _txt)),
               bool(re.search(r"<code>two</code>[^\n]*\n<ul>", _txt))), (True, False))
+    with _tf.TemporaryDirectory() as _d3:
+        _pd3 = pathlib.Path(_d3) / "plans"; _pd3.mkdir()
+        (_pd3 / "real.md").write_text("# real\n- [x] a")
+        (_pd3 / "stray.md").mkdir()
+        # Two DISTINCT directories: one value at every call site cannot tell `plan_dir` from a
+        # constant, which `check-fixture-variation` refused on first sight of this case.
+        _pd4 = pathlib.Path(_d3) / "other"; _pd4.mkdir()
+        (_pd4 / "elsewhere.md").write_text("# e\n- [ ] a")
+        case("a DIRECTORY named *.md is not a plan, and does not stop the page",
+             [_try(lambda: [r["slug"] for r in read_plans(_pd3)]),
+              _try(lambda: [r["slug"] for r in read_plans(_pd4)])],
+             [["real"], ["elsewhere"]])
     with _tf.TemporaryDirectory() as _d2:
         _empty = pathlib.Path(_d2) / "plans"; _empty.mkdir()
         case("an EMPTY plan directory is CANNOT RUN (2), never an empty page",

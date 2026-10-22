@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 78 cases
+    scripts/begin-plan.py --self-test  # 80 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -392,7 +392,11 @@ def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -
     # human's own words, and silently editing them is the one thing this field must not do.
     # ⟳ r2: ASK `splitlines()`, as `cmd_pause` does — `parse_steps` reads the plan with it, and
     # the r1 fix hand-listed `\n`/`\r`, so `\x0b- [ ] x` still became a counted step.
-    if serving is not None and (len(serving.splitlines()) > 1 or "-->" in serving):
+    # ⟳ r3 Claude 1: `len(...) > 1` let a TRAILING separator through (`"ask\n"` splits to ONE
+    # element), and a blank value rendered as an empty quote. The value must BE its own single
+    # line, and say something.
+    if serving is not None and (serving.splitlines() != [serving] or not serving.strip()
+                                or "-->" in serving):
         print("refusing: --serving must be ONE line and must not contain `-->` — it is stored in "
               "an HTML comment on its own line, and either would make the reader drop it.",
               file=sys.stderr)
@@ -844,8 +848,18 @@ def _self_test() -> int:
 
             # ⟳ r1 (Codex 4, Claude m1): a multiline objective vanished from the page and its
             # second line could become a counted STEP; `-->` closes the comment.
+            # ⟳ r3 Claude 3: one separator was tested, so a fix adding only `\x0b` passed while
+            # seven others still smuggled in a step. The set is DERIVED from splitlines() itself.
+            _seps = [chr(c) for c in range(0x110000) if len(f"a{chr(c)}b".splitlines()) == 2]
+            _err3 = io.StringIO()
+            with contextlib.redirect_stderr(_err3):
+                _leaks = [repr(c) for c in _seps
+                          if cmd_begin("sep-probe", ["One|d1|w1"], serving=f"x{c}- [ ] y") != REFUSED
+                          or (PLAN_DIR / "sep-probe.md").exists()]
+            case(f"⛔ EVERY separator splitlines() honours is refused in --serving "
+                 f"({len(_seps)} of them)", (len(_seps) >= 8, _leaks) == (True, []))
             for _bad in ("first line\n- [ ] not a step", "ends the comment --> early",
-                         "vertical tab\x0b- [ ] not a step either"):
+                         "ask\n", "   "):
                 case(f"⛔ --serving {_bad[:18]!r}… is REFUSED, and no plan is written",
                      (cmd_begin("bad-serving", ["One|d1|w1"], serving=_bad),
                       (PLAN_DIR / "bad-serving.md").exists()) == (REFUSED, False))

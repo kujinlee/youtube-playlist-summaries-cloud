@@ -167,5 +167,31 @@
     "expect": [
       "⛔ a cycle is cut ON the cycle: tails sorting before it stay attached, ONE line results"
     ]
+  },
+  {
+    "name": "the cycle is cut where the walk MET it, not at its first member, so the cut moves with the walk's start",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        cut = min(walk[walk.index(n):])\n        node = by_slug[cut]",
+        "        cut = n\n        node = by_slug[cut]"
+      ]
+    ],
+    "expect": [
+      "⛔ the cut is at the ALPHABETICALLY FIRST cycle member, not where the walk met it"
+    ]
+  },
+  {
+    "name": "a directory named *.md is read as a plan, so one stray name stops the whole page",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        if not f.is_file():\n            continue\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "a DIRECTORY named *.md is not a plan, and does not stop the page"
+    ]
   }
 ]

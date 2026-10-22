@@ -148,10 +148,13 @@ def population(root: pathlib.Path) -> "list[pathlib.Path]":
 # than a number nobody can act on.
 KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'begin-plan.py': (
-        'cmd_begin.slug_raw', 'cmd_begin.step_args', 'pp_count_drift.actual',
-        'pp_count_drift.doc', 'render_banner.steps', 'render_plan.slug',
-        'render_plan.steps', 'render_plan.today', 'render_sentinel.now',
-        'render_sentinel.plan_rel', 'split_step.arg',),
+        'cmd_begin.slug_raw', 'pp_count_drift.actual',
+        'pp_count_drift.doc', 'render_banner.steps',
+        'render_plan.steps', 'split_step.arg',),
+    # ⟳ 2026-10-22 (work-lines r3 fold): FIVE leave the debt rather than being carried as
+    # frozen — `render_plan.today`, `render_plan.slug`, `render_sentinel.now`,
+    # `render_sentinel.plan_rel` and `cmd_begin.step_args` now vary, because the lineage and
+    # sentinel-resolution cases arm distinct plans with distinct steps at distinct targets.
     'brief-compose.py': (
         'assert_theme_complete.also_read', 'assert_theme_complete.fragment_css',
         'assert_theme_complete.live_control',
