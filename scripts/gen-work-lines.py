@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 35 cases
+    python3 scripts/gen-work-lines.py --self-test  # 36 cases
 
 WHY THIS EXISTS
 ---------------
@@ -120,11 +120,21 @@ def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
 
     for r in roots:
         place(r)
-    # Whatever is unplaced sits on a cycle (or hangs below one). Cut ONE edge — into the
-    # alphabetically first unplaced node — make that node a root, place its subtree, repeat.
-    # Each pass places at least that node, so this terminates.
+    # Whatever is unplaced sits on a cycle or hangs BELOW one. Find a node ON the cycle by
+    # following parent pointers from any unplaced node until one repeats, cut the edge into the
+    # alphabetically first member of that cycle, make it a root, place its subtree, repeat. Each
+    # pass places at least that node, so this terminates.
+    # ⟳ r2 Codex 1 (Major): the first cut took the first unplaced node OVERALL, which can be a
+    # tail below the cycle — `y ↔ z` with `a` under `y` cut `y → a` and `z → b` first, turning
+    # one line into three and saying each tail "leads back to itself". Every parent of an
+    # unplaced node is itself unplaced and present (an absent one made it an orphan ROOT), so
+    # the walk stays inside the unplaced set and must repeat.
     while len(seen) < len(by_slug):
-        cut = min(s for s in by_slug if s not in seen)
+        walk, n = [], min(s for s in by_slug if s not in seen)
+        while n not in walk:
+            walk.append(n)
+            n = by_slug[n]["parent"]
+        cut = min(walk[walk.index(n):])
         node = by_slug[cut]
         par = by_slug[node["parent"]]
         par["children"] = [c for c in par["children"] if c["slug"] != cut]
@@ -394,6 +404,14 @@ def _self_test() -> int:
          (_walk(_self), _self[0]["children"], _self[0].get("cycle")), (["a"], [], True))
     case("...and a cycle hanging BELOW nothing still places its tail exactly once",
          _walk(build_forest([_mk("a", "b"), _mk("b", "a"), _mk("t", "b")])[0]), ["a", "b", "t"])
+    # ⟳ r2 Codex 1: the tail fixture above names its tail `t`, AFTER the cycle members, which is
+    # the one ordering under which cutting "the first unplaced node" happens to hit the cycle.
+    # Tails that sort BEFORE the members are the input that tells a cycle cut from a tail cut.
+    _tails = build_forest([_mk("y", "z"), _mk("z", "y"), _mk("a", "y"), _mk("b", "z")])[0]
+    case("⛔ a cycle is cut ON the cycle: tails sorting before it stay attached, ONE line results",
+         ([(r["slug"], r.get("cycle", False)) for r in _tails], _walk(_tails),
+          sorted(c["slug"] for c in _tails[0]["children"]) if _tails else None),
+         ([("y", True)], ["a", "b", "y", "z"], ["a", "z"]))
     # Gated on the tree check: under a broken build_forest, render() HANGS rather than fails, and
     # a hang names no case and hides every case after it.
     case("⛔ a cycle RENDERS, and says where the link was cut",

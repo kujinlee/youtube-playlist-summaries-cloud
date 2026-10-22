@@ -284,5 +284,31 @@
     "expect": [
       "⭐ a plan armed with NOTHING armed records that it STARTED a line"
     ]
+  },
+  {
+    "name": "a non-.md sentinel target is accepted, so `real.txt` attaches to an unrelated `real.md`",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if (target is None or target.parent != PLAN_DIR.resolve() or target.suffix != \".md\"\n            or not target.is_file()):",
+        "    if (target is None or target.parent != PLAN_DIR.resolve()\n            or not target.is_file()):"
+      ]
+    ],
+    "expect": [
+      "⛔ a sentinel naming a non-.md file whose stem names an unrelated plan records NO parent, and SAYS so"
+    ]
+  },
+  {
+    "name": "the --serving refusal hand-lists separators again, so a vertical tab smuggles in a counted step",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if serving is not None and (len(serving.splitlines()) > 1 or \"-->\" in serving):",
+        "    if serving is not None and (\"\\n\" in serving or \"\\r\" in serving or \"-->\" in serving):"
+      ]
+    ],
+    "expect": [
+      "⛔ --serving 'vertical tab\\x0b- [ ]'… is REFUSED, and no plan is written"
+    ]
   }
 ]

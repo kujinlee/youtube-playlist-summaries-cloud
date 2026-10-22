@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 76 cases
+    scripts/begin-plan.py --self-test  # 78 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -364,7 +364,10 @@ def _derive_parent() -> str | None:
         return None
     prev = pp.parse_sentinel(text).get("plan") or ""
     target = (ROOT / prev).resolve() if prev else None
-    if target is None or target.parent != PLAN_DIR.resolve() or not target.is_file():
+    # ⟳ r2 Codex 2 (Major): `.md` too. `--plan` can arm `real.txt`, whose stem names an
+    # UNRELATED `real.md` — the generator reads only `*.md`, so that is what the slug would mean.
+    if (target is None or target.parent != PLAN_DIR.resolve() or target.suffix != ".md"
+            or not target.is_file()):
         print(f"⚠ no parent recorded: the armed plan {prev or '(none named)'!r} is not a plan "
               f"file in {PLAN_DIR.relative_to(ROOT)}, so it cannot be named as one.",
               file=sys.stderr)
@@ -387,7 +390,9 @@ def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -
     # pattern dropped the objective silently, and a line starting `- [ ]` became a STEP the Stop
     # guard counted. `-->` closes the comment early. Refused, never rewritten: these are the
     # human's own words, and silently editing them is the one thing this field must not do.
-    if serving is not None and ("\n" in serving or "\r" in serving or "-->" in serving):
+    # ⟳ r2: ASK `splitlines()`, as `cmd_pause` does — `parse_steps` reads the plan with it, and
+    # the r1 fix hand-listed `\n`/`\r`, so `\x0b- [ ] x` still became a counted step.
+    if serving is not None and (len(serving.splitlines()) > 1 or "-->" in serving):
         print("refusing: --serving must be ONE line and must not contain `-->` — it is stored in "
               "an HTML comment on its own line, and either would make the reader drop it.",
               file=sys.stderr)
@@ -822,8 +827,11 @@ def _self_test() -> int:
             # ⛔ THE SENTINEL MUST RESOLVE TO A PLAN IN PLAN_DIR. ⟳ r1 (Codex 2, Claude M3):
             # `Path(prev).stem` attached `elsewhere/real.md` to an unrelated `real.md` here.
             (PLAN_DIR / "real.md").write_text("# real\n- [ ] x\n")
+            (PLAN_DIR / "real.txt").write_text("# real, but not a plan the page reads\n- [ ] x\n")
             for _label, _target in (("outside PLAN_DIR, with a same-named plan inside it",
                                      "elsewhere/real.md"),
+                                    ("a non-.md file whose stem names an unrelated plan",
+                                     ".claude/plans/real.txt"),
                                     ("a plan that does not exist", ".claude/plans/gone.md")):
                 _arm(_target)
                 _err = io.StringIO()
@@ -836,7 +844,8 @@ def _self_test() -> int:
 
             # ⟳ r1 (Codex 4, Claude m1): a multiline objective vanished from the page and its
             # second line could become a counted STEP; `-->` closes the comment.
-            for _bad in ("first line\n- [ ] not a step", "ends the comment --> early"):
+            for _bad in ("first line\n- [ ] not a step", "ends the comment --> early",
+                         "vertical tab\x0b- [ ] not a step either"):
                 case(f"⛔ --serving {_bad[:18]!r}… is REFUSED, and no plan is written",
                      (cmd_begin("bad-serving", ["One|d1|w1"], serving=_bad),
                       (PLAN_DIR / "bad-serving.md").exists()) == (REFUSED, False))

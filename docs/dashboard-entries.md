@@ -16898,13 +16898,14 @@ leaving as its parent, which made a loop and froze the page. A task's place in i
 fixed when it is first created.
 
 **Waiting on you:** merging, once the pull request is green. Two independent reviews found ten
-defects; all ten are fixed, and a second round checks those fixes before the PR opens.
+defects; all ten are fixed. A second review of those fixes found two more, in the fixes
+themselves; those are fixed too, and a third round checks them.
 <!--tech-->
-`scripts/gen-work-lines.py` (NEW, 35 cases, 12 mutation entries)
+`scripts/gen-work-lines.py` (NEW, 36 cases, 13 mutation entries)
 renders `~/explainers/work-lines.html` from `.claude/plans/*.md`. `scripts/begin-plan.py` records
 `<!-- parent: … -->` and `<!-- serving: … -->`; **the parent is DERIVED from
 `.claude/executing-plan` at arm time, never passed** — arming while another plan is armed IS the
-branch. 65 → 76 cases, 18 → 22 mutation entries.
+branch. 65 → 78 cases, 18 → 24 mutation entries.
 
 ⛔ **A BUG THAT WOULD HAVE MADE THE WHOLE FEATURE SILENTLY RECORD NOTHING.** The first version read
 `pp.parse_sentinel(...)` inside `cmd_begin` — but `pp` is a LOCAL in every other function and
@@ -16923,7 +16924,7 @@ with `reverse=True` flips BOTH members; two stable sorts now, held by two cases.
 still reaches main()'s "no plan files" branch and returns 2 anyway) — so the case was rewritten to
 assert the message that only the raise produces.
 
-Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1725),
+Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1728),
 `check-selftest-counts` POPULATION, `check-fixture-variation` EXAMINED_KEYS. ⚠ `parse_plan`'s
 `name` and `touched` were unvaried and are now exercised at two distinct inputs — they carry
 straight to the page, so a constant there would have made every row show one slug and one date.
@@ -16940,3 +16941,13 @@ said on stderr); `parent: -` now marks a STARTED line so it cannot pass for "nev
 multiline or `-->` `--serving` is refused; and the nesting case had passed on the word `none` in
 the inlined CSS. Every new case was shown to redden on the pre-fix code, and all 8 new mutations
 are killed by the case each names. A `ci.yml` step now runs the suite by name (`479114be`).
+
+⛔ **ROUND 2 (Codex, the fixes only) — NOT CONVERGED, 2 Major, BOTH IN ROUND 1's OWN FIXES.** The
+cycle cut took the first unplaced node OVERALL, which can be a TAIL below the cycle: `y ↔ z` with
+tails `a`, `b` became three lines, each tail "leading back to itself". The round-1 tail fixture
+named its tail `t` — the one ordering under which the wrong cut happens to be right. And the
+sentinel check still accepted `real.txt`, whose stem names an unrelated `real.md`. Found while
+fixing: the r1 `--serving` refusal hand-listed `\n`/`\r` while `parse_steps` reads with
+`splitlines()` — a vertical tab still smuggled in a counted step, the exact shape `cmd_pause`'s
+own r2 High recorded in the same file. All three fixed; 3 mutations, each reverting the r1 code,
+each killed by the case it names.

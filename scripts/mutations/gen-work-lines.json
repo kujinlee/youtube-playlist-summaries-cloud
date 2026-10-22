@@ -154,5 +154,18 @@
     "expect": [
       "the count of lines that still owe something is the REAL count"
     ]
+  },
+  {
+    "name": "the cycle cut takes the first unplaced node OVERALL, so a tail below a cycle is cut and one line becomes three",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        cut = min(walk[walk.index(n):])",
+        "        cut = walk[0]"
+      ]
+    ],
+    "expect": [
+      "⛔ a cycle is cut ON the cycle: tails sorting before it stay attached, ONE line results"
+    ]
   }
 ]
