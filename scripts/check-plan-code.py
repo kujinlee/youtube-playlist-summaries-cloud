@@ -1632,7 +1632,9 @@ EXPECTED_MUTATIONS = {
     # breadth, and the record running inside it), the branch taken from the SENTINEL rather than
     # from git at clear time (asked, ignored, stripped at the clear site), an undecodable branch
     # name, and the lookup answering None. Two r1 anchors re-anchored onto the boundary's call.
-    "scripts/check-plan-progress.py": 29,
+    # ⟳ 2026-10-22, owner's option A (the parent holds within ONE session): 29 -> 31 — the
+    # session copied into the record, and a failed new record removing the old one.
+    "scripts/check-plan-progress.py": 31,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
@@ -1649,7 +1651,10 @@ EXPECTED_MUTATIONS = {
     # (omitted, looked up as None, stripped at --finish), both optional steps inside the boundary,
     # the open question asked directly (gh's 30-result default), the 8s timeout, and the escaped
     # Line words. Four anchors re-anchored onto the rewritten `gh_pr_line_state` and `cmd_finish`.
-    "scripts/begin-plan.py": 49,
+    # ⟳ 2026-10-22, owner's option A: 49 -> 53 — a different session starts a line (no `gh`),
+    # an unknown session records no marker, the fingerprint check, and `session:` at arm time.
+    # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
+    "scripts/begin-plan.py": 53,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5581,7 +5586,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1770)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1776)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

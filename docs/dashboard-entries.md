@@ -16906,6 +16906,11 @@ Four follow-ups you asked for on the same day, all now in:
   written down, and the next task asks GitHub about its pull request: still open, the line
   continues; merged or closed, a new line starts; no pull request at all, or GitHub cannot be
   asked, and no parent is recorded and the reason is printed — it never guesses.
+  **A new session starts a new line** (your decision, the same day): the finished task is the
+  parent only for tasks started in the same Claude session it finished in. Without that, a pull
+  request waiting days for your merge made every unrelated task started meanwhile look like its
+  child. Not yet measured: whether `/clear` or `/compact` counts as a new session — if it does, a
+  task continued after one shows as a new line rather than a wrong one.
 - **The page is always current.** Every time a task is started, ticked, paused, resumed or
   finished, the page is rebuilt. A rebuild that fails prints one line and never stops the command.
 - **The page has a Refresh button**, for a task file edited by hand.
@@ -17035,5 +17040,16 @@ git repository on a named branch** (Claude F3), so the branch wiring is exercise
 begin-plan 104 → 112, check-plan-progress 54 → 60. Mutations +15 (begin-plan 41 → 49,
 check-plan-progress 22 → 29; declared sum 1755 → 1770); a scoped run over both manifests killed
 78/78, each by the case it names. Six anchors orphaned by this change were re-anchored.
-⚠ NOT folded, waiting on the owner: when a `.claude/last-plan` record stops counting (Claude F1/F4,
-Codex 1).
+⟳ **The record's lifecycle — the owner's option A, 2026-10-22: a new session starts a new
+line** (Claude F1/F4, Codex 1). `check-plan-progress.current_session` reads
+`CLAUDE_CODE_BRIDGE_SESSION_ID` (injectable `environ`); `begin-plan` writes `session:` into the
+sentinel at arm time (omitted when unknown) and `record_last_plan` copies it, plus `sha256:` of the
+plan file's bytes, into `.claude/last-plan`. `_parent_from_last_finished`: no record → `-`; current
+session unknown or record without `session:` → NO marker + stderr; a different session → `-`
+**without calling `gh`**; same session → the plan must still be a plan file AND its fingerprint
+must match (else NO marker + "has changed since it finished"), then the unchanged PR logic. A NEW
+record whose write fails deletes any existing record (inside the boundary), so an older plan never
+stands in for it. ⚠ UNVERIFIED and stated in the docstring: whether the session id survives
+`/clear` or `/compact`. Cases: begin-plan 112 → 118, check-plan-progress 60 → 63. Mutations +6
+(begin-plan 49 → 53, check-plan-progress 29 → 31; declared sum 1770 → 1776); two anchors this
+change orphaned were re-anchored.

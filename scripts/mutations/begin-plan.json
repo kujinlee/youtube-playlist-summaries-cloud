@@ -537,8 +537,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    SENTINEL.write_text(render_sentinel(plan_rel, now, branch))",
-        "    SENTINEL.write_text(render_sentinel(plan_rel, now, None))"
+        "    if branch:\n        out += f\"branch: {branch}\\n\"\n    if session:",
+        "    if False:\n        out += f\"branch: {branch}\\n\"\n    if session:"
       ]
     ],
     "expect": [
@@ -641,6 +641,59 @@
     ],
     "expect": [
       "⛔ the root's words are ESCAPED, so Markdown in them renders literally — emphasis, a link, a backtick and HTML (r1 Codex 4)"
+    ]
+  },
+  {
+    "name": "a plan armed in a DIFFERENT session is still the old plan's child, and gh is asked (owner's option A undone)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if rec_session != now_session:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a plan armed in a DIFFERENT session STARTS a new line even while the old plan's PR is OPEN — and `gh` is not asked at all"
+    ]
+  },
+  {
+    "name": "an unknown session is compared anyway, so 'cannot tell' becomes a definite new line",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if now_session is None or not rec_session:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ when the CURRENT session id is unknown, NO parent is recorded and the stderr line says the session could not be compared",
+      "⛔ a record with NO `session:` records NO parent — the sessions cannot be compared, and that is said"
+    ]
+  },
+  {
+    "name": "the plan's fingerprint is not checked, so a file edited after it finished still stands as the finished parent (r1 Codex 1)",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if rec.get(\"sha256\", \"\") != fp_now:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a recorded plan EDITED after it finished is no longer the plan that finished: NO parent, and the stderr line says it has changed"
+    ]
+  },
+  {
+    "name": "arming writes no session into the sentinel, so no record can be compared by session",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "render_sentinel(plan_rel, now, branch, session))",
+        "render_sentinel(plan_rel, now, branch, None))"
+      ]
+    ],
+    "expect": [
+      "⭐ arming WRITES the session it was armed in into the sentinel (owner's option A)"
     ]
   }
 ]

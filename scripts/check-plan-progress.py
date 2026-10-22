@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 60 cases
+    python3 scripts/check-plan-progress.py --self-test  # 63 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import importlib.util
 import os
 import re
@@ -346,13 +347,53 @@ def decide(
 
 # ── the work line: what a FINISHED plan leaves behind, and the page it feeds ─────────────────
 
-def render_last_plan(plan_rel: str, branch: str | None, when: str) -> str:
+def render_last_plan(plan_rel: str, branch: str | None, when: str, *,
+                     session: str | None = None, fingerprint: str | None = None) -> str:
     """The `.claude/last-plan` body. PURE. `branch:` is OMITTED, never blank, when unknown —
-    the reader must see "not recorded", not an empty branch name it would hand to `gh`."""
+    the reader must see "not recorded", not an empty branch name it would hand to `gh`.
+    `session:` (the Claude session the plan was ARMED in) and `sha256:` (the plan file's bytes
+    when it finished) are omitted the same way; the reader treats either absence as "cannot
+    compare", never as a match."""
     out = f"plan: {plan_rel}\n"
     if branch:
         out += f"branch: {branch}\n"
+    if session:
+        out += f"session: {session}\n"
+    if fingerprint:
+        out += f"sha256: {fingerprint}\n"
     return out + f"finished: {when}\n"
+
+
+SESSION_ENV = "CLAUDE_CODE_BRIDGE_SESSION_ID"
+
+
+def current_session(environ=None) -> str | None:
+    """The current Claude session's id, from `CLAUDE_CODE_BRIDGE_SESSION_ID`, or None.
+
+    ⭐ THE OWNER'S DECISION, 2026-10-22 (option A): a finished plan is the parent only for plans
+    armed in the SAME session it finished in; a new session starts a new line. This is the ONE
+    reader of that identity — `begin-plan` writes it into the sentinel at arm time and compares
+    it on read. `environ` is injectable; None means `os.environ`.
+    ⚠ UNVERIFIED: whether this id stays the same across `/clear` or `/compact` has NOT been
+    measured. If it changes, a continuation after either shows as a NEW line — wrong in the
+    direction of absent lineage, never invented lineage."""
+    env = os.environ if environ is None else environ
+    sid = (env.get(SESSION_ENV) or "").strip()
+    return sid or None
+
+
+def plan_fingerprint(path: Path) -> str:
+    """sha256 of the plan file's BYTES. Raises OSError when it cannot be read — callers decide.
+
+    ⟳ r1 Codex 1: a record named a PATH, so a plan file replaced after it finished (measured:
+    re-armed as an unfinished plan) still stood as the finished parent. The fingerprint is what
+    lets the reader tell "the plan that finished" from "a file now at that path"."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_record(dest: Path, body: str) -> None:
+    """The one write of `.claude/last-plan` — a seam so the self-test can make it FAIL."""
+    dest.write_text(body)
 
 
 def current_branch(root: Path) -> str | None:
@@ -415,6 +456,10 @@ def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path) -> st
     plan armed on `feat/a`, cleared after a checkout, was recorded against `feat/b`, so its
     lineage followed some OTHER branch's PR. A sentinel with no `branch:` (older than the field,
     or armed where the branch was unknown) records none, and the reader says so.
+    ⭐ `session:` IS COPIED THE SAME WAY (owner's option A, 2026-10-22): the session the plan was
+    armed in, so `begin-plan` can make the parent apply only within that session. And `sha256:`
+    fingerprints the plan file's bytes as they finished, so a file replaced at the same path
+    afterwards is not taken for it (r1 Codex 1).
     ⚠ A failed WRITE is reported on stderr and returns None, and every caller ALSO runs this
     inside `run_optional`: a traceback in the Stop hook is a fail-closed BLOCK, and a record that
     could not be written must not trap the session that just finished its plan.
@@ -423,11 +468,13 @@ def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path) -> st
         return None
     fields = parse_sentinel(sentinel_text)
     branch = fields.get("branch") or None
+    session = fields.get("session") or None
     rel = fields.get("plan", "")
     if not rel:
         return None
     try:
-        text = (root / rel).read_text()
+        raw = (root / rel).read_bytes()
+        text = raw.decode()
     except (OSError, UnicodeDecodeError):
         return None
     done, total = count_steps(text)
@@ -435,10 +482,20 @@ def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path) -> st
         return None
     when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
     try:
-        dest.write_text(render_last_plan(rel, branch, when))
-    except OSError as exc:
-        print(f"⚠ the finished plan {rel} was NOT recorded as the last plan ({exc}); the next "
-              f"plan armed will record no parent from it.", file=sys.stderr)
+        _write_record(dest, render_last_plan(rel, branch, when, session=session,
+                                             fingerprint=hashlib.sha256(raw).hexdigest()))
+    except Exception as exc:                       # noqa: BLE001 - reported, and the old record goes
+        # ⛔ A FAILED NEW RECORD MUST NOT LEAVE AN OLD ONE STANDING IN FOR IT (r1 Codex 1,
+        # measured: a `PermissionError` on the new write, and the next lookup returned the OLDER
+        # plan). Best effort: if even the delete fails, the reader's fingerprint and session
+        # checks are what remain.
+        try:
+            dest.unlink(missing_ok=True)
+        except OSError:
+            pass
+        print(f"⚠ the finished plan {rel} was NOT recorded as the last plan "
+              f"({type(exc).__name__}: {exc}); any older record was removed, so the next plan "
+              f"armed records no parent from either.".replace("\n", " "), file=sys.stderr)
         return None
     return rel
 
@@ -583,7 +640,7 @@ def run_status() -> int:
 def _self_test() -> int:
     # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
     # declared here because Python refuses a `global` after the name's first use.
-    global record_last_plan, current_branch
+    global record_last_plan, current_branch, _write_record
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -814,6 +871,46 @@ def _self_test() -> int:
              "naming it a parent would continue work that was dropped",
              (_attempt(lambda: record_last_plan("plan: .claude/plans/half.md\nbranch: feat/one\n",
                                                 root=_r, dest=_d3)), _d3.exists()) == (None, False))
+        # ⭐ OWNER'S OPTION A: the SESSION is copied from the sentinel, like the branch, and the
+        # plan's BYTES are fingerprinted (r1 Codex 1). Two sentinels, two distinct sessions.
+        _d4, _d5 = _r / "rec4", _r / "rec5"
+        _attempt(lambda: record_last_plan("plan: .claude/plans/fin.md\nsession: cpp-sess-1\n",
+                                          root=_r, dest=_d4))
+        _attempt(lambda: record_last_plan("plan: .claude/plans/other.md\nsession: cpp-sess-2\n",
+                                          root=_r, dest=_d5))
+        _f4 = parse_sentinel(_d4.read_text()) if _d4.exists() else {}
+        _f5 = parse_sentinel(_d5.read_text()) if _d5.exists() else {}
+        case("⭐ the record COPIES the sentinel's session and fingerprints the plan's bytes — two "
+             "plans, two sessions",
+             (_f4.get("session"), _f5.get("session"), "session" in _f1,
+              _f4.get("sha256") == _attempt(lambda: plan_fingerprint(_r / ".claude/plans/fin.md")),
+              _f5.get("sha256") == _attempt(lambda: plan_fingerprint(_r / ".claude/plans/other.md")))
+             == ("cpp-sess-1", "cpp-sess-2", False, True, True))
+        case("current_session reads CLAUDE_CODE_BRIDGE_SESSION_ID, and an unset or blank one is "
+             "UNKNOWN (None), never a guess",
+             [_attempt(lambda: current_session({"CLAUDE_CODE_BRIDGE_SESSION_ID": "cpp-sess-3"})),
+              _attempt(lambda: current_session({})),
+              _attempt(lambda: current_session({"CLAUDE_CODE_BRIDGE_SESSION_ID": "  "}))]
+             == ["cpp-sess-3", None, None])
+        # ⛔ r1 Codex 1: a NEW record that cannot be written must not leave an OLDER one standing
+        # in for it — the measured failure was a PermissionError and the old plan returned.
+        _real_write = _write_record
+
+        def _deny(_dest, _body):
+            raise PermissionError("injected by the self-test")
+        _write_record = _deny
+        _e6 = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(_e6):
+                _got6 = _attempt(lambda: record_last_plan(
+                    "plan: .claude/plans/other.md\nsession: cpp-sess-2\n", root=_r, dest=_d4))
+        finally:
+            _write_record = _real_write
+        case("⛔ a NEW record that FAILS to write removes the OLD one — an older plan can never "
+             "stand in for the one that just finished — and one stderr line says so",
+             (_got6, _d4.exists(),
+              len([ln for ln in _e6.getvalue().splitlines() if "NOT recorded" in ln]))
+             == (None, False, 1))
         case("...and no sentinel, or one naming no plan, records nothing",
              (_attempt(lambda: record_last_plan(None, root=_r, dest=_d3)),
               _attempt(lambda: record_last_plan("armed: x\n", root=_r, dest=_d3)),
@@ -914,10 +1011,12 @@ def _self_test() -> int:
         case("refresh_work_lines is SILENT on success and returns ONE named line on failure",
              (_ok, _ok_out.is_file(), isinstance(_bad, str) and "\n" not in _bad
               and "CANNOT RUN" in _bad) == (None, True, True))
-        case("render_last_plan carries plan, branch and time as given — two distinct inputs",
-             [parse_sentinel(render_last_plan(".claude/plans/a.md", "feat/a", "t1")),
+        case("render_last_plan carries plan, branch, session, fingerprint and time as given — two distinct inputs",
+             [parse_sentinel(render_last_plan(".claude/plans/a.md", "feat/a", "t1",
+                                              session="cpp-sess-a", fingerprint="f00d")),
               parse_sentinel(render_last_plan(".claude/plans/b.md", None, "t2"))]
-             == [{"plan": ".claude/plans/a.md", "branch": "feat/a", "finished": "t1"},
+             == [{"plan": ".claude/plans/a.md", "branch": "feat/a", "session": "cpp-sess-a",
+                  "sha256": "f00d", "finished": "t1"},
                  {"plan": ".claude/plans/b.md", "finished": "t2"}])
         _bare = tempfile.mkdtemp()                 # NOT inside `_r`, which is a repository now
         case("current_branch outside a repository is None, not a guess",

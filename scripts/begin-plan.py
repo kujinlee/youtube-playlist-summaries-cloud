@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 112 cases
+    scripts/begin-plan.py --self-test  # 118 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -69,6 +69,7 @@ import datetime as _dt
 import importlib.util
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -113,7 +114,8 @@ def _load_plan_progress():
     # whole job is to say WHY, and it can only do that for names it knows it borrows.
     missing = [n for n in ("count_steps", "next_pending_task", "parse_sentinel", "strip_field",
                            "decide", "WARN", "record_last_plan", "current_branch",
-                           "refresh_work_lines", "run_optional", "make_test_repo", "test_git")
+                           "refresh_work_lines", "run_optional", "make_test_repo", "test_git",
+                           "current_session", "plan_fingerprint", "SESSION_ENV")
                if not hasattr(mod, n)]
     if missing:
         raise ImportError(
@@ -374,15 +376,19 @@ def tick(plan_text: str, index: int) -> str:
     return "".join(out)
 
 
-def render_sentinel(plan_rel: str, now: str, branch: str | None = None) -> str:
+def render_sentinel(plan_rel: str, now: str, branch: str | None = None,
+                    session: str | None = None) -> str:
     """The `.claude/executing-plan` body. `plan:` is the only key the guard reads.
 
     `branch:` is the branch checked out WHEN THE PLAN WAS ARMED — what `record_last_plan` records
     at the clear (⟳ r1 Claude F2: reading it at clear time recorded whatever the coordinator had
-    checked out by the end of that turn). OMITTED, never blank, when unknown."""
+    checked out by the end of that turn). `session:` is the Claude session it was armed in
+    (owner's option A, 2026-10-22). Each is OMITTED, never blank, when unknown."""
     out = f"plan: {plan_rel}\narmed: {now}\nby: scripts/begin-plan.py\n"
     if branch:
         out += f"branch: {branch}\n"
+    if session:
+        out += f"session: {session}\n"
     return out
 
 
@@ -414,7 +420,9 @@ def _arm(plan_rel: str) -> None:
     # ⛔ OPTIONAL: an arm must never fail over a branch lookup (r1 Codex 3). None -> no field.
     branch = pp.run_optional("looking up the branch to record on the sentinel",
                              lambda: pp.current_branch(ROOT))
-    SENTINEL.write_text(render_sentinel(plan_rel, now, branch))
+    session = pp.run_optional("reading the session id to record on the sentinel",
+                              pp.current_session)
+    SENTINEL.write_text(render_sentinel(plan_rel, now, branch, session))
     STATE.unlink(missing_ok=True)
 
 
@@ -530,8 +538,20 @@ PR_LINE_STATE = gh_pr_line_state   # ⚠ REPLACED by the self-test, so no case t
 
 
 def _parent_from_last_finished() -> str | None:
-    """With NOTHING armed: the last finished plan while its PR is OPEN, `STARTED` once the PR has
-    ended, and NO marker when there is no PR or no answer.
+    """With NOTHING armed: the last finished plan while its PR is OPEN — IN THE SAME SESSION —
+    `STARTED` once the PR has ended or the session is a new one, and NO marker when there is no
+    PR, no answer, no session to compare, or the recorded plan has changed since it finished.
+
+    ⭐ OWNER'S DECISION, 2026-10-22 (option A): A FINISHED PLAN IS THE PARENT ONLY FOR PLANS ARMED
+    IN THE SAME CLAUDE SESSION IT FINISHED IN; A NEW SESSION STARTS A NEW LINE. ⟳ r1 Claude F1:
+    "some PR for the recorded branch is open" could not tell a side job branched off the plan
+    from unrelated work started while its PR waited days for the merge gate, so every later plan
+    became its child. The session is checked FIRST, and a different session never asks `gh`.
+    ⚠ UNVERIFIED: whether `CLAUDE_CODE_BRIDGE_SESSION_ID` stays the same across `/clear` or
+    `/compact` has NOT been measured, so a continuation after either may show as a NEW line.
+    ⛔ A RECORD IS CHECKED AGAINST THE FILE (r1 Codex 1): its `sha256:` must equal the plan
+    file's bytes now, else the recorded plan has changed since it finished and NO marker is
+    recorded. A record with no `sha256:` cannot be confirmed, and is treated the same way.
 
     ⭐ OPTION A (the owner's decision, 2026-10-22) — "a plan stays the PARENT until its PR
     merges" — IMPLEMENTED AS "WHILE AN OPEN PR EXISTS FOR ITS BRANCH". Measured: `work-lines-page`
@@ -552,8 +572,28 @@ def _parent_from_last_finished() -> str | None:
         print(f"⚠ no parent recorded: {LAST_PLAN.name} could not be read ({exc}).",
               file=sys.stderr)
         return None
+    now_session, rec_session = pp.current_session(), rec.get("session", "")
+    if now_session is None or not rec_session:
+        print(f"⚠ no parent recorded: the session could not be compared — "
+              f"{'the current session id is unknown (' + pp.SESSION_ENV + ' is not set)' if now_session is None else 'the last finished plan records no session'}"
+              f", so whether this continues it in the same session cannot be told.",
+              file=sys.stderr)
+        return None
+    if rec_session != now_session:
+        return STARTED   # a new session starts a new line — and `gh` is never asked
     slug = _plan_slug(rec.get("plan", ""), "the last finished plan")
     if slug is None:
+        return None
+    try:
+        fp_now = pp.plan_fingerprint(ROOT / rec.get("plan", ""))
+    except OSError as exc:
+        print(f"⚠ no parent recorded: `{slug}` could not be fingerprinted ({exc}).",
+              file=sys.stderr)
+        return None
+    if rec.get("sha256", "") != fp_now:
+        print(f"⚠ no parent recorded: the recorded plan `{slug}` has changed since it finished "
+              f"(its fingerprint differs), so it is no longer the plan that finished.",
+              file=sys.stderr)
         return None
     branch = rec.get("branch", "")
     if not branch:
@@ -1084,6 +1124,11 @@ def _self_test() -> int:
         # lookup runs. Every case used to run in a non-repo, where it is None — and three
         # mutations that switched Option A off survived. A name unlike check-plan-progress's.
         _git_err = pp.make_test_repo(ROOT, "bp/armed-here")
+        # ⛔ THE SESSION IS THE SUITE'S, NEVER THE CALLER'S: this suite runs inside a real Claude
+        # session whose id is in the environment, and a result that depended on it would differ
+        # by who ran it. Set here, restored in `finally`.
+        _sess_saved = os.environ.get(pp.SESSION_ENV)
+        os.environ[pp.SESSION_ENV] = "sess-alpha"
         try:
             case("the test root IS a git repository on a named branch (else every branch case "
                  "below is NOT RUN)", _git_err is None)
@@ -1427,6 +1472,8 @@ def _self_test() -> int:
 
             case("⭐ arming WRITES the branch it was armed on into the sentinel (r1 Claude F2)",
                  pp.parse_sentinel(SENTINEL.read_text()).get("branch") == "bp/armed-here")
+            case("⭐ arming WRITES the session it was armed in into the sentinel (owner's option A)",
+                 pp.parse_sentinel(SENTINEL.read_text()).get("session") == "sess-alpha")
             # ⛔ THE BRANCH IS FIXED AT ARM TIME. Switch branch, then finish: the record must name
             # the branch the plan RAN on, not the one checked out at the clear.
             _co_err = pp.test_git(ROOT, "checkout", "-q", "-b", "bp/switched-before-finish")
@@ -1446,7 +1493,6 @@ def _self_test() -> int:
                  LAST_PLAN.is_file()
                  and pp.parse_sentinel(LAST_PLAN.read_text()).get("plan")
                  == ".claude/plans/wiring.md")
-            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "feat/wiring", "t"))
             _asked: list[str] = []
 
             def _line_state_in(prs):
@@ -1454,6 +1500,80 @@ def _self_test() -> int:
                     _asked.append(b)
                     return gh_pr_line_state(b, run=_gh_world(prs))
                 return ask
+
+            def _record(branch, session="sess-alpha", plan="wiring"):
+                """A record as `record_last_plan` writes it: this session, the plan's REAL bytes."""
+                rel = f".claude/plans/{plan}.md"
+                LAST_PLAN.write_text(pp.render_last_plan(
+                    rel, branch, "t", session=session,
+                    fingerprint=pp.plan_fingerprint(ROOT / rel)))
+
+            # ── owner's option A (2026-10-22): the parent holds only WITHIN ONE SESSION ─────────
+            # ⭐ The REAL record --finish wrote above, read back in the SAME session.
+            _real_rec = pp.parse_sentinel(LAST_PLAN.read_text())
+            PR_LINE_STATE = _line_state_in([{"state": "OPEN"}])
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_begin("same-session", ["One|d1|w1"])
+            case("⭐ a plan finished in THIS session whose PR is OPEN is the parent — the record "
+                 "carries the session it finished in and the plan's fingerprint",
+                 ("<!-- parent: wiring -->" in (PLAN_DIR / "same-session.md").read_text(),
+                  _real_rec.get("session"),
+                  _real_rec.get("sha256") == pp.plan_fingerprint(PLAN_DIR / "wiring.md"))
+                 == (True, "sess-alpha", True))
+            cmd_finish()
+            (PLAN_DIR / "same-session.md").unlink()
+            # ⛔ A DIFFERENT SESSION starts a new line, and GitHub is never asked.
+            _record("feat/wiring")
+            os.environ[pp.SESSION_ENV] = "sess-beta"
+            _asked.clear()
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_begin("new-session", ["One|d1|w1"])
+            os.environ[pp.SESSION_ENV] = "sess-alpha"
+            case("⛔ a plan armed in a DIFFERENT session STARTS a new line even while the old "
+                 "plan's PR is OPEN — and `gh` is not asked at all",
+                 ("<!-- parent: - -->" in (PLAN_DIR / "new-session.md").read_text(), _asked)
+                 == (True, []))
+            cmd_finish()
+            (PLAN_DIR / "new-session.md").unlink()
+            # ⛔ The CURRENT session unknown -> no marker, said.
+            os.environ.pop(pp.SESSION_ENV)
+            _err_sx = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err_sx):
+                cmd_begin("no-session-now", ["One|d1|w1"])
+            os.environ[pp.SESSION_ENV] = "sess-alpha"
+            case("⛔ when the CURRENT session id is unknown, NO parent is recorded and the stderr "
+                 "line says the session could not be compared",
+                 ("parent:" in (PLAN_DIR / "no-session-now.md").read_text(),
+                  "session could not be compared" in _err_sx.getvalue()) == (False, True))
+            cmd_finish()
+            (PLAN_DIR / "no-session-now.md").unlink()
+            # ⛔ A record with NO `session:` -> no marker, said.
+            _record("feat/wiring", session=None)
+            _err_sr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err_sr):
+                cmd_begin("no-session-rec", ["One|d1|w1"])
+            case("⛔ a record with NO `session:` records NO parent — the sessions cannot be "
+                 "compared, and that is said",
+                 ("parent:" in (PLAN_DIR / "no-session-rec.md").read_text(),
+                  "session could not be compared" in _err_sr.getvalue()) == (False, True))
+            cmd_finish()
+            (PLAN_DIR / "no-session-rec.md").unlink()
+            # ⛔ r1 Codex 1: the plan file EDITED after it finished -> no marker, said.
+            _record("feat/wiring")
+            _wiring_bytes = (PLAN_DIR / "wiring.md").read_bytes()
+            (PLAN_DIR / "wiring.md").write_bytes(_wiring_bytes + b"\n- [ ] added after it finished\n")
+            _err_fp = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err_fp):
+                cmd_begin("after-edit", ["One|d1|w1"])
+            (PLAN_DIR / "wiring.md").write_bytes(_wiring_bytes)
+            case("⛔ a recorded plan EDITED after it finished is no longer the plan that finished: "
+                 "NO parent, and the stderr line says it has changed",
+                 ("parent:" in (PLAN_DIR / "after-edit.md").read_text(),
+                  "has changed since it finished" in _err_fp.getvalue()) == (False, True))
+            cmd_finish()
+            (PLAN_DIR / "after-edit.md").unlink()
+
+            _record("feat/wiring")
             PR_LINE_STATE = _line_state_in([{"state": "OPEN"}])
             _out = io.StringIO()
             with contextlib.redirect_stdout(_out):
@@ -1482,7 +1602,7 @@ def _self_test() -> int:
                  "not the old plan's child",
                  "<!-- parent: - -->" in (PLAN_DIR / "closed-only.md").read_text())
             cmd_finish()
-            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "master", "t"))
+            _record("master")
             PR_LINE_STATE = _line_state_in([])
             _err_n = io.StringIO()
             with contextlib.redirect_stderr(_err_n):
@@ -1492,7 +1612,7 @@ def _self_test() -> int:
                  ("parent:" in (PLAN_DIR / "no-pr.md").read_text(),
                   "no PR exists for branch `master`" in _err_n.getvalue()) == (False, True))
             cmd_finish()
-            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", "feat/wiring", "t"))
+            _record("feat/wiring")
             PR_LINE_STATE = _line_state_in([{"number": 3}])
             _err_s = io.StringIO()
             with contextlib.redirect_stderr(_err_s):
@@ -1511,7 +1631,7 @@ def _self_test() -> int:
                   "could not be decided" in _err_u.getvalue(),
                   "`gh` is not installed" in _err_u.getvalue()) == (False, True, True))
             cmd_finish()
-            LAST_PLAN.write_text(pp.render_last_plan(".claude/plans/wiring.md", None, "t"))
+            _record(None)
             PR_LINE_STATE = _line_state_in([{"state": "OPEN"}])
             _err_b = io.StringIO()
             with contextlib.redirect_stderr(_err_b):
@@ -1591,6 +1711,10 @@ def _self_test() -> int:
         finally:
             ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE = real
             _load_plan_progress = _real_loader
+            if _sess_saved is None:
+                os.environ.pop(pp.SESSION_ENV, None)
+            else:
+                os.environ[pp.SESSION_ENV] = _sess_saved
 
     # ── the line-state check itself, through an INJECTED runner: never the network ──────────
     class _R:

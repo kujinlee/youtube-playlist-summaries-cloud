@@ -333,8 +333,8 @@
     "file": "scripts/check-plan-progress.py",
     "edits": [
       [
-        "    branch = fields.get(\"branch\") or None\n    rel = ",
-        "    branch = None\n    rel = "
+        "    branch = fields.get(\"branch\") or None\n    session = ",
+        "    branch = None\n    session = "
       ]
     ],
     "expect": [
@@ -379,6 +379,32 @@
     ],
     "expect": [
       "current_branch reads the checked-out branch of a real repository"
+    ]
+  },
+  {
+    "name": "the record drops the sentinel's session, so every later plan reads 'cannot compare'",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    session = fields.get(\"session\") or None",
+        "    session = None"
+      ]
+    ],
+    "expect": [
+      "⭐ the record COPIES the sentinel's session and fingerprints the plan's bytes — two plans, two sessions"
+    ]
+  },
+  {
+    "name": "a failed new record leaves the OLD record standing in for the plan that just finished (r1 Codex 1)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            dest.unlink(missing_ok=True)\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a NEW record that FAILS to write removes the OLD one — an older plan can never stand in for the one that just finished — and one stderr line says so"
     ]
   }
 ]
