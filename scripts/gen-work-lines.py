@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 30 cases
+    python3 scripts/gen-work-lines.py --self-test  # 35 cases
 
 WHY THIS EXISTS
 ---------------
@@ -29,11 +29,14 @@ forgot to tick it closed, which the Stop guard caught. So an unticked plan is re
 **"not ticked closed"**, with its own last-touched date, and the reader decides. Asserting
 "abandoned" would be inventing a fact from an absence.
 
-⚠ **121 PLANS PREDATE THE `parent:` FIELD AND ARE NOT GUESSED AT.** They render as roots with
-*"no parent recorded"* — which is a different claim from *"this started a line"*, and the
-difference is the whole reason the field was added. Nothing back-fills them from mtime order: two
-plans touched minutes apart need not be parent and child, and a plausible lineage is worse than an
-absent one because it will be believed.
+⚠ **THREE STATES, AND THE PAGE NEVER COLLAPSES THEM.** `parent: <slug>` is a branch;
+`parent: -` is a plan armed with nothing else armed, so it STARTED a line; NO marker means nothing
+was recorded — the 121 plans written before the field, or a sentinel `begin-plan` could not
+resolve. Only the first two are claims. The third renders as *"no parent recorded"* and says
+nothing about why or when, because the absence of a marker establishes neither (r1 Codex 5:
+the first version said "predates the work-line fields", which a missing marker cannot know).
+Nothing back-fills from mtime order: two plans touched minutes apart need not be parent and
+child, and a plausible lineage is worse than an absent one because it will be believed.
 """
 from __future__ import annotations
 
@@ -48,6 +51,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLAN_DIR = ROOT / ".claude" / "plans"
 DEFAULT_OUT = pathlib.Path.home() / "explainers" / "work-lines.html"
 
+STARTED = "-"   # the `parent:` value `begin-plan` writes when nothing else was armed
 PARENT = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
 SERVING = re.compile(r"^<!--\s*serving:\s*(.+?)\s*-->\s*$", re.M)
 TICKED = re.compile(r"^\s*- \[x\]", re.M)
@@ -64,23 +68,29 @@ def parse_plan(name: str, text: str, touched: str) -> dict:
     p = PARENT.search(text)
     s = SERVING.search(text)
     x, o = len(TICKED.findall(text)), len(UNTICKED.findall(text))
-    return {"slug": name, "parent": p.group(1) if p else None,
+    par = p.group(1) if p else None
+    return {"slug": name, "parent": None if par == STARTED else par,
+            "started": par == STARTED,
             "serving": s.group(1) if s else None,
             "ticked": x, "total": x + o, "touched": touched,
             "done": x + o > 0 and o == 0, "empty": x + o == 0}
 
 
 def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
-    """PURE. (roots, orphan-parent slugs). Each record gains `children`, newest line first.
+    """PURE. (roots, orphan-parent slugs). Each record gains `children`; the result is a TREE.
 
     ⛔ A PARENT THAT NAMES A PLAN THAT DOES NOT EXIST IS REPORTED, NOT DROPPED. A dangling link is
     how a work line silently loses its head — the child would quietly become a root and the page
     would show a new line that is really the middle of an old one, which is precisely the
     confusion this page exists to remove.
 
-    ⛔ A CYCLE CANNOT HANG THIS. Arming A, then B, then re-arming A gives A a parent of B and B a
-    parent of A, and a naive walk recurses forever. Membership is tracked, and a node already
-    placed is not placed again.
+    ⛔ A CYCLE IS BROKEN BY DETACHING AN EDGE, AND THE RESULT IS A TREE — so every later walk
+    (`line_state`, `_render_node`) can be naive. ⟳ r1 (both halves, Blocking): the first version
+    filtered already-SEEN children during a walk FROM THE ROOTS — but a cycle is never reachable
+    from a root, so that filter could never fire. Its members were promoted to roots with their
+    circular children still attached, and the first re-arm hung the generator. `begin-plan` no
+    longer writes a self-parent or rewrites lineage on re-arm, so a cycle now takes a hand-edited
+    file; it is still broken here, because a page that hangs shows nothing at all.
     """
     by_slug = {p["slug"]: dict(p, children=[]) for p in plans}
     orphans, roots = [], []
@@ -94,20 +104,33 @@ def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
             roots.append(p)
         else:
             by_slug[par]["children"].append(p)
-    # cycle break: anything reachable from a root is placed; the rest surface as roots
-    seen, stack = set(), list(roots)
-    while stack:
-        n = stack.pop()
-        if n["slug"] in seen:
-            n["children"] = [c for c in n["children"] if c["slug"] not in seen]
-            continue
-        seen.add(n["slug"])
-        stack.extend(n["children"])
-    for p in by_slug.values():
-        if p["slug"] not in seen:
-            p["cycle"] = True  # type: ignore[assignment]
-            roots.append(p)
-            seen.add(p["slug"])
+    seen: set[str] = set()
+
+    def place(start: dict) -> None:
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            # Never true once the cuts below are made. It is here so that a broken cut FAILS the
+            # tree cases by name instead of hanging the suite — measured: without it, removing the
+            # cut hung the self-test and named nothing.
+            if n["slug"] in seen:
+                continue
+            seen.add(n["slug"])
+            stack.extend(n["children"])
+
+    for r in roots:
+        place(r)
+    # Whatever is unplaced sits on a cycle (or hangs below one). Cut ONE edge — into the
+    # alphabetically first unplaced node — make that node a root, place its subtree, repeat.
+    # Each pass places at least that node, so this terminates.
+    while len(seen) < len(by_slug):
+        cut = min(s for s in by_slug if s not in seen)
+        node = by_slug[cut]
+        par = by_slug[node["parent"]]
+        par["children"] = [c for c in par["children"] if c["slug"] != cut]
+        node["cycle"] = True  # type: ignore[assignment]
+        roots.append(node)
+        place(node)
     return roots, sorted(set(orphans))
 
 
@@ -165,9 +188,16 @@ def render(roots: list[dict], orphans: list[str], generated: str) -> str:
         elif r.get("orphan_parent"):
             parts.append(f'<p class="serving absent">continues <code>'
                          f'{esc(r["orphan_parent"])}</code>, which no longer exists</p>')
+        elif r.get("cycle"):
+            parts.append(f'<p class="serving absent">⛔ its recorded parent <code>'
+                         f'{esc(r["parent"])}</code> leads back to itself — the link was cut '
+                         f'here to show the line</p>')
+        elif r.get("started"):
+            parts.append('<p class="serving absent">started this line; no objective was '
+                         'recorded</p>')
         else:
-            parts.append('<p class="serving absent">no parent recorded, and no stated objective '
-                         '— this plan predates the work-line fields</p>')
+            parts.append('<p class="serving absent">no parent recorded, and no stated '
+                         'objective</p>')
         parts.append('<ul class="tree">')
         _render_node(r, parts)
         parts.append('</ul></section>')
@@ -188,6 +218,7 @@ def _render_node(n: dict, parts: list[str]) -> None:
                  f'<span class="when">{esc(n["touched"])}</span>{cyc}')
     if n["children"]:
         parts.append('<ul>')
+        # oldest first: the order the branches were taken in
         for c in sorted(n["children"], key=lambda k: k["touched"]):
             _render_node(c, parts)
         parts.append('</ul>')
@@ -309,6 +340,14 @@ def _self_test() -> int:
          [parse_plan("a", "# a", "2026-10-22")[k] for k in ("done", "empty")], [False, True])
     case("a plan with no parent is absent, not empty-string",
          parse_plan("a", "- [x] one", "2026-10-22")["parent"], None)
+    # ⛔ THREE STATES: a branch, a line STARTED (`-`), and nothing recorded. r1 Claude M2: with
+    # only two, a root created today was indistinguishable from a plan written before the field.
+    case("⭐ `parent: -` is a STARTED line — no parent, and distinguishable from nothing recorded",
+         [(r["parent"], r["started"]) for r in
+          (parse_plan("a", "<!-- parent: - -->\n- [x] one", "t"),
+           parse_plan("a", "- [x] one", "t"),
+           parse_plan("a", "<!-- parent: b -->\n- [x] one", "t"))],
+         [(None, True), (None, False), ("b", False)])
     # ⛔ `name` AND `touched` PASS STRAIGHT THROUGH TO THE PAGE and every call site above used the
     # same value, so nothing could tell either from a constant — `check-fixture-variation` found
     # it. These are not bureaucracy: a record that reported someone else's slug, or everyone's
@@ -323,7 +362,7 @@ def _self_test() -> int:
 
     # ── the forest ───────────────────────────────────────────────────────────────────────────
     _mk = lambda s, par, done=True, when="2026-10-01": {
-        "slug": s, "parent": par, "serving": None, "ticked": 1 if done else 0,
+        "slug": s, "parent": par, "started": False, "serving": None, "ticked": 1 if done else 0,
         "total": 1, "touched": when, "done": done, "empty": False}
     _roots, _orph = build_forest([_mk("root", None), _mk("kid", "root")])
     case("a child hangs off its parent, not off the top",
@@ -335,12 +374,32 @@ def _self_test() -> int:
     case("⛔ a parent that does not exist is REPORTED, and the child still renders",
          (_orph2, [r["slug"] for r in _roots2], _roots2[0].get("orphan_parent")),
          (["vanished"], ["kid"], "vanished"))
-    # ⛔ A CYCLE CANNOT HANG THE WALK. Arming A, B, then re-arming A makes each the other's parent.
-    case("⛔ a two-node cycle terminates and both nodes still appear",
-         _try(lambda: sorted(r["slug"] for r in
-                             build_forest([_mk("a", "b"), _mk("b", "a")])[0])), ["a", "b"])
-    case("...and a self-parent terminates too",
-         _try(lambda: [r["slug"] for r in build_forest([_mk("a", "a")])[0]]), ["a"])
+    # ⛔ A CYCLE IS BROKEN INTO A TREE, AND THE WHOLE PAGE RENDERS. ⟳ r1, both halves, Blocking:
+    # the old cases asserted only build_forest's ROOT SLUGS, which were right while the circular
+    # children were still attached — so render() hung and every case stayed green. These walk
+    # the result the way the page does, and count each plan exactly once.
+    def _walk(roots):
+        out, stack = [], list(roots)
+        while stack and len(out) < 50:              # the bound turns a hang into a wrong count
+            n = stack.pop()
+            out.append(n["slug"])
+            stack.extend(n["children"])
+        return sorted(out)
+    _cyc2 = build_forest([_mk("a", "b"), _mk("b", "a")])[0]
+    case("⛔ a two-node cycle becomes a tree: each plan appears EXACTLY once",
+         (_walk(_cyc2), [r["slug"] for r in _cyc2], [c["slug"] for c in _cyc2[0]["children"]]),
+         (["a", "b"], ["a"], ["b"]))
+    _self = build_forest([_mk("a", "a")])[0]
+    case("...and a self-parent loses its edge to itself",
+         (_walk(_self), _self[0]["children"], _self[0].get("cycle")), (["a"], [], True))
+    case("...and a cycle hanging BELOW nothing still places its tail exactly once",
+         _walk(build_forest([_mk("a", "b"), _mk("b", "a"), _mk("t", "b")])[0]), ["a", "b", "t"])
+    # Gated on the tree check: under a broken build_forest, render() HANGS rather than fails, and
+    # a hang names no case and hides every case after it.
+    case("⛔ a cycle RENDERS, and says where the link was cut",
+         _try(lambda: "leads back to itself" in render(_self, [], "t"))
+         if _walk(_self) == ["a"] and not _self[0]["children"] else "NOT A TREE — render skipped",
+         True)
     case("an empty corpus has no roots and no orphans", build_forest([]), ([], []))
 
     # ── the line state, which is the question the reader has ─────────────────────────────────
@@ -357,8 +416,13 @@ def _self_test() -> int:
     _html = render(_r3, _o3, "2026-10-22 09:00")
     case("the stated objective is rendered in the line's own words",
          "“the ask”" in _html, True)
-    case("a plan with no recorded parent says SO, rather than claiming it started a line",
-         "no parent recorded" in render(build_forest([_mk("x", None)])[0], [], "t"), True)
+    case("a plan with no recorded parent says SO, and claims no reason why",
+         (lambda h: ("no parent recorded" in h, "predates" in h, "started this line" in h))(
+             render(build_forest([_mk("x", None)])[0], [], "t")), (True, False, False))
+    case("...while a STARTED line says it started one",
+         (lambda h: ("started this line" in h, "no parent recorded" in h))(
+             render(build_forest([{**_mk("x", None), "started": True}])[0], [], "t")),
+         (True, False))
     # ⛔ THE PAGE MUST NOT ASSERT ABANDONMENT from an unticked box.
     # ⛔ THE BADGE IS WHAT LABELS A PLAN, and it is what must never say "abandoned". The page's
     # own caveat DOES use the word — to say an unticked plan is not one — so asserting the word is
@@ -373,8 +437,13 @@ def _self_test() -> int:
          "abandoned" in _html, True)
     case("a dangling parent is named on the page, not just counted",
          "vanished" in render(*build_forest([_mk("kid", "vanished")]), "t"), True)
-    case("the count of lines that still owe something is stated",
-         "still owe something" in _html, True)
+    # ⟳ r1 Codex 6: this asserted only the PHRASE, and `{999}` in place of the count passed. Two
+    # distinct counts, so neither a constant nor the total of all lines can satisfy it.
+    case("the count of lines that still owe something is the REAL count",
+         [f"<strong>{k} still owe something</strong>" in
+          render(build_forest([_mk(f"o{i}", None, done=False) for i in range(k)]
+                              + [_mk("fin", None)])[0], [], "t") for k in (1, 3)],
+         [True, True])
     # ⛔ THE ORDER IS THE POINT OF THE PAGE, and the first version had it backwards. An open line
     # must appear ABOVE a completed one even when the completed one is newer — which is the input
     # that distinguishes the two sorts.
@@ -390,6 +459,13 @@ def _self_test() -> int:
                     [], "t")), True)
     case("a slug is HTML-escaped, so a plan name cannot inject markup",
          "&lt;b&gt;" in render(build_forest([_mk("<b>", None)])[0], [], "t"), True)
+    # r1 Claude m3: both of these were escaped and neither was checked — removing either escape
+    # survived. The raw tag must be ABSENT, not merely the escaped form present.
+    _x = render(*build_forest([{**_mk("k", "<s>gone</s>"), "serving": "<i>ask</i>"},
+                               {**_mk("j", None), "serving": "<i>ask</i>"}]), "t")
+    case("the serving line and an orphan's name are escaped too",
+         ("<i>" in _x, "&lt;i&gt;ask" in _x, "<s>" in _x, "&lt;s&gt;gone" in _x),
+         (False, True, False, True))
 
     # ── main() over a constructed world ──────────────────────────────────────────────────────
     with _tf.TemporaryDirectory() as _d:
@@ -400,8 +476,12 @@ def _self_test() -> int:
         case("main() writes the page and reports what it found",
              main(["--out", str(_out)], plan_dir=_pd), 0)
         _txt = _out.read_text()
+        # ⟳ r1 Claude M4: this compared `index("one") < index("two")`, and "one" first occurs in
+        # the inlined CSS (`list-style:none`), so inverted nesting still passed. It asserts the
+        # STRUCTURE now: `two`'s <li> sits inside a <ul> opened inside `one`'s <li>.
         case("...and the child is nested under its parent in the output",
-             _txt.index("one") < _txt.index("two"), True)
+             (bool(re.search(r"<code>one</code>[^\n]*\n<ul>\n<li>[^\n]*<code>two</code>", _txt)),
+              bool(re.search(r"<code>two</code>[^\n]*\n<ul>", _txt))), (True, False))
     with _tf.TemporaryDirectory() as _d2:
         _empty = pathlib.Path(_d2) / "plans"; _empty.mkdir()
         case("an EMPTY plan directory is CANNOT RUN (2), never an empty page",

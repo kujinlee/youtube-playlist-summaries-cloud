@@ -102,5 +102,57 @@
     "expect": [
       "a slug is HTML-escaped, so a plan name cannot inject markup"
     ]
+  },
+  {
+    "name": "a cycle's edge is never cut, so its members keep their circular children and the page hangs",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        par[\"children\"] = [c for c in par[\"children\"] if c[\"slug\"] != cut]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ a two-node cycle becomes a tree: each plan appears EXACTLY once"
+    ]
+  },
+  {
+    "name": "`parent: -` collapses into 'nothing recorded', so a line started today reads like one never recorded",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            \"started\": par == STARTED,",
+        "            \"started\": False,"
+      ]
+    ],
+    "expect": [
+      "⭐ `parent: -` is a STARTED line — no parent, and distinguishable from nothing recorded"
+    ]
+  },
+  {
+    "name": "the serving line is not escaped, so a stated objective can inject markup",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "<p class=\"serving\">“{esc(r[\"serving\"])}”</p>",
+        "<p class=\"serving\">“{r[\"serving\"]}”</p>"
+      ]
+    ],
+    "expect": [
+      "the serving line and an orphan's name are escaped too"
+    ]
+  },
+  {
+    "name": "the open-line count states ALL lines, so a page of finished work still says it owes something",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "f'<strong>{len(open_lines)} still owe something</strong>. '",
+        "f'<strong>{len(roots)} still owe something</strong>. '"
+      ]
+    ],
+    "expect": [
+      "the count of lines that still owe something is the REAL count"
+    ]
   }
 ]

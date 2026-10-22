@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 68 cases
+    scripts/begin-plan.py --self-test  # 76 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -183,9 +183,10 @@ def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str,
         f"# {slug}",
         "",]
     # ⚠ Machine-readable and ON ITS OWN LINE, because a reader (`gen-work-lines.py`) parses it.
-    # A fact embedded in prose is a fact that gets reworded. Absence is a VALUE here: "root" and
-    # "no parent recorded" are different claims, and the 121 plans that predate this field are the
-    # second, not the first.
+    # A fact embedded in prose is a fact that gets reworded. THREE values, never collapsed: a slug
+    # (a branch), `-` (nothing else was armed: this STARTED a line), and NO marker (nothing could
+    # be recorded). ⟳ r1 Claude M2: with only "slug or absent", a root created today rendered
+    # exactly like a plan written before the field existed.
     if parent:
         out.append(f"<!-- parent: {parent} -->")
     if serving:
@@ -331,6 +332,46 @@ def _print_state(plan_abs: Path, plan_rel: str) -> int:
     return OK
 
 
+_PARENT_LINE = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
+_SERVING_LINE = re.compile(r"^<!--\s*serving:\s*(.+?)\s*-->\s*$", re.M)
+STARTED = "-"   # the parent value for a plan armed with nothing else armed
+
+
+def _derive_parent() -> str | None:
+    """The plan being LEFT, read from the sentinel before it is overwritten — or None, said aloud.
+
+    Arming while another plan is armed IS the branch, so the parent is derived rather than
+    remembered. Returns a slug, `STARTED` when nothing is armed, or None when a parent cannot be
+    known — and in that case says WHY on stderr, because a silent None is what the first version
+    of this produced for every call while its suite stayed green.
+
+    ⛔ THE SENTINEL MUST RESOLVE TO A PLAN IN `PLAN_DIR`. ⟳ r1 (Codex 2, Claude M3): the first
+    version took `Path(prev).stem`, so `--plan docs/plans/design.md` was recorded as `design`,
+    which the reader looks for in `.claude/plans/` — rendered "no longer exists" while it existed,
+    or ATTACHED TO AN UNRELATED `.claude/plans/design.md`. A wrong parent is worse than none.
+
+    ⛔ ONLY THE READ IS GUARDED. ⟳ r1 (Codex 3, Claude m2): the try once also covered loading and
+    parsing, and caught AttributeError/KeyError — which only a code defect raises there. Loading
+    is outside now, so a typo crashes instead of quietly recording no parent.
+    """
+    if not SENTINEL.is_file():
+        return STARTED
+    pp = _load_plan_progress()
+    try:
+        text = SENTINEL.read_text()
+    except OSError as exc:
+        print(f"⚠ no parent recorded: {SENTINEL.name} could not be read ({exc}).", file=sys.stderr)
+        return None
+    prev = pp.parse_sentinel(text).get("plan") or ""
+    target = (ROOT / prev).resolve() if prev else None
+    if target is None or target.parent != PLAN_DIR.resolve() or not target.is_file():
+        print(f"⚠ no parent recorded: the armed plan {prev or '(none named)'!r} is not a plan "
+              f"file in {PLAN_DIR.relative_to(ROOT)}, so it cannot be named as one.",
+              file=sys.stderr)
+        return None
+    return target.stem
+
+
 def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -> int:
     try:
         slug = normalise_slug(slug_raw)
@@ -342,25 +383,32 @@ def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -
               "fails closed and blocks every stop. Pass at least one step.", file=sys.stderr)
         return REFUSED
 
+    # ⟳ r1 (Codex 4, Claude m1): a newline ended the marker's line, so the reader's single-line
+    # pattern dropped the objective silently, and a line starting `- [ ]` became a STEP the Stop
+    # guard counted. `-->` closes the comment early. Refused, never rewritten: these are the
+    # human's own words, and silently editing them is the one thing this field must not do.
+    if serving is not None and ("\n" in serving or "\r" in serving or "-->" in serving):
+        print("refusing: --serving must be ONE line and must not contain `-->` — it is stored in "
+              "an HTML comment on its own line, and either would make the reader drop it.",
+              file=sys.stderr)
+        return REFUSED
     steps = [split_step(a) for a in step_args]
-    # ⛔ THE PARENT IS READ FROM THE SENTINEL BEFORE IT IS OVERWRITTEN. Arming while another plan
-    # is armed IS the branch; the plan being left is the parent, derived rather than remembered.
-    parent = None
-    if SENTINEL.is_file():
-        # ⛔ `pp` IS A LOCAL IN EVERY OTHER FUNCTION, NEVER A MODULE GLOBAL — the first version of
-        # this block referenced it and raised NameError, which a bare `except Exception` swallowed
-        # into `parent = None`. The lineage silently never recorded, the suite stayed green, and
-        # only a case asserting the MARKER caught it. That is the "catching any error passes on a
-        # typo" shape this repository has measured before; the except is NARROW now and the
-        # loader is called explicitly.
-        try:
-            _pp_local = _load_plan_progress()
-            prev = _pp_local.parse_sentinel(SENTINEL.read_text()).get("plan") or ""
-            parent = Path(prev).stem or None
-        except (OSError, ValueError, AttributeError, KeyError):
-            parent = None                      # a malformed sentinel loses the LINK, not the plan
     PLAN_DIR.mkdir(parents=True, exist_ok=True)
     plan_abs = PLAN_DIR / f"{slug}.md"
+    # ⛔ LINEAGE IS FIXED WHEN A PLAN IS FIRST WRITTEN. ⟳ r1 Claude M1 / Codex 1 (Blocking): re-
+    # arming a slug derived its parent afresh, so re-arming the ARMED plan recorded it as its own
+    # parent, and walking back to A from B gave A the parent B — a cycle, which hung the page, and
+    # A's `serving` line was erased. Walking back to an original objective is the very act this
+    # field exists for, so it must not rewrite the record of where that objective came from.
+    if plan_abs.is_file():
+        old = plan_abs.read_text()
+        kept = _PARENT_LINE.search(old)
+        parent = kept.group(1) if kept else None
+        if serving is None:
+            was = _SERVING_LINE.search(old)
+            serving = was.group(1) if was else None
+    else:
+        parent = _derive_parent()
     plan_abs.write_text(render_plan(slug, steps, _dt.date.today().isoformat(),
                                     parent=parent, serving=serving))
     plan_rel = str(plan_abs.relative_to(ROOT))
@@ -753,6 +801,45 @@ def _self_test() -> int:
                  "<!-- parent: wiring -->" in _branch)
             case("...and with serving omitted, no serving marker is written",
                  "serving:" not in _branch)
+            case("⭐ a plan armed with NOTHING armed records that it STARTED a line",
+                 "<!-- parent: - -->" in (PLAN_DIR / "wiring.md").read_text())
+            # ⛔ RE-ARMING IS WALKING BACK, AND IT MUST NOT REWRITE LINEAGE. ⟳ r1 (both halves):
+            # this exact sequence — wiring, branch, wiring — gave `wiring` the parent `branch`, a
+            # cycle, and erased its serving line. Re-armed WITHOUT --serving on purpose: the
+            # kept line must come from the file, not from this call.
+            cmd_begin("wiring", ["One|d1|w1", "Two|d2|w2"])
+            _again = (PLAN_DIR / "wiring.md").read_text()
+            case("⛔ re-arming a plan KEEPS its lineage — no parent taken from the plan being left",
+                 ("<!-- parent: - -->" in _again, "<!-- parent: branch -->" in _again,
+                  "<!-- serving: why this line exists -->" in _again) == (True, False, True))
+            cmd_begin("wiring", ["One|d1|w1", "Two|d2|w2"])
+            case("⛔ re-arming the ARMED plan never records it as its own parent",
+                 "<!-- parent: wiring -->" not in (PLAN_DIR / "wiring.md").read_text())
+            cmd_begin("branch", ["One|d1|w1"])
+            case("...and a re-armed BRANCH keeps the parent it was created with",
+                 "<!-- parent: wiring -->" in (PLAN_DIR / "branch.md").read_text())
+
+            # ⛔ THE SENTINEL MUST RESOLVE TO A PLAN IN PLAN_DIR. ⟳ r1 (Codex 2, Claude M3):
+            # `Path(prev).stem` attached `elsewhere/real.md` to an unrelated `real.md` here.
+            (PLAN_DIR / "real.md").write_text("# real\n- [ ] x\n")
+            for _label, _target in (("outside PLAN_DIR, with a same-named plan inside it",
+                                     "elsewhere/real.md"),
+                                    ("a plan that does not exist", ".claude/plans/gone.md")):
+                _arm(_target)
+                _err = io.StringIO()
+                with contextlib.redirect_stderr(_err):
+                    cmd_begin("child", ["One|d1|w1"])
+                _child = (PLAN_DIR / "child.md").read_text()
+                (PLAN_DIR / "child.md").unlink()
+                case(f"⛔ a sentinel naming {_label} records NO parent, and SAYS so",
+                     ("parent:" in _child, "no parent recorded" in _err.getvalue()) == (False, True))
+
+            # ⟳ r1 (Codex 4, Claude m1): a multiline objective vanished from the page and its
+            # second line could become a counted STEP; `-->` closes the comment.
+            for _bad in ("first line\n- [ ] not a step", "ends the comment --> early"):
+                case(f"⛔ --serving {_bad[:18]!r}… is REFUSED, and no plan is written",
+                     (cmd_begin("bad-serving", ["One|d1|w1"], serving=_bad),
+                      (PLAN_DIR / "bad-serving.md").exists()) == (REFUSED, False))
             cmd_begin("wiring", ["One|d1|w1", "Two|d2|w2"], serving="why this line exists")
             armed = pp.parse_sentinel(SENTINEL.read_text()) if SENTINEL.is_file() else {}
             case("cmd_begin ARMS the sentinel — not just writes a plan",

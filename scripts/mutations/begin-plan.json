@@ -232,5 +232,57 @@
     "expect": [
       "a restatement over a STAMP-LESS pause does not invent a baseline — the honest `cannot tell` survives `--pause` instead of becoming a definite silence"
     ]
+  },
+  {
+    "name": "re-arming derives the parent afresh, so walking back to a plan rewrites where it came from",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if plan_abs.is_file():\n        old = plan_abs.read_text()",
+        "    if False:\n        old = plan_abs.read_text()"
+      ]
+    ],
+    "expect": [
+      "⛔ re-arming a plan KEEPS its lineage — no parent taken from the plan being left"
+    ]
+  },
+  {
+    "name": "the sentinel is reduced to a stem again, attaching a parent from outside PLAN_DIR to a same-named plan",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if target is None or target.parent != PLAN_DIR.resolve() or not target.is_file():",
+        "    if target is None:"
+      ]
+    ],
+    "expect": [
+      "⛔ a sentinel naming outside PLAN_DIR, with a same-named plan inside it records NO parent, and SAYS so"
+    ]
+  },
+  {
+    "name": "a multiline or comment-closing --serving is accepted, and the objective silently vanishes",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if serving is not None and (\"\\n\" in serving",
+        "    if False and serving is not None and (\"\\n\" in serving"
+      ]
+    ],
+    "expect": [
+      "⛔ --serving 'first line\\n- [ ] n'… is REFUSED, and no plan is written"
+    ]
+  },
+  {
+    "name": "a plan armed with nothing armed records no marker, indistinguishable from one never recorded",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if not SENTINEL.is_file():\n        return STARTED",
+        "    if not SENTINEL.is_file():\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a plan armed with NOTHING armed records that it STARTED a line"
+    ]
   }
 ]

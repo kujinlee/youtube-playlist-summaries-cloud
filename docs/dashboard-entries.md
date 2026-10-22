@@ -16892,21 +16892,27 @@ history is worse than an absent one. And an unticked box means the task was not 
 is not the same as abandoned; work has been finished here and left unticked, so the page says
 "not ticked closed" and shows the date for you to judge.
 
-**Waiting on you:** this is on a branch, not merged — the final verification run and CI have not
-been done. Everything else from this session is already on the main branch.
+Going back to an earlier task — the whole point — no longer rewrites where it came from. The first
+version did exactly that, and the review caught it: returning to a task recorded the task you were
+leaving as its parent, which made a loop and froze the page. A task's place in its line is now
+fixed when it is first created.
+
+**Waiting on you:** merging, once the pull request is green. Two independent reviews found ten
+defects; all ten are fixed, and a second round checks those fixes before the PR opens.
 <!--tech-->
-`scripts/gen-work-lines.py` (NEW, 30 cases, 8 mutation entries, **8/8 killed and 8/8 attributed**)
+`scripts/gen-work-lines.py` (NEW, 35 cases, 12 mutation entries)
 renders `~/explainers/work-lines.html` from `.claude/plans/*.md`. `scripts/begin-plan.py` records
 `<!-- parent: … -->` and `<!-- serving: … -->`; **the parent is DERIVED from
 `.claude/executing-plan` at arm time, never passed** — arming while another plan is armed IS the
-branch. 65 → 68 cases.
+branch. 65 → 76 cases, 18 → 22 mutation entries.
 
 ⛔ **A BUG THAT WOULD HAVE MADE THE WHOLE FEATURE SILENTLY RECORD NOTHING.** The first version read
 `pp.parse_sentinel(...)` inside `cmd_begin` — but `pp` is a LOCAL in every other function and
 never a module global, so it raised `NameError`, which my own `except Exception` swallowed into
 `parent = None`. Suite green, lineage never written. Caught only by a case asserting the MARKER
-appears. The except is narrow now and the loader is called explicitly. That is the
-"catching any error passes on a typo" shape, self-inflicted.
+appears. That is the "catching any error passes on a typo" shape, self-inflicted. ⟳ r1 (Codex 3):
+the narrowed except STILL caught `AttributeError`/`KeyError`, which only a code defect raises
+there — it now guards the sentinel READ alone, and loading sits outside it.
 
 ⭐ **Looking at the page caught a defect no case had**: completed lines sorted FIRST, burying the
 26 that still owe something — backwards for the only question the page answers. One composite key
@@ -16917,11 +16923,20 @@ with `reverse=True` flips BOTH members; two stable sorts now, held by two cases.
 still reaches main()'s "no plan files" branch and returns 2 anyway) — so the case was rewritten to
 assert the message that only the raise produces.
 
-Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1717),
+Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1725),
 `check-selftest-counts` POPULATION, `check-fixture-variation` EXAMINED_KEYS. ⚠ `parse_plan`'s
 `name` and `touched` were unvaried and are now exercised at two distinct inputs — they carry
 straight to the page, so a constant there would have made every row show one slug and one date.
 `check-ratchet-contract` rc=0.
 
-⛔ **NOT DONE: the full 64-step `ci.yml` guard list, a `ci.yml` caller step, a PR, and CI.** Handed
-off deliberately at the owner's call on context. See `.remember/remember.md` §9.
+⛔ **REVIEW ROUND 1 — NOT CONVERGED, 10 findings, all folded** (`docs/reviews/{codex,claude}/work-lines-r1-*.md`).
+The Blocking one, found by both halves: re-arming a plan derived its parent afresh, so the
+"wiring → branch → wiring" walk-back made a cycle, and `build_forest`'s cycle filter could NEVER
+fire — it pruned during a walk FROM THE ROOTS, and a cycle is never reachable from one. The old
+cycle cases asserted only root slugs and stayed green over a generator that hung. Fixed twice
+over: lineage is fixed at first write, and a cycle is cut into a tree. Also: a sentinel outside
+`.claude/plans/` was reduced to its stem and could attach to an unrelated plan (now: no parent,
+said on stderr); `parent: -` now marks a STARTED line so it cannot pass for "never recorded"; a
+multiline or `-->` `--serving` is refused; and the nesting case had passed on the word `none` in
+the inlined CSS. Every new case was shown to redden on the pre-fix code, and all 8 new mutations
+are killed by the case each names. A `ci.yml` step now runs the suite by name (`479114be`).
