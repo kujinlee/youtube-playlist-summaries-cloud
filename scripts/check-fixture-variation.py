@@ -310,6 +310,19 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # The work-lines generator. Every parameter is varied by a case; none is exempt.
+    "gen-work-lines.py": (
+        "build_forest.plans",
+        "line_state.node",
+        "main.argv",
+        "main.plan_dir",
+        "parse_plan.name",
+        "parse_plan.text",
+        "parse_plan.touched",
+        "render.generated",
+        "render.orphans",
+        "render.roots",
+    ),
     # The status grammar and its verdict. `main.argv` is exempted above (its second value
     # re-enters the suite); everything else is varied by a case.
     "check-goal-status.py": (

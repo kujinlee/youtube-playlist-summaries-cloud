@@ -1,0 +1,106 @@
+[
+  {
+    "name": "the parent marker is matched inline, so prose mentioning it becomes a declaration",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "PARENT = re.compile(r\"^<!--\\s*parent:\\s*(.+?)\\s*-->\\s*$\", re.M)",
+        "PARENT = re.compile(r\"<!--\\s*parent:\\s*(.+?)\\s*-->\")"
+      ]
+    ],
+    "expect": [
+      "prose mentioning a parent is NOT a declaration"
+    ]
+  },
+  {
+    "name": "a step-less plan counts as DONE, which is true of arithmetic and false of work",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            \"done\": x + o > 0 and o == 0, \"empty\": x + o == 0}",
+        "            \"done\": o == 0, \"empty\": x + o == 0}"
+      ]
+    ],
+    "expect": [
+      "⛔ a plan with NO steps is neither done nor open"
+    ]
+  },
+  {
+    "name": "a dangling parent is dropped, so the middle of an old line becomes a new one",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            orphans.append(par)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a parent that does not exist is REPORTED, and the child still renders"
+    ]
+  },
+  {
+    "name": "a line is judged by its TIP alone, so an unfinished parent under a finished tip hides",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        if not n[\"empty\"]:\n            empty = False\n            if not n[\"done\"]:\n                open_ = True\n        stack.extend(n[\"children\"])",
+        "        if not n[\"empty\"]:\n            empty = False\n            if not n[\"done\"]:\n                open_ = True\n        pass"
+      ]
+    ],
+    "expect": [
+      "⭐ a line is OPEN when any node in it is open, even under a finished tip"
+    ]
+  },
+  {
+    "name": "completed lines sort first again, burying everything that still owes something",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    for r in sorted(_by_date, key=lambda n: 0 if line_state(n) == \"open\" else 1):",
+        "    for r in sorted(_by_date, key=lambda n: 1 if line_state(n) == \"open\" else 0):"
+      ]
+    ],
+    "expect": [
+      "⭐ an OPEN line sorts above a COMPLETED one, even when the completed one is newer"
+    ]
+  },
+  {
+    "name": "the badge asserts abandonment from an unticked box",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        badge, cls = f'{n[\"ticked\"]}/{n[\"total\"]} not ticked closed', \"st-open\"",
+        "        badge, cls = f'{n[\"ticked\"]}/{n[\"total\"]} abandoned', \"st-open\""
+      ]
+    ],
+    "expect": [
+      "⛔ the BADGE says 'not ticked closed' and never 'abandoned'"
+    ]
+  },
+  {
+    "name": "a missing plan directory renders an empty page instead of CANNOT RUN",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        raise ValueError(f\"{d} is not a directory, so there are no work lines to read\")",
+        "        return []"
+      ]
+    ],
+    "expect": [
+      "a MISSING plan directory is CANNOT RUN (2) and the message NAMES it"
+    ]
+  },
+  {
+    "name": "the slug is not escaped, so a plan name can inject markup",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    return html.escape(str(x), quote=True)",
+        "    return str(x)"
+      ]
+    ],
+    "expect": [
+      "a slug is HTML-escaped, so a plan name cannot inject markup"
+    ]
+  }
+]

@@ -16865,3 +16865,63 @@ spent a rerun"*. I read the step's refusal and not the comment three lines above
 runs — the declaration is not path-scoped, so it still covers them.
 
 This commit exists to BE the push that carries the edited body into a fresh event.
+
+## 2026-10-22 [needs-you]
+There is now a page that shows how each piece of work connects back to what started it.
+
+You said work drifts: you ask for one thing, something is discovered, that becomes its own task,
+and after a few of those the line back to the original request is gone — and it is hard to follow
+even within a single sitting.
+
+It turns out the history was already being kept and nothing read it. Every task this project runs
+writes a small file with its steps; there were 121 of them, and 25 had been left unfinished, the
+oldest from early September. What was missing was the link between one task and the task it
+branched off — that only ever existed in the running commentary, which disappears when a session
+ends.
+
+That link is now recorded automatically. When a new task starts while another is open, the one
+being left is written down as its parent. Nobody has to remember to do it, because starting a task
+while another is open *is* the branch.
+
+The page lists each chain, shows which still owe something, and puts those first. The top entry is
+this request, in your own words.
+
+Two honest limits. The 121 existing tasks have no parent recorded, so they each appear alone —
+they are marked "no parent recorded" rather than guessed at, because a plausible but invented
+history is worse than an absent one. And an unticked box means the task was not closed out, which
+is not the same as abandoned; work has been finished here and left unticked, so the page says
+"not ticked closed" and shows the date for you to judge.
+
+**Waiting on you:** this is on a branch, not merged — the final verification run and CI have not
+been done. Everything else from this session is already on the main branch.
+<!--tech-->
+`scripts/gen-work-lines.py` (NEW, 30 cases, 8 mutation entries, **8/8 killed and 8/8 attributed**)
+renders `~/explainers/work-lines.html` from `.claude/plans/*.md`. `scripts/begin-plan.py` records
+`<!-- parent: … -->` and `<!-- serving: … -->`; **the parent is DERIVED from
+`.claude/executing-plan` at arm time, never passed** — arming while another plan is armed IS the
+branch. 65 → 68 cases.
+
+⛔ **A BUG THAT WOULD HAVE MADE THE WHOLE FEATURE SILENTLY RECORD NOTHING.** The first version read
+`pp.parse_sentinel(...)` inside `cmd_begin` — but `pp` is a LOCAL in every other function and
+never a module global, so it raised `NameError`, which my own `except Exception` swallowed into
+`parent = None`. Suite green, lineage never written. Caught only by a case asserting the MARKER
+appears. The except is narrow now and the loader is called explicitly. That is the
+"catching any error passes on a typo" shape, self-inflicted.
+
+⭐ **Looking at the page caught a defect no case had**: completed lines sorted FIRST, burying the
+26 that still owe something — backwards for the only question the page answers. One composite key
+with `reverse=True` flips BOTH members; two stable sorts now, held by two cases.
+
+⚠ **Two of my own MUTATIONS were wrong** and the sweep found them: one was a literal no-op
+(`node = node`), and one targeted a path whose effect is masked by the next check (`return []`
+still reaches main()'s "no plan files" branch and returns 2 anyway) — so the case was rewritten to
+assert the message that only the raise produces.
+
+Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1717),
+`check-selftest-counts` POPULATION, `check-fixture-variation` EXAMINED_KEYS. ⚠ `parse_plan`'s
+`name` and `touched` were unvaried and are now exercised at two distinct inputs — they carry
+straight to the page, so a constant there would have made every row show one slug and one date.
+`check-ratchet-contract` rc=0.
+
+⛔ **NOT DONE: the full 64-step `ci.yml` guard list, a `ci.yml` caller step, a PR, and CI.** Handed
+off deliberately at the owner's call on context. See `.remember/remember.md` §9.
