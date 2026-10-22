@@ -310,6 +310,16 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # The status grammar and its verdict. `main.argv` is exempted above (its second value
+    # re-enters the suite); everything else is varied by a case.
+    "check-goal-status.py": (
+        "main.argv",
+        "main.armed",
+        "main.repo",
+        "parse_status.text",
+        "verdict.armed",
+        "verdict.docs",
+    ),
     # ⟳ 2026-10-20, the transcript reference guard (backlog #328's sibling, owner-requested).
     # Ten parameters, every one varied by a case rather than exempted — the guard's first run
     # reported four unvaried (`transcript_for.td`, `.second`, `main.argv`, `main.log`) and each
@@ -990,6 +1000,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
 # file dimension; a brand-new script defining a function called `run_suite_parts` would have
 # inherited an excuse written about a different file entirely.
 EXEMPT: dict[str, str] = {
+    # ⛔ argv has exactly two values and the suite cannot pass the second: `main(["--self-test"])`
+    # re-enters `_self_test()` from inside itself and never terminates. Measured by writing it.
+    # The dispatch IS covered — every `main([])` case reaches it and takes the other branch —
+    # so what is unvaried here is a parameter whose second value is self-referential, not an
+    # untested clause.
+    "check-goal-status.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by every other case",
     # ⟳⟳ 2026-09-16 — TWO `peer-sites.py:changed_lines.*` EXEMPTIONS STOOD HERE AND ARE GONE,
     # because round 1's Codex half measured their premise FALSE. They claimed varying `ref` and
     # `path` "would require a real .git, which the harness tree lacks". It does not:

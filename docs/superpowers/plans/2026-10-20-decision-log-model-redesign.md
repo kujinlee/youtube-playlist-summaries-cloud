@@ -10,6 +10,8 @@
 > because the corpus holds **1 clean round in 48** against a predicate needing two consecutive (backlog #329).
 > ⭐ **The mechanism CONSUMES those signals**, so a decision layer over non-discriminating inputs cannot
 > work however well it is built. The work moved one level down — **backlog #328** (one `corpus()` owner + a
+
+**Status:** 🟠 current — the ⏸️ deferral's precondition is LIFTED (backlog #328 and #329 both ✅ closed) and §1.1's first finding shipped as backlog #321 in `ee0e461b`. Resuming is the owner's call; backlog #314 still governs one of the two signals.
 > denominator guard) and **backlog #329** (make convergence satisfiable).
 >
 > ⛔ **DEFER is terminal on the ladder — *stop, file it*.** r2's nine findings are **filed, not fixed**;

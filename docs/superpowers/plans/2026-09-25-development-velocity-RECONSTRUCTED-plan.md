@@ -9,7 +9,7 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** ⛔ **RETIRED — thread CLOSED 2026-10-21. The question is NOT retired; this THREAD is.**
+**Status:** ⛔ obsolete — 0 of 12 tasks ever started; the design it implements is obsolete for the same reason. Backlog #177 stays 🟠.
 Three independent grounds, each checkable:
 
 1. the deliverable `docs/development-velocity.md` is a **self-declared TOMBSTONE** — its first line

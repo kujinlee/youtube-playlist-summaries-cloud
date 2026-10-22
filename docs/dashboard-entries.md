@@ -16660,3 +16660,72 @@ row #191's standing order forbids building before the judgement; thread 2
 recommendation column by design. ⭐ Its option **B** — a budget and retirement rule for guards — is
 where #381's own proportionality question (203 cases and 82 mutation entries guarding a 6-row log)
 would be settled.
+
+## 2026-10-21 [needs-you]
+The goals page now says what state each piece of work is in, and a checking problem turned up on
+the main branch while building it.
+
+You said you could not tell from the page which items are current, finished or obsolete. That is
+fixed: every thread now carries a small label — shipped, current, needs-you, parked or obsolete —
+visible without opening anything. The vocabulary is the one already used elsewhere in this project
+rather than a new one, so there is nothing extra to learn.
+
+Worth knowing: the status is written down, not worked out. I tried deriving it from how much of a
+plan was ticked off, and checked that against the seven items whose real state I knew. It was wrong
+on all seven. One piece of work that shipped months ago and runs on every change has none of its
+boxes ticked, and nothing in the files can tell "abandoned" apart from "not started yet". So each
+document now says what it is, and a check refuses to let the ones on this goal stay silent.
+
+**Waiting on you — two things.**
+
+The first is new and it blocks merging: a check on the main branch is failing, and the cause is that
+merging squashes a branch into a single commit, which makes every file in it look as though it was
+created today. One check asks "has anything been reviewed repeatedly without being recorded?" and
+dates its answer from that. After today's merge it now sees work from two days ago as happening
+today, and reports a problem that is not real. Every pull request from here will show that failure
+until it is fixed, and it will happen again on the next merge. I have written up the fix but not
+made it, because the check is one you rely on and changing how it decides is your call.
+
+The second is unchanged: three items on the goals page are labelled needs-you, and that label is
+accurate — they are waiting on a decision from you, not on work from me.
+<!--tech-->
+**The feature.** `scripts/check-goal-status.py` owns a status grammar — `**Status:** <marker> …`
+over `✅ shipped · 🟠 current · 🟠 needs-you · ⏸️ parked · ⛔ obsolete` — and `gen-goals-page.py`
+**IMPORTS** it (one rule, one place; a case fails if the page grows its own copy, the way
+`check-review-recorded` loads `check-dashboard-entry`'s parser). Badge colours reuse the existing
+`--good/--pending/--defect` tokens, so `check-theme-token-coverage` stays green across light, dark
+and the OS-dark shim. **Verified by looking at it in a browser**, not by reading HTML.
+
+⛔ **STATUS IS DECLARED BECAUSE DERIVATION WAS MEASURED WRONG 7 OF 7.** `review-decision-procedure`
+reads 0/36 ticks and SHIPPED (1,225 lines live in CI); `development-velocity` reads 0/12 and is
+ABANDONED; four threads have no plan at all and are variously awaiting-gate, unjudged or parked. No
+mechanical signal separates ABANDONED from NOT-STARTED, or PARKED from AWAITING-DECISION.
+
+⚠ **THE GUARD'S FIRST LIVE RUN FOUND A DEFECT IN MY OWN DESIGN.** Its first rule failed a malformed
+declaration anywhere — and 78 documents carry `**Status:** Approved` / `v7 — CONVERGED`, a
+DIFFERENT field under the same name in months of legitimate prose. That would have been red from
+birth across 40% of the corpus: **backlog #56**, the exact failure the per-anchor arming exists to
+avoid, undone one screen below the docstring claiming it. Corrected: malformed is judged only
+inside an ARMED anchor. ⚠ The mutation sweep then found **two of my cases passing for ambient
+reasons** — the variation-selector case tested nothing (`rest[0]` is one character, so the selector
+is never in it) and the unreadable-document case passed because skipping the only document emptied
+the corpus and returned the right code for the wrong reason. Both now use inputs that exercise the
+code. ⚠ And one mutation anchor was typed as `️` where the file holds the literal character —
+zero matches; anchors are now taken FROM the file.
+
+34 cases · 7 mutation entries, **7/7 killed and 7/7 attributed**, 0 survivors · registered with
+`check-plan-code` (pinned manifest list), `check-selftest-counts` (POPULATION),
+`check-fixture-variation` (EXAMINED_KEYS + one honest EXEMPT: `main.argv`'s second value is
+`--self-test`, which re-enters the suite) and `ci.yml`. `check-ratchet-contract` rc=0.
+
+⛔ **backlog #341, FILED AND NOT FIXED: a squash merge re-dates every file it carries.** Measured
+both sides — `docs/reviews/claude/memory-index-budget-r1-claude.md` was added by `49b7b267`
+(2026-10-19) on the branch and by `ee0e461b` (2026-10-21) on master. `check-decision-scheme`'s
+trigger 1 asks which subjects reached ≥2 rounds AFTER `armed_at` (2026-10-20), so three rounds that
+legitimately predate the mechanism now read as today and it reports starvation. **`rc=1` on
+unmodified `origin/master`, verified in a clean worktree** — so `verify` is red for every PR cut
+from master, including #382. ⛔ NOT cleared by writing a log row: that fabricates a decision never
+made under the mechanism (backlog #321's own refusal), and the guard says a failing trigger is not
+a bug to patch. The fix is to date the corpus from something a squash preserves — the filename
+grammar, or the verdict JSONs' own timestamps — and that changes how a gate you rely on decides,
+so it is yours.

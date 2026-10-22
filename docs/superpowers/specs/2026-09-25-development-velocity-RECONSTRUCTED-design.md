@@ -4,7 +4,7 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall.
 
-**Status:** ⛔ **RETIRED — thread CLOSED 2026-10-21. The question is NOT retired; this THREAD is.**
+**Status:** ⛔ obsolete — THE THREAD, not the question. Deliverable is a self-declared tombstone, plan is 0 of 12 ticked. Backlog #177 stays 🟠 and is the live home of this subject.
 Three independent grounds, each checkable:
 
 1. the deliverable `docs/development-velocity.md` is a **self-declared TOMBSTONE** — its first line

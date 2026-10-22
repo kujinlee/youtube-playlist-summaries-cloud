@@ -4,7 +4,7 @@
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded
 > evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
-**Status:** ⏳ **DESIGN — Phase 1, awaiting the human gate.** ⛔ **This document DECIDES NOTHING.**
+**Status:** 🟠 needs-you — four unranked options (A seam · B guard budget · C measure first · D ship), recommendation column deliberately empty because the owner said this discussion is for together. ⭐ Option B is where backlog #381's proportionality question gets settled.
 The owner asked, after `chrome-bar-reachable` took five review rounds for a control bar: *why does
 a simple feature need five rounds, and why has the project become hard to change?* They also said
 the discussion is **for together**. So this is the evidence and the options, and the

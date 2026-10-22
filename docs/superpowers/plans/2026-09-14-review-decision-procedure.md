@@ -5,7 +5,7 @@
 > **Anchor:** `review-decides-itself` — **ADR:** none
 > **Goal:** A review loop decides its own next step — run, stop, or escalate — from recorded evidence rather than recall, and reaches the human only for decisions that are genuinely theirs.
 
-**Status:** ✅ **SHIPPED — thread CLOSED 2026-10-21.** `scripts/check-review-decision.py` is live
+**Status:** ✅ shipped — see the design document; the guard it plans is live in CI, merged as PR #303. ⚠ Its task boxes are UNTICKED and that is not evidence of anything: this thread is why a derived status was measured wrong 7 of 7.
 (1,225 lines, called from `.github/workflows/ci.yml`, `--self-test` rc=0) and merged as **PR #303**
 (*"A review loop that decides its own next step — and then told me it was not finished"*,
 2026-09-15). ⛔ **Do not re-plan this.** Kept in place rather than deleted because review documents
