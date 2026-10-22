@@ -243,3 +243,40 @@ the user as evidence the review was recorded. Accurate and meaningless.
   `('velocity-backfill', 3, 'claude')` for the plain one. The suffix would have made the round invisible
   to the gate, reproducing the defect being repaired. **The rule is not "label the filename" — it is put
   the label where the READER looks, and identify the reader first.**
+
+---
+
+## ⟳ 2026-10-21 — THE NARROW MEASUREMENT REPORTED IN THE VOCABULARY OF A WIDE ONE, **3× in one session**, and a review half filed it against me as a High — twice
+
+Every instance below was a REAL measurement. None was wrong about what it read. All three were
+reported with a scope they did not have, which is the form this file keeps collecting.
+
+| what I ran | what I called it | what it actually was |
+|---|---|---|
+| 6 guards after a fold (sweep, guard, fixture-variation, main-drivable, counts, plan-code) | *"the full `ci.yml` guard list"* | 6 of **62**. CI then failed on a step the subset could not reach |
+| `gh pr checks` → `verify: pass`, `schema-gates: pass` | *"REAL CI IS GREEN … first green CI on this branch"* | the run's conclusion was **cancelled**: 6 of 8 sweep shards cancelled, `mutation-sweep-complete` **failure**. The sweep — the work's central evidence — was **NOT RUN** on that commit |
+| `Schema gates: success` on `6ca7abc0` | *"`6ca7abc0` success"* in a run-history table | that commit's **CI was a failure**. True of a job, stated of the run |
+
+⛔⛔ **AND THE SHARPEST ONE, WHICH IS NEW: THE COMMIT ASSERTING THE CHECKS PASS IS THE COMMIT THAT
+BROKE THEM.** I wrote *"the automated checks on the pushed branch are now passing"* into a dashboard
+entry inside the commit that put CI's required `verify` job red. **A claim about CI written before
+CI has run on that tree is a PREDICTION, not an observation** — and it reads identically to one.
+The review half found it within the hour; no amount of care in the prose would have.
+
+⚠ **`rc=$?` AFTER A PIPE CAUGHT ME AGAIN** — in the verification script I wrote *to confirm the
+fix*, two sections above where this file already records the rule. `… | head -5; echo "rc=$?"`
+printed `rc=0` for a guard whose status I had not read. The lesson being written down is not the
+same as the lesson being applied, and the place it recurs is the harness you trust least to be
+wrong: your own.
+
+**How to apply — say the denominator, every time:**
+- Never *"the full list"*, *"all the guards"*, *"CI is green"*. Say **"61 of 62"**, **"2 of 3
+  required contexts; the sweep did not run"**. If the denominator is unknown, that is the finding.
+- ⛔ A workflow RUN has a conclusion; so does each JOB. `gh pr checks` shows jobs. Read
+  `gh run view --json conclusion` before using the word *green*, and remember `cancel-in-progress`
+  means **your own next push** can turn a green run into a cancelled one retroactively.
+- ⛔ **Never write a CI claim into the commit that changes CI's inputs.** Push, let it run, then
+  record what it said. A tick written in advance is a forecast wearing evidence's clothes.
+- Same family as [[an-inference-stated-as-measured]] and
+  [[measure-the-population-the-code-actually-sees]]: there the SET was wrong; here the set was
+  right and the SENTENCE was wider than it.
