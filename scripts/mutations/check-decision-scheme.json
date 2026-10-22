@@ -1,0 +1,1093 @@
+[
+  {
+    "name": "the ladder is walked from the MOST expensive route, inverting the whole bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for route in LADDER:",
+        "    for route in reversed(LADDER):"
+      ]
+    ],
+    "expect": [
+      "an untried unit starts at the CHEAPEST route"
+    ]
+  },
+  {
+    "name": "a retried route is accepted as a step, which is how the loop runs forever",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if len(set(tried)) != len(tried):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a retried route is refused by the validator too"
+    ]
+  },
+  {
+    "name": "the collapse floor moves to six, so a five-row collapse passes",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if len(scored) < 5:",
+        "    if len(scored) < 6:"
+      ]
+    ],
+    "expect": [
+      "five scored rows on one route is a collapse"
+    ]
+  },
+  {
+    "name": "equalling the pinned baseline counts as an improvement",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if med < baseline_median:",
+        "    if med <= baseline_median:"
+      ]
+    ],
+    "expect": [
+      "a median at the pinned baseline is NOT an improvement — >= fails, not >"
+    ]
+  },
+  {
+    "name": "ANY single miss fires trigger 5, making one lost bet look like a broken instrument",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not marks[i] and not marks[i + 1]:",
+        "        if not marks[i] or not marks[i + 1]:"
+      ]
+    ],
+    "expect": [
+      "one miss is a bet losing, not a broken instrument"
+    ]
+  },
+  {
+    "name": "the re-evaluation sample drops to nine",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "def t7_sample_reached(rows: list[dict], floor: int = 10) -> str | None:",
+        "def t7_sample_reached(rows: list[dict], floor: int = 9) -> str | None:"
+      ]
+    ],
+    "expect": [
+      "nine ranker predictions is below the re-evaluation sample"
+    ]
+  },
+  {
+    "name": "the drift tolerance widens to 500%, so no denominator move is ever material — ⟳ anchor re-pointed 2026-10-20 when the signature gained the count parameters; the SUBJECT is unchanged",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 0.5,",
+        "def t6_denominator_moved(now: dict, pinned: dict, tol: float = 5.0,"
+      ]
+    ],
+    "expect": [
+      "a denominator that doubled warns"
+    ]
+  },
+  {
+    "name": "the ATTEMPT history is read from the WRONG rows, so a RETRY is misreported as a walk-back",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return [r[\"route\"] for r in prior if r.get(\"route\")]",
+        "    return []"
+      ]
+    ],
+    "expect": [
+      "⛔ a RETRY is not a skip: no reason declares a repeat into a step",
+      "history is DERIVED from the unit's own rows, in file order"
+    ]
+  },
+  {
+    "name": "validate_row stops relating `route` to the derived history — the r1 Blocking, restored",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if row[\"route\"] != expected:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a RETRY of the same route is refused BY NAME, not merely flagged"
+    ]
+  },
+  {
+    "name": "a bet after exhaustion is accepted instead of named",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if expected is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a bet after the ladder is EXHAUSTED says so, rather than naming a next route"
+    ]
+  },
+  {
+    "name": "ranker_hit is coerced again, so a string 'false' erases a miss",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"ranker_hit\" in row and not isinstance(row[\"ranker_hit\"], bool):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a non-bool ranker_hit is refused rather than coerced"
+    ]
+  },
+  {
+    "name": "a non-object row raises out of the validator instead of being named",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(row, dict):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a non-object row is NAMED rather than raising"
+    ]
+  },
+  {
+    "name": "an authored routes_tried may contradict history again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"routes_tried\" in row and list(row[\"routes_tried\"]) != tried:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an authored routes_tried that contradicts this unit's history is refused"
+    ]
+  },
+  {
+    "name": "rows are grouped by SUBJECT only, so two units of one subject merge",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        out.setdefault(unit_key(r), []).append(r)",
+        "        out.setdefault(r.get(\"subject\"), []).append(r)"
+      ]
+    ],
+    "expect": [
+      "group_by_unit keeps each unit's rows in file order",
+      "group_by_unit over a single row gives one group, not an empty one"
+    ],
+    "_attribution_correction": "r2 finding 5. This entry declared 'unit_key partitions on (subject, unit), not on either alone', and the mutation changes group_by_unit, NOT unit_key — so that label never reddens and check-plan-code's contract (EVERY expect entry must equal exactly one red case) refuses the entry. My own probe accepted it because it used any() + substring where the harness uses all() + equality: a weaker stand-in passing what the real rule refuses, inside the apparatus doing the measuring. The two labels here were DERIVED by running the mutation and reading the red case names, not chosen."
+  },
+  {
+    "name": "non-termination needs MORE routes than the ladder holds, so it cannot fire",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not exhausted:",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "a unit that exhausted every route and still carries findings REFUTES the design",
+      "exhaustion is DERIVED, so it cannot be hidden by never writing routes_tried"
+    ]
+  },
+  {
+    "name": "a STOPPED unit that exhausted the ladder is reported as non-terminating",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if unit_rows[-1].get(\"outcome\") == \"continued\":",
+        "        if True:"
+      ]
+    ],
+    "expect": [
+      "the SAME unit reaching the last route and STOPPING is the success path"
+    ]
+  },
+  {
+    "name": "trigger 4 counts ROWS again, so five units of one subject are five subjects",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            per_subject[r.get(\"subject\")] = (r[\"rounds_at_termination\"], r.get(\"route\"))",
+        "            per_subject[(r.get(\"subject\"), r.get(\"unit\"))] = (r[\"rounds_at_termination\"], r.get(\"route\"))"
+      ]
+    ],
+    "expect": [
+      "five UNITS of one subject do not make five subjects"
+    ]
+  },
+  {
+    "name": "a corpus that could not be read is quiet again on the default path",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if now.get(\"error\") and not args.rederive:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a corpus that could not be read is CANNOT RUN on the DEFAULT path, not quiet"
+    ]
+  },
+  {
+    "name": "main() validates each row ALONE, so it cannot see a retry",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        prior = seen.get(unit_key(r), []) if isinstance(r, dict) else []",
+        "        prior = None"
+      ]
+    ],
+    "expect": [
+      "main() validates each row against ITS UNIT'S history, so a retry is caught"
+    ]
+  },
+  {
+    "name": "an empty corpus returns a figure instead of an error, so zero over nothing is a pass",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        return {\"median\": None, \"mean\": None, \"error\": \"no subject has >=2 rounds\"}",
+        "        return {\"median\": 0, \"mean\": 0.0, \"subjects\": 0}"
+      ]
+    ],
+    "expect": [
+      "a corpus with no qualifying subject is an ERROR too, reached with no exception"
+    ]
+  },
+  {
+    "name": "an unreadable log reads as an EMPTY log rather than CANNOT RUN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    except OSError as exc:\n        raise ValueError(f\"{path.name} could not be read: {exc}\") from exc",
+        "    except OSError:\n        return []"
+      ]
+    ],
+    "expect": [
+      "an unreadable log raises ValueError (or reads) — never a silent empty log"
+    ]
+  },
+  {
+    "name": "an unparseable armed_at becomes an empty set again instead of CANNOT RUN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    epoch, why = parse_armed_at(armed)\n    if why:\n        return [], why",
+        "    epoch, why = parse_armed_at(armed)\n    if why:\n        return [], None"
+      ]
+    ],
+    "expect": [
+      "a BARE DATE is refused — git's approxidate would match nothing, silently",
+      "...and so is free text, with the remedy named"
+    ]
+  },
+  {
+    "name": "a naive instant is accepted, so the window depends on the reading machine",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if when.tzinfo is None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a naive instant is refused, because the window would depend on the reader's machine",
+      "a BARE DATE is refused — git's approxidate would match nothing, silently"
+    ]
+  },
+  {
+    "name": "tree_at stops checking that git resolved INSIDE the window",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not when.isdigit() or int(when) > epoch:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an instant before the first commit is refused, not answered with an empty tree"
+    ],
+    "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
+  },
+  {
+    "name": "the shallow-clone refusal is dropped, so every tracked document looks new",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if flag.strip() == \"true\":",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a shallow clone is REFUSED, because history before arming is absent",
+      "...and a full clone is not — two DISTINCT inputs, so the flag is read"
+    ],
+    "_why_extracted": "In place the branch read `if shallow == \"true\"`, which can only behave differently on a shallow clone — so mutating it was EQUIVALENT on any normal checkout and survived with rc=0, indistinguishable from a coverage gap. The decision is now `shallow_refusal`, a pure function a case drives with both inputs."
+  },
+  {
+    "name": "the comparator defaults to a literal again, attributing a figure to a baseline without it",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(pinned_rounds.get(\"median\"), (int, float)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a baseline with no median is CANNOT RUN, not a defaulted comparator"
+    ]
+  },
+  {
+    "name": "an unreadable baseline raises instead of reporting CANNOT RUN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    except (json.JSONDecodeError, OSError) as exc:",
+        "    except (KeyError,) as exc:"
+      ]
+    ],
+    "expect": [
+      "an unreadable baseline is CANNOT RUN rather than a traceback"
+    ]
+  },
+  {
+    "name": "the identity reverts to the FULL PATH, so a moved document makes history look new",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        name = path.rsplit(\"/\", 1)[-1]",
+        "        name = path"
+      ]
+    ],
+    "expect": [
+      "⭐ a subject whose documents MOVED since arming is still historical",
+      "⭐ the DIRECTORY is irrelevant, which is what survives a move"
+    ]
+  },
+  {
+    "name": "the ratchet compares round NUMBERS without their subject, so nothing ever matches",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        rounds_before = sum(1 for n in rounds if (subject, n) in before_rounds)",
+        "        rounds_before = sum(1 for n in rounds if n in before_rounds)"
+      ]
+    ],
+    "expect": [
+      "HISTORY IS NOT STARVED — a subject whose rounds BOTH predate arming is out of scope",
+      "⭐ a subject whose documents MOVED since arming is still historical"
+    ]
+  },
+  {
+    "name": "the ratchet excludes TWO-round subjects, where the procedure first applies",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if len(rounds) < 2:\n            continue\n        rounds_before",
+        "        if len(rounds) <= 2:\n            continue\n        rounds_before"
+      ]
+    ],
+    "expect": [
+      "a subject whose rounds BOTH postdate arming is named",
+      "a subject that had ONE round before arming and two now has crossed into scope"
+    ]
+  },
+  {
+    "name": "tree_at lists TODAY'S tree instead of the historical one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "[\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", sha]",
+        "[\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", \"HEAD\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ a file committed AFTER the instant is absent from the tree at that instant"
+    ],
+    "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
+  },
+  {
+    "name": "the NUL-delimited output is split on newlines, so every path is mangled",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    paths = {part for part in out.split(\"\\0\") if part}",
+        "    paths = {part.strip() for part in out.splitlines() if part.strip()}"
+      ]
+    ],
+    "expect": [
+      "...and one committed BEFORE it is present, so absence is not emptiness",
+      "at a LATER instant the same file IS present — two distinct epochs, one repo"
+    ],
+    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names, not chosen. The first draft named the historical-tree case, which this mutation does not redden.",
+    "_expect_rederived": "Labels re-DERIVED by applying the mutation in a COPY and reading the red case names. The previous labels named cases that backlog #322's repair replaced: those cases asserted against THIS repository, which is exactly what made the file unmeasurable. They now assert over a git repo the case builds."
+  },
+  {
+    "name": "an empty tree listing is accepted as a real answer rather than git not being read",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not paths:\n        return (f\"the tree at {sha[:8]} lists no paths",
+        "    if False:\n        return (f\"the tree at {sha[:8]} lists no paths"
+      ]
+    ],
+    "expect": [
+      "an EMPTY listing is git not having been read, not a tree that held nothing",
+      "...and a non-empty one is accepted — two DISTINCT inputs, so the set is read"
+    ],
+    "_why_extracted": "In place the branch could only differ on an input a real repository never produces, so the mutation was equivalent-in-environment and survived with rc=0. Extracted as empty_listing_refusal so a case drives both inputs — the same remedy shallow_refusal needed."
+  },
+  {
+    "name": "trigger 4 reads the last five by FIRST insertion again, so the latest runs are ignored",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            per_subject.pop(r.get(\"subject\"), None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ the LAST five subjects is by occurrence, not by first insertion"
+    ]
+  },
+  {
+    "name": "derive_outcome counts appearances again instead of reading positions",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    later = {n for n in seen[unit] if n > after_round}\n    return \"continued\" if later else \"stopped\"",
+        "    return \"continued\" if len(seen[unit]) > after_round else \"stopped\""
+      ]
+    ],
+    "expect": [
+      "⭐ a component in rounds 1 and 5 CONTINUED past round 4 — a count said stopped"
+    ]
+  },
+  {
+    "name": "derive_outcome guesses instead of reporting NOT DERIVABLE",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not seen or unit not in seen:\n        return None",
+        "    if not seen or unit not in seen:\n        return \"stopped\""
+      ]
+    ],
+    "expect": [
+      "an unknown unit is NOT DERIVABLE rather than assumed stopped",
+      "no evidence at all is NOT DERIVABLE — 10 of 81 subjects are readable"
+    ]
+  },
+  {
+    "name": "component_rounds accepts a non-integer round, so a bad header poisons the positions",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(n, int):\n            continue",
+        "        if False:\n            continue"
+      ]
+    ],
+    "expect": [
+      "a round with no usable number contributes nothing rather than a None key"
+    ]
+  },
+  {
+    "name": "component_rounds collapses the round set to a count, losing position entirely",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            out.setdefault(c, set()).add(n)",
+        "            out.setdefault(c, set()).add(0)"
+      ]
+    ],
+    "expect": [
+      "component_rounds gives the SET of rounds, which is what a position question needs"
+    ],
+    "_expect_derived": "Labels DERIVED by applying the mutation and reading the red case names. The draft also named the rounds-1-and-5 case, which this mutation does NOT redden: replacing the added round with 0 makes component_rounds return {'a': {0}}, and that case feeds derive_outcome a hand-written set rather than component_rounds' output, so it never sees the collapse. ⚠ That is worth stating: derive_outcome's cases are INDEPENDENT of component_rounds by construction, which is why each needs its own entry."
+  },
+  {
+    "name": "tree_at ignores the repo it is GIVEN and reads whatever filesystem it sits in — #322 restored",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    repo = REPO if repo is None else repo",
+        "    repo = REPO"
+      ]
+    ],
+    "expect": [
+      "tree_at reads a repository it is GIVEN, so the suite needs no repo of its own",
+      "an instant before the repo's history REFUSES, and names no subject"
+    ],
+    "_reachable_since": "backlog #322 — before the repo was injectable these clauses could not be driven from a case at all"
+  },
+  {
+    "name": "the ls-tree call reaches past its subject to the module global",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "out = subprocess.run([\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", sha], cwd=repo,",
+        "out = subprocess.run([\"git\", \"ls-tree\", \"-r\", \"-z\", \"--name-only\", sha], cwd=REPO,"
+      ]
+    ],
+    "expect": [
+      "...and one committed BEFORE it is present, so absence is not emptiness"
+    ],
+    "_reachable_since": "backlog #322 — before the repo was injectable these clauses could not be driven from a case at all"
+  },
+  {
+    "name": "backlog #328: trigger 6 stops comparing the pinned COUNTS, returning to the state where a corpus that grew 392 -> 420 rounds reported no drift at all",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for key in (\"rounds_total\", \"subjects_with_any_round\", \"subjects_with_ge2_rounds\"):",
+        "    for key in ():"
+      ]
+    ],
+    "expect": [
+      "⭐ a corpus that GREW past the count tolerance now fires — it did not before"
+    ]
+  },
+  {
+    "name": "backlog #328: the corpus producer stops emitting the pinned key names, so trigger 6 compares nothing and is inert while every fixture-built case still passes",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            \"subjects\": len(counts), **extra}",
+        "            \"subjects\": len(counts)}"
+      ]
+    ],
+    "expect": [
+      "⭐ _corpus_now emits the keys baseline.json pins, or trigger 6 compares nothing"
+    ]
+  },
+  {
+    "name": "a RETRY is declarable as a skip, re-opening the r1 Blocking through the new door",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if row[\"route\"] in tried:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a RETRY is not a skip: no reason declares a repeat into a step"
+    ]
+  },
+  {
+    "name": "a rung passed by an earlier skip can be walked back down to",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if row[\"route\"] in accounted:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "...and the rung BELOW a declared skip cannot be walked back to",
+      "...and no declaration makes a walk-back expressible, because its gap is empty"
+    ]
+  },
+  {
+    "name": "any non-prefix route is accepted, so the skip needs no declaration at all",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if declared is None and why is None:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and the SAME route on the SAME history is still refused UNDECLARED"
+    ]
+  },
+  {
+    "name": "skipped need only be a list, so it may name rungs this row did not skip",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(declared, list) or [str(x) for x in declared] != gap:",
+        "        if not isinstance(declared, list):"
+      ]
+    ],
+    "expect": [
+      "a skipped list that does not name the rungs actually skipped is refused"
+    ]
+  },
+  {
+    "name": "a whitespace reason counts as a reason, which is the near-miss of an empty one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(why, str) or not why.strip():",
+        "        if not isinstance(why, str) or not why:"
+      ]
+    ],
+    "expect": [
+      "...and a WHITESPACE reason is refused too, not read as present"
+    ]
+  },
+  {
+    "name": "the reason is not read from the row, so an absent one can never be empty",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        declared, why = row.get(\"skipped\"), row.get(\"why_skipped\")",
+        "        declared, why = row.get(\"skipped\"), \"a placeholder reason\""
+      ]
+    ],
+    "expect": [
+      "...and an ABSENT reason is refused by its own repr, a separate state from empty"
+    ]
+  },
+  {
+    "name": "a skip CLAIMED where none happened is ignored as harmless surplus",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    elif \"skipped\" in row or \"why_skipped\" in row:",
+        "    elif False:"
+      ]
+    ],
+    "expect": [
+      "a skip claimed on a row that skips NOTHING is refused rather than ignored"
+    ]
+  },
+  {
+    "name": "the validator reads attempts as the ladder position, so a skip makes its unit unappendable",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    accounted = routes_accounted(prior)",
+        "    accounted = tried"
+      ]
+    ],
+    "expect": [
+      "⭐ the unit stays APPENDABLE after a declared skip — the history is still a prefix"
+    ]
+  },
+  {
+    "name": "the gap is measured against attempts, so an earlier skip's rungs are demanded again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        gap = [r for r in LADDER[:LADDER.index(row[\"route\"])] if r not in accounted]",
+        "        gap = [r for r in LADDER[:LADDER.index(row[\"route\"])] if r not in tried]"
+      ]
+    ],
+    "expect": [
+      "the gap excludes rungs an EARLIER skip already passed, not only the tried ones"
+    ]
+  },
+  {
+    "name": "the primary falsifier counts ATTEMPTS again, so a skip to DEFER switches it off",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        exhausted = route_next(routes_accounted(unit_rows)) is None",
+        "        exhausted = route_next(derive_routes_tried(unit_rows)) is None"
+      ]
+    ],
+    "expect": [
+      "⭐ a unit that reached the terminal rung BY SKIP and still carries findings REFUTES it"
+    ]
+  },
+  {
+    "name": "a declared skip contributes no passed rungs, so the fold is a no-op",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            out.extend(str(s) for s in skipped)",
+        "            out.extend([])"
+      ]
+    ],
+    "expect": [
+      "routes_accounted folds a declared skip into the rungs the ladder has passed"
+    ]
+  },
+  {
+    "name": "a truthy non-list skipped is folded character by character",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if isinstance(skipped, list):",
+        "        if skipped:"
+      ]
+    ],
+    "expect": [
+      "a non-list skipped contributes no rungs rather than its characters"
+    ]
+  },
+  {
+    "name": "the ladder order is changed under the cases that are written against it",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "LADDER = (\"accrete\", \"redesign\", \"split\", \"defer\")",
+        "LADDER = (\"accrete\", \"redesign\", \"defer\", \"split\")"
+      ]
+    ],
+    "expect": [
+      "the ladder is PINNED to a literal, so reordering or extending it reddens by name"
+    ]
+  },
+  {
+    "name": "prospective() stops filtering, so a retroactive row is scored as a bet placed in advance",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return [r for r in dicts if not r.get(\"retroactive\")]",
+        "    return list(dicts)"
+      ]
+    ],
+    "expect": [
+      "prospective() drops a retroactive row and keeps the rest, in order"
+    ]
+  },
+  {
+    "name": "the route-collapse trigger counts retroactive rows, so history buys off a live collapse",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    scored = [r for r in prospective(rows) if r.get(\"outcome\") in OUTCOMES]",
+        "    scored = [r for r in rows if r.get(\"outcome\") in OUTCOMES]"
+      ]
+    ],
+    "expect": [
+      "⭐ t3 cannot be bought off by a retroactive row on another route"
+    ]
+  },
+  {
+    "name": "the improvement trigger counts retroactive terminations, so a deferral displaces a subject",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    for r in prospective(rows):",
+        "    for r in rows:"
+      ]
+    ],
+    "expect": [
+      "⭐ a retroactive termination cannot DISPLACE a subject out of t4's last-five window"
+    ]
+  },
+  {
+    "name": "the sample trigger counts retroactive rows toward the prediction sample",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    sample = [r for r in prospective(rows)",
+        "    sample = [r for r in rows"
+      ]
+    ],
+    "expect": [
+      "a retroactive row does not enter t7's sample either"
+    ]
+  },
+  {
+    "name": "the sample trigger treats outcome availability as prediction eligibility again",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "              if r.get(\"outcome\") in OUTCOMES and is_prediction(r)]",
+        "              if r.get(\"outcome\") in OUTCOMES]"
+      ]
+    ],
+    "expect": [
+      "⭐ ten scored rows that made NO ranker prediction do not reach t7's floor"
+    ]
+  },
+  {
+    "name": "every prediction in the sample is counted as a HIT, so a miss cannot lower the rate",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hits = sum(1 for r in sample if r[\"ranker_hit\"])",
+        "    hits = len(sample)"
+      ]
+    ],
+    "expect": [
+      "...and the hit count is of PREDICTIONS, so a miss is not read as a hit"
+    ]
+  },
+  {
+    "name": "a retroactive flag is coerced rather than type-checked, dropping a real bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"retroactive\" in row and not isinstance(row[\"retroactive\"], bool):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a retroactive flag must be a bool — a string coerces to True and hides a real bet"
+    ]
+  },
+  {
+    "name": "a malformed routes_tried crashes the validator instead of being named",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"routes_tried\" in row and not isinstance(row[\"routes_tried\"], (list, tuple)):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a malformed routes_tried is NAMED rather than raising"
+    ]
+  },
+  {
+    "name": "a reason need only be non-empty, so punctuation and a zero-width space pass as explanation",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not any(ch.isalnum() for ch in why):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "a punctuation-only reason is refused — non-empty is not the same as explanatory",
+      "...and a zero-width space is refused too, which strip() does NOT remove"
+    ]
+  },
+  {
+    "name": "the hindsight trigger reports nothing, so backfill silences the only non-use detector",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not hindsight:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a subject fed ONLY in hindsight is NAMED, not absorbed into t1's silence"
+    ]
+  },
+  {
+    "name": "the hindsight trigger names every fed subject, prospective or not",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hindsight = sorted(s for s in subjects_since_arming\n                       if by_subject.get(s) and not prospective(by_subject[s]))",
+        "    hindsight = sorted(s for s in subjects_since_arming if by_subject.get(s))"
+      ]
+    ],
+    "expect": [
+      "...and one PROSPECTIVE row makes the subject genuine use, not hindsight"
+    ]
+  },
+  {
+    "name": "the sample message reports the ROW count again, restoring Codex M2 inside its own fix",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "return (f\"{len(sample)} ranker predictions",
+        "return (f\"{len(rows)} ranker predictions"
+      ]
+    ],
+    "expect": [
+      "⭐ t7 names the ELIGIBLE count and the TRUE hit count, not the row count"
+    ]
+  },
+  {
+    "name": "the eligibility rule admits a non-bool, so an abstention becomes a prediction",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return isinstance(row.get(\"ranker_hit\"), bool)",
+        "    return \"ranker_hit\" in row"
+      ]
+    ],
+    "expect": [
+      "is_prediction is the ONE eligibility rule, over every value that has diverged"
+    ]
+  },
+  {
+    "name": "the ranker-miss trigger keeps its OWN second eligibility rule",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    marks = [bool(r[\"ranker_hit\"]) for r in rows if is_prediction(r)]",
+        "    marks = [bool(r.get(\"ranker_hit\")) for r in rows if \"ranker_hit\" in r]"
+      ]
+    ],
+    "expect": [
+      "...so t5 and t7 agree about the value they used to disagree about"
+    ]
+  },
+  {
+    "name": "the summary line drops the provenance split a reader needs to read `all triggers quiet`",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "f\"({retro} retroactive, so {len(scoreable)} scoreable); \"",
+        "f\"\""
+      ]
+    ],
+    "expect": [
+      "the summary line SPLITS the provenance, so `all triggers quiet` is readable"
+    ]
+  },
+  {
+    "name": "the retroactive count is hardcoded to zero in the one line a reader sees",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    retro = len(rows) - len(prospective(rows))",
+        "    retro = 0"
+      ]
+    ],
+    "expect": [
+      "the summary line SPLITS the provenance, so `all triggers quiet` is readable"
+    ]
+  },
+  {
+    "name": "the n=10 accuracy bound is quoted at every floor, including floors it is false for",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "f\"coin\" if floor == 10 else",
+        "f\"coin\" if True else"
+      ]
+    ],
+    "expect": [
+      "the quoted bound belongs to the floor it was computed for, and a different floor says so"
+    ]
+  },
+  {
+    "name": "hindsight after a real bet is accepted, closing the unit's ladder irreversibly",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if hindsight_after_bet:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a retroactive row may NOT follow a prospective bet — door (c) is irreversible"
+    ]
+  },
+  {
+    "name": "any prior row blocks a backfill, so the permitted case is refused too",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hindsight_after_bet = bool(row.get(\"retroactive\")) and bool(prospective(prior))",
+        "    hindsight_after_bet = bool(row.get(\"retroactive\")) and bool(prior)"
+      ]
+    ],
+    "expect": [
+      "...while hindsight after hindsight is a BACKFILL, which is the permitted case"
+    ]
+  },
+  {
+    "name": "the prospective filter raises on a non-dict row, the class it was fixed beside",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    dicts = [r for r in rows if isinstance(r, dict)]",
+        "    dicts = list(rows)"
+      ]
+    ],
+    "expect": [
+      "prospective() NAMES nothing and raises nothing on a non-dict row"
+    ]
+  },
+  {
+    "name": "the routes_tried type check admits a string, making its own message untrue",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(list, tuple)):",
+        "(list, tuple, str)):"
+      ]
+    ],
+    "expect": [
+      "a routes_tried STRING is refused, so the message it prints is true"
+    ]
+  },
+  {
+    "name": "a firing improvement trigger hides how much of its median was deferral",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "f\"repairs\" if defers else \"\"",
+        "\"\""
+      ]
+    ],
+    "expect": [
+      "⭐ when t4 fires, its message says how much of the median was DEFERRAL"
+    ]
+  },
+  {
+    "name": "the deferral-composition warning never fires, so #337's hazard stays invisible",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not defers:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ t9 names a median composed of deferrals, which is where #337 is invisible"
+    ]
+  },
+  {
+    "name": "the deferral warning fires over a window t4 already owns, giving one window two verdicts",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if med >= baseline_median:\n        return None",
+        "    if med > 10 ** 9:\n        return None"
+      ]
+    ],
+    "expect": [
+      "...and it stays quiet when t4 is already FIRING, so one window has one verdict"
+    ]
+  },
+  {
+    "name": "the hindsight trigger is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"8 HINDSIGHT ONLY\", t8_hindsight_only(rows, starved_subjects)),",
+        "(\"8 HINDSIGHT ONLY\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 8's verdict REACHES the CLI as a WARN, and does not fail the run"
+    ]
+  },
+  {
+    "name": "the deferral warning is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"9 DEFERRAL COMPOSED\", t9_deferral_composed(rows, pinned_rounds[\"median\"])),",
+        "(\"9 DEFERRAL COMPOSED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 9's verdict REACHES the CLI too, naming how many were deferrals"
+    ]
+  },
+  {
+    "name": "the window takes the FIRST `size` terminations instead of the last, a distinct off-by-end",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return list(per_subject.values())[-size:]",
+        "    return list(per_subject.values())[:size]"
+      ]
+    ],
+    "expect": [
+      "only the LAST five subjects count, so early bad ones do not pin it forever"
+    ]
+  }
+]

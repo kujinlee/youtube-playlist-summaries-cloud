@@ -96,7 +96,7 @@ FAILS IF
   * a declared citing site does not cite the canonical path;
   * any non-exempt file RESTATES a mechanism (carries its tokens) without citing its canon.
 
-  --self-test  runs 25 cases over synthetic trees, including that each failure mode is DETECTED.
+  --self-test  runs 28 cases over synthetic trees, including that each failure mode is DETECTED.
 """
 from __future__ import annotations
 import contextlib
@@ -295,9 +295,38 @@ def audit(root: Path, canons: list[dict] | None = None) -> list[str]:
         if marker not in path.read_text(encoding="utf-8", errors="replace"):
             problems.append(f"{rel} does not carry its marker {marker!r}")
 
+        # ⛔⛔ `EXEMPT` APPLIES HERE TOO, AND IT DID NOT — found 2026-10-21 by running the FULL
+        # `ci.yml` guard list instead of a subset. This module's docstring states that
+        # `docs/reviews/**` is *"frozen testimony … never edited"* and is exempt, and the CITING
+        # check at the loop below honours that. **This rule did not**, so a review document that
+        # QUOTED a marker inside its own test output became a second canon site:
+        #
+        #   marker <the handoff-path canon marker> appears in 2 files —
+        #     .agents/skills/shared/handoff-path.md,
+        #     docs/reviews/codew/decision-route-escalation-r4-codex.md
+        #
+        # ⚠ THE MARKER IS DESCRIBED AND NOT WRITTEN OUT ABOVE, ON PURPOSE. The first version of
+        # this comment pasted it literally and INSTANTLY recreated the defect one directory over —
+        # `appears in 2 files — .agents/skills/shared/handoff-path.md, scripts/check-canonical-
+        # source.py`. A guard that cannot quote its own subject is the sharpest possible proof that
+        # the subject is a live token rather than a string, and the `codew` typo above is also
+        # deliberate so this block cannot be grepped into a third one.
+        #
+        # ⭐ AND THE QUOTE WAS THE REVIEWER'S EVIDENCE: Codex pasted the `[FAIL]` line proving a
+        # mutation worked, and that line necessarily contains the marker. So the guard punished a
+        # review for showing its working — and it went red on a branch where NO CI RUN EXISTS
+        # (CI triggers on pull requests to master; this branch has no pull request), which is why
+        # six guard failures sat undiscovered behind a subset that reported green.
+        #
+        # ⚠ THIS IS NOT A LOOSENING. The exemption was already DECIDED and DOCUMENTED; one of the
+        # module's two rules simply never read it. The rationale is unchanged and is the same one
+        # the citing check already accepts: nobody follows a frozen review document as a rule, so
+        # a marker quoted there is not a second place the mechanism LIVES. Drift inside
+        # `docs/reviews/**` is still NOT caught here, exactly as the docstring says.
         holders = [
             f for f in files
             if marker in f.read_text(encoding="utf-8", errors="replace")
+            and not EXEMPT.match(str(f.relative_to(root)))
         ]
         if len(holders) > 1:
             where = ", ".join(sorted(str(f.relative_to(root)) for f in holders))
@@ -450,6 +479,25 @@ def self_test() -> int:
 
         r = _tree(t / "twomark", CANON, {"docs/other.md": CANON, "docs/site.md": CITE})
         case("a SECOND file holding the marker is detected",
+             any("appears in 2 files" in x for x in r), True)
+
+        # ⛔ THE EXEMPTION MUST REACH *BOTH* RULES, and until 2026-10-21 it reached only the citing
+        # one — so a review that QUOTED a marker in its own test output became a second canon site.
+        # The pre-existing exemption case covers the CITING check; this covers the DUPLICATION
+        # check, and without it the fix for that defect would be unguarded. The negative case
+        # below is the discriminator: an un-exempt second holder must STILL be caught, or this
+        # would have disabled the rule rather than scoping it.
+        r = _tree(t / "dupreview", CANON,
+                  {"docs/reviews/r9.md": CANON, "docs/site.md": CITE})
+        case("⭐ a marker QUOTED in frozen testimony is NOT a second canon site",
+             [x for x in r if "appears in" in x], [])
+        r = _tree(t / "dupdash", CANON,
+                  {"docs/dashboard-entries.md": CANON, "docs/site.md": CITE})
+        case("...and the dated dashboard record is exempt from it too",
+             [x for x in r if "appears in" in x], [])
+        r = _tree(t / "dupreal", CANON,
+                  {"docs/notreviews/r9.md": CANON, "docs/site.md": CITE})
+        case("...but a second holder OUTSIDE the exempt paths is still caught",
              any("appears in 2 files" in x for x in r), True)
 
         r = _tree(t / "nocite", CANON, {"docs/site.md": "nothing here\n"})

@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 61 cases
+    python3 scripts/check-review-decision.py --self-test  # 115 cases
 
 WHY THIS EXISTS
 ---------------
@@ -93,6 +93,116 @@ def scope_for(paths: list[str], is_prose) -> str:
 
 
 # ----------------------------------------------------------- Q5: thrashing
+def review_scope(rounds: list[dict]) -> list[str]:
+    """PURE. -> the component(s) a convened review should EXAMINE, most-recurrent first.
+
+    ⛔ THIS IS NOT `thrashing_component`, AND KEEPING THEM APART IS THE WHOLE POINT. That function
+    answers WHETHER to convene — the arming condition, phrased on two CONSECUTIVE rounds. This
+    answers WHICH component to examine. **They can disagree, and when they disagreed the arming
+    statistic was wrong.**
+
+    MEASURED 2026-10-20 over the 11 subjects whose coordinator documents carry a parseable header,
+    against the 3 whose architecture review names the component it convened on (`src-caller`,
+    `number-populations`, `parse-header`):
+
+        total appearances        3 of 3   <- this function
+        longest CONSECUTIVE run  2 of 3   <- what the arming condition encodes
+        returns-after-a-gap      1 of 3
+        total + 2x returns       3 of 3   rejected: a free parameter buying nothing
+
+    ⭐ THE CASE THAT DECIDES IT is `review-decision-procedure`, whose own review convened on
+    `parse-header` (backlog #117). Consecutive-run ranks `scope-for` first (rounds 1,2,3,4 — run 4);
+    `parse-header` appeared in rounds **1,2,3 then 6,7** — total 5, longest run 3. It was fixed,
+    went quiet for two rounds, and CAME BACK. **Consecutiveness is exactly what blinds a ranker to
+    that shape**, and a component that returns after being apparently fixed is the stronger signal
+    of a design problem.
+
+    ⚠ BOUNDS, STATED RATHER THAN HIDDEN. **n = 3**, and it is a FIT not a validation. It is also a
+    cap in the data rather than a shortfall in effort: of 19 architecture reviews, the three that
+    would have extended the set land on subjects whose coordinator documents carry no header, so
+    there is nothing to rank (backlog #314). ⛔ **And this is a RANKER, never a TRIGGER** — no
+    threshold on this quantity separated labelled from unlabelled subjects, raw or normalised by
+    round count, so it must not be read as "convene". `thrashing_component` keeps that job.
+    """
+    return [c for c, _ in sorted(scope_tally(rounds).items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def scope_tally(rounds: list[dict]) -> dict[str, int]:
+    """PURE. component -> the NUMBER OF ROUNDS it appeared in.
+
+    One rule, one place: `review_scope` ORDERS this and `scope_lead` MEASURES ITS MARGIN. The
+    two were a single expression until 2026-10-20, which is why nothing could ask how big the
+    lead was. A component counts ONCE per round however many findings it carried — the signal
+    is "this component came back", not "this round was noisy".
+    """
+    tally: dict[str, int] = {}
+    for r in rounds:
+        for c in {f.get("component") for f in r.get("findings", []) if f.get("component")}:
+            tally[c] = tally.get(c, 0) + 1
+    return tally
+
+
+def scope_lead(rounds: list[dict]) -> dict:
+    """PURE. Is first place a LEAD, or an artifact of the tie-break?
+
+    ⛔ MEASURED 2026-10-20 over the 10 subjects whose coordinator documents are readable:
+    **5 of them have no lead at all** — every top component tied on appearance count — and
+    `review_scope` resolves those by NAME (`key=(-kv[1], kv[0])`). `arm-prod-drift-cron` has
+    five components tied at one appearance each, and the ranking's first element is
+    `cron-comment` because `c` sorts first.
+
+    ⭐ Determinism was never the missing property. The ranker is deterministic by construction;
+    what it lacked was any way for a reader to see that first place was won by the alphabet. A
+    deterministic answer that is evidence-free is worse than an abstention, because only one of
+    the two gets re-examined.
+
+    ⚠ `review_scope`'s ORDER is deliberately UNCHANGED — the case "ties break by name, so the
+    order is deterministic" still holds and should. What changes is that nothing has to read
+    that order as a finding.
+    """
+    tally = scope_tally(rounds)
+    if not tally:
+        return {"top": [], "order": [], "n1": 0, "n2": 0, "margin": 0, "tied": 0,
+                "abstain": True, "why": "no component appeared in any round"}
+    counts = sorted(tally.values(), reverse=True)
+    n1 = counts[0]
+    n2 = counts[1] if len(counts) > 1 else 0
+    tied = [c for c, v in sorted(tally.items()) if v == n1]
+    abstain = len(tied) > 1
+    return {
+        # ⛔ r1 Claude M4: `review_scope` had NO non-test caller, and it is the symbol BOTH
+        # `dev-process.md` and `review-method.md` name as what computes the ranking. Carrying
+        # its order here gives it the reader the docs already promised it has.
+        "order": review_scope(rounds),
+        "top": tied, "n1": n1, "n2": n2, "margin": n1 - n2, "tied": len(tied),
+        "abstain": abstain,
+        "why": (f"{len(tied)} components tied at {n1} appearance(s) — first place is the "
+                f"tie-break, not evidence" if abstain
+                else f"{tied[0]} leads by {n1 - n2}"),
+    }
+
+
+def scope_lead_lines(lead: dict) -> list[str]:
+    """PURE. How `scope_lead` is REPORTED to a reader.
+
+    Extracted so the reader is testable. The first version of this printed inline inside
+    `main()`, which meant the repair for "the ranker had no reader" shipped a reader with no
+    case — the same shape one level down. `main()` must not re-implement any of this.
+    """
+    if lead["abstain"]:
+        out = [f"  scope-rank: NO LEAD — {lead['why']}"]
+        if lead["top"]:
+            out.append(f"              tied: {', '.join(lead['top'])}")
+        if lead.get("order"):
+            out.append(f"              ranking: {' > '.join(lead['order'][:4])}")
+        return out
+    out = [f"  scope-rank: {lead['top'][0]} — {lead['why']} "
+           f"(n1={lead['n1']} n2={lead['n2']})"]
+    if lead.get("order"):
+        out.append(f"              ranking: {' > '.join(lead['order'][:4])}")
+    return out
+
+
 def thrashing_component(rounds: list[dict]) -> str | None:
     """PURE. The component carrying fix-induced findings in BOTH of the last two rounds.
 
@@ -123,15 +233,161 @@ def converged(rounds: list[dict], scope: str) -> tuple[bool, str]:
     if len(rounds) < need:
         return False, f"{len(rounds)} round(s) recorded; a {scope} change needs {need}"
     for r in rounds[-need:]:
-        for f in r.get("findings", []):
-            if f.get("severity") in ("Blocking", "High"):
-                return False, f"r{r.get('round')} produced a {f.get('severity')}"
-            if f.get("aim") == "deliverable":
-                return False, f"r{r.get('round')} found a defect in the deliverable"
-        if r.get("fixes_nontrivial"):
-            return False, (f"r{r.get('round')}'s fixes were non-trivial — the card makes "
-                           f"that a CONTINUE, and a fix is unreviewed code")
-    return True, (f"{need} round(s) with no Blocking/High and nothing in the deliverable")
+        why = round_blocker(r)
+        if why:
+            return False, why
+    return True, (f"{need} round(s) with every Blocking/High and every deliverable finding "
+                  f"dispositioned, and trivial fixes")
+
+
+def round_blocker(r: dict) -> str | None:
+    """PURE. Why this ONE round is not clean, else None. **The only owner of that rule.**
+
+    ⛔ EXTRACTED 2026-10-21, r4 — found by BOTH halves (CLAUDE H3, CODEX finding 5), and it is
+    the 18th instance of `a-second-implementation-of-one-rule-drifts` in this repository. The
+    rule lived in `converged`'s loop AND, separately, in `convergence_unreachable`'s `clean`
+    filter. backlog #329 then added the `disposition` clause to one of them, in the same commit
+    that created the other — so the copies disagreed from birth:
+
+        converged([one round, a Blocking with disposition 'fixed'])  -> (True, '...')
+        convergence_unreachable(same)                                -> 'UNREACHABLE ...'
+
+    and the contradiction ESCAPED TO A READER through `decide`, which printed a demand for
+    "rounds with no Blocking/High" — precisely the demand backlog #329 measured as unsatisfiable
+    and removed. A diagnostic telling the reader to produce an artifact the workflow does not
+    make is worse than silence, because they try.
+
+    ⚠ The de-duplication is why this returns the REASON rather than a bool: `converged` needs the
+    sentence for its refusal and `convergence_unreachable` needs only `is None`. A bool here would
+    have forced one caller to re-derive the message, which is how the rule split the first time.
+
+    ⭐ `filed` counts as OPEN on purpose: a finding moved to the backlog is deferred, not
+    answered, and convergence is a claim about THIS branch.
+    """
+    for f in r.get("findings", []):
+        # ⟳ 2026-10-20, owner decision, backlog #329. This used to refuse on the mere PRESENCE of
+        # a Blocking/High or a deliverable-aimed finding, which asked for a round that found
+        # nothing — an artifact the workflow does not produce, because a round document is only
+        # written when a round FINDS something. MEASURED over every readable round: 48 rounds, ONE
+        # clean, and 0 of 12 subjects converging. A predicate that cannot be satisfied reports the
+        # same thing about good work and bad. What it asks now is whether the finding is still
+        # OPEN, reading `disposition` — evidence that EXISTS — instead of evidence nobody writes.
+        if f.get("disposition") in ("fixed", "declined"):
+            continue
+        if f.get("severity") in ("Blocking", "High"):
+            return (f"r{r.get('round')}'s {f.get('severity')} is still open "
+                    f"(disposition {f.get('disposition')!r})")
+        if f.get("aim") == "deliverable":
+            return (f"r{r.get('round')} left a defect open in the deliverable "
+                    f"(disposition {f.get('disposition')!r})")
+    if r.get("fixes_nontrivial"):
+        return (f"r{r.get('round')}'s fixes were non-trivial — the card makes "
+                f"that a CONTINUE, and a fix is unreviewed code")
+    return None
+
+
+# ── The UNREACHABLE diagnostic's PROPERTIES, as DATA (r5 CLAUDE H1+H2) ────────────────────────
+# ⛔⛔ THIRD ATTEMPT AT ONE PROPERTY, AND THE FIRST TWO FAILED THE SAME WAY — recorded because the
+# shape is the lesson, not the fix. The property: *this refusal is about the RECORD, not the work,
+# and the remedy is DISPOSITIONING findings.*
+#
+#   r4  asserted the literal token `RECORDED` appeared.          -> r5 CODEX: a message asserting
+#       the OPPOSITE contains it too; suite passed 99/99.
+#   r5a asserted a remedy phrase present + a FORBIDDEN phrase    -> r5 CLAUDE: (H2) a ONE-TOKEN
+#       list absent.                                                 negation passes, because
+#       "NOT DISPOSITIONING those findings" CONTAINS the phrase; 4 of 4 adjacent wrong messages
+#       accepted. (H1) and the list itself had NO falsifier — emptying the tuple left the suite at
+#       102/102, because the case LOOPED OVER THE SET UNDER TEST, so both sides shrank together.
+#
+# ⚠ H1 IS THE RULE I HAD WRITTEN OUT LONGHAND IN `check-plan-code.py` THE SAME HOUR
+# ("AN INDEPENDENT COPY, NOT A LOOP OVER THE SET UNDER TEST") AND THEN BROKE HERE.
+#
+# ⭐ SO THE PROSE IS NOT PATCHED A THIRD TIME. `dual-review-what-it-catches` records the reason:
+# *use review for CLAIMS and design; use a corpus for SURFACES* — a message is an UNBOUNDED surface,
+# so each round finds another evasion and none of them is the last. The property is now carried by
+# TOKENS, and the prose is RENDERED from them. A negation cannot pass, because there is no sentence
+# to negate: `remedy` either equals `disposition` or it does not.
+UNREACHABLE_ABOUT = "record"        # not "work" — what the refusal is a statement about
+UNREACHABLE_REMEDY = "disposition"  # not a finding-free round — what reaches convergence
+
+_UNREACHABLE_PROSE = {
+    "about": {"record": "UNREACHABLE from this record rather than merely unmet",
+              "work": "UNREACHABLE because the work is defective"},
+    "remedy": {"disposition": ("What reaches convergence is recording a disposition — `fixed` or "
+                               "`declined` — on each of them, which is evidence this workflow "
+                               "already produces. `filed` does not count: a backlog deferral is "
+                               "not an answer about THIS branch"),
+               "clean-round": "What reaches convergence is a round that finds nothing"},
+}
+
+
+def unreachable_reason(rounds: list[dict]) -> dict | None:
+    """PURE. STRUCTURED: `{"about": ..., "remedy": ..., "blockers": [...]}`, else None.
+
+    This is the function the suite asserts against, by VALUE EQUALITY on `about` and `remedy`.
+    Those two tokens are the whole property, and a token cannot be negated the way a sentence can.
+    """
+    if not rounds:
+        return None
+    if any(round_blocker(r) is None for r in rounds):
+        return None
+    return {"about": UNREACHABLE_ABOUT,
+            "remedy": UNREACHABLE_REMEDY,
+            "blockers": [round_blocker(r) for r in rounds]}
+
+
+def render_unreachable(reason: dict) -> str:
+    """PURE. The ONE place this diagnostic's prose exists, built from `unreachable_reason`.
+
+    ⛔⛔ WHAT IS GUARDED HERE IS **CHANGE DETECTION, NOT SOUNDNESS**, and the distinction is the whole
+    conclusion of `docs/reviews/architecture-review-2026-10-21-message-soundness.md`. Four designs
+    tried to assert that this diagnostic MEANS the right thing and all four were defeated, because
+    *"the sentence a reader acts on says X"* is not a testable property — every design reduced it to
+    a testable proxy (a token's presence, a phrase's absence, a dictionary key) and each proxy
+    admitted a sentence that satisfied it while asserting the opposite. r6 defeated even the
+    structured version by editing a rendering below: tokens and tests untouched, suite 107/107, and
+    the reader told *"UNREACHABLE because this implementation is faulty"*.
+
+    ⭐ SO THE CLAIM IS NARROWED TO ONE THAT HOLDS: **an edit to any rendering below cannot pass
+    unnoticed**, because each string is pinned by an identity case. A reword must come to the suite
+    and be decided. ⚠ THAT IS NOT A CLAIM THAT THE RENDERINGS ARE CORRECT — a human changing a
+    pinned string and updating its case can still ship nonsense. The guard makes the change VISIBLE;
+    judging it remains human judgment, which is the bound `check-gate-falsifiability.py` states
+    about itself for the same reason.
+
+    ⚠ The identity cases are DELIBERATELY BRITTLE. I rejected them at r5 as "brittle to rewording";
+    that was the wrong reason — the brittleness IS the mechanism.
+
+    ⚠ A KeyError here is DELIBERATE: a token with no rendering must fail loudly rather than silently
+    emit a sentence that does not match the structure. r6 confirmed no ordinary record input can
+    select an unknown token (the tokens are module constants), so this is a programming-error guard,
+    not a reachable input path.
+    """
+    return ("no round recorded for this subject is clean, so convergence is "
+            + _UNREACHABLE_PROSE["about"][reason["about"]]
+            + ": every recorded round still carries an OPEN Blocking/High finding, an open "
+              "deliverable-aimed finding, or fixes it declared non-trivial. ⚠ "
+            + _UNREACHABLE_PROSE["remedy"][reason["remedy"]]
+            + ". See backlog #329 for why the record, not the work, is what this is about")
+
+
+def convergence_unreachable(rounds: list[dict]) -> str | None:
+    """PURE. Why this subject can NEVER converge on the rounds recorded, else None.
+
+    ⛔ BACKLOG #329, AND THE PREDICATE IS NOT THE DEFECT — the EVIDENCE IS MISSING.
+    `converged` needs consecutive rounds carrying no Blocking/High, nothing aimed at the
+    deliverable, and `fixes_nontrivial` false. Measured 2026-10-20 over every readable round
+    in the corpus: **48 rounds, 1 of them clean, 39 flagged `fixes_nontrivial`, and 0 of 12
+    subjects converging.** The cause is structural rather than a quality problem: a round
+    document is only written when a round FINDS something, so "a clean round" is an artifact
+    the workflow does not produce — and `converged` asks for two in a row.
+
+    So the refusal must name the missing evidence instead of only the round that failed.
+    A gate that cannot be reached, and does not say what would reach it, reads as a verdict
+    about the work when it is a verdict about the record.
+    """
+    reason = unreachable_reason(rounds)
+    return None if reason is None else render_unreachable(reason)
 
 
 # ------------------------------------------------------- Q4b: tree identity
@@ -184,7 +440,12 @@ def decide(rounds: list[dict], scope: str, tree_reviewed: bool) -> tuple[str, st
                 f"r{rounds[-2].get('round')} and r{rounds[-1].get('round')}")
     ok, why = converged(rounds, scope)
     if not ok:
-        return "ROUND_OWED", why
+        # ⛔ #329: say WHAT EVIDENCE IS MISSING, not only which round failed. Measured over
+        # the corpus, 0 of 12 subjects converge and only 1 round in 48 is clean, because a
+        # round that finds nothing is never written up. Without this line the refusal reads
+        # as a verdict about the work when it is a verdict about the record.
+        unreachable = convergence_unreachable(rounds)
+        return "ROUND_OWED", (f"{why} — ⚠ {unreachable}" if unreachable else why)
     if not tree_reviewed:
         return "TREE", "converged, but no round saw the merging tree; cheapest first: " + \
                        "; ".join(f"({i}) {a}" for i, a in enumerate(TREE_ANSWERS, 1))
@@ -350,6 +611,23 @@ def rounds_for(subject: str) -> list[dict]:
 
     A document without a header propagates its ValueError — the caller turns that into
     CANNOT RUN rather than a decision.
+
+    ⟳ 2026-10-20: A RELOCATION TO THE HALVES WAS BUILT HERE AND THEN REMOVED, ROUTE **SPLIT**.
+    It read `("coordinator", "codex", "claude")` in precedence order so a half could supply a
+    round no coordinator document carried, on the measurement that 97% of rounds carry a half
+    against 35% a coordinator document. Round 1 refuted the inference by running it: readable
+    subjects went **10 -> 10, zero gained**, because **0 of 435 half documents carry a parseable
+    header**. 97% was the rate at which half documents EXIST, reported as the rate at which
+    rounds become READABLE.
+
+    ⛔ AND IT CANNOT REACH THAT CEILING WITHOUT A GRAMMAR CHANGE, which is why this is SPLIT
+    rather than a corrected claim: `disposition` and `fixes_nontrivial` are POST-FOLD facts. A
+    reviewer writing its half does not yet know whether its finding was fixed, filed or
+    declined, so a half structurally cannot carry two of the seven fields. Deciding which
+    fields a half CAN know is a design question, not a patch — filed as its own slice. The
+    second cost of keeping it: reading one document per round silently discarded the other
+    half's findings in 171 of 261 rounds, which turned a tree holding an unaddressed High into
+    a recorded STOP.
     """
     d = REPO / "docs" / "reviews" / "coordinator"
     out = []
@@ -481,6 +759,114 @@ def _self_test() -> int:
     case("a single round can never be thrashing",
          thrashing_component([fix_a1]), None)
 
+    # ── review_scope: WHICH component a convened review examines ─────────────────────────────
+    def _r(n, *comps):
+        return {"round": n, "findings": [{"component": c, "fix_induced": True} for c in comps]}
+
+    case("review_scope ranks by TOTAL appearances",
+         review_scope([_r(1, "a", "b"), _r(2, "a"), _r(3, "a")]), ["a", "b"])
+    # ⭐ THE IDENTITY CASE — the real measured disagreement, from `review-decision-procedure`,
+    # whose own architecture review convened on `parse-header` (backlog #117). Consecutive-run
+    # ranks `scope-for` first; total appearances ranks `parse-header` first, and it is right.
+    _real = [_r(n, *( (["parse-header"] if n in (1,2,3,6,7) else [])
+                    + (["scope-for"]    if n in (1,2,3,4)   else []) )) for n in range(1, 8)]
+    case("a component that RETURNS AFTER A GAP outranks a longer consecutive run "
+         "(parse-header 1,2,3,6,7 over scope-for 1,2,3,4)",
+         review_scope(_real)[0], "parse-header")
+    case("and the arming function still names the OTHER one, which is why they are separate "
+         "functions rather than one",
+         thrashing_component(_real[-2:]), "parse-header")
+    case("a component counts ONCE per round however many findings it carried",
+         review_scope([{"round": 1, "findings": [{"component": "a", "fix_induced": True}] * 5},
+                       _r(2, "b"), _r(3, "b")]), ["b", "a"])
+    case("ties break by name, so the order is deterministic",
+         review_scope([_r(1, "zeta", "alpha")]), ["alpha", "zeta"])
+    case("no rounds -> no scope, rather than a guess", review_scope([]), [])
+    case("findings with no component are ignored rather than counted as one",
+         review_scope([{"round": 1, "findings": [{"fix_induced": True}, {"component": "a"}]}]), ["a"])
+
+    # ── scope_lead: is first place a LEAD, or the tie-break speaking? ─────────────────────────
+    # ⭐ THE IDENTITY CASE, and it is the MEASURED shape, not a constructed one. Five of the ten
+    # readable subjects have no lead; `arm-prod-drift-cron` is five components at one appearance
+    # each. Both halves are asserted TOGETHER on purpose: the order still resolves
+    # alphabetically (which is wanted, and was pinned deliberately) AND the lead reports that
+    # the order is all it is. A case asserting only one half passes while the defect is live.
+    _five = [{"round": 1, "findings": [{"component": c, "fix_induced": True} for c in
+              ("merge-readiness", "schedule-durability", "cron-comment",
+               "drift-window", "doc-row")]}]
+    case("a 5-way tie ABSTAINS, and names every tied component rather than one of them",
+         (scope_lead(_five)["abstain"], scope_lead(_five)["tied"], scope_lead(_five)["margin"]),
+         (True, 5, 0))
+    # ⚠ THE LIST, not its length. Asserting `tied == 5` leaves `sorted()` free to be dropped,
+    # and the reader PRINTS these names — so an unstable order is a reader defect, caught here.
+    case("...and the tied names are reported in a stable order, because the reader prints them",
+         scope_lead(_five)["top"],
+         ["cron-comment", "doc-row", "drift-window", "merge-readiness", "schedule-durability"])
+    case("the reader says NO LEAD and lists the tied names on a second line",
+         scope_lead_lines(scope_lead(_five))[:2],
+         ["  scope-rank: NO LEAD — 5 components tied at 1 appearance(s) — first place is the "
+          "tie-break, not evidence",
+          "              tied: cron-comment, doc-row, drift-window, merge-readiness, "
+          "schedule-durability"])
+    case("the reader names the winner and its margin when there IS a lead",
+         scope_lead_lines(scope_lead(_real))[0],
+         "  scope-rank: parse-header — parse-header leads by 1 (n1=5 n2=4)")
+    # ⛔ r1 Claude M4: `review_scope` is the symbol both process docs name and it had NO
+    # non-test caller. It is now reached through `scope_lead`, and the reader PRINTS its order,
+    # so the claim in those docs is true of a run rather than only of the self-test.
+    case("the reader prints review_scope's ORDER, giving the named symbol a reader",
+         _try(lambda: scope_lead_lines(scope_lead(_real))[1]),
+         "              ranking: parse-header > scope-for")
+    # ⛔ THE FIXTURE MUST MAKE RANK AND ALPHABET DISAGREE. The first version used `_real`,
+    # where parse-header(5) and scope-for(4) happen to be in alphabetical order too, so
+    # `sorted(tally)` returned the same list and the mutation survived with rc=0. A fixture
+    # that cannot distinguish the right answer from a wrong one is not a case.
+    _rank_vs_alpha = [_r(1, "zeta", "alpha"), _r(2, "zeta"), _r(3, "zeta")]
+    case("...and the order it prints IS review_scope's RANKING, not an alphabetical re-sort",
+         (scope_lead(_rank_vs_alpha)["order"], sorted(scope_tally(_rank_vs_alpha))),
+         (["zeta", "alpha"], ["alpha", "zeta"]))
+    case("the reader shows that ranking, so rank order reaches a human",
+         _try(lambda: scope_lead_lines(scope_lead(_rank_vs_alpha))[1]),
+         "              ranking: zeta > alpha")
+    case("an abstention still shows the ranking, so the tie is visible beside the order",
+         _try(lambda: scope_lead_lines(scope_lead(_five))[2].startswith(
+             "              ranking: ")), True)
+    case("the reader does not emit a tied line when there is nothing to tie",
+         scope_lead_lines(scope_lead([])), ["  scope-rank: NO LEAD — no component appeared in "
+                                           "any round"])
+    case("...while review_scope's ORDER is unchanged and still alphabetical — the two coexist, "
+         "which is the whole repair",
+         review_scope(_five)[0], "cron-comment")
+    # ⚠ ADJACENT NEGATIVE, not an absurd one: the boundary is margin 0 vs margin 1, so the case
+    # that matters sits one appearance away from the tie it must not be confused with.
+    _narrow = [_r(1, "a", "b"), _r(2, "a")]
+    case("a margin of ONE is a lead, not a tie — the adjacent case to abstention",
+         (scope_lead(_narrow)["abstain"], scope_lead(_narrow)["margin"],
+          scope_lead(_narrow)["top"]), (False, 1, ["a"]))
+    # TWO DISTINCT INPUTS for the margin arithmetic: a fixture that supplies one constant
+    # cannot show the producer computes anything.
+    _wide = [_r(n, "number-populations") for n in range(1, 6)] + [_r(6, "number-populations",
+                                                                    "invariant-scope")]
+    case("a WIDE margin is reported as its own value, not as a boolean",
+         (scope_lead(_wide)["margin"], scope_lead(_wide)["n1"], scope_lead(_wide)["n2"]),
+         (5, 6, 1))
+    case("the real measured fixture leads by one, so it does NOT abstain",
+         (scope_lead(_real)["abstain"], scope_lead(_real)["top"][0],
+          scope_lead(_real)["margin"]), (False, "parse-header", 1))
+    case("an empty round set ABSTAINS rather than naming a component",
+         (scope_lead([])["abstain"], scope_lead([])["top"]), (True, []))
+    case("a lone component leads trivially — n2 is 0, not undefined",
+         (scope_lead([_r(1, "only")])["margin"], scope_lead([_r(1, "only")])["abstain"]),
+         (1, False))
+    # INDEPENDENT COPY: asserted on the tally itself, so the per-round rule is pinned without
+    # going through the orderer that was the only reader of it before.
+    case("scope_tally counts a component ONCE per round, asserted on the tally directly",
+         scope_tally([{"round": 1, "findings": [{"component": "a"}] * 4}, _r(2, "a")]), {"a": 2})
+    # A SECOND, DISTINCT input to the same producer: one fixture supplying one constant cannot
+    # show that the tally computes anything.
+    case("...and a different shape gives a different tally, not the same one",
+         scope_tally([_r(1, "x", "y"), _r(2, "y")]), {"x": 1, "y": 2})
+
     # --- Q4a convergence --------------------------------------------------
     inst = {"severity": "Low", "aim": "instrument", "fix_induced": False, "component": "t"}
     deliv = {"severity": "Low", "aim": "deliverable", "fix_induced": False, "component": "d"}
@@ -489,6 +875,155 @@ def _self_test() -> int:
     two_inst = [_R(1, [inst]), _R(2, [inst])]
     case("two consecutive instrument-only rounds converge",
          converged(two_inst, "full-loop")[0], True)
+
+    # --- #329: an unreachable gate must say what evidence is missing ------
+    case("a subject with a clean round is NOT reported unreachable",
+         convergence_unreachable(two_inst), None)
+    case("a subject whose every round is dirty IS reported unreachable",
+         "UNREACHABLE" in (convergence_unreachable([_R(1, [deliv]), _R(2, [high])]) or ""), True)
+    # ⟳ 2026-10-21, r4: THIS PAIR USED TO ASSERT THE LITERAL TOKEN `RECORDED`, and that token was
+    # carrying superseded ADVICE rather than the property. The old message told the reader a
+    # finding-free round "still has to be RECORDED (`findings: []`) to count" — but backlog #329
+    # measured that demand as unsatisfiable (48 rounds, 1 clean, 0 of 12 subjects converging) and
+    # REMOVED it; what reaches convergence is DISPOSITIONING. So a case pinning that word was
+    # pinning the wrong instruction, and `convergence_unreachable` could not be corrected without
+    # reddening it. ⛔ RE-POINTED AT THE PROPERTY AND MADE STRICTER, NOT WEAKER: the refusal must
+    # still be about the RECORD rather than the work, AND must now also name the remedy that
+    # actually exists. Asserting a message's own tokens defends only its deletion.
+    # ── r5 CLAUDE H1+H2: the property as VALUE EQUALITY, not prose matching ──────────────────
+    # ⛔ THE THIRD ATTEMPT, and the first two are in `unreachable_reason`'s comment. A token
+    # cannot be negated the way a sentence can, so these cases cannot be passed by a message
+    # asserting the opposite — which is exactly how both previous versions were defeated.
+    # ⛔ `or {}` IS LOAD-BEARING, NOT DEFENSIVE NOISE. Written as `unreachable_reason(...)["about"]`
+    # these two CRASHED the suite under the `aim`-arm mutation — that round becomes clean, the
+    # function correctly returns None, and the subscript raises. A suite that DIES does not redden:
+    # it truncates the run, so every later case goes unevaluated and other mutations lose their
+    # attribution (measured — the aim mutation reported ONE red and no "passed" line at all, and
+    # `check-plan-code` then refused its `expect`). `.get` turns that into a clean MISMATCH, which
+    # is a named red the harness can attribute. See `test-harness-can-launder-failures`.
+    case("the refusal is about the RECORD — asserted as a VALUE, not found in prose",
+         (unreachable_reason([_R(1, [deliv])]) or {}).get("about"), "record")
+    case("...and the remedy is DISPOSITIONING — likewise a value",
+         (unreachable_reason([_R(1, [deliv])]) or {}).get("remedy"), "disposition")
+    # ⛔ INDEPENDENT COPIES. H1's defect was a case that LOOPED OVER THE SET UNDER TEST, so
+    # emptying `UNREACHABLE_FORBIDDEN` left the suite at 102/102 — both sides shrank together.
+    # These name the tokens literally, so changing either must come HERE and be decided.
+    case("UNREACHABLE_ABOUT is the token the renderer has prose for", UNREACHABLE_ABOUT, "record")
+    case("UNREACHABLE_REMEDY is the token the renderer has prose for",
+         UNREACHABLE_REMEDY, "disposition")
+    case("every token the module can emit HAS a rendering — a missing one must raise, not emit",
+         sorted(_UNREACHABLE_PROSE["about"]) == ["record", "work"]
+         and sorted(_UNREACHABLE_PROSE["remedy"]) == ["clean-round", "disposition"], True)
+    # ⭐ THE NEGATION CASES THAT DEFEATED BOTH PREVIOUS VERSIONS, kept as the falsifier. Under the
+    # structured design they are not even expressible: the WRONG remedy renders the WRONG prose,
+    # so the two cannot disagree. This asserts that pairing, which is the whole property.
+    case("the `work` token renders prose that blames the WORK — so the tokens really do decide",
+         "work is defective" in render_unreachable(
+             {"about": "work", "remedy": "disposition", "blockers": []}), True)
+    case("...and the `clean-round` token renders the demand backlog #329 abolished, provably",
+         "finds nothing" in render_unreachable(
+             {"about": "record", "remedy": "clean-round", "blockers": []}), True)
+    case("so the SHIPPED reason renders neither of those",
+         ("work is defective" not in (convergence_unreachable([_R(1, [deliv])]) or "")
+          and "finds nothing" not in (convergence_unreachable([_R(1, [deliv])]) or "")), True)
+    # ── ARCHITECTURE REVIEW 2026-10-21 F1: IDENTITY CASES ON EVERY RENDERING ─────────────────
+    # ⛔ r6 edited a rendering and the suite stayed 107/107 while the reader was told the opposite of
+    # the property. These pin each string EXACTLY, so an edit reddens and must be decided. They do
+    # NOT establish that the strings are correct — see `render_unreachable`'s docstring for the bound
+    # that is actually claimed. An INDEPENDENT COPY, not a loop over `_UNREACHABLE_PROSE`: looping
+    # would let the table be emptied silently, which is r5 CLAUDE H1's defect exactly.
+    # ⛔⛔ r6 CLAUDE H1 — THE FIFTH EVASION, AND THE IDENTITY CASES BELOW DID NOT CATCH IT.
+    # They pin `_UNREACHABLE_PROSE`, which is the renderer's INPUT. `render_unreachable` also
+    # concatenates THREE BODY LITERALS that no case touched, so editing only those left the suite
+    # at 111/111 while `decide()` told the reader *"the implementation on this branch is defective
+    # … the code it delivers is broken and must be rewritten"*. Verified. A `.replace()` on the
+    # returned string passes the same way.
+    # ⭐ SO THE PIN MOVES TO THE OUTPUT — the artifact a reader actually sees — and that is what
+    # "change detection" had to mean all along. This is NOT a sixth proxy: a proxy stands in for
+    # the thing, and this IS the thing. The table pins below are kept as the LOCALISERS: they say
+    # WHICH part moved when this case reddens, which a single 551-char diff does not.
+    # ⚠ AND THE ARCHITECTURE REVIEW'S FRAMING WAS PART OF THE CAUSE (r6 CLAUDE M2): concluding
+    # "the property is untestable, so narrow the claim" excused stopping at the inputs. Change
+    # detection on the OUTPUT is entirely testable; the previous round simply did not do it.
+    case("⭐ THE SHIPPED DIAGNOSTIC IS PINNED IN FULL — body literals included, not just the table",
+         render_unreachable({"about": "record", "remedy": "disposition", "blockers": []}),
+         "no round recorded for this subject is clean, so convergence is UNREACHABLE from this "
+         "record rather than merely unmet: every recorded round still carries an OPEN Blocking/High "
+         "finding, an open deliverable-aimed finding, or fixes it declared non-trivial. ⚠ What "
+         "reaches convergence is recording a disposition — `fixed` or `declined` — on each of them, "
+         "which is evidence this workflow already produces. `filed` does not count: a backlog "
+         "deferral is not an answer about THIS branch. See backlog #329 for why the record, not the "
+         "work, is what this is about")
+    case("...and what `decide` hands a reader is that same rendered string, not a paraphrase",
+         render_unreachable({"about": "record", "remedy": "disposition", "blockers": []})
+         in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1], True)
+    case("the `record` rendering is pinned — an edit must come HERE",
+         _UNREACHABLE_PROSE["about"]["record"],
+         "UNREACHABLE from this record rather than merely unmet")
+    case("the `work` rendering is pinned too — it is the one that must never be SHIPPED",
+         _UNREACHABLE_PROSE["about"]["work"],
+         "UNREACHABLE because the work is defective")
+    case("the `disposition` rendering is pinned",
+         _UNREACHABLE_PROSE["remedy"]["disposition"],
+         "What reaches convergence is recording a disposition — `fixed` or `declined` — on each of "
+         "them, which is evidence this workflow already produces. `filed` does not count: a backlog "
+         "deferral is not an answer about THIS branch")
+    case("the `clean-round` rendering is pinned — the demand backlog #329 abolished",
+         _UNREACHABLE_PROSE["remedy"]["clean-round"],
+         "What reaches convergence is a round that finds nothing")
+    case("a clean round yields NO reason at all", unreachable_reason([_R(1, [])]), None)
+    case("no rounds yields no reason either", unreachable_reason([]), None)
+    # rounds carry it, so a case that varied only `findings` would miss the dominant cause.
+    case("a findings-clean round flagged fixes_nontrivial does not count as clean",
+         "UNREACHABLE" in (convergence_unreachable([_R(1, [], nt=True)]) or ""), True)
+    case("no rounds at all is not 'unreachable' — it is simply unstarted",
+         convergence_unreachable([]), None)
+    # ⛔ The ESCAPE PATH is what matters here: r4's drift mattered because the contradiction
+    # reached a reader THROUGH `decide`. So this asserts `decide` carries the rendered remedy —
+    # and it is checked against the RENDERER's own output rather than a quoted phrase, so a
+    # reworded remedy cannot make this case silently stop testing anything.
+    case("the ROUND_OWED reason reaches the reader carrying the rendered remedy",
+         _UNREACHABLE_PROSE["remedy"]["disposition"]
+         in decide([_R(1, [deliv]), _R(2, [deliv])], "full-loop", True)[1], True)
+    # ── r4 CLAUDE H3 / CODEX finding 5: the two convergence readers must not disagree ──────────
+    # ⛔ THE REGRESSION CASE FOR THE DRIFT ITSELF, at the input that exhibited it: one round whose
+    # Blocking+deliverable finding is DISPOSITIONED `fixed`, with trivial fixes. `converged` said
+    # True while `convergence_unreachable` called the same record UNREACHABLE, and the
+    # contradiction escaped to a reader through `decide`. Now both read `round_blocker`.
+    _fixed = {"id": "B1", "severity": "Blocking", "aim": "deliverable", "disposition": "fixed"}
+    case("⭐ a dispositioned round is NOT unreachable — the two readers agree",
+         convergence_unreachable([{"round": 1, "fixes_nontrivial": False,
+                                   "findings": [_fixed]}]), None)
+    case("...and converged() accepts that same record, which is what made them contradict",
+         converged([{"round": 1, "fixes_nontrivial": False, "findings": [_fixed]}],
+                   "one-round")[0], True)
+    # ⛔ AND THE PROPERTY, OVER INPUTS THE PAIR ABOVE DOES NOT COVER: a record that converges can
+    # never be unreachable, whatever the findings look like. This is the invariant the duplicate
+    # rule broke; a case naming one input would be satisfied by re-breaking it differently.
+    case("INVARIANT: if converged() is True then convergence_unreachable() is None",
+         all(convergence_unreachable(rs) is None
+             for rs in ([{"round": 1, "fixes_nontrivial": False, "findings": [_fixed]}],
+                        [{"round": 1, "fixes_nontrivial": False, "findings": []}],
+                        [{"round": 1, "fixes_nontrivial": False,
+                          "findings": [{"severity": "High", "aim": "instrument",
+                                        "disposition": "declined"}]}])
+             if converged(rs, "one-round")[0]), True)
+    # ⛔ TWO DISTINCT INPUTS, AND THAT IS THE POINT — `check-fixture-variation.py` caught this
+    # calling `round_blocker` at ONE value, so *"any clause that reads that parameter is
+    # unguarded"*: the case was satisfiable by a function ignoring its argument. ⚠ Found 2026-10-21
+    # only by running the FULL `ci.yml` guard list; my own subset reported green. The two inputs
+    # block for DIFFERENT reasons — non-trivial fixes, and an open Blocking — so the asserted
+    # property (converged's refusal IS round_blocker's sentence) is tested across both arms rather
+    # than once. See `exercise-the-producer-at-two-distinct-inputs`.
+    _nt = {"round": 7, "fixes_nontrivial": True, "findings": []}
+    _open = {"round": 2, "fixes_nontrivial": False,
+             "findings": [{"severity": "Blocking", "aim": "instrument", "disposition": "filed"}]}
+    case("round_blocker is the owner — converged's refusal IS its sentence (non-trivial fixes)",
+         converged([_nt], "one-round")[1] == round_blocker(_nt), True)
+    case("...and at a SECOND, differently-blocking input (an open Blocking)",
+         converged([_open], "one-round")[1] == round_blocker(_open), True)
+    case("...and those two inputs really do produce DIFFERENT sentences",
+         round_blocker(_nt) != round_blocker(_open), True)
     case("a High blocks convergence even when aimed at the instrument",
          converged([_R(1, [inst]), _R(2, [high])], "full-loop")[0], False)
     case("a deliverable finding blocks convergence",
@@ -565,13 +1100,33 @@ def _self_test() -> int:
          _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nsubject: s\n```")), True)
     # r1 Blocking (Codex): block-style YAML parsed to ZERO findings, so a recorded High
     # reached STOP. Executed by the reviewer, not reasoned about.
+    # ⟳ 2026-10-20, backlog #329: the fixture's disposition moved `fixed` -> `filed`. The CASE'S
+    # PURPOSE IS UNCHANGED and so is its falsifying power — it exists because block-style YAML once
+    # parsed to ZERO findings, making a recorded High invisible, and a parser that drops findings
+    # still makes this reach STOP. What changed is `converged`, which now asks whether a finding is
+    # still OPEN rather than whether it exists; `filed` is open (deferred to the backlog is not
+    # answered), so an open High still blocks and this case still measures the parser.
     _block = ("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - id: H1\n    severity: High\n"
               "    aim: deliverable\n    fix_induced: false\n    component: c\n"
-              "    disposition: fixed\n```")
+              "    disposition: filed\n```")
     case("an ordinary BLOCK-style finding is parsed, not silently dropped",
          parse_header(_block)["findings"][0]["severity"], "High")
-    case("a block-style High does NOT reach STOP",
+    case("a block-style High that is still OPEN does NOT reach STOP",
          decide([parse_header(_block)], "one-round", True)[0], "ROUND_OWED")
+    # ⭐ THE DELIBERATE CHANGE, PINNED SO IT CANNOT HAPPEN BY ACCIDENT. The same High, FIXED and
+    # with trivial fixes, now converges. That is the whole of backlog #329: the old rule refused on
+    # a finding's PRESENCE and so demanded a round that found nothing — 1 clean round in 48, and
+    # 0 of 12 subjects converging. ⚠ `fixes_nontrivial: false` is still required and still blocks,
+    # so a SUBSTANTIVE fix cannot converge unreviewed; only a reworded-line fix can.
+    _fixed = _block.replace("disposition: filed", "disposition: fixed")
+    case("⭐ the same High, FIXED with trivial fixes, DOES converge — backlog #329",
+         decide([parse_header(_fixed)], "one-round", True)[0], "STOP")
+    _fixed_big = _fixed.replace("fixes_nontrivial: false", "fixes_nontrivial: true")
+    case("...but a NON-TRIVIAL fix still blocks, because a fix is unreviewed code",
+         decide([parse_header(_fixed_big)], "one-round", True)[0], "ROUND_OWED")
+    _declined = _block.replace("disposition: filed", "disposition: declined")
+    case("a DECLINED finding converges too — declining is an answer, filing is not",
+         decide([parse_header(_declined)], "one-round", True)[0], "STOP")
     case("a list item that parses to nothing REFUSES rather than shrinking the round",
          _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - \n```")), True)
     # r2 Blocking (Codex): parity proved a dict appeared, not that it SAYS anything. A
@@ -656,6 +1211,10 @@ def main(argv: list[str]) -> int:
     print(f"{decision} — {why}")
     print(f"  branch={branch}  scope={scope}  rounds={len(rounds)}  "
           f"tree_reviewed={tree_reviewed}")
+    # ⛔ THE RANKER HAD NO READER. Until 2026-10-20 `review_scope` was called only by this
+    # file's own self-test, while `dev-process.md` said running this script computes it.
+    for line in scope_lead_lines(scope_lead(rounds)):
+        print(line)
     for r in rounds:
         aims = ",".join(f.get("aim", "?") for f in r["findings"]) or "none"
         print(f"    r{r['round']}: {len(r['findings'])} finding(s) [{aims}]")

@@ -1,0 +1,534 @@
+<title>Why it is not converging</title>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+</style>
+
+<div class="wrap ex-body">
+
+<h1>Why it is not converging</h1>
+<p class="horizon">as of <code>ea119c82</code> · 2026-10-20 ~17:40 PDT · branch <code>decision-route-escalation</code></p>
+
+<div class="reading">
+<b>The reading I chose:</b> the <i>causal mechanism</i> of non-convergence — why finding counts went
+<span class="num">29 → 8 → 20</span> on the code and <span class="num">25 → 9</span> on the design
+instead of falling to zero. <b>Not</b> what the open findings are (that is backlog&nbsp;#327) and
+<b>not</b> whether to SPLIT or DEFER (that is yours, and still pending).
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say
+<i>“read my questions”</i> in the session and the answer gets written into this page, under the
+section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to
+run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#short">The short answer</a></li>
+<li><a href="#reframe">The reframe: it is not this mechanism</a></li>
+<li><a href="#counts">What the counts actually were</a></li>
+<li><a href="#pop">Cause 1 — the defects are population choices</a></li>
+<li><a href="#corpus">The one-pass corpus run</a></li>
+<li><a href="#why">Why review cannot find these</a></li>
+<li><a href="#falsifier">Cause 2 — claims that cannot fail</a></li>
+<li><a href="#deadlock">Cause 3 — admissibility <i>is</i> liveness</a></li>
+<li><a href="#implies">What this implies for the pending decision</a></li>
+<li><a href="#table">Measured vs inferred</a></li>
+</ol>
+</div>
+
+<h2 id="short">1. The short answer</h2>
+
+<p class="lede">Three causes, and the third is the one that makes the other two unfixable by more
+reviewing.</p>
+
+<ol>
+<li><b>The defects are population choices</b> — <i>over which subjects? which rounds? which
+corpus?</i> — and adversarial review asks <i>“is this correct?”</i>, which is a <b>local</b>
+question. A local instrument samples one population error per round. There were at least five.</li>
+<li><b>Several defects were claims rather than code</b> — most of all <i>“all seven triggers
+re-derived”</i>, asserted twice and wrong both times. A table you fill in has no falsifier, so
+nothing fails when it is wrong.</li>
+<li><b>Admissibility and liveness are the same switch.</b> Append-only, plus <i>any</i> unusable row
+making every trigger <code>CANNOT RUN</code>, means a tightening fix can take the whole instrument
+offline — so each fix creates a new way to be refused, which is what <i>fix-induced</i> counts
+measure.</li>
+</ol>
+
+<p>And then the corpus run below found a fourth thing, which reframes all of it.</p>
+
+<h2 id="reframe">2. The reframe: it is not this mechanism</h2>
+
+<p>I ran the arming condition over <i>every</i> subject in the repository it can read, instead of
+over one subject at a time. That had not been done before.</p>
+
+<div class="k red">
+<b>The thrashing condition arms on 8 of the 12 readable subjects — 67%.</b> Not on this mechanism
+specially. On two thirds of everything the instrument can see.
+</div>
+
+<div class="scroll">
+<table>
+<tr><th>subject</th><th>rounds</th><th>component it arms on</th></tr>
+<tr><td><code>decision-card-soundness</code></td><td class="num">2</td><td><code>calibration-claims</code></td></tr>
+<tr><td><code>decision-log-model-redesign</code></td><td class="num">2</td><td><code>log-schema</code></td></tr>
+<tr><td><code>decision-route-escalation</code></td><td class="num">3</td><td><code>corpus-cannot-run</code></td></tr>
+<tr><td><code>doc-citations-guard</code></td><td class="num">5</td><td><code>delivery-figures</code></td></tr>
+<tr><td><code>explainer-src-root-self-configures</code></td><td class="num">8</td><td><code>start-restart</code></td></tr>
+<tr><td><code>fix-src-viewer-escaping</code></td><td class="num">2</td><td><code>dashboard-gate</code></td></tr>
+<tr><td><code>review-decision-procedure</code></td><td class="num">7</td><td><code>parse-header</code></td></tr>
+<tr><td><code>seed-explainer-serve-manifest</code></td><td class="num">3</td><td><code>regenerate</code></td></tr>
+</table>
+</div>
+
+<p>The four that do <i>not</i> arm are <code>arm-prod-drift-cron</code>, <code>peer-sites</code>,
+<code>velocity-177</code> and <code>velocity-doc-consistency</code>.</p>
+
+<p>Two consequences follow, and they pull in opposite directions:</p>
+
+<ul>
+<li><b>Non-convergence here is not exceptional.</b> It is the ordinary state of this repository’s
+review process wherever the process can measure itself. Asking “why is <i>this</i> code not
+converging” has a partly uncomfortable answer: because almost nothing does, by this definition.</li>
+<li><b>A condition that fires on two thirds of its population is a description, not a trigger.</b>
+<code>dev-process.md</code> says thrashing → convene an architecture review. Of these 8 armed
+subjects, exactly <b>1</b> has an architecture review whose filename names it
+(<code>architecture-review-2026-10-20-decision-route-escalation.md</code>), out of 20 reviews on
+disk. <span class="tag i">inferred</span> — the mapping is by filename, which is not authoritative;
+a review may cover a subject without naming it.</li>
+</ul>
+
+<div class="k warn">
+<b>This does not mean the condition is wrong.</b> It fires at <code>rounds=2</code> on three
+subjects — the earliest it mathematically can — while the pre-scheme median is <b>4</b> rounds
+(<code>baseline.json</code>). So either thrashing genuinely is endemic, or the condition is tuned to
+fire before the process’s own median. <b>This page cannot tell those apart</b>, and that is a real
+open question rather than a conclusion I am withholding.
+</div>
+
+<h2 id="counts">3. What the counts actually were</h2>
+
+<div class="scroll">
+<table class="big">
+<tr><th>round</th><th>subject</th><th>findings</th><th>what was wrong</th></tr>
+<tr><td>r1</td><td>the code</td><td class="num">3 B · 9 H · 10 M · 7 L = 29</td><td>the design’s <b>claims</b></td></tr>
+<tr><td>r2</td><td>the code</td><td class="num">0 B · 2 H · 4 M · 2 L = 8</td><td>the <b>fixes</b> for r1</td></tr>
+<tr><td>r3</td><td>the code</td><td class="num">1 B · 7 H · 6 M · 6 L = 20</td><td>the <b>fixes</b> for r2 — counts went <b>up</b></td></tr>
+<tr><td colspan="4" style="border-bottom:none;padding-top:14px"><i>Phase 6 architecture review, armed mechanically on thrashing →</i></td></tr>
+<tr><td>r1</td><td>the design</td><td class="num">4 B · 10 H · 10 M · 1 L = 25</td><td>19 of 25 <b>fix-induced</b>; <code>log-schema</code> carried 12 of those</td></tr>
+<tr><td>r2</td><td>the design</td><td class="num">6 H · 3 M = 9</td><td>8 of 9 fix-induced; <code>log-schema</code> 4 → the condition <b>fired</b></td></tr>
+</table>
+</div>
+
+<p>Phase 6’s own verdict split the subject cleanly, and that split is the single most useful fact in
+the whole slice:</p>
+
+<blockquote><p>The <b>pure core</b> — <code>route_next</code>, <code>route_sequence_error</code>,
+<code>derive_routes_tried</code>, <code>scope_lead</code>, <code>t2</code>–<code>t7</code> —
+<b>converged in one round</b> and has produced almost nothing since. The <b>I/O boundary</b> has not
+converged in three. <b>64%</b> of the 28 fix-round findings are in components that read the
+world.</p></blockquote>
+
+<p>So the question is not “why is the code not converging” but “<b>why does the half that reads the
+world not converge, when the half that does not converged immediately?</b>”</p>
+
+<h2 id="pop">4. Cause 1 — the defects are population choices</h2>
+
+<p>A pure function has inputs you can enumerate. A world-reader has a <i>population</i>, and the
+population was wrong five separate times, each caught one round later by somebody else.</p>
+
+<div class="scroll">
+<table>
+<tr><th>the figure that was used</th><th>what it should have been</th><th>provenance</th></tr>
+<tr>
+  <td>corpus of <b>57</b> subjects / 63 / 261 rounds</td>
+  <td><b>81</b> / 105 / 392 as pinned, <b>83 / 106 / 420</b> today</td>
+  <td><code>baseline.json</code> keeps the wrong one under its own key
+      <code>corpus_ORIGINAL_WRONG</code></td>
+</tr>
+<tr>
+  <td><b>294 flat round documents excluded</b> by a writer-subdirectory filter</td>
+  <td>both layouts</td>
+  <td>r1 Claude M1 — and its stated cause is the tell:
+      <i>“it reproduced a PREVIOUS SESSION’S denominator”</i></td>
+</tr>
+<tr>
+  <td>readability <b>10 of 57 = 18%</b></td>
+  <td><b>11 of 82 = 13.4%</b>, and <b>46 of 395 = 11.6%</b> over the rule’s real
+      <code>(subject, round)</code> domain</td>
+  <td>found independently by <i>both</i> r1 halves (Codex XM6, Claude CB3b)</td>
+</tr>
+<tr>
+  <td>ranker fit <b>3 of 3</b> labelled subjects</td>
+  <td>2 of 2 — the third, <code>ship-src-root-alone</code>, <b>raises</b></td>
+  <td><code>rounds_for</code> → <code>finding 'L4' has disposition='refuted'</code></td>
+</tr>
+<tr>
+  <td><b>97%</b> of rounds carry a half → “so readability becomes 97%”</td>
+  <td>readable subjects went <b>10 → 10, zero gained</b></td>
+  <td>0 of 435 half documents carry a parseable header
+      (<code>check-review-decision.py:458</code> docstring)</td>
+</tr>
+</table>
+</div>
+
+<p>Every one of these is the same error: a number that is <b>correct about one set</b> presented as
+a number <b>about a different set</b>. The repository has a name for it and has measured it twelve
+times. It is not carelessness — <code>18%</code> and <code>13.4%</code> both describe something
+real. They just describe different things, and the design hung a rule on the wrong one.</p>
+
+<h3>And the structural version of it, which nothing is watching</h3>
+
+<p><code>baseline.json</code> pins three corpus counts so drift becomes visible. Then:</p>
+
+<pre><code>subjects_with_ge2_rounds   referenced in 1 script  — printed only under --rederive, never compared
+rounds_total               referenced in 0 scripts
+subjects_with_any_round    referenced in 0 scripts</code></pre>
+
+<p><code>t6_denominator_moved</code>, the trigger whose entire job is <i>“a finding expires when its
+denominator moves”</i>, compares only the <b>median and mean</b> of rounds-to-termination. So:</p>
+
+<div class="k red">
+The corpus has grown from the pinned <span class="num">105 / 81 / 392</span> to
+<span class="num">106 / 83 / 420</span> — <b>+28 rounds in 17 hours</b>, largely from this slice’s own
+review documents — and <code>t6_denominator_moved</code> returns <code>None</code>. <b>The exact class
+of error that caused five findings is pinned in a file that no trigger reads.</b>
+</div>
+
+<h2 id="corpus">5. The one-pass corpus run</h2>
+
+<p>The prescription this suggests is: stop asking <i>is this correct</i> and start asking <i>what
+does this do over everything it will ever read</i>. So I ran that — every subject, every
+<code>(subject, round)</code> pair, through the real readers, read-only, one pass:</p>
+
+<div class="scroll">
+<table class="big">
+<tr><th>measurement</th><th>result</th></tr>
+<tr><td>subjects in the corpus</td><td class="num">106</td></tr>
+<tr><td><code>(subject, round)</code> pairs</td><td class="num">420</td></tr>
+<tr><td>subjects with ≥ 2 rounds</td><td class="num">83</td></tr>
+<tr><td><code>rounds_for()</code> <b>raises</b></td><td class="num">14</td></tr>
+<tr><td>parses but returns <b>zero</b> rounds</td><td class="num">80 &nbsp;<span class="tag">silent</span></td></tr>
+<tr><td><b>actually readable</b></td><td class="num">12 &nbsp;(11.3% of subjects)</td></tr>
+<tr><td>pairs with a parseable header</td><td class="num">48 of 420 = 11.4%</td></tr>
+<tr><td>readable subjects where the ranker <b>abstains</b></td><td class="num">7 of 12 = 58%</td></tr>
+<tr><td>readable subjects where <b>thrashing arms</b></td><td class="num">8 of 12 = 67%</td></tr>
+</table>
+</div>
+
+<p>And the 14 failures group into exactly <b>two</b> distinct causes, by their own message text:</p>
+
+<pre><code>[ 13]  ValueError: no ```yaml header block
+[  1]  ValueError: finding 'L4' has disposition='refuted', not one of ['declined','filed','fixed']</code></pre>
+
+<h3>What that one pass bought, against five rounds</h3>
+
+<ul>
+<li>It reproduced the <b>whole population-error class in seconds</b>, and showed the pinned baseline
+is <i>already stale</i> — 17 hours after being pinned.</li>
+<li>It found the <code>disposition='refuted'</code> vocabulary gap, which cost r1 a whole finding
+(CH1) to discover.</li>
+<li>It found the <b>80 subjects that parse to zero rounds</b> — the silent case, where
+<i>“no header anywhere”</i> is indistinguishable from <i>“a clean round”</i> at the call site.</li>
+<li><b>Two things five rounds never found:</b> that <code>t6</code> cannot see its own pinned counts
+move, and that thrashing arms on 67% of the readable corpus.</li>
+</ul>
+
+<div class="k green">
+<b>The thesis survives, and with a number attached.</b> One read-only pass found every population
+defect the five rounds found plus two they did not. It cost minutes.
+</div>
+
+<div class="k warn">
+<b>Where the thesis is INCOMPLETE, stated plainly.</b> The corpus run would <b>not</b> have found
+the row-lifecycle Blocking, the <code>t3</code> breakage, or the attempt-identity ambiguity — those
+are defects in a <i>proposed design</i>, which has no corpus to run against because it does not
+exist yet. Review found those, and only review could have. <b>So the answer is not “review is the
+wrong instrument”; it is “review was being used for both jobs, and it is only good at one.”</b>
+</div>
+
+<h2 id="why">6. Why review cannot find these</h2>
+
+<p>Adversarial review answers <i>“is this correct?”</i>. That question is answerable by reading the
+thing in front of you — which is why it converged on the pure core in one round. The function’s
+inputs are visible in its signature.</p>
+
+<p>A population question is not answerable that way. <i>“Is 18% the right readability figure?”</i>
+cannot be settled by reading the sentence that contains it, or the function that produced it, or even
+the file it came from. It is settled by <b>enumerating the set</b> — and no amount of care while
+reading substitutes for that, which is why three different reviewers and the author all read past
+<code>18%</code> and the fourth reader only caught it by computing <code>11 of 82</code>.</p>
+
+<p>So each round samples <i>one</i> population error, because a reviewer notices the one it happens
+to recompute. With five such errors present, you get five rounds — and the count does not fall,
+because the supply was never the thing the rounds were reducing.</p>
+
+<blockquote><p>The repository had already measured this exact shape and written it down:
+<i>review is the wrong instrument for a SURFACE — 6 rounds ≈ 7 edge cases, one corpus run ≈
+5,287.</i></p></blockquote>
+
+<h2 id="falsifier">7. Cause 2 — claims that cannot fail</h2>
+
+<p>The single most repeated defect in this slice is not in the code. It is a sentence:</p>
+
+<blockquote><p>“All seven triggers, re-derived.”</p></blockquote>
+
+<p>Asserted in the design’s first version, which had missed <b>t4</b>. Asserted again in the
+rewrite, which had missed <b>t3</b> — and that time <i>the rewrite’s own fix caused the breakage</i>.
+Moving outcomes onto observation rows left <code>t3_routes_collapsed</code> reading
+<code>route</code> off rows that no longer carry one:</p>
+
+<pre><code>attempted routes: ['accrete', 'redesign', 'split', 'defer', 'accrete']
+t3 -&gt; "all 5 scored rows took route None — the routes are not discriminating,
+       so this is a conveyor wearing a decision's clothes"</code></pre>
+
+<p>A <b>false FAIL</b> over maximally varied routes. Both times what caught it was somebody
+constructing an input and running the function; both times what failed to catch it was everybody
+reading the table, including the person who wrote it.</p>
+
+<p>The lesson is about the <i>shape of the claim</i>, not about diligence: <b>a table you fill in has
+no falsifier.</b> There is no observation that makes “all seven re-derived” go red, so it is not a
+check — it is a hope with a tick next to it. This is the same reason the first version’s self-imposed
+gate was worthless: it required “3 of 3 labelled subjects”, where one subject <i>raises</i> and the
+other two have unique winners that a tie-break cannot move. It could only ever pass.</p>
+
+<h2 id="deadlock">8. Cause 3 — admissibility <i>is</i> liveness</h2>
+
+<p>This is the cause that makes the first two unfixable by more reviewing, and it has a clean
+demonstration. Three facts, each independently true and benign:</p>
+
+<ol>
+<li>the log is <b>append-only</b>, so a row cannot be corrected;</li>
+<li><code>validate_row</code> refuses a row whose route is not the next rung;</li>
+<li><code>main()</code> treats <i>any</i> unusable row as <code>CANNOT RUN</code> for <b>every</b>
+trigger.</li>
+</ol>
+
+<p>Together they mean a tightening of (2) can silence the whole instrument via (3), permanently via
+(1). Here is that state, driven through the real <code>main()</code> four times — the only variable
+is which row gets written about this very design review:</p>
+
+<div class="scroll">
+<table class="big">
+<tr><th>state</th><th>the row written</th><th>rc</th><th>verdict</th></tr>
+<tr><td>A</td><td>none — as committed</td><td class="num">1</td><td><code>FAIL trigger 1 NOT FED</code></td></tr>
+<tr><td>B</td><td>the <b>truth</b>: <code>redesign</code></td><td class="num">2</td><td><code>CANNOT RUN — no trigger was evaluated</code></td></tr>
+<tr><td>C</td><td>the route <b>the ladder prescribes</b>: <code>split</code></td><td class="num">2</td><td><code>CANNOT RUN</code></td></tr>
+<tr><td>D</td><td>a <b>dishonest</b> <code>accrete</code></td><td class="num">0</td><td><code>all triggers quiet</code></td></tr>
+</table>
+</div>
+
+<div class="k red">
+<b>The mechanism cannot be in a green state about its own design review by any honest row. The only
+green state is the dishonest one.</b>
+</div>
+
+<p>Note what makes this more than an irony. In state A the guard fired <b>correctly</b> — two review
+rounds had run and no decision was recorded, which is exactly what trigger 1 exists to catch. Trying
+to obey it produces states B and C. So the instrument is <b>right</b>, and <b>obeying it is
+impossible</b>, and the only way to a green tree is a false durable record. That is what “the fixes
+generate the next round’s defects” looks like from the inside: not carelessness, but a structure
+where every honest move is refused.</p>
+
+<p><code>check-decision-scheme.py</code> is therefore <b>red on purpose right now</b>, and left that
+way. Its own failure text is the instruction: <i>“a failing trigger is not a bug to patch; it is the
+promise saying the scheme no longer earns its place.”</i></p>
+
+<h2 id="implies">9. What this implies for the pending decision</h2>
+
+<p>The SPLIT-vs-DEFER choice is yours and I am not pre-empting it. But the corpus run puts a third
+option on the table that neither review proposed, and it is cheap:</p>
+
+<div class="scroll">
+<table class="big">
+<tr><th>option</th><th>what it buys</th><th>what the evidence here says</th></tr>
+<tr>
+  <td><b>SPLIT</b></td>
+  <td>the confirmed-closed corrections land; the row model becomes its own subject</td>
+  <td>the ladder’s own next rung, and the only route with positive evidence
+      (<code>relocation</code> 5 → 0 → 0, n=1). ⚠ but most of the “stable half” is
+      <b>corrections to false statements</b>, not working mechanism</td>
+</tr>
+<tr>
+  <td><b>DEFER</b></td>
+  <td>stop, file it</td>
+  <td>five rounds, zero measured benefit, and rounds-to-termination <b>uncomputable</b> because no
+      unit has terminated</td>
+</tr>
+<tr>
+  <td><b>MEASURE FIRST</b> <span class="tag i">not proposed by either review</span></td>
+  <td>run the readers over the whole corpus before deciding anything about the design</td>
+  <td>one pass already answered two questions five rounds could not. It is read-only, costs minutes,
+      and it would tell you whether the mechanism has a <i>design</i> problem or a
+      <i>population</i> problem — which is the thing nobody currently knows</td>
+</tr>
+</table>
+</div>
+
+<p>The strongest single argument for <b>MEASURE FIRST</b> is section 2. If thrashing arms on 67% of
+the readable corpus, then the finding that armed this slice’s architecture review is not evidence
+about <i>this</i> mechanism at all — it is the base rate. Deciding SPLIT or DEFER on a signal that
+fires two thirds of the time is deciding on noise, and that is answerable in an afternoon.</p>
+
+<h2 id="table">10. Measured vs inferred</h2>
+
+<p>The prose above cannot tell these apart, and the difference is usually what you came for.</p>
+
+<div class="scroll">
+<table>
+<tr><th>claim</th><th>status</th><th>how</th></tr>
+<tr><td>106 subjects, 420 pairs, 83 with ≥2 rounds</td><td><span class="tag m">measured</span></td><td><code>_round_docs()</code>, one pass</td></tr>
+<tr><td><code>rounds_for</code> raises on 14; 80 parse to zero rounds; 12 readable</td><td><span class="tag m">measured</span></td><td>every subject called once; failures grouped by their own message</td></tr>
+<tr><td>48 of 420 pairs readable = 11.4%</td><td><span class="tag m">measured</span></td><td>same pass</td></tr>
+<tr><td>thrashing arms on 8 of 12 readable subjects</td><td><span class="tag m">measured</span></td><td><code>thrashing_component</code> over every readable subject</td></tr>
+<tr><td><code>t6</code> returns <code>None</code> while the corpus moved 392 → 420</td><td><span class="tag m">measured</span></td><td><code>t6_denominator_moved(_corpus_now(), pinned)</code></td></tr>
+<tr><td>two pinned counts referenced by zero scripts, one only under <code>--rederive</code></td><td><span class="tag m">measured</span></td><td><code>grep -rl</code> over <code>scripts/</code>; <code>check-decision-scheme.py:703</code></td></tr>
+<tr><td><code>t3</code> false FAIL over four distinct routes</td><td><span class="tag m">measured</span></td><td>constructed attempt/observation pairs → <code>route None</code></td></tr>
+<tr><td>the four-state deadlock (rc 1 / 2 / 2 / 0)</td><td><span class="tag m">measured</span></td><td>real <code>main()</code> over four temp logs</td></tr>
+<tr><td><code>ship-src-root-alone</code> raises on <code>disposition='refuted'</code></td><td><span class="tag m">measured</span></td><td><code>rounds_for</code></td></tr>
+<tr><td>the five population figures and their corrections</td><td><span class="tag m">measured</span></td><td><code>baseline.json</code>’s own keys + both r1 halves, independently</td></tr>
+<tr><td>finding counts 29 / 8 / 20 and 25 / 9; 19 and 8 fix-induced</td><td><span class="tag m">measured</span></td><td>parsed from the round-document headers, not counted by hand (the hand count said 18)</td></tr>
+<tr><td><b>that population error is the <i>dominant</i> cause of non-convergence</b></td><td><span class="tag i">inferred</span></td><td>five instances enumerated, but no classification of all 63 findings was done. The instances are measured; the <i>share</i> is not</td></tr>
+<tr><td><b>that one corpus run would have replaced five rounds</b></td><td><span class="tag i">inferred</span></td><td>it found their population defects plus two more — but it demonstrably could not have found the design Blockings (§5)</td></tr>
+<tr><td><b>only 1 of 8 armed subjects has an architecture review</b></td><td><span class="tag i">inferred</span></td><td>filename matching over 20 reviews; a review may cover a subject without naming it</td></tr>
+<tr><td><b>whether thrashing is endemic or the condition is mis-tuned</b></td><td><span class="tag i">open</span></td><td>not decidable from this data. Arms at <code>rounds=2</code> on three subjects against a pre-scheme median of 4</td></tr>
+<tr><td><b>that the pure core “converged”</b></td><td><span class="tag i">inherited</span></td><td>Phase 6’s verdict, not re-derived here</td></tr>
+</table>
+</div>
+
+<hr>
+
+<p style="font-size:13.5px;color:var(--fg3)">Built from the five round documents, the Phase 6
+architecture review, <code>baseline.json</code>, and one read-only corpus pass over
+<code>check-review-decision.py</code> and <code>check-decision-scheme.py</code>. Scratch probes were
+written outside the repository. Nothing in the repository was modified to produce this page.</p>
+
+</div>

@@ -87,6 +87,19 @@ POPULATION: frozenset[str] = frozenset({
     # 46 → 73 → 74 → 76 → 79 while it was being written, each step for a real reason, so a
     # docstring count nothing verifies would have been wrong four times in one evening.
     "check-main-drivable.py",
+    # ⟳ 2026-10-19: pinned in the commit that creates it, because this guard REFUSED it until
+    # it was — a declared count with no reader is exactly `a-count-with-no-owner`. Earned:
+    # its suite went 16 → 18 → 19 → 24 → 26 → 37 → 39 while being written, each step for a
+    # real reason (a surviving mutation, ADR-0014 D2, then five r1 CODEX findings), so an
+    # unverified docstring number would have been wrong SIX times in one evening.
+    "check-memory-index-budget.py",
+    # ⟳ 2026-10-20: pinned in the commit that creates it, for the reason the two entries above
+    # record — this guard REFUSED it otherwise ("declares a case count but is not in POPULATION,
+    # so nothing checks it"). Earned the same way: its suite went 13 → 17 → 18 while it was being
+    # written, each step forced by another guard rather than chosen — ADR-0014's drivable `main`,
+    # then `check-fixture-variation` finding four parameters no case could tell from a constant.
+    # A docstring count nothing verified would have been wrong three times in twenty minutes.
+    "check-transcript-references.py",
     "check-memory-link.py",
     # ⟳ 2026-09-29, backlog #191: pinned in the commit that creates `recall-llm.py`. Its own
     # docstring is the only place its case count is stated, and a count nothing verifies is the
@@ -180,6 +193,9 @@ POPULATION: frozenset[str] = frozenset({
                                     # the near-miss; that is the gap this row closes.
     "check-review-rounds.py",
     "check-review-decision.py",
+    "check-decision-scheme.py",   # NEW 2026-10-20 — pinned on arrival, because its
+                                  # sibling above drifted 61 -> 68 -> 80 in two days
+
     "check-review-recorded.py",      # ⟳ 2026-09-14, r11 Medium. It had a `--self-test`, declared no
                                      # count, and was in neither direction this file reports:
                                      # `population_errors` catches pinned-but-no-longer-declaring

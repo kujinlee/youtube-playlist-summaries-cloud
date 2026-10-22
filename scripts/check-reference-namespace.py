@@ -46,8 +46,17 @@ adjacent qualifier and inline-code quoting. It does NOT decide which namespace a
 -- that is the semantic question 2026-08-27 refused, and refusing it is why this can be mechanical.
 
 ⛔ OUT OF SCOPE BY CONSTRUCTION, stated rather than discovered later:
-  * `docs/backlog.md` -- owns the namespace; its own rows cite each other unambiguously, and the
-    2026-08-27 rule already exempts the owning document.
+  * ⟳ `docs/backlog.md` and `docs/roadmap-to-launch.md` are now IN SCOPE (2026-10-20). The
+    exemption claimed the backlog "owns the namespace"; it does not, because PR numbers occupy the
+    same integers. Cost, measured the same way the original scoping was: 80 firings over 40 commits
+    (2.00 per commit) against the 0.50 accepted for the original scope -- higher, but of a different
+    KIND. `scripts/` was rejected at 3.95 because 87% was noise; a hand-classified sample here ran
+    8 of 10 genuine. The rate is high because the VIOLATION rate is high, and since only ADDED lines
+    are read it falls as soon as it is enforced rather than accumulating.
+    ⚠ Closing the same sample's one false-positive class cost one word, not a notch: `deliverable #2`
+    was a QUALIFIED reference whose qualifier was missing from the vocabulary (this project has two
+    deliverables). That is the failure direction the QUALIFIER comment predicts -- an omission fires
+    rather than passing silently -- and it removed 9 of the 89 firings.
   * `docs/reviews/**` -- frozen testimony, never edited.
   * `docs/dashboard-entries.md` -- dated records of what was true on a day.
   * `scripts/**`, `docs/memory/**`, `docs/superpowers/**`, `docs/explainers/**`, `docs/adr/**`,
@@ -62,7 +71,7 @@ FAILS IF
   * `git diff` cannot be run, or the base ref does not resolve -- which is CANNOT RUN (rc=2), never
     a pass.
 
-  --self-test  runs 23 cases over diff texts this file builds, including that each failure mode is
+  --self-test  runs 26 cases over diff texts this file builds, including that each failure mode is
                DETECTED and that both main() worlds are driven.
 """
 from __future__ import annotations
@@ -83,6 +92,17 @@ SCOPE: tuple[str, ...] = (
     "docs/CLAUDE.md", "docs/dev-process.md", "docs/process-checklists.md",
     "docs/plugins.md", "docs/portable-practices.md", "docs/process-rationale.md",
     ".agents/skills/", ".claude/hooks/",
+    # ⟳ 2026-10-20, AT THE OWNER'S DECISION, AND THE PREMISE THAT EXCLUDED THESE IS FALSIFIED.
+    # This list used to exempt `docs/backlog.md` because it "owns the namespace; its own rows cite
+    # each other unambiguously". MEASURED: backlog ids run 1..329 and PR numbers run 1..380, so the
+    # ranges FULLY OVERLAP and nothing about being inside the file disambiguates a reference. Inside
+    # `backlog.md`: 856 bare `#N` (397 already qualified alongside them), of which **19 are PROVABLY
+    # not backlog rows** because they exceed the highest row id — `#336`, `#340`, `#341` are pull
+    # requests. The remaining ~837 are INDISTINGUISHABLE, which is not the same as safe.
+    # ⭐ The owner's own report is what settles it: asked to resolve `#329`, they could not — both a
+    # backlog row and a merged PR carry that number.
+    "docs/backlog.md",
+    "docs/roadmap-to-launch.md",
 )
 
 # ⛔ `(?<![\w/#])` is load-bearing three times over: it keeps `v1#2` out, keeps a URL fragment
@@ -95,7 +115,7 @@ BARE = re.compile(r"(?<![\w/#])#(\d{1,4})\b")
 # FIRING (a false positive someone sees and fixes), never toward a silent pass.
 QUALIFIER = re.compile(
     r"(backlog|task|pr|pull request|issue|phase|review|section|round|step|item|row|migration|adr"
-    r"|finding|question|slice|stage|goal|milestone|shard|rule|case|mutation)"
+    r"|finding|question|slice|stage|goal|milestone|shard|rule|case|mutation|deliverable)"
     # ⛔ AN ORDINAL MAY SIT BETWEEN THE QUALIFIER AND THE `#`, and omitting that was a real gap the
     # self-test caught on the first run: `Phase 6 #1` puts "6 " in the way, and it is exactly the
     # shape that was ~90% of the 2026-08-27 sample. `Architecture Review #2` needs no such slack.
@@ -199,9 +219,17 @@ def _d(path: str, *lines: str) -> str:
 
 def self_test() -> int:
     failed = 0
+    cases = 0
 
     def case(name: str, got, want=True) -> None:
-        nonlocal failed
+        # ⟳ 2026-10-20: `cases` is COUNTED here now. It used to be a LITERAL in the closing
+        # print — `f"{23 - failed}/23 passed"` — so the reported total measured nothing and
+        # could not drift, which is worse than drifting: `check-selftest-counts` compares the
+        # docstring's declared count against the PRINTED one, so a literal on both sides is
+        # green by construction. MEASURED at the moment this was found: 24 cases executed
+        # while the suite reported 23, and had done for some time with every gate green.
+        nonlocal failed, cases
+        cases += 1
         if got != want:
             failed += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
@@ -237,8 +265,22 @@ def self_test() -> int:
     # ── SCOPE, in both directions, which is the axis the measurement chose ────────────────
     case("⭐ a bare #N in scripts/ is OUT of scope — 87% of firings lived there",
          violations(_d("scripts/check-docs.py", "# fixes #291")), [])
-    case("a bare #N in docs/backlog.md is out of scope — it OWNS the namespace",
-         violations(_d("docs/backlog.md", "| 291 | see #290 |")), [])
+    # ⟳ 2026-10-20: THIS CASE IS INVERTED, NOT DELETED. It used to assert that `docs/backlog.md`
+    # is out of scope because it "OWNS the namespace". That premise is false — backlog ids run
+    # 1..329 and PR numbers 1..380, so being inside the file disambiguates nothing, and 19 bare
+    # references in it provably point OUTSIDE it (`#336`, `#340`, `#341` are pull requests).
+    # Keeping the case and flipping its expectation is what makes the change falsifiable: revert
+    # SCOPE and this reddens.
+    case("⭐ a bare #N in docs/backlog.md is IN scope — PR numbers occupy the same integers",
+         len(violations(_d("docs/backlog.md", "| 291 | see #290 |"))), 1)
+    case("...and the roadmap too, for the same reason",
+         len(violations(_d("docs/roadmap-to-launch.md", "- [ ] blocked on #290"))), 1)
+    # ⛔ `deliverable` was MISSING from the qualifier vocabulary, so `deliverable #2` — a genuine
+    # qualified reference, this project having two deliverables — fired as a violation. That is the
+    # failure direction the QUALIFIER comment predicts: an omission fires rather than passing
+    # silently. It accounted for 9 of the 89 firings the widening would otherwise have produced.
+    case("`deliverable #2` is a QUALIFIED reference, not a bare one",
+         violations(_d("docs/backlog.md", "| 47 | ... deliverable #2 (the reusable harness) |")), [])
     case("a bare #N in a frozen review is out of scope",
          violations(_d("docs/reviews/claude/x-r1-claude.md", "see #291")), [])
     case("a bare #N in a HOOK is IN scope — it prints to a reader at the moment of need",
@@ -301,7 +343,7 @@ def self_test() -> int:
         case("...and OK there once qualified, so the second root is not a one-way fixture",
              rc_hook_ok, OK)
 
-    print(f"{23 - failed}/23 passed" if failed else "23/23 passed")
+    print(f"{cases - failed}/{cases} passed")
     return OK if failed == 0 else VIOLATION
 
 

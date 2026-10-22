@@ -2,6 +2,25 @@
 
 Every **coordinator** round document carries this block immediately after its title.
 
+⟳ **2026-10-20: A RELOCATION TO THE HALVES WAS PROPOSED HERE, BUILT, AND WITHDRAWN THE SAME DAY —
+and the withdrawn claim is recorded because it is the instructive part.** This paragraph said that
+**97%** of rounds carry at least one half against **35%** carrying a coordinator document, and
+concluded that moving the fields into the halves lifts feedability to 97%.
+
+⛔ **Round 1 refuted the inference by running it.** Readable subjects went **10 → 10, zero gained**,
+because **0 of 435 half documents carry a parseable header**. 97% was the rate at which half
+documents **EXIST**, reported as the rate at which rounds become **READABLE**. The three rates
+themselves re-derive correctly; the inference drawn from them did not. ⚠ And the corpus was wrong
+too: it excluded 294 flat round documents, so the real figures over both layouts are **81 subjects /
+392 rounds**, which moves the coordinator share to **29.3%** and both-halves to **71.4%**.
+
+⛔ **THE STRUCTURAL REASON, which is why this is a design question and not a corrected sentence:**
+`disposition` and `fixes_nontrivial` are **post-fold facts**. A reviewer writing its half does not
+yet know whether its own finding will be fixed, filed or declined, nor whether the fold will be
+non-trivial. **A half structurally cannot carry two of the seven fields**, which is why 0 of 435 do.
+Deciding which fields a half CAN know — `severity`, `aim`, `component` are candidates — is a grammar
+split that wants a spec. Filed as its own slice; see the backlog row that names this paragraph.
+
 **Why it exists.** The decision procedure needs two counters — *consecutive fix-induced rounds* and
 *rounds since a finding in the deliverable*. On PR #302 nobody kept either, which is why four rounds
 ran where two were owed. `review-method.md` already refuses the alternative: *"the evidence is

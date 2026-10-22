@@ -1,0 +1,67 @@
+[
+  {
+    "name": "the adjacent-qualifier exemption is dropped, so `backlog #291` fires as a violation and the guard cries wolf on correctly written prose",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "            if crn.QUALIFIER.search(before.lower()):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "...and a QUALIFIED one is not"
+    ]
+  },
+  {
+    "name": "the inline-code quotation exemption is dropped, so a bare `#39` QUOTED as the wrong form is reported as the wrong form",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "            if line[:m.start()].count(\"`\") % 2 == 1:      # a quotation, not a reference\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "the inline-code QUOTATION exemption is inherited too"
+    ]
+  },
+  {
+    "name": "the LIVE turn is judged instead of the completed one, so the nudge fires on a message that is still being written and the one-turn-latency contract is broken",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    window = cba.judged_window(cba.windows(cba._parse_records(lines)))",
+        "    _wins = cba.windows(cba._parse_records(lines))\n    window = _wins[-1] if _wins else None"
+      ]
+    ],
+    "expect": [
+      "the COMPLETED turn is judged, not the live one"
+    ]
+  },
+  {
+    "name": "a payload with no transcript_path reads as QUIET instead of CANNOT RUN, so a hook that stopped supplying it would look like a clean turn for ever",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    if not raw:\n        return 2, \"CANNOT RUN — the hook payload carries no `transcript_path`\", []",
+        "    if not raw:\n        return 0, \"no transcript\", []"
+      ]
+    ],
+    "expect": [
+      "no transcript_path is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "a firing stops being appended to the log, so the only durable record of the false-positive rate disappears while the printed warning still looks healthy",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "        log.parent.mkdir(parents=True, exist_ok=True)",
+        "        return 1\n        log.parent.mkdir(parents=True, exist_ok=True)"
+      ]
+    ],
+    "expect": [
+      "...and the firing is APPENDED to the log, which is the durable channel"
+    ]
+  }
+]

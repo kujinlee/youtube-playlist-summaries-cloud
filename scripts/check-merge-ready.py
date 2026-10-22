@@ -244,6 +244,14 @@ def job_level_gates(workflow: str) -> list[str]:
 # so it is recorded rather than mechanised — but an allow-list reason is a claim with an
 # expiry date, and the expiry is not in the key.
 ACCOUNTED_MENTIONS: dict[tuple[str, str], tuple[int, str]] = {
+    # ⟳ 2026-10-20, backlog #173. The mutation sweep now skips when no `scripts/**` file changed,
+    # and the step that decides needs the BASE REF — which differs by event: `origin/<base_ref>`
+    # on a pull request, `HEAD^` on a push. ⚠ THIS IS NOT A PR-ONLY GATE and must not be read as
+    # one: the step runs on EVERY event and the sweep step it gates runs on every event too. The
+    # mention is a base-ref selection inside a shell block, not a conditional on the step.
+    ("ci.yml", 'if [ "${{ github.event_name }}" = "pull_request" ]; then'):
+        (1, "backlog #173's base-ref selection — picks origin/<base_ref> vs HEAD^ for the "
+            "changed-file diff; it gates nothing and runs on every event"),
     ("ci.yml", "pull_request:"):
         (1, "the workflow TRIGGER — says when CI runs, gates nothing"),
     ("ci.yml", "if: github.event_name == 'pull_request'"):

@@ -29,7 +29,14 @@ filter**. A handoff told me `--shard` would isolate a file; it does not.
 
 ## ✅ The scoped run: a pruned COPY, ~4 seconds
 
-1. `rsync -a` the **six** `HARNESS_TREE` paths into a temp tree — read the tuple, do not guess:
+1. `rsync -a` **every** `HARNESS_TREE` path into a temp tree — read the tuple, do not guess.
+   ⟳ **2026-10-17: THIS LINE SAID "six" AND THE COUNT HAD GONE STALE — the tuple is seven now
+   (`.agents/skills` was added), and the stale number cost two NOT MEASURED runs before I read
+   the tuple I had just told myself to read.** The number is now REMOVED rather than corrected:
+   a count in prose has no owner, which is this repo's own rule and the one this entry broke.
+   ⭐ The harness refused CORRECTLY both times — *"`.agents/skills` is missing under `.`, so every
+   verdict below it would be an artefact. TREAT THIS AS NOT CHECKED"* — so the cost was minutes,
+   not a false green. Derive the list:
    `scripts`, `supabase`, `docs`, `node_modules/typescript`, `.claude/hooks`, `.github/workflows`.
    Miss one and the harness **refuses and names it** (it caught my missing `.github/workflows`).
 2. In the COPY, delete every `scripts/mutations/*.json` but the one under test.

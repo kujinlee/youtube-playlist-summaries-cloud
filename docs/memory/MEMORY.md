@@ -9,7 +9,11 @@
 
 ## How things go wrong here (⭐ = costly, recurring)
 
+- [⭐⭐ A class fix needs an INDEPENDENT copy + identity case](a-class-fix-needs-an-independent-copy-and-an-identity-case.md) — looping over the set under test makes the case LIST shrink, not redden (57/57→56/56). The one sound duplicate
+- [⭐⭐ A guard can MANDATE the duplication it audits](a-guard-can-mandate-the-duplication-it-audits.md) — deleting the stale copy went RED; 4 rounds could only reword. Ask what a guard FORBIDS
 - [⭐⭐ A check result isn't the claim](a-check-result-is-not-the-claim.md) — green says nothing about the BASE (use `origin/master`); a red is a STOP, it hid a second failure. ⭐ **Never read `$?` after a PIPE**, and `grep | head || echo MISSING` can NEVER fire. ⭐⭐ **A restore verified against WHAT I DID lost a 32KB review** — diff the old tip BEFORE `reset --hard`
+- [⭐⭐ A signal needs its BASE RATE](a-signal-needs-its-base-rate.md) — 3× in ONE day: thrashing armed on **67%** of the corpus, `converged()` false **12 of 12**, and a grep that reported a false zero. The signals were all CORRECT; the inference was not
+- [⭐⭐ A sweeping conclusion that ends the work early](a-sweeping-conclusion-that-ends-the-work-early.md) — **2× in one session**, each refuted by the NEXT round: "0 in the verdict logic" and "the property is untestable". Both honest, both CONVENIENT. Ask: does this conclusion mean I can stop?
 - [⭐⭐ An inference stated as MEASURED](an-inference-stated-as-measured.md) — **3× in ONE document**, each caught by the NEXT round, never me. The fix is PARAGRAPH STRUCTURE, not "verify agent output" — a cost figure invented to support a sound argument is the tell
 - [⭐⭐ A retrospective number needs provenance](a-retrospective-number-needs-provenance.md) — recall is fiction and THE CORRECTIONS FAIL TOO (**0 for 5**). DERIVE; cite the SYMBOL, not the line
 - [⭐⭐ Concurrent agents go wrong](concurrent-agents-go-wrong.md) — the WRONG SUBJECT, a report that never arrives, one Postgres → a FALSE BLOCKING. ⭐⭐ **A LIVE AGENT'S FILE IS NOT STATIC** — cost TWICE in one night (appended to it; `git add -A`'d it). Stage EXPLICIT PATHS. RULE in `docs/review-method.md`
@@ -24,6 +28,7 @@
 - [⭐⭐ A harness cannot read a CAUSE from a child's text](a-harness-cannot-read-a-cause-from-a-childs-text.md) — 3 rounds, ONE cause; an arch review did NOT stop it. A crash FORGED a `[FAIL]`
 - [⭐ A vendored LINE NUMBER has no owner](a-vendored-line-number-has-no-owner.md) — 5 sites, one the REFUSAL TEXT; `grep -r` skips symlinks. ⛔ The FIX cited a stale COMMENT
 - [⭐ A BOUND enumerates what is WITNESSED](a-bound-enumerates-what-is-witnessed.md) — I listed what the seam TOUCHES; the cases covered 3 of 4. The missing one reinstated the defect the harness exists for. ⚠ A caveat headed "stated rather than hidden" that is wrong is worse than none
+- [⭐⭐ Assert the emitted artifact PARSES](assert-the-emitted-artifact-parses.md) — 201 cases green over invalid JS; every control dead, and the browser's "0 flips" read as success. `}{` balances
 - [⭐ A test that cannot fail](a-test-that-cannot-fail.md) — what observation makes this FAIL? Removing a signal hollows out its falsifier
 - [⭐⭐ Ask an agent to REFUTE, not confirm](ask-an-agent-to-refute-not-confirm.md) — 4-for-4 on 2026-09-23: the refuting prompts caught a wrong correction I had ALREADY PUBLISHED; the confirming one shipped a summary contradicting its own table. ⚠ The gap is VERIFICATION/RESEARCH agents — review halves already have a mandate (33 docs); I claimed otherwise without grepping
 - [⭐ Dual review: what it catches](dual-review-what-it-catches.md) — halves NOT redundant; the finding-reviewer right 3/3; ⭐ and **review is the wrong instrument for a SURFACE** — 6 rounds ≈ 7 edge cases, one corpus run ≈ 5,287
@@ -35,7 +40,7 @@
 - [Passing for an AMBIENT reason](a-case-can-pass-for-an-ambient-reason.md) — ⭐⭐⭐ 4× then **5 MORE**; tell = NAME vs BODY. **Flip what the case names, check it reddens** — stating a falsifier is not running one
 - [⭐⭐ Two DISTINCT inputs, in ONE case](exercise-the-producer-at-two-distinct-inputs.md) — a case is satisfied by the CONSTANT its own fixture supplies. 3 rounds, 9 survivors; pairwise-distinct FIXTURES are the weaker rule that already failed
 - […and a CORPUS](a-measurement-is-only-as-good-as-its-corpus.md) — ⭐ 4×. Code did what I measured; I measured the wrong SET
-- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **11×, SIX of them in one session (2026-09-26)**: a grep filter, a wrapped line, an off-by-one `tail`, a wrong CSS class, CSS-uppercased text, and `gh` check states — **check a KNOWN POSITIVE before trusting a negative**, and ⛔ a fix inside a heredoc is not a class fix. 5×. `splitlines()` where the subject uses `split("\n")`. ⭐ 2026-09-22: the RUN was right and the CONCLUSION was about a different subject — a synthetic fixture proved what the tool does to the FIXTURE; I never opened the real callee's signature
+- [Measure what the CODE sees](measure-the-population-the-code-actually-sees.md) — ⭐⭐⭐ **12×, SIX of them in one session (2026-09-26)**: a grep filter, a wrapped line, an off-by-one `tail`, a wrong CSS class, CSS-uppercased text, and `gh` check states — **check a KNOWN POSITIVE before trusting a negative**, and ⛔ a fix inside a heredoc is not a class fix. 5×. `splitlines()` where the subject uses `split("\n")`. ⭐ 2026-09-22: the RUN was right and the CONCLUSION was about a different subject — a synthetic fixture proved what the tool does to the FIXTURE; I never opened the real callee's signature
 - [The CONTROL refuted the premise](the-control-refuted-the-premise.md) — ⭐⭐ "red → fix → green" is NOT a cause
 - [A mock tests the contract you IMAGINED](a-mocked-boundary-tests-the-contract-you-imagined.md) — ⭐ 2,808 green tests, 500s on first live press
 - [A privilege ≠ a CAPABILITY](a-privilege-is-not-a-capability.md) — ⭐ `has_table_privilege` said granted
@@ -73,6 +78,8 @@
 
 ## Design & guard lessons
 
+- [⭐ The apparatus outgrew its subject](the-apparatus-outgrew-its-subject.md) — guards+tests **4.4×** the product; repo budgets PROSE, never guards; a branch shipped 46 browser-visible lines of 2,633
+
 - [One rule, one place](one-rule-one-place.md) — duplicate vocabulary shadows a duplicate mechanism; de-duplicating DROPS the clause the signature can't see
 - [anon EXECUTE is the DEFAULT](anon-execute-is-the-default-not-a-decision.md) — ⭐ anon-callable unless someone remembers
 - [RLS denial looks like absence](rls-denial-is-indistinguishable-from-absence.md) — same 404 both ways; the serve guard re-charged 6¢→12¢
@@ -94,12 +101,13 @@
 
 - [⛔ A DECLARATION is not the act](a-declaration-is-not-the-act.md) — `--watching` only RECORDS a claim. Arm the Monitor FIRST, then declare. Measured: **43m blind on a red CI**, found only because the user asked about something else
 - [⭐ A side job gets a NAME first](a-side-job-gets-a-name-first.md) — over ~5 calls or a tracked file → slug + branch BEFORE the first edit. One sentinel, so ANNOUNCE the swap
-- [⏳ A waiting line carries a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — asked 2026-10-06: `⏳ **13:25 PDT** — …`, with the START not just the duration. "~25 min" is unreadable an hour later
+- [⏳ BANNERS + waiting lines carry a TIMESTAMP](waiting-lines-carry-a-timestamp.md) — ⭐ asked 2026-10-06, re-asked for BANNERS 2026-10-19: clock in the `▶` heading. I had shrunk the rule to its glyph
 - [⏳ Show a WAITING SIGNAL, not prose](show-a-waiting-signal-not-prose.md) — asked for 2026-09-23: lead with `⏳ **Waiting** — <what>`; "still running" buried in a paragraph does not register
-- [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — plain words, a `## ▶ STEP n of N` banner BEFORE each step, and a live progress line for background work. ⭐⭐ **3rd lapse 2026-09-23: a step that GREW to 12 findings stayed "step 5" for 20 tool calls.** Sub-divide with a ONE-LINE `▸ 5.3 — …` marker; the trail is DATA for a future workflow view
+- [⭐ The user does NOT follow in real time](the-user-does-not-follow-in-real-time.md) — ⛔ banner BEFORE each step, format SETTLED 10-16: `## ▶ [mm-dd hh:mm] STEP n of N` — prepended, no tz/seconds/`·`. Sub-steps too: `▸ [mm-dd hh:mm] 5.3 — …`. ⭐⭐ This LINE omitted the stamp for 3 days and I copied the line, not the file
 - [⭐ A title is SCANNED, not read](a-title-is-scanned-not-read.md) — asked 2026-10-02: lead with the concrete SCOPE, then the finding. An essayistic title says what was LEARNED and hides what was TOUCHED. The body still argues
 - [⭐ How to shape a message to me](how-to-shape-a-message-to-me.md) — LEAD with the conclusion, state READINESS separately from ownership, and ⛔ CLOSE with the repo's **CHECK/RESULT table** (`process-checklists.md`), never prose
 - [⭐⭐ Never close with a promise](never-close-with-a-promise.md) — ⛔ **5th instance 2026-09-25.** The Stop guard EXISTS and was INERT — I never armed it. ARM `begin-plan.py` for review/fold loops too, not just implementation
+- [⭐⭐ Blocking on a gate that does not EXIST](a-blocking-question-while-afk-costs-the-whole-night.md) — AskUserQuestion BLOCKS (6.5h idle, 2-line change). ⭐⭐ Worse 10-19: I cited "the owner's call" — **0 hits in 5 process docs** — and folded 5 rounds / 20h. GREP the rule and QUOTE it, or there isn't one
 - [⭐ Putting a choice to the user](putting-a-choice-to-the-user.md) — TAG A/B/C + a question exit; never two options that are the SAME action; decide it yourself when obvious
 - [⭐ Name and define every reference](name-and-define-every-reference.md) — never a bare `#39` or `M4`; gloss jargon on first use. Do NOT try to script it
 - [⛔ PUSH is mine, MERGING is theirs](push-is-mine-merging-is-theirs.md) — ruled 2026-09-30; never ask again. A PR is a SEPARATE judgement — not for unconverged work
@@ -127,42 +135,14 @@
 - [backlog.md stays Markdown](backlog-md-stays-markdown.md) — decided 2026-09-10; don't re-derive the JSON question
 - [Cost per video](cost-per-video-analysis.md) — real Flash ≈8¢/video vs the 150¢ reservation
 
-## Slice history (all MERGED unless noted — open the file for PR/SHA)
+## Slice history
 
-- [⭐⭐ recall fold — PR #360 MERGED](recall-fold-360-merged.md) — `5128b99b`, **merged NOT CONVERGED with 3 Highs open**. 9 rounds; each fix CREATED the next instance. ⭐⭐ The fix was already in the repo at `check-ci-watched.py:860` and reached **zero** siblings → ADR-0014
-- [⭐⭐ backlog #154 — PR #331 READY](backlog-154-dash-scalar-ready-331.md) — `0791ca6f`, **not merged**. EIGHT rounds, each a NEW GRANULARITY (line→node→document→key-depth). Fix changed KIND: **refuse, don't widen**. ⭐ My class-fix made 6 mutations UNKILLABLE, suite green — only the sweep saw it
-- [⭐ arch review #153 — PR #329 READY](arch-review-153-workflow-readers.md) — `ccff9878`, **not merged**. Verdict: extract `_structural()`, NOT parse. Found a **LIVE false green** → #154 first. 4 rounds; #155 SIZE NOT KNOWN → size by ATTEMPTING
-- [M4 superseded trail](m4-superseded-trail.md) — history only, split out of the RESUME file when it outgrew the read limit. Fork (a), `0028` cannot be a migration, Phase 6 ran TWICE
-- [⭐⭐ pin-python — #317](pin-python-317-merged.md) — `e7ed8c1a`. **TEN defects, ONE function, 7 rounds**, all one root cause. ⭐ I tested the CONTAINER's shape not its CONTENTS (2×); a fix landed at the WRONG LAYER (2×); my pre-committed falsifier FIRED
-- [⭐⭐ closing-table r7–r11 — #327 + #328](closing-table-r7-r8-merged-327.md) — the independent read #325 shipped without. 16 findings/5 rounds. Marker fired on **96.7%→49%**, false-sentence firings **372→0**. ⛔ `check-review-recorded` keys on CODEX VERDICTS, not commit order — 2 of 5 reds
-- [⭐ merge-ready + budget slack — #324](merge-ready-slice-merged-324.md) — `af4d9033`. `check-merge-ready.py` runs the **PR-only** gates a local run can't reach; relay its verdict VERBATIM. ⭐ **2026-09-26: I skipped it and put TWO PRs red** — run it, not a gate subset; `NO-ENTRY:` ≠ `NO-REVIEW:`; and it reads the COMMITTED diff, so an uncommitted entry is a vacuous rc=0. 3 rounds, 4 silent misses, ONE parser. `--tick` REFUSES while `paused:`
-- [⭐ Wake-on-visit — #322](wake-on-visit-merged-322.md) — `e693f36a`. Worker sleeps/wakes, own Fly app NO public IP. INERT except the drain-key fix
-- [Lease-sweep cadence — #318](lease-sweep-merged-318.md) — ⭐ `35cf44c6`. Idle worker was **100%** of prod DB traffic. Found 🔴 **#139**; `fly.toml` drift reverts it
-- [#137 schema-gates REQUIRED — #315+#316](schema-gates-required-137-merged.md) — ⭐ `[verify, schema-gates]` live. The deleted filter had a SECOND CONSUMER (#138)
-- [peer-sites — #313](peer-sites-merged-pr-313.md) — `14063fe5`. Ships with NO caller by design (#134). ⛔ `NO-REVIEW:` must start the line
-- [#122 manifest seeded — #311](seed-manifest-122-merged.md) — 42 entries, 7 live defects. ⛔ Codex timed out ALL 3 rounds; #129/#130 open
-- [Split #295: /src/ half — #310](split-295-src-root-merged.md) — ⛔ #295 STILL OPEN, do NOT merge as-is; restart half parked
-- [Guard-ratchet scope — #298](guard-coverage-scope-merged.md) — ⭐ saw 41 guards, ignored 14 on tables it BUILDS; now has a falsifier
-- [Schema gates in CI — #297](schema-gates-in-ci-merged.md) — ⭐ 15 gates, 93s, zero added wall clock. ⛔ nightly cron UNARMED
-- [#91 coverage-verdict union — #269](coverage-verdict-union-91-merged.md) — ⭐ 374 mutations / 0 survivors
-- [Selection-card guard LIVE](selection-card-guard-built.md) — ⭐ a hook REFUSES a malformed card. Its 2 rounds found **4 Blockings**
-- [#110 parser completeness](backlog-110-parser-completeness-merged.md) — ⭐⭐ BOTH Blockings were the row's own defect, reintroduced by its fix
-- [Retire plan mode — #270+#271](retire-plan-mode-merged.md) — ⭐ 3,607 → 2,013 lines. The only sanctioned ratchet FALL
-- [Ask-choices — #186](dashboard-ask-choices-merged.md) — ⭐⭐ **CONSENSUS IS NOT VERIFICATION**: all three agreed, `git diff` refuted
-- [Page chrome seam — #185](page-chrome-seam-merged.md) — ⭐ theme+provenance on all five page producers
-- [HOME-redirect — #181](mutation-harness-home-redirect-state.md) — ⭐ `$HOME` governs `Path.home()` and a bare `~`, **NOTHING else**
-- [Inline renderer seam](inline-renderer-seam-merged.md) — ⭐ ONE renderer, four pages; the sum HELD at 73
-- [Fixing a PREMISE ≠ covering the BRANCH](fixing-a-premise-is-not-covering-the-branch.md) — ⭐⭐ **12 unfalsifiable cases across 8 guards**
-- [Mutation-manifest retarget](mutation-manifest-retarget-merged.md) — ⭐ `--mutate .` mutates DELIVERED scripts
-- [Link-contrast slice](link-contrast-slice-merged.md) — ⭐ shipped UNREVIEWED; 2 rounds then found 6 defects
-- [Integration suite skips migrations](integration-suite-does-not-apply-migrations.md) — ✅ FIXED (#46). A GREEN gate on the wrong schema is worse than none
-- **Older slices, all MERGED unless marked:**
-  [Stage 3 cloud-sync](stage3-cloud-sync-branch-state.md) (honest-blob-read open) ·
-  [Blob addressing](blob-addressing-spec-state.md) ⏸ PARKED, round 10 mandatory if unparked ·
-  [Worker-vs-sync fencing](worker-vs-sync-fencing-gap.md) · [Serial coherence](serial-coherence-slice-state.md) ·
-  [Reservation release](reservation-release-slice-state.md) · [Section timestamps](summary-section-timestamp-guarantee-state.md) ·
-  [Dig frontend](cloud-dig-deeper-frontend-state.md) · [Dig serving](cloud-dig-serving-branch-state.md) ·
-  [Sidebar UX](playlist-sidebar-ux-branch-state.md) · [Summary PDF](cloud-summary-pdf-slice-state.md) ·
-  [Frontend sub-project](frontend-subproject-design-state.md) · [Stage 2 autonomy](stage-2-batch-autonomy-plan.md) ·
-  [1G](stage-1g-design-state.md) · [1F-c](stage-1f-c-design-state.md) · [1F-b](stage-1f-b-design-state.md) ·
-  [1F-a](stage-1f-a-design-state.md) · [1D](stage-1d-merged-followups.md)
+> ⛔ **NEW SLICE ROWS GO IN THAT FILE, NOT IN THIS INDEX.** This index is injected WHOLE on
+> every turn and the harness truncates it in silence once it passes 24,985 CHARACTERS — measured
+> 2026-10-19, it stood at 26,930 and **8 rows** had stopped arriving, with every other memory
+> signal green. ⟳ Both the unit and the count are corrections: this said "bytes" and "~30 rows",
+> and the real figures were established by reading the cut point out of a consuming agent's own
+> injected context. `scripts/check-memory-index-budget.py` now fails on that, so this is enforced
+> rather than remembered; a convention only catches what someone happens to read.
+
+- [⭐ Slice history — every shipped slice, with PR + SHA](slice-history.md) — 28 rows, MOVED OUT of this index 2026-10-19. ⛔ Reached by TRIGGER now, not always-loaded — verified by firing: ask for a PR number or SHA and it returns. The index was 26,930 of a 24,985-CHARACTER budget; the 28 rows are **4,912** chars without line endings, 4,940 with one newline each (the whole section 5,990). ⚠ Two earlier versions were wrong: "6,232 of 27,805 bytes" (wrong unit, and it charged the rows with the whole SECTION's cost), then "4,985" (r2 CODEX #6 — that joined 29 `- ` lines, counting the "Older slices" bullet as a 29th row)

@@ -3,21 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Recall went 3/20 to 20/20, and the rules were still broken</title>
+<title>Memory recall with a semantic matcher — it works, and the mistakes continued</title>
 
 <style>
 :root{--bg:#fbfaf7;--fg:#1c1d21;--fg2:#3d4049;--fg3:#6b7080;--rule:#e2ded4;--card:#fffefb;
 --hot:#9c2b1f;--hotbg:#fdf1ef;--cool:#1f5c4a;--coolbg:#eef7f3;--warn:#8a5a0b;--warnbg:#fdf6e8;
 --verified:#1f5c4a;--verified-br:#bcd9cc;--ink:#2a2c33;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
---defect:#9c2b1f;--good:#1f5c4a;--ink-soft:#3d4049;--ink-faint:#6b7080;--structure:#e2ded4}
+--defect:#9c2b1f;--good:#1f5c4a;--ink-soft:#3d4049;--ink-faint:#6b7080;--structure:#e2ded4;--accent:#8a5a2b;--link:#1f5d8c}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15161a;--fg:#eceae4;--fg2:#c6c4bd;
 --fg3:#9a9890;--rule:#32343b;--card:#1c1e23;--hot:#f09c92;--hotbg:#2b1b19;--cool:#8fd3ba;--coolbg:#16241f;
 --warn:#e6bd73;--warnbg:#2a2118;--verified:#8fd3ba;--verified-br:#2f4f44;--ink:#eceae4;
---defect:#f09c92;--good:#8fd3ba;--ink-soft:#c6c4bd;--ink-faint:#9a9890;--structure:#32343b}}
+--defect:#f09c92;--good:#8fd3ba;--ink-soft:#c6c4bd;--ink-faint:#9a9890;--structure:#32343b;--accent:#cb9a68;--link:#8cbde0}}
+:root[data-theme="light"]{--bg:#fbfaf7;--fg:#1c1d21;--fg2:#3d4049;--fg3:#6b7080;--rule:#e2ded4;--card:#fffefb;
+--hot:#9c2b1f;--hotbg:#fdf1ef;--cool:#1f5c4a;--coolbg:#eef7f3;--warn:#8a5a0b;--warnbg:#fdf6e8;
+--verified:#1f5c4a;--verified-br:#bcd9cc;--ink:#2a2c33;
+--defect:#9c2b1f;--good:#1f5c4a;--ink-soft:#3d4049;--ink-faint:#6b7080;--structure:#e2ded4;--accent:#8a5a2b;--link:#1f5d8c}
 :root[data-theme="dark"]{--bg:#15161a;--fg:#eceae4;--fg2:#c6c4bd;--fg3:#9a9890;--rule:#32343b;--card:#1c1e23;
 --hot:#f09c92;--hotbg:#2b1b19;--cool:#8fd3ba;--coolbg:#16241f;--warn:#e6bd73;--warnbg:#2a2118;
 --verified:#8fd3ba;--verified-br:#2f4f44;--ink:#eceae4;
---defect:#f09c92;--good:#8fd3ba;--ink-soft:#c6c4bd;--ink-faint:#9a9890;--structure:#32343b}
+--defect:#f09c92;--good:#8fd3ba;--ink-soft:#c6c4bd;--ink-faint:#9a9890;--structure:#32343b;--accent:#cb9a68;--link:#8cbde0}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",sans-serif}
 .wrap{max-width:880px;margin:0 auto;padding:40px 20px 90px}
@@ -40,13 +44,15 @@ th{background:var(--card);font-weight:600;font-size:13px;color:var(--fg3);text-t
 .box.cool{border-left-color:var(--cool);background:var(--coolbg)}
 .box.warn{border-left-color:var(--warn);background:var(--warnbg)}
 .box h4{margin:0 0 6px;font-size:15px;color:var(--fg)}
+.note{font-size:14px;color:var(--fg3);border-left:2px solid var(--rule);padding-left:12px;margin:14px 0}
 .lede{font-size:17.5px;color:var(--fg);border-left:3px solid var(--verified);padding-left:15px;margin:22px 0}
 .k{font:600 10.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:3px 6px;border-radius:3px;
 background:var(--card);border:1px solid var(--rule);color:var(--fg3);vertical-align:2px}
-.k.hot{color:var(--hot);border-color:var(--hot)}.k.cool{color:var(--cool);border-color:var(--cool)}
+.k.hot{color:var(--hot);border-color:var(--hot)}.k.cool{color:var(--cool);border-color:var(--cool)}.k.warn{color:var(--warn);border-color:var(--warn)}
 .m{color:var(--cool);font-weight:600}.i{color:var(--warn);font-weight:600}
 .howto{background:var(--card);border:1px solid var(--verified-br);border-radius:8px;padding:13px 16px;margin:20px 0;font-size:14px}
 .howto code{font-size:12.5px}
+a{color:var(--link);text-decoration-thickness:1px;text-underline-offset:2.5px}
 .toc{columns:2;column-gap:28px;font-size:14px;margin:18px 0}
 .toc a{color:var(--fg2);text-decoration:none;display:block;padding:2px 0}
 .toc a:hover{color:var(--fg);text-decoration:underline}
@@ -57,7 +63,29 @@ hr{border:0;border-top:1px solid var(--rule);margin:30px 0}
           --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
           --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
   html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
-         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
   /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
      one page's invention — every recent fragment has been re-declaring them privately to get past
      assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
@@ -119,15 +147,16 @@ hr{border:0;border-top:1px solid var(--rule);margin:30px 0}
 #modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
   border-radius:20px;margin-left:.4rem;white-space:nowrap}
 /* ---- end Ask tray ---- */
-.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor)}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
 
 
-<div class="wrap">
+<div class="wrap ex-body">
 
-<h1>Recall went 3/20 to 20/20, and the rules were still broken</h1>
+<h1>Memory recall with a semantic matcher — it works, and the mistakes continued</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-19 18:28 · 88423432 · uncommitted changes</time></span></div></div>
 <p class="sub"><strong>What this page is:</strong> a test report. A page written on 2026-09-27 argued that
 memory recall here had no matcher and that <em>mechanism must be primary</em>. A matcher shipped five days
 later and measures near-perfect. This page reports what happened to the gap afterwards — it did not close.</p>
@@ -145,7 +174,60 @@ twice). <strong>A reboot stops the server</strong> — that is the one moment yo
 <code>file://</code> copy still reads fine and only loses <strong>Send</strong>.
 </div>
 
+<div class="box cool" id="s0" style="border-left-width:4px">
+<h4 style="font-size:17px;margin:0 0 10px">Executive summary — read this, skip the rest unless a row surprises you</h4>
+<p style="margin-top:0"><em>Added 2026-10-19 at the owner's request, with §12 and §13. Every answer links to
+where it is argued; nothing here is new evidence, it is the four answers the rest of the page supports.</em></p>
+<div class="scroll">
+<table>
+<tr><th style="width:30%">The question</th><th style="width:46%">The answer</th><th style="width:24%">Argued in</th></tr>
+<tr>
+  <td><strong>Does the semantic matcher work?</strong></td>
+  <td><span class="k cool">yes</span> On its labelled set: <strong>19/20</strong> against the prompt that actually
+      ships (<strong>20/20</strong> against the validation brief — two different experiments, never spanned),
+      with <strong>0</strong> false fires in 60. ⚠ That bound is a 95% ceiling of <strong>5.0%</strong> by the
+      rule of three, not “no false positives”.</td>
+  <td><a href="#s2">§02</a></td>
+</tr>
+<tr>
+  <td><strong>Did it reduce mistakes?</strong></td>
+  <td><span class="k hot">no</span> — and this is the page's point. With the matcher live, lessons that were
+      <strong>already in context</strong> were violated anyway. Recall was never the constraint, because the
+      index injects every row unfiltered.</td>
+  <td><a href="#s3">§03</a>, <a href="#s12">§12</a></td>
+</tr>
+<tr>
+  <td><strong>What does it do in real use?</strong></td>
+  <td>Measured over <strong>19 days / 49 armed plans / 265 steps</strong>: silent on <strong>71%</strong> of
+      steps; <strong>81%</strong> of eligible entries have <strong>never fired once</strong>; one entry is
+      <strong>26%</strong> of all fires. ⚠ And a false negative is <em>silent by construction</em> — there is
+      no falsifier at the call site.</td>
+  <td><a href="#s12">§12</a></td>
+</tr>
+<tr>
+  <td><strong>Can it ship to the public as a plugin?</strong></td>
+  <td><span class="k warn">already public, and broken for a stranger</span> The code is on
+      <code>master</code> and <code>docs/memory/</code> is tracked in a <strong>public</strong> repo — so it is
+      published. But <code>memory_dir()</code> resolves a machine-local path and returns
+      <code>None</code> in a clone: <strong>a stranger gets the corpus as documents and no working recall.</strong>
+      Not a licensing problem — a portability defect.</td>
+  <td><a href="#s13">§13</a></td>
+</tr>
+<tr>
+  <td><strong>So where is the lever?</strong></td>
+  <td>Not in better matching. Of <strong>16</strong> process-checklist sections, <strong>4</strong> are enforced
+      by a program. The question is <em>which lessons can become mechanisms</em>, not which can be recalled
+      faster. ⚠ Goal-shaping, so the owner's call.</td>
+  <td><a href="#s5">§05</a>, <a href="#s7">§07</a></td>
+</tr>
+</table>
+</div>
+<p style="margin-bottom:0"><strong>If you read one more thing:</strong> <a href="#s3">§03</a> — it is the test
+of the whole design argument, and it came out against the comfortable answer.</p>
+</div>
+
 <div class="toc">
+<a href="#s0">0 · Executive summary</a>
 <a href="#s1">1 · The prediction, and the five-day gap</a>
 <a href="#s2">2 · Retrieval is solved here — the numbers</a>
 <a href="#s3">3 · The gap did not close</a>
@@ -156,6 +238,8 @@ twice). <strong>A reboot stops the server</strong> — that is the one moment yo
 <a href="#s8">8 · The honest limit</a>
 <a href="#s9">9 · The PDF's MCP proposal, assessed</a>
 <a href="#s10">10 · Measured vs inferred</a>
+<a href="#s12">12 · What it did in 19 days of real use</a>
+<a href="#s13">13 · Could a stranger use it?</a>
 </div>
 
 <p class="lede">The 09-27 page asked how to organise memory so recall stops failing. Recall stopped failing.
@@ -519,6 +603,103 @@ falsifier is cheap and names an observation: <em>fails when a page under <code>d
 untracked at the end of the loop that produced it</em>. That is a thing <code>git status --porcelain</code> can
 answer, which is the whole test from §07 — a check that can report nothing is a check.</p>
 
+<h2 id="s12"><span class="n">12</span>What it did in 19 days of real use — and a fourth instance of §03</h2>
+
+<p><em>Added 2026-10-19. The matcher writes one cache per armed plan recording its pick for every step.
+<strong>49 of those existed on disk and nobody had opened them</strong> — so this section cost no new
+experiment, only the decision to look.</em></p>
+
+<div class="scroll">
+<table>
+<tr><th>Measured over <code>.claude/recall-cache/*.json</code>, 2026-09-30 → 2026-10-19</th><th>Value</th></tr>
+<tr><td>armed plans · plan steps</td><td><strong>49</strong> · <strong>265</strong></td></tr>
+<tr><td>steps that matched an entry</td><td><strong>75</strong> (28%)</td></tr>
+<tr><td>steps that returned <code>NONE</code></td><td><strong>190</strong> (71%)</td></tr>
+<tr><td>silent : fired</td><td><strong>2.5 : 1</strong></td></tr>
+<tr><td>plans where <em>every</em> step returned <code>NONE</code></td><td><strong>10 of 49</strong></td></tr>
+<tr><td>eligible entries that have <strong>never</strong> fired</td><td><strong>128 of 158 — 81%</strong></td></tr>
+<tr><td>share of all fires taken by one entry (<code>running-codex</code>)</td><td><strong>26%</strong>; top 10 = <strong>72%</strong></td></tr>
+</table>
+</div>
+
+<p>Re-derive it rather than trusting it — this snippet was run to produce the line beneath it:</p>
+
+<pre><code>import json, glob, collections
+picked, steps, fired = collections.Counter(), 0, 0
+for f in glob.glob(".claude/recall-cache/*.json"):
+    p = (json.load(open(f)).get("picks") or {})
+    steps += len(p)
+    for v in p.values():
+        if v and v != "NONE": fired += 1; picked[v] += 1
+print(steps, fired, steps-fired, len(picked), picked.most_common(1))</code></pre>
+
+<pre><code>265 75 190 31 [('running-codex', 20)]</code></pre>
+
+<div class="box hot">
+<h4>⛔ The fourth instance of §03, and it was first written up as the opposite</h4>
+<p>On 2026-10-19 an armed plan returned <code>NONE</code> on all six steps, and during those six steps four
+errors were committed, each covered by an existing entry:
+<code>a-blocking-question-while-afk…</code>, <code>an-inference-stated-as-measured</code>,
+<code>concurrent-agents-go-wrong</code>, <code>after-fixing-search-for-the-class</code>.</p>
+<p>That was first recorded as a <strong>matcher false-negative</strong>. It is not. Checking each entry's byte
+offset in the index against its 24,986-byte load limit:</p>
+<pre><code>byte   2114  an-inference-stated-as-measured                      LOADED
+byte   2587  concurrent-agents-go-wrong                           LOADED
+byte  11217  after-fixing-search-for-the-class                    LOADED
+byte  17484  a-blocking-question-while-afk-costs-the-whole-night  LOADED</code></pre>
+<p><strong>All four were in context for the entire session.</strong> The matcher's silence is irrelevant to
+whether the lesson was available — it was. This is <a href="#s3">§03</a> happening a fourth time, twelve days
+later, to an author who had not read §03.</p>
+</div>
+
+<p class="note">⚠ <strong>Bound, stated before it is quoted elsewhere.</strong> The population is <em>armed plan
+steps</em>, not <em>moments while working</em>. <code>begin-plan.py</code> collects every step's
+<code>Doing:</code> line at arm time, so these are <strong>pre-declared intentions</strong>. A matcher reading an
+intention cannot see an error not yet made — which is why 71% silence is <em>not</em> a defect rate, and why the
+71% and the four misses above are not the same claim.</p>
+
+<p class="note">⚠ One cache names an entry retired since. <code>git log --all</code> shows it existed when
+picked, so the <strong>cache outlived the entry</strong> — nearly filed as “the matcher invented a name”, which
+would have been a fabricated defect.</p>
+
+<h2 id="s13"><span class="n">13</span>Could a stranger use it? — already published, and broken for them</h2>
+
+<p><em>Added 2026-10-19, answering the owner's question directly. The assessment is not new work: the
+marketplace-inventory spec on PR&nbsp;#376 classifies recall as its “Effort (1)” and had already corrected its
+own membership after a Blocking review finding — the first list <strong>“contained only the mechanism the
+evidence REJECTS, and omitted the one it endorses.”</strong></em></p>
+
+<div class="scroll">
+<table>
+<tr><th>Component</th><th>Lines</th><th>Where</th></tr>
+<tr><td><code>scripts/recall-llm.py</code> — the semantic matcher</td><td>2,550</td><td><strong><code>master</code></strong></td></tr>
+<tr><td><code>scripts/check-surface-recall.py</code> — the lexical matcher, refuted</td><td>820</td><td><code>master</code></td></tr>
+<tr><td><code>.claude/hooks/surface-recall.sh</code> — the caller</td><td>113</td><td><code>master</code></td></tr>
+<tr><td>the memory corpus</td><td>158</td><td><code>docs/memory/</code>, <strong>tracked</strong></td></tr>
+</table>
+</div>
+
+<div class="box warn">
+<h4>The blocker is portability, not permission</h4>
+<p>This repository is <strong>public</strong> and <code>docs/memory/</code> is tracked, so the corpus is
+<strong>already published</strong>. #376 records the consequence verbatim: <em>“the FILES are published; the
+HARNESS PATH is not — <code>recall-llm.memory_dir()</code> returns <code>None</code> in a clone, so a stranger
+gets the corpus as documents and no working recall.”</em></p>
+<p>The cause is one function: it builds <code>~/.claude/projects/&lt;slug&gt;/memory</code> from the repo's
+absolute path and returns <code>None</code> when that directory is absent. A stranger's clone has a different
+path, so the slug differs and the lookup fails. That is backlog <strong>#204</strong>
+(<em>“<code>memory_dir</code>'s docstring promises a capability it does not have”</em>) and it is exactly row
+191's condition — <em>portable, or it is a local habit</em>.</p>
+<p>⛔ <strong>So the question #376 asks is inverted from the one you would expect:</strong> not <em>may we publish
+this</em> but <em>is anything already public that should not be</em>. A corpus of 158 entries about this
+project's own failures is already readable by anyone.</p>
+</div>
+
+<p>⚠ <strong>Not assessed here:</strong> whether a stranger's recall <em>should</em> read this corpus at all
+(they would need their own), what the support bar would be, or whether the two unmerged branches
+<code>c5-recall-matcher</code> and <code>backlog-117-parser-substrate</code> change the answer — #376 excludes both
+as work in progress rather than shippable units.</p>
+
 <hr>
 <p class="cite">Builds on <code>~/explainers/2026-09-27-topic-memory-recall-taxonomy.html</code> — §10
 <em>"(3) measured: there is no matcher, but the socket for one exists"</em> and §7 <em>"Part A — mechanism is
@@ -527,8 +708,7 @@ claim that events have overtaken, and it does not know that.</p>
 
 </div>
 
-<div class="chrome"><span class="chrome-when">generated <time>2026-10-07 11:23 · 764a3b5e · uncommitted changes</time></span></div>
-
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
 <div id="tray"><div class="in">
   <div id="qt"></div>
   <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>

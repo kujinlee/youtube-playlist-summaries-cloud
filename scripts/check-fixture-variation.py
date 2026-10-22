@@ -310,6 +310,17 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # ⟳ 2026-10-20, the transcript reference guard (backlog #328's sibling, owner-requested).
+    # Ten parameters, every one varied by a case rather than exempted — the guard's first run
+    # reported four unvaried (`transcript_for.td`, `.second`, `main.argv`, `main.log`) and each
+    # was fixed by supplying a SECOND REAL INPUT, not by writing an exemption: a second temp
+    # directory, a different closing message, the no-action argv branch, and a second log path
+    # that must stay UNWRITTEN on a quiet turn.
+    "check-transcript-references.py": (
+        "assistant.text", "bare_references.text", "judge.payload", "main.argv", "main.log",
+        "main.stdin", "transcript_for.first", "transcript_for.second", "transcript_for.td",
+        "user.text",
+    ),
     # ⟳ 2026-10-14, the round-6 one-canonical-source redesign. ⟳⟳ r6 CLAUDE M5: **FOUR**
     # parameters, all varied by cases — the word "Three" stood here while the enumeration below it
     # listed four and this guard reported "4 parameter(s) examined", the third instance on this
@@ -431,6 +442,14 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # ⟳ 2026-09-30, backlog #194: the memory-link guard, pinned in the commit that creates
     # it. Its `tracked` parameter was flagged here as never-varied and two cases were added
     # rather than an exemption taken — the comparison that reads it is now guarded.
+    # ⟳ 2026-10-19: the memory-index injection budget, pinned in the commit that creates it
+    # — this guard REFUSED the file until it was. DERIVED by running `analyse()` on the frozen
+    # source, not transcribed: 8 keys, `findings = []`. ⚠ It reported FOUR keys on the first
+    # draft; `main.index`, `main.limit` and `budget_verdict.label` exist because
+    # `check-main-drivable.py` (ADR-0014 D1) demanded main() take its world as parameters, and
+    # driving it that way immediately printed a CANNOT RUN naming `docs/memory/MEMORY.md`
+    # about a temp fixture it had never opened. The pin and that defect have the same cause.
+    "check-memory-index-budget.py": ('budget_facts.label', 'budget_facts.limit', 'budget_facts.n_chars', 'budget_verdict.label', 'budget_verdict.limit', 'budget_verdict.n_chars', 'index_chars.path', 'main.argv', 'main.index', 'main.limit', 'render.f', 'unknown_args.argv', 'warn_threshold.limit'),
     "check-memory-link.py": ('link_verdict.is_symlink', 'link_verdict.link_exists', 'link_verdict.n_entries', 'link_verdict.target', 'link_verdict.tracked', 'slug_for.repo'),
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher, pinned in the commit that creates it
     # — this guard REFUSED the file until it was, the fifth time it has caught a new script
@@ -587,14 +606,84 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # creates them — this guard REFUSED the file until it was, which is the population
     # half of the rule doing its job. `analyse()` reports NO findings: every parameter
     # below is genuinely varied by the suite, not merely present in a signature.
+    # NEW 2026-10-20 — the route-escalation promise. Pinned on arrival with ZERO findings:
+    # every parameter is varied by at least two call sites, including `main()`'s world,
+    # which is built inline per case because a helper's return is opaque to
+    # `check-main-drivable.py` and one wrapper is one call site to THIS guard.
+    # ⟳ 2026-10-20 r1 FOLD: `subjects_starved.added` and `.since` are GONE — the
+    # starvation rule was REDESIGNED, not patched. It asked which path ARRIVED; it now
+    # asks what the tree HELD before arming, so the parameters are `armed` and `before`.
+    # `derive_routes_tried`, `derive_outcome`, `group_by_unit`, `unit_key`,
+    # `parse_armed_at`, `tree_at` and `shallow_refusal` joined with it.
+    # ⟳ 2026-10-20 r2 FOLD: `derive_outcome.tally` -> `seen` and `subjects_starved.before`
+    # -> `before_rounds`, both RENAMED BY THE REDESIGN rather than dropped.
+    # `derive_outcome` stopped taking scope_tally's COUNTS and now takes a round SET
+    # (r2 YL7 — a count cannot answer a question about position); `subjects_starved`
+    # stopped taking a set of PATHS and now takes (subject, round) pairs (r2 YH2 — a path
+    # is not a stable identity). `component_rounds`, `rounds_in_paths`, `round_shapes`
+    # and `empty_listing_refusal` joined with them.
+    'check-decision-scheme.py': (
+        'component_rounds.rounds',
+        'derive_outcome.after_round',
+        'derive_outcome.seen',
+        'derive_outcome.subject',
+        'derive_outcome.unit',
+        'derive_routes_tried.prior',
+        'empty_listing_refusal.paths',
+        'empty_listing_refusal.sha',
+        'group_by_unit.rows',
+        'main.argv',
+        'main.baseline_path',
+        'main.corpus',
+        'main.log_path',
+        'main.starved',
+        'parse_armed_at.raw',
+        'read_log.path',
+        'rounds_in_paths.paths',
+        'rounds_in_paths.shapes',
+        'route_next.tried',
+        'route_sequence_error.tried',
+        'shallow_refusal.flag',
+        'subjects_starved.armed',
+        'subjects_starved.before_rounds',
+        'subjects_starved.docs',
+        't1_not_fed.rows',
+        't1_not_fed.subjects_since_arming',
+        't2_non_termination.rows',
+        't3_routes_collapsed.rows',
+        't4_no_improvement.baseline_median',
+        't4_no_improvement.rows',
+        't5_ranker_miss.rows',
+        't6_denominator_moved.now',
+        't6_denominator_moved.pinned',
+        't6_denominator_moved.tol',
+        't7_sample_reached.floor',
+        't7_sample_reached.rows',
+        'tree_at.epoch',
+        'unit_key.row',
+        'validate_row.prior',
+        'validate_row.row',
+    ),
+    # ⟳ 2026-10-20 r1 FOLD: `rounds_for.base`, `.subject` and `.writers` are GONE, not
+    # unexamined — the halves-relocation they belonged to was removed by route SPLIT
+    # (backlog #320), so `rounds_for` is back to one parameter. Retired with their
+    # subject, which is the one permitted kind of fall. `scope_lead`/`scope_tally`/
+    # `scope_lead_lines` joined for the margin and abstention.
     'check-review-decision.py': (
         'converged.rounds',
         'converged.scope',
         'decide.rounds',
         'decide.scope',
         'decide.tree_reviewed',
+        'exit_code_for.decision',
         'parse_header.text',
+        'review_scope.rounds',
+        'scope_for.is_prose',
         'scope_for.paths',
+        'scope_lead.rounds',
+        'scope_lead_lines.lead',
+        'scope_tally.rounds',
+        'sequence_error.rounds',
         'thrashing_component.rounds',
     ),
     # ⟳ 2026-09-13: the CI storage fixture's falsifier. Pinned in the commit that creates it —

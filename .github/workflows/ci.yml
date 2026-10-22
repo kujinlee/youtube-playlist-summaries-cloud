@@ -215,6 +215,20 @@ jobs:
       - name: check-review-rounds self-test
         run: python3 scripts/check-review-rounds.py --self-test
 
+      # ⛔ THE RE-EVALUATION PROMISE for the route-escalation mechanism, and it is a RATCHET.
+      # Its loudest trigger is STARVATION, because that is how its predecessor died:
+      # `check-review-decision.py` was correct and saw rounds=0 on 81% of the subjects where it
+      # applied (57 with >=2 rounds, 10 readable). It was never wrong; it was never fed.
+      # History is the pinned baseline in docs/reviews/decision-scheme/baseline.json and is
+      # NEVER retro-filled — trigger 1 counts only subjects whose SECOND round document was
+      # added after `armed_at`. A gate red from birth over 57 historical subjects gets switched
+      # off, which backlog #56 measured.
+      - name: Decision-scheme re-evaluation triggers
+        run: python3 scripts/check-decision-scheme.py
+
+      - name: check-decision-scheme self-test
+        run: python3 scripts/check-decision-scheme.py --self-test
+
       # A feature's documents must say which GOAL they belong to, by a name that survives a rename.
       # Written after an hour was lost re-deriving a roadmap that existed: the feature spans three
       # vocabularies after two honest renames, and membership by keyword returns 7 of 162 specs and
@@ -239,6 +253,38 @@ jobs:
 
       - name: check-memory-link self-test
         run: python3 scripts/check-memory-link.py --self-test
+
+      # ⛔ THE SIBLING ABOVE ASKS WHETHER THE CORPUS IS REACHABLE; THIS ASKS WHETHER THE INDEX
+      # ACTUALLY ARRIVES, which is a different question and was the one nothing asked. Measured
+      # 2026-10-19: `MEMORY.md` stood at 26,930 CHARACTERS against the harness's 24,985-character
+      # injection limit, so 8 of its 145 rows were silently dropped before any of it was read. ⟳ The
+      # unit and the row count are both r1-CLAUDE corrections; the first version of this comment said
+      # "~30 of its 118 rows" and "bytes", and all three numbers were wrong. The 8 was counted out of
+      # a consuming agent's own context, which is also what established the unit — while the
+      # link guard, `corpus_verdict` and `check-docs.py`'s line budget were all green. A CANNOT RUN
+      # here (rc 2) means the index is missing or empty, which is never a pass.
+      #
+      # ⛔ WHAT THIS STEP DOES **NOT** COVER, and the sentence that used to claim it did. This said
+      # *"`docs/memory/MEMORY.md` is committed, so CI measures exactly the file a session loads"* —
+      # FALSE, and r1 CLAUDE N2 measured it over two worktrees at the same HEAD: a working tree
+      # grown past the limit with NOTHING COMMITTED gives **rc=1 OVER BUDGET**, while a fresh
+      # checkout of that same HEAD — what this runner sees — gives **rc=0 ok**. A session loads the
+      # WORKING TREE (`INDEX` is the path the harness symlink resolves to, same inode), so the
+      # overflow that actually degrades a session is invisible here by construction.
+      # ⚠ This is backlog #309's class, and the guard is NOT structurally blind to it — it reads the
+      # right file. It is simply only CALLED from here. ⛔ A leading caller EXISTS AS A SCRIPT AND IS
+      # NOT REGISTERED: `.claude/hooks/check-memory-index-budget.sh` (advisory, PostToolUse on writes
+      # to the index). Registering it edits `.claude/settings.json`, i.e. session config, and the
+      # finding that prompted it came from a review agent rather than from the owner — so it waits on
+      # their decision rather than being wired in on a peer's suggestion. UNTIL IT IS REGISTERED THIS
+      # STEP IS THE ONLY CALLER and catches committed growth only; a working-tree overflow that
+      # degrades a live session is still unobserved. ⚠ And even registered it would only see writes
+      # made THROUGH THE TOOL — the #309 instance arrived by another route.
+      - name: Memory index injection budget
+        run: python3 scripts/check-memory-index-budget.py
+
+      - name: check-memory-index-budget self-test
+        run: python3 scripts/check-memory-index-budget.py --self-test
 
       # ⛔ THE ONLY GATE THAT READS BOTH SIDES OF THE MATCHER/HOOK SEAM, and it exists because two
       # LIVE defects lived there with 188 self-test cases and 91 mutations on the python side alone
@@ -758,7 +804,190 @@ jobs:
       # not a canonical ASCII `I/N` (bounded to four digits, no Unicode digits, no leading zeros, no
       # surrounding whitespace), refuses `0 <= I < N` violations, and refuses an empty value — each
       # with a CANNOT RUN sentence and a case in `check-plan-code.py`'s own suite.
+      # ── backlog #173, raised by the owner TWICE and measured rather than estimated ──────
+      # "this sweep time become quite a drag as it happens every merge even for small changes".
+      # MEASURED on run 35889056587: the sweep was 8m12s of a 10m22s job — 79% of the gate — and
+      # three of the five pull requests merged that week changed no code at all. When no
+      # `scripts/**` file changed, the sweep mutates UNCHANGED code against UNCHANGED suites, so
+      # it can only reproduce the previous result: skipping it loses nothing BY CONSTRUCTION.
+      #
+      # ⛔⛔ A STEP-LEVEL `if:`, NEVER A WORKFLOW-LEVEL `paths:` FILTER — backlog #137 already paid
+      # for that distinction. A `paths:` filter means the context never appears on a docs-only pull
+      # request, and *a required check that never reports leaves a pull request pending for ever*.
+      # A step conditional keeps the job running and reporting, so the check stays required.
+      #
+      # ⛔ AND IT FAILS TOWARD RUNNING. If the base ref cannot be resolved the answer is `true`,
+      # because an undetermined diff must not silently skip a gate — "cannot run is a failure,
+      # never a pass" applies to the DECISION to skip just as much as to the sweep itself.
+      - name: Did any mutated code or manifest change?
+        id: mutated_code
+        run: |
+          set -u
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="HEAD^"
+          fi
+          if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+            echo "base '$BASE' does not resolve — running the sweep rather than guessing"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # `scripts/` covers both the delivered guards and `scripts/mutations/**`, which is the
+          # whole of what the sweep reads. Anything else cannot change a mutation verdict.
+          # ⛔ THE DECISION IS NOT MADE HERE. This block collects the diff and calls
+          # `check-plan-code.sweep_needed`, which is pure, has seven cases and a mutation entry.
+          # A `run:` block has none of those, and that is exactly how the shard rule shipped wrong
+          # in three consecutive rounds with every gate green — see the comment on that step.
+          #
+          # ⛔⛔ AND THE ANSWER IS READ FROM STDOUT, NOT FROM AN EXIT CODE — MEASURED, because the
+          # first version of this block used `if python3 - <<EOF` and would have DISABLED THE GATE
+          # ENTIRELY. `check-plan-code.py` cannot be imported under a custom module name: a frozen
+          # dataclass needs the module registered in `sys.modules`, so `exec_module` raises. A
+          # raise is a non-zero exit, `if` reads that as false, and the sweep would have been
+          # skipped on EVERY run while the job stayed green. Printing the verdict separates "the
+          # answer is no" from "the question could not be asked" — the distinction the exit code
+          # silently collapsed.
+          # ⛔⛔ THE DIFF'S EXIT STATUS IS CHECKED, AND `|| true` IS GONE — r4, found independently
+          # by BOTH review halves and the coordinator, the only three-way overlap of the round.
+          # `|| true` made "the diff could not be taken" indistinguishable from "nothing changed":
+          # the redirect had already truncated the file, so Python read `[]`, and `sweep_needed([])`
+          # is False -> SKIP. MEASURED with a `git` shim that resolves `rev-parse --verify` and
+          # fails `diff` (the shape of a missing merge base): `changed=false`, exit 0, and a log
+          # line asserting *"no scripts/ file changed"* — a FALSE STATEMENT ABOUT THE WORLD rather
+          # than an error, so the `::warning::` arm below was never reached and nothing in the log
+          # told a reader the gate had been skipped.
+          #
+          # ⛔ `[]` IS NOT `None`, AND THAT WAS THE WHOLE BUG. `sweep_needed` has always had a
+          # `None` arm for exactly this condition, with a case pinning it — but the shell could
+          # express "no paths changed" and had NO WAY to express "I could not find out", so that
+          # arm was UNREACHABLE FROM ITS ONLY CALL SITE. The callee was correct and the guarantee
+          # was still absent: *unit coverage does not compose — mutate the CALL SITE*.
+          # ⚠ The only thing protecting this today is `fetch-depth: 0` on this job's checkout, and
+          # that setting's own comment says it is there "for parity with `verify`, not because the
+          # sweep reads history" — an incidental guard that invites its own removal.
+          # ⛔ `-z` IS LOAD-BEARING (r6 CODEX finding 2). Without it `git` C-QUOTES any non-ASCII
+          # path — measured in a real repo: `"scripts/\303\251.py"` — which does not start with a
+          # staged root, so `sweep_needed` returned False and the WHOLE GATE was skipped while a
+          # `scripts/` file had changed. That is a VERDICT defect, and it refutes three rounds of
+          # my own claim that this component's logic was undented while only its log was wrong.
+          # ⚠ `changed_from_nul` REFUSES newline-delimited input, so dropping `-z` here produces
+          # `None` and RUNS the sweep rather than silently reinstating the bug.
+          if git diff --name-only -z "$BASE"...HEAD > /tmp/changed.txt; then
+            DIFF_TAKEN=1
+          else
+            DIFF_TAKEN=0
+            echo "::warning::git diff against $BASE failed — the changed-file set is UNDETERMINED,"
+            echo "::warning::so the sweep RUNS. An unanswered question must never skip a gate."
+          fi
+          # ⛔ THE VERDICT AND THE EVIDENCE COME FROM THE SAME OWNER. The first version of the log
+          # line below re-listed the staged roots as a `grep -E` alternation here in YAML, which is
+          # a SECOND IMPLEMENTATION of `SWEEP_RELEVANT_ROOTS` — the drift class this repo has paid
+          # for 17 times, and one a weaker stand-in passes what the real rule would refuse. So the
+          # module prints the verdict on line 1 and the matching paths after it; the shell reports
+          # what it is given and decides nothing.
+          VERDICT_OUT=$(DIFF_TAKEN="$DIFF_TAKEN" python3 - <<'PYEOF' || echo "ERROR"
+          import importlib.util, os, pathlib, sys
+          spec = importlib.util.spec_from_file_location("cpc", "scripts/check-plan-code.py")
+          mod = importlib.util.module_from_spec(spec)
+          sys.modules["cpc"] = mod                     # a frozen dataclass needs this
+          spec.loader.exec_module(mod)
+          # `None` means the diff could not be taken, which `sweep_needed` answers with True.
+          # This is the line that makes that arm reachable; before it, nothing could produce None.
+          # ⛔ NOT `splitlines()` — that is what passed C-quoted paths straight into the
+          # predicate (r6 CODEX finding 2). `changed_from_nul` owns the parse and REFUSES input it
+          # cannot trust, returning None, which `sweep_needed` answers by running the sweep.
+          changed = (mod.changed_from_nul(pathlib.Path("/tmp/changed.txt").read_text())
+                     if os.environ["DIFF_TAKEN"] == "1" else None)
+          # ⛔⛔ THE DECISION IS NOT MADE HERE — AND FOR AN HOUR IT WAS. The three-way
+          # classification was written inline in this block, twenty lines under the comment above
+          # that forbids exactly that, and it is now `check-plan-code.sweep_verdict`: pure, nine
+          # cases, three mutation entries. The rule is not a style point — ALL 1,655 mutation
+          # entries in this repository target `scripts/`, and `.github/` has ZERO, so logic living
+          # here is unmeasurable by construction. Every significant finding on this branch landed
+          # in the unmeasured areas while the covered code held under three rounds.
+          verdict = mod.sweep_verdict(changed, os.environ["DIFF_TAKEN"] == "1")
+          print(verdict)
+          need = verdict != "SKIP"
+          # Line 2+ is EVIDENCE, and which evidence depends on the verdict: for RUN, the staged
+          # paths that forced it; for SKIP, the staged-but-unswept paths that fell in the measured
+          # hole (r5 CLAUDE M1). Both come from the module, so the shell owns no copy of either set.
+          if need and changed is not None:
+              for p in [c for c in changed
+                        if c.strip() and c.startswith(mod.SWEEP_RELEVANT_ROOTS)][:20]:
+                  print(p)
+          elif not need:
+              for p in mod.sweep_skipped_hole(changed)[:20]:
+                  print(p)
+          PYEOF
+          )
+          VERDICT=$(printf '%s\n' "$VERDICT_OUT" | head -1)
+          MATCHED=$(printf '%s\n' "$VERDICT_OUT" | tail -n +2)
+          # On the SKIP path the same lines are the skipped-set paths, not the matched ones.
+          HOLE=""
+          [ "$VERDICT" = "SKIP" ] && HOLE="$MATCHED"
+          case "$VERDICT" in
+            SKIP)
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              # ⛔⛔ THIS MESSAGE HAS BEEN WRONG TWICE, AND BOTH WORDINGS ARE RECORDED BECAUSE THE
+              # SHAPE REPEATS. v1 claimed "no scripts/ file changed" on a path where the diff had
+              # FAILED — a false statement about the world rather than an error. v2 claimed
+              # "nothing the harness stages changed" while `docs` IS staged, and asserted
+              # "unchanged suites" one line above its own warning that a docs change can alter a
+              # suite result (r5 CLAUDE M1: self-contradicting in adjacent lines, and byte-identical
+              # whether the hole was crossed or not). v3 DISCRIMINATES, and the discrimination is
+              # computed by `check-plan-code.sweep_skipped_hole` — not by a grep alternation here,
+              # which would be a second implementation of SWEEP_SKIP_ROOTS.
+              if [ -n "$HOLE" ]; then
+                echo "no path under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE,"
+                echo "⚠ BUT these changed paths are STAGED and NOT swept — the measured hole:"
+                printf '%s\n' "$HOLE"
+                echo "⚠ So this skip is NOT free: a change in that set CAN alter a suite result"
+                echo "(measured — check-anon-exposure 74/74 -> exit 1). backlog #173 pinned the"
+                echo "decision to skip it; backlog #330 is the selector that would remove the trade."
+              else
+                echo "nothing under check-plan-code.SWEEP_RELEVANT_ROOTS changed against $BASE, and"
+                echo "nothing in the skipped set either — the sweep would mutate unchanged code"
+                echo "against unchanged suites, so it can only reproduce the previous result."
+              fi
+              ;;
+            RUN-UNPARSED)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::the diff was taken but its paths could not be trusted —"
+              # ⛔ NO BACKTICKS IN A DOUBLE-QUOTED STRING. The first version of this line wrote
+              # the flag as `-z` in backticks and bash ran it as COMMAND SUBSTITUTION: the log read
+              # "-z: command not found" and the sentence lost the very word it was about. That is
+              # the exact footgun docs/dev-process.md records ("any backtick inside a double-quoted
+              # bash string is command substitution, and it has silently skipped a review gate"),
+              # committed by the person citing it, in a warning about dishonest log lines.
+              echo "::warning::not NUL-delimited, so the -z flag is missing or git quoted a path."
+              echo "the changed-file set is UNDETERMINED, so the sweep runs rather than"
+              echo "skipping a gate on an unanswered question. No path list is shown"
+              echo "BECAUSE THERE IS NONE — saying otherwise is what r6 CLAUDE M1 caught."
+              ;;
+            RUN)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              # ⛔ THE REASON IS REPORTED, NOT ASSUMED. This arm used to print "scripts/ changed"
+              # unconditionally, so on the undetermined-diff path it asserted a changed file set it
+              # had just failed to read — a smaller instance of the very defect above, where the
+              # SKIP arm's "no scripts/ file changed" was a false statement rather than an error.
+              # A log line must never claim to know something this step could not determine.
+              if [ "$DIFF_TAKEN" = "0" ]; then
+                echo "the diff could not be taken, so the sweep runs without a changed-file list."
+              else
+                echo "a staged path changed, so the sweep runs:"
+                printf '%s\n' "$MATCHED"
+              fi
+              ;;
+            *)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::could not decide whether the sweep is needed ($VERDICT) —"
+              echo "::warning::running it rather than skipping a gate on an unanswered question"
+              ;;
+          esac
+
       - name: Mutation manifest against the delivered scripts (one shard)
+        if: steps.mutated_code.outputs.changed == 'true'
         env:
           SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}

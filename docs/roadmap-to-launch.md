@@ -654,7 +654,20 @@ that fires anyway, so it resurfaces without anyone remembering it exists.
 error, no report, no cleanup. Divergence was routine, not hypothetical: both replicas allocate
 `max + 1` in their own ingestion order and no migration constrains uniqueness.
 
-**Status: implemented, dual review in progress (round 3 dispatched). NOT merged. No PR yet.**
+**Status (2026-10-21): SIX ROUNDS RUN, NOT CONVERGED, NOT MERGED, NO PR YET.** r4 reviewed the
+implementation that r1–r3's design document never covered (`check-review-recorded.py` exited 1 over
+17 files) and found 4 High; r5 found 8 more, **all 8 against r4/r5 fixes**; r6 fired a pre-committed
+falsifier and an **architecture review was convened** —
+`docs/reviews/architecture-review-2026-10-21-message-soundness.md`. `check-review-decision.py`
+returns `ROUND_OWED` (r3's Blocking still `filed`; `fixes_nontrivial: true`). ⛔ **Merging is the
+human gate and is OUTSTANDING; it also carries PR #380's 26 commits into master and closes it
+implicitly** (verified from git: `origin/baseline-surveys` is an ancestor of HEAD).
+
+- [ ] ⛔ **r6's Claude half** — the only thing `check-review-rounds.py` is red on right now.
+- [ ] ⛔ **The merge decision, and the owner's view of a call I made about my own work:** the tool
+      armed `ARCHITECTURE_REVIEW` on `sweep-skip` at r5, the r5 coordinator half DECLINED it with a
+      written falsifier, and r6 reversed that on evidence. The declining party was the party whose
+      fixes armed it (backlog #334).
 
 - [x] **A0** behaviors table (33 rows) + Codex review of the table
 - [x] **A4** `copy` at the `BlobStore` seam — ONE shared `copyBlob`, all three adapters delegate.
@@ -2353,6 +2366,220 @@ skill and not the hook, so the hook's refusal printed a claim and its withdrawal
       BLOCKED. Its two remedies — raise the budget in a reviewable PR diff, or prioritise and
       retire with the reason recorded in `process-rationale.md` — are explicitly flagged as the
       human's call, so neither is taken here.
+
+## Redesign-or-accretion mechanism — backlog #320–326 — anchor `review-decides-itself` — 🔴 **NOT CONVERGED after THREE rounds; Phase 6 review done 2026-10-20; NOTHING MERGED**
+
+Branch `decision-route-escalation`, stacked on `baseline-surveys` (PR #380, unmerged). Built at the
+owner's instruction — *"try a most promising scheme and check outcomes, then re-evaluate the
+mechanism; create a re-evaluation promise"* — after their three steers replaced a deterministic goal
+with **a bet that corrects itself**: ACCRETE → REDESIGN → SPLIT → DEFER, no route retried, figure of
+merit **rounds-to-termination** rather than accuracy.
+
+| round | findings | what was wrong |
+|---|---|---|
+| r1 (both halves) | 3 B · 9 H · 10 M · 7 L | the design's **claims** — the 97% headline gained **zero** subjects |
+| r2 (Codex alone) | 0 B · 2 H · 4 M · 2 L | the **fixes** for r1 |
+| r3 (Claude alone) | 1 B · 7 H · 6 M · 6 L | the **fixes** for r2 — counts went UP |
+
+⛔ **THRASHING ARMED MECHANICALLY** (`ARCHITECTURE_REVIEW — 'corpus-cannot-run' carried fix-induced
+findings in r2 and r3`). Review: `docs/reviews/architecture-review-2026-10-20-decision-route-escalation.md`.
+**Its verdict: the pure core is sound and converged; the world-reading boundary is not, and the
+reason is structural** — 64% of the fix-round findings are in components that read the world.
+
+- [x] **backlog #322 ✅ FIXED 2026-10-20, same day** — `tree_at` takes a defaulted `repo`; the cases now
+      BUILD a git repository instead of asserting against this one. **Falsifier run:
+      `control_is_green=True` in a staged tree with no `.git`**, where it was False. It also removed
+      a case that could not fail and made two mutations reachable for the first time.
+      ⚠ The coverage figures in the three earlier commit messages are still only as good as the
+      sweep that now runs — re-stated, not retro-corrected.
+- [ ] **backlog #323** the ranker's statistic **saturates at the round count** — four components tied at 3,
+      and I reported the forced silence as humility in two review documents
+- [ ] **backlog #324** `t1_not_fed` reads SUBJECT granularity while the mechanism reasons in UNITS: 7 units
+      decided, 2 logged — the predecessor's blind spot one level down
+- [ ] **backlog #325** an abstention is **inexpressible as data**, so trigger 5 has no reachable falsifier
+- [x] **backlog #326 ✅ CLOSED BY backlog #322**, exactly as the review predicted — `probe7.py` stages a copy and
+      mutates there, and matches the harness contract (`expect` EQUALS one red case) which the old
+      probe did not
+- [x] **backlog #321 ✅ CLOSED 2026-10-21 — it is a CHOICE, and the choice is option (b):** a skip is
+      recordable with a REQUIRED non-empty `why_skipped`, refused when absent or whitespace. The ladder
+      is unchanged and no jump route was added — forcing ACCRETE first is what produces the label
+      *accrete was tried on this shape and failed*, so deviations are RECORDED, not legalised.
+      Measured: guard `rc=1` (starved) → `rc=0` with the real history written; 140 → 162 cases,
+      42 → 55 mutations, 55/55 killed and 55/55 ATTRIBUTED, 0 survivors
+- [ ] **backlog #320** which round-header fields can a reviewer's own half know (the withdrawn relocation)
+
+### The escalated DESIGN review (what Phase 6 actually owed) — r1 done, NOT CONVERGED
+
+`review-method.md:178` says the escalated round is a **design review, not a defect hunt**. It ran
+2026-10-20 on `docs/superpowers/plans/2026-10-20-decision-log-model-redesign.md`; record:
+[`decision-log-model-redesign-r1-coordinator.md`](reviews/coordinator/decision-log-model-redesign-r1-coordinator.md).
+
+| half | findings | |
+|---|---|---|
+| Codex (`gpt-6.1-sol`) | 1 B · 4 H · 3 M | NOT CONVERGED |
+| Claude (independent) | 3 B · 6 H · 7 M · 1 L | NOT CONVERGED |
+
+⭐ **The halves agreed on four defects independently**, two of which refuted the document's own
+claims: that a ranker miss is inexpressible today (it is **not** — `rc=1, FAIL trigger 5`, verified
+by hand), and the `10 of 57 = 18%` readability figure (the population is `baseline.json`'s
+`corpus_ORIGINAL_WRONG`; really **11 of 82 = 13.4%**, or **46 of 395 = 11.6%** over the rule's own
+`(subject, round)` domain).
+
+- [x] **r1 folded** — the document is rewritten, not patched: backlog #323 **split out of the unification**
+      (it ranks round documents and never touches the log, which is how its answer escaped the
+      constraint and collected two Blockings); attempt/observation row kinds and a `schema >= 2`
+      epoch, so the four live rows stay valid instead of returning `rc=2` for ever; the skip's lever
+      on `t4` — the figure of merit — neutralised; `units_decided` dropped for the fix backlog #324 actually
+      filed. All 25 findings mapped in the document's §8 fold table.
+- [x] **r2 ran — Codex alone, as rounds 2+ ALTERNATE** (a concurrent pair never reviews the fixes).
+      **6 High / 3 Medium, NOT CONVERGED.** Three claims re-derived by construction before acceptance,
+      all three confirmed — including two errors of mine: the row-kind split **breaks `t3`** (a measured
+      false FAIL, `"all 5 scored rows took route None"` over four distinct routes) and T7 named the
+      **wrong module** as `component_rounds`' owner while closing the finding about naming the owner.
+      Record: [`…-r2-coordinator.md`](reviews/coordinator/decision-log-model-redesign-r2-coordinator.md).
+- [x] ⛔⛔ **THRASHING WATCH — IT FIRED.** `thrashing_component` returns **`'log-schema'`**, computed by
+      the tool rather than read by me: two consecutive rounds of fix-induced findings there, **12 of
+      r1's 19** then **4 of r2's 8**. ⟳ The r1 figure was **19**, not the 18 three artifacts of mine
+      claimed — I counted prose in a slice whose subject is a machine built to stop that. r2's reviewer
+      applied the design's own §5 condition unprompted and reached the same place.
+- [x] ⏸️ **DECIDED 2026-10-20 — DEFER** (backlog **#327**). The owner ruled *defer it, fix the signals first*.
+      The ladder says **SPLIT**: `log-schema` took REDESIGN at r1, its failure observation is satisfied,
+      and DEFER is the rung *after* SPLIT — §5 forbids only a third **REDESIGN**, which SPLIT is not.
+      SPLIT is also the only route in this slice with positive evidence (`relocation` 5 → 0 → 0, n=1).
+      ⚠ **But the argument for DEFER is not thrashing — it is return:** five review rounds plus an
+      architecture review, **zero measured benefit**, and the figure of merit (rounds-to-termination)
+      uncomputable because no unit has terminated. That moves the goal, so it is not mine.
+      ⛔ **No third redesign is being written: r2's nine findings are FILED, not fixed.**
+
+⛔ **AND THE REASON IS NOT THE THRASHING CONDITION — both signals this slice leaned on are BASE RATES.**
+Measured 2026-10-20 over the readable corpus: `thrashing_component` arms on **8 of 12** subjects (67%),
+and `converged()` is false for **12 of 12** because the corpus holds **1 clean round in 48** against a
+predicate needing two consecutive (backlog #329). ⭐ **The mechanism CONSUMES those signals**, so a decision
+layer over non-discriminating inputs cannot work however well it is built. The measurement layer is
+the work now:
+
+- [ ] **backlog #328** — one `corpus()` owner every reader imports, plus a guard refusing a denominator that
+      does not match it. Replaces **five** live derivation sites with different filters.
+- [ ] **backlog #329** — make `converged()` satisfiable: decide whether a no-findings round must be RECORDED,
+      and whether `aim` needs a third value for a subject whose deliverable IS an instrument (measured:
+      the two decision subjects carry the corpus's lowest instrument share, **4%** and **12%**, against
+      a mean of 32%).
+
+⤳ **DISCOVERED 2026-10-21 across r4–r6 and the architecture review — filed in the same turn, per
+`dev-process.md`'s rule that a discovery living only in chat is lost at `/compact`:**
+
+- [x] **backlog #335** — the convergence diagnostic's guarantee NARROWED to change detection after
+      four designs each tried to assert what an English sentence means and each was defeated by the
+      next round. Renderings pinned by independent identity cases; r6's exact attack now reddens.
+- [ ] ⭐ **backlog #336** — the CLASS behind it: nothing interrogates a guard's own property claim at
+      design time. `check-gate-falsifiability.py` exists for exactly this shape but its population
+      is gate checklist items, not guard docstrings. Cost measured: 4 designs, 3 rounds, ~12 cases.
+- [ ] **backlog #330** — diff-scoped per-manifest mutation selection (the owner's idea). Bounded by
+      backlog #109: only a FULL sweep sees an orphaned anchor, so it is a fast path WITH a full
+      sweep behind it, never a replacement.
+- [ ] **backlog #331** — the transcript guard's remainder: a corrupt transcript still passes quiet, a
+      duplicated reference predicate that already disagrees, an incomplete surface list, and a FALSE
+      NEGATIVE on `AskUserQuestion` inputs — the surface the owner most reads.
+- [ ] **backlog #332** — an armed `ARCHITECTURE_REVIEW` is disarmed by the next round, and nothing
+      checks that anyone answered it. Measured by moving one review file in and out.
+- [ ] **backlog #333** — the sweep's shards are imbalanced ~2x in wall-clock against a predicted
+      1.15x, and the sweep IS the critical path: verify→`mutation-sweep-complete` is **19–23 min**
+      and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
+- [ ] **backlog #334** — a declined escalation must pre-commit the observation that would reverse it.
+
+⟳ **backlog #321's FOURTH occurrence — the decision that ends the slice — IS NOW RECORDED (2026-10-21).**
+The deferral is written as the two rows the evidence supports: `redesign` (skipping `accrete`, which
+`review-method.md:178` had closed BY RULE — so that label is explicitly NOT evidence of accrete's
+futility) then `defer` (skipping `split`, because the measured cause is one level down in backlog #328 and backlog #329).
+- [x] ⭐ **backlog #321 blocked the escalation decision itself — THIRD independent occurrence — CLOSED.**
+      `["redesign"]` is a ladder prefix again once the skipped rung is named, so the mechanism can now
+      record the route the mechanism prescribes for it. ⛔ Trigger 1 was fed with the TRUTH, not with a
+      fabricated `accrete` and not with `continue-on-error` — both were explicitly refused.
+- [ ] 🟠 **backlog #337 — found by writing that row, within the half hour; INSTANCE FIXED at r7, CLASS
+      STILL OPEN:** `outcome: "stopped"` cannot distinguish a stream that stopped because the defect was
+      REPAIRED from one that stopped because the work was DEFERRED. ⟳ r7 Codex measured the symptom as
+      worse than filed — it does not merely flatter, it **turns a FIRING trigger QUIET by displacing a
+      subject out of t4's last-five window** (`[4,4,4,1,1]` median 4 → `[4,4,1,1,2]` median 2). Fixed
+      for the retroactive case: provenance is a FIELD now and t3/t4/t7 read `prospective()` only. ⛔ Still
+      open for a FUTURE PROSPECTIVE defer row, which the reviewer named explicitly — that is a real bet
+      whose termination is still indistinguishable from a repair.
+- [x] ⭐⭐ **r7 BOTH HALVES FOLDED. The CLAUDE half found 13 (2 Blocking, 3 High, 5 Medium, 3 Low)
+      and ZERO overlapped with Codex's four — the non-redundancy this project measured in 2026-09-13
+      is holding at 17 findings and 0 overlap across one round.** ⛔ **B1 corrected the branch's own
+      headline.** `1c5376e2` said *"trigger 1 goes green by being FED, not patched"*; measured, t1 is
+      silent over all 6 rows and FIRES over the 4 prospective ones — so after the fold the claim read
+      *fed with rows that are not bets*. My written defence ("coverage, not timely use, a different
+      complaint") was only sound if some trigger owned timely use, and the reviewer enumerated all
+      seven and none did: the only detector of non-use was satisfiable by backfill. `t8_hindsight_only`
+      now WARNS by name (WARN, not FAIL — a prospective row for finished work is unsatisfiable, and a
+      gate red from birth gets switched off, backlog #56). ⛔ **B2: two mutations survived 179/179
+      against the fold's own t7 message**, one restoring Codex M2 verbatim (`13 ranker predictions`
+      over 10), because every t7 fixture had `len(rows) == len(sample)` at the message site — the
+      "passes at ANY N" defect the fold itself had just named, recurring in its replacement. Also
+      fixed: hindsight after a real bet CLOSED a unit's ladder irreversibly (H3 door c, which my
+      caveat had not named), t5/t7 shipped TWO eligibility rules under a "one rule, one place" claim
+      (M6, now one `is_prediction`), the summary line a human reads was un-split (M7), the 74% bound
+      was quoted at floors it is false for (M8), and the docstring asserted hindsight labels *cannot*
+      be scored while the schema now accepts them (M9). 179 → 201 cases, 64 → 80 mutations,
+      **80/80 killed and 80/80 ATTRIBUTED**, 0 survivors. ⟳ (r8 Claude M2: an earlier correction of
+      a stale count was applied to THIS bullet, which describes r7 — making a different number wrong.
+      r8's own figures are in its bullet above.)
+- [x] ⭐ **r8 (Codex) — 3 Medium, 1 Low, NO Blocking and NO High: the first round that did not find
+      a Blocking since r3, which is what convergence looks like rather than being asserted.** All four
+      folded, and two were about my own discipline rather than the code's difficulty. **M1: both new
+      WARNs could be disconnected while 201/201 stayed GREEN** — I added two triggers and wire-tested
+      neither, in a file that carries the comment *"THE CASE THAT WOULD HAVE CAUGHT THE INERT WIRING,
+      AND DID NOT EXIST"*. Now two `main()`-driven cases assert each verdict REACHES the CLI, and both
+      call-site severs are killed by name. **M2: t9 duplicated t4's window, and deleting t9's recency
+      rule left BOTH triggers silent on a deferral-composed window with the suite green** — the
+      two-guard silence hazard r7 had warned about. Fixed STRUCTURALLY, not with another guard: one
+      `termination_window` producer with two readers, so severing the single recency rule moves t4 and
+      t9 TOGETHER and no window exists where both are quiet. **M3: one of my seven r7 re-points
+      measured a DIFFERENT decision than its name claims** — `[-5:]`→`[:5]` is first-five-vs-last-five,
+      not first-insertion-vs-latest-occurrence — which is exactly the failure I had asked the reviewer
+      to look for in my own work. Re-pointed to the pop rule; the `[:5]` off-by-end kept as its own
+      entry. **L4: the published records said 200 cases where the suite said 201** (the commit message
+      was right); corrected to the final 203. One entry was RETIRED WITH ITS SUBJECT — t9's duplicate
+      retroactive filter, removed by M2's fix rather than orphaned. 201 → 203 cases, 80 → 82 mutations,
+      **82/82 killed and 82/82 ATTRIBUTED**, 0 survivors. ⭐ **REAL CI IS GREEN on `e72ccc2b`** —
+      `schema-gates: pass`, `verify: pass`; the earlier schema-gates red was a transient registry
+      `Data limit exceeded` (CANNOT RUN, rc=2), cleared by one re-run, and it had broken at `ea005a3e`
+      — one commit BEFORE this work, which the inherited handoff had read as a pass.
+- [x] ⭐ **r7 Codex half folded — one cause, three doors, and a prose disclaimer was none of them.** The two
+      retroactive rows entered the population of every trigger that treats a SCORED row as a bet placed
+      in advance: t3 fired → quiet, t4 fired → quiet, t7 quoted an accuracy bound over a sample of 10
+      when 8 predictions existed. Fix: `retroactive` is a type-checked field, `prospective()` owns the
+      filter, and t7's population became ranker PREDICTIONS — `t5`'s own rule, which it had failed to
+      borrow. Also fixed: a malformed `routes_tried` crashed the validator instead of being named, and
+      `"!!!"` / a zero-width space passed as a reason (`strip()` does not remove U+200B). 162 → 179
+      cases, 55 → 64 mutations, **64/64 killed and 64/64 ATTRIBUTED**, 0 survivors.
+- [ ] 🟠 **backlog #340 — a REQUIRED check is gated on an anonymous public-registry pull with a data
+      cap, hit 3× in 90 minutes** (`ea005a3e`, `afe3b7cd`, `70e4ead3`): `start-schema-db.sh` exits
+      2 = CANNOT RUN on *"error from registry: Data limit exceeded"*. The script's refusal to fail
+      open is CORRECT; the dependency is the fragility. ⟳ I first called it transient and declined to
+      file it after one re-run cleared it — the third occurrence refuted that within the hour.
+- [ ] 🟠 **backlog #339 — three rules make every alternating round structurally red**, and the only
+      escape the gate offers is one `plugins.md` forbids. I hit it, put a required check red, and
+      renumbered around it; nothing writes the resolution down.
+- [ ] 🟡 **backlog #338 — a declared skip does not record WHY the rung was unavailable**, so the
+      rule-imposed skip (`review-method.md:178` closed `accrete`) and a judgement-imposed one are the
+      same datum — while the stated purpose of recording skips is to be training data. Deliberately NOT
+      built yet: r7 found no training consumer, so a field for it would be speculative.
+
+⚠ **Mutation coverage of the two subjects backlog #322 unblocked: 62/62 killed, 62 attributed, 0 survivors**
+(`43`+`19`, matching `EXPECTED_MUTATIONS` in both directions), measured by the harness over a pruned
+`HARNESS_TREE` copy in 57s. ⛔ The full 1,625 sweep is **CI's, at the PR** — a local full run was
+started and abandoned at 413/1,625, re-opening a question the prior session had already closed by
+delegation.
+
+⭐ **THE ONE POSITIVE DATUM, and it is the mechanism's own:** `relocation` went **5 → 0 → 0** after
+the ladder emitted SPLIT. It is the only component to go quiet, and the only one whose route the
+ladder chose rather than a patch. ⚠ n = 1, and "quiet because removed" is weaker than "quiet because
+right".
+
+⚠ **Measured benefit remains ZERO.** Four log rows, two scored, no outcome observed for any unit.
+Everything claimed is about construction. ⛔ **Merging is the owner's gate and nothing here is
+merge-ready**: r1/r2/r3 all NOT CONVERGED and backlog #322 must land before any coverage claim is evidence.
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all

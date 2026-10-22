@@ -111,16 +111,16 @@ A one-line change can be the most dangerous thing in the repo.
 - Merging stays a **human gate**: open the PR, notify, do not merge.
 
 **⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT (corrected 2026-09-14).** It fires when **two
-consecutive rounds carry findings caused by the previous round's own fix, in one component** — the
-shape that bought it: the stable-blob-addressing reservation produced a Blocking or High in six
-consecutive rounds, four of them introduced by the previous fix, while every other component of the
-same spec converged. **The inventory was right; the arming condition was wrong** — and a count was
-the wrong repair for it. ⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer
-*thrashing or prose floor?* in the round document, with per-finding evidence. Measured 2026-08-28:
-Blocking totals ran 4→5→4 while the character shifted entirely, so a count would have convened this
-over prose that was improving — and on a document rounds can be right forever, which is a signal to
-go build. Both shapes, the test *can a redesign remove it?* and the stop condition are in
-[`review-method.md`](review-method.md); the full account is in that retrospective's review doc.
+consecutive rounds carry findings caused by the previous round's own fix, in one component**. A
+count was the wrong repair: measured 2026-08-28, Blocking totals ran 4→5→4 while the character
+shifted entirely, and on a document rounds can be right forever — go build, do not convene.
+⚠ **Reaching four rounds OBLIGES ASKING, and does not fire.** Answer *thrashing or prose floor?* in
+the round document, with per-finding evidence. ⟳ **2026-10-20: THE COMPONENT A CONVENED REVIEW
+EXAMINES IS NOT NECESSARILY THE ONE THAT ARMED IT** — rank by TOTAL appearances, not consecutive
+run, because one fixed, gone quiet and COME BACK beats a longer unbroken run. A ranker, never a
+trigger. `check-review-decision.py:review_scope` computes it; the measurement is in
+[`review-method.md`](review-method.md), which also holds both shapes, the test *can a redesign
+remove it?* and the stop condition. The full account is in that retrospective's review doc.
 
 **The architecture review — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
@@ -154,6 +154,7 @@ copy that drifts.
 | `scripts/check-function-revokes.py` | every newly created `public` function revokes PUBLIC in its own migration — **`alter default privileges` CANNOT do this** (measured 2026-08-28: stored entries are additive to PostgreSQL's built-in `PUBLIC` EXECUTE), so the per-function revoke is the only mechanism that works (`--self-test`: 16 cases) |
 | `scripts/check-python-pin.py` | ⟳ 2026-09-17: **every CI job pins the Python interpreter, the pins agree, and in CI the pin TOOK EFFECT** — `ci.yml` ran bare `python3` **45 times** in the required check and never called `setup-python`, so a runner-image bump could change every guard's behaviour with no commit. ⚠ The rule is *every job pins or is exempt with a reason*, NOT *jobs that run python*: the `schema-gates` job invokes the gates through a shell script and contains no literal `python3`. Locally a mismatch is ADVISORY (a gate red from birth gets switched off — #56); in CI it FAILS. Found by CI and a dev machine disagreeing about the same commit (`Path.is_file()` raises ENAMETOOLONG below 3.13, returns False above) |
 | `scripts/check-docs.py` | documentation integrity |
+| `scripts/check-memory-index-budget.py` | ⭐ **the always-loaded memory index FITS the harness's injection budget — the one quantity that decides whether a row ARRIVES, and nothing measured it.** Measured 2026-10-19: `MEMORY.md` stood at **26,930 characters against a 24,985-character limit**, so **8 of its 145 rows were silently dropped on every load** while `check-memory-link.py`, `recall-llm.corpus_verdict` and `check-docs.py`'s line budget were ALL green — the link guard asks whether the corpus is REACHABLE, this asks whether the index ARRIVES. Fails over budget, WARNS at 90%, and names the remedy (move history rows to the triggered `slice-history.md` entry) in the message. ⛔ **CHARACTERS, not bytes, and that took two rounds** — the harness's reported `26.3KB` is chars/1024 (26.30), not bytes/1024 (27.15), and r1 CLAUDE read the cut point out of its OWN injected context at char 24,958 / byte 25,771. Counting bytes could only ever fire EARLY, never produce a false green, but the suite and the manifest had pinned the wrong unit as the invariant — a mutation entry whose job was to forbid the right answer. ⚠ The UNIT is measured; the ALGORITHM (strict prefix vs row-wise) is **NOT VERIFIED** and the docstring says so. ⚠ Row LENGTH is deliberately not enforced: 35 of 145 rows exceed the harness's own ~200-char suggestion, and a gate red from birth on a quarter of its subject gets switched off (backlog #56). ⚠ NO COUNTS QUOTED HERE ON PURPOSE — this row shipped saying "42 cases, 12 mutations" and both were stale within twenty minutes. The script declares its own case count and `check-selftest-counts` verifies it by running it; `EXPECTED_MUTATIONS` pins the manifest |
 | `scripts/check-backlog-closure.py` | ⭐ **the INVERTED direction (backlog #98)** — every other backlog rule compares a row to ITSELF (marker vs status), so a stale row agrees with itself and disagrees only with **git**; five shipped that way, none caught by a machine. Reads merged subjects, warns when a row they close lacks `✅`. **WARN-ONLY** by #56's measured verdict (a blocking gate on a docs-only mismatch gets switched off); exits **2** only on CANNOT RUN — shallow clone, no git, or ZERO closing tokens. ⚠ Keys on `(backlog #N)` at the **subject TAIL**: measured, ANY-occurrence matched 18 ids and would have fired on **10**, the tail rule 7 and fired on **1** — a true positive. `--self-test`: 20 cases |
 | `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so. Reads the flat layout AND `docs/reviews/<writer>/`, refusing a basename filed in both (`--self-test`: 27 cases). ⟳ 2026-09-04: this row said **14** while the suite ran **22** — a third declared-count drift, caught by `check-selftest-counts.py` only because backlog #92 happened to touch the file |
 | `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to, by a name that survives a rename (ADR-0010; registry `docs/anchors.md`; `--self-test`: 15 cases) |
