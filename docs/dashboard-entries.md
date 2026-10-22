@@ -17118,9 +17118,12 @@ time. If one of those names a different parent from the replay, the plan stays u
 listed. Every rebuilt link is labelled, and the page draws it dashed and marked "reconstructed",
 so it can never be mistaken for one recorded live.
 
-Over the real transcripts it would link 56 plans. It would leave 67 unlinked, 34 of them because
-a "switched from" line disagreed. Two plans already had a recorded link and are untouched. It also
-reproduces the one link the live tool recorded today exactly.
+Over the real transcripts it would link 56 plans from the replay alone. You then chose to link
+the cases where the earlier plan had just been closed and the "switched from" line named exactly
+that plan. Those 24 links are labelled "from banner" and drawn in their own style, so the page shows
+three kinds of link and says what each rests on. 43 plans stay unlinked, including the two where
+the line named a plan other than the one the replay found active. Two plans already had a recorded
+link and are untouched. It also reproduces the one link the live tool recorded today exactly.
 
 **Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the
 plan files change only when you say so.
@@ -17130,7 +17133,9 @@ plan files change only when you say so.
 `<!-- parent: … -->` + `<!-- parent-source: transcript <session-8> <ISO> -->` only on plans with no
 `parent:` marker, keeps each file's mtime, and skips the plan `.claude/last-plan` fingerprints.
 `gen-work-lines.py` reads `parent-source:` (dashed connector, "reconstructed" tag, source in the
-tooltip, one caveat sentence). `begin-plan.py` carries `parent-source:` through a re-arm, so a
+tooltip). A `parent-source: banner <session-8> <ISO>` link — written only when the replay's `-`
+follows a clear and every slug-shaped banner in the arm's turn names exactly the cleared plan — is
+drawn double and tagged "from banner". One caveat sentence covers all three kinds. `begin-plan.py` carries `parent-source:` through a re-arm, so a
 rebuilt link never becomes a live-looking one.
 
 Divergence from the live rule, by the owner's decision: with nothing armed the backfill records

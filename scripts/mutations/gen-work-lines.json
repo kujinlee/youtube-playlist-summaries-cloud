@@ -225,8 +225,8 @@
     "file": "scripts/gen-work-lines.py",
     "edits": [
       [
-        "    li = '<li class=\"rebuilt\">' if n.get(\"source\") else \"<li>\"",
-        "    li = \"<li>\""
+        "    li = ('<li class=\"from-banner\">' if banner else '<li class=\"rebuilt\">') if src else \"<li>\"",
+        "    li = ('<li class=\"from-banner\">' if banner else \"<li>\") if src else \"<li>\""
       ]
     ],
     "expect": [
@@ -238,8 +238,8 @@
     "file": "scripts/gen-work-lines.py",
     "edits": [
       [
-        "        '“reconstructed”</span> was rebuilt afterwards from the session transcripts, not '",
-        "        '“reconstructed”</span> was rebuilt, not '"
+        "        'was rebuilt afterwards from the session transcripts by replaying every plan command; and '",
+        "        'was rebuilt; and '"
       ]
     ],
     "expect": [
@@ -264,12 +264,51 @@
     "file": "scripts/gen-work-lines.py",
     "edits": [
       [
-        "title=\"reconstructed from {esc(n[\"source\"])}\">reconstructed'",
-        "title=\"reconstructed from {n[\"source\"]}\">reconstructed'"
+        "        rec = (f' <span class=\"recon\" title=\"reconstructed from {esc(src)}\">reconstructed'",
+        "        rec = (f' <span class=\"recon\" title=\"reconstructed from {src}\">reconstructed'"
       ]
     ],
     "expect": [
       "the provenance is HTML-escaped, so a transcript id cannot inject markup"
+    ]
+  },
+  {
+    "name": "a banner link is drawn as a transcript replay",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    banner = bool(src) and src.startswith(\"banner\")",
+        "    banner = False"
+      ]
+    ],
+    "expect": [
+      "⭐ THREE kinds of link, each drawn and labelled differently"
+    ]
+  },
+  {
+    "name": "a banner link's tooltip does not say it is a banner",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        rec = (f' <span class=\"from-banner-tag\" title=\"from a banner: {esc(src)}\">from banner'",
+        "        rec = (f' <span class=\"from-banner-tag\" title=\"{esc(src)}\">from banner'"
+      ]
+    ],
+    "expect": [
+      "...a banner link's tooltip names the banner it rests on"
+    ]
+  },
+  {
+    "name": "the caveat stops naming the banner kind",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        'one drawn <span class=\"banner-key\">double and marked “from banner”</span> rests only on a '",
+        "        'one drawn <span class=\"banner-key\">double</span> rests only on a '"
+      ]
+    ],
+    "expect": [
+      "...and the caveat says in one sentence what each of the three kinds rests on"
     ]
   }
 ]

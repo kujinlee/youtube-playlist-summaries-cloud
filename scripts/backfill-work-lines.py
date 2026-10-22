@@ -2,10 +2,10 @@
 """Rebuild the work-line links that predate the `parent:` field — by REPLAYING the transcripts.
 
     python3 scripts/backfill-work-lines.py                  # DRY RUN: print the table, write nothing
-    python3 scripts/backfill-work-lines.py --write          # apply the table's `keep` rows
+    python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 63 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 70 cases
 
 WHY THIS EXISTS
 ---------------
@@ -52,6 +52,14 @@ rebuilt history can always be told apart.
 own text, in the same turn as Y's first arm, is what was SAID at the time. If it names a parent
 that disagrees with the replay, Y gets NO marker and is listed — two witnesses that disagree are
 not evidence for either.
+
+⭐ OPTION A FOR BANNERS (the owner, after reading the dry run, 2026-10-22). When the replay's `-`
+exists ONLY because the plan armed just before was CLEARED (a turn-end clear or `--finish`), and
+the banners in the arm's turn name EXACTLY that cleared plan as the one being left, the plan is
+linked to it — labelled `parent-source: banner <session-8> <ISO>` with the BANNER's own session
+and time, never `transcript`, so the page can say what the link rests on. Every other
+disagreement stays unlinked and listed, and a banner never overrides a parent the replay found
+ARMED at the time.
 
 FAILS IF
 --------
@@ -652,6 +660,12 @@ def replay(events: list[Event], root: str) -> dict[str, dict]:
 
     trail: list[tuple[str, str, str]] = []     # (when, what moved it, the state after) — --explain
     snap, last = state, None
+    # ⭐ OPTION A (owner, 2026-10-22): the plan a CLEAR just removed. A `-` that follows one is
+    # what a banner may overturn; a `-` from a fresh start is not. Only a clear sets it, and it
+    # holds only while nothing is armed — anything that arms or obscures the sentinel resets it.
+    # It is set at BOTH transitions to "nothing armed" (the Stop clear and `--finish`) and read
+    # only while nothing is armed, so a stale value can never be read.
+    cleared: str | None = None
     for e in events:
         if last is not None and state != snap:
             trail.append((last.ts, f"{last.kind} in {Path(last.stream).stem[:8]}", describe(state)))
@@ -667,7 +681,7 @@ def replay(events: list[Event], root: str) -> dict[str, dict]:
                 if maybe_full:
                     state = unknown("a turn ended where the Stop hook's effect cannot be known")
             elif full:
-                state = None
+                cleared, state = _slug_of(state.rel), None
             elif maybe_full:
                 state = unknown("a turn ended after a tick whose result was not read")
             continue
@@ -708,7 +722,8 @@ def replay(events: list[Event], root: str) -> dict[str, dict]:
                         if par is not None and overlapping(e):
                             par, why = None, ("another session or agent changed plan state "
                                               "while this arm ran")
-                        seen[slug] = {"parent": par, "why": why}
+                        seen[slug] = {"parent": par, "why": why,
+                                      "cleared": cleared}
                     seen[slug].update(session=e.session, ts=e.ts, stream=e.stream,
                                       before=describe(state), trail=list(trail))
                 state = (unknown(f"the output of arming {slug} was not readable")
@@ -728,6 +743,10 @@ def replay(events: list[Event], root: str) -> dict[str, dict]:
                     p = (sub == "pause") if oc == "ok" else None
                     state = Armed(state.rel, state.n, state.lo, state.hi, p)
             elif sub == "finish":
+                if oc == "ok" and isinstance(state, Armed):
+                    cleared = _slug_of(state.rel)
+                elif oc == "ok" and state is not None:
+                    cleared = None             # it cleared SOMETHING, but nobody knows what
                 state = None if oc == "ok" else unknown("the output of --finish was not readable")
     _attach_banners(seen, events)
     return seen
@@ -747,8 +766,11 @@ def _attach_banners(seen: dict[str, dict], events: list[Event]) -> None:
         before = [p.ts for p in evs if p.kind == "prompt" and p.ts <= rec["ts"]]
         after = [p.ts for p in evs if p.kind == "prompt" and p.ts > rec["ts"]]
         lo, hi = (max(before) if before else ""), (min(after) if after else "\uffff")
-        rec["banners"] = [b.data["frm"] for b in evs
-                          if b.kind == "banner" and b.data["to"] == slug and lo <= b.ts < hi]
+        mine = [b for b in evs
+                if b.kind == "banner" and b.data["to"] == slug and lo <= b.ts < hi]
+        rec["banners"] = [b.data["frm"] for b in mine]
+        rec["banner_src"] = [{"frm": b.data["frm"], "session": b.session, "ts": b.ts}
+                             for b in mine]
 
 
 # ── the decision, per plan on disk ────────────────────────────────────────────────────────────
@@ -760,6 +782,15 @@ def birth_time(p: Path) -> float | None:
 
 def _epoch(ts: str) -> float:
     return _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+def _banner_link(rec: dict, banners: list[str]) -> dict | None:
+    """The banner that names EXACTLY the plan a clear just removed, if the slug-shaped banners
+    in the arm's turn name that plan and nothing else; else None."""
+    named = [b for b in banners if SLUG.fullmatch(b)]
+    if not rec.get("cleared") or named != [rec["cleared"]]:
+        return None
+    return next((b for b in rec.get("banner_src", []) if b["frm"] == rec["cleared"]), None)
 
 
 def decide(plans: dict[str, str], seen: dict[str, dict], births: dict[str, float | None]
@@ -789,6 +820,17 @@ def decide(plans: dict[str, str], seen: dict[str, dict], births: dict[str, float
         # banners named a thread armed in ANOTHER checkout (`quiet-stop-observers`) or one never
         # armed at all, and filtering to plans on disk silently KEPT all six. Prose such as
         # `(session start)` names no thread and is no witness.
+        # ⭐ OPTION A (owner, 2026-10-22): the replay's `-` came ONLY from a clear, and every
+        # slug-shaped banner in the arm's turn names EXACTLY the plan that clear removed. The
+        # link is the banner's, so it is labelled with the BANNER's session and time — never as
+        # a transcript replay. A banner never overrides a parent the replay found ARMED.
+        elif rep == STARTED and _banner_link(rec, banners):
+            src = _banner_link(rec, banners)
+            row.update(verdict="keep-banner",
+                       why=f"the replay's `-` follows clearing {rec['cleared']}, which a banner "
+                           f"names as the plan being left",
+                       marker=(f"<!-- parent: {rec['cleared']} -->\n<!-- parent-source: banner "
+                               f"{src['session'][:8]} {src['ts']} -->"))
         elif any(b != rep for b in banners if SLUG.fullmatch(b)):
             row.update(verdict="no-marker", why=f"a banner said {row['banner']}, the replay "
                        f"says {rep}")
@@ -853,7 +895,7 @@ def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None) -> tupl
         # writing a marker into it would cost the NEXT live link; it is left for a later run.
         last = _last_plan_slug(plan_dir.parent / "last-plan")
         for r in rows:
-            if r["verdict"] != "keep":
+            if r["verdict"] not in ("keep", "keep-banner"):
                 continue
             if r["slug"] == last:
                 report += (f"\nskipped {last}: .claude/last-plan fingerprints it, and changing "
@@ -867,7 +909,8 @@ def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None) -> tupl
             n += 1
         report += f"\nwrote {n} plan file(s) in {plan_dir}"
     else:
-        report += "\nDRY RUN — nothing was written. --write applies the `keep` rows."
+        report += ("\nDRY RUN — nothing was written. --write applies the `keep` and "
+                   "`keep-banner` rows.")
     return 0, report
 
 
@@ -1266,6 +1309,52 @@ def _self_test() -> int:
     case("...and the disagreement is LISTED under the table",
          "two: a banner said other" in render_table(list(_dis.values())), True)
     _seen_b = world(_banner("one"))[1]
+
+    # ── option A (owner, 2026-10-22): a banner LINKS a plan whose `-` only follows a clear ────
+    def _after_clear(how, frm, *, first="prev"):
+        def b(f):
+            if first:
+                f.bash(f"{BP} {first} a", _arm_out(first, 1))
+                if how == "finish":
+                    f.bash(f"{BP} --finish", "cleared .claude/executing-plan")
+                else:
+                    f.bash(f"{BP} --tick", _tick_out(1, 1, first))
+                    f.stop()
+            f.prompt()
+            f.say(f"> **Thread:** ⤳ SWITCHED from `{frm}` (1/1 done) → `nxt` · 0 of 1")
+            f.bash(f"{BP} nxt a", _arm_out("nxt", 1))
+        return b
+    _pl2 = {s: f"# {s}\n\n- [ ] a\n" for s in ("prev", "nxt", "elsewhere")}
+    _bi2 = {s: _births["one"] for s in _pl2}
+    _rows = {k: {r["slug"]: r for r in decide(_pl2, world(w)[1], _bi2)}["nxt"] for k, w in (
+        ("finish", _after_clear("finish", "prev")), ("turn", _after_clear("turn", "prev")),
+        ("other", _after_clear("finish", "elsewhere")),
+        ("fresh", _after_clear("finish", "prev", first=None)))}
+    case("⭐ just CLEARED by --finish + a banner naming exactly that plan: linked, sourced `banner`",
+         (_rows["finish"]["verdict"], bool(re.fullmatch(
+             r"<!-- parent: prev -->\n<!-- parent-source: banner sess-aaa "
+             r"2026-10-01T12:\d\d:\d\d\.000Z -->", _rows["finish"]["marker"] or ""))),
+         ("keep-banner", True))
+    case("...and the same when the Stop hook's turn-end clear was what cleared it",
+         (_rows["turn"]["verdict"], (_rows["turn"]["marker"] or "").split("\n")[0]),
+         ("keep-banner", "<!-- parent: prev -->"))
+    case("⛔ the banner's OWN session and time are the source — never the arm's",
+         [r_["marker"].split("banner ")[1] if r_["marker"] else None for r_ in decide(
+             {"nxt": "# nxt\n"},
+             {"nxt": {"parent": "-", "cleared": "prev", "session": "armsess1-x",
+                      "ts": "2026-10-01T12:00:00Z", "banners": ["prev"],
+                      "banner_src": [{"frm": "prev", "session": "bansess9-y",
+                                      "ts": "2026-10-01T11:59:00Z"}]}},
+             {"nxt": _epoch("2026-10-01T12:00:00Z")})],
+         ["bansess9 2026-10-01T11:59:00Z -->"])
+    case("⛔ just cleared + a banner naming ANOTHER plan: no marker, and still listed",
+         (_rows["other"]["verdict"], "a banner said elsewhere" in _rows["other"]["why"]),
+         ("no-marker", True))
+    case("⛔ nothing was cleared (a fresh start) + a banner: no marker — `-` was not a clear",
+         _rows["fresh"]["verdict"], "no-marker")
+    case("⛔ a banner never overrides a replay that found a parent ARMED at the time",
+         {r["slug"]: r["verdict"] for r in decide(_plans, world(_banner("other"))[1],
+                                                  _births)}["two"], "no-marker")
     case("a banner from ANOTHER turn is not about this arm",
          _seen_b["other"]["banners"], [])
     case("a banner naming PROSE, not a thread, is no witness",
@@ -1356,6 +1445,20 @@ def _self_test() -> int:
              run(Path(d) / "nope", tdir, str(root), False, births)[0], 2)
         case("a missing transcripts directory is CANNOT RUN (2)",
              run(pd, Path(d) / "no-t", str(root), False, births)[0], 2)
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "repo"
+        pd = root / PLAN_REL
+        pd.mkdir(parents=True)
+        for s_ in ("prev", "nxt"):
+            (pd / f"{s_}.md").write_text(f"# {s_}\n\n- [ ] a\n")
+        fx = _Fx(str(root))
+        _after_clear("finish", "prev")(fx)
+        bi = {s_: _births["one"] for s_ in ("prev", "nxt")}
+        run(pd, fx.write(Path(d) / "t"), str(root), True, bi)
+        case("--write applies a `keep-banner` row too, labelled `banner`",
+             (pd / "nxt.md").read_text().split("\n")[2:4][1].startswith(
+                 "<!-- parent-source: banner sess-aaa "), True)
 
     # ── the ground-truth check is CANNOT RUN without its subject, never a pass ───────────────
     with tempfile.TemporaryDirectory() as d:

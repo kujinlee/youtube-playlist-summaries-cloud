@@ -921,11 +921,16 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
     # ⟳ 2026-10-22 (work-lines backfill): 16 -> 21 — a reconstructed link is read only under a
     # parent, drawn distinctly, explained by the caveat, labelled on a started line, and escaped.
-    "scripts/gen-work-lines.py": 21,
+    # ⟳ 2026-10-22, backlog option A for banners: 21 -> 24 — the third link kind (drawn,
+    # tooltip, caveat).
+    "scripts/gen-work-lines.py": 24,
     # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
     # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
     # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
-    "scripts/backfill-work-lines.py": 25,
+    # ⟳ same day, the owner's option A for banners: 25 -> 33 — both clear sites remember the
+    # plan they cleared, a fresh start is no clear, the banner must name EXACTLY that plan, an
+    # ARMED parent is never overridden, the `banner` label, the banner's own time, and --write.
+    "scripts/backfill-work-lines.py": 33,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5600,7 +5605,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1815)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1826)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

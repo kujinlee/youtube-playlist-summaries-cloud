@@ -30,8 +30,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            elif full:\n                state = None",
-        "            elif False:\n                state = None"
+        "            elif full:\n                cleared, state = _slug_of(state.rel), None",
+        "            elif False:\n                cleared, state = _slug_of(state.rel), None"
       ]
     ],
     "expect": [
@@ -322,6 +322,114 @@
     ],
     "expect": [
       "⭐ the marker is labelled: parent line + `parent-source: transcript <8> <ISO>`"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear forgets which plan it cleared",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                cleared, state = _slug_of(state.rel), None",
+        "                state = None"
+      ]
+    ],
+    "expect": [
+      "...and the same when the Stop hook's turn-end clear was what cleared it"
+    ]
+  },
+  {
+    "name": "--finish forgets which plan it cleared",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    cleared = _slug_of(state.rel)\n",
+        "                    pass\n"
+      ]
+    ],
+    "expect": [
+      "⭐ just CLEARED by --finish + a banner naming exactly that plan: linked, sourced `banner`"
+    ]
+  },
+  {
+    "name": "a fresh start is treated as a clear",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    cleared: str | None = None\n",
+        "    cleared: str | None = \"prev\"\n"
+      ]
+    ],
+    "expect": [
+      "⛔ nothing was cleared (a fresh start) + a banner: no marker — `-` was not a clear"
+    ]
+  },
+  {
+    "name": "the banner need not name the cleared plan",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if not rec.get(\"cleared\") or named != [rec[\"cleared\"]]:",
+        "    if not rec.get(\"cleared\") or not named:"
+      ],
+      [
+        "    return next((b for b in rec.get(\"banner_src\", []) if b[\"frm\"] == rec[\"cleared\"]), None)",
+        "    return next((b for b in rec.get(\"banner_src\", [])), None)"
+      ]
+    ],
+    "expect": [
+      "⛔ just cleared + a banner naming ANOTHER plan: no marker, and still listed"
+    ]
+  },
+  {
+    "name": "a banner overrides a parent the replay found ARMED",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        elif rep == STARTED and _banner_link(rec, banners):",
+        "        elif _banner_link(rec, banners):"
+      ]
+    ],
+    "expect": [
+      "⛔ a banner never overrides a replay that found a parent ARMED at the time"
+    ]
+  },
+  {
+    "name": "a banner link is labelled as a transcript replay",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                       marker=(f\"<!-- parent: {rec['cleared']} -->\\n<!-- parent-source: banner \"",
+        "                       marker=(f\"<!-- parent: {rec['cleared']} -->\\n<!-- parent-source: transcript \""
+      ]
+    ],
+    "expect": [
+      "⭐ just CLEARED by --finish + a banner naming exactly that plan: linked, sourced `banner`"
+    ]
+  },
+  {
+    "name": "a banner link carries the ARM's session and time",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               f\"{src['session'][:8]} {src['ts']} -->\"))",
+        "                               f\"{rec['session'][:8]} {rec['ts']} -->\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ the banner's OWN session and time are the source — never the arm's"
+    ]
+  },
+  {
+    "name": "--write skips keep-banner rows",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if r[\"verdict\"] not in (\"keep\", \"keep-banner\"):",
+        "            if r[\"verdict\"] != \"keep\":"
+      ]
+    ],
+    "expect": [
+      "--write applies a `keep-banner` row too, labelled `banner`"
     ]
   }
 ]

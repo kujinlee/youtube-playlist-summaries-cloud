@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 46 cases
+    python3 scripts/gen-work-lines.py --self-test  # 49 cases
 
 WHY THIS EXISTS
 ---------------
@@ -191,9 +191,13 @@ def render(roots: list[dict], orphans: list[str], generated: str) -> str:
         '<p class="lede">⚠ <strong>“not ticked closed” is not “abandoned.”</strong> A plan file is '
         'a claim about progress; work has been finished here and left unticked. The date is when '
         'the file was last touched — judge from that, not from the box.</p>',
-        '<p class="lede">⚠ A link drawn <span class="recon-key">dashed and marked '
-        '“reconstructed”</span> was rebuilt afterwards from the session transcripts, not '
-        'recorded when the plan was armed — hover it for the session and time it came from.</p>',
+        # ⭐ ONE sentence, three kinds — what each link RESTS ON (owner, 2026-10-22).
+        '<p class="lede">⚠ Three kinds of link: a plain dotted one was recorded live when the '
+        'plan was armed; one drawn <span class="recon-key">dashed and marked “reconstructed”</span> '
+        'was rebuilt afterwards from the session transcripts by replaying every plan command; and '
+        'one drawn <span class="banner-key">double and marked “from banner”</span> rests only on a '
+        '“switched from” line written at the time, after the replay found the earlier plan '
+        'already closed — hover either rebuilt kind for the session and time it came from.</p>',
     ]
     if orphans:
         parts.append('<p class="warn">⛔ ' + esc(len(orphans)) +
@@ -238,9 +242,17 @@ def _render_node(n: dict, parts: list[str]) -> None:
     else:
         badge, cls = f'{n["ticked"]}/{n["total"]} not ticked closed', "st-open"
     cyc = ' <span class="warn">⛔ cycle</span>' if n.get("cycle") else ""
-    rec = (f' <span class="recon" title="reconstructed from {esc(n["source"])}">reconstructed'
-           f'</span>' if n.get("source") else "")
-    li = '<li class="rebuilt">' if n.get("source") else "<li>"
+    src = n.get("source")
+    # ⛔ A BANNER LINK IS NOT A REPLAYED ONE: it rests on what was SAID, not on what the sentinel
+    # did, so it is drawn and labelled as its own kind (owner, 2026-10-22, option A).
+    banner = bool(src) and src.startswith("banner")
+    if banner:
+        rec = (f' <span class="from-banner-tag" title="from a banner: {esc(src)}">from banner'
+               f'</span>')
+    else:
+        rec = (f' <span class="recon" title="reconstructed from {esc(src)}">reconstructed'
+               f'</span>' if src else "")
+    li = ('<li class="from-banner">' if banner else '<li class="rebuilt">') if src else "<li>"
     parts.append(f'{li}<span class="st {cls}">{esc(badge)}</span> '
                  f'<code>{esc(n["slug"])}</code> '
                  f'<span class="when">{esc(n["touched"])}</span>{cyc}{rec}')
@@ -285,6 +297,9 @@ ul.tree li.rebuilt{border-left:2px dashed var(--pending)}
 .recon,.recon-key{font-family:var(--mono);font-size:.66rem;color:var(--pending);
        border:1px dashed var(--pending);border-radius:.3rem;padding:.02rem .32rem}
 .recon{cursor:help}
+ul.tree li.from-banner{border-left:3px double var(--ink-soft)}
+.from-banner-tag,.banner-key{font-family:var(--mono);font-size:.66rem;color:var(--ink-soft);
+       border:3px double var(--ink-soft);border-radius:.3rem;padding:0 .32rem;cursor:help}
 code{font-family:var(--mono);font-size:.85rem}
 .when{font-family:var(--mono);font-size:.7rem;color:var(--ink-faint)}
 .st{font-family:var(--mono);font-size:.68rem;padding:.08rem .38rem;border-radius:.3rem;
@@ -561,6 +576,25 @@ def _self_test() -> int:
          (True, True, False, False))
     case("...and the page's caveat says, once, what the dashed mark means",
          "rebuilt afterwards from the session transcripts" in _rk, True)
+    # ⭐ OPTION A (owner, 2026-10-22): a link resting only on a banner is a THIRD kind, drawn
+    # unlike both the live and the transcript-replayed one, with its own label.
+    _SRC_BAN = "banner 77776666 2026-10-02T10:00:00Z"
+    _r3k = render(*build_forest([_mk("p", None), _mk("live-kid", "p"),
+                                 {**_mk("replay-kid", "p"), "source": _SRC_A},
+                                 {**_mk("banner-kid", "p"), "source": _SRC_BAN}]), "t")
+    _l3 = {k: [l for l in _r3k.splitlines() if f"<code>{k}</code>" in l][0]
+           for k in ("live-kid", "replay-kid", "banner-kid")}
+    case("⭐ THREE kinds of link, each drawn and labelled differently",
+         [(l_.split(">")[0] + ">", "reconstructed<" in l_, "from banner<" in l_)
+          for l_ in (_l3["live-kid"], _l3["replay-kid"], _l3["banner-kid"])],
+         [("<li>", False, False), ('<li class="rebuilt">', True, False),
+          ('<li class="from-banner">', False, True)])
+    case("...a banner link's tooltip names the banner it rests on",
+         f'title="from a banner: {_SRC_BAN}">from banner<' in _l3["banner-kid"], True)
+    case("...and the caveat says in one sentence what each of the three kinds rests on",
+         [l_ for l_ in _r3k.splitlines() if "Three kinds of link" in l_ and "recorded live" in l_
+          and "rebuilt afterwards from the session transcripts" in l_ and "from banner" in l_]
+         != [], True)
     case("a reconstructed START of a line says it was reconstructed; a live one does not",
          [("started this line; no objective was recorded (reconstructed)" in render(
              build_forest([{**_mk("x", None), "started": True, "source": src}])[0], [], "t"))

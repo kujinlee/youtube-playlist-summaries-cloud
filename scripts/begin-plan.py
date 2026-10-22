@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 123 cases
+    scripts/begin-plan.py --self-test  # 124 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -1203,6 +1203,13 @@ def _self_test() -> int:
             case("⛔ a re-arm KEEPS a reconstructed link's `parent-source:` label, under its parent",
                  "<!-- parent: wiring -->\n<!-- parent-source: transcript abcd1234 "
                  "2026-10-01T12:00:00Z -->" in _rb)
+            (PLAN_DIR / "bannered.md").write_text(
+                "# bannered\n\n<!-- parent: wiring -->\n<!-- parent-source: banner ffff0000 "
+                "2026-10-02T10:00:00Z -->\n\n- [ ] **Step 1 of 1** — x\n")
+            cmd_begin("bannered", ["One|d1|w1"])
+            case("⛔ a re-arm keeps a BANNER-sourced label exactly as it keeps a transcript one",
+                 "<!-- parent: wiring -->\n<!-- parent-source: banner ffff0000 "
+                 "2026-10-02T10:00:00Z -->" in (PLAN_DIR / "bannered.md").read_text())
             case("...and a plan armed LIVE never gets one",
                  "parent-source" not in (PLAN_DIR / "branch.md").read_text())
 
