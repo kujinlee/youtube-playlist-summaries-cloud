@@ -38,7 +38,7 @@ docstring, not the code, was the thing that needed fixing.
 Usage (the hook calls form 1; a human can call form 2 to see where things stand):
     python3 scripts/check-plan-progress.py --decide [--stop-hook-active]
     python3 scripts/check-plan-progress.py --status
-    python3 scripts/check-plan-progress.py --self-test  # 43 cases
+    python3 scripts/check-plan-progress.py --self-test  # 66 cases
 Exit codes for --decide:
     0 = allow the stop, silently (message, if any, on stdout)
     2 = block it (message on stderr)
@@ -80,13 +80,24 @@ scalar is `docs/backlog.md` #100's subject and is deliberately NOT done here.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
+import hashlib
+import importlib.util
+import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SENTINEL = ROOT / ".claude/executing-plan"
 STATE = ROOT / ".claude/executing-plan.state"
+# ⭐ THE LAST FINISHED PLAN — what `begin-plan._derive_parent` reads when NOTHING is armed. See
+# `record_last_plan`. A `key: value` file beside the sentinel, read with `parse_sentinel`.
+LAST_PLAN = ROOT / ".claude/last-plan"
+PLAN_DIR = ROOT / ".claude/plans"
+WORK_LINES_OUT: Path | None = None   # None -> gen-work-lines' own default (~/explainers/…)
 
 ALLOW, BLOCK = 0, 2
 
@@ -334,6 +345,229 @@ def decide(
     ), unticked
 
 
+# ── the work line: what a FINISHED plan leaves behind, and the page it feeds ─────────────────
+
+def render_last_plan(plan_rel: str, branch: str | None, when: str, *,
+                     session: str | None = None, fingerprint: str | None = None) -> str:
+    """The `.claude/last-plan` body. PURE. `branch:` is OMITTED, never blank, when unknown —
+    the reader must see "not recorded", not an empty branch name it would hand to `gh`.
+    `session:` (the Claude session the plan was ARMED in) and `sha256:` (the plan file's bytes
+    when it finished) are omitted the same way; the reader treats either absence as "cannot
+    compare", never as a match."""
+    out = f"plan: {plan_rel}\n"
+    if branch:
+        out += f"branch: {branch}\n"
+    if session:
+        out += f"session: {session}\n"
+    if fingerprint:
+        out += f"sha256: {fingerprint}\n"
+    return out + f"finished: {when}\n"
+
+
+SESSION_ENV = "CLAUDE_CODE_BRIDGE_SESSION_ID"
+
+
+def current_session(environ=None) -> str | None:
+    """The current Claude session's id, from `CLAUDE_CODE_BRIDGE_SESSION_ID`, or None.
+
+    ⭐ THE OWNER'S DECISION, 2026-10-22 (option A): a finished plan is the parent only for plans
+    armed in the SAME session it finished in; a new session starts a new line. This is the ONE
+    reader of that identity — `begin-plan` writes it into the sentinel at arm time and compares
+    it on read. `environ` is injectable; None means `os.environ`.
+    ⚠ UNVERIFIED: whether this id stays the same across `/clear` or `/compact` has NOT been
+    measured. If it changes, a continuation after either shows as a NEW line — wrong in the
+    direction of absent lineage, never invented lineage."""
+    env = os.environ if environ is None else environ
+    sid = (env.get(SESSION_ENV) or "").strip()
+    return sid or None
+
+
+def plan_fingerprint(path: Path) -> str:
+    """sha256 of the plan file's BYTES. Raises OSError when it cannot be read — callers decide.
+
+    ⟳ r1 Codex 1: a record named a PATH, so a plan file replaced after it finished (measured:
+    re-armed as an unfinished plan) still stood as the finished parent. The fingerprint is what
+    lets the reader tell "the plan that finished" from "a file now at that path"."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_record(dest: Path, body: str) -> None:
+    """The one write of `.claude/last-plan` — a seam so the self-test can make it FAIL."""
+    dest.write_text(body)
+
+
+def current_branch(root: Path) -> str | None:
+    """The checked-out branch at `root`, or None — detached HEAD and no git are both None.
+
+    ⟳ r1 Codex 3: output that is not UTF-8 raised `UnicodeDecodeError` out of `subprocess.run`
+    (measured with a fake `git` printing `feat/\\xff`), and this runs on the arm path. An
+    undecodable name is an UNKNOWN branch, never a crash and never a guess."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
+    b = r.stdout.strip()
+    return b if r.returncode == 0 and b and b != "HEAD" else None
+
+
+def run_optional(what: str, fn, default=None):
+    """Run `fn()` — a side effect the caller's verdict must NOT depend on. NEVER RAISES.
+
+    Returns `fn()`'s value, or `default` after printing ONE stderr line naming `what` and the
+    exception. ⛔ ⟳ r1 Codex 3 (Major): the record and the branch lookup ran bare inside the Stop
+    hook, so a recorder that raised (measured: `RuntimeError`) or a `git` whose output did not
+    decode turned an ALLOWED stop into a traceback — exit 1, which the wrapper treats as a
+    fail-closed BLOCK — and left the sentinel behind. ONE boundary, owned here, used by every
+    caller of an optional step: the Stop hook's clear, `begin-plan --finish`'s clear and
+    `begin-plan`'s arm. A second copy of "which failures are optional" is the drift this repo
+    has measured most.
+    ⚠ The line goes to stderr, which on the Stop path reaches NOBODY — see `refresh_work_lines`.
+    """
+    try:
+        return fn()
+    except Exception as exc:                       # noqa: BLE001 - the breadth IS the contract
+        print(f"⚠ {what} was skipped — {type(exc).__name__}: {exc}".replace("\n", " "),
+              file=sys.stderr)
+        return default
+
+
+def record_last_plan(sentinel_text: str | None, *, root: Path, dest: Path) -> str | None:
+    """Record the plan `sentinel_text` names as the LAST FINISHED plan — only if fully ticked.
+
+    Returns the recorded repo-relative plan path, or None when nothing was recorded.
+
+    ⭐ OPTION A, the owner's decision 2026-10-22: A PLAN STAYS THE PARENT UNTIL ITS PR MERGES, not
+    merely until its steps are ticked — implemented as "while an OPEN PR exists for its branch". Measured gap: `work-lines-page` was ticked closed when its
+    PR opened, which cleared the sentinel, so a side job armed while that PR was still in CI
+    recorded `parent: -` — a NEW line — instead of continuing the one it branched from. The
+    sentinel's clear is the moment the plan's identity would otherwise be lost, so the clear is
+    where it is written down. `begin-plan._derive_parent` reads it when nothing is armed and asks
+    `gh` whether the branch still has an OPEN PR (`begin-plan.gh_pr_line_state`).
+
+    ⛔ ONE RECORDER, CALLED FROM BOTH CLEAR SITES — `run_decide` here (the Stop hook) and
+    `begin-plan.cmd_finish` — because two copies of "what counts as finished" is this repo's most
+    measured failure. A plan that was PAUSED and then `--finish`ed comes through here too.
+    ⚠ NOT FULLY TICKED -> NOT RECORDED. `--finish` on a half-done plan is an abandonment; naming it
+    the parent of the next plan would claim a line continues work that was dropped.
+    ⛔ THE BRANCH COMES FROM THE SENTINEL, written when the plan was ARMED (⟳ r1 Claude F2,
+    Major). It used to be `current_branch()` at CLEAR time, and the clear is the end of a turn in
+    which the coordinator may already have run `git checkout -b` for the next job — measured: a
+    plan armed on `feat/a`, cleared after a checkout, was recorded against `feat/b`, so its
+    lineage followed some OTHER branch's PR. A sentinel with no `branch:` (older than the field,
+    or armed where the branch was unknown) records none, and the reader says so.
+    ⭐ `session:` IS COPIED THE SAME WAY (owner's option A, 2026-10-22): the session the plan was
+    armed in, so `begin-plan` can make the parent apply only within that session. And `sha256:`
+    fingerprints the plan file's bytes as they finished, so a file replaced at the same path
+    afterwards is not taken for it (r1 Codex 1).
+    ⚠ A failed WRITE is reported on stderr and returns None, and every caller ALSO runs this
+    inside `run_optional`: a traceback in the Stop hook is a fail-closed BLOCK, and a record that
+    could not be written must not trap the session that just finished its plan.
+    """
+    if sentinel_text is None:
+        return None
+    fields = parse_sentinel(sentinel_text)
+    branch = fields.get("branch") or None
+    session = fields.get("session") or None
+    rel = fields.get("plan", "")
+    if not rel:
+        return None
+    try:
+        raw = (root / rel).read_bytes()
+        text = raw.decode()
+    except (OSError, UnicodeDecodeError):
+        return None
+    done, total = count_steps(text)
+    if not total or done != total:
+        return None
+    when = _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    try:
+        _write_record(dest, render_last_plan(rel, branch, when, session=session,
+                                             fingerprint=hashlib.sha256(raw).hexdigest()))
+    except Exception as exc:                       # noqa: BLE001 - reported, and the old record goes
+        # ⛔ A FAILED NEW RECORD MUST NOT LEAVE AN OLD ONE STANDING IN FOR IT (r1 Codex 1,
+        # measured: a `PermissionError` on the new write, and the next lookup returned the OLDER
+        # plan). Best effort: if even the delete fails, the reader's fingerprint and session
+        # checks are what remain.
+        try:
+            dest.unlink(missing_ok=True)
+        except OSError:
+            pass
+        print(f"⚠ the finished plan {rel} was NOT recorded as the last plan "
+              f"({type(exc).__name__}: {exc}); any older record was removed, so the next plan "
+              f"armed records no parent from either.".replace("\n", " "), file=sys.stderr)
+        return None
+    return rel
+
+
+def refresh_work_lines(plan_dir: Path, out: Path | None) -> str | None:
+    """Rebuild the work-lines page. NEVER RAISES. Returns the one stderr line it printed, or None.
+
+    ⭐ "ALWAYS CURRENT" (2026-10-22). The plan files are git-ignored and written through Bash, so
+    no file hook ever fires on them; every command that changes plan state calls this instead —
+    `begin-plan.py`'s begin/plan/tick/pause/resume/finish and this Stop hook's clear.
+    ⛔ IT MUST NEVER FAIL THE COMMAND IT FOLLOWS. A page is a view; a Stop hook that raised here
+    would BLOCK the session over a rendering problem, and a `--tick` that failed would leave the
+    human unsure whether the tick landed. So ANY exception — a missing generator, an unwritable
+    output, a defect in the renderer — becomes ONE stderr line and the caller's exit code stands.
+    That breadth is the contract, not a shortcut: there is no failure here worth more than the
+    command.
+    ⚠ ⟳ r1 Claude F5: this said "every one is still SAID", and on one of its two paths that is
+    false. From `begin-plan.py` the line reaches the caller's terminal. From the STOP HOOK it is
+    printed to stderr with rc 0, and `.claude/hooks/block-idle-stop.sh` allows an rc-0 stop
+    SILENTLY — so there a failed rebuild (or a failed record) is lost, and the visible symptom is
+    a page that did not update. The verdict is unchanged either way, which is the part that matters.
+    """
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_gen_work_lines", Path(__file__).resolve().parent / "gen-work-lines.py")
+        if spec is None or spec.loader is None:
+            raise ImportError("cannot load scripts/gen-work-lines.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        rc, msg = mod.write_page(out if out is not None else mod.DEFAULT_OUT, plan_dir)
+        err = None if rc == 0 else msg
+    except Exception as exc:                       # noqa: BLE001 - reported, never swallowed
+        err = f"{type(exc).__name__}: {exc}"
+    if err is None:
+        return None
+    line = f"⚠ work-lines page NOT rebuilt — {err}".replace("\n", " ")
+    print(line, file=sys.stderr)
+    return line
+
+
+def test_git(root: Path, *argv: str) -> str | None:
+    """SELF-TEST SUPPORT, shared with `begin-plan.py`'s suite: run one `git` command in `root`.
+    Returns None, or a reason it failed (which the caller reports as a RED case — a branch case
+    run where git did not do what it was told is NOT RUN, never a pass).
+
+    ⛔ ISOLATED FROM THE CALLER'S GIT: inherited `GIT_*` variables are dropped (a hook context
+    sets `GIT_DIR`, which `-C` does not override), and signing and hooks are off, so a developer's
+    global config cannot make the suite's result depend on whose machine it runs on."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    cfg = ["-c", "user.name=self-test", "-c", "user.email=self-test@example.invalid",
+           "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+    try:
+        r = subprocess.run(["git", *cfg, "-C", str(root), *argv], env=env,
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"git {argv[0]} could not run ({type(exc).__name__})"
+    if r.returncode != 0:
+        return f"git {argv[0]} exited {r.returncode}: {r.stderr.strip()[:120]}"
+    return None
+
+
+def make_test_repo(root: Path, branch: str) -> str | None:
+    """SELF-TEST SUPPORT: make `root` a git repository with one commit, checked out on `branch`."""
+    for argv in (["init", "-q"], ["checkout", "-q", "-b", branch],
+                 ["commit", "-q", "--allow-empty", "--no-verify", "-m", "self-test"]):
+        err = test_git(root, *argv)
+        if err:
+            return err
+    return None
+
+
 # ── I/O shell around the pure decision ────────────────────────────────────────────────────────
 
 def _read(p: Path) -> str | None:
@@ -359,8 +593,19 @@ def run_decide(stop_hook_active: bool) -> int:
     code, message, unticked = decide(sentinel_text, plan_text, prev, stop_hook_active)
 
     if unticked == 0:
+        # ⛔ RECORD FIRST, THEN CLEAR (⟳ r2 Codex 1, Major). The clear used to come first, so a
+        # state file whose unlink raised (measured: a directory at that path) ended the hook
+        # after the sentinel was gone and BEFORE the record was written — the finished plan's
+        # identity vanished and an OLDER `.claude/last-plan` answered the next lookup. The record
+        # is optional and protected (r1 Codex 3); the clear is MANDATORY and stays outside the
+        # boundary with its old error behaviour. The rebuild is a SEPARATE optional step (r2
+        # Codex 2): a recorder that raises must not also cost the page.
+        run_optional("recording the last plan",
+                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))
         SENTINEL.unlink(missing_ok=True)
         STATE.unlink(missing_ok=True)
+        run_optional("rebuilding the work-lines page",
+                     lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))
     elif unticked is not None:
         STATE.write_text(str(unticked))
 
@@ -398,6 +643,9 @@ def run_status() -> int:
 # ── Self-test ─────────────────────────────────────────────────────────────────────────────────
 
 def _self_test() -> int:
+    # Rebound inside the wiring cases to INJECT a raising recorder / branch lookup (r1 Codex 3);
+    # declared here because Python refuses a `global` after the name's first use.
+    global record_last_plan, current_branch, _write_record, refresh_work_lines
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -425,6 +673,15 @@ def _self_test() -> int:
         # CONTRACT*, where "the guard did not fire" and "nothing could see it fire" are
         # indistinguishable from outside.
         print(f"  [FAIL] {name}: got {ok!r} want {True!r}")
+
+    def _attempt(fn):
+        """`fn()`, or the string `RAISED <type>` — so a case that drives real code reports RED
+        through `case()` instead of killing the suite with a traceback the mutation harness
+        cannot attribute."""
+        try:
+            return fn()
+        except Exception as exc:                   # noqa: BLE001 - the case reports it
+            return f"RAISED {type(exc).__name__}"
 
     PLAN = (
         "### Task 1: A\n\n- [x] **Step 1**\n\n- [x] **Step 2**\n\n"
@@ -584,6 +841,252 @@ def _self_test() -> int:
          next_pending_task("- [ ] orphan\n").startswith("(before"))
     case("parse_sentinel keeps unknown keys",
          parse_sentinel("plan: x\nfoo: bar\n") == {"plan": "x", "foo": "bar"})
+
+    # ── Option A: a finished plan is RECORDED, so it stays the parent while its PR is open ──
+    import contextlib
+    import io
+    import tempfile
+    with tempfile.TemporaryDirectory() as _td:
+        _r = Path(_td)
+        (_r / ".claude/plans").mkdir(parents=True)
+        (_r / ".claude/plans/fin.md").write_text("# fin\n- [x] a\n- [x] b\n")
+        (_r / ".claude/plans/half.md").write_text("# half\n- [x] a\n- [ ] b\n")
+        (_r / ".claude/plans/other.md").write_text("# other\n- [x] only\n")
+        _d1, _d2, _d3 = _r / "rec1", _r / "rec2", _r / "rec3"
+        # A SECOND root, holding a plan the first does not: `root` must be what resolves `plan:`.
+        _r2 = _r / "second-root"
+        (_r2 / ".claude/plans").mkdir(parents=True)
+        (_r2 / ".claude/plans/second.md").write_text("# second\n- [x] only\n")
+        # ⟳ r1 Claude F2: the branch is the one the SENTINEL carries — written when the plan was
+        # armed — so these drive it through the sentinel text, never through a parameter.
+        _got1 = _attempt(lambda: record_last_plan(
+            "plan: .claude/plans/fin.md\nbranch: feat/one\n", root=_r, dest=_d1))
+        _got2 = _attempt(lambda: record_last_plan(
+            "plan: .claude/plans/second.md\npaused: was parked\n", root=_r2, dest=_d2))
+        _f1 = parse_sentinel(_d1.read_text()) if _d1.exists() else {}
+        _f2 = parse_sentinel(_d2.read_text()) if _d2.exists() else {}
+        case("⭐ a fully-ticked plan is RECORDED with the branch its sentinel was ARMED on",
+             (_got1, _f1.get("plan"), _f1.get("branch"), "finished" in _f1)
+             == (".claude/plans/fin.md", ".claude/plans/fin.md", "feat/one", True))
+        case("...and an UNKNOWN branch is OMITTED, never written blank — a second plan, a second "
+             "branch value, and a sentinel that had been paused",
+             (_got2, _f2.get("plan"), "branch" in _f2) == (".claude/plans/second.md",
+                                                          ".claude/plans/second.md", False))
+        case("⛔ a HALF-ticked plan is NOT recorded — `--finish` on it is an abandonment, and "
+             "naming it a parent would continue work that was dropped",
+             (_attempt(lambda: record_last_plan("plan: .claude/plans/half.md\nbranch: feat/one\n",
+                                                root=_r, dest=_d3)), _d3.exists()) == (None, False))
+        # ⭐ OWNER'S OPTION A: the SESSION is copied from the sentinel, like the branch, and the
+        # plan's BYTES are fingerprinted (r1 Codex 1). Two sentinels, two distinct sessions.
+        _d4, _d5 = _r / "rec4", _r / "rec5"
+        _attempt(lambda: record_last_plan("plan: .claude/plans/fin.md\nsession: cpp-sess-1\n",
+                                          root=_r, dest=_d4))
+        _attempt(lambda: record_last_plan("plan: .claude/plans/other.md\nsession: cpp-sess-2\n",
+                                          root=_r, dest=_d5))
+        _f4 = parse_sentinel(_d4.read_text()) if _d4.exists() else {}
+        _f5 = parse_sentinel(_d5.read_text()) if _d5.exists() else {}
+        case("⭐ the record COPIES the sentinel's session and fingerprints the plan's bytes — two "
+             "plans, two sessions",
+             (_f4.get("session"), _f5.get("session"), "session" in _f1,
+              _f4.get("sha256") == _attempt(lambda: plan_fingerprint(_r / ".claude/plans/fin.md")),
+              _f5.get("sha256") == _attempt(lambda: plan_fingerprint(_r / ".claude/plans/other.md")))
+             == ("cpp-sess-1", "cpp-sess-2", False, True, True))
+        case("current_session reads CLAUDE_CODE_BRIDGE_SESSION_ID, and an unset or blank one is "
+             "UNKNOWN (None), never a guess",
+             [_attempt(lambda: current_session({"CLAUDE_CODE_BRIDGE_SESSION_ID": "cpp-sess-3"})),
+              _attempt(lambda: current_session({})),
+              _attempt(lambda: current_session({"CLAUDE_CODE_BRIDGE_SESSION_ID": "  "}))]
+             == ["cpp-sess-3", None, None])
+        # ⛔ r1 Codex 1: a NEW record that cannot be written must not leave an OLDER one standing
+        # in for it — the measured failure was a PermissionError and the old plan returned.
+        _real_write = _write_record
+
+        def _deny(_dest, _body):
+            raise PermissionError("injected by the self-test")
+        _write_record = _deny
+        _e6 = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(_e6):
+                _got6 = _attempt(lambda: record_last_plan(
+                    "plan: .claude/plans/other.md\nsession: cpp-sess-2\n", root=_r, dest=_d4))
+        finally:
+            _write_record = _real_write
+        case("⛔ a NEW record that FAILS to write removes the OLD one — an older plan can never "
+             "stand in for the one that just finished — and one stderr line says so",
+             (_got6, _d4.exists(),
+              len([ln for ln in _e6.getvalue().splitlines() if "NOT recorded" in ln]))
+             == (None, False, 1))
+        case("...and no sentinel, or one naming no plan, records nothing",
+             (_attempt(lambda: record_last_plan(None, root=_r, dest=_d3)),
+              _attempt(lambda: record_last_plan("armed: x\n", root=_r, dest=_d3)),
+              _d3.exists()) == (None, None, False))
+
+        # ── r1 F3: THE ROOT IS A REAL GIT REPOSITORY, so the real branch lookup runs ─────────
+        # Every case above had a root that was not a repo, so `current_branch` was None at every
+        # clear site and three mutations that switched Option A off survived both suites.
+        # ⚠ A branch name DIFFERENT from begin-plan's suite, so neither can pass on a constant.
+        _git_err = make_test_repo(_r, "cpp/cleared-here")
+        case("the test root IS a git repository on a named branch (else every branch case below "
+             "is NOT RUN)", _git_err is None)
+        # TWO repositories on two branches, so neither the lookup nor the fixture can pass on a
+        # constant (check-fixture-variation).
+        _other = Path(tempfile.mkdtemp())
+        _git_err2 = make_test_repo(_other, "cpp/a-second-repo")
+        case("current_branch reads the checked-out branch of a real repository",
+             (_git_err2, _attempt(lambda: current_branch(_r)),
+              _attempt(lambda: current_branch(_other)))
+             == (None, "cpp/cleared-here", "cpp/a-second-repo"))
+        shutil.rmtree(_other, ignore_errors=True)
+
+        # ── THE WIRING: run_decide's clear records the plan and rebuilds the page ───────────
+        # Every case above is the recorder alone. Deleting its CALL at the clear site would leave
+        # them all green while Option A silently stopped working — so the real `run_decide` is
+        # driven over a constructed root.
+        global ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT
+        _saved = (ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT)
+        try:
+            ROOT, PLAN_DIR = _r, _r / ".claude/plans"
+            SENTINEL, STATE = _r / ".claude/executing-plan", _r / ".claude/executing-plan.state"
+            LAST_PLAN, WORK_LINES_OUT = _r / ".claude/last-plan", _r / "out" / "wl.html"
+            # ⛔ ARMED on one branch, CLEARED on another (the repo is on `cpp/cleared-here`).
+            SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
+            with contextlib.redirect_stdout(io.StringIO()):
+                _rc = _attempt(lambda: run_decide(False))
+            _rec = parse_sentinel(LAST_PLAN.read_text()) if LAST_PLAN.exists() else {}
+            case("⭐ the Stop hook's clear RECORDS the finished plan as the last plan",
+                 (_rc, SENTINEL.exists(), _rec.get("plan"))
+                 == (ALLOW, False, ".claude/plans/fin.md"))
+            case("⛔ ...against the branch the plan was ARMED on, not the one checked out when "
+                 "the Stop hook clears it",
+                 _rec.get("branch") == "cpp/armed-there")
+            case("⭐ ...and REBUILDS the work-lines page, so it is current without being asked",
+                 WORK_LINES_OUT.is_file() and "<code>fin</code>" in WORK_LINES_OUT.read_text())
+            # ⛔ NEVER BLOCK ON A PAGE. The output's parent is a FILE, so the write must fail; the
+            # stop is still ALLOWED and exactly ONE line says the page was not rebuilt.
+            (_r / "blocker").write_text("a file where a directory must go")
+            WORK_LINES_OUT = _r / "blocker" / "wl.html"
+            SENTINEL.write_text("plan: .claude/plans/other.md\n")
+            _err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(_err):
+                try:
+                    _rc2 = run_decide(True)
+                except Exception as exc:              # noqa: BLE001 - the case reports it
+                    _rc2 = f"RAISED {type(exc).__name__}"
+            case("⛔ a page that CANNOT be rebuilt never changes the stop's verdict — ONE stderr "
+                 "line says so",
+                 (_rc2, SENTINEL.exists(),
+                  [ln for ln in _err.getvalue().splitlines() if "NOT rebuilt" in ln].__len__())
+                 == (ALLOW, False, 1))
+            case("...and the record is still written when the page is not",
+                 parse_sentinel(LAST_PLAN.read_text()).get("plan") == ".claude/plans/other.md")
+
+            # ⛔ r1 Codex 3: AN OPTIONAL STEP THAT RAISES NEVER CHANGES THE STOP. Measured before
+            # the fix: a raising recorder escaped `run_decide` (exit 1 = a fail-closed BLOCK) and
+            # left the sentinel. The verdict, the message, the clear and the rc must all be what
+            # they are with no recorder at all — compared against `decide` itself, not a literal.
+            _real_rec, _real_branch = record_last_plan, current_branch
+
+            def _boom(*_a, **_k):
+                raise RuntimeError("injected by the self-test")
+            WORK_LINES_OUT = _r / "out" / "wl.html"
+            # ⟳ r2 Codex 2: the REBUILD is a separate optional step, so a spy records whether it
+            # still runs after the recorder raised.
+            _real_refresh, _rebuilt = refresh_work_lines, []
+
+            def _spy(*_a, **_k):
+                _rebuilt.append(1)
+                return None
+            _branch_calls: list = []
+
+            def _counting_boom(*_a, **_k):
+                _branch_calls.append(1)
+                raise RuntimeError("injected by the self-test")
+            for _label, _rec_fn in (("recorder", _boom), ("no-fault control", _real_rec)):
+                record_last_plan, current_branch = _rec_fn, _counting_boom
+                refresh_work_lines = _spy
+                (STATE).write_text("4")
+                SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
+                _want = decide(SENTINEL.read_text(), (_r / ".claude/plans/fin.md").read_text(),
+                               4, False)
+                _o, _e = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(_o), contextlib.redirect_stderr(_e):
+                    _got = _attempt(lambda: run_decide(False))
+                record_last_plan, current_branch = _real_rec, _real_branch
+                refresh_work_lines = _real_refresh
+                if _label == "recorder":
+                    case("⛔ a recorder that RAISES at the Stop hook's clear leaves the verdict, the "
+                         "message, the clear and the rc exactly as they are without it",
+                         (_got, _o.getvalue().strip(), SENTINEL.exists(), STATE.exists())
+                         == (_want[0], _want[1].strip(), False, False))
+                    case("⛔ ...and the work-lines page is STILL rebuilt — the rebuild is its own "
+                         "optional step, not the recorder's tail (r2 Codex 2)", _rebuilt == [1])
+            # ⟳ r2 Codex 5: the branch comes from the SENTINEL, so a lookup that raises cannot even
+            # be reached here — what is asserted is that it is never CALLED, over both runs above.
+            case("⛔ clearing at the Stop hook never queries the current branch — ZERO calls to the "
+                 "lookup across both runs; the record's branch is the sentinel's",
+                 _branch_calls == [])
+
+            # ⛔ r2 Codex 1 (Major): A PARTIAL CLEAR MUST NOT LOSE THE RECORD. An OLDER valid
+            # record, a fully-ticked plan armed, and a DIRECTORY at the state path so its unlink
+            # raises. Before the fix the sentinel was gone and the record never written, so the
+            # next lookup was answered by the older plan.
+            LAST_PLAN.write_text(render_last_plan(".claude/plans/other.md", "cpp/older", "t0"))
+            STATE.unlink(missing_ok=True)
+            STATE.mkdir()
+            SENTINEL.write_text("plan: .claude/plans/fin.md\nbranch: cpp/armed-there\n")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _partial = _attempt(lambda: run_decide(False))
+            STATE.rmdir()
+            case("⛔ a clear whose state unlink RAISES still leaves the record naming the NEW plan "
+                 "— recording happens before either file is deleted",
+                 (parse_sentinel(LAST_PLAN.read_text()).get("plan") if LAST_PLAN.exists()
+                  else None) == ".claude/plans/fin.md")
+            # ⟳ always-on r3 Claude F1: `_partial` was stored and never read, so the comment's
+            # promise — the clear is MANDATORY and keeps its old error behaviour — had no case;
+            # moving the state unlink inside `run_optional` left the suite green. A failed clear
+            # must still RAISE out of the hook, exactly as it did before this feature.
+            case("⛔ ...and that failed clear is NOT swallowed: it still raises out of the hook, "
+                 "as it did before the work-lines record existed",
+                 str(_partial).startswith("RAISED "))
+            SENTINEL.unlink(missing_ok=True)
+        finally:
+            ROOT, SENTINEL, STATE, LAST_PLAN, PLAN_DIR, WORK_LINES_OUT = _saved
+
+        # refresh_work_lines itself, at two DISTINCT outputs: success says nothing, failure says
+        # one line that names the cause.
+        _ok_out = _r / "ok" / "page.html"
+        with contextlib.redirect_stderr(io.StringIO()):
+            _ok = refresh_work_lines(_r / ".claude/plans", _ok_out)
+            _bad = refresh_work_lines(_r / "no-plans-here", _r / "bad.html")
+        case("refresh_work_lines is SILENT on success and returns ONE named line on failure",
+             (_ok, _ok_out.is_file(), isinstance(_bad, str) and "\n" not in _bad
+              and "CANNOT RUN" in _bad) == (None, True, True))
+        case("render_last_plan carries plan, branch, session, fingerprint and time as given — two distinct inputs",
+             [parse_sentinel(render_last_plan(".claude/plans/a.md", "feat/a", "t1",
+                                              session="cpp-sess-a", fingerprint="f00d")),
+              parse_sentinel(render_last_plan(".claude/plans/b.md", None, "t2"))]
+             == [{"plan": ".claude/plans/a.md", "branch": "feat/a", "session": "cpp-sess-a",
+                  "sha256": "f00d", "finished": "t1"},
+                 {"plan": ".claude/plans/b.md", "finished": "t2"}])
+        _bare = tempfile.mkdtemp()                 # NOT inside `_r`, which is a repository now
+        case("current_branch outside a repository is None, not a guess",
+             current_branch(Path(_bare)) is None
+             and current_branch(Path(_bare) / "no-such-dir-here") is None)
+        # ⟳ r1 Codex 3: a branch name that does not DECODE raised out of `subprocess.run`. A
+        # fake `git` first on PATH prints one; the answer must be "unknown", not a traceback.
+        _fake = _r / "fake-bin"
+        _fake.mkdir()
+        (_fake / "git").write_text("#!/bin/sh\nprintf 'feat/\\377\\n'\n")
+        (_fake / "git").chmod(0o755)
+        _path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{_fake}{os.pathsep}{_path}"
+        try:
+            _undec = _attempt(lambda: current_branch(_r))
+        finally:
+            os.environ["PATH"] = _path
+        case("⛔ a branch name that is not UTF-8 is an UNKNOWN branch (None), not a crash",
+             _undec is None)
+        os.rmdir(_bare)
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

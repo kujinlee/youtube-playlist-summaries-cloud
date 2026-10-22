@@ -148,10 +148,13 @@ def population(root: pathlib.Path) -> "list[pathlib.Path]":
 # than a number nobody can act on.
 KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
     'begin-plan.py': (
-        'cmd_begin.slug_raw', 'cmd_begin.step_args', 'pp_count_drift.actual',
-        'pp_count_drift.doc', 'render_banner.steps', 'render_plan.slug',
-        'render_plan.steps', 'render_plan.today', 'render_sentinel.now',
-        'render_sentinel.plan_rel', 'split_step.arg',),
+        'pp_count_drift.actual',
+        'pp_count_drift.doc', 'render_banner.steps',
+        'render_plan.steps', 'split_step.arg',),
+    # ⟳ 2026-10-22 (work-lines r3 fold): FIVE leave the debt rather than being carried as
+    # frozen — `render_plan.today`, `render_plan.slug`, `render_sentinel.now`,
+    # `render_sentinel.plan_rel` and `cmd_begin.step_args` now vary, because the lineage and
+    # sentinel-resolution cases arm distinct plans with distinct steps at distinct targets.
     'brief-compose.py': (
         'assert_theme_complete.also_read', 'assert_theme_complete.fragment_css',
         'assert_theme_complete.live_control',
@@ -310,6 +313,19 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # The work-lines generator. Every parameter is varied by a case; none is exempt.
+    "gen-work-lines.py": (
+        "build_forest.plans",
+        "line_state.node",
+        "main.argv",
+        "main.plan_dir",
+        "parse_plan.name",
+        "parse_plan.text",
+        "parse_plan.touched",
+        "render.generated",
+        "render.orphans",
+        "render.roots",
+    ),
     # The status grammar and its verdict. `main.argv` is exempted above (its second value
     # re-enters the suite); everything else is varied by a case.
     "check-goal-status.py": (

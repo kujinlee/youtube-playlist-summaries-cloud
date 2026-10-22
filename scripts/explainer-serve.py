@@ -32,6 +32,7 @@ newest one, so no filename ever has to be copied again. `/` lists them all, newe
 STANDING PAGES — a fixed url for a page that is rewritten, not re-created
 ------------------------------------------------------------------------
     http://127.0.0.1:7391/backlog-table        ← scripts/gen-backlog-page.py
+    http://127.0.0.1:7391/work-lines           ← scripts/gen-work-lines.py
 
 Some pages are not a snapshot of a moment but a live view of something in the repo, regenerated in
 place. They are recognised by their filename carrying NO date, and they get two things:
@@ -63,7 +64,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 202 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 203 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -124,6 +125,7 @@ REGENERABLE = {
     "backlog-table": "gen-backlog-page.py",
     "goals": "gen-goals-page.py",
     "features": "gen-features-page.py",
+    "work-lines": "gen-work-lines.py",
 }
 # ⟳ 2026-09-02. Which repo file each derived page is BUILT FROM, for `/_stale`.
 #
@@ -152,6 +154,20 @@ PAGE_SOURCES = {
     # Teaching `/_stale` about directories (rglob each entry, take the max mtime) is a real change
     # to this file and is deliberately out of that plan's scope.
     "features": ["docs/features.md", "docs/anchors.md", "docs/backlog.md"],
+    # ⛔ DELIBERATELY EMPTY, AND EXEMPT BY NAME IN `STALE_EXEMPT` BELOW — not a missing entry.
+    # This page is built from `.claude/plans/`, a git-IGNORED DIRECTORY: it is not a file (the
+    # case below asserts every declared source is one, and widening that turned it red once
+    # already), and it is not in git, so no checkout would carry it. An empty list makes the
+    # handler answer `fresh` through its existing `not sources` arm, so `/_stale` never raises a
+    # banner over this page. The residual, stated rather than hidden: a plan edited BY HAND makes
+    # the page stale with no banner. Every SCRIPTED change rebuilds it at the writer instead
+    # (`check-plan-progress.refresh_work_lines`), and the Refresh button covers the hand edit.
+    "work-lines": [],
+}
+# ⛔ THE ONLY PAGES WITH NO `/_stale` BANNER, and why — the self-test holds this set EQUAL to the
+# keys whose source list is empty, so an empty list can never appear on another page silently.
+STALE_EXEMPT = {
+    "work-lines": "built from the git-ignored DIRECTORY .claude/plans/, rebuilt by its writers",
 }
 
 
@@ -1493,6 +1509,12 @@ def _self_test() -> int:
         case("...and every declared source is a real file in the repo",
              lambda: [s for ss in PAGE_SOURCES.values() for s in ss
                       if not (REPO / s).is_file()] == [])
+        # ⛔ THE EXEMPTION IS EXPLICIT, AND IT CANNOT SPREAD. The file-only case above passes
+        # VACUOUSLY on an empty list, so emptiness itself is pinned: exactly the pages named in
+        # STALE_EXEMPT have no sources, and each exemption states its reason.
+        case("an EMPTY source list is exactly the STALE_EXEMPT set, each with a reason",
+             lambda: (sorted(k for k, v in PAGE_SOURCES.items() if not v), sorted(STALE_EXEMPT),
+                      all(STALE_EXEMPT.values())) == (["work-lines"], ["work-lines"], True))
 
         # ⚠ THE SHIPPED FUNCTION, not a copy of its rule. See `stale_verdict`'s docstring:
         # the first draft defined the comparison again right here, which would have kept

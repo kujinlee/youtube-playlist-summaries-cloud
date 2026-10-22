@@ -16867,6 +16867,210 @@ runs — the declaration is not path-scoped, so it still covers them.
 This commit exists to BE the push that carries the edited body into a fresh event.
 
 ## 2026-10-22 [needs-you]
+There is now a page that shows how each piece of work connects back to what started it.
+
+You said work drifts: you ask for one thing, something is discovered, that becomes its own task,
+and after a few of those the line back to the original request is gone — and it is hard to follow
+even within a single sitting.
+
+It turns out the history was already being kept and nothing read it. Every task this project runs
+writes a small file with its steps; there were 121 of them, and 25 had been left unfinished, the
+oldest from early September. What was missing was the link between one task and the task it
+branched off — that only ever existed in the running commentary, which disappears when a session
+ends.
+
+That link is now recorded automatically. When a new task starts while another is open, the one
+being left is written down as its parent. Nobody has to remember to do it, because starting a task
+while another is open *is* the branch.
+
+The page lists each chain, shows which still owe something, and puts those first. The top entry is
+this request, in your own words.
+
+Two honest limits. The 121 existing tasks have no parent recorded, so they each appear alone —
+they are marked "no parent recorded" rather than guessed at, because a plausible but invented
+history is worse than an absent one. And an unticked box means the task was not closed out, which
+is not the same as abandoned; work has been finished here and left unticked, so the page says
+"not ticked closed" and shows the date for you to judge.
+
+Going back to an earlier task — the whole point — no longer rewrites where it came from. The first
+version did exactly that, and the review caught it: returning to a task recorded the task you were
+leaving as its parent, which made a loop and froze the page. A task's place in its line is now
+fixed when it is first created.
+
+Four follow-ups you asked for on the same day, all now in:
+
+- **A finished task stays the parent until its pull request merges** — in practice, for as long
+  as GitHub shows an *open* pull request for it. Before, a task counted as finished the moment its
+  boxes were ticked — which is when its pull request is *opened* — so a side job started while that
+  pull request was still being checked looked like a brand-new line. Now the finished task is
+  written down, and the next task asks GitHub about its pull request: still open, the line
+  continues; merged or closed, a new line starts; no pull request at all, or GitHub cannot be
+  asked, and no parent is recorded and the reason is printed — it never guesses.
+  **A new session starts a new line** (your decision, the same day): the finished task is the
+  parent only for tasks started in the same Claude session it finished in. Without that, a pull
+  request waiting days for your merge made every unrelated task started meanwhile look like its
+  child. Not yet measured: whether `/clear` or `/compact` counts as a new session — if it does, a
+  task continued after one shows as a new line rather than a wrong one.
+- **The page is always current.** Every time a task is started, ticked, paused, resumed or
+  finished, the page is rebuilt. A rebuild that fails prints one line and never stops the command.
+- **The page has a Refresh button**, for a task file edited by hand.
+- **Every step heading now shows its line**: the original request's words, then each task back
+  down to the current one.
+
+**Waiting on you:** merging, once the pull request is green. Two independent reviews found ten
+defects; all ten are fixed. A second review of those fixes found two more, in the fixes
+themselves; those are fixed too. A third review found only small things, and the fourth found
+nothing at all.
+<!--tech-->
+`scripts/gen-work-lines.py` (NEW, 38 cases, 15 mutation entries)
+renders `~/explainers/work-lines.html` from `.claude/plans/*.md`. `scripts/begin-plan.py` records
+`<!-- parent: … -->` and `<!-- serving: … -->`; **the parent is DERIVED from
+`.claude/executing-plan` at arm time, never passed** — arming while another plan is armed IS the
+branch. 65 → 80 cases, 18 → 25 mutation entries.
+
+⛔ **A BUG THAT WOULD HAVE MADE THE WHOLE FEATURE SILENTLY RECORD NOTHING.** The first version read
+`pp.parse_sentinel(...)` inside `cmd_begin` — but `pp` is a LOCAL in every other function and
+never a module global, so it raised `NameError`, which my own `except Exception` swallowed into
+`parent = None`. Suite green, lineage never written. Caught only by a case asserting the MARKER
+appears. That is the "catching any error passes on a typo" shape, self-inflicted. ⟳ r1 (Codex 3):
+the narrowed except STILL caught `AttributeError`/`KeyError`, which only a code defect raises
+there — it now guards the sentinel READ alone, and loading sits outside it.
+
+⭐ **Looking at the page caught a defect no case had**: completed lines sorted FIRST, burying the
+26 that still owe something — backwards for the only question the page answers. One composite key
+with `reverse=True` flips BOTH members; two stable sorts now, held by two cases.
+
+⚠ **Two of my own MUTATIONS were wrong** and the sweep found them: one was a literal no-op
+(`node = node`), and one targeted a path whose effect is masked by the next check (`return []`
+still reaches main()'s "no plan files" branch and returns 2 anyway) — so the case was rewritten to
+assert the message that only the raise produces.
+
+Registered: `check-plan-code` (manifest list + EXPECTED_MUTATIONS 1709 → 1731),
+`check-selftest-counts` POPULATION, `check-fixture-variation` EXAMINED_KEYS. ⚠ `parse_plan`'s
+`name` and `touched` were unvaried and are now exercised at two distinct inputs — they carry
+straight to the page, so a constant there would have made every row show one slug and one date.
+`check-ratchet-contract` rc=0.
+
+⛔ **REVIEW ROUND 1 — NOT CONVERGED, 10 findings, all folded** (`docs/reviews/{codex,claude}/work-lines-r1-*.md`).
+The Blocking one, found by both halves: re-arming a plan derived its parent afresh, so the
+"wiring → branch → wiring" walk-back made a cycle, and `build_forest`'s cycle filter could NEVER
+fire — it pruned during a walk FROM THE ROOTS, and a cycle is never reachable from one. The old
+cycle cases asserted only root slugs and stayed green over a generator that hung. Fixed twice
+over: lineage is fixed at first write, and a cycle is cut into a tree. Also: a sentinel outside
+`.claude/plans/` was reduced to its stem and could attach to an unrelated plan (now: no parent,
+said on stderr); `parent: -` now marks a STARTED line so it cannot pass for "never recorded"; a
+multiline or `-->` `--serving` is refused; and the nesting case had passed on the word `none` in
+the inlined CSS. Every new case was shown to redden on the pre-fix code, and all 8 new mutations
+are killed by the case each names. A `ci.yml` step now runs the suite by name (`479114be`).
+
+⛔ **ROUND 2 (Codex, the fixes only) — NOT CONVERGED, 2 Major, BOTH IN ROUND 1's OWN FIXES.** The
+cycle cut took the first unplaced node OVERALL, which can be a TAIL below the cycle: `y ↔ z` with
+tails `a`, `b` became three lines, each tail "leading back to itself". The round-1 tail fixture
+named its tail `t` — the one ordering under which the wrong cut happens to be right. And the
+sentinel check still accepted `real.txt`, whose stem names an unrelated `real.md`. Found while
+fixing: the r1 `--serving` refusal hand-listed `\n`/`\r` while `parse_steps` reads with
+`splitlines()` — a vertical tab still smuggled in a counted step, the exact shape `cmd_pause`'s
+own r2 High recorded in the same file. All three fixed; 3 mutations, each reverting the r1 code,
+each killed by the case it names.
+
+✅ **ROUND 3 (Claude, the r2 fold) — CONVERGED, 6 Minor; 5 folded, 1 recorded.** Three were caused
+by the r2 fold (a trailing separator slipped past `len(splitlines()) > 1`; one separator tested of
+ten; the cut's first-member rule untested), so the arming rule's letter is met — answered in
+`docs/reviews/coordinator/work-lines-r3-coordinator.md` as the prose floor: severity fell 1/4/5 →
+0/2/0 → 0/0/6, and the reviewer drove 200,000 random graphs through `build_forest` with no failure.
+⛔ **Re-verifying every mutation found the r2 commit had ORPHANED two of r1's entries** — their
+anchors were the condition lines that fold rewrote. `--self-test` stayed green (it does not apply
+anchors); CI's sweep would have gone red. Re-anchored; all 22 of this branch's entries are killed
+by the case each names. The decision log now carries a `work-lines` row, written late (trigger 1
+caught its absence) and stating its bet about round 4 before round 4 runs.
+
+✅ **ROUND 4 (Codex, the r3 fold) — CONVERGED, no findings at any severity**, on `664821c2`. The
+decision-log bet held and is scored: `outcome: stopped` at 4 rounds. Nothing but documentation
+changed after it.
+
+⭐ **FOLLOW-UP, same day (`feat/work-lines-always-on`) — the owner's four requests.**
+(1) **Option A**: `check-plan-progress.record_last_plan` (ONE recorder, called from BOTH clear
+sites — `run_decide`'s clear and `begin-plan.cmd_finish`) writes `.claude/last-plan` (`plan:`,
+`branch:` omitted when unknown, `finished:`) only for a FULLY-ticked plan, so a paused-then-finished
+plan is recorded and an abandoned one is not. `begin-plan._derive_parent` with no sentinel →
+`_parent_from_last_finished`. The owner's Option A ("the parent until its PR merges") is
+IMPLEMENTED AS "WHILE AN OPEN PR EXISTS": no record → `-`; otherwise `PR_LINE_STATE(branch)`
+(default `gh_pr_line_state`: `gh pr list --head <b> --state all --json state`, runner injectable)
+— any OPEN → the slug; PRs exist, none open (merged or closed unmerged) → `-`; **NO PR at all
+(master included) → NO marker and a stderr line naming the branch; cannot decide (no branch, no
+`gh`, non-zero exit, not JSON, not a list, a PR without a string `state`) → NO marker and a stderr
+line saying why**. ⟳ The first cut (`7fdd335c`) queried `--state merged` and read "none merged" as
+"still open", which made a master-finished, never-reviewed or closed-unmerged plan the parent of
+every later plan — caught by the coordinator's verification; the closed, no-PR and no-`state`
+scenarios were shown RED on `7fdd335c` and green on the fix. The sentinel and the record share one resolver,
+`_plan_slug`. (2) **Always current**: `check-plan-progress.refresh_work_lines` NEVER raises —
+every failure is one stderr line and the caller's rc stands; called after every state-changing
+command in `begin-plan.main` and after the Stop hook's clear. `gen-work-lines.write_page` is the
+one writer behind `main()` and both. (3) **Refresh**: `explainer-serve.REGENERABLE["work-lines"]`;
+`PAGE_SOURCES["work-lines"] = []` with an explicit `STALE_EXEMPT` (source is the git-ignored
+DIRECTORY `.claude/plans/`), pinned by a case that holds the empty-source set EQUAL to the exempt
+set, so the file-only assertion for every other page is unchanged; the page now carries
+`page_chrome.chrome_bar` and both `data-theme` palettes, checked by `assert_wired`. (4) **Banner
+line**: `begin-plan.work_line` (pure, over `gen-work-lines.read_plans` records — no second marker
+parser) renders `> **Line:** "<root's words, ≤60>" → root → … → this`; no marker, a missing
+parent, a cycle, or a plan outside `.claude/plans/` is SAID in the line. Cases: begin-plan 80 →
+104, check-plan-progress 43 → 54, gen-work-lines 38 → 40, explainer-serve 202 → 203. Mutations
++24 (begin-plan 25 → 41, check-plan-progress 17 → 22, gen-work-lines 15 → 16, explainer-serve 46 →
+48; declared sum 1731 → 1755); a scoped run over the four manifests killed 127/127, each by the
+case it names. ⚠ One r1 anchor (`if not SENTINEL.is_file(): return STARTED`) was orphaned by this
+change and re-anchored onto `if not LAST_PLAN.is_file()`, where that `STARTED` now lives.
+⚠ Known limit: a hand-edited plan leaves the page stale with no `/_stale` banner (the Refresh
+button is the remedy).
+
+⟳ **ROUND 1 of the follow-up — folded (the findings that do not wait on the owner).** (a) **The
+Stop hook cannot crash on an optional step** (Codex 3): `check-plan-progress.run_optional` is ONE
+boundary — any exception is one stderr line and the caller's verdict, message, clear and rc stand.
+The Stop hook's record + page rebuild, `--finish`'s record and the arm-time branch lookup all run
+inside it; `current_branch` also treats undecodable output (`UnicodeDecodeError`) as unknown.
+(b) **The branch is recorded when the plan is ARMED** (Claude F2): `render_sentinel` writes
+`branch:` (omitted when unknown) and `record_last_plan` takes it FROM THE SENTINEL — never from git
+at clear time, so a `git checkout` before the clear no longer re-parents the plan. (c) **The open
+question is asked directly** (Codex 2): `gh_pr_line_state` asks `--state open --limit 1` first and
+`--state all --limit 1` only if none is open, because `gh pr list` returns at most 30, newest
+first — 30 newer merged PRs hid an older open one. The `_gh_world` fixture now models that default.
+(d) `gh` timeout 30s → 8s (Claude F6). (e) The banner's `Line:` words are Markdown-escaped after
+truncation (Codex 4). (f) The docstring claim that a failed rebuild "is still SAID" is corrected:
+on the Stop path stderr with rc 0 reaches nobody (Claude F5). (g) **Both suites now run in a real
+git repository on a named branch** (Claude F3), so the branch wiring is exercised. Cases:
+begin-plan 104 → 112, check-plan-progress 54 → 60. Mutations +15 (begin-plan 41 → 49,
+check-plan-progress 22 → 29; declared sum 1755 → 1770); a scoped run over both manifests killed
+78/78, each by the case it names. Six anchors orphaned by this change were re-anchored.
+⟳ **The record's lifecycle — the owner's option A, 2026-10-22: a new session starts a new
+line** (Claude F1/F4, Codex 1). `check-plan-progress.current_session` reads
+`CLAUDE_CODE_BRIDGE_SESSION_ID` (injectable `environ`); `begin-plan` writes `session:` into the
+sentinel at arm time (omitted when unknown) and `record_last_plan` copies it, plus `sha256:` of the
+plan file's bytes, into `.claude/last-plan`. `_parent_from_last_finished`: no record → `-`; current
+session unknown or record without `session:` → NO marker + stderr; a different session → `-`
+**without calling `gh`**; same session → the plan must still be a plan file AND its fingerprint
+must match (else NO marker + "has changed since it finished"), then the unchanged PR logic. A NEW
+record whose write fails deletes any existing record (inside the boundary), so an older plan never
+stands in for it. ⚠ UNVERIFIED and stated in the docstring: whether the session id survives
+`/clear` or `/compact`. Cases: begin-plan 112 → 118, check-plan-progress 60 → 63. Mutations +6
+(begin-plan 49 → 53, check-plan-progress 29 → 31; declared sum 1770 → 1776); two anchors this
+change orphaned were re-anchored.
+
+⟳ **ROUND 2 (Codex) — 1 Major, 4 Minor, all folded.** (1) **Record BEFORE the clear**: the Stop
+hook deleted the sentinel first, so a state file whose unlink raised (a directory at that path)
+ended the hook before the record was written and an OLDER `.claude/last-plan` answered the next
+lookup. `run_decide` now records (optional, protected), then clears (mandatory, outside the
+boundary, error behaviour unchanged); `cmd_finish` already recorded first. (2) The page rebuild is
+its own `run_optional` call, so a recorder that raises no longer skips it. (3) An OPEN entry in
+`gh_pr_line_state`'s SECOND answer (a PR opened between the questions) returns "open". (4)
+`md_literal` escapes every ASCII punctuation character CommonMark allows (backslash first);
+checked outside the suite with the worktree's node `markdown-it`, which renders `~~deleted~~`,
+`a &copy; b` and the full punctuation set back as their literal input — the suite asserts the
+escaped string, since the mutation harness stages no renderer. (5) The two clear-site "branch
+lookup that RAISES" cases never reached the lookup; they now assert ZERO calls to it, and the
+raising lookup stays covered at arm time. Cases: begin-plan 118 → 120, check-plan-progress 63 →
+65. Mutations +6 (begin-plan 53 → 56, check-plan-progress 31 → 34; declared sum 1776 → 1782); four
+anchors re-anchored onto the split calls.
+
+## 2026-10-22 [needs-you]
 Making the review fixes myself, instead of handing them to a fresh helper, is now a written rule
 with conditions, rather than something I drifted into.
 

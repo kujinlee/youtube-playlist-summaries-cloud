@@ -219,5 +219,248 @@
     "expect": [
       "paused and the plan GREW -> ALLOW and silent: more outstanding than at pause time is work ADDED, never work resumed, and the third side of the comparison had no case"
     ]
+  },
+  {
+    "name": "the Stop hook's clear does not record the finished plan, so Option A is lost at the first clear site",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))",
+        "lambda: None)"
+      ]
+    ],
+    "expect": [
+      "⭐ the Stop hook's clear RECORDS the finished plan as the last plan"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear no longer rebuilds the work-lines page",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))",
+        "lambda: None)"
+      ]
+    ],
+    "expect": [
+      "⭐ ...and REBUILDS the work-lines page, so it is current without being asked"
+    ]
+  },
+  {
+    "name": "a rebuild failure escapes refresh_work_lines, so a rendering problem changes the stop's verdict",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    except Exception as exc:                       # noqa: BLE001 - reported, never swallowed",
+        "    except ImportError as exc:"
+      ]
+    ],
+    "expect": [
+      "⛔ a page that CANNOT be rebuilt never changes the stop's verdict — ONE stderr line says so"
+    ]
+  },
+  {
+    "name": "a half-ticked plan is recorded as finished, so an abandoned plan becomes the next line's parent",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if not total or done != total:",
+        "    if not total:"
+      ]
+    ],
+    "expect": [
+      "⛔ a HALF-ticked plan is NOT recorded — `--finish` on it is an abandonment, and naming it a parent would continue work that was dropped"
+    ]
+  },
+  {
+    "name": "an unknown branch is written as a value, which the reader would hand to gh",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if branch:\n        out += f\"branch: {branch}\\n\"",
+        "    if True:\n        out += f\"branch: {branch}\\n\""
+      ]
+    ],
+    "expect": [
+      "...and an UNKNOWN branch is OMITTED, never written blank — a second plan, a second branch value, and a sentinel that had been paused"
+    ]
+  },
+  {
+    "name": "the optional-step boundary lets an exception through, so a raising recorder turns an allowed stop into a fail-closed BLOCK (r1 Codex 3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    except Exception as exc:                       # noqa: BLE001 - the breadth IS the contract",
+        "    except ImportError as exc:"
+      ]
+    ],
+    "expect": [
+      "⛔ a recorder that RAISES at the Stop hook's clear leaves the verdict, the message, the clear and the rc exactly as they are without it"
+    ]
+  },
+  {
+    "name": "the Stop hook's record runs OUTSIDE the boundary again, so it can crash the stop (r1 Codex 3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        run_optional(\"recording the last plan\",\n                     lambda: record_last_plan(",
+        "        (lambda: record_last_plan("
+      ],
+      [
+        "root=ROOT, dest=LAST_PLAN))\n        SENTINEL.unlink",
+        "root=ROOT, dest=LAST_PLAN))()\n        SENTINEL.unlink"
+      ]
+    ],
+    "expect": [
+      "⛔ a recorder that RAISES at the Stop hook's clear leaves the verdict, the message, the clear and the rc exactly as they are without it"
+    ]
+  },
+  {
+    "name": "the recorder asks git for the branch at CLEAR time again, so a checkout before the clear re-parents the plan (r1 Claude F2)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    branch = fields.get(\"branch\") or None",
+        "    branch = current_branch(root)"
+      ]
+    ],
+    "expect": [
+      "⛔ ...against the branch the plan was ARMED on, not the one checked out when the Stop hook clears it"
+    ]
+  },
+  {
+    "name": "the recorder ignores the sentinel's branch, so every record has none and Option A is off (r1 Claude F3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    branch = fields.get(\"branch\") or None\n    session = ",
+        "    branch = None\n    session = "
+      ]
+    ],
+    "expect": [
+      "⭐ a fully-ticked plan is RECORDED with the branch its sentinel was ARMED on",
+      "⛔ ...against the branch the plan was ARMED on, not the one checked out when the Stop hook clears it"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear hands the recorder a sentinel with no branch, so that clear site records none (r1 Claude F3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n",
+        "record_last_plan(strip_field(sentinel_text, \"branch\"), root=ROOT, dest=LAST_PLAN))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ ...against the branch the plan was ARMED on, not the one checked out when the Stop hook clears it"
+    ]
+  },
+  {
+    "name": "an undecodable branch name raises out of current_branch again (r1 Codex 3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):\n        return None",
+        "    except (OSError, subprocess.SubprocessError):\n        return None"
+      ]
+    ],
+    "expect": [
+      "⛔ a branch name that is not UTF-8 is an UNKNOWN branch (None), not a crash"
+    ]
+  },
+  {
+    "name": "the branch lookup always answers None, so every plan is armed with no branch (r1 Claude F3)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    return b if r.returncode == 0 and b and b != \"HEAD\" else None",
+        "    return None"
+      ]
+    ],
+    "expect": [
+      "current_branch reads the checked-out branch of a real repository"
+    ]
+  },
+  {
+    "name": "the record drops the sentinel's session, so every later plan reads 'cannot compare'",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    session = fields.get(\"session\") or None",
+        "    session = None"
+      ]
+    ],
+    "expect": [
+      "⭐ the record COPIES the sentinel's session and fingerprints the plan's bytes — two plans, two sessions"
+    ]
+  },
+  {
+    "name": "a failed new record leaves the OLD record standing in for the plan that just finished (r1 Codex 1)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "            dest.unlink(missing_ok=True)\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a NEW record that FAILS to write removes the OLD one — an older plan can never stand in for the one that just finished — and one stderr line says so"
+    ]
+  },
+  {
+    "name": "the Stop hook clears BEFORE recording again, so a state unlink that raises loses the record and an older plan answers (r2 Codex 1)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        run_optional(\"recording the last plan\",\n                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n        SENTINEL.unlink(missing_ok=True)\n        STATE.unlink(missing_ok=True)\n",
+        "        SENTINEL.unlink(missing_ok=True)\n        STATE.unlink(missing_ok=True)\n        run_optional(\"recording the last plan\",\n                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n"
+      ]
+    ],
+    "expect": [
+      "⛔ a clear whose state unlink RAISES still leaves the record naming the NEW plan — recording happens before either file is deleted"
+    ]
+  },
+  {
+    "name": "the rebuild rides on the recorder again, so a recorder that raises also costs the page (r2 Codex 2)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "                     lambda: record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN))\n        SENTINEL",
+        "                     lambda: (record_last_plan(sentinel_text, root=ROOT, dest=LAST_PLAN), refresh_work_lines(PLAN_DIR, WORK_LINES_OUT)))\n        SENTINEL"
+      ],
+      [
+        "        run_optional(\"rebuilding the work-lines page\",\n                     lambda: refresh_work_lines(PLAN_DIR, WORK_LINES_OUT))\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ ...and the work-lines page is STILL rebuilt — the rebuild is its own optional step, not the recorder's tail (r2 Codex 2)"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear queries the current branch again (r2 Codex 5)",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "    if unticked == 0:\n        # ⛔ RECORD FIRST",
+        "    if unticked == 0:\n        current_branch(ROOT)\n        # ⛔ RECORD FIRST"
+      ]
+    ],
+    "expect": [
+      "⛔ clearing at the Stop hook never queries the current branch — ZERO calls to the lookup across both runs; the record's branch is the sentinel's"
+    ]
+  },
+  {
+    "name": "the mandatory state clear is moved inside the optional boundary, so a failed clear is swallowed and the hook reports success over a half-cleared plan",
+    "file": "scripts/check-plan-progress.py",
+    "edits": [
+      [
+        "        STATE.unlink(missing_ok=True)\n        run_optional(\"rebuilding the work-lines page\",",
+        "        run_optional(\"clearing the state\", lambda: STATE.unlink(missing_ok=True))\n        run_optional(\"rebuilding the work-lines page\","
+      ]
+    ],
+    "expect": [
+      "⛔ ...and that failed clear is NOT swallowed: it still raises out of the hook, as it did before the work-lines record existed"
+    ]
   }
 ]

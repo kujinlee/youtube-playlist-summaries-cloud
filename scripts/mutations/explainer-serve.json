@@ -504,5 +504,27 @@
    ]
   ],
   "expect": "index_html escapes the filename in the LINK TEXT, not only the href"
+ },
+ {
+  "name": "work-lines is dropped from the Refresh allow-list, so its button answers 400",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    \"work-lines\": \"gen-work-lines.py\",\n",
+    ""
+   ]
+  ],
+  "expect": "\u2b50 every regenerable page declares where it is built FROM"
+ },
+ {
+  "name": "the stale exemption is emptied, so an empty source list is no longer a stated decision",
+  "file": "scripts/explainer-serve.py",
+  "edits": [
+   [
+    "    \"work-lines\": \"built from the git-ignored DIRECTORY .claude/plans/, rebuilt by its writers\",\n",
+    ""
+   ]
+  ],
+  "expect": "an EMPTY source list is exactly the STALE_EXEMPT set, each with a reason"
  }
 ]

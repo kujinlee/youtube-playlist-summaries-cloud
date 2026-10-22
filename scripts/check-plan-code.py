@@ -918,6 +918,8 @@ EXPECTED_MUTATIONS = {
     # own grammar).
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
+    # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
+    "scripts/gen-work-lines.py": 16,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1573,7 +1575,9 @@ EXPECTED_MUTATIONS = {
     # specific temp path — and couples the entry to one failure mode of the case even when it does
     # not. That still supports converting the raise to a value (the case `driving /src/ never
     # consults the environment`), which is why the decision stands and only its reason changed.
-    "scripts/explainer-serve.py": 46,
+    # ⟳ 2026-10-22 (work lines, always current): 46 -> 48 — the `work-lines` Refresh allow-list
+    # entry, and the STALE_EXEMPT set that makes its empty source list a stated decision.
+    "scripts/explainer-serve.py": 48,
     # ⟳ 2026-09-01, backlog #79: the theme-token coverage guard joins the manifest in the same
     # commit that adds it, rather than as a follow-up. Its four entries cover both ratchet
     # directions (a token stops being forced OUT of the allowlist; the allowlist may name a
@@ -1621,12 +1625,41 @@ EXPECTED_MUTATIONS = {
     # stops naming `--resume` strands the reader in #99's own state with no discoverable exit),
     # and two on `--resume` — one for a write-back that never clears, one for a clear that takes
     # the `plan:` pointer with it.
-    "scripts/check-plan-progress.py": 17,
+    # ⟳ 2026-10-22 (work lines, always current): 17 -> 22 — the record at the Stop hook's clear
+    # (Option A's first clear site), the page rebuild there, the rebuild never changing the
+    # stop's verdict, the fully-ticked rule, and an unknown branch being omitted.
+    # ⟳ 2026-10-22, work-lines-always-on r1 fold: 22 -> 29 — the optional-step boundary (its
+    # breadth, and the record running inside it), the branch taken from the SENTINEL rather than
+    # from git at clear time (asked, ignored, stripped at the clear site), an undecodable branch
+    # name, and the lookup answering None. Two r1 anchors re-anchored onto the boundary's call.
+    # ⟳ 2026-10-22, owner's option A (the parent holds within ONE session): 29 -> 31 — the
+    # session copied into the record, and a failed new record removing the old one.
+    # ⟳ 2026-10-22, work-lines-always-on r2 fold: 31 -> 34 — record BEFORE the clear, the
+    # rebuild as its own optional step, and the clear never querying the branch. Four entries
+    # re-anchored onto the split `run_optional` calls.
+    "scripts/check-plan-progress.py": 35,
     # ⟳ 2026-09-07. Five targets in the PURE rules: the ternary probe's optional-chain
     # exclusion, the alias fullmatch, ALIAS_RHS's repeat quantifier, and the `||` and `??`
     # patterns. Verified through check-plan-code's OWN run_mutations, not a copy of it.
     "scripts/check-producer-enumeration.py": 5,
-    "scripts/begin-plan.py": 18,
+    # ⟳ 2026-10-22 (work lines, always current): 25 -> 35 — Option A (the last finished plan as
+    # parent, merged -> started, cannot-decide -> no marker, the --finish record), the rebuild
+    # after a state change, the banner's Line row (printed, rendered, no invented head), and two
+    # unanswerable `gh` replies.
+    # ⟳ 2026-10-22, coordinator verification of 7fdd335c: 35 -> 41. The merged-only query read
+    # "no merged PR" as "still open"; the rule now needs an OPEN PR. Three entries re-anchored
+    # with the code they guard, six added — one per decision branch of `gh_pr_line_state` and its
+    # caller, plus the old `--state merged` query itself.
+    # ⟳ 2026-10-22, work-lines-always-on r1 fold: 41 -> 49 — the branch written at ARM time
+    # (omitted, looked up as None, stripped at --finish), both optional steps inside the boundary,
+    # the open question asked directly (gh's 30-result default), the 8s timeout, and the escaped
+    # Line words. Four anchors re-anchored onto the rewritten `gh_pr_line_state` and `cmd_finish`.
+    # ⟳ 2026-10-22, owner's option A: 49 -> 53 — a different session starts a line (no `gh`),
+    # an unknown session records no marker, the fingerprint check, and `session:` at arm time.
+    # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
+    # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
+    # the full CommonMark escape set, and --finish never querying the branch.
+    "scripts/begin-plan.py": 56,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -3807,6 +3840,7 @@ def _self_test() -> int:
                                       "scripts/gen-dashboard.py",
                                       "scripts/gen-features-page.py",
                                       "scripts/gen-goals-page.py",
+                                      "scripts/gen-work-lines.py",
                                       # ⟳ 2026-09-23, backlog #166 + #170 — the ONE owner of
                                       # the observer-log record. A LIBRARY, not a guard, so
                                       # `check-ratchet-contract`'s population never sees it;
@@ -5557,7 +5591,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1709)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1783)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
