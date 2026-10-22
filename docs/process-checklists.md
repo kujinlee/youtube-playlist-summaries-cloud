@@ -108,7 +108,7 @@ something, and the table is the reason this is a condition and not a preference:
 ### The exception — ALL five must hold, or a subagent writes it
 
 1. **The findings ARE the spec.** Every finding being folded names its fix, and the fold makes no
-   design choice the review did not make. A finding that asks *which* behaviour is right (r3 #6 on
+   design choice the review did not make. A finding that asks *which* behaviour is right (round-3 finding 6 on
    PR #384: "which name is canonical?") is a decision, and is outside this exception.
 2. **Scope is what the findings name** — those files, plus their tests, mutation manifests and
    declared counts. Anything else found while folding is a side job (named first) or a new finding.
