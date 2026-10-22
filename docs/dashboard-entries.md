@@ -16785,3 +16785,60 @@ the distinction.
 
 Final tally on the page: **41 shipped · 3 needs-you · 1 current · 1 parked · 3 obsolete**.
 `check-goal-status` rc=0 over 13 armed anchors; `check-anchors` rc=0; self-test 34/34.
+
+## 2026-10-22
+The merge blocker is fixed. The check that was failing on the main branch now passes, and it
+passes because it stopped asking a question that had become unanswerable.
+
+Yesterday's problem: merging squashes a branch into one commit, which makes every file it carries
+look as though it was created on the merge date. One check asks "has any piece of work been
+reviewed repeatedly without being recorded?", and it answered that by asking the version history
+what existed when the check was first switched on. After a merge, the history no longer knows.
+
+I had written up a fix that assumed the dates were merely wrong and could be read from somewhere
+else. Looking properly, they are not wrong — they are gone. Nothing in the files carries the
+original date, so no amount of looking elsewhere recovers it.
+
+So the fix is the one this check already uses for its other comparison: write the answer down once,
+rather than working it out again every time. The list of what existed when the check was armed is
+now recorded alongside it — 415 entries — taken from the branch whose history the merge had not
+yet rewritten. The check reads that list instead of interrogating git, and a future merge cannot
+disturb it.
+
+The piece of work it was wrongly accusing had in fact been reviewed three times *before* the check
+even existed.
+
+**Waiting on you:** merging, and the three goals-page items marked needs-you. Nothing else is
+outstanding from my side.
+<!--tech-->
+**backlog #341 FIXED — and the fix differs from the one I filed, because the filed diagnosis was
+wrong in a way worth recording.** #341 said: *derive the date from something a squash preserves*.
+Checked: verdict JSONs carry a `head` SHA but **no timestamp**, and review documents carry **no
+date** in their heads. The information is DESTROYED, not mis-stamped — master has no commit in
+which those files existed before the squash. A different date source cannot fix a missing fact.
+
+⭐ **So: PIN IT, which is the posture this file already takes two fields away.**
+`rounds_to_termination` is pinned for the stated reason *"a baseline recomputed at read time
+cannot detect that it has moved"* — the round inventory now is too. `baseline.json` gains
+`rounds_at_arming`: **415 (subject, round) pairs across 104 subjects**, derived from commit
+`5d957db8` (2026-10-20 08:27:49) on branch `decision-route-escalation`, whose history the squash
+did not rewrite, through the SAME `rounds_in_paths` grammar the live corpus is read with.
+
+New pure `pinned_inventory(baseline)`; `main()` prefers it over `tree_at`, which remains the
+fallback for a repo that has not pinned one. ⛔ A MALFORMED pin is **CANNOT RUN**, never a quiet
+fallback — falling back is exactly what a squash makes wrong. ⛔ An EMPTY pin is REFUSED, because
+empty would make every subject look post-arming and name nearly all of them (backlog #56).
+
+**Proof the trigger was firing on a false premise:** `memory-index-budget`'s rounds **1, 2 and 3
+all existed at the arming instant**. It never reached ≥2 rounds after arming.
+
+`check-decision-scheme` **rc=1 → rc=0**. 203 → 216 cases. 82 → 86 mutations, **86/86 killed,
+86/86 ATTRIBUTED**, 0 survivors. Full `ci.yml` list: **64 steps, 63 rc=0**.
+
+⚠ **Four defects of my own while building it, every one caught by a machine:** `pinned_rounds`
+collided with an existing local in `main()` ("'dict' object is not callable"); **16 injected test
+doubles did not match the real signature** — and a double that does not match the real contract is
+a mock of a contract I imagined, so updating them was the repair, not a workaround; I inserted a
+case block BETWEEN a `main()` call and the `case()` reading its captured `_o`, clobbering it; and
+one mutation anchored on the first line of a MULTI-LINE return, so it did not COMPILE and "killed"
+the suite with an `IndentationError` nothing could attribute.

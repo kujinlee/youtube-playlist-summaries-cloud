@@ -1089,5 +1089,57 @@
     "expect": [
       "only the LAST five subjects count, so early bad ones do not pin it forever"
     ]
+  },
+  {
+    "name": "the pinned inventory is ignored, so git archaeology decides again and a squash misnames",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    before_rounds, pin_why = pinned_inventory(pinned)",
+        "    before_rounds, pin_why = None, None"
+      ]
+    ],
+    "expect": [
+      "⭐ main() READS the pinned inventory and HANDS IT to the starver"
+    ]
+  },
+  {
+    "name": "an EMPTY pinned inventory is read as 'nothing existed', naming nearly every subject",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not out:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ an EMPTY pin is REFUSED, because empty would name nearly every subject"
+    ]
+  },
+  {
+    "name": "a pair's types are not checked, so a STRING round is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "                or not isinstance(item[0], str) or not isinstance(item[1], int)",
+        "                or False"
+      ]
+    ],
+    "expect": [
+      "...and a STRING round, which is what the int check alone refuses"
+    ]
+  },
+  {
+    "name": "a malformed pin is swallowed as absent, so the gate runs on git after all",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if pin_why:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a MALFORMED pin is CANNOT RUN (2), never a quiet fallback to git"
+    ]
   }
 ]
