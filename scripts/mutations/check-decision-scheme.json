@@ -26,19 +26,6 @@
     ]
   },
   {
-    "name": "the collapse floor moves to six, so a five-row collapse passes",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if len(scored) < 5:",
-        "    if len(scored) < 6:"
-      ]
-    ],
-    "expect": [
-      "five scored rows on one route is a collapse"
-    ]
-  },
-  {
     "name": "equalling the pinned baseline counts as an improvement",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -203,7 +190,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "        if unit_rows[-1].get(\"outcome\") == \"continued\":",
+        "        if bets and bets[-1].get(\"outcome\") == \"continued\":",
         "        if True:"
       ]
     ],
@@ -752,19 +739,6 @@
     ]
   },
   {
-    "name": "the route-collapse trigger counts retroactive rows, so history buys off a live collapse",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    scored = [r for r in prospective(rows) if r.get(\"outcome\") in OUTCOMES]",
-        "    scored = [r for r in rows if r.get(\"outcome\") in OUTCOMES]"
-      ]
-    ],
-    "expect": [
-      "⭐ t3 cannot be bought off by a retroactive row on another route"
-    ]
-  },
-  {
     "name": "the improvement trigger counts retroactive terminations, so a deferral displaces a subject",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -926,7 +900,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "f\"({retro} retroactive, so {len(scoreable)} scoreable); \"",
+        "f\"({retro} retroactive, so {len(scoreable)} scoreable{ack_note}); \"",
         "f\"\""
       ]
     ],
@@ -939,7 +913,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    retro = len(rows) - len(prospective(rows))",
+        "    retro = len(rows) - len(prospective(rows)) - acks",
         "    retro = 0"
       ]
     ],
@@ -1140,6 +1114,292 @@
     ],
     "expect": [
       "⛔ a MALFORMED pin is CANNOT RUN (2), never a quiet fallback to git"
+    ]
+  },
+  {
+    "name": "trigger 3 counts a RETROACTIVE lost bet as a bet, so hindsight owes an escalation",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if not prospective([r]):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "a RETROACTIVE lost bet is not a bet, so nothing is owed after it"
+    ]
+  },
+  {
+    "name": "a WON bet is read as lost, reinstating the forced-first-rung false alarm",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if r.get(\"outcome\") != \"continued\":",
+        "            if r.get(\"outcome\") is None:"
+      ]
+    ],
+    "expect": [
+      "⭐ five first-rung accrete bets that all STOPPED are quiet — the forced rung is not a conveyor"
+    ]
+  },
+  {
+    "name": "ANY later row counts as an escalation in time, so an acknowledgment silences the warning",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if prospective(later):",
+        "            if later:"
+      ]
+    ],
+    "expect": [
+      "⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL"
+    ]
+  },
+  {
+    "name": "a hindsight escalation is classed as unlogged, so an acknowledgment cannot downgrade the FAIL",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "\"hindsight\" if later else \"unlogged\"",
+        "\"unlogged\""
+      ]
+    ],
+    "expect": [
+      "⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL"
+    ]
+  },
+  {
+    "name": "trigger 3 reads the HINDSIGHT bets instead of the unlogged ones",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    unlogged = [k for k, how in lost_bets(rows) if how == \"unlogged\"]",
+        "    unlogged = [k for k, how in lost_bets(rows) if how == \"hindsight\"]"
+      ]
+    ],
+    "expect": [
+      "⭐ a lost FIRST bet with no later row FAILS, naming its unit"
+    ]
+  },
+  {
+    "name": "trigger 3 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not unlogged:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "...and so does a lost SECOND bet, while the first — escalated in time — stays quiet"
+    ]
+  },
+  {
+    "name": "trigger 10 reads the UNLOGGED bets instead of the hindsight ones",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    late = [k for k, how in lost_bets(rows) if how == \"hindsight\"]",
+        "    late = [k for k, how in lost_bets(rows) if how == \"unlogged\"]"
+      ]
+    ],
+    "expect": [
+      "...and so does one followed only by a RETROACTIVE route row, on another unit"
+    ]
+  },
+  {
+    "name": "trigger 10 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not late:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL"
+    ]
+  },
+  {
+    "name": "trigger 3 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"3 LOST BET NOT ESCALATED\", t3_lost_bet_not_escalated(rows)),",
+        "(\"3 LOST BET NOT ESCALATED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 3's verdict REACHES the CLI as a FAIL and fails the run"
+    ]
+  },
+  {
+    "name": "trigger 10 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"10 ESCALATED IN HINDSIGHT\", t10_escalated_in_hindsight(rows)),",
+        "(\"10 ESCALATED IN HINDSIGHT\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ an acknowledged lost bet reaches the CLI as trigger 10's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "an acknowledgment is validated as a BET, so it is refused for having no route",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if \"kind\" in row:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ an acknowledgment after a LOST first bet is accepted"
+    ]
+  },
+  {
+    "name": "an unknown row kind is validated as an acknowledgment",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if row[\"kind\"] != ACKNOWLEDGMENT:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "an unknown row kind is NAMED, not read as a bet or an acknowledgment"
+    ]
+  },
+  {
+    "name": "an acknowledgment may carry bet fields, so it can enter the ladder",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if carried:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "an acknowledgment carrying a ROUTE is refused — it would enter the ladder"
+    ]
+  },
+  {
+    "name": "`retroactive` is dropped from the bet fields, so an acknowledgment may claim a provenance",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "\"rounds_at_termination\", \"prediction\", \"retroactive\")",
+        "\"rounds_at_termination\", \"prediction\")"
+      ]
+    ],
+    "expect": [
+      "...and one flagged retroactive is refused too — it is hindsight BY KIND"
+    ]
+  },
+  {
+    "name": "an acknowledgment's account need only be a string, so punctuation passes as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(obs, str) or not any(ch.isalnum() for ch in obs):",
+        "    if not isinstance(obs, str):"
+      ]
+    ],
+    "expect": [
+      "...and so is one whose account has no words in it"
+    ]
+  },
+  {
+    "name": "a RETROACTIVE row counts as the bet an acknowledgment may follow",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    bets = prospective(prior)",
+        "    bets = list(prior)"
+      ]
+    ],
+    "expect": [
+      "an acknowledgment on a unit with NO prospective bet is refused"
+    ]
+  },
+  {
+    "name": "an acknowledgment on a unit with no bet at all is not refused",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not bets:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...including a unit with no rows at all"
+    ]
+  },
+  {
+    "name": "the FIRST bet is checked instead of the last, so an in-flight bet can be acknowledged as lost",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if bets[-1].get(\"outcome\") != \"continued\":",
+        "    if bets[0].get(\"outcome\") != \"continued\":"
+      ]
+    ],
+    "expect": [
+      "...and after an IN-FLIGHT bet, the last bet on the unit being the one that counts"
+    ]
+  },
+  {
+    "name": "prospective() keeps acknowledgments, so a record reads as a bet placed in time",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    dicts = [r for r in dicts if not is_acknowledgment(r)]",
+        "    dicts = list(dicts)"
+      ]
+    ],
+    "expect": [
+      "prospective() drops an acknowledgment — it is not a bet placed in time"
+    ]
+  },
+  {
+    "name": "nothing is recognised as an acknowledgment",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return isinstance(row, dict) and row.get(\"kind\") == ACKNOWLEDGMENT",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "prospective() drops an acknowledgment — it is not a bet placed in time"
+    ]
+  },
+  {
+    "name": "trigger 2 reads the last ROW, so an acknowledgment hides an exhausted, still-losing unit",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        bets = [r for r in unit_rows if not is_acknowledgment(r)]",
+        "        bets = unit_rows"
+      ]
+    ],
+    "expect": [
+      "⭐ an exhausted unit whose last bet lost STILL refutes the design after an acknowledgment"
+    ]
+  },
+  {
+    "name": "the acknowledgment count is hardcoded to zero in the one line a reader sees",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    acks = sum(1 for r in rows if is_acknowledgment(r))",
+        "    acks = 0"
+      ]
+    ],
+    "expect": [
+      "⭐ an acknowledged lost bet reaches the CLI as trigger 10's WARN and exits 0"
     ]
   }
 ]

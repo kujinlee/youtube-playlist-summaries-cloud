@@ -648,6 +648,10 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # stopped taking a set of PATHS and now takes (subject, round) pairs (r2 YH2 — a path
     # is not a stable identity). `component_rounds`, `rounds_in_paths`, `round_shapes`
     # and `empty_listing_refusal` joined with them.
+    # ⟳ 2026-10-23: `t3_routes_collapsed.rows` is GONE WITH ITS FUNCTION — trigger 3 changed
+    # its question (route collapse -> a lost bet whose next route was never logged). Retired
+    # with its subject; `lost_bets`, `t3_lost_bet_not_escalated` and `t10_escalated_in_hindsight`
+    # join, each varied by two distinct inputs per branch.
     'check-decision-scheme.py': (
         'component_rounds.rounds',
         'derive_outcome.after_round',
@@ -658,6 +662,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'empty_listing_refusal.paths',
         'empty_listing_refusal.sha',
         'group_by_unit.rows',
+        'lost_bets.rows',
         'main.argv',
         'main.baseline_path',
         'main.corpus',
@@ -676,7 +681,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         't1_not_fed.rows',
         't1_not_fed.subjects_since_arming',
         't2_non_termination.rows',
-        't3_routes_collapsed.rows',
+        't10_escalated_in_hindsight.rows',
+        't3_lost_bet_not_escalated.rows',
         't4_no_improvement.baseline_median',
         't4_no_improvement.rows',
         't5_ranker_miss.rows',

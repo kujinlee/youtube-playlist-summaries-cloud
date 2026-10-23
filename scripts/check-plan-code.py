@@ -1354,7 +1354,14 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-21 r6: 27 -> 28. The OUTPUT pin — r6 edited three unpinned body
     # literals and the suite stayed 111/111 while the reader was told the opposite.
     "scripts/check-review-decision.py": 28,
-    "scripts/check-decision-scheme.py": 86,
+    # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
+    # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
+    # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
+    # the collapse trigger's prospective filter, both in the deleted `t3_routes_collapsed` — and
+    # THREE re-pointed (t2's last-BET read, the summary line's acknowledgment clause, and its
+    # retroactive count), so they do not move this number. TWENTY-TWO added on `lost_bets`,
+    # t3/t10 and their wiring, the acknowledgment's validation, and the readers taught to skip it.
+    "scripts/check-decision-scheme.py": 106,
     "scripts/check-goal-status.py": 7,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5647,7 +5654,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1842)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1862)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

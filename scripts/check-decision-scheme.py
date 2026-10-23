@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 216 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 241 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -47,8 +47,28 @@ WHY THIS FILE EXISTS RATHER THAN A NOTE IN A PROCESS DOC
 The owner asked for a re-evaluation PROMISE: what can trigger re-evaluation later? A promise
 written in prose is the thing this repository has measured rotting — `review-method.md` says
 "the evidence is derivable, not remembered" and `round-header-template.md` cites that line and
-then introduces a hand-authored tally. So the promise is seven predicates with stated
-observations, and four of them FAIL rather than warn.
+then introduces a hand-authored tally. So the promise is a set of predicates with stated
+observations, some of which FAIL rather than warn — the table in `main()` is the list, and it
+is not restated here because this sentence once said "seven" and "four" and went stale twice.
+
+⟳ 2026-10-23 — TRIGGER 3 CHANGED ITS QUESTION (owner-approved). It used to ask whether >=5
+scored rows all took one ROUTE. A unit's first bet is FORCED to be `accrete`, and every scored
+row so far was a first bet, so it fired on the ladder's structure rather than on a decision.
+It now asks the question the ladder actually poses: after a LOST bet (`outcome: continued`),
+was the next route logged?
+
+    no later row on the unit                         -> FAIL  trigger 3  LOST BET NOT ESCALATED
+    later rows, but only retroactive / acknowledged  -> WARN  trigger 10 ESCALATED IN HINDSIGHT
+    a later PROSPECTIVE bet                          -> quiet
+
+A lost bet whose next route was not logged at the time cannot be repaired with a retroactive
+ROUTE row — `validate_row` refuses hindsight after a real bet, and that bound stays. What may be
+written instead is an ACKNOWLEDGMENT:
+
+    {"subject", "unit", "kind": "missed-escalation", "observed": "<what actually happened>"}
+
+It takes no route and no outcome, never enters the ladder, is excluded by `prospective()` from
+every scoring population, and is accepted only when the unit's LAST prospective bet lost.
 
 ⛔ TRIGGER 1 IS STARVATION, AND IT IS FIRST ON PURPOSE. The predecessor mechanism
 (`check-review-decision.py`) was correct and saw `rounds=0` on 81% of the subjects where it
@@ -124,6 +144,19 @@ FAILURE_OBSERVATION = {
 
 OUTCOMES = ("stopped", "continued")
 
+# ⟳ 2026-10-23: the one NON-BET row kind. It records that a lost prospective bet's next route
+# was NOT logged at the time, and what actually happened instead. It takes no route, never
+# enters the unit's ladder, is never scored, and exists because the honest alternative — a
+# retroactive ROUTE row after the bet — is refused by `validate_row`'s door-(c) bound, and that
+# bound must not be loosened (a backfilled ladder after a real bet is irreversible).
+ACKNOWLEDGMENT = "missed-escalation"
+
+# Fields that make a row a BET. An acknowledgment carrying any of them would be read by some
+# trigger as a route, an outcome or a prediction, so `validate_acknowledgment` refuses them all.
+# `retroactive` is among them: an acknowledgment is hindsight BY KIND, and `false` would be a lie.
+BET_FIELDS = ("route", "outcome", "skipped", "why_skipped", "ranker_hit", "routes_tried",
+              "rounds_at_termination", "prediction", "retroactive")
+
 
 # ------------------------------------------------------------------ pure: the ladder
 def route_next(tried: list[str]) -> str | None:
@@ -164,6 +197,11 @@ def route_sequence_error(tried: list[str]) -> str | None:
     return None
 
 
+def is_acknowledgment(row: object) -> bool:
+    """PURE. Is this a `missed-escalation` row — a record, not a bet? One rule, one place."""
+    return isinstance(row, dict) and row.get("kind") == ACKNOWLEDGMENT
+
+
 def prospective(rows: list[dict]) -> list[dict]:
     """PURE. The rows that are scoreable BETS — the retroactive ones removed.
 
@@ -186,6 +224,10 @@ def prospective(rows: list[dict]) -> list[dict]:
     # — the class the fold had just fixed one function away — and the dict guard and the
     # retroactive filter are separate choices: on one line only one of them could be guarded.
     dicts = [r for r in rows if isinstance(r, dict)]
+    # ⟳ 2026-10-23: an ACKNOWLEDGMENT is not a bet either — it has no route and no outcome, and
+    # as a "prospective" row it would read as an escalation placed in time (trigger 3) and as
+    # timely use of its subject (trigger 8). A third decision, so a third line.
+    dicts = [r for r in dicts if not is_acknowledgment(r)]
     return [r for r in dicts if not r.get("retroactive")]
 
 
@@ -292,7 +334,11 @@ def t2_non_termination(rows: list[dict]) -> str | None:
         # to rather than being retired with the expression it named.
         if not exhausted:
             continue
-        if unit_rows[-1].get("outcome") == "continued":
+        # ⟳ 2026-10-23: the LAST BET, not the last row. An acknowledgment may follow a lost
+        # bet — including a lost DEFER — and as the last row its absent outcome would switch
+        # the primary falsifier off on exactly the unit it describes.
+        bets = [r for r in unit_rows if not is_acknowledgment(r)]
+        if bets and bets[-1].get("outcome") == "continued":
             bad.append(key)
     if not bad:
         return None
@@ -301,26 +347,81 @@ def t2_non_termination(rows: list[dict]) -> str | None:
             f"the claim that escalation terminates is refuted, not delayed")
 
 
-def t3_routes_collapsed(rows: list[dict]) -> str | None:
-    """FAIL. >=5 scored rows all taking one route: a conveyor, not a decision.
+def lost_bets(rows: list[dict]) -> list[tuple[tuple, str]]:
+    """PURE. Every LOST prospective bet, as ((subject, unit), what followed it on that unit).
 
-    ⚠ r1 Claude B3 noted this was defeated by a single second unit on another route. That shape
-    is now INEXPRESSIBLE rather than guarded: `validate_row` derives each unit's history and
-    refuses any row whose route is not `route_next(derived)`, so a unit cannot repeat a route at
-    all. What remains here is the GLOBAL question — many units, every one taking the same route —
-    which is a different claim and still worth asking.
+    A bet is LOST when its `outcome` is `continued` — the route's FAILURE_OBSERVATION was seen,
+    so the ladder says escalate. What followed is one of:
+
+        "unlogged"   no later row on the unit at all — the next route was never recorded
+        "hindsight"  later rows exist and NONE is a prospective bet — the escalation was recorded
+                     only after the fact (a retroactive row, or an ACKNOWLEDGMENT row)
+
+    and a lost bet followed by a later PROSPECTIVE bet is not returned: it escalated in time.
+
+    ⛔ "SAME UNIT" AND "LATER" ARE `group_by_unit`'s, NOT A SECOND DERIVATION. The unit is
+    `unit_key` and "later" is file order inside that unit's group — the append-only order
+    `validate_row` already derives each unit's history from via `main()`'s `seen`. "Is this row a
+    bet" is `prospective()` asked of one row, so an acknowledgment or a retroactive row can never
+    be mistaken for an escalation placed in time.
     """
-    # ⛔ PROSPECTIVE ONLY (r7 Codex H1). Measured: five collapsed ACCRETE rows fired this
-    # trigger, and appending the two RETROACTIVE rows — whose routes are redesign and defer —
-    # turned it QUIET. The collapse was untouched; history supplied the apparent discrimination.
-    scored = [r for r in prospective(rows) if r.get("outcome") in OUTCOMES]
-    if len(scored) < 5:
+    out = []
+    for key, unit_rows in group_by_unit(rows).items():
+        for i, r in enumerate(unit_rows):
+            # ⚠ TWO DECISIONS, TWO LINES: which rows are BETS, and which bets LOST.
+            if not prospective([r]):
+                continue
+            if r.get("outcome") != "continued":
+                continue
+            later = unit_rows[i + 1:]
+            if prospective(later):
+                continue                 # a real next bet was placed — escalated in time
+            out.append((key, "hindsight" if later else "unlogged"))
+    return out
+
+
+def t3_lost_bet_not_escalated(rows: list[dict]) -> str | None:
+    """FAIL. A prospective bet LOST and no next route was ever logged for its unit.
+
+    ⟳ 2026-10-23, REPLACING `t3_routes_collapsed` (owner-approved). The old trigger failed when
+    >=5 scored prospective rows all took one route — but a unit's FIRST bet is FORCED to be
+    `accrete` by the ladder, and the only scored rows were first bets. MEASURED on a merge of two
+    logs: 5 scored prospective rows, all accrete, and the trigger fired on the ladder's STRUCTURE,
+    not on a decision. Under a forced first rung route diversity cannot discriminate, so it is
+    not asked at all any more.
+
+    ⭐ THE DECISION THIS SCHEME ACTUALLY MAKES IS WHAT HAPPENS AFTER A LOST BET: the next route is
+    logged, or work silently keeps accreting under folds — the conveyor the old trigger was
+    named for, now asked of the place it can occur.
+
+    ⚠ AN IN-FLIGHT WINDOW EXISTS, stated rather than hidden. `outcome` is filled into a row when
+    its round's result arrives, and the NEXT bet is written before the next round is dispatched
+    — so between those two writes this fires. That is the intended pressure (the next bet must
+    be logged before the next round runs), and a commit that lands in the window is red.
+    """
+    unlogged = [k for k, how in lost_bets(rows) if how == "unlogged"]
+    if not unlogged:
         return None
-    routes = {r.get("route") for r in scored}
-    if len(routes) > 1:
+    names = ", ".join(f"{a}/{b}" for a, b in unlogged[:4])
+    return (f"{len(unlogged)} lost bet(s) with no next route logged ({names}) — the bet's "
+            f"failure was observed and the ladder's escalation never recorded, so the work kept "
+            f"going on a route the log says failed")
+
+
+def t10_escalated_in_hindsight(rows: list[dict]) -> str | None:
+    """WARN. A prospective bet LOST and its unit's next step was recorded only in hindsight.
+
+    The FAIL/WARN split of trigger 3, in this file's existing style (t4/t9): one producer,
+    `lost_bets`, two readers that cannot disagree about which bets lost. A retroactive row or a
+    `missed-escalation` acknowledgment after the lost bet RECORDS what happened, which is why
+    this is not a FAIL — but it is not a decision made in time, which is why it is not quiet.
+    """
+    late = [k for k, how in lost_bets(rows) if how == "hindsight"]
+    if not late:
         return None
-    return (f"all {len(scored)} scored rows took route {routes.pop()!r} — the routes are not "
-            f"discriminating, so this is a conveyor wearing a decision's clothes")
+    names = ", ".join(f"{a}/{b}" for a, b in late[:4])
+    return (f"{len(late)} lost bet(s) escalated only in HINDSIGHT ({names}) — the next step was "
+            f"recorded after the fact, not bet on before the next round")
 
 
 def termination_window(rows: list[dict], size: int = 5) -> list[tuple]:
@@ -642,6 +743,13 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
     """
     if not isinstance(row, dict):
         return f"a row is {type(row).__name__}, not an object"
+    # ⟳ 2026-10-23: a row with a `kind` is not a bet, and the bet rules below would refuse it
+    # for having no route. Only one kind exists; an unknown one is named, not guessed at.
+    if "kind" in row:
+        if row["kind"] != ACKNOWLEDGMENT:
+            return (f"kind {row['kind']!r} is not a known row kind — the only one is "
+                    f"{ACKNOWLEDGMENT!r}; a bet row carries no kind at all")
+        return validate_acknowledgment(row, prior)
     for key in ("subject", "unit", "route"):
         if key not in row:
             return f"missing {key!r}"
@@ -752,11 +860,48 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
     return None
 
 
+def validate_acknowledgment(row: dict, prior: list[dict] | None = None) -> str | None:
+    """PURE. Why a `missed-escalation` row is unusable, else None. `prior` is this unit's rows.
+
+    ⛔ IT MAY ONLY ACKNOWLEDGE A LOSS THAT HAPPENED. Accepted only when the unit's LAST
+    prospective bet has outcome `continued` — after a won bet, an in-flight one, or a unit with
+    no real bet at all, "the escalation was missed" is not a fact, and the row would silence
+    trigger 3's FAIL with a false record. This is the whole reason it is not free text.
+
+    ⛔ AND IT MUST SAY WHAT HAPPENED. `observed` is required with alphanumeric content — the
+    same bar `why_skipped` meets — because the record IS the deliverable: a bare acknowledgment
+    turns a FAIL into a WARN and tells the next reader nothing.
+    """
+    for key in ("subject", "unit"):
+        if key not in row:
+            return f"missing {key!r}"
+    carried = [k for k in BET_FIELDS if k in row]
+    if carried:
+        return (f"a {ACKNOWLEDGMENT!r} row is not a bet and may not carry {carried} — it takes "
+                f"no route, has no outcome, and is never scored")
+    obs = row.get("observed")
+    if not isinstance(obs, str) or not any(ch.isalnum() for ch in obs):
+        return (f"observed is {obs!r} — a {ACKNOWLEDGMENT!r} row must say what actually "
+                f"happened after the lost bet, in words")
+    if prior is None:
+        return None
+    bets = prospective(prior)
+    if not bets:
+        return (f"{unit_key(row)} has no prospective bet to acknowledge — a missed escalation "
+                f"is only possible after a real bet was placed and lost")
+    if bets[-1].get("outcome") != "continued":
+        return (f"the last prospective bet on {unit_key(row)} has outcome "
+                f"{bets[-1].get('outcome')!r}, not 'continued' — there is no lost bet whose "
+                f"escalation could have been missed")
+    return None
+
+
 def group_by_unit(rows: list[dict]) -> dict[tuple, list[dict]]:
     """PURE. (subject, unit) -> its rows in file order.
 
-    ⛔ r1 Claude B3: NO trigger grouped rows this way, so `t3_routes_collapsed` was defeated by
-    a single second unit on another route and a per-unit conveyor was invisible.
+    ⛔ r1 Claude B3: NO trigger grouped rows this way, so the old route-collapse trigger was
+    defeated by a single second unit on another route and a per-unit conveyor was invisible.
+    ⟳ 2026-10-23: that trigger is gone; `lost_bets` reads this grouping for trigger 3 now.
     """
     out: dict[tuple, list[dict]] = {}
     for r in rows:
@@ -1152,7 +1297,7 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
     for name, result in (
         ("1 NOT FED", t1_not_fed(rows, starved_subjects)),
         ("2 NON-TERMINATION", t2_non_termination(rows)),
-        ("3 ROUTES COLLAPSED", t3_routes_collapsed(rows)),
+        ("3 LOST BET NOT ESCALATED", t3_lost_bet_not_escalated(rows)),
         ("4 NO IMPROVEMENT", t4_no_improvement(rows, pinned_rounds["median"])),
         ("5 RANKER MISS", t5_ranker_miss(rows)),
     ):
@@ -1164,6 +1309,7 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         ("7 SAMPLE REACHED", t7_sample_reached(rows)),
         ("8 HINDSIGHT ONLY", t8_hindsight_only(rows, starved_subjects)),
         ("9 DEFERRAL COMPOSED", t9_deferral_composed(rows, pinned_rounds["median"])),
+        ("10 ESCALATED IN HINDSIGHT", t10_escalated_in_hindsight(rows)),
     ):
         if result:
             warns.append((name, result))
@@ -1175,9 +1321,13 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
     # interpret `all triggers quiet` at all.
     scored = [r for r in rows if r.get("outcome") in OUTCOMES]
     scoreable = [r for r in prospective(rows) if r.get("outcome") in OUTCOMES]
-    retro = len(rows) - len(prospective(rows))
+    # ⟳ 2026-10-23: an acknowledgment is neither a bet nor retroactive, so it is counted apart —
+    # folded into `retro` it would overstate how much of the log is hindsight BETS.
+    acks = sum(1 for r in rows if is_acknowledgment(r))
+    retro = len(rows) - len(prospective(rows)) - acks
+    ack_note = f", {acks} missed-escalation acknowledgment(s)" if acks else ""
     print(f"decision-scheme: {len(rows)} row(s), {len(scored)} scored "
-          f"({retro} retroactive, so {len(scoreable)} scoreable); "
+          f"({retro} retroactive, so {len(scoreable)} scoreable{ack_note}); "
           f"pinned median {pinned_rounds.get('median')} vs now {now.get('median')}")
     for name, why in warns:
         print(f"  WARN  trigger {name}: {why}")
@@ -1546,16 +1696,79 @@ def _self_test() -> int:
          t2_non_termination([_u("u", r, "continued") for r in LADDER[:2]]
                             + [_u("v", r, "continued") for r in LADDER[:2]]), None)
 
-    # ── trigger 3: a conveyor wearing a decision's clothes ───────────────────────────────────
-    _one = [{"route": "accrete", "outcome": "stopped"}] * 5
-    case("five scored rows on one route is a collapse",
-         "not discriminating" in (t3_routes_collapsed(_one) or ""), True)
-    case("four is below the floor — the trigger states its own sample size",
-         t3_routes_collapsed(_one[:4]), None)
-    case("five rows across TWO routes discriminate",
-         t3_routes_collapsed(_one[:4] + [{"route": "redesign", "outcome": "stopped"}]), None)
-    case("UNSCORED rows do not count toward the floor",
-         t3_routes_collapsed([{"route": "accrete", "outcome": None}] * 9), None)
+    # ── trigger 3: a LOST bet whose next route was never logged ──────────────────────────────
+    # ⟳ 2026-10-23: replaces the route-collapse cases, whose subject is deleted. Each branch is
+    # driven by TWO DISTINCT inputs — a different unit, and a different rung of the ladder — so
+    # no branch is satisfied by one fixture's constant.
+    def _b(sub, unit, route, outcome=None, **kw):
+        r = {"subject": sub, "unit": unit, "route": route, "outcome": outcome, **kw}
+        if outcome == "stopped":
+            r.setdefault("rounds_at_termination", 2)
+        return r
+
+    def _ack(sub, unit, observed="r3 kept accreting under folds and r4 converged"):
+        return {"subject": sub, "unit": unit, "kind": ACKNOWLEDGMENT, "observed": observed}
+    # ⛔ EVERY CALL GOES THROUGH `_try`, like trigger 2's cases: a mutation that makes a trigger
+    # RAISE must redden the case it hits, not kill the suite before the cases after it run —
+    # measured, an unwrapped call here took every later case down under a grouping mutation.
+    _fail1 = [_b("s", "u", "accrete", "continued")]
+    _fail2 = [_b("t", "v", "accrete", "continued"), _b("t", "v", "redesign", "continued")]
+    _warn1 = [_b("s", "u", "accrete", "continued"), _ack("s", "u")]
+    _warn2 = [_b("t", "v", "accrete", "continued"), _b("t", "v", "redesign", retroactive=True)]
+    _quiet1 = [_b("s", "u", "accrete", "continued"), _b("s", "u", "redesign")]
+    _quiet2 = [_b("t", "v", "accrete", "continued"), _b("t", "v", "redesign", "continued"),
+               _b("t", "v", "split", "stopped")]
+    _forced = [_b(f"p{i}", "u", "accrete", "stopped") for i in range(5)]
+    _retro_lost = [_b("s", "u", "accrete", "continued", retroactive=True)]
+    case("⭐ a lost FIRST bet with no later row FAILS, naming its unit",
+         _try(lambda: t3_lost_bet_not_escalated(_fail1)),
+         "1 lost bet(s) with no next route logged (s/u) — the bet's failure was observed and "
+         "the ladder's escalation never recorded, so the work kept going on a route the log "
+         "says failed")
+    case("...and so does a lost SECOND bet, while the first — escalated in time — stays quiet",
+         _try(lambda: t3_lost_bet_not_escalated(_fail2)),
+         "1 lost bet(s) with no next route logged (t/v) — the bet's failure was observed and "
+         "the ladder's escalation never recorded, so the work kept going on a route the log "
+         "says failed")
+    case("⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL",
+         (_try(lambda: t3_lost_bet_not_escalated(_warn1)),
+          _try(lambda: t10_escalated_in_hindsight(_warn1))),
+         (None, "1 lost bet(s) escalated only in HINDSIGHT (s/u) — the next step was recorded "
+                "after the fact, not bet on before the next round"))
+    case("...and so does one followed only by a RETROACTIVE route row, on another unit",
+         (_try(lambda: t3_lost_bet_not_escalated(_warn2)),
+          "(t/v)" in (_try(lambda: t10_escalated_in_hindsight(_warn2)) or "")),
+         (None, True))
+    case("⭐ a lost bet followed by a PROSPECTIVE next bet is quiet on BOTH halves",
+         (_try(lambda: t3_lost_bet_not_escalated(_quiet1)),
+          _try(lambda: t10_escalated_in_hindsight(_quiet1))), (None, None))
+    case("...and so is a two-rung escalation that ends in a won split",
+         (_try(lambda: t3_lost_bet_not_escalated(_quiet2)),
+          _try(lambda: t10_escalated_in_hindsight(_quiet2))), (None, None))
+    # ⛔⛔ THE STRUCTURAL FALSE ALARM THIS TRIGGER REPLACES. Five first-rung accrete rows that all
+    # WON are the ladder's forced shape, not a conveyor — the old trigger failed on exactly this.
+    case("⭐ five first-rung accrete bets that all STOPPED are quiet — the forced rung is not a conveyor",
+         (_try(lambda: t3_lost_bet_not_escalated(_forced)),
+          _try(lambda: t10_escalated_in_hindsight(_forced))), (None, None))
+    case("an IN-FLIGHT bet (no outcome yet) is not a lost bet",
+         _try(lambda: t3_lost_bet_not_escalated([_b("s", "u", "accrete")])), None)
+    case("a RETROACTIVE lost bet is not a bet, so nothing is owed after it",
+         (_try(lambda: t3_lost_bet_not_escalated(_retro_lost)),
+          _try(lambda: t10_escalated_in_hindsight(_retro_lost))), (None, None))
+    case("lost_bets reads each UNIT apart — a next bet on another unit does not escalate this one",
+         _try(lambda: lost_bets([_b("s", "u", "accrete", "continued"),
+                                 _b("s", "w", "accrete")])),
+         [(("s", "u"), "unlogged")])
+    case("...and classifies a hindsight-only follow-up as hindsight, keyed by its own unit",
+         _try(lambda: lost_bets(_warn2)), [(("t", "v"), "hindsight")])
+    # ⛔ THE LAST BET, NOT THE LAST ROW: an acknowledgment of a lost DEFER must not hide it.
+    case("⭐ an exhausted unit whose last bet lost STILL refutes the design after an acknowledgment",
+         "refuted" in (_try(lambda: t2_non_termination(
+             [_u("u", r, "continued") for r in LADDER] + [_ack("s", "u")])) or ""), True)
+    case("...and so does a skipped-to-defer unit, acknowledged in different words",
+         "refuted" in (_try(lambda: t2_non_termination(
+             [_u("w", "defer", "continued", skipped=["accrete", "redesign", "split"],
+                 why_skipped="x"), _ack("s", "w", "filed, never repaired")])) or ""), True)
 
     # ── trigger 4: no better than doing nothing, per SUBJECT (r1 Codex M6) ───────────────────
     def _done(subject, n):
@@ -1860,18 +2073,9 @@ def _self_test() -> int:
     case("...and an explicit retroactive: false is prospective, like an absent flag",
          len(prospective([{"subject": "a", "retroactive": False}, {"subject": "b"}])), 2)
 
-    _collapsed = [{"subject": f"c{i}", "unit": "u", "route": "accrete", "outcome": "continued"}
-                  for i in range(5)]
-    case("⭐ t3 cannot be bought off by a retroactive row on another route",
-         "not discriminating" in (t3_routes_collapsed(
-             _collapsed + [{**_retro, "route": "defer", "outcome": "stopped",
-                            "rounds_at_termination": 2}]) or ""), True)
-    # ⚠ ADJACENT: the SAME row, prospective. The fix must exclude retroactive rows, NOT ignore
-    # every late row — a real second route is the discrimination t3 exists to find.
-    case("...while a PROSPECTIVE row on another route does quiet it, which is the real signal",
-         t3_routes_collapsed(_collapsed + [{"subject": "p", "unit": "u", "route": "redesign",
-                                            "outcome": "stopped",
-                                            "rounds_at_termination": 2}]), None)
+    # ⟳ 2026-10-23: the two route-collapse provenance cases left with their trigger. The same
+    # property — a retroactive row cannot stand in for a bet — is now asked of trigger 3 by
+    # "a lost bet followed only by a RETROACTIVE route row" (WARN, never quiet).
 
     _t4base = [{"subject": f"x{i}", "unit": "u", "route": "accrete", "outcome": "stopped",
                 "rounds_at_termination": r} for i, r in enumerate([4, 4, 4, 1, 1])]
@@ -2029,6 +2233,60 @@ def _self_test() -> int:
                         "retroactive": True}]), None)
     case("...and a PROSPECTIVE row after a prospective bet is untouched by the rule",
          validate_row({"subject": "s", "unit": "u", "route": "redesign"}, _live_first), None)
+
+    # ── the ACKNOWLEDGMENT row: a record of a missed escalation, never a bet ─────────────────
+    # ⟳ 2026-10-23. The retroactive route row after a real bet stays REFUSED (door (c) above);
+    # this is the row that may be written instead, and every one of its gates gets two inputs.
+    case("⭐ an acknowledgment after a LOST first bet is accepted",
+         validate_row(_ack("s", "u"), [_b("s", "u", "accrete", "continued")]), None)
+    case("...and after a lost SECOND bet on another unit, with a different account of it",
+         validate_row(_ack("t", "v", "two more folds, no restructuring"),
+                      [_b("t", "v", "accrete", "continued"),
+                       _b("t", "v", "redesign", "continued")]), None)
+    case("⭐ an acknowledgment after a WON bet is refused — nothing was missed",
+         "has outcome 'stopped', not 'continued'" in (validate_row(
+             _ack("s", "u"), [_b("s", "u", "accrete", "stopped")]) or ""), True)
+    case("...and after an IN-FLIGHT bet, the last bet on the unit being the one that counts",
+         "has outcome None, not 'continued'" in (validate_row(
+             _ack("t", "v"), [_b("t", "v", "accrete", "continued"),
+                              _b("t", "v", "redesign")]) or ""), True)
+    case("an acknowledgment on a unit with NO prospective bet is refused",
+         "has no prospective bet to acknowledge" in (_try(lambda: validate_row(
+             _ack("s", "u"), [_b("s", "u", "accrete", "continued", retroactive=True)])) or ""),
+         True)
+    case("...including a unit with no rows at all",
+         "has no prospective bet to acknowledge" in (_try(lambda: validate_row(
+             _ack("t", "v"), [])) or ""),
+         True)
+    case("⭐ an acknowledgment WITHOUT an account of what happened is refused",
+         "must say what actually happened" in (validate_row(
+             {"subject": "s", "unit": "u", "kind": ACKNOWLEDGMENT},
+             [_b("s", "u", "accrete", "continued")]) or ""), True)
+    case("...and so is one whose account has no words in it",
+         "must say what actually happened" in (validate_row(
+             _ack("t", "v", " !!! "), [_b("t", "v", "accrete", "continued")]) or ""), True)
+    case("an acknowledgment carrying a ROUTE is refused — it would enter the ladder",
+         "may not carry ['route']" in (validate_row(
+             {**_ack("s", "u"), "route": "redesign"}, [_b("s", "u", "accrete", "continued")])
+             or ""), True)
+    case("...and one flagged retroactive is refused too — it is hindsight BY KIND",
+         "may not carry ['retroactive']" in (validate_row(
+             {**_ack("t", "v"), "retroactive": True}, None) or ""), True)
+    case("an unknown row kind is NAMED, not read as a bet or an acknowledgment",
+         "kind 'note' is not a known row kind" in (validate_row(
+             {"subject": "s", "unit": "u", "kind": "note", "observed": "x"}) or ""), True)
+    case("...and an EMPTY kind is unknown too, not an absent one",
+         "kind '' is not a known row kind" in (validate_row(
+             {"subject": "s", "unit": "u", "route": "accrete", "kind": ""}) or ""), True)
+    case("an acknowledgment still needs its unit",
+         validate_row({"subject": "s", "kind": ACKNOWLEDGMENT, "observed": "x"}),
+         "missing 'unit'")
+    case("prospective() drops an acknowledgment — it is not a bet placed in time",
+         [r.get("route") for r in prospective([_b("s", "u", "accrete", "continued"),
+                                                _ack("s", "u")])], ["accrete"])
+    case("a BET after an acknowledgment is still validated against the ladder, unmoved by it",
+         validate_row(_b("s", "u", "redesign"),
+                      [_b("s", "u", "accrete", "continued"), _ack("s", "u")]), None)
     # ⚠ r7 Claude L11: the fold re-introduced, in the function it ADDED, the class it had just
     # fixed one function away — `prospective([None])` raised AttributeError.
     case("prospective() NAMES nothing and raises nothing on a non-dict row",
@@ -2252,7 +2510,10 @@ def _self_test() -> int:
         _bp_prov.write_text(_json.dumps(_ARMED))
         _lp_prov = Path(_wd) / "prov-log.jsonl"
         _lp_prov.write_text("".join(_json.dumps(r) + "\n" for r in [
-            {"subject": "live", "unit": "u", "route": "accrete", "outcome": "continued"},
+            # ⟳ 2026-10-23: `stopped`, not `continued` — a lone lost bet now FAILS trigger 3,
+            # and this case is about the summary line of a QUIET run.
+            {"subject": "live", "unit": "u", "route": "accrete", "outcome": "stopped",
+             "rounds_at_termination": 3},
             {"subject": "hist", "unit": "u", "route": "accrete", "outcome": "stopped",
              "rounds_at_termination": 2, "retroactive": True}]))
         _buf = io.StringIO()
@@ -2363,6 +2624,35 @@ def _self_test() -> int:
         case("⭐ trigger 9's verdict REACHES the CLI too, naming how many were deferrals",
              (_rc, "WARN  trigger 9 DEFERRAL COMPOSED" in _o,
               "at most 3 of 5 repairs" in _o), (0, True, True))
+        # ⛔ TRIGGER 3 AND ITS WARN HALF, WIRE-TESTED — the same lesson as trigger 8 and 9 above:
+        # a pure-function case proves the rule computes, never that its verdict REACHES a reader.
+        def _run_log(tag, log_rows):
+            _bp = Path(_wd) / f"{tag}-baseline.json"
+            _bp.write_text(_json.dumps(_ARMED))
+            _lp = Path(_wd) / f"{tag}-log.jsonl"
+            _lp.write_text("".join(_json.dumps(r) + "\n" for r in log_rows))
+            _b2 = io.StringIO()
+            with contextlib.redirect_stdout(_b2):
+                _r = main([], baseline_path=_bp, log_path=_lp,
+                          corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                          starved=lambda since, **_: ([], None))
+            return _r, _b2.getvalue()
+        _rc, _o = _run_log("lost", [_b("lost", "u", "accrete", "continued")])
+        case("⭐ trigger 3's verdict REACHES the CLI as a FAIL and fails the run",
+             (_rc, "FAIL  trigger 3 LOST BET NOT ESCALATED" in _o, "(lost/u)" in _o),
+             (1, True, True))
+        _rc, _o = _run_log("acked", [_b("acked", "u", "accrete", "continued"),
+                                     _ack("acked", "u")])
+        case("⭐ an acknowledged lost bet reaches the CLI as trigger 10's WARN and exits 0",
+             (_rc, "WARN  trigger 10 ESCALATED IN HINDSIGHT" in _o, "FAIL" in _o,
+              _o.splitlines()[0]),
+             (0, True, False, "decision-scheme: 2 row(s), 1 scored (0 retroactive, so 1 "
+                              "scoreable, 1 missed-escalation acknowledgment(s)); pinned "
+                              "median 4 vs now 4"))
+        _rc, _o = _run_log("badack", [_b("badack", "u", "accrete", "stopped"),
+                                      _ack("badack", "u")])
+        case("main() refuses an acknowledgment of a bet that WON — CANNOT RUN, naming the row",
+             (_rc, "row 2" in _o, "not 'continued'" in _o), (2, True, True))
         _bp_starved = Path(_wd) / "starved-baseline.json"
         _bp_starved.write_text(_json.dumps({"rounds_to_termination": {"median": 9}, "armed_at": "2026-01-01T00:00:00Z"}))
         _lp_starved = Path(_wd) / "starved-log.jsonl"
