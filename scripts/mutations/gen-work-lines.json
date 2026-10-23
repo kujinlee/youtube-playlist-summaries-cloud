@@ -208,19 +208,6 @@
     ]
   },
   {
-    "name": "plan_dirs no longer skips a MISSING checkout with a note",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        if not t.is_dir():\n            notes.append(",
-        "        if False:\n            notes.append("
-      ]
-    ],
-    "expect": [
-      "WT5 a checkout whose directory is MISSING is skipped and NAMED, never fatal"
-    ]
-  },
-  {
     "name": "plan_dirs falls back to this checkout SILENTLY when git cannot answer",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -256,33 +243,7 @@
       ]
     ],
     "expect": [
-      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH copies of a slug held twice, never merging them"
-    ]
-  },
-  {
-    "name": "read_plans no longer labels a slug held in two checkouts, so the copies collide",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "    if not dup:\n        return [r for _, r in found], notes",
-        "    if True:\n        return [r for _, r in found], notes"
-      ]
-    ],
-    "expect": [
-      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH copies of a slug held twice, never merging them"
-    ]
-  },
-  {
-    "name": "read_plans re-points a duplicated parent at the FIRST copy, not the child's own checkout's",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "            r[\"parent\"] = by_place.get((par, str(checkout)), first[par])",
-        "            r[\"parent\"] = first[par]"
-      ]
-    ],
-    "expect": [
-      "WT3 a child's parent points at the copy in ITS OWN checkout"
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
     ]
   },
   {
@@ -295,7 +256,114 @@
       ]
     ],
     "expect": [
-      "WT6 ...and the PAGE says so, rather than silently covering less"
+      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — and the PAGE says so"
+    ]
+  },
+  {
+    "name": "plan_dirs NOTES a checkout whose folder is gone again, hedging every warning",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            continue            # gone, so it holds no plans",
+        "            notes.append(f\"the checkout {t} is missing, so its plans were not read\"); continue  # gone"
+      ]
+    ],
+    "expect": [
+      "WT5 a registered checkout whose folder is GONE is skipped with NO note — it holds no plans to miss (r3 Claude F2)",
+      "WT6c ...and the page carries no 'not read' warning for it"
+    ]
+  },
+  {
+    "name": "read_plans no longer labels DIFFERING copies of a slug, so they collide",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            if len(gs) > 1:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
+    ]
+  },
+  {
+    "name": "row_for ignores the asking checkout and always takes the first copy",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        if want in r.get(\"checkouts\", ()):\n            return r[\"slug\"]",
+        "        if False:\n            return r[\"slug\"]"
+      ]
+    ],
+    "expect": [
+      "WT3 a child's parent points at the copy in ITS OWN checkout",
+      "WT4d row_for resolves a duplicated slug in the asking checkout, else main"
+    ]
+  },
+  {
+    "name": "byte-identical copies are no longer collapsed, so one plan counts as two lines",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            if g[1][\"sha\"] == r[\"sha\"]:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "WT4b BYTE-IDENTICAL copies are ONE row, holding both checkouts (r3 Claude F4)",
+      "WT4c ...so the identical pair is counted as ONE line, the differing pair as two"
+    ]
+  },
+  {
+    "name": "labels use the checkout's absolute path instead of a short name",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "                  else pathlib.Path(c).name for c, _, _ in gs]",
+        "                  else str(c) for c, _, _ in gs]"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
+    ]
+  },
+  {
+    "name": "a plan directory git does not list is labelled by its `.claude` folder, not its checkout",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        found = [(d.parent.parent, r) for r in _read_dir(d)] + found",
+        "        found = [(d.parent, r) for r in _read_dir(d)] + found"
+      ]
+    ],
+    "expect": [
+      "WT8 a plan directory git does not list is read under ITS checkout's name, not `.claude` (r3 Claude F6)"
+    ]
+  },
+  {
+    "name": "another checkout whose plans cannot be read is dropped SILENTLY",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            notes.append(f\"the plans in {pd} could not be read ({exc}), so they are not shown\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — and the PAGE says so"
+    ]
+  },
+  {
+    "name": "plan_dirs inherits GIT_* again, so a hook's GIT_DIR redirects it to another repository",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "env={k: v for k, v in os.environ.items() if not k.startswith(\"GIT_\")})",
+        "env=None)"
+      ]
+    ],
+    "expect": [
+      "WT9 an inherited GIT_DIR (a hook context) does not redirect plan_dirs — `root` decides"
     ]
   }
 ]

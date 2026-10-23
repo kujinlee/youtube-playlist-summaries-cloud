@@ -860,7 +860,13 @@ EXPECTED_MUTATIONS = {
     # its replacement entry asserts the opposite: re-introducing the suppression is killed. Eleven
     # are new: precedence (explicit > `plan` > leading, conflicts unreadable), the `also=` field and
     # its wiring, the every-checkout union, its notes and its CANNOT RUN. Net -6 +16 = +10.
-    "scripts/check-banner-armed.py": 87,
+    # ⟳ r3 fold, 87 -> 91. Four entries lost their anchors and were RE-ANCHORED to the same
+    # property in the new code (`SWITCHED to plan`, the dropped known set, the r1 suppression —
+    # now expressed at the log step, since the thread check runs BEFORE decide() — and the
+    # leading-slug arrow). Four are new: an arrow in prose is not a destination (r3 F7, two
+    # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
+    # the warning (F6). Net +4.
+    "scripts/check-banner-armed.py": 91,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -949,7 +955,13 @@ EXPECTED_MUTATIONS = {
     # git's order kept, a missing checkout named, the git fallback named, the union itself,
     # duplicate slugs labelled, a duplicated parent re-pointed at the child's own checkout, and
     # the page showing its notes — every `expect` read from a real `git worktree add` run.
-    "scripts/gen-work-lines.py": 23,
+    # ⟳ r3 fold, 23 -> 28. The missing-checkout entry is RETIRED WITH ITS SUBJECT — the rule
+    # inverted (r3 F2: a gone folder is skipped SILENTLY), and a new entry re-adds the note and is
+    # killed. Two were RE-ANCHORED (differing copies labelled; the parent resolver, now `row_for`).
+    # Six are new: byte-identical copies collapse (F4), short labels, the not-listed directory's
+    # label (F6), another checkout's unreadable plans named (F6), and inherited GIT_* dropped.
+    # Net -1 +6 = +5.
+    "scripts/gen-work-lines.py": 28,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1689,7 +1701,10 @@ EXPECTED_MUTATIONS = {
     # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
     # the full CommonMark escape set, and --finish never querying the branch.
-    "scripts/begin-plan.py": 56,
+    # ⟳ 2026-10-22, banner-thread-armed r3 fold, 56 -> 57: the banner `Line:` resolves a slug
+    # held in two checkouts through `gen-work-lines.row_for` (r3 Claude F5); the new entry puts the
+    # bare-stem lookup back and is killed by the two-checkout case.
+    "scripts/begin-plan.py": 57,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5621,7 +5636,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1829)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1839)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

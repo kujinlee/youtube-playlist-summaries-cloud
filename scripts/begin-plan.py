@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 120 cases
+    scripts/begin-plan.py --self-test  # 121 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -316,15 +316,15 @@ def work_line(slug: str, plans: list[dict]) -> str:
     where the reader actually is. Built from the plan files' own parent markers.
 
     ⛔ IT NEVER INVENTS A CHAIN. Three ways a walk can stop short, and each is SAID in the line:
-    the plan is not in `.claude/plans/` (no record at all), a plan on the chain records no
+    the plan is not in any checkout's `.claude/plans/` (no record at all), a plan on the chain records no
     parent (written before the field, or the parent could not be decided), or a recorded parent
     no longer exists. A cycle (only reachable by hand-editing) is cut and named, never looped.
     `plans` are `gen-work-lines.parse_plan` records, so "started a line" is ITS reading of `-`.
     """
     by = {p["slug"]: p for p in plans}
     if slug not in by:
-        return ("> **Line:** _(this plan is not in .claude/plans/, so no line is recorded for "
-                "it)_")
+        return ("> **Line:** _(this plan is not in any checkout's .claude/plans/, so no line is "
+                "recorded for it)_")
     chain, cur, note = [slug], by[slug], ""
     while True:
         par = cur["parent"]
@@ -362,7 +362,11 @@ def _banner_line(plan_abs: Path) -> str:
         return f"> **Line:** _(the work line could not be read: {type(exc).__name__}: {exc})_"
     if plan_abs.resolve().parent != PLAN_DIR.resolve():
         return work_line("", plans)
-    return work_line(plan_abs.stem, plans)
+    # ⟳ r3 Claude F5: `read_plans` reads EVERY checkout, and a slug held in two of them is
+    # labelled `slug @ <checkout>` — so the bare stem found nothing and the banner said "not in
+    # .claude/plans/" about a file in its own directory. `row_for` is the page's own resolver
+    # (THIS checkout's copy, else main), so the banner and the page name the same row.
+    return work_line(wl.row_for(plans, plan_abs.stem, ROOT) or plan_abs.stem, plans)
 
 
 def tick(plan_text: str, index: int) -> str:
@@ -1808,7 +1812,7 @@ def _self_test() -> int:
     case("...and a hand-made cycle is cut and named, never looped",
          "leads back into this line" in work_line("x", _pl))
     case("...and a plan outside .claude/plans/ says it has no line rather than inventing one",
-         "not in .claude/plans/" in work_line("elsewhere", _pl))
+         "not in any checkout's .claude/plans/" in work_line("elsewhere", _pl))
     case("...and the root's words are TRUNCATED to the banner's width, marked with an ellipsis",
          work_line("long", _pl) == '> **Line:** "' + "w" * (SERVING_SHOWN - 1) + '…" → `long`')
     case("⛔ the root's words are ESCAPED, so Markdown in them renders literally — emphasis, a "
@@ -1830,6 +1834,32 @@ def _self_test() -> int:
     case("render_banner puts the Line row under the title and ABOVE Doing",
          -1 < _bl.find("> **Line:** `r` → `kid`") < _bl.find("> **Doing:**")
          and "**Line:**" not in render_banner(steps, 0))
+
+    # ── r3 Claude F5: a slug held in TWO checkouts, through the real `_banner_line` ─────────────
+    # A REAL `git worktree add` (pp.test_git strips the caller's GIT_* and hooks). Each copy differs,
+    # so the page labels both; each checkout's banner must name ITS OWN copy, by a short name.
+    with tempfile.TemporaryDirectory() as _tdw:
+        _m = Path(_tdw).resolve() / "main"
+        _m.mkdir()
+        _we = pp.make_test_repo(_m, "bp/main")
+        _w = Path(_tdw).resolve() / "wt-dup"
+        _we = _we or pp.test_git(_m, "worktree", "add", "-q", str(_w), "-b", "bp/wt")
+        for _co, _body in ((_m, "- [ ] main copy\n"), (_w, "- [ ] worktree copy\n- [ ] b\n")):
+            (_co / ".claude/plans").mkdir(parents=True, exist_ok=True)
+            (_co / ".claude/plans/dup.md").write_text("<!-- parent: - -->\n" + _body)
+        _saved_rp = (ROOT, PLAN_DIR)
+        _lines = {}
+        try:
+            for _co in (_w, _m):
+                ROOT, PLAN_DIR = _co, _co / ".claude/plans"
+                _lines[_co.name] = _banner_line(PLAN_DIR / "dup.md")
+        finally:
+            ROOT, PLAN_DIR = _saved_rp
+        case("F5 a slug held in two checkouts: each checkout's banner Line names ITS OWN copy, by a "
+             "SHORT checkout name — never 'not in .claude/plans/', never an absolute path",
+             _we is None
+             and _lines.get("wt-dup") == "> **Line:** _(no objective recorded)_ `dup @ wt-dup`"
+             and _lines.get("main") == "> **Line:** _(no objective recorded)_ `dup @ main`")
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

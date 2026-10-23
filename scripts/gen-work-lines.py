@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 48 cases
+    python3 scripts/gen-work-lines.py --self-test  # 55 cases
 
 WHY THIS EXISTS
 ---------------
@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import html
 import pathlib
 import os
@@ -303,16 +304,24 @@ def plan_dirs(root: pathlib.Path) -> tuple[list[tuple[pathlib.Path, pathlib.Path
     place that answers "which plan directories exist"; the page and check-banner-armed both use it.
 
     The checkouts are `git worktree list --porcelain`, in its order (the main worktree first). A
-    checkout whose DIRECTORY is missing is skipped and named in `notes`, never fatal. A checkout
-    with no `.claude/plans/` is included anyway — the caller lists it and finds nothing, which is
-    the truth. ⛔ IF GIT CANNOT ANSWER (not installed, not a repository, an error, a timeout) THE
+    checkout whose DIRECTORY is gone (git marks it `prunable`) is skipped WITHOUT a note: a deleted
+    folder has no plans left to miss, and ⟳ r3 Claude F2 measured what a note there costs — one
+    stale registration put "may be a false alarm" on EVERY warning until someone ran `git worktree
+    prune`. A checkout with no `.claude/plans/` is included anyway — the caller lists it and finds
+    nothing, which is the truth. Notes are kept for what really was not read.
+    ⚠ KNOWN LIMIT, an owner question (r3 Claude F3, not folded): `git worktree remove` deletes the
+    worktree's git-ignored `.claude/plans/` with it, so that checkout's lines LEAVE THE PAGE with no
+    note — the checkout is no longer registered, so nothing here knows it existed. ⛔ IF GIT CANNOT ANSWER (not installed, not a repository, an error, a timeout) THE
     RESULT IS THIS CHECKOUT ONLY, AND A NOTE SAYS SO — a silent fallback would make "no plan in any
     checkout" and "no other checkout was looked at" read the same.
     """
     own = (root, root / ".claude" / "plans")
     try:
+        # ⛔ Inherited GIT_* are DROPPED: a hook context can set `GIT_DIR`, which `-C` does NOT
+        # override, and then this would list some other repository's checkouts. `root` decides.
         r = subprocess.run(["git", "-C", str(root), "worktree", "list", "--porcelain"],
-                           capture_output=True, text=True, timeout=GIT_TIMEOUT)
+                           capture_output=True, text=True, timeout=GIT_TIMEOUT,
+                           env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
     except (OSError, subprocess.SubprocessError) as exc:
         return [own], [f"git could not list the worktrees ({type(exc).__name__}), so only this "
                        f"checkout's plans were read"]
@@ -325,8 +334,7 @@ def plan_dirs(root: pathlib.Path) -> tuple[list[tuple[pathlib.Path, pathlib.Path
     out, notes = [], []
     for t in trees:
         if not t.is_dir():
-            notes.append(f"the checkout {t} is missing, so its plans were not read")
-            continue
+            continue            # gone, so it holds no plans — see the docstring for why no note
         out.append((t, t / ".claude" / "plans"))
     return out, notes
 
@@ -344,8 +352,26 @@ def _read_dir(d: pathlib.Path) -> list[dict]:
         except OSError as exc:
             raise ValueError(f"{f.name} could not be read: {exc}") from exc
         touched = _dt.date.fromtimestamp(f.stat().st_mtime).isoformat()
-        out.append(parse_plan(f.stem, text, touched))
+        rec = parse_plan(f.stem, text, touched)
+        rec["sha"] = hashlib.sha256(text.encode()).hexdigest()
+        out.append(rec)
     return out
+
+
+def row_for(plans: list[dict], name: str, checkout: pathlib.Path | str) -> str | None:
+    """The row slug that plan `name` has AS SEEN FROM `checkout`: the copy held in that checkout,
+    else the first copy (main first). None when no checkout holds `name`.
+
+    ⛔ THE ONE RESOLVER for a duplicated slug. `read_plans_noted` uses it to re-point a child's
+    `parent:`, and `begin-plan`'s banner `Line:` uses it to find its OWN plan (r3 Claude F5) — two
+    resolvers would let the banner and the page put one plan under two different rows.
+    """
+    copies = [r for r in plans if r.get("name", r["slug"]) == name]
+    want = str(pathlib.Path(checkout).resolve())
+    for r in copies:
+        if want in r.get("checkouts", ()):
+            return r["slug"]
+    return copies[0]["slug"] if copies else None
 
 
 def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], list[str]]:
@@ -354,10 +380,11 @@ def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], 
     When `plan_dir` is a checkout's own `.claude/plans/` (the default, and every real caller), the
     plans of EVERY checkout are read through `plan_dirs`. Any other directory — a test fixture —
     is read alone, because it belongs to no checkout.
-    ⛔ ONE SLUG IN TWO CHECKOUTS IS TWO ROWS, NEVER MERGED. Each copy is renamed `<slug> @
-    <checkout>`, and a child's `parent:` is re-pointed at the copy in ITS OWN checkout when there
-    is one, else at the first copy (main first). Merging would show one plan's ticks under the
-    other's name.
+    ⛔ ONE SLUG IN TWO CHECKOUTS WITH DIFFERENT CONTENT IS TWO ROWS, NEVER MERGED: each is renamed
+    `<slug> @ <checkout>` (`main`, or the checkout's folder name), and a child's `parent:` is
+    re-pointed at the copy in ITS OWN checkout when there is one, else at the first (main first) —
+    `row_for`. Byte-identical copies are ONE row. Every record carries `name` (the bare slug) and
+    `checkouts` (where it is held).
     ⚠ Another checkout whose `.claude/plans/` cannot be listed is skipped with a note, never fatal.
     """
     d = PLAN_DIR if plan_dir is None else plan_dir
@@ -383,29 +410,40 @@ def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], 
         except (OSError, ValueError) as exc:
             notes.append(f"the plans in {pd} could not be read ({exc}), so they are not shown")
     if not seen_own:            # git listed checkouts that do not include this one
-        found = [(d.parent, r) for r in _read_dir(d)] + found
-    counts: dict[str, int] = {}
-    for _, r in found:
-        counts[r["slug"]] = counts.get(r["slug"], 0) + 1
-    dup = {k for k, n in counts.items() if n > 1}
-    if not dup:
-        return [r for _, r in found], notes
-    first: dict[str, str] = {}
-    by_place: dict[tuple[str, str], str] = {}
+        # ⟳ r3 Claude F6: the CHECKOUT is `d.parent.parent`; `d.parent` is its `.claude` directory,
+        # which is what a label built from it used to name.
+        found = [(d.parent.parent, r) for r in _read_dir(d)] + found
+    main = dirs[0][0] if dirs else d.parent.parent
+    # ⟳ r3 Claude F4 — BYTE-IDENTICAL COPIES ARE ONE PLAN. A copied file is the same plan held twice;
+    # showing it twice counted one open line as two (measured: `chrome-r2-fold` in two checkouts,
+    # identical). Copies are grouped by (slug, content hash): one group is one row, keeping the bare
+    # slug and every checkout that holds it; only DIFFERING copies become labelled rows.
+    groups: dict[str, list[list]] = {}
     for checkout, r in found:
-        if r["slug"] in dup:
-            label = f'{r["slug"]} @ {checkout}'
-            by_place[(r["slug"], str(checkout))] = label
-            first.setdefault(r["slug"], label)
+        gs = groups.setdefault(r["slug"], [])
+        for g in gs:
+            if g[1]["sha"] == r["sha"]:
+                g[2].append(str(pathlib.Path(checkout).resolve()))
+                break
+        else:
+            gs.append([checkout, r, [str(pathlib.Path(checkout).resolve())]])
     out = []
-    for checkout, r in found:
-        r = dict(r)
+    for name, gs in groups.items():
+        labels = ["main" if pathlib.Path(c).resolve() == pathlib.Path(main).resolve()
+                  else pathlib.Path(c).name for c, _, _ in gs]
+        if len(set(labels)) < len(labels):          # two checkouts share a folder name
+            labels = [str(c) for c, _, _ in gs]
+        for (checkout, r, held), label in zip(gs, labels):
+            r = dict(r, name=name, checkouts=tuple(held))
+            if len(gs) > 1:
+                # ⛔ DIFFERING copies stay TWO ROWS, NEVER MERGED — merging would show one plan's
+                # ticks under the other's name. A short checkout name, not an absolute path.
+                r["slug"] = f"{name} @ {label}"
+            out.append(r)
+    for r in out:
         par = r["parent"]
-        if par in dup:
-            r["parent"] = by_place.get((par, str(checkout)), first[par])
-        if r["slug"] in dup:
-            r["slug"] = by_place[(r["slug"], str(checkout))]
-        out.append(r)
+        if par is not None and len(groups.get(par, ())) > 1:
+            r["parent"] = row_for(out, par, r["checkouts"][0])
     return out, notes
 
 
@@ -702,7 +740,8 @@ def _self_test() -> int:
     # first order and the "missing checkout" state are all git's, and a fixture would assert my
     # reading of them. HOME is redirected so no user config or hook reaches the temp repo.
     import os as _os, shutil as _shw, subprocess as _spw
-    _genv = {**_os.environ, "HOME": "", "GIT_CONFIG_NOSYSTEM": "1"}
+    _genv = {**{k: v for k, v in _os.environ.items() if not k.startswith("GIT_")},
+             "HOME": "", "GIT_CONFIG_NOSYSTEM": "1"}
 
     def _git(cwd, *args):
         return _spw.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
@@ -728,33 +767,86 @@ def _self_test() -> int:
         case("WT1 plan_dirs lists EVERY checkout from a real `git worktree add`, main first",
              (_added.returncode, [str(c) for c, _ in _dirs], _notes),
              (0, [str(_main), str(_wt)], []))
+        (_main / ".claude/plans/twin.md").write_text("# t\n- [ ] a\n- [x] b")
+        (_wt / ".claude/plans/twin.md").write_text("# t\n- [ ] a\n- [x] b")
         _slugs = _try(lambda: sorted(r["slug"] for r in read_plans(_main / ".claude/plans")))
         case("WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold "
-             "case — and labels BOTH copies of a slug held twice, never merging them",
-             _slugs, sorted(["main-only", "wt-only", "kid", f"both @ {_main}", f"both @ {_wt}"]))
+             "case — and labels BOTH differing copies of a slug with a SHORT checkout name",
+             _slugs, sorted(["main-only", "wt-only", "kid", "twin", "both @ main",
+                             "both @ wt-side"]))
         _kid = _try(lambda: [r["parent"] for r in read_plans(_main / ".claude/plans")
                              if r["slug"] == "kid"])
         case("WT3 a child's parent points at the copy in ITS OWN checkout",
-             _kid, [f"both @ {_wt}"])
+             _kid, ["both @ wt-side"])
         _two = _try(lambda: [(r["ticked"], r["total"]) for r in read_plans(_main / ".claude/plans")
                              if r["slug"].startswith("both @")])
         case("WT4 ...and each labelled copy keeps ITS OWN progress", sorted(_two),
              sorted([(1, 1), (0, 2)]))
+        _tw = _try(lambda: [r["checkouts"] for r in read_plans(_main / ".claude/plans")
+                            if r["name"] == "twin"])
+        case("WT4b BYTE-IDENTICAL copies are ONE row, holding both checkouts (r3 Claude F4)",
+             _tw, [(str(_main), str(_wt))])
+        _o4 = pathlib.Path(_dw) / "w4.html"
+        _r4 = write_page(_o4, _main / ".claude/plans")
+        case("WT4c ...so the identical pair is counted as ONE line, the differing pair as two",
+             (_r4[0], (_o4.read_text() if _o4.exists() else "").count("<code>twin</code>"),
+              (_o4.read_text() if _o4.exists() else "").count("<code>both @ ")), (0, 1, 2))
+        _rows = _try(lambda: read_plans(_main / ".claude/plans"))
+        case("WT4d row_for resolves a duplicated slug in the asking checkout, else main",
+             _try(lambda: (row_for(_rows, "both", _wt), row_for(_rows, "both", _dw),
+                           row_for(_rows, "twin", _wt), row_for(_rows, "nowhere", _main),
+                           row_for([{"slug": "solo", "name": "solo", "checkouts": ()}], "solo",
+                                   _wt))),
+             ("both @ wt-side", "both @ main", "twin", None, "solo"))
+        _sub = _main / "sub" / ".claude" / "plans"
+        _sub.mkdir(parents=True)
+        (_sub / "both.md").write_text("# b\n- [ ] sub copy")
+        case("WT8 a plan directory git does not list is read under ITS checkout's name, not "
+             "`.claude` (r3 Claude F6)",
+             _try(lambda: sorted(r["slug"] for r in read_plans(_sub)
+                                 if r["name"] == "both")),
+             sorted(["both @ main", "both @ sub", "both @ wt-side"]))
+        _gd = _os.environ.get("GIT_DIR")
+        _os.environ["GIT_DIR"] = str(pathlib.Path(_dw) / "no-such-git-dir")
+        try:
+            _dirs9, _notes9 = plan_dirs(_main)
+        finally:
+            if _gd is None:
+                _os.environ.pop("GIT_DIR", None)
+            else:
+                _os.environ["GIT_DIR"] = _gd
+        case("WT9 an inherited GIT_DIR (a hook context) does not redirect plan_dirs — `root` decides",
+             ([str(c) for c, _ in _dirs9], _notes9), ([str(_main), str(_wt)], []))
+        (_wt / ".claude" / "plans").chmod(0)
+        try:
+            _o6 = pathlib.Path(_dw) / "w6.html"
+            _r6u = write_page(_o6, _main / ".claude/plans")
+            _n6 = _try(lambda: read_plans_noted(_main / ".claude/plans")[1])
+        finally:
+            (_wt / ".claude" / "plans").chmod(0o755)
+        case("WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — "
+             "and the PAGE says so",
+             (_r6u[0], any(str(_wt) in n and "could not be read" in n for n in _n6),
+              "could not be read" in (_o6.read_text() if _o6.exists() else "")),
+             (0, True, True))
         _shw.rmtree(_wt)
         _dirs2, _notes2 = plan_dirs(_main)
-        case("WT5 a checkout whose directory is MISSING is skipped and NAMED, never fatal",
-             ([str(c) for c, _ in _dirs2], any(str(_wt) in n and "missing" in n
-                                               for n in _notes2)),
-             ([str(_main)], True))
+        case("WT5 a registered checkout whose folder is GONE is skipped with NO note — it holds "
+             "no plans to miss (r3 Claude F2)",
+             ([str(c) for c, _ in _dirs2], _notes2), ([str(_main)], []))
         _o7 = pathlib.Path(_dw) / "w7.html"
         _r7 = write_page(_o7, _main / ".claude/plans")
-        case("WT6 ...and the PAGE says so, rather than silently covering less",
-             (_r7[0], "is missing, so its plans were not read" in
-              (_o7.read_text() if _o7.exists() else "")), (0, True))
+        case("WT6c ...and the page carries no 'not read' warning for it",
+             (_r7[0], "not read" in (_o7.read_text() if _o7.exists() else ""),
+              "could not be read" in (_o7.read_text() if _o7.exists() else "")),
+             (0, False, False))
         case("WT6b render shows EACH note it is given, escaped",
              (lambda h: ("⚠ first &lt;note&gt;" in h, "⚠ second note" in h, "<note>" in h))(
                  render(*build_forest([_mk("x", None)]), "t",
                         notes=["first <note>", "second note"])), (True, True, False))
+        case("WT6d a directory git does not list, read after the gone checkout, carries no note "
+             "either",
+             _try(lambda: read_plans_noted(_sub)[1]), [])
         _lone = pathlib.Path(_dw) / "not-a-repo"
         (_lone / ".claude" / "plans").mkdir(parents=True)
         _dirs3, _notes3 = plan_dirs(_lone)

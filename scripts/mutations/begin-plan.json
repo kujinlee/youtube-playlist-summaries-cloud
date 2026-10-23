@@ -734,5 +734,18 @@
     "expect": [
       "⛔ --finish never queries the current branch — ZERO calls to the lookup across both runs; the record's branch is the sentinel's"
     ]
+  },
+  {
+    "name": "the banner Line looks up the bare stem again, so a slug held in two checkouts is 'not found'",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    return work_line(wl.row_for(plans, plan_abs.stem, ROOT) or plan_abs.stem, plans)",
+        "    return work_line(plan_abs.stem, plans)"
+      ]
+    ],
+    "expect": [
+      "F5 a slug held in two checkouts: each checkout's banner Line names ITS OWN copy, by a SHORT checkout name — never 'not in .claude/plans/', never an absolute path"
+    ]
   }
 ]

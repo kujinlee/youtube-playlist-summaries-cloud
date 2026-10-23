@@ -938,20 +938,6 @@
     ]
   },
   {
-    "name": "thread class: `SWITCHED to plan `x`` is no longer read",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        explicit += _SWITCH_TO_RE.findall(SWITCHED + body.split(SWITCHED, 1)[1])",
-        "        pass"
-      ]
-    ],
-    "expect": [
-      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read",
-      "TN12 the REAL mixed row from turn af0b134a reads its SWITCH destination, not its leading slug"
-    ]
-  },
-  {
     "name": "thread class: several explicit destinations are GUESSED (the first) instead of unreadable",
     "file": "scripts/check-banner-armed.py",
     "edits": [
@@ -991,34 +977,6 @@
     ]
   },
   {
-    "name": "thread class: run_decide drops the known set, so every thread reads as unknown — finished plans included",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "texts, _known, block",
-        "texts, set(), block"
-      ]
-    ],
-    "expect": [
-      "TE2 ...and the SAME turn is quiet once `.claude/plans/work-lines-page.md` exists",
-      "TE5 after a real `begin-plan.py --finish`, the finished thread is QUIET — the sentinel is gone and the plan file is what the page reads"
-    ]
-  },
-  {
-    "name": "thread class: the r1 SUPPRESSION is re-introduced — the class is skipped when an original class fired",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "                    _known, _notes = known_everywhere()\n",
-        "                    _known, _notes = known_everywhere()\n                    if reason:\n                        texts = []\n"
-      ]
-    ],
-    "expect": [
-      "TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row naming the co-fired class",
-      "TE7b ...and BLOCK applies to that turn regardless — Codex's end-to-end input"
-    ]
-  },
-  {
     "name": "thread class: `plan `x`` no longer beats a bare leading token",
     "file": "scripts/check-banner-armed.py",
     "edits": [
@@ -1042,19 +1000,6 @@
     ],
     "expect": [
       "TN17 two DIFFERENT `plan` slugs are unreadable too"
-    ]
-  },
-  {
-    "name": "thread class: a bare `→ `b`` counts only inside a SWITCHED row",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "    explicit = _SWITCH_ARROW_RE.findall(body)\n",
-        "    explicit = _SWITCH_ARROW_RE.findall(body) if SWITCHED in body else []\n"
-      ]
-    ],
-    "expect": [
-      "TN14 a bare `→ `b`` with no SWITCHED marker is an explicit destination too"
     ]
   },
   {
@@ -1146,6 +1091,114 @@
     ],
     "expect": [
       "TW3 outside a git repository only THIS checkout is read, and the warning SAYS so"
+    ]
+  },
+  {
+    "name": "thread class: `SWITCHED to plan `x`` is no longer read",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    explicit += _SWITCH_TO_RE.findall(body)\n",
+        "    explicit += []\n"
+      ]
+    ],
+    "expect": [
+      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read",
+      "TN12 the REAL mixed row from turn af0b134a reads its SWITCH destination, not its leading slug"
+    ]
+  },
+  {
+    "name": "thread class: run_decide drops the known set, so every thread reads as unknown — finished plans included",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "_known, block=THREAD_BLOCK",
+        "set(), block=THREAD_BLOCK"
+      ]
+    ],
+    "expect": [
+      "TE2 ...and the SAME turn is quiet once `.claude/plans/work-lines-page.md` exists",
+      "TE5 after a real `begin-plan.py --finish`, the finished thread is QUIET — the sentinel is gone and the plan file is what the page reads"
+    ]
+  },
+  {
+    "name": "thread class: the r1 SUPPRESSION is re-introduced — the class is skipped when an original class fired",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    elif t_code != QUIET:\n",
+        "    elif t_code != QUIET and not reason:\n"
+      ]
+    ],
+    "expect": [
+      "TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row naming the co-fired class",
+      "TE7b ...and BLOCK applies to that turn regardless — Codex's end-to-end input"
+    ]
+  },
+  {
+    "name": "thread class: a bare `→ `b`` after the leading slug is no longer a destination",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "[lead.group(1)] if lead else []",
+        "[]"
+      ]
+    ],
+    "expect": [
+      "TN14 a bare `→ `b`` with no SWITCHED marker is an explicit destination too"
+    ]
+  },
+  {
+    "name": "thread class: an arrow ANYWHERE in a non-switch row is a destination again — a commit id becomes the thread",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        explicit = [lead.group(1)] if lead else []",
+        "        explicit = _SWITCH_ARROW_RE.findall(body)"
+      ]
+    ],
+    "expect": [
+      "TN19 an arrow in PROSE is not a destination — the commit id after `→` is not the thread (r3 Claude F7)"
+    ]
+  },
+  {
+    "name": "thread class: in a switch row, an arrow BEFORE the marker counts as a destination too",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "_SWITCH_ARROW_RE.findall(body.split(SWITCHED, 1)[1])",
+        "_SWITCH_ARROW_RE.findall(body)"
+      ]
+    ],
+    "expect": [
+      "TN20 an arrow BEFORE the `⤳ SWITCHED` marker is prose; the switch's own target decides"
+    ]
+  },
+  {
+    "name": "thread class: a turn with NO saved record skips the thread check again, bypassing BLOCK",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            if sample is None:\n                code, message = CANNOT_RUN, (",
+        "            if sample is None:\n                t_code = QUIET\n                code, message = CANNOT_RUN, ("
+      ]
+    ],
+    "expect": [
+      "TE10 with NO saved record the stop is still CANNOT RUN — and the thread row IS logged",
+      "TE10b ...and with BLOCK on, a missing record no longer bypasses it"
+    ]
+  },
+  {
+    "name": "thread class: run_decide drops the partial-read notes, so the warning hides what was not read",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "notes=_notes)",
+        "notes=[])"
+      ]
+    ],
+    "expect": [
+      "TE11 run_decide's warning carries the partial-read caveat from known_everywhere"
     ]
   }
 ]
