@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 216 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 271 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -47,8 +47,38 @@ WHY THIS FILE EXISTS RATHER THAN A NOTE IN A PROCESS DOC
 The owner asked for a re-evaluation PROMISE: what can trigger re-evaluation later? A promise
 written in prose is the thing this repository has measured rotting — `review-method.md` says
 "the evidence is derivable, not remembered" and `round-header-template.md` cites that line and
-then introduces a hand-authored tally. So the promise is seven predicates with stated
-observations, and four of them FAIL rather than warn.
+then introduces a hand-authored tally. So the promise is a set of predicates with stated
+observations, some of which FAIL rather than warn — the table in `main()` is the list, and it
+is not restated here because this sentence once said "seven" and "four" and went stale twice.
+
+⟳ 2026-10-23 — TRIGGER 3 CHANGED ITS QUESTION (owner-approved). It used to ask whether >=5
+scored rows all took one ROUTE. A unit's first bet is FORCED to be `accrete`, and every scored
+row so far was a first bet, so it fired on the ladder's structure rather than on a decision.
+It now asks the question the ladder actually poses: after a bet the stream CONTINUED past
+(`outcome: continued` — the route's FAILURE_OBSERVATION was seen; whether the bet's PREDICTION
+held is a separate claim and is not read here), was the next route logged?
+
+    a later PROSPECTIVE bet on the unit         -> quiet
+    nothing, and the bet PREDATES trigger 3     -> WARN  trigger 10 PRE-TRIGGER LOST BET
+    nothing                                     -> FAIL  trigger 3  LOST BET NOT ESCALATED
+    the bet was DEFER (no rung left)            -> trigger 3 is silent; trigger 2 owns it:
+        ... and the DEFER does not close the unit   -> FAIL  trigger 2  NON-TERMINATION
+        ... and it records rounds_at_termination    -> WARN  trigger 11 LADDER EXHAUSTED, CLOSED
+                                                       (the unit is closed: no bet may follow;
+                                                        close only at the subject's FINAL round)
+    a NEW unit on that subject after a closure  -> WARN  trigger 12 LADDER RESTARTED
+
+The bets that predate the trigger are a CLOSED, PINNED list in `baseline.json`
+(`lost_bets_before_trigger3`), beside the other pinned history; a pin that matches no lost bet
+in the log is itself named by trigger 10, so a stale pin cannot pass forever. ⚠ It is NOT the
+only way a loss goes unflagged: a loss written `retroactive: true` is not a bet, so trigger 3
+skips it, and it is caught only by trigger 8 — and only when its subject has NO prospective row.
+
+⟳ r3 — THE IN-LOG ACKNOWLEDGMENT IS REMOVED. Two folds offered a `missed-escalation` row that
+closed a unit instead; rounds 2 and 3 each found the previous fold's defect in it (no time
+bound, then a verdict reader over the review corpus), one component, two consecutive rounds:
+THRASHING. The answer was removal, not a third patch. A bet row may still carry the
+decision-log-model-redesign plan's `kind` field; this file claims no field of that name.
 
 ⛔ TRIGGER 1 IS STARVATION, AND IT IS FIRST ON PURPOSE. The predecessor mechanism
 (`check-review-decision.py`) was correct and saw `rounds=0` on 81% of the subjects where it
@@ -123,6 +153,9 @@ FAILURE_OBSERVATION = {
 }
 
 OUTCOMES = ("stopped", "continued")
+
+# The `baseline.json` key holding the lost bets that PREDATE trigger 3 (see `pinned_lost_bets`).
+PRE_TRIGGER_PINS = "lost_bets_before_trigger3"
 
 
 # ------------------------------------------------------------------ pure: the ladder
@@ -278,8 +311,42 @@ def t2_non_termination(rows: list[dict]) -> str | None:
     DEFER having attempted ONCE — so an attempt-counting test would stop firing exactly where a
     skip is used, switching the primary falsifier off through the door that was just opened. A
     case covers the skipped-to-terminal unit and an adjacent one that is still escalating.
+
+    ⟳ r5 (the owner's option A): only an OPEN exhausted unit fails here. A unit whose continued
+    DEFER records `rounds_at_termination` is CLOSED (`closes_unit`) and is trigger 11's WARN —
+    see there for the incentive that remains.
     """
-    bad = []
+    bad = [k for k, closed in exhausted_units(rows) if not closed]
+    if not bad:
+        return None
+    names = ", ".join(f"{a}/{b}" for a, b in bad[:4])
+    return (f"{len(bad)} unit(s) exhausted every route and still carry findings ({names}) — "
+            f"the claim that escalation terminates is refuted, not delayed")
+
+
+def closes_unit(row: dict) -> bool:
+    """PURE. Does this bet CLOSE its unit — a `continued` DEFER that records how it ended?
+
+    ⟳ 2026-10-23 r5, the owner's decision (option A). `validate_row` admits
+    `rounds_at_termination` on a `continued` row only when its route is DEFER, so a closing row
+    always ends an exhausted ladder. One rule, one place: trigger 2, trigger 11 and the
+    validator's closed-unit refusal all ask it here.
+
+    ⛔ CLOSE ONLY AT THE END (the owner's containment, r5). `rounds_at_termination` on a closing
+    DEFER is the subject's FINAL round, written once review has CONVERGED. A unit closed early,
+    while rounds continue, is a FALSE claim — and this script cannot detect it: reading the review
+    corpus to check was the component that thrashed in r2–r3 and was removed. The rule is the
+    author's to keep; what IS visible is a ladder restarted on a new unit (trigger 12).
+    """
+    return row.get("outcome") == "continued" and "rounds_at_termination" in row
+
+
+def exhausted_units(rows: list[dict]) -> list[tuple]:
+    """PURE. ((subject, unit), closed) for every unit whose ladder is exhausted and whose last
+    bet the stream CONTINUED past. One producer, two readers — trigger 2 (open) and trigger 11
+    (closed) — so they cannot disagree about which units are exhausted.
+    """
+    out = []
     for key, unit_rows in group_by_unit(rows).items():
         # ⛔ EXHAUSTION IS "NOTHING LEFT TO ESCALATE TO", NOT "FOUR ATTEMPTS MADE". A unit that
         # reached DEFER by declaring a skip has an exhausted ladder with one attempt in it, so
@@ -293,34 +360,189 @@ def t2_non_termination(rows: list[dict]) -> str | None:
         if not exhausted:
             continue
         if unit_rows[-1].get("outcome") == "continued":
-            bad.append(key)
-    if not bad:
-        return None
-    names = ", ".join(f"{a}/{b}" for a, b in bad[:4])
-    return (f"{len(bad)} unit(s) exhausted every route and still carry findings ({names}) — "
-            f"the claim that escalation terminates is refuted, not delayed")
+            out.append((key, closes_unit(unit_rows[-1])))
+    return out
 
 
-def t3_routes_collapsed(rows: list[dict]) -> str | None:
-    """FAIL. >=5 scored rows all taking one route: a conveyor, not a decision.
+def ladder_restarts(rows: list[dict]) -> list[tuple]:
+    """PURE. (subject, closed unit, new unit) for every unit whose FIRST row comes after another
+    unit of the same subject was CLOSED (`closes_unit`). File order is the append order.
 
-    ⚠ r1 Claude B3 noted this was defeated by a single second unit on another route. That shape
-    is now INEXPRESSIBLE rather than guarded: `validate_row` derives each unit's history and
-    refuses any row whose route is not `route_next(derived)`, so a unit cannot repeat a route at
-    all. What remains here is the GLOBAL question — many units, every one taking the same route —
-    which is a different claim and still worth asking.
+    A unit that existed BEFORE the closure is a sibling, not a restart, and is not returned.
     """
-    # ⛔ PROSPECTIVE ONLY (r7 Codex H1). Measured: five collapsed ACCRETE rows fired this
-    # trigger, and appending the two RETROACTIVE rows — whose routes are redesign and defer —
-    # turned it QUIET. The collapse was untouched; history supplied the apparent discrimination.
-    scored = [r for r in prospective(rows) if r.get("outcome") in OUTCOMES]
-    if len(scored) < 5:
+    first: dict[tuple, int] = {}
+    closed_at: dict[tuple, int] = {}
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict):
+            continue
+        first.setdefault(unit_key(r), i)
+        if closes_unit(r):
+            closed_at.setdefault(unit_key(r), i)
+    out = []
+    for (subject, closed), at in closed_at.items():
+        for (other_subject, unit), began in first.items():
+            # ⚠ ONE DECISION PER LINE: which units are on the SAME subject, and which of them
+            # began AFTER the closure. The closed unit needs no exclusion: its first row is at or
+            # before its own closing row, so `began > at` can never hold for it.
+            if other_subject != subject:
+                continue
+            if began > at:
+                out.append((subject, closed, unit))
+    return sorted(out)
+
+
+def t12_ladder_restarted(rows: list[dict]) -> str | None:
+    """WARN. A subject's ladder restarted on a NEW unit after one of its units was CLOSED.
+
+    ⟳ 2026-10-23 r5, the owner's second containment on option A. Closing a unit cannot be
+    undone, but a NEW unit on the same subject starts a fresh ladder at ACCRETE — which is the
+    move a closure exists to stop, if the "new" unit is the old work renamed. A genuinely
+    separate unit is legitimate, so this WARNS rather than fails or refuses: it must be SEEN,
+    not forbidden. Units that existed before the closure are siblings and do not warn.
+    """
+    found = ladder_restarts(rows)
+    if not found:
         return None
-    routes = {r.get("route") for r in scored}
-    if len(routes) > 1:
+    names = "; ".join(f"{s}: {u} after {c} closed" for s, c, u in found[:4])
+    return (f"{len(found)} ladder(s) restarted after exhaustion ({names}) — a closed unit "
+            f"cannot be reopened, so check the new unit is separate work, not the old one renamed")
+
+
+def t11_ladder_exhausted_closed(rows: list[dict]) -> str | None:
+    """WARN. A unit exhausted the ladder, the stream continued, and its DEFER CLOSED the unit.
+
+    ⟳ 2026-10-23 r5, the owner's decision (option A) — the FAIL/WARN split of trigger 2, in the
+    style of 3/10. A `continued` DEFER is the honest score for "every route was tried and the
+    findings did not stop; the work is set down". Without a way to record that, the only quiet
+    score was `stopped`, which is false — so honesty was punished with a permanent FAIL. A DEFER
+    that records `rounds_at_termination` declares the unit CLOSED: it is named here instead of
+    failing trigger 2, and `validate_row` refuses any later bet on it (a closed unit cannot be
+    reopened; a new attempt is a new unit).
+
+    ⚠ THE INCENTIVE THAT REMAINS, stated rather than hidden: scoring a deferral `stopped` is
+    still QUIET, while scoring it honestly as a closed `continued` WARNS. The gap between the two
+    is now a WARN, not a permanent red — smaller, not gone. Nothing here can tell a false
+    `stopped` from a true one; the review corpus could, and reading it was removed (r2–r3).
+    """
+    closed = [k for k, c in exhausted_units(rows) if c]
+    if not closed:
         return None
-    return (f"all {len(scored)} scored rows took route {routes.pop()!r} — the routes are not "
-            f"discriminating, so this is a conveyor wearing a decision's clothes")
+    names = ", ".join(f"{a}/{b}" for a, b in closed[:4])
+    return (f"{len(closed)} unit(s) exhausted every route, the stream continued, and a DEFER "
+            f"CLOSED them ({names}) — set down, not repaired; the ladder terminated, the "
+            f"findings did not")
+
+
+def lost_bets(rows: list[dict]) -> list[tuple]:
+    """PURE. Every prospective bet the stream CONTINUED past with no next bet: (subject, unit, route).
+
+    ⟳ r4 Codex Major: the identity is the BET, not the unit. Keyed on (subject, unit), a pin on a
+    unit's historical loss also excused every LATER loss on that unit. (subject, unit, route)
+    names exactly one bet, because `route_next` never lets a unit repeat a route.
+
+    "Lost" here means `outcome: continued` and nothing more: the route's FAILURE_OBSERVATION was
+    seen, so the ladder says escalate. ⚠ It is NOT a claim that the bet's PREDICTION failed — a
+    prediction can hold while the stream continues (work-lines-always-on's did), and the two are
+    separate fields. A bet is NOT returned when (a) a later PROSPECTIVE bet exists on its unit —
+    it escalated in time — or (b) it left NO rung to escalate to (a continued DEFER, or any bet
+    that exhausts the ladder). (b) is trigger 2's defect, and two triggers naming one defect is a
+    reader who cannot tell which is which (r1 F4).
+
+    ⛔ "SAME UNIT" AND "LATER" ARE `group_by_unit`'s, NOT A SECOND DERIVATION. The unit is
+    `unit_key` and "later" is file order inside that unit's group — the append-only order
+    `invalid_rows` validates each unit's history in. "Is this row a bet" is `prospective()` asked
+    of one row, and "is a rung left" is `route_next(routes_accounted(...))`, the validator's own
+    ladder position. A later RETROACTIVE row is not an escalation and in a valid log cannot occur
+    after a real bet (door (c)), so it does not quiet this.
+    """
+    out = []
+    for key, unit_rows in group_by_unit(rows).items():
+        for i, r in enumerate(unit_rows):
+            # ⚠ ONE DECISION PER LINE: which rows are BETS, which bets the stream continued
+            # past, and whether the ladder had a rung left to escalate to.
+            if not prospective([r]):
+                continue
+            if r.get("outcome") != "continued":
+                continue
+            if route_next(routes_accounted(unit_rows[:i + 1])) is None:
+                continue                 # nothing to escalate to — trigger 2's verdict
+            if prospective(unit_rows[i + 1:]):
+                continue                 # a real next bet was placed — escalated in time
+            out.append(key + (r.get("route"),))
+    return out
+
+
+def t3_lost_bet_not_escalated(rows: list[dict], pinned: frozenset) -> str | None:
+    """FAIL. The stream continued after a prospective bet and no next route was ever logged.
+
+    ⟳ 2026-10-23, REPLACING `t3_routes_collapsed` (owner-approved). The old trigger failed when
+    >=5 scored prospective rows all took one route — but a unit's FIRST bet is FORCED to be
+    `accrete` by the ladder, and the only scored rows were first bets. MEASURED on a merge of two
+    logs: 5 scored prospective rows, all accrete, and the trigger fired on the ladder's STRUCTURE,
+    not on a decision. Under a forced first rung route diversity cannot discriminate, so it is
+    not asked at all any more.
+
+    ⭐ THE DECISION THIS SCHEME ACTUALLY MAKES IS WHAT HAPPENS AFTER THE STREAM CONTINUES: the
+    next route is logged, or work silently keeps accreting under folds — the conveyor the old
+    trigger was named for, now asked of the place it can occur.
+
+    ⛔ THE ONE DECLARED EXEMPTION is `pinned`: the CLOSED list of lost bets that PREDATE this
+    trigger, read from `baseline.json` by `pinned_lost_bets` — a bet placed before the rule
+    existed could not have obeyed it. Nothing adds to that list at run time, and a bet placed
+    after this trigger shipped is never on it. ⚠ (r5) It is not the only route to silence: a loss
+    written `retroactive: true` is not a bet, so this trigger skips it, and it is caught only by
+    trigger 8, and only when its subject has no prospective row at all.
+    ⟳ r3: an earlier fold offered an in-log "missed-escalation acknowledgment" instead. Rounds 2
+    and 3 each found its own fold's defect in it (no time bound; then a verdict reader over the
+    review corpus), which is THRASHING, so it was REMOVED rather than patched a third time.
+
+    ⚠ AN IN-FLIGHT WINDOW EXISTS, stated rather than hidden. `outcome` is filled into a row when
+    its round's result arrives, and the NEXT bet is written before the next round is dispatched
+    — so between those two writes this fires. That is the intended pressure, and a commit that
+    lands in the window is red.
+
+    ⚠ LIMIT, NOT FIXED HERE (r1 F5): a bet whose `outcome` is never written stays in flight
+    forever — no trigger ages an unscored bet, so leaving `outcome` null is quiet everywhere.
+    """
+    unlogged = [k for k in lost_bets(rows) if k not in pinned]
+    if not unlogged:
+        return None
+    names = ", ".join(f"{a}/{b}" for a, b, _ in unlogged[:4])
+    return (f"{len(unlogged)} bet(s) the stream continued past with no next route logged "
+            f"({names}) — the route's failure observation was seen and the ladder's escalation "
+            f"was never recorded, so the work kept going on a route the log records as failed")
+
+
+def t10_pre_trigger_lost_bet(rows: list[dict], pinned: frozenset) -> str | None:
+    """WARN. A lost bet that PREDATES trigger 3 is exempted by its pin — or a pin matches nothing.
+
+    The FAIL/WARN split of trigger 3, in this file's existing style (t4/t9): one producer,
+    `lost_bets`, two readers that cannot disagree about which bets the stream continued past.
+
+      * a PINNED lost bet is named, not hidden: it is history the rule could not have governed,
+        and a reader should still see that its escalation was never logged;
+      * an UNUSED pin — no unescalated lost bet with that (subject, unit, route) in this log — is named
+        too, because a pin that silently matches nothing would pass forever. It means one of two
+        things, and the message says both: the bet's row lives on a branch not merged here, or a
+        later prospective bet escalated it and the pin is stale and should be deleted.
+    """
+    found = set(lost_bets(rows))
+    hit = sorted(k for k in pinned if k in found)
+    unused = sorted(k for k in pinned if k not in found)
+    if not hit and not unused:
+        return None
+    parts = []
+    if hit:
+        names = ", ".join(f"{a}/{b} ({c})" for a, b, c in hit)
+        parts.append(f"{len(hit)} lost bet(s) PREDATE trigger 3 and are pinned in baseline.json "
+                     f"({names}) — their next route was never logged, and they are history the "
+                     f"rule could not have governed")
+    if unused:
+        names = ", ".join(f"{a}/{b} ({c})" for a, b, c in unused)
+        parts.append(f"{len(unused)} pin(s) match no unescalated lost bet in this log ({names}) "
+                     f"— expected while that bet's row is on a branch not merged here; otherwise "
+                     f"a later bet escalated it and the pin is stale and should be deleted")
+    return "; ".join(parts)
 
 
 def termination_window(rows: list[dict], size: int = 5) -> list[tuple]:
@@ -651,6 +873,17 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
         return f"outcome {row.get('outcome')!r} is not one of {(None, *OUTCOMES)}"
     if row.get("outcome") == "stopped" and not isinstance(row.get("rounds_at_termination"), int):
         return "a stopped row must record rounds_at_termination as an integer"
+    # ⟳ r5: the same field now also CLOSES a unit (`closes_unit`), so where present it is held
+    # to its meaning on every row — `bool` is an `int` subclass, and `True` is not one round.
+    n_rounds = row.get("rounds_at_termination")
+    if "rounds_at_termination" in row and (not isinstance(n_rounds, int)
+                                           or isinstance(n_rounds, bool) or n_rounds < 1):
+        return f"rounds_at_termination is {n_rounds!r} — it must be an integer >= 1"
+    # Only the last rung can close a unit: a `continued` non-DEFER row has a next route to bet on.
+    if (row.get("outcome") == "continued" and "rounds_at_termination" in row
+            and row["route"] != LADDER[-1]):
+        return (f"a continued {row['route']!r} row records rounds_at_termination, but only a "
+                f"continued {LADDER[-1]!r} — the exhausted ladder — may close its unit")
     # ⛔ r1 Codex M5: `bool("false")` is True, so a STRING silently became a ranker hit and two
     # misses read as two hits. A field a trigger turns on is type-checked, not coerced.
     if "ranker_hit" in row and not isinstance(row["ranker_hit"], bool):
@@ -663,6 +896,11 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
                 f"coerces to True and would drop a real bet from every scoring trigger")
     if prior is None:
         return None
+    # ⟳ r5: a CLOSED unit cannot be reopened. Exhaustion would refuse the row anyway; this names
+    # the reason a reader needs — the unit was closed on purpose, and a new attempt is a new unit.
+    if prior and isinstance(prior[-1], dict) and closes_unit(prior[-1]):
+        return (f"{unit_key(row)} is CLOSED — its continued DEFER recorded "
+                f"rounds_at_termination, so no bet may follow it; a new attempt is a new unit")
     # ⛔⛔ H3 DOOR (c), WHICH IS IRREVERSIBLE IN AN APPEND-ONLY LOG. One authored boolean buys
     # three things: it satisfies t1's starvation check, it empties every scoring population, and
     # — if a unit is backfilled all the way to `defer` — it makes recording a real prospective
@@ -752,11 +990,31 @@ def validate_row(row: dict, prior: list[dict] | None = None) -> str | None:
     return None
 
 
+def invalid_rows(rows: list) -> list[tuple[int, str]]:
+    """PURE. (1-based row number, why) for every row that fails against ITS UNIT'S earlier rows.
+
+    ⟳ r1 F3: extracted from `main()` so the self-test can hold every log it builds to the SAME
+    validation the CLI applies — two cases had passed over a log `main()` would refuse, and a
+    copy of this loop in the suite would be a second implementation of it.
+    """
+    bad = []
+    seen: dict[tuple, list[dict]] = {}
+    for i, r in enumerate(rows, 1):
+        prior = seen.get(unit_key(r), []) if isinstance(r, dict) else []
+        why = validate_row(r, prior)
+        if why:
+            bad.append((i, why))
+        elif isinstance(r, dict):
+            seen.setdefault(unit_key(r), []).append(r)
+    return bad
+
+
 def group_by_unit(rows: list[dict]) -> dict[tuple, list[dict]]:
     """PURE. (subject, unit) -> its rows in file order.
 
-    ⛔ r1 Claude B3: NO trigger grouped rows this way, so `t3_routes_collapsed` was defeated by
-    a single second unit on another route and a per-unit conveyor was invisible.
+    ⛔ r1 Claude B3: NO trigger grouped rows this way, so the old route-collapse trigger was
+    defeated by a single second unit on another route and a per-unit conveyor was invisible.
+    ⟳ 2026-10-23: that trigger is gone; `lost_bets` reads this grouping for trigger 3 now.
     """
     out: dict[tuple, list[dict]] = {}
     for r in rows:
@@ -997,6 +1255,51 @@ def pinned_inventory(baseline: object) -> "tuple[set[tuple[str, int]] | None, st
     return out, None
 
 
+def pinned_lost_bets(baseline: object) -> "tuple[frozenset | None, str | None]":
+    """PURE. The CLOSED set of (subject, unit, route) lost bets that predate trigger 3, or (None, why).
+
+    ⛔ PINNED, LIKE `rounds_at_arming`, AND FOR THE SAME REASON: it is history, and a list a
+    script could grow at run time would be an exemption anyone could write. It lives in
+    `baseline.json` beside the other pins, each entry with a written `reason`; nothing in this
+    file adds to it, and a case pins the shipped list to its two entries.
+
+    ⟳ r4 Codex Major: each pin names ONE BET — (subject, unit, route), unique because
+    `route_next` never lets a unit repeat a route — so a later loss on a pinned unit is not
+    excused. A pin without a ladder `route` is refused.
+
+    ⟳ r4 Codex Low: only an ABSENT key is the empty set — a repository with no pre-trigger
+    history. A PRESENT key must be a list; `null` is a wrong shape, never an empty list. A key of
+    the wrong shape is a refusal, never an empty set and never a partial one.
+    """
+    if not isinstance(baseline, dict):
+        return None, f"the pinned baseline is {type(baseline).__name__}, not an object"
+    if PRE_TRIGGER_PINS not in baseline:
+        return frozenset(), None
+    raw = baseline[PRE_TRIGGER_PINS]
+    if not isinstance(raw, list):
+        return None, (f"{PRE_TRIGGER_PINS} is {type(raw).__name__}, not a list — a PRESENT key "
+                      f"must be a list; only an absent key means no pins")
+    out = set()
+    for item in raw:
+        if (not isinstance(item, dict) or not isinstance(item.get("subject"), str)
+                or not isinstance(item.get("unit"), str)):
+            return None, (f"{PRE_TRIGGER_PINS} holds {item!r}, not a "
+                          f"{{subject, unit, route, reason}}")
+        why = item.get("reason")
+        if not isinstance(why, str) or not any(ch.isalnum() for ch in why):
+            return None, (f"the pin on {item['subject']}/{item['unit']} has no reason — an "
+                          f"exemption from trigger 3 must say why it is history")
+        if item.get("route") not in LADDER:
+            return None, (f"the pin on {item['subject']}/{item['unit']} names route "
+                          f"{item.get('route')!r}, not one of {list(LADDER)} — a pin names ONE "
+                          f"bet, and a bet is (subject, unit, route)")
+        key = (item["subject"], item["unit"], item["route"])
+        if key in out:
+            return None, f"{item['subject']}/{item['unit']} is pinned twice"
+        out.add(key)
+    return frozenset(out), None
+
+
 def subjects_starved(armed: object, docs: dict | None = None,
                      before_rounds: "set[tuple[str, int]] | None" = None,
                      repo: Path | None = None) -> "tuple[list[str], str | None]":
@@ -1111,15 +1414,7 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
     # ⛔ r1 Claude B3: each row is validated against ITS UNIT'S EARLIER ROWS, not alone. A row
     # validated in isolation cannot be seen to retry a route, which is how the Blocking was
     # expressible. `main()` is the one caller that must not forget `prior`; a case covers that.
-    bad = []
-    seen: dict[tuple, list[dict]] = {}
-    for i, r in enumerate(rows, 1):
-        prior = seen.get(unit_key(r), []) if isinstance(r, dict) else []
-        why = validate_row(r, prior)
-        if why:
-            bad.append((i, why))
-        elif isinstance(r, dict):
-            seen.setdefault(unit_key(r), []).append(r)
+    bad = invalid_rows(rows)
     if bad:
         print("CANNOT RUN — the log holds unusable rows, so no trigger was evaluated:")
         for i, why in bad[:5]:
@@ -1148,11 +1443,19 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         print(f"CANNOT RUN — the starvation ratchet could not be evaluated: {starve_why}")
         print("    Trigger 1 is the loudest one and it was NOT CHECKED. Treat this as not run.")
         return 2
+    # ⛔ THE PRE-TRIGGER PINS ARE HISTORY, READ LIKE `rounds_at_arming`: a malformed list is
+    # CANNOT RUN, because a pin that read as empty would turn history into FAILs and one that
+    # read as everything would exempt every lost bet.
+    pins, pins_why = pinned_lost_bets(pinned)
+    if pins_why:
+        print(f"CANNOT RUN — the pinned pre-trigger lost bets are unusable: {pins_why}")
+        print("    Trigger 3 cannot tell history from a new lost bet. Treat this as not run.")
+        return 2
     fails, warns = [], []
     for name, result in (
         ("1 NOT FED", t1_not_fed(rows, starved_subjects)),
         ("2 NON-TERMINATION", t2_non_termination(rows)),
-        ("3 ROUTES COLLAPSED", t3_routes_collapsed(rows)),
+        ("3 LOST BET NOT ESCALATED", t3_lost_bet_not_escalated(rows, pins)),
         ("4 NO IMPROVEMENT", t4_no_improvement(rows, pinned_rounds["median"])),
         ("5 RANKER MISS", t5_ranker_miss(rows)),
     ):
@@ -1164,6 +1467,9 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         ("7 SAMPLE REACHED", t7_sample_reached(rows)),
         ("8 HINDSIGHT ONLY", t8_hindsight_only(rows, starved_subjects)),
         ("9 DEFERRAL COMPOSED", t9_deferral_composed(rows, pinned_rounds["median"])),
+        ("10 PRE-TRIGGER LOST BET", t10_pre_trigger_lost_bet(rows, pins)),
+        ("11 LADDER EXHAUSTED, CLOSED", t11_ladder_exhausted_closed(rows)),
+        ("12 LADDER RESTARTED", t12_ladder_restarted(rows)),
     ):
         if result:
             warns.append((name, result))
@@ -1546,16 +1852,282 @@ def _self_test() -> int:
          t2_non_termination([_u("u", r, "continued") for r in LADDER[:2]]
                             + [_u("v", r, "continued") for r in LADDER[:2]]), None)
 
-    # ── trigger 3: a conveyor wearing a decision's clothes ───────────────────────────────────
-    _one = [{"route": "accrete", "outcome": "stopped"}] * 5
-    case("five scored rows on one route is a collapse",
-         "not discriminating" in (t3_routes_collapsed(_one) or ""), True)
-    case("four is below the floor — the trigger states its own sample size",
-         t3_routes_collapsed(_one[:4]), None)
-    case("five rows across TWO routes discriminate",
-         t3_routes_collapsed(_one[:4] + [{"route": "redesign", "outcome": "stopped"}]), None)
-    case("UNSCORED rows do not count toward the floor",
-         t3_routes_collapsed([{"route": "accrete", "outcome": None}] * 9), None)
+    # ── trigger 2 / trigger 11: an exhausted unit is OPEN (FAIL) or CLOSED by its DEFER (WARN) ──
+    # ⟳ 2026-10-23 r5, the owner's decision (option A). Two distinct inputs per branch: a fully
+    # WALKED ladder on unit u, and a SKIP straight to defer on unit w. Every log here is one
+    # `invalid_rows` accepts (the last case of this block holds them to it).
+    _walk_open = [_u("u", r, "continued") for r in LADDER]
+    _skip_open = [_u("w", "defer", "continued", skipped=["accrete", "redesign", "split"],
+                     why_skipped="judged futile")]
+    _walk_closed = _walk_open[:-1] + [_u("u", "defer", "continued", rounds_at_termination=5)]
+    _skip_closed = [{**_skip_open[0], "rounds_at_termination": 2}]
+    _walk_stopped = _walk_open[:-1] + [_u("u", "defer", "stopped")]
+    _skip_stopped = [{**_skip_open[0], "outcome": "stopped", "rounds_at_termination": 1}]
+    case("⭐ an exhausted unit whose DEFER continued and did NOT close it FAILs trigger 2, not 11",
+         ("refuted" in (_try(lambda: t2_non_termination(_walk_open)) or ""),
+          _try(lambda: t11_ladder_exhausted_closed(_walk_open))), (True, None))
+    case("...and so does one that SKIPPED to defer, on another unit",
+         ("(s/w)" in (_try(lambda: t2_non_termination(_skip_open)) or ""),
+          _try(lambda: t11_ladder_exhausted_closed(_skip_open))), (True, None))
+    case("⭐ a continued DEFER that records rounds_at_termination CLOSES the unit: WARN, not FAIL",
+         (_try(lambda: t2_non_termination(_walk_closed)),
+          _try(lambda: t11_ladder_exhausted_closed(_walk_closed))),
+         (None, "1 unit(s) exhausted every route, the stream continued, and a DEFER CLOSED them "
+                "(s/u) — set down, not repaired; the ladder terminated, the findings did not"))
+    case("...and so does a skipped-to-defer unit that closes, on another unit",
+         (_try(lambda: t2_non_termination(_skip_closed)),
+          "(s/w)" in (_try(lambda: t11_ladder_exhausted_closed(_skip_closed)) or "")),
+         (None, True))
+    case("⭐ an exhausted unit whose DEFER STOPPED is quiet on both triggers",
+         (_try(lambda: t2_non_termination(_walk_stopped)),
+          _try(lambda: t11_ladder_exhausted_closed(_walk_stopped))), (None, None))
+    case("...and so is a skipped-to-defer unit that stopped",
+         (_try(lambda: t2_non_termination(_skip_stopped)),
+          _try(lambda: t11_ladder_exhausted_closed(_skip_stopped))), (None, None))
+    case("an open and a closed unit side by side: trigger 2 names only the OPEN one",
+         (_try(lambda: t2_non_termination(_walk_closed + _skip_open)) or "").count("(s/w)"), 1)
+    case("⭐ a bet after a CLOSED unit is refused — a closed unit cannot be reopened",
+         "is CLOSED" in (validate_row(_u("u", "accrete"), _walk_closed) or ""), True)
+    case("...whatever its route, after a skipped-to-defer close on another unit",
+         "is CLOSED" in (validate_row(_u("w", "split", "stopped"), _skip_closed) or ""), True)
+    case("⛔ rounds_at_termination on a continued NON-DEFER row is refused — a rung is left",
+         ("only a continued 'defer'" in (validate_row(
+             _u("u", "accrete", "continued", rounds_at_termination=3)) or ""),
+          "only a continued 'defer'" in (validate_row(
+              _u("w", "split", "continued", rounds_at_termination=1,
+                 skipped=["accrete", "redesign"], why_skipped="x")) or "")), (True, True))
+    case("⛔ rounds_at_termination must be an integer >= 1 — zero, and a bool posing as one",
+         ("must be an integer >= 1" in (validate_row(
+             _u("u", "defer", "continued", rounds_at_termination=0)) or ""),
+          "must be an integer >= 1" in (validate_row(
+              {**_u("w", "accrete", "stopped"), "rounds_at_termination": True}) or "")),
+         (True, True))
+    case("every log this block drives is one main() ACCEPTS",
+         [n for n, lg in (("walk_open", _walk_open), ("skip_open", _skip_open),
+                          ("walk_closed", _walk_closed), ("skip_closed", _skip_closed),
+                          ("walk_stopped", _walk_stopped), ("skip_stopped", _skip_stopped))
+          if _try(lambda: invalid_rows(lg))], [])
+
+    # ── trigger 12: a ladder RESTARTED on a new unit after its subject closed one ─────────────
+    # ⟳ r5, the owner's second containment. Seen, not forbidden: a WARN, never a refusal.
+    _restart1 = _walk_closed + [_u("u2", "accrete", "continued")]
+    _restart2 = _skip_closed + [_u("w-again", "accrete"), _u("w-again", "redesign")]
+    _sibling1 = [_u("v", "accrete")] + _walk_closed
+    _sibling2 = [_u("x", "accrete", "stopped")] + _skip_closed + [_u("x", "redesign")]
+    _other_subj = _walk_closed + [{**_u("u9", "accrete"), "subject": "t"}]
+    _no_close = _walk_open + [_u("u3", "accrete")]
+    case("⭐ a NEW unit after a closure WARNS, naming the subject, the closed unit and the new one",
+         _try(lambda: t12_ladder_restarted(_restart1)),
+         "1 ladder(s) restarted after exhaustion (s: u2 after u closed) — a closed unit cannot "
+         "be reopened, so check the new unit is separate work, not the old one renamed")
+    case("...and so does one after a skipped-to-defer close, however many rows it has",
+         _try(lambda: ladder_restarts(_restart2)), [("s", "w", "w-again")])
+    case("⭐ a sibling unit that PREDATES the closure does not warn",
+         _try(lambda: t12_ladder_restarted(_sibling1)), None)
+    case("...nor does one that began before it and kept betting after it",
+         _try(lambda: ladder_restarts(_sibling2)), [])
+    case("⭐ a new unit on ANOTHER subject after a closure does not warn",
+         _try(lambda: t12_ladder_restarted(_other_subj)), None)
+    case("...nor does a new unit on a subject whose exhausted unit is OPEN, not closed",
+         _try(lambda: ladder_restarts(_no_close)), [])
+    case("every trigger-12 log is one main() ACCEPTS",
+         [n for n, lg in (("restart1", _restart1), ("restart2", _restart2),
+                          ("sibling1", _sibling1), ("sibling2", _sibling2),
+                          ("other_subj", _other_subj), ("no_close", _no_close))
+          if _try(lambda: invalid_rows(lg))], [])
+
+    # ── trigger 3: a bet the stream CONTINUED past, whose next route was never logged ─────────
+    # ⟳ 2026-10-23: replaces the route-collapse cases, whose subject is deleted. Each branch is
+    # driven by TWO DISTINCT inputs — a different unit, and a different rung of the ladder — so
+    # no branch is satisfied by one fixture's constant.
+    def _b(sub, unit, route, outcome=None, **kw):
+        r = {"subject": sub, "unit": unit, "route": route, "outcome": outcome, **kw}
+        if outcome == "stopped":
+            r.setdefault("rounds_at_termination", 2)
+        return r
+    # ⛔ EVERY CALL GOES THROUGH `_try`, like trigger 2's cases: a mutation that makes a trigger
+    # RAISE must redden the case it hits, not kill the suite before the cases after it run —
+    # measured, an unwrapped call here took every later case down under a grouping mutation.
+    # ⛔ r1 F3: and EVERY log below is one `main()` would accept — the last case of this block
+    # holds them all to `invalid_rows`, the CLI's own validation.
+    _NO_PINS = frozenset()
+    _fail1 = [_b("s", "u", "accrete", "continued")]
+    _fail2 = [_b("t", "v", "accrete", "continued"), _b("t", "v", "redesign", "continued")]
+    _quiet1 = [_b("s", "u", "accrete", "continued"), _b("s", "u", "redesign")]
+    _quiet2 = [_b("t", "v", "accrete", "continued"), _b("t", "v", "redesign", "continued"),
+               _b("t", "v", "split", "stopped")]
+    _forced = [_b(f"p{i}", "u", "accrete", "stopped") for i in range(5)]
+    _retro_lost = [_b("s", "u", "accrete", "continued", retroactive=True)]
+    _defer1 = [_b("s", "u", "defer", "continued", skipped=["accrete", "redesign", "split"],
+                  why_skipped="judged futile on this shape")]
+    _defer2 = [_b("t", "v", r, "continued") for r in LADDER]
+    _apart = [_b("s", "u", "accrete", "continued"), _b("s", "w", "accrete")]
+    _inflight = [_b("s", "u", "accrete")]
+    _kinded = [_b("k", "u", "accrete", "continued", kind="attempt")]
+    case("⭐ a FIRST bet the stream continued past, with no later row, FAILS naming its unit",
+         _try(lambda: t3_lost_bet_not_escalated(_fail1, _NO_PINS)),
+         "1 bet(s) the stream continued past with no next route logged (s/u) — the route's "
+         "failure observation was seen and the ladder's escalation was never recorded, so the "
+         "work kept going on a route the log records as failed")
+    case("...and so does a SECOND such bet, while the first — escalated in time — stays quiet",
+         _try(lambda: t3_lost_bet_not_escalated(_fail2, frozenset({("x", "y")}))),
+         "1 bet(s) the stream continued past with no next route logged (t/v) — the route's "
+         "failure observation was seen and the ladder's escalation was never recorded, so the "
+         "work kept going on a route the log records as failed")
+    case("⭐ a bet followed by a PROSPECTIVE next bet is quiet on trigger 3",
+         _try(lambda: t3_lost_bet_not_escalated(_quiet1, _NO_PINS)), None)
+    case("...and so is a two-rung escalation that ends in a won split",
+         _try(lambda: t3_lost_bet_not_escalated(_quiet2, frozenset({("q", "r")}))), None)
+    # ⛔⛔ THE STRUCTURAL FALSE ALARM THIS TRIGGER REPLACES. Five first-rung accrete rows that all
+    # WON are the ladder's forced shape, not a conveyor — the old trigger failed on exactly this.
+    case("⭐ five first-rung accrete bets that all STOPPED are quiet — the forced rung is not a conveyor",
+         _try(lambda: t3_lost_bet_not_escalated(_forced, _NO_PINS)), None)
+    case("an IN-FLIGHT bet (no outcome yet) is not a bet the stream continued past",
+         _try(lambda: t3_lost_bet_not_escalated(_inflight, _NO_PINS)), None)
+    case("a RETROACTIVE bet is not a bet, so nothing is owed after it",
+         _try(lambda: t3_lost_bet_not_escalated(_retro_lost, _NO_PINS)), None)
+    # ⛔ r1 F4: a continued DEFER has no rung to escalate to. Trigger 2 owns it; trigger 3
+    # naming it as well would be two triggers for one defect, and its message would be false.
+    case("⭐ a continued DEFER reached by SKIP is trigger 2's FAIL, and trigger 3 is silent",
+         ("refuted" in (_try(lambda: t2_non_termination(_defer1)) or ""),
+          _try(lambda: t3_lost_bet_not_escalated(_defer1, _NO_PINS))), (True, None))
+    case("...and so is one at the end of a fully WALKED ladder, on another unit",
+         ("refuted" in (_try(lambda: t2_non_termination(_defer2)) or ""),
+          _try(lambda: t3_lost_bet_not_escalated(_defer2, _NO_PINS))), (True, None))
+    case("lost_bets reads each UNIT apart — a next bet on another unit does not escalate this one",
+         _try(lambda: lost_bets(_apart)), [("s", "u", "accrete")])
+    case("...and names a SECOND-rung loss by its own unit AND route",
+         _try(lambda: lost_bets(_fail2)), [("t", "v", "redesign")])
+    case("a bet row carrying the redesign plan's `kind` is judged like any other bet",
+         _try(lambda: t3_lost_bet_not_escalated(_kinded, _NO_PINS)) is not None, True)
+
+    # ── the PINNED pre-trigger lost bets: history, not an exemption anyone can write ─────────
+    # ⟳ r3: replaces the in-log acknowledgment, REMOVED for thrashing. ⟳ r4: a pin names ONE
+    # BET, (subject, unit, route) — a pin on the unit would excuse its every later loss too.
+    _pin_s = frozenset({("s", "u", "accrete")})
+    _pin_t = frozenset({("t", "v", "redesign")})
+    case("⭐ a PINNED lost bet does not FAIL trigger 3, and trigger 10 names it as history",
+         (_try(lambda: t3_lost_bet_not_escalated(_fail1, _pin_s)),
+          _try(lambda: t10_pre_trigger_lost_bet(_fail1, _pin_s))),
+         (None, "1 lost bet(s) PREDATE trigger 3 and are pinned in baseline.json (s/u "
+                "(accrete)) — their next route was never logged, and they are history the rule "
+                "could not have governed"))
+    case("...and so is a pinned SECOND-rung loss on another unit",
+         (_try(lambda: t3_lost_bet_not_escalated(_fail2, _pin_t)),
+          "PREDATE trigger 3" in (_try(lambda: t10_pre_trigger_lost_bet(_fail2, _pin_t)) or "")),
+         (None, True))
+    case("⭐ an UNPINNED lost bet still FAILS while another unit's is pinned",
+         "(s/w)" in (_try(lambda: t3_lost_bet_not_escalated(
+             _fail1 + [_b("s", "w", "accrete", "continued")], _pin_s)) or ""), True)
+    case("...and a pin on another unit of the SAME subject does not cover it",
+         "(t/v)" in (_try(lambda: t3_lost_bet_not_escalated(
+             _fail2, frozenset({("t", "other", "redesign")}))) or ""), True)
+    # ⛔⛔ r4 Codex Major, with BOTH shipped histories: the pinned bet ESCALATED and its successor
+    # LOST. The successor is a new loss and FAILs; the pin no longer matches an unescalated loss,
+    # so it is reported UNUSED — "a later bet escalated it and the pin is stale" is exactly true.
+    _AO = ("work-lines-always-on", "last-plan lifecycle + Stop-hook optional steps")
+    _BF = ("work-lines-backfill", "transcript replay (event intake + END windows + checkpoints)")
+    _ship = frozenset({_AO + ("accrete",), _BF + ("accrete",)})
+    _succ_ao = [_b(*_AO, "accrete", "continued"), _b(*_AO, "redesign", "continued"),
+                _b(*_BF, "accrete", "continued")]
+    _succ_bf = [_b(*_AO, "accrete", "continued"), _b(*_BF, "accrete", "continued"),
+                _b(*_BF, "redesign", "continued"), _b(*_BF, "split", "continued")]
+    case("⭐ always-on's pinned bet ESCALATED and its successor LOST: trigger 3 FAILs on it",
+         (_try(lambda: t3_lost_bet_not_escalated(_succ_ao, _ship)),
+          "1 pin(s) match no unescalated lost bet in this log (work-lines-always-on/last-plan "
+          "lifecycle + Stop-hook optional steps (accrete))" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_succ_ao, _ship)) or "")),
+         ("1 bet(s) the stream continued past with no next route logged (work-lines-always-on/"
+          "last-plan lifecycle + Stop-hook optional steps) — the route's failure observation was "
+          "seen and the ladder's escalation was never recorded, so the work kept going on a "
+          "route the log records as failed", True))
+    case("...and so does backfill's, two rungs on, its pin reported UNUSED and always-on's HIT",
+         ("(work-lines-backfill/" in (_try(lambda: t3_lost_bet_not_escalated(_succ_bf, _ship))
+                                       or ""),
+          "match no unescalated lost bet in this log (work-lines-backfill/" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_succ_bf, _ship)) or ""),
+          "pinned in baseline.json (work-lines-always-on/" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_succ_bf, _ship)) or "")),
+         (True, True, True))
+    # A pin whose bet was ESCALATED in time matches nothing: trigger 3 is quiet regardless, and
+    # trigger 10 reports the pin as UNUSED, because a pin that matches nothing is stale.
+    case("⭐ a pin on a unit that ESCALATED is quiet on trigger 3 and reported UNUSED by trigger 10",
+         (_try(lambda: t3_lost_bet_not_escalated(_quiet1, _pin_s)),
+          _try(lambda: t10_pre_trigger_lost_bet(_quiet1, _pin_s))),
+         (None, "1 pin(s) match no unescalated lost bet in this log (s/u (accrete)) — expected "
+                "while that bet's row is on a branch not merged here; otherwise a later bet "
+                "escalated it and the pin is stale and should be deleted"))
+    case("...and so is one whose escalation ended in a won split, on another unit",
+         (_try(lambda: t3_lost_bet_not_escalated(_quiet2, _pin_t)),
+          "match no unescalated lost bet in this log (t/v (redesign))" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_quiet2, _pin_t)) or "")), (None, True))
+    case("⭐ a pin on a unit ABSENT from the log WARNS as unused and does not crash",
+         "match no unescalated lost bet in this log (gone/u (accrete))" in (_try(
+             lambda: t10_pre_trigger_lost_bet(_forced, frozenset({("gone", "u", "accrete")})))
+             or ""), True)
+    case("...including over an EMPTY log",
+         "match no unescalated lost bet in this log (t/v (redesign))" in (_try(
+             lambda: t10_pre_trigger_lost_bet([], _pin_t)) or ""), True)
+    case("no pins and no lost bets: trigger 10 is quiet",
+         (_try(lambda: t10_pre_trigger_lost_bet(_quiet1, _NO_PINS)),
+          _try(lambda: t10_pre_trigger_lost_bet(_forced, _NO_PINS))), (None, None))
+    case("...and an UNPINNED lost bet is trigger 3's alone, never trigger 10's",
+         _try(lambda: t10_pre_trigger_lost_bet(_fail1, _NO_PINS)), None)
+    _pins_ok = {PRE_TRIGGER_PINS: [
+        {"subject": "s", "unit": "u", "route": "accrete", "reason": "predates it"},
+        {"subject": "t", "unit": "v", "route": "redesign", "reason": "also predates"}]}
+    case("pinned_lost_bets reads the pins as a closed set of (subject, unit, route)",
+         pinned_lost_bets(_pins_ok),
+         (frozenset({("s", "u", "accrete"), ("t", "v", "redesign")}), None))
+    case("...and an ABSENT key is the empty set, a repository with no pre-trigger history",
+         pinned_lost_bets({"armed_at": "x"}), (frozenset(), None))
+    # ⛔ r4 Codex Low: a PRESENT key must be a list — `null` is not "no pins".
+    case("⛔ a PRESENT null pin list is refused, never read as empty",
+         "is NoneType, not a list" in str(_try(lambda: pinned_lost_bets(
+             {PRE_TRIGGER_PINS: None}))), True)
+    case("⛔ a pin with no REASON is refused — an exemption must say why it is history",
+         ("has no reason" in (pinned_lost_bets(
+             {PRE_TRIGGER_PINS: [{"subject": "s", "unit": "u", "route": "accrete"}]})[1] or ""),
+          "has no reason" in (pinned_lost_bets(
+              {PRE_TRIGGER_PINS: [{"subject": "t", "unit": "v", "route": "split",
+                                   "reason": " !! "}]})[1] or "")),
+         (True, True))
+    case("⛔ a pin with no ROUTE is refused — it would name a unit, not a bet",
+         ("names route None" in str(_try(lambda: pinned_lost_bets(
+             {PRE_TRIGGER_PINS: [{"subject": "s", "unit": "u", "reason": "x"}]}))),
+          "names route 'retry'" in str(_try(lambda: pinned_lost_bets(
+              {PRE_TRIGGER_PINS: [{"subject": "t", "unit": "v", "route": "retry",
+                                   "reason": "y"}]})))), (True, True))
+    case("⛔ a pin list of the wrong SHAPE is refused, never read as empty",
+         "is str, not a list" in str(_try(lambda: pinned_lost_bets({PRE_TRIGGER_PINS: "s/u"}))),
+         True)
+    case("⛔ ...and so is a pin ENTRY of the wrong shape",
+         "not a {subject, unit, route, reason}" in str(_try(lambda: pinned_lost_bets(
+             {PRE_TRIGGER_PINS: [["s", "u"]]}))), True)
+    case("⛔ a pin written TWICE is refused",
+         "is pinned twice" in (pinned_lost_bets(
+             {PRE_TRIGGER_PINS: _pins_ok[PRE_TRIGGER_PINS][:1] * 2})[1] or ""), True)
+    case("a baseline that is not an object is refused",
+         "not an object" in str(_try(lambda: pinned_lost_bets([]))), True)
+    # ⛔ THE LIST IS CLOSED: an independent copy of the shipped pins, so adding one reddens here.
+    _shipped = pinned_lost_bets(json.loads(BASELINE.read_text()))
+    case("⛔ the SHIPPED pin list is exactly the two lost bets that predate trigger 3",
+         _shipped, (frozenset({
+             ("work-lines-always-on", "last-plan lifecycle + Stop-hook optional steps",
+              "accrete"),
+             ("work-lines-backfill",
+              "transcript replay (event intake + END windows + checkpoints)", "accrete")}),
+             None))
+    case("every log this block drives is one main() ACCEPTS — no branch is tested off-domain",
+         [n for n, lg in (("fail1", _fail1), ("fail2", _fail2), ("quiet1", _quiet1),
+                          ("quiet2", _quiet2), ("forced", _forced), ("retro_lost", _retro_lost),
+                          ("defer1", _defer1), ("defer2", _defer2), ("apart", _apart),
+                          ("inflight", _inflight), ("kinded", _kinded),
+                          ("succ_ao", _succ_ao), ("succ_bf", _succ_bf))
+          if _try(lambda: invalid_rows(lg))], [])
+    case("invalid_rows NAMES a row the ladder refuses, by its 1-based number",
+         [n for n, _ in invalid_rows([_b("s", "u", "accrete", "continued"),
+                                      _b("s", "u", "split")])], [2])
 
     # ── trigger 4: no better than doing nothing, per SUBJECT (r1 Codex M6) ───────────────────
     def _done(subject, n):
@@ -1860,18 +2432,10 @@ def _self_test() -> int:
     case("...and an explicit retroactive: false is prospective, like an absent flag",
          len(prospective([{"subject": "a", "retroactive": False}, {"subject": "b"}])), 2)
 
-    _collapsed = [{"subject": f"c{i}", "unit": "u", "route": "accrete", "outcome": "continued"}
-                  for i in range(5)]
-    case("⭐ t3 cannot be bought off by a retroactive row on another route",
-         "not discriminating" in (t3_routes_collapsed(
-             _collapsed + [{**_retro, "route": "defer", "outcome": "stopped",
-                            "rounds_at_termination": 2}]) or ""), True)
-    # ⚠ ADJACENT: the SAME row, prospective. The fix must exclude retroactive rows, NOT ignore
-    # every late row — a real second route is the discrimination t3 exists to find.
-    case("...while a PROSPECTIVE row on another route does quiet it, which is the real signal",
-         t3_routes_collapsed(_collapsed + [{"subject": "p", "unit": "u", "route": "redesign",
-                                            "outcome": "stopped",
-                                            "rounds_at_termination": 2}]), None)
+    # ⟳ 2026-10-23: the two route-collapse provenance cases left with their trigger. The same
+    # property — a retroactive row cannot stand in for a bet — is now asked of trigger 3 by
+    # "a RETROACTIVE bet is not a bet, so nothing is owed after it". (r1 F3: an earlier pointer
+    # here named a case over a log `main()` refuses; that case is gone.)
 
     _t4base = [{"subject": f"x{i}", "unit": "u", "route": "accrete", "outcome": "stopped",
                 "rounds_at_termination": r} for i, r in enumerate([4, 4, 4, 1, 1])]
@@ -2029,6 +2593,7 @@ def _self_test() -> int:
                         "retroactive": True}]), None)
     case("...and a PROSPECTIVE row after a prospective bet is untouched by the rule",
          validate_row({"subject": "s", "unit": "u", "route": "redesign"}, _live_first), None)
+
     # ⚠ r7 Claude L11: the fold re-introduced, in the function it ADDED, the class it had just
     # fixed one function away — `prospective([None])` raised AttributeError.
     case("prospective() NAMES nothing and raises nothing on a non-dict row",
@@ -2252,7 +2817,10 @@ def _self_test() -> int:
         _bp_prov.write_text(_json.dumps(_ARMED))
         _lp_prov = Path(_wd) / "prov-log.jsonl"
         _lp_prov.write_text("".join(_json.dumps(r) + "\n" for r in [
-            {"subject": "live", "unit": "u", "route": "accrete", "outcome": "continued"},
+            # ⟳ 2026-10-23: `stopped`, not `continued` — a lone continued bet now FAILS trigger 3,
+            # and this case is about the summary line of a QUIET run.
+            {"subject": "live", "unit": "u", "route": "accrete", "outcome": "stopped",
+             "rounds_at_termination": 3},
             {"subject": "hist", "unit": "u", "route": "accrete", "outcome": "stopped",
              "rounds_at_termination": 2, "retroactive": True}]))
         _buf = io.StringIO()
@@ -2363,6 +2931,61 @@ def _self_test() -> int:
         case("⭐ trigger 9's verdict REACHES the CLI too, naming how many were deferrals",
              (_rc, "WARN  trigger 9 DEFERRAL COMPOSED" in _o,
               "at most 3 of 5 repairs" in _o), (0, True, True))
+        # ⛔ TRIGGER 3 AND ITS WARN HALF, WIRE-TESTED — the same lesson as trigger 8 and 9 above:
+        # a pure-function case proves the rule computes, never that its verdict REACHES a reader.
+        # The pins arrive through the BASELINE, the way `main()` reads them.
+        def _run_log(tag, log_rows, pins=None):
+            _bp = Path(_wd) / f"{tag}-baseline.json"
+            _bp.write_text(_json.dumps({**_ARMED, **({PRE_TRIGGER_PINS: pins}
+                                                     if pins is not None else {})}))
+            _lp = Path(_wd) / f"{tag}-log.jsonl"
+            _lp.write_text("".join(_json.dumps(r) + "\n" for r in log_rows))
+            _b2 = io.StringIO()
+            with contextlib.redirect_stdout(_b2):
+                _r = _try(lambda: main([], baseline_path=_bp, log_path=_lp,
+                                       corpus=lambda: {"median": 4, "mean": 4.6,
+                                                       "subjects": 57},
+                                       starved=lambda since, **_: ([], None)))
+            return _r, _b2.getvalue()
+        _rc, _o = _run_log("lost", [_b("lost", "u", "accrete", "continued")])
+        case("⭐ trigger 3's verdict REACHES the CLI as a FAIL and fails the run",
+             (_rc, "FAIL  trigger 3 LOST BET NOT ESCALATED" in _o, "(lost/u)" in _o),
+             (1, True, True))
+        # ⟳ r5: a CLOSED exhausted unit reaches the CLI as trigger 11's WARN, and the run exits 0.
+        _rc, _o = _run_log("closed", [_b("closed", "u", r, "continued") for r in LADDER[:-1]]
+                           + [_b("closed", "u", "defer", "continued", rounds_at_termination=4)])
+        case("⭐ a CLOSED exhausted unit reaches the CLI as trigger 11's WARN and exits 0",
+             (_rc, "WARN  trigger 11 LADDER EXHAUSTED, CLOSED" in _o, "FAIL" in _o),
+             (0, True, False))
+        _rc, _o = _run_log("restart", [_b("restart", "u", r, "continued") for r in LADDER[:-1]]
+                           + [_b("restart", "u", "defer", "continued", rounds_at_termination=4),
+                              _b("restart", "u-new", "accrete")])
+        case("⭐ a restarted ladder reaches the CLI as trigger 12's WARN and exits 0",
+             (_rc, "WARN  trigger 12 LADDER RESTARTED" in _o, "FAIL" in _o), (0, True, False))
+        _rc, _o = _run_log("pinned", [_b("pinned", "u", "accrete", "continued")],
+                           [{"subject": "pinned", "unit": "u", "route": "accrete",
+                             "reason": "predates trigger 3"}])
+        case("⭐ a PINNED lost bet reaches the CLI as trigger 10's WARN and exits 0",
+             (_rc, "WARN  trigger 10 PRE-TRIGGER LOST BET" in _o, "FAIL" in _o),
+             (0, True, False))
+        _rc, _o = _run_log("badpin", [_b("badpin", "u", "accrete", "continued")],
+                           [{"subject": "badpin", "unit": "u"}])
+        case("⛔ a MALFORMED pin list is CANNOT RUN at the CLI, never an empty one",
+             (_rc, "CANNOT RUN" in _o, "has no reason" in _o), (2, True, True))
+        # ⛔ r4 Codex Low, at the CLI: a PRESENT null is CANNOT RUN, not "no pins" — measured
+        # before the fix, it exited 0 "all triggers quiet" over an empty log.
+        _bp_null = Path(_wd) / "nullpin2-baseline.json"
+        _bp_null.write_text(_json.dumps({**_ARMED, PRE_TRIGGER_PINS: None}))
+        _lp_null = Path(_wd) / "nullpin2-log.jsonl"
+        _lp_null.write_text(_json.dumps(_b("np", "u", "accrete", "continued")) + "\n")
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = _try(lambda: main([], baseline_path=_bp_null, log_path=_lp_null,
+                                    corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                                    starved=lambda since, **_: ([], None)))
+        _o = _buf.getvalue()
+        case("⛔ a PRESENT null pin list is CANNOT RUN at the CLI, not an empty exemption list",
+             (_rc, "CANNOT RUN" in _o, "is NoneType, not a list" in _o), (2, True, True))
         _bp_starved = Path(_wd) / "starved-baseline.json"
         _bp_starved.write_text(_json.dumps({"rounds_to_termination": {"median": 9}, "armed_at": "2026-01-01T00:00:00Z"}))
         _lp_starved = Path(_wd) / "starved-log.jsonl"

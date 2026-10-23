@@ -341,8 +341,8 @@ the two gets re-examined. `scope_lead` reports the margin and the tied set; `sco
 *NO LEAD* rather than a winner.
 
 **The re-evaluation promise — `scripts/check-decision-scheme.py` over an append-only
-`docs/reviews/decision-scheme/decision-log.jsonl`, prediction written BEFORE outcome.** Seven
-triggers; four FAIL, three WARN. ⛔ **Trigger 1 is STARVATION and it is first on purpose:** the
+`docs/reviews/decision-scheme/decision-log.jsonl`, prediction written BEFORE outcome.** Its
+triggers either FAIL or WARN — how many of each is the script's to say, not this line's. ⛔ **Trigger 1 is STARVATION and it is first on purpose:** the
 predecessor was correct and saw `rounds=0` on 81% of the subjects where it applied. It is a RATCHET —
 history is the pinned baseline in `baseline.json` (median **4** rounds over 57 subjects, derived at
 `5d957db8`) and is never retro-filled, because a gate red from birth over 57 historical subjects gets

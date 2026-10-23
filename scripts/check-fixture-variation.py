@@ -648,6 +648,17 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # stopped taking a set of PATHS and now takes (subject, round) pairs (r2 YH2 — a path
     # is not a stable identity). `component_rounds`, `rounds_in_paths`, `round_shapes`
     # and `empty_listing_refusal` joined with them.
+    # ⟳ 2026-10-23: `t3_routes_collapsed.rows` is GONE WITH ITS FUNCTION — trigger 3 changed
+    # its question (route collapse -> a lost bet whose next route was never logged). Retired
+    # with its subject; `lost_bets`, `t3_lost_bet_not_escalated` and `t10_escalated_in_hindsight`
+    # join, each varied by two distinct inputs per branch. ⟳ r1 fold: t10 is renamed
+    # `t10_missed_escalation_acknowledged`, and `invalid_rows` (extracted from `main`) joins.
+    # ⟳ r3 fold: the in-log acknowledgment is REMOVED (thrashing), and every key that belonged
+    # to it goes WITH its subject — `acknowledgment_rejection`, `half_verdict`, `review_rounds`,
+    # `main.rounds` and the `rounds` parameter of the trigger-3 readers. t10 is renamed
+    # `t10_pre_trigger_lost_bet`; the readers take `pinned`, and `pinned_lost_bets` joins.
+    # ⟳ r5 fold: trigger 2's WARN half, `t11_ladder_exhausted_closed`, joins; so do
+    # `ladder_restarts` and `t12_ladder_restarted`, the owner's restart containment.
     'check-decision-scheme.py': (
         'component_rounds.rounds',
         'derive_outcome.after_round',
@@ -658,12 +669,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'empty_listing_refusal.paths',
         'empty_listing_refusal.sha',
         'group_by_unit.rows',
+        'invalid_rows.rows',
+        'ladder_restarts.rows',
+        'lost_bets.rows',
         'main.argv',
         'main.baseline_path',
         'main.corpus',
         'main.log_path',
         'main.starved',
         'parse_armed_at.raw',
+        'pinned_lost_bets.baseline',
         'read_log.path',
         'rounds_in_paths.paths',
         'rounds_in_paths.shapes',
@@ -676,7 +691,12 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         't1_not_fed.rows',
         't1_not_fed.subjects_since_arming',
         't2_non_termination.rows',
-        't3_routes_collapsed.rows',
+        't10_pre_trigger_lost_bet.pinned',
+        't10_pre_trigger_lost_bet.rows',
+        't11_ladder_exhausted_closed.rows',
+        't12_ladder_restarted.rows',
+        't3_lost_bet_not_escalated.pinned',
+        't3_lost_bet_not_escalated.rows',
         't4_no_improvement.baseline_median',
         't4_no_improvement.rows',
         't5_ranker_miss.rows',

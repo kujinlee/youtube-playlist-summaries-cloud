@@ -160,6 +160,12 @@ another rung (a route that was never attempted) or edits an append-only row.
   "rounds_at_termination": int              # iff stopped
 ```
 
+> ⟳ **2026-10-23 (branch `feat/trigger3-lost-bet`, not this plan's work):** `kind` is FREE for
+> this schema. That branch briefly added a non-bet "missed-escalation acknowledgment" row, first
+> under `kind` and then under a separate field, and then REMOVED it; the live log has no non-bet
+> row, and a bet row carrying `kind` is accepted by today's validator. The lost bets that predate
+> the new trigger 3 are pinned in `baseline.json` (`lost_bets_before_trigger3`) instead.
+
 ⛔ **THE EPOCH, which is what keeps the instrument alive (XB1/CB1).** Every clause above is required
 **iff `schema >= 2`**. A row with no `schema` is epoch 1 and is validated by the v1 rules exactly as
 today. The four live rows are therefore untouched and remain valid; nothing is rewritten; `main()`
@@ -309,7 +315,7 @@ and, with misses at 1 and 2, must name rows **1 and 2 of 4**.
 |---|---|---|
 | **t1** `not_fed` | **CHANGED** | domain = post-`armed_at` `(subject, round)` pairs from `ratchet_epoch`; component-derived unit set; `units_not_logged` escape (§2.4) |
 | **t2** `non_termination` | ⛔ **CHANGED TWICE** | (i) exhaustion must be `route_next(tried) is None`, not `len(set(tried)) < len(LADDER)` — measured: `t2` returns **None** for `[accrete, split, defer]` with `outcome: continued`, so a skipping unit's exhaustion is **skipped by the guard**. (ii) **a one-row `defer` must not read as "termination refuted" (CM4)** — DEFER *is* the answer "stop, file it", and its outcome is expected to be `continued`. t2 fires only when a unit has **≥2 attempts**, the ladder is exhausted, and the last outcome is `continued` |
-| **t3** `routes_collapsed` | ⛔ **BROKEN BY §2.1 — r2 YH4, and v2 declared it "unchanged"** | `t3_routes_collapsed` selects rows carrying an `outcome` and then reads their `route`. After the row-kind split the outcomes are on **observation** rows and the routes on **attempt** rows, so it reports `"all 5 scored rows took route None"` over `[accrete, redesign, split, defer, accrete]` — a **false FAIL**, measured. It needs a resolved attempt/observation projection. ⚠ **This is the SECOND trigger an "all seven re-derived" claim has missed** (v1 missed t4), and this time the fix caused it |
+| **t3** `routes_collapsed` | ⛔ **BROKEN BY §2.1 — r2 YH4, and v2 declared it "unchanged"** | `t3_routes_collapsed` selects rows carrying an `outcome` and then reads their `route`. After the row-kind split the outcomes are on **observation** rows and the routes on **attempt** rows, so it reports `"all 5 scored rows took route None"` over `[accrete, redesign, split, defer, accrete]` — a **false FAIL**, measured. It needs a resolved attempt/observation projection. ⚠ **This is the SECOND trigger an "all seven re-derived" claim has missed** (v1 missed t4), and this time the fix caused it. ⟳ **2026-10-23: `t3_routes_collapsed` is DELETED** (`feat/trigger3-lost-bet`) — under a forced first rung it fired on ladder structure. Its replacement, `t3_lost_bet_not_escalated`, reads `outcome` from BET rows, so §2.1's move of outcomes onto observation rows breaks it the same way and it would need the same projection |
 | **t4** `no_improvement` | ⛔ **CHANGED (CH2/XH5)** | v1 said "unchanged". It must exclude skip-bearing subjects and report the exclusion count (§2.3). ⚠ **And "terminated subject" is still undefined** — collapsing `stopped` rows by subject counts a subject with one stopped unit and others pending; that definition is **owed and listed in §6 T5** |
 | **t5** `ranker_miss` | **CHANGED** | reads `bet`; abstentions are gaps; prints log rows and the real denominator (§2.5) |
 | **t6** `denominator_moved` | unchanged | reads the corpus, not the log |

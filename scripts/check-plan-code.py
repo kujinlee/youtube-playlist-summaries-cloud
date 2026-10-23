@@ -1354,7 +1354,51 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-21 r6: 27 -> 28. The OUTPUT pin — r6 edited three unpinned body
     # literals and the suite stayed 111/111 while the reader was told the opposite.
     "scripts/check-review-decision.py": 28,
-    "scripts/check-decision-scheme.py": 86,
+    # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
+    # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
+    # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
+    # the collapse trigger's prospective filter, both in the deleted `t3_routes_collapsed` — and
+    # THREE re-pointed (t2's last-BET read, the summary line's acknowledgment clause, and its
+    # retroactive count), so they do not move this number. TWENTY-TWO added on `lost_bets`,
+    # t3/t10 and their wiring, the acknowledgment's validation, and the readers taught to skip it.
+    # ⟳ 2026-10-23 r1 fold: 106 -> 113. The acknowledgment became a CLOSING statement and moved
+    # off `kind`: SEVEN added (a continued DEFER left to trigger 2, twice; a bet after an
+    # acknowledgment; a second acknowledgment; its round count, twice; the acknowledged/unlogged
+    # split). Nine RE-POINTED with the rename, and t10's retroactive WARN branch — unreachable
+    # from any valid log — went with no entry of its own to retire.
+    # ⟳ 2026-10-23 r2 fold: 113 -> 128. An acknowledgment now counts only while the review
+    # corpus ON DISK shows its subject ended, converged, at the round it names. FIFTEEN added
+    # (each refutation branch of `acknowledgment_rejection`, the rejected class and its reader,
+    # main's corpus read and its CANNOT RUN, `review_rounds`' two refusals, and `half_verdict`'s
+    # last-line and bold-line rules). Seven RE-POINTED to the signatures that gained `rounds`.
+    # Two candidates REJECTED as equivalent: dropping `w != "coordinator"` (a coordinator entry's
+    # verdict is always None, so the `v is not None` clause already excludes it) and reading
+    # coordinator documents in `review_rounds` (their verdict is never read).
+    # ⟳ 2026-10-23 r3 fold: 128 -> 107 — the ONE permitted kind of fall. Rounds 2 and 3 were
+    # consecutive fold-induced rounds in the acknowledgment, THRASHING, and it was REMOVED.
+    # THIRTY-FIVE entries RETIRED WITH THEIR SUBJECT: the acknowledgment row and its validation,
+    # `acknowledgment_rejection`, `review_rounds`, `half_verdict`, main's corpus read, the
+    # acknowledged/rejected classes and their trigger-10 reader, and trigger 2's last-BET read
+    # (the only non-bet row it skipped is gone). EIGHT re-pointed — three of them back to the
+    # text they had on master. FOURTEEN added on its replacement: the closed pin list in
+    # `baseline.json` (`pinned_lost_bets`), trigger 3's exemption, and trigger 10's two halves.
+    # ⟳ 2026-10-23 r4 fold: 107 -> 111. A pin names ONE BET, (subject, unit, route), so a later
+    # loss on a pinned unit is not excused; and a PRESENT null pin list is refused. FOUR added
+    # (the route carried by `lost_bets`, the route check, the three-part key, null-vs-absent);
+    # THREE re-pointed to the parser's new presence test.
+    # ⟳ 2026-10-23 r5 fold: 111 -> 119, the owner's option A. A `continued` DEFER that records
+    # `rounds_at_termination` CLOSES its unit: trigger 2 FAILs only OPEN exhausted units, the new
+    # trigger 11 WARNs on closed ones, and `validate_row` refuses a bet after a close. EIGHT added
+    # (both triggers' filters, t11's guard and wiring, `closes_unit`, the named closed refusal,
+    # and the field's two shape rules). Dropping the `continued` clause of `closes_unit` was first
+    # written off here as equivalent; ⟳ r6 Codex measured it is NOT — a stopped DEFER followed by a
+    # new unit then warns trigger 12 — and two existing cases already go red on it (269/271).
+    # ⟳ 2026-10-23 r5 fold, second containment: 119 -> 125. A NEW unit on a subject after one of
+    # its units was CLOSED is trigger 12's WARN (a restarted ladder, seen, not forbidden). SIX
+    # added: the closure record, the began-after test, the same-subject test, the first-row
+    # rule, t12's guard and its wiring. An `unit == closed` exclusion was DELETED rather than
+    # mutated: the closed unit's first row is never after its own closing row, so it was dead.
+    "scripts/check-decision-scheme.py": 125,
     "scripts/check-goal-status.py": 7,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5647,7 +5691,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1842)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1881)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
