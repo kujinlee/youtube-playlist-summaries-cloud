@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 56 cases
+    python3 scripts/gen-work-lines.py --self-test  # 58 cases
 
 WHY THIS EXISTS
 ---------------
@@ -81,6 +81,29 @@ def parse_plan(name: str, text: str, touched: str) -> dict:
             "done": x + o > 0 and o == 0, "empty": x + o == 0}
 
 
+def plan_key(rec: dict):
+    """A plan's IDENTITY: `(checkout, slug)` from `read_plans_noted`, else its bare slug (a record
+    built by `parse_plan` alone, which belongs to no checkout). ⛔ THE ONLY KEY — every dict of
+    plans is keyed by this and every lookup goes through it (r6 Codex, Major: the display label was
+    the key, so a file NAMED `kid @ main.md` overwrote the generated label for `kid` in main, and an
+    unfinished plan vanished from the forest while its banner described the completed copy)."""
+    return rec.get("key", rec["slug"])
+
+
+def parent_key(rec: dict):
+    """The KEY of a plan's parent: resolved by `read_plans_noted` (None when it exists nowhere),
+    else the bare `parent:` name for a `parse_plan`-only record. Never a display label."""
+    return rec["parent_key"] if "parent_key" in rec else rec["parent"]
+
+
+def label(rec: dict) -> str:
+    """The DISPLAY name — derived here, at render time, and never used as a key or for lookup:
+    the bare slug, or `<slug> @ <checkout>` when the same slug is held in several checkouts.
+    ⚠ Two different plans can therefore DISPLAY alike (a hand-named `kid @ main.md` beside `kid`
+    held twice); they stay separate rows, because identity is `plan_key`."""
+    return f'{rec["slug"]} @ {rec["where"]}' if rec.get("where") else rec["slug"]
+
+
 def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
     """PURE. (roots, orphan-parent slugs). Each record gains `children`; the result is a TREE.
 
@@ -97,19 +120,19 @@ def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
     longer writes a self-parent or rewrites lineage on re-arm, so a cycle now takes a hand-edited
     file; it is still broken here, because a page that hangs shows nothing at all.
     """
-    by_slug = {p["slug"]: dict(p, children=[]) for p in plans}
+    by_slug = {plan_key(p): dict(p, children=[]) for p in plans}
     orphans, roots = [], []
     for p in sorted(by_slug.values(), key=lambda r: r["touched"], reverse=True):
-        par = p["parent"]
-        if par is None:
+        par = parent_key(p)
+        if p["parent"] is None:
             roots.append(p)
-        elif par not in by_slug:
-            orphans.append(par)
-            p["orphan_parent"] = par
+        elif par is None or par not in by_slug:
+            orphans.append(p["parent"])
+            p["orphan_parent"] = p["parent"]
             roots.append(p)
         else:
             by_slug[par]["children"].append(p)
-    seen: set[str] = set()
+    seen: set = set()
 
     def place(start: dict) -> None:
         stack = [start]
@@ -118,9 +141,9 @@ def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
             # Never true once the cuts below are made. It is here so that a broken cut FAILS the
             # tree cases by name instead of hanging the suite — measured: without it, removing the
             # cut hung the self-test and named nothing.
-            if n["slug"] in seen:
+            if plan_key(n) in seen:
                 continue
-            seen.add(n["slug"])
+            seen.add(plan_key(n))
             stack.extend(n["children"])
 
     for r in roots:
@@ -138,11 +161,11 @@ def build_forest(plans: list[dict]) -> tuple[list[dict], list[str]]:
         walk, n = [], min(s for s in by_slug if s not in seen)
         while n not in walk:
             walk.append(n)
-            n = by_slug[n]["parent"]
+            n = parent_key(by_slug[n])
         cut = min(walk[walk.index(n):])
         node = by_slug[cut]
-        par = by_slug[node["parent"]]
-        par["children"] = [c for c in par["children"] if c["slug"] != cut]
+        par = by_slug[parent_key(node)]
+        par["children"] = [c for c in par["children"] if plan_key(c) != cut]
         node["cycle"] = True  # type: ignore[assignment]
         roots.append(node)
         place(node)
@@ -240,7 +263,7 @@ def _render_node(n: dict, parts: list[str]) -> None:
         badge, cls = f'{n["ticked"]}/{n["total"]} not ticked closed', "st-open"
     cyc = ' <span class="warn">⛔ cycle</span>' if n.get("cycle") else ""
     parts.append(f'<li><span class="st {cls}">{esc(badge)}</span> '
-                 f'<code>{esc(n["slug"])}</code> '
+                 f'<code>{esc(label(n))}</code> '
                  f'<span class="when">{esc(n["touched"])}</span>{cyc}')
     if n["children"]:
         parts.append('<ul>')
@@ -355,20 +378,20 @@ def _read_dir(d: pathlib.Path) -> list[dict]:
     return out
 
 
-def row_for(plans: list[dict], name: str, checkout: pathlib.Path | str) -> str | None:
-    """The row slug that plan `name` has AS SEEN FROM `checkout`: the copy held in that checkout,
-    else the first copy (main first). None when no checkout holds `name`.
+def row_for(plans: list[dict], name: str, checkout: pathlib.Path | str):
+    """The KEY (`plan_key`) of plan `name` AS SEEN FROM `checkout`: the copy held in that checkout,
+    else the first copy (main first). None when no checkout holds `name`. Never a label.
 
     ⛔ THE ONE RESOLVER for a duplicated slug. `read_plans_noted` uses it to re-point a child's
     `parent:`, and `begin-plan`'s banner `Line:` uses it to find its OWN plan (r3 Claude F5) — two
     resolvers would let the banner and the page put one plan under two different rows.
     """
-    copies = [r for r in plans if r.get("name", r["slug"]) == name]
+    copies = [r for r in plans if r["slug"] == name]
     want = str(pathlib.Path(checkout).resolve())
     for r in copies:
         if want in r.get("checkouts", ()):
-            return r["slug"]
-    return copies[0]["slug"] if copies else None
+            return plan_key(r)
+    return plan_key(copies[0]) if copies else None
 
 
 def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], list[str]]:
@@ -428,16 +451,16 @@ def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], 
                   else pathlib.Path(c).name for c, _ in copies]
         if len(set(labels)) < len(labels):          # two checkouts share a folder name
             labels = [str(c) for c, _ in copies]
-        for (checkout, r), label in zip(copies, labels):
-            r = dict(r, name=name, checkouts=(str(pathlib.Path(checkout).resolve()),))
-            if len(copies) > 1:
-                # ⛔ TWO ROWS, NEVER MERGED — a short checkout name, not an absolute path.
-                r["slug"] = f"{name} @ {label}"
+        for (checkout, r), where in zip(copies, labels):
+            held = str(pathlib.Path(checkout).resolve())
+            # ⛔ IDENTITY IS THE KEY `(checkout, slug)`; `slug` stays BARE. `where` only feeds
+            # `label()` at render time — TWO ROWS, NEVER MERGED, shown with a short checkout name.
+            r = dict(r, name=name, key=(held, name), checkouts=(held,),
+                     where=where if len(copies) > 1 else None)
             out.append(r)
     for r in out:
-        par = r["parent"]
-        if par is not None and len(by_name.get(par, ())) > 1:
-            r["parent"] = row_for(out, par, r["checkouts"][0])
+        r["parent_key"] = (None if r["parent"] is None
+                           else row_for(out, r["parent"], r["checkouts"][0]))
     return out, notes
 
 
@@ -671,6 +694,15 @@ def _self_test() -> int:
          ("<i>" in _x, "&lt;i&gt;ask" in _x, "<s>" in _x, "&lt;s&gt;gone" in _x),
          (False, True, False, True))
 
+    # ── identity accessors (r6 Codex): the KEY, the parent's KEY, and the display label ──────
+    case("⭐ identity is the KEY, the parent is a KEY, and the label is display only — at distinct "
+         "records, so none of them is a constant",
+         (plan_key({"slug": "a", "key": ("/co", "a")}), plan_key({"slug": "b"}),
+          parent_key({"slug": "c", "parent": "p", "parent_key": None}),
+          parent_key({"slug": "d", "parent": "q"}),
+          label({"slug": "s", "where": "main"}), label({"slug": "t", "where": None})),
+         (("/co", "a"), "b", None, "q", "s @ main", "t"))
+
     # ── main() over a constructed world ──────────────────────────────────────────────────────
     with _tf.TemporaryDirectory() as _d:
         _pd = pathlib.Path(_d) / "plans"; _pd.mkdir()
@@ -763,17 +795,22 @@ def _self_test() -> int:
              (0, [str(_main), str(_wt)], []))
         (_main / ".claude/plans/twin.md").write_text("# t\n- [ ] a\n- [x] b")
         (_wt / ".claude/plans/twin.md").write_text("# t\n- [ ] a\n- [x] b")
-        _slugs = _try(lambda: sorted(r["slug"] for r in read_plans(_main / ".claude/plans")))
+        # ⟳ r6: identity is `plan_key`; a case observes the DISPLAY name through `label()`, and a
+        # parent through the row its KEY resolves to — never by matching label strings.
+        def _plab(rows, r):
+            k = parent_key(r)
+            return next((label(x) for x in rows if plan_key(x) == k), None) if k else None
+        _slugs = _try(lambda: sorted(label(r) for r in read_plans(_main / ".claude/plans")))
         case("WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold "
              "case — and labels BOTH differing copies of a slug with a SHORT checkout name",
              _slugs, sorted(["main-only", "wt-only", "kid", "twin @ main", "twin @ wt-side",
                              "both @ main", "both @ wt-side"]))
-        _kid = _try(lambda: [r["parent"] for r in read_plans(_main / ".claude/plans")
-                             if r["slug"] == "kid"])
+        _kid = _try(lambda: (lambda rows: [_plab(rows, r) for r in rows if r["slug"] == "kid"])(
+            read_plans(_main / ".claude/plans")))
         case("WT3 a child's parent points at the copy in ITS OWN checkout",
              _kid, ["both @ wt-side"])
         _two = _try(lambda: [(r["ticked"], r["total"]) for r in read_plans(_main / ".claude/plans")
-                             if r["slug"].startswith("both @")])
+                             if label(r).startswith("both @")])
         case("WT4 ...and each labelled copy keeps ITS OWN progress", sorted(_two),
              sorted([(1, 1), (0, 2)]))
         _tw = _try(lambda: [r["checkouts"] for r in read_plans(_main / ".claude/plans")
@@ -792,13 +829,13 @@ def _self_test() -> int:
                            row_for(_rows, "twin", _wt), row_for(_rows, "nowhere", _main),
                            row_for([{"slug": "solo", "name": "solo", "checkouts": ()}], "solo",
                                    _wt))),
-             ("both @ wt-side", "both @ main", "twin @ wt-side", None, "solo"))
+             ((str(_wt), "both"), (str(_main), "both"), (str(_wt), "twin"), None, "solo"))
         _sub = _main / "sub" / ".claude" / "plans"
         _sub.mkdir(parents=True)
         (_sub / "both.md").write_text("# b\n- [ ] sub copy")
         case("WT8 a plan directory git does not list is read under ITS checkout's name, not "
              "`.claude` (r3 Claude F6)",
-             _try(lambda: sorted(r["slug"] for r in read_plans(_sub)
+             _try(lambda: sorted(label(r) for r in read_plans(_sub)
                                  if r["name"] == "both")),
              sorted(["both @ main", "both @ sub", "both @ wt-side"]))
         _gd = _os.environ.get("GIT_DIR")
@@ -860,11 +897,44 @@ def _self_test() -> int:
         _croots = _try(lambda: build_forest(_cr)[0])
         case("WT10 identical children of DIFFERENT parents stay apart: each kid under its own "
              "checkout's parent, and BOTH lines are open",
-             (_try(lambda: sorted((r["slug"], r["parent"]) for r in _cr)),
-              _try(lambda: sorted((n["slug"], line_state(n)) for n in _croots))),
+             (_try(lambda: sorted((label(r), _plab(_cr, r)) for r in _cr)),
+              _try(lambda: sorted((label(n), line_state(n)) for n in _croots))),
              ([("kid @ main", "parent @ main"), ("kid @ side", "parent @ side"),
                ("parent @ main", None), ("parent @ side", None)],
               [("parent @ main", "open"), ("parent @ side", "open")]))
+        # ⟳ r6 Codex (Major) — HIS COLLISION FIXTURE. A hand-named `kid @ main.md` (unfinished)
+        # beside `kid` held in two checkouts (both done). Keyed by label, the generated
+        # `kid @ main` overwrote the real file and the page said "0 still owing".
+        _km = pathlib.Path(_dw).resolve() / "collide-main"
+        _km.mkdir()
+        _git(_km, "init", "-q")
+        _git(_km, "commit", "-q", "--allow-empty", "-m", "root")
+        _ks = pathlib.Path(_dw).resolve() / "collide-side"
+        _git(_km, "worktree", "add", "-q", str(_ks), "-b", "collide")
+        for _co in (_km, _ks):
+            (_co / ".claude" / "plans").mkdir(parents=True)
+            (_co / ".claude/plans/kid.md").write_text("<!-- parent: - -->\n- [x] done")
+        (_km / ".claude/plans/kid @ main.md").write_text(
+            "<!-- parent: - -->\n<!-- serving: unrelated unfinished work -->\n- [ ] still open")
+        _kr = _try(lambda: read_plans(_km / ".claude/plans"))
+        _kroots = _try(lambda: build_forest(_kr)[0])
+
+        def _nodes(roots):
+            out_, stack = [], list(roots)
+            while stack:
+                n_ = stack.pop()
+                out_.append(n_)
+                stack.extend(n_["children"])
+            return out_
+        _ko = pathlib.Path(_dw) / "w11.html"
+        _kw = write_page(_ko, _km / ".claude/plans")
+        case("WT11 a hand-named `kid @ main.md` beside `kid` held twice: THREE nodes kept, ONE open "
+             "line, and the page says 1 still owing",
+             (_try(lambda: len(_nodes(_kroots))),
+              _try(lambda: sorted(line_state(n) for n in _kroots)),
+              _try(lambda: [n["serving"] for n in _kroots if line_state(n) == "open"]),
+              "1 still owing" in _kw[1]),
+             (3, ["done", "done", "open"], ["unrelated unfinished work"], True))
         _lone = pathlib.Path(_dw) / "not-a-repo"
         (_lone / ".claude" / "plans").mkdir(parents=True)
         _dirs3, _notes3 = plan_dirs(_lone)

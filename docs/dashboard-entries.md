@@ -17150,10 +17150,15 @@ NEXT turn's stop, because the guard judges the previous turn.
 Every checkout: `scripts/gen-work-lines.py` gains `plan_dirs` (`git worktree list --porcelain`,
 main first, inherited `GIT_*` dropped; a checkout whose folder is gone is skipped silently, since
 it holds no plans; if git cannot answer, this checkout only, and a note says so) and
-`read_plans_noted`, which the page and this check both use. Plan identity is (checkout, slug): a
-slug in two checkouts is two rows, `<slug> @ main` / `<slug> @ <folder>`, even when the files are
-identical — equal content does not establish identity (r4 Codex: the collapse that tried merged
-children of different parents, and was removed). `row_for` is the one
+`read_plans_noted`, which the page and this check both use. Plan identity is the key
+`(checkout, slug)` (`plan_key`), carried through parent resolution (`row_for`), `build_forest`
+and `begin-plan.work_line`; the display name `<slug> @ main` / `<slug> @ <folder>` comes from
+`label()` only when text is emitted, and is never a key (r6 Codex: keyed by the label, a file
+NAMED `kid @ main.md` overwrote the generated label for `kid` and an unfinished plan vanished).
+⚠ Two different plans can therefore DISPLAY alike; they stay separate rows. A slug in two
+checkouts is two rows even when the files are identical — equal content does not establish
+identity (r4 Codex: the collapse that tried merged children of different parents, and was
+removed). `row_for` is the one
 resolver for a duplicated slug: a child's parent and `begin-plan`'s banner `Line:` both take the
 copy in their own checkout, else main. The thread check runs on every judged turn, including one
 with no saved record. An arrow is a destination only after `⤳ SWITCHED` or directly after the
@@ -17169,6 +17174,6 @@ row is readable in 91 of the 95, against 24 for the first version.
 not see a STAMPED banner; unstamped ones, last emitted 2026-10-19 19:07Z, were still seen.
 Measured over judgable turns since 2026-10-16: 67 carry a banner the fixed pattern matches, 21 one
 the old pattern matched. The warn log over that span is therefore partial, not evidence of no
-misses. Self-tests: this guard 160 -> 236, `gen-work-lines` 40 -> 56, `begin-plan` 120 -> 122.
-Mutation manifests 48 -> 91, 16 -> 28 and 56 -> 57, every entry killed and attributed in a scoped
+misses. Self-tests: this guard 160 -> 236, `gen-work-lines` 40 -> 58, `begin-plan` 120 -> 123.
+Mutation manifests 48 -> 91, 16 -> 30 and 56 -> 58, every entry killed and attributed in a scoped
 run.

@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 122 cases
+    scripts/begin-plan.py --self-test  # 123 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -308,7 +308,7 @@ def _load_work_lines():
     return mod
 
 
-def work_line(slug: str, plans: list[dict]) -> str:
+def work_line(slug, plans: list[dict]) -> str:
     """PURE. The banner's `> **Line:**` row: the chain from `slug` back to its root.
 
     ⭐ Asked 2026-10-22 alongside the page: the page answers "what did I never walk back to"
@@ -320,23 +320,30 @@ def work_line(slug: str, plans: list[dict]) -> str:
     parent (written before the field, or the parent could not be decided), or a recorded parent
     no longer exists. A cycle (only reachable by hand-editing) is cut and named, never looped.
     `plans` are `gen-work-lines.parse_plan` records, so "started a line" is ITS reading of `-`.
+
+    ⛔ `slug` IS A PLAN KEY (`gen-work-lines.plan_key`: `(checkout, slug)` from `read_plans`, or a
+    bare slug), and every lookup here goes through that key — ⟳ r6 Codex (Major): keyed by the
+    display label, a file NAMED `kid @ main.md` overwrote the generated label for `kid` in main and
+    the banner described the completed copy. Names are emitted through `label()` only.
     """
-    by = {p["slug"]: p for p in plans}
+    wl = _load_work_lines()
+    by = {wl.plan_key(p): p for p in plans}
     if slug not in by:
         return ("> **Line:** _(this plan is not in any checkout's .claude/plans/, so no line is "
                 "recorded for it)_")
     chain, cur, note = [slug], by[slug], ""
     while True:
-        par = cur["parent"]
-        if par is None:
+        name = cur["parent"]
+        if name is None:
             if not cur["started"]:
-                note = f"_(no parent recorded above `{cur['slug']}`)_ "
+                note = f"_(no parent recorded above `{wl.label(cur)}`)_ "
             break
+        par = wl.parent_key(cur)
         if par in chain:
-            note = f"_(`{cur['slug']}`'s recorded parent `{par}` leads back into this line)_ "
+            note = f"_(`{wl.label(cur)}`'s recorded parent `{name}` leads back into this line)_ "
             break
-        if par not in by:
-            note = f"_(continues `{par}`, which no longer exists)_ "
+        if par is None or par not in by:
+            note = f"_(continues `{name}`, which no longer exists)_ "
             break
         chain.insert(0, par)
         cur = by[par]
@@ -349,7 +356,7 @@ def work_line(slug: str, plans: list[dict]) -> str:
         head = "_(no objective recorded)_ "
     else:
         head = note
-    return "> **Line:** " + head + " → ".join(f"`{c}`" for c in chain)
+    return "> **Line:** " + head + " → ".join(f"`{wl.label(by[c])}`" for c in chain)
 
 
 def _banner_line(plan_abs: Path) -> str:
@@ -1884,6 +1891,33 @@ def _self_test() -> int:
              "content is not identity (r4 Codex)",
              _ce is None
              and _side == "> **Line:** _(no objective recorded)_ `parent @ side` → `kid @ side`")
+
+    # ── r6 Codex (Major): a hand-named file whose name equals a generated LABEL ────────────
+    # `kid @ main.md` (unfinished, with its own objective) beside `kid` held in two checkouts. Its
+    # banner must describe IT — keyed by label, it described the completed `kid` in main.
+    with tempfile.TemporaryDirectory() as _tdk:
+        _km = Path(_tdk).resolve() / "main"
+        _km.mkdir()
+        _ke = pp.make_test_repo(_km, "bp/collide-main")
+        _ks = Path(_tdk).resolve() / "side"
+        _ke = _ke or pp.test_git(_km, "worktree", "add", "-q", str(_ks), "-b", "bp/collide-side")
+        for _co in (_km, _ks):
+            (_co / ".claude/plans").mkdir(parents=True, exist_ok=True)
+            (_co / ".claude/plans/kid.md").write_text("<!-- parent: - -->\n- [x] done\n")
+        (_km / ".claude/plans/kid @ main.md").write_text(
+            "<!-- parent: - -->\n<!-- serving: unrelated unfinished work -->\n- [ ] open\n")
+        _saved_rk = (ROOT, PLAN_DIR)
+        try:
+            ROOT, PLAN_DIR = _km, _km / ".claude/plans"
+            _kline = _banner_line(PLAN_DIR / "kid @ main.md")
+            _kmain = _banner_line(PLAN_DIR / "kid.md")
+        finally:
+            ROOT, PLAN_DIR = _saved_rk
+        case("F5c a file NAMED like a generated label gets ITS OWN banner — its objective, not the "
+             "completed copy's (r6 Codex)",
+             _ke is None
+             and _kline == '> **Line:** "unrelated unfinished work" → `kid @ main`'
+             and _kmain == "> **Line:** _(no objective recorded)_ `kid @ main`")
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

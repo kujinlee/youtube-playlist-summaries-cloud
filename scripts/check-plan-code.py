@@ -965,7 +965,13 @@ EXPECTED_MUTATIONS = {
     # children of different parents), and its ONE entry is RETIRED WITH THE CODE. Two entries were
     # RE-ANCHORED to the replacement loop (copies labelled; short labels). ONE is new: it
     # RE-INTRODUCES a collapse and is killed by WT10, Codex's own fixture. Net -1 +1 = 0.
-    "scripts/gen-work-lines.py": 28,
+    # ⟳ r6 fold, 28 -> 30: identity is now the KEY `(checkout, slug)` (r6 Codex, Major — the
+    # display label was the dict key, so a file NAMED `kid @ main.md` overwrote the generated label
+    # and an unfinished plan vanished). Four entries lost their anchors to the re-keying and were
+    # RE-ANCHORED to the same property (dangling parent, cycle cut, the asking checkout in
+    # `row_for`, the checkout label); two are NEW: `build_forest` re-keyed by label (killed by
+    # WT11, Codex's fixture) and `row_for` returning a label. Net +2.
+    "scripts/gen-work-lines.py": 30,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1708,7 +1714,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-22, banner-thread-armed r3 fold, 56 -> 57: the banner `Line:` resolves a slug
     # held in two checkouts through `gen-work-lines.row_for` (r3 Claude F5); the new entry puts the
     # bare-stem lookup back and is killed by the two-checkout case.
-    "scripts/begin-plan.py": 57,
+    # ⟳ r6 fold, 57 -> 58: `work_line` re-keyed by the display label is killed by F5c.
+    "scripts/begin-plan.py": 58,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5640,7 +5647,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1839)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1842)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

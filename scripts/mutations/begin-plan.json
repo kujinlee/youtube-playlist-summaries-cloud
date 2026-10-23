@@ -747,5 +747,18 @@
     "expect": [
       "F5 a slug held in two checkouts: each checkout's banner Line names ITS OWN copy, by a SHORT checkout name — never 'not in .claude/plans/', never an absolute path"
     ]
+  },
+  {
+    "name": "work_line is RE-KEYED BY THE DISPLAY LABEL, so a file named like a generated label gets the other plan's banner",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    by = {wl.plan_key(p): p for p in plans}",
+        "    by = {wl.label(p): p for p in plans}"
+      ]
+    ],
+    "expect": [
+      "F5c a file NAMED like a generated label gets ITS OWN banner — its objective, not the completed copy's (r6 Codex)"
+    ]
   }
 ]
