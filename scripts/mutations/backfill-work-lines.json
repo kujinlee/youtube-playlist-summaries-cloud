@@ -1048,8 +1048,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                after = sorted([t for t, use in terminal.get((ev.session, task), [])",
-        "                after = sorted([t for t, use in terminal.get((\"\", task), [])"
+        "                after = sorted(t for t, use in terminal.get((ev.session, task), [])",
+        "                after = sorted(t for t, use in terminal.get((\"\", task), [])"
       ]
     ],
     "expect": [
@@ -1217,12 +1217,12 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                if isinstance(note, str) and note.lstrip().startswith(\"<task-notification>\"):",
-        "                if isinstance(note, str) and \"<task-notification>\" in note:"
+        "                                              note.lstrip().startswith(\"<task-notification>\")):",
+        "                                              \"<task-notification>\" in note):"
       ]
     ],
     "expect": [
-      "⛔ r4 Codex 1: notification text QUOTED in a message is not a terminal record"
+      "⛔ a queued command that only QUOTES a notice is not an END"
     ]
   },
   {
@@ -1256,8 +1256,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                                if t > ev.ts and use in (None, ev.data[\"tuid\"])]",
-        "                                if t > ev.ts]"
+        "                               if t > ev.ts and use in (None, ev.data[\"tuid\"]))",
+        "                               if t > ev.ts)"
       ]
     ],
     "expect": [
@@ -1314,19 +1314,6 @@
     ],
     "expect": [
       "⛔ r4 Codex 2: a foreground command with NO result stays open to its session's end"
-    ]
-  },
-  {
-    "name": "a task's notice in ANOTHER session is never found",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        "                               + [t for t in by_use.get(ev.data[\"tuid\"], []) if t > ev.ts])",
-        "                               + [])"
-      ]
-    ],
-    "expect": [
-      "⛔ r5 M1: a background task that OUTLIVES its session ends at its notice in the next session, matched by the launching tool-use id"
     ]
   },
   {
@@ -1392,6 +1379,32 @@
     ],
     "expect": [
       "--backup copies the plans, content AND mtime, BEFORE anything is written"
+    ]
+  },
+  {
+    "name": "a user message that merely STARTS with a notice is an END",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if isinstance(note, str) and (_ONE_NOTICE.fullmatch(note) if typ == \"user\" else",
+        "                if isinstance(note, str) and (note.lstrip().startswith(\"<task-notification>\") if typ == \"user\" else"
+      ]
+    ],
+    "expect": [
+      "⛔ r6 Codex 1: a user message that STARTS with a notice but goes on is quoted text, not an END"
+    ]
+  },
+  {
+    "name": "a user message holding TWO notices is an END",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "_ONE_NOTICE = re.compile(r\"\\s*<task-notification>(?:(?!<task-notification>).)*?\"",
+        "_ONE_NOTICE = re.compile(r\"\\s*<task-notification>(?:.)*?\""
+      ]
+    ],
+    "expect": [
+      "...and so is one holding TWO notices"
     ]
   }
 ]

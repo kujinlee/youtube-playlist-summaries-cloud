@@ -963,7 +963,11 @@ EXPECTED_MUTATIONS = {
     # its tool-use id, the session-id grouping, the real tick count and "all ticked", and the
     # --backup copy (content and mtimes). The backup's exists-refusal has no entry: removing it
     # still refuses, through copytree's own FileExistsError (measured equivalent).
-    "scripts/backfill-work-lines.py": 107,
+    # ⟳ 2026-10-23, round-6 (Codex) fold: 107 -> 108 — ONE entry RETIRED WITH THE CODE it
+    # guarded (the cross-session tool-use-id END match, removed as thrashing's answer); four
+    # rebound onto the simplified lookup and the per-form notice rule; two added for the
+    # one-notice user-message rule.
+    "scripts/backfill-work-lines.py": 108,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5638,7 +5642,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1900)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1901)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -6,7 +6,7 @@
     python3 scripts/backfill-work-lines.py --write --backup DIR   # ...after copying the plans to DIR
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 265 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 268 cases
 
 WHY THIS EXISTS
 ---------------
@@ -123,9 +123,10 @@ uncertain command has an END, matched by SESSION ID across files:
     `queued_command` attachment or a user message, never a message quoting one), with a
     terminal status, naming this command's tool-use id when it names one; or a TaskStop at its
     SUCCESSFUL result, never at the request;
-  * a task can OUTLIVE its session (`/clear`, resume start a new session id), so a notice in
-    ANY session naming this command's launching tool-use id also ends it (r5 M1; measured, 796
-    of 796 real notices for a known launch name it). It must still come after START;
+  * a notice in ANOTHER session never ends a task. r5 added a cross-session match by tool-use
+    id; r6 found it accepted contradictory evidence, and it was REMOVED (three rounds of END
+    defects running — thrashing — answered by removal). A task that outlives its session stays
+    open to that session's last event; measured, that changes none of the 31 links;
   * anything without such an END (a shell `&` job, a foreground command with no result, a task
     with no notice) stays open until the last event of its session, never back to START.
 Until its END, the checkouts it can reach stay UNKNOWN, and a checkpoint inside that window
@@ -942,6 +943,9 @@ _TASK_ID = re.compile(r"<task-id>([\w-]+)</task-id>")
 _BG_ID = re.compile(r"running in background with ID: ([\w-]+)")
 _STATUS = re.compile(r"<status>(\w+)</status>")
 _TOOL_USE_ID = re.compile(r"<tool-use-id>([\w-]+)</tool-use-id>")
+# the harness's own user-message shape: exactly ONE notice block, whitespace aside
+_ONE_NOTICE = re.compile(r"\s*<task-notification>(?:(?!<task-notification>).)*?"
+                         r"</task-notification>\s*", re.S)
 _SESSION = re.compile(r'"sessionId"\s*:\s*"([^"]+)"')
 # A notice with one of these ENDED its task; anything else (a progress event) did not.
 TERMINAL_STATUSES = {"completed", "failed", "killed", "stopped", "cancelled", "canceled",
@@ -975,7 +979,6 @@ def read_transcripts(tdir: Path) -> list[Event]:
     session_end: dict[str, str] = {}        # session -> its last timestamp anywhere
     terminal: dict[tuple, list[str]] = {}   # (session, task id) -> when a terminal record says
     stop_sessions: set[str] = set()         # sessions that show the STOP hook specifically
-    by_use: dict[str, list[str]] = {}       # launching tool-use id -> its terminal notices
     for f in files:
         top = f.parent == tdir
         pending: dict[str, Event] = {}
@@ -1026,16 +1029,17 @@ def read_transcripts(tdir: Path) -> list[Event]:
                         att.get("prompt") if typ == "attachment"
                         and att.get("type") == "queued_command" else
                         _text_of(msg.get("content")) if typ == "user" else None)
-                if isinstance(note, str) and note.lstrip().startswith("<task-notification>"):
+                # ⛔ r6 Codex 1: a USER message counts only when it IS exactly one notice block
+                # and nothing else — the harness's own shape. A notice followed by prose, or two
+                # of them, is a message quoting notices. Measured 2026-10-23: of 463 terminal user
+                # notices, the 453 that start with the tag are all exactly one block.
+                if isinstance(note, str) and (_ONE_NOTICE.fullmatch(note) if typ == "user" else
+                                              note.lstrip().startswith("<task-notification>")):
                     tm, sm = _TASK_ID.search(note), _STATUS.search(note)
                     um = _TOOL_USE_ID.search(note)
                     if tm and sm and sm.group(1).lower() in TERMINAL_STATUSES:
                         terminal.setdefault((sess, tm.group(1)), []).append(
                             (ts, um.group(1) if um else None))
-                        if um:
-                            # ⛔ r5 M1: a task can OUTLIVE its session (/clear, resume); its
-                            # notice then lands in the next one. The tool-use id is global.
-                            by_use.setdefault(um.group(1), []).append(ts)
                 if typ == "user" and top and not r.get("isMeta"):
                     content = msg.get("content")
                     if isinstance(content, str) or (isinstance(content, list) and all(
@@ -1110,9 +1114,8 @@ def read_transcripts(tdir: Path) -> list[Event]:
             task = ev.data.get("task")
             if ev.data["bg"] or task:
                 # a notice naming its originating tool call must name THIS one
-                after = sorted([t for t, use in terminal.get((ev.session, task), [])
-                                if t > ev.ts and use in (None, ev.data["tuid"])]
-                               + [t for t in by_use.get(ev.data["tuid"], []) if t > ev.ts])
+                after = sorted(t for t, use in terminal.get((ev.session, task), [])
+                               if t > ev.ts and use in (None, ev.data["tuid"]))
                 ev.data["until"] = after[0] if task and after else end_of_session
             else:
                 ev.data["until"] = ev.end or end_of_session
@@ -1778,9 +1781,9 @@ class _Fx:
                                                                    "text": text}]}})
 
     def task_done(self, task_id: str, *, stream="sess-aaaa1111", status="completed",
-                  form: str = "user", use: str | None = None) -> None:
+                  form: str = "user", use: str | None = None, prefix: str = "") -> None:
         """The harness's notice that a background task ended, in one of its three real forms."""
-        text = (f"<task-notification>\n<task-id>{task_id}</task-id>\n"
+        text = (f"{prefix}<task-notification>\n<task-id>{task_id}</task-id>\n"
                 + (f"<tool-use-id>{use}</tool-use-id>\n" if use else "")
                 + f"<status>{status}</status>\n</task-notification>")
         rec = {"timestamp": self._ts(), "sessionId": stream.split("/")[0]}
@@ -2296,29 +2299,46 @@ def _self_test() -> int:
     case("...while one naming THIS tool call is",
          world(_notice_form("queue", use="toolu_0003"))[0]["two"], STARTED)
 
-    # ── review round 5 (Claude) ───────────────────────────────────────────────────────────────
-    def _outlives(use):
+    # ── review round 6 (Codex): END evidence must be the harness's OWN record ──────────────────
+    # (r5's cross-session tool-use-id match is RETIRED with its cases: three rounds running
+    # found defects in END matching — thrashing — and the response was removal.)
+    def _quoted_queued(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+        f.task_done("bx1", form="attachment", prefix="see the old notice: ")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ a queued command that only QUOTES a notice is not an END",
+         world(_quoted_queued)[0]["two"], None)
+
+    def _wrong_task(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)    # bx1, toolu_0003
+        # another session's notice names task `other` but carries bx1's launching tool-use id
+        f.task_done("other", form="queue", use="toolu_0003", stream="sess-cccc3333")
+        f.bash(f"{BP} --status", NONE_OUT, stream="sess-cccc3333")
+        f.bash(f"{BP} two a", _arm_out("two", 1), stream="sess-cccc3333")
+        f.prompt("later", stream="sess-aaaa1111")          # the launching session goes on
+    case("⛔ r6 Codex 2: a notice in ANOTHER session never ends a task, whatever ids it carries",
+         world(_wrong_task)[0]["two"], None)
+
+    def _user_notice(text):
         def b(f):
             f.bash(f"{BP} one a", _arm_out("one", 1))
-            f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)    # toolu_0003
-            # the launching session ENDS here; the task runs on, and its notice lands in the
-            # NEXT session (a /clear or resume starts a new session id)
-            f.bash(f"{BP} --status", NONE_OUT, stream="sess-cccc3333")
-            f.bash(f"{BP} two a", _arm_out("two", 1), stream="sess-cccc3333")
-            f.task_done("bx1", form="queue", use=use, stream="sess-cccc3333")
-            f.bash(f"{BP} --status", ".claude/plans/two.md: 0/1 steps ticked, 1 remaining",
-                   stream="sess-cccc3333")
-            f.bash(f"{BP} three a", _arm_out("three", 1), stream="sess-cccc3333")
-            if use != "toolu_0003":
-                f.prompt("later", stream="sess-aaaa1111")   # the launching session goes on
+            f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+            f.prompt(text)
+            f.bash(f"{BP} --status", NONE_OUT)
+            f.bash(f"{BP} two a", _arm_out("two", 1))
         return b
-    _ol = world(_outlives("toolu_0003"))[0]
-    case("⛔ r5 M1: a background task that OUTLIVES its session ends at its notice in the next "
-         "session, matched by the launching tool-use id", (_ol["two"], _ol["three"]),
-         (None, "two"))
-    _ol2 = world(_outlives("toolu_9999"))[0]
-    case("...and a notice in another session for ANOTHER tool call ends nothing",
-         (_ol2["two"], _ol2["three"]), (None, None))
+    _NOTICE = ("<task-notification>\n<task-id>bx1</task-id>\n<status>completed</status>\n"
+               "</task-notification>")
+    case("⛔ r6 Codex 1: a user message that STARTS with a notice but goes on is quoted text, "
+         "not an END", world(_user_notice(_NOTICE + "\nThis is quoted historical output."))[0]
+         ["two"], None)
+    case("...and so is one holding TWO notices",
+         world(_user_notice(_NOTICE + "\n" + _NOTICE))[0]["two"], None)
+    case("...while a user message that IS exactly one notice (the harness's shape) closes it",
+         world(_user_notice("\n  " + _NOTICE + "\n"))[0]["two"], STARTED)
     case("r5 L2: the sessions a file holds never include the empty id, from either source",
          _file_sessions([Event(ts="t", stream="s", order=0, session="", kind="cmd"),
                          Event(ts="t", stream="s", order=1, session="abc", kind="cmd")],
