@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 85 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 135 cases
 
 WHY THIS EXISTS
 ---------------
@@ -61,22 +61,34 @@ and time, never `transcript`, so the page can say what the link rests on. Every 
 disagreement stays unlinked and listed, and a banner never overrides a parent the replay found
 ARMED at the time.
 
-⭐ CHECKPOINTS (review round 1, Claude F4 — the structural fix). The transcripts also hold direct
-OBSERVATIONS of the sentinel: a `cat`/`sed -n` of it, `--status` (either script), the state line
-of an arm or tick, `--finish`'s reply, and the Stop hook's own `✅ … Clearing` message. At each the
-replayed state is compared with the observation. A disagreement RESETS the replay to what was
-observed and leaves NO MARKER on every plan first armed since the last checkpoint ("replay
-contradicted by an observation"). Before the first checkpoint the state is UNKNOWN, not "nothing
-armed" (F3) — the transcripts begin mid-history.
+⛔ THE ALLOW-LIST (review round 2 — the coordinator's decision to stop patching shapes). A Bash
+command keeps a checkout's state KNOWN only if EVERY simple command in it (split on `;`, `&&`,
+`||`, `|` and newlines) is a `begin-plan.py` / `check-plan-progress.py` call or a member of
+`READ_ONLY`, under that member's own condition. Anything else — an interpreter, `eval`, `source`,
+`xargs`, a non-read `git`, an unknown command, command substitution — may run code and makes
+EVERY checkout UNKNOWN. A file operation or output redirection makes UNKNOWN only the checkouts
+whose sentinel or plans its paths name (an unresolvable path reaches all). This happens BEFORE any
+arm in the same command is processed. A lone `rm -f` of a sentinel stays a known "nothing armed",
+but only when nothing else in the command is opaque. Every plan first armed while its checkout is
+UNKNOWN gets NO marker, with the reason named. Every Bash command is parsed, not only those
+naming begin-plan, because any of them may run code. A call inside a loop ran an unknown number of
+times, so it too makes its checkout UNKNOWN. Each checkout's sentinel is replayed separately, and
+output from calls spanning two checkouts is attributed to neither. A banner counts only as live
+text in the banner block under a `## ▶` heading.
 
-⛔ ALSO FROM ROUND 1. Every call in a command is found, in order, including inside `for … done`; a
-call in a loop ran an unknown number of times, so the state is UNKNOWN until the next checkpoint
-(F1). A sentinel write in the same command as a call is applied IN COMMAND ORDER — `rm` is a known
-"nothing armed" (but no clear a banner may cite), any other edit is UNKNOWN; a Python heredoc that
-writes a sentinel cannot be ordered and makes every checkout UNKNOWN (F2). Each checkout's sentinel
-is replayed SEPARATELY, and output from a command whose calls span two checkouts is attributed to
-neither (Codex 1). A banner counts only as the assistant's live text in the banner block under a
-`## ▶` heading — never fenced, block-quoted or in a tool result (Codex 3). `--write` is atomic.
+⭐ CHECKPOINTS COME ONLY FROM THE TOOLS' OWN STATE LINES: begin-plan's arm / tick / `--status` /
+`--finish` output, `check-plan-progress.py --status`, and the Stop hook's `Clearing` message in a
+session at this checkout. A read of the sentinel (`cat`, `sed -n`, `head`) is NEVER one — its
+output cannot be attributed to the file (round 2, Codex 1). A checkpoint that disagrees resets the
+replay and unmarks every plan first armed since the last checkpoint. A checkpoint can move UNKNOWN
+to known, but it never authorises a parent for an arm made while unknown. Before the first
+checkpoint the state is UNKNOWN.
+
+⚠ THE RESIDUAL BOUND, STATED PLAINLY. An arm made outside any transcript — another tool, an editor,
+a human in a shell — is invisible to this replay. And agreeing checkpoints do NOT prove the
+interval between them: an invisible arm followed by a visible one leaves every later checkpoint
+agreeing. The allow-list closes what the transcripts can show; it cannot close what they never
+recorded.
 
 ⚠ A STATED BOUND (r1 Claude F6, not fixed). A plan's parent is taken from its FIRST recorded arm.
 A plan file deleted and re-created by a later arm carries the later arm's live parent; the birth
@@ -117,7 +129,8 @@ BIRTH_SLACK_S = 120.0
 PARENT_LINE = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
 SOURCE_LINE = re.compile(r"^<!--\s*parent-source:\s*(.+?)\s*-->\s*$", re.M)
 BANNER = re.compile(r"SWITCHED\s+from\s+\*?`([^`]+)`[^\n]*?→\s*\*{0,2}`([^`]+)`")
-_PREFILTER = ("begin-plan", "SWITCHED", '"end_turn"', "stop_hook_summary", "executing-plan",
+_PREFILTER = ('"Bash"', "begin-plan", "SWITCHED", '"end_turn"', "stop_hook_summary",
+              "executing-plan",
               ".claude/plans/")
 _TOOL_RESULT_ID = re.compile(r'"tool_use_id"\s*:\s*"([^"]+)"')
 _WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
@@ -156,21 +169,6 @@ def strip_heredocs(cmd: str) -> str:
         i += 1
         for m in _HEREDOC.finditer(ln):
             while i < len(lines) and lines[i].strip() != m.group(2):
-                i += 1
-            i += 1
-    return "\n".join(out)
-
-
-def heredoc_bodies(cmd: str) -> str:
-    """Every heredoc BODY, joined — what `strip_heredocs` removes. Data to the shell, but a Python
-    body can still WRITE the sentinel, and where it does the order is not knowable."""
-    lines, out, i = cmd.split("\n"), [], 0
-    while i < len(lines):
-        ln = lines[i]
-        i += 1
-        for m in _HEREDOC.finditer(ln):
-            while i < len(lines) and lines[i].strip() != m.group(2):
-                out.append(lines[i])
                 i += 1
             i += 1
     return "\n".join(out)
@@ -223,10 +221,17 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
                 if cmd[i] == "\\" and i + 1 < n and cmd[i + 1] in '"\\$`':
                     word.append(cmd[i + 1]); i += 2
                     continue
+                if cmd[i] == "`" or cmd[i:i + 2] == "$(":
+                    toks.append(("subst", ""))      # command substitution RUNS code
                 word.append(cmd[i]); i += 1
             has_word = True; i += 1
             continue
+        if c == "`":
+            toks.append(("subst", ""))
+            word.append(c); has_word = True; i += 1
+            continue
         if c == "$" and i + 1 < n and cmd[i + 1] == "(":
+            toks.append(("subst", ""))
             depth, j = 0, i
             while j < n:
                 if cmd[j] == "(":
@@ -246,9 +251,11 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
             if has_word and "".join(word).isdigit():
                 word, has_word = [], False
             flush()
+            start = i
             i += 1
             while i < n and cmd[i] in "<>":
                 i += 1
+            out = ">" in cmd[start:i]
             if i < n and cmd[i] == "&" and c != "&":
                 i += 1
                 while i < n and (cmd[i].isdigit() or cmd[i] == "-"):
@@ -257,7 +264,7 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
             while i < n and cmd[i] in " \t":
                 i += 1
             target, i = _read_word(cmd, i)
-            toks.append(("redir", target))
+            toks.append(("redir" if out else "inredir", target))
             continue
         if c in ";|&()\n":
             flush()
@@ -297,7 +304,48 @@ _RESERVED = {"do", "then", "else", "elif", "!", "time", "{", "}", "if", "fi", "e
 _LOOP_OPEN = {"for", "while", "until", "select"}
 _SCRIPTS = {"begin-plan.py": "begin-plan", "check-plan-progress.py": "progress"}
 _SENT_TAIL = "/" + SENTINEL_REL
-_PLAN_FILE = re.compile(r"^(.*)/\.claude/plans/([a-z0-9][a-z0-9-]*)\.md$")
+
+# ⛔ THE ALLOW-LIST (round 2, the coordinator's decision: stop patching shapes). A command keeps a
+# checkout's state KNOWN only if every simple command in it is a begin-plan / check-plan-progress
+# call or one of these. Each reason says why the tool CANNOT change a sentinel. Anything else —
+# an interpreter, `eval`, `source`, `xargs`, an unknown command, a non-read `git` (hooks run
+# code), command substitution — may run arbitrary code and makes EVERY checkout unknown.
+READ_ONLY: dict[str, str] = {
+    "git": "only the subcommands in GIT_READ: they print history and state, and run no hooks",
+    "ls": "lists directory entries; it writes nothing",
+    "cat": "prints files to stdout; a redirection of that output is judged on its own",
+    "head": "prints the start of files to stdout",
+    "tail": "prints the end of files to stdout",
+    "grep": "prints matching lines to stdout",
+    "wc": "prints counts to stdout",
+    "sed": "only with -n and never -i: it prints selected lines and edits no file",
+    "awk": "only with no `system`, `getline`, `>` or `|` in its program: it prints text",
+    "echo": "prints its arguments",
+    "printf": "prints its arguments",
+    "date": "prints the time",
+    "cd": "moves the shell only; a path that cannot be resolved makes the cwd unknown",
+}
+GIT_READ = {"log", "show", "diff", "status", "rev-parse", "ls-remote", "fetch"}
+# File operations reach only the sentinels and plan files their PATHS name (or a directory
+# containing them). They run no code, so a target elsewhere cannot change a sentinel.
+FILE_OPS = {"rm", "unlink", "mv", "cp", "tee", "truncate", "touch", "mkdir", "ln", "chmod",
+            "sed"}
+
+
+def _read_only(name: str, args: list[str]) -> bool:
+    """Is this simple command a READ_ONLY member, under that member's own condition?"""
+    if name not in READ_ONLY or name == "cd":
+        return False
+    if name == "git":
+        a = [x for x in args if not x.startswith("-")]
+        return bool(a) and (a[0] in GIT_READ or a[0] == "branch" and args[-1:] == [
+            "--show-current"] and len(a) == 1)
+    if name == "sed":
+        return "-n" in args and not any(x.startswith("-i") for x in args)
+    if name == "awk":
+        prog = [x for x in args if not x.startswith("-")]
+        return not any(k in x for x in prog for k in ("system", "getline", ">", "|"))
+    return True
 
 
 @dataclass
@@ -312,33 +360,26 @@ class Call:
 
 @dataclass
 class Op:
-    """One step of a Bash command, in COMMAND ORDER. ⟳ r1 Claude F2 / Codex 2: a write and a call
-    in one command were examined by an `if`/`elif`, so the write was never seen at all."""
-    kind: str             # 'call' | 'write' | 'read' | 'planwrite'
-    root: str | None
+    """One step of a Bash command, in COMMAND ORDER."""
+    kind: str             # 'call' | 'rmsent' | 'opaque'
+    root: str | None = None
     call: Call | None = None
-    effect: str = ""      # write: 'rm' (removed — nothing armed) | 'edit' (content unknown)
-    slug: str = ""        # planwrite
+    paths: list[str] | None = None    # opaque: the file paths it writes; None = it runs code
+    why: str = ""
 
 
-def _target(word: str, env: dict[str, str], cur: str | None) -> tuple | None:
-    """('sentinel', root) / ('plan', root, slug) when `word` names one of those files; root None
-    when the path cannot be resolved. None when it names neither."""
-    if not (word.endswith(SENTINEL_REL) or ".claude/plans/" in word):
-        return None
+def _resolve(word: str, env: dict[str, str], cur: str | None) -> str | None:
     p = expand(word, env)
-    full = (None if p is None or (cur is None and not os.path.isabs(p))
-            else os.path.normpath(os.path.join(cur or "/", p)))
-    if word.endswith(SENTINEL_REL) and (full is None or full.endswith(_SENT_TAIL)):
-        return ("sentinel", None if full is None else full[:-len(_SENT_TAIL)])
-    m = _PLAN_FILE.match(full or "")
-    return ("plan", m.group(1), m.group(2)) if m else None
+    if p is None or (cur is None and not os.path.isabs(p)):
+        return None
+    return os.path.normpath(p if os.path.isabs(p) else os.path.join(cur, p))
 
 
 def parse_command(cmd: str, cwd: str) -> list[Op]:
-    """Every call, sentinel write, sentinel read and plan-file write a Bash command makes, IN
-    ORDER, each against the checkout it resolves to (`begin-plan.ROOT` is the script's own
-    checkout; a path is resolved against the record's cwd as changed by `cd` in the command)."""
+    """Every call and every operation that could change a sentinel, IN ORDER. Each call is
+    resolved to its checkout (`begin-plan.ROOT` is the script's own); a path is resolved against
+    the record's cwd as changed by `cd`. A command made only of READ_ONLY members and calls
+    yields only calls."""
     toks = tokenize(strip_heredocs(cmd))
     ops: list[Op] = []
     env: dict[str, str] = {}
@@ -346,31 +387,35 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
     depth = 0
     words: list[str] = []
     redirs: list[str] = []
+    subst = False
 
-    def finish(ws: list[str], rs: list[str]) -> None:
+    def opaque(why: str, paths: list[str] | None) -> None:
+        ops.append(Op("opaque", paths=paths, why=why))
+
+    def finish(ws: list[str], rs: list[str], sub: bool) -> None:
         nonlocal cur, depth
         while ws and (ws[0] in _RESERVED or ws[0] in _LOOP_OPEN):
             w = ws.pop(0)
             if w in _LOOP_OPEN:
                 depth += 1
                 if w in ("for", "select"):
-                    ws = []            # the loop's header, not a command
+                    ws = []            # the loop's header names values; it runs nothing
             elif w == "done":
                 depth = max(0, depth - 1)
+        if sub:
+            opaque("a command substitution runs code", None)
         while ws and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ws[0]):
             k, v = ws[0].split("=", 1)
             env[k] = expand(v, env) or v
             ws = ws[1:]
-        for r in rs:
-            t = _target(r, env, cur)
-            if t and t[0] == "sentinel":
-                ops.append(Op("write", t[1], effect="edit"))
-            elif t:
-                ops.append(Op("planwrite", t[1], slug=t[2]))
+        outs = [r for r in rs if r != "/dev/null"]
+        if outs:
+            paths = [_resolve(r, env, cur) for r in outs]
+            opaque("an output redirection", None if None in paths else paths)
         if not ws:
             return
-        if ws[0] == "cd" and len(ws) >= 2:
-            d = expand(ws[1], env)
+        if ws[0] == "cd":
+            d = expand(ws[1], env) if len(ws) >= 2 else None
             cur = None if d is None or cur is None else os.path.normpath(os.path.join(cur, d))
             return
         for k in range(min(3, len(ws))):
@@ -378,44 +423,41 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
             if script is None:
                 continue
             if not all(_INTERP.match(w) or w.startswith("$") or w == "env" for w in ws[:k]):
-                return
-            p = expand(ws[k], env)
-            root = (None if p is None or (cur is None and not os.path.isabs(p)) else
-                    os.path.dirname(os.path.dirname(os.path.normpath(
-                        p if os.path.isabs(p) else os.path.join(cur, p)))))
+                break
+            p = _resolve(ws[k], env, cur)
+            root = None if p is None else os.path.dirname(os.path.dirname(p))
             ops.append(Op("call", root, call=Call(ws[k + 1:], root, depth > 0, script)))
             return
-        name = os.path.basename(ws[0])
-        args = ws[1:]
-        targets = [(i, _target(a, env, cur)) for i, a in enumerate(args)]
-        targets = [(i, t) for i, t in targets if t]
-        for i, t in targets:
-            last = i == len(args) - 1
-            if name in ("rm", "unlink") or (name == "mv" and not last):
-                kind = "rm"
-            elif name in ("truncate", "tee") or (name in ("mv", "cp") and last) or (
-                    name == "sed" and any(a.startswith("-i") for a in args)):
-                kind = "edit"
-            elif name in ("cat", "head", "tail", "grep", "sed", "awk", "nl"):
-                kind = "read"
-            else:
-                continue
-            if t[0] == "plan":
-                if kind != "read":
-                    ops.append(Op("planwrite", t[1], slug=t[2]))
-            elif kind == "read":
-                ops.append(Op("read", t[1]))
-            else:
-                ops.append(Op("write", t[1], effect=kind))
+        name, args = os.path.basename(ws[0]), ws[1:]
+        if _read_only(name, args):
+            return
+        if name in FILE_OPS and not (name == "sed" and not any(a.startswith("-i")
+                                                                for a in args)):
+            files = [a for a in args if a and not a.startswith("-")]
+            if name == "sed":
+                files = files[1:]          # the first operand is sed's SCRIPT, not a file
+            paths = [_resolve(a, env, cur) for a in files]
+            sents = [p for p in paths if p and p.endswith(_SENT_TAIL)]
+            if name in ("rm", "unlink") and paths and len(sents) == len(paths):
+                for p in sents:
+                    ops.append(Op("rmsent", p[:-len(_SENT_TAIL)]))
+                return
+            opaque(f"`{name}` writes files", None if None in paths else paths)
+            return
+        opaque(f"`{name}` is not on the read-only allow-list, so it may run code", None)
 
     for kind, text in toks + [("op", ";")]:
         if kind == "w":
             words.append(text)
         elif kind == "redir":
             redirs.append(text)
+        elif kind == "subst":
+            subst = True
+        elif kind == "inredir":
+            continue
         else:
-            finish(words, redirs)
-            words, redirs = [], []
+            finish(words, redirs, subst)
+            words, redirs, subst = [], [], False
     return ops
 
 
@@ -425,14 +467,21 @@ def find_calls(cmd: str, cwd: str) -> list[Call]:
             if o.kind == "call" and o.call.script == "begin-plan"]
 
 
-_OPAQUE_WRITE = re.compile(r"executing-plan[\"']?\)?\s*\.\s*(?:write_text|unlink|open)|"
-                           r"executing-plan[\"'][^\n]*[\"'][wa]\+?[\"']")
-
-
-def opaque_sentinel_write(cmd: str) -> bool:
-    """A heredoc body (a Python script) that writes or removes a sentinel. Its target and its
-    order against the shell's own steps cannot be resolved."""
-    return bool(_OPAQUE_WRITE.search(heredoc_bodies(cmd)))
+def reaches(op: Op, roots: list[str]) -> list[str] | None:
+    """The checkouts an opaque op can change; None = every checkout (it runs code, or a path
+    could not be resolved). A path reaches a checkout when it is its sentinel, a file under its
+    plans, or a directory containing either."""
+    if op.paths is None:
+        return None
+    out = []
+    for r in roots:
+        guarded = (r + _SENT_TAIL, os.path.join(r, PLAN_REL))
+        for p in op.paths:
+            if p == guarded[0] or p.startswith(guarded[1] + "/") or any(
+                    g.startswith(p.rstrip("/") + "/") for g in guarded):
+                out.append(r)
+                break
+    return out
 
 
 def classify(args: list[str]) -> tuple[str, str | None]:
@@ -709,23 +758,20 @@ def read_transcripts(tdir: Path) -> list[Event]:
                         continue
                     inp = c.get("input") or {}
                     if c.get("name") == "Bash":
+                        # ⛔ EVERY command is parsed (round 2): any command may run code, and a
+                        # command that never names begin-plan can still change a sentinel.
                         cmd = inp.get("command") or ""
-                        if not any(k in cmd for k in ("begin-plan", "check-plan-progress",
-                                                      "executing-plan", ".claude/plans/")):
-                            continue
                         ops = parse_command(cmd, cwd)
-                        opaque = opaque_sentinel_write(cmd)
-                        if ops or opaque:
-                            ev = Event(kind="cmd", data={"ops": ops, "opaque": opaque,
-                                                         "cmd": cmd}, **base)
+                        if ops:
+                            ev = Event(kind="cmd", data={"ops": ops, "cmd": cmd}, **base)
                             events.append(ev)
-                            pending[c.get("id", "")] = ev
+                            if any(o.kind == "call" for o in ops):
+                                pending[c.get("id", "")] = ev
                     elif c.get("name") in _WRITE_TOOLS:
                         p = os.path.normpath(inp.get("file_path") or inp.get("notebook_path")
                                              or "/")
-                        t = _target(p, {}, "/")
-                        if t:
-                            events.append(Event(kind="tool", data={"target": t}, **base))
+                        if SENTINEL_REL in p or ".claude/plans/" in p or p.endswith("/.claude"):
+                            events.append(Event(kind="tool", data={"paths": [p]}, **base))
     events.sort(key=lambda e: (e.ts, e.stream, e.order))
     return events
 
@@ -775,38 +821,13 @@ def describe(state: object) -> str:
     return f"UNKNOWN ({state[1]})"
 
 
-_PLAN_LINE = re.compile(r"^plan:\s*(\S+)\s*$", re.M)
-_NO_FILE = re.compile(r"executing-plan[^\n]*No such file|No such file[^\n]*executing-plan")
-_FALLBACK = re.compile(r"executing-plan[^\n|;&]*\|\|\s*echo\s+(['\"])(.+?)\1")
-
-
-def read_observation(cmd: str, text: str | None) -> tuple | None:
-    """What a READ of the sentinel printed: ('armed', rel, paused) / ('none',) / None (no clean
-    reading). Exactly one `plan:` line, or the command's own `|| echo …` fallback / `No such
-    file`, with no `plan:` line at all."""
-    # ⛔ ONE sentinel named in the whole command. Measured 2026-10-22: a command reading BOTH the
-    # main checkout's sentinel (inside `$(…)`, unparsed) and a worktree's printed the main one's
-    # "No such file", which was read as the worktree's — a false disagreement.
-    if text is None or "last-plan" in cmd or strip_heredocs(cmd).count("executing-plan") != 1:
-        return None
-    plans = _PLAN_LINE.findall(text)
-    if len(plans) == 1:
-        return ("armed", plans[0], bool(re.search(r"^paused:", text, re.M)))
-    if plans:
-        return None
-    fb = _FALLBACK.search(cmd)
-    if _NO_FILE.search(text) or (fb and fb.group(2) in text):
-        return ("none",)
-    return None
-
-
 def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[str, dict]:
     """`root`'s plans: slug -> {parent, why, session, ts, stream, banners, …}. `parent` None
     means NO MARKER. Every checkout's sentinel is replayed SEPARATELY (r1 Codex 1).
 
-    ⭐ CHECKPOINTS (r1 Claude F4 — the structural fix). The transcripts hold direct OBSERVATIONS
-    of the sentinel: a `cat` of it, `--status`, the state line of an arm or tick, `--finish`'s
-    reply, and the Stop hook's own `Clearing` message. At each, the replayed state is compared
+    ⭐ CHECKPOINTS (r1 Claude F4; narrowed in r2). Only the TOOLS' own state lines count:
+    `--status`, the state line of an arm or tick, `--finish`'s reply, and the Stop hook's own
+    `Clearing` message — never a read of the file (r2 Codex 1). At each, the replayed state is compared
     with what was observed. A disagreement RESETS the replay to the observation and UNMARKS every
     plan first armed since the last checkpoint — those parents were derived from a state now known
     to be wrong. Before the first checkpoint the state is UNKNOWN (r1 Claude F3).
@@ -831,6 +852,9 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
             states[None] = unknown(why)    # type: ignore[index]
         else:
             states[r] = unknown(why)
+
+    def known_roots() -> list[str]:
+        return sorted({k for k in states if k is not None} | {root})
 
     def checkpoint(r: str, obs: tuple, ts: str, label: str) -> bool:
         """Compare `r`'s replayed state with an observation. Returns whether it agreed (a
@@ -871,9 +895,9 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
         for o in bps:
             if o.stream == e.stream or not (o.ts <= hi and (o.end or o.ts) >= lo):
                 continue
-            if o.data["opaque"] or any(op.kind == "write" and op.root in (r, None)
-                                       or op.kind == "call" and op.root in (r, None)
-                                       and _sub(op.call)[0] != "ro" for op in o.data["ops"]):
+            if any(op.kind in ("opaque", "rmsent")
+                   or op.kind == "call" and op.root in (r, None)
+                   and _sub(op.call)[0] != "ro" for op in o.data["ops"]):
                 return True
         for o in events:
             if o.stream == e.stream or not lo <= o.ts <= hi:
@@ -919,12 +943,8 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
             cleared[root], states[root] = _slug_of(rel), None
             continue
         if e.kind == "tool":
-            t = e.data["target"]
-            if t[0] == "sentinel":
-                poison(t[1], "the sentinel was written by an edit tool")
-            elif isinstance(get(t[1]), Armed) and _slug_of(get(t[1]).rel) == t[2]:
-                st = get(t[1])
-                states[t[1]] = Armed(st.rel, None, 0, 0, st.paused)
+            for r in reaches(Op("opaque", paths=e.data["paths"]), known_roots()) or []:
+                poison(r, "an edit tool wrote its sentinel or a plan file")
             continue
         if e.kind != "cmd":
             continue
@@ -939,20 +959,25 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
         outs = (read_outcomes(subs, e.data.get("result"), e.data.get("is_error", False))
                 if not ambiguous else [("unknown", {})] * len(calls))
         by_call = {id(o): (s_, oc) for o, s_, oc in zip(calls, subs, outs)}
-        mutated: set = set()
+        # ⛔ THE ALLOW-LIST, APPLIED FIRST (round 2, Codex 3). Anything opaque in the command
+        # poisons every checkout it can reach BEFORE any call in it is processed, so an arm in
+        # the same command derives no parent. A lone `rm -f` of a sentinel stays a known removal
+        # only when nothing else in the command is opaque.
+        opaques = [o for o in ops if o.kind == "opaque"]
+        if opaques:
+            for o in opaques + [Op("opaque", paths=[x.root + _SENT_TAIL], why="`rm`")
+                                for x in ops if x.kind == "rmsent"]:
+                reach = reaches(o, known_roots())
+                why = f"the same command ran an unrecognised operation: {o.why}"
+                if reach is None:
+                    poison(None, why)
+                for r in reach or []:
+                    poison(r, why)
         for op in ops:
-            if op.kind == "write":
-                mutated.add(op.root)
-                if op.effect == "rm" and op.root is not None:
+            if op.kind == "rmsent":
+                if not opaques:
                     # a removal is a KNOWN state — but a hand `rm` is no clear a banner may cite
                     states[op.root], cleared[op.root] = None, None
-                else:
-                    poison(op.root, "the sentinel was written by hand")
-                continue
-            if op.kind == "planwrite":
-                st = get(op.root) if op.root is not None else None
-                if isinstance(st, Armed) and _slug_of(st.rel) == op.slug:
-                    states[op.root] = Armed(st.rel, None, 0, 0, st.paused)
                 continue
             if op.kind != "call":
                 continue
@@ -1040,19 +1065,6 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
                     cleared[r] = _slug_of(st.rel) if agree and isinstance(st, Armed) else None
                 states[r] = (None if oc == "ok" else
                              unknown("the output of --finish was not readable"))
-        # A READ of the sentinel is a checkpoint only when nothing in the command changed that
-        # checkout — then where it sits in the command does not matter.
-        reads = [op for op in ops if op.kind == "read" and op.root is not None]
-        if len(reads) == 1 and reads[0].root not in mutated and reads[0].root not in roots:
-            obs = read_observation(e.data["cmd"], e.data.get("result"))
-            r = reads[0].root
-            if obs:
-                checkpoint(r, obs[:2], e.ts, "a read of the sentinel")
-                states[r] = (None if obs[0] == "none" else
-                             Armed(_rel(obs[1], r), None, 0, 0, obs[2]))
-        if e.data["opaque"]:
-            # ⛔ a Python heredoc wrote some sentinel: neither which one nor when is knowable
-            poison(None, "a script in the command wrote a sentinel")
     if stats is not None:
         stats.update(counts)
     mine = seen.get(root, {})
@@ -1496,7 +1508,7 @@ def _self_test() -> int:
     def _contradicted(f):
         f.bash(f"{BP} one a", _arm_out("one", 1))
         f.bash(f"{BP} mid a", _arm_out("mid", 1))
-        f.bash('cat .claude/executing-plan 2>/dev/null || echo "(none armed)"', "(none armed)\n")
+        f.bash(f"{BP} --status", NONE_OUT)
         f.bash(f"{BP} two a", _arm_out("two", 1))
     _ct_stats: dict = {}
     _ct = world(fresh(_contradicted), stats=_ct_stats)
@@ -1509,22 +1521,12 @@ def _self_test() -> int:
 
     def _agreed(f):
         f.bash(f"{BP} one a", _arm_out("one", 1))
-        f.bash("cat .claude/executing-plan", "plan: .claude/plans/one.md\narmed: 2026\n")
+        f.bash(f"{BP} --status", ".claude/plans/one.md: 0/1 steps ticked, 1 remaining")
         f.bash(f"{BP} two a", _arm_out("two", 1))
     _ag_stats: dict = {}
     case("...and one that AGREES leaves the replay's links standing",
          (world(fresh(_agreed), stats=_ag_stats)[0], _ag_stats.get("agree", 0) >= 1),
          ({"one": STARTED, "two": "one"}, True))
-
-    def _two_sentinels(f):
-        f.bash(f"cd /w/wt && {BP} side a", _arm_out("side", 1))
-        f.bash('echo "[$(cat /w/repo/.claude/executing-plan)]"; cat /w/wt/.claude/executing-plan',
-               "cat: /w/repo/.claude/executing-plan: No such file or directory\n[]\n")
-        f.bash(f"cd /w/wt && {BP} two a", _arm_out("two", 1))
-    _ts_stats: dict = {}
-    case("⛔ a command naming TWO sentinels is no observation of either — one's reply is not the "
-         "other's", (world(_two_sentinels, root="/w/wt", stats=_ts_stats, start=False)[0]["two"],
-                      _ts_stats.get("disagree")), ("side", 0))
 
     def _opaque(f):
         f.bash(f"{BP} one a", _arm_out("one", 1))
@@ -1557,6 +1559,67 @@ def _self_test() -> int:
              {"prev": "# prev\n", "nxt": "# nxt\n"}, _fa,
              {"prev": _epoch("2026-10-01T12:00:00Z"), "nxt": _epoch("2026-10-01T12:00:00Z")})}
           ["nxt"]), (0, "keep-banner"))
+
+    # ── review round 2 (Codex): the ALLOW-LIST ─────────────────────────────────────────────
+    def _stale_read(f):
+        f.bash(f"{BP} bbs a", _arm_out("bbs", 1))
+        f.bash("cat /tmp/old-sentinel; cat .claude/executing-plan >/dev/null",
+               "plan: .claude/plans/r8-fold.md\n")
+        f.bash(f"{BP} p6 a", _arm_out("p6", 1))
+    case("⛔ Codex r2-1: a READ is never a checkpoint — stale output cannot reset the replay",
+         world(_stale_read)[0]["p6"], "bbs")
+
+    def _subprocess_arm(f):
+        f.bash(f"{BP} bbs a", _arm_out("bbs", 1))
+        f.bash("python3 - <<'PY'\nimport subprocess\nsubprocess.run(['python3', "
+               "'scripts/begin-plan.py', 'round-6-scoped', 'a'])\nPY",
+               "armed: .claude/executing-plan -> .claude/plans/round-6-scoped.md (1 steps)")
+        f.bash(f"{BP} p6 a", _arm_out("p6", 1))
+    case("⛔ Codex r2-2: code run by an interpreter may arm anything — the next arm gets no marker",
+         world(_subprocess_arm)[0]["p6"], None)
+
+    def _write_then_arm(f):
+        f.bash(f"{BP} bbs a", _arm_out("bbs", 1))
+        f.bash("python3 - <<'PY'\nfrom pathlib import Path\nPath('.claude/executing-plan')"
+               f".unlink()\nPY\n{BP} p6 a", _arm_out("p6", 1))
+    _wa = world(_write_then_arm)[1]["p6"]
+    case("⛔ Codex r2-3: an opaque op poisons the checkout BEFORE an arm in the same command",
+         (_wa["parent"], "unknown" in _wa["why"]), (None, True))
+
+    # Each allow-list member keeps the state KNOWN (the arm after it gets `one`); each opaque
+    # class makes it UNKNOWN (no marker). One literal command per member and per class.
+    def _between(cmd, out=""):
+        def b(f):
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash(cmd, out)
+            f.bash(f"{BP} two a", _arm_out("two", 1))
+        return b
+    for _cmd in ("git log --oneline -3", "git show HEAD --stat", "git diff --stat",
+                 "git status --short", "git rev-parse HEAD", "git branch --show-current",
+                 "git ls-remote origin", "git fetch -q origin", "ls -la .claude/plans",
+                 "cat .claude/plans/one.md", "head -3 docs/x.md", "tail -2 docs/x.md",
+                 "grep -n plan docs/x.md", "wc -l docs/x.md", "sed -n 1,3p docs/x.md",
+                 "awk '{print $1}' docs/x.md", "echo hi", "printf 'x\\n'", "date '+%H:%M'",
+                 "cd docs && ls", "cat docs/x.md > /dev/null 2>&1", "W=/w/repo; ls $W",
+                 "echo done > /tmp/note.txt", "sed -i '' s/a/b/ docs/x.md"):
+        case(f"allow-listed, or reaching no sentinel, keeps the state known: {_cmd}",
+             world(_between(_cmd))[0]["two"], "one")
+    for _cmd in ("python3 - <<'PY'\nprint(1)\nPY", "python3 scripts/other.py", "node x.js",
+                 "bash run.sh", "sh -c 'true'", "eval x", "source env.sh", "xargs echo < f",
+                 "git checkout -b x", "echo $(date)", "awk 'BEGIN{system(\"true\")}'",
+                 "sleep 1", "echo x >> .claude/executing-plan",
+                 "printf 'p\\n' > /w/repo/.claude/executing-plan",
+                 "sed -i '' s/a/b/ .claude/executing-plan", "tee .claude/executing-plan < f",
+                 "mv .claude/executing-plan /tmp/x", "cp /tmp/x .claude/executing-plan",
+                 "rm -f .claude/plans/one.md", "rm -rf .claude", "cd \"$NOPE\" && rm -f x"):
+        case(f"an opaque op makes the checkout UNKNOWN: {_cmd.splitlines()[0]}",
+             world(_between(_cmd))[0]["two"], None)
+    case("⭐ `rm -f` of the sentinel ALONE is a known removal: the next arm starts a line",
+         world(_between("rm -f .claude/executing-plan"))[0]["two"], STARTED)
+    case("⛔ ...but not beside another opaque op — then the whole command is UNKNOWN",
+         world(_between("rm -f .claude/executing-plan; python3 x.py"))[0]["two"], None)
+    case("a reachable checkout is poisoned; ANOTHER checkout's sentinel write leaves this one known",
+         world(_between("echo x >> /w/other/.claude/executing-plan"))[0]["two"], "one")
 
     # ── the shell: finding the call and where it ran ─────────────────────────────────────────
     case("a relative script path resolves against ITS cwd",

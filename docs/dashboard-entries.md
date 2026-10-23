@@ -17126,9 +17126,14 @@ than the one the replay found active stay unlinked.
 
 After review, the replay also checks itself. Wherever the transcripts show what the tracking file
 actually held at a moment, the replay compares its own answer with what was seen. If the two
-disagree, it corrects itself and drops any links it had worked out since the last check. With that
-in place, the reviewers' two wrong links are gone. The current count is 56 links from the replay,
-26 from a "switched from" line, and 41 unlinked. Two plans already had a recorded
+disagree, it corrects itself and drops any links it had worked out since the last check.
+
+A second review still found three ways to a wrong link, so the replay now trusts a stretch of
+history only when every command in it is on a short list of read-only tools. Anything else, such
+as running a script or `git checkout`, could have changed what was being tracked. Any plan started
+after one of those commands is left unlinked. That is much safer and much thinner: 15 links from
+the replay and 4 from a "switched from" line, with 104 unlinked. It no longer reproduces the one
+link recorded live today, because a script ran between the two plans. Two plans already had a recorded
 link and are untouched. It also reproduces the one link the live tool recorded today exactly.
 
 **Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the

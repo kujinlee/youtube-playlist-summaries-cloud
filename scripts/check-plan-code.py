@@ -933,7 +933,11 @@ EXPECTED_MUTATIONS = {
     # ⟳ same day, review round 1 fold: 33 -> 48 — loops and reserved words, sentinel writes in
     # command order, checkouts attributed separately, live banners only, an UNKNOWN start, the
     # checkpoints (status, reads, the Clearing message, an inferred --finish), and atomic --write.
-    "scripts/backfill-work-lines.py": 48,
+    # ⟳ same day, review round 2 (the allow-list): 48 -> 53 — three entries retired with the read
+    # checkpoints and the heredoc detector they guarded; three more retired as EQUIVALENT under
+    # the allow-list (an unstripped `do` is itself opaque; `/dev/null` and sed's script operand
+    # reach no sentinel either way — measured: each survived with the suite green); eleven added.
+    "scripts/backfill-work-lines.py": 53,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5608,7 +5612,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1841)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1846)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

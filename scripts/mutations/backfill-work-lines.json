@@ -156,16 +156,16 @@
     ]
   },
   {
-    "name": "a hand edit of the sentinel goes unseen",
+    "name": "a file operation on a sentinel goes unseen",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                else:\n                    poison(op.root, \"the sentinel was written by hand\")",
-        "                else:\n                    pass"
+        "            opaque(f\"`{name}` writes files\", None if None in paths else paths)",
+        "            return"
       ]
     ],
     "expect": [
-      "⛔ a hand edit of the sentinel makes its state unknown"
+      "an opaque op makes the checkout UNKNOWN: mv .claude/executing-plan /tmp/x"
     ]
   },
   {
@@ -433,19 +433,6 @@
     ]
   },
   {
-    "name": "`do` is not stripped, so a loop's call is invisible",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        "_RESERVED = {\"do\", \"then\",",
-        "_RESERVED = {\"then\","
-      ]
-    ],
-    "expect": [
-      "⛔ F1: a call inside a shell LOOP ran an unknown number of times — no marker after it"
-    ]
-  },
-  {
     "name": "a call in a loop is counted once",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
@@ -463,12 +450,12 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                if op.effect == \"rm\" and op.root is not None:",
-        "                if False:"
+        "                    states[op.root], cleared[op.root] = None, None",
+        "                    pass"
       ]
     ],
     "expect": [
-      "⛔ F2: a sentinel `rm` in the SAME command as an arm is applied, in order, before it"
+      "⭐ `rm -f` of the sentinel ALONE is a known removal: the next arm starts a line"
     ]
   },
   {
@@ -563,32 +550,6 @@
     ]
   },
   {
-    "name": "a read of the sentinel is not a checkpoint",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        "        if len(reads) == 1 and reads[0].root not in mutated and reads[0].root not in roots:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed since the last agreeing checkpoint"
-    ]
-  },
-  {
-    "name": "a command naming two sentinels is read as observing one",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        " or strip_heredocs(cmd).count(\"executing-plan\") != 1:",
-        ":"
-      ]
-    ],
-    "expect": [
-      "⛔ a command naming TWO sentinels is no observation of either — one's reply is not the other's"
-    ]
-  },
-  {
     "name": "a discarded --finish reply is taken as an observation",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
@@ -615,16 +576,120 @@
     ]
   },
   {
-    "name": "a heredoc write of the sentinel is ignored",
+    "name": "an unknown command is treated as read-only",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            poison(None, \"a script in the command wrote a sentinel\")",
+        "        opaque(f\"`{name}` is not on the read-only allow-list, so it may run code\", None)",
+        "        return"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: node x.js"
+    ]
+  },
+  {
+    "name": "every git subcommand is read-only",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return bool(a) and (a[0] in GIT_READ or",
+        "        return True or (a[0] in GIT_READ or"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: git checkout -b x"
+    ]
+  },
+  {
+    "name": "sed -i is read-only",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return \"-n\" in args and not any(x.startswith(\"-i\") for x in args)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: sed -i '' s/a/b/ .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "awk with system() is read-only",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(k in x for x in prog for k in (\"system\", \"getline\", \">\", \"|\"))",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: awk 'BEGIN{system(\"true\")}'"
+    ]
+  },
+  {
+    "name": "command substitution is not opaque",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            opaque(\"a command substitution runs code\", None)",
         "            pass"
       ]
     ],
     "expect": [
-      "⛔ F2: a Python heredoc that writes a sentinel cannot be ordered — no marker after it"
+      "an opaque op makes the checkout UNKNOWN: echo $(date)"
+    ]
+  },
+  {
+    "name": "an output redirection is not opaque",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            opaque(\"an output redirection\", None if None in paths else paths)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: echo x >> .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "a file op reaches every checkout whatever its path",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if p == guarded[0] or p.startswith",
+        "            if True or p == guarded[0] or p.startswith"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: echo done > /tmp/note.txt"
+    ]
+  },
+  {
+    "name": "an opaque op in a command poisons nothing",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if opaques:\n            for o in opaques",
+        "        if False:\n            for o in opaques"
+      ]
+    ],
+    "expect": [
+      "⛔ Codex r2-3: an opaque op poisons the checkout BEFORE an arm in the same command"
+    ]
+  },
+  {
+    "name": "a sentinel rm beside an opaque op is still a known removal",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if not opaques:",
+        "                if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ ...but not beside another opaque op — then the whole command is UNKNOWN"
     ]
   }
 ]
