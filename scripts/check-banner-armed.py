@@ -120,13 +120,13 @@ WHAT IT CANNOT SEE, stated rather than hidden:
 THE THREAD CLASS (`unknown-thread`, owner's decision 2026-10-22 — option A: warn first, then block)
 ---------------------------------------------------------------------------------------------------
 The work-lines page (`scripts/gen-work-lines.py`) shows a thread exactly when
-`.claude/plans/<slug>.md` exists — armed or not, finished or not. On 2026-10-22 a side job was run
+`.claude/plans/<slug>.md` exists in ANY checkout — armed or not, finished or not. On 2026-10-22 a side job was run
 on banners alone, so it had no plan file and never reached that page, and none of the three
 classes above could notice: they ask whether a bannered job STOPPED PARTWAY, not whether the
 thread it ran on is one the page knows. The rule:
 
     warn  <=>  the judged turn's LAST banner `> **Thread:**` row names a READABLE slug, AND
-               `.claude/plans/<slug>.md` does not exist, AND no original class fired for that turn.
+               no checkout's `.claude/plans/<slug>.md` exists.
 
   * ⟳ r1 (Codex 1, Codex 2, Claude F2): the first version compared against the ARMED sentinel.
     That fired on correct sequences — a plan closed with `--finish`, a parent resumed after its
@@ -137,25 +137,35 @@ thread it ran on is one the page knows. The rule:
     heading, within BANNER_WINDOW lines (blank lines and `---` allowed, anything else ends it);
     one row per banner. A standalone quoted row — a reviewer's example, prose — is not read.
     Fenced code is skipped, a fence closing only on its own character at no shorter a length.
-  * The slug is read where the convention writes it, and nowhere else: FIRST in the row
-    (`` `slug` · … ``, the common real form), after `↳` (with or without `RESUMED`), the one slug
-    after `→` in a `⤳ SWITCHED` row (or `SWITCHED to plan `slug``), or CLAUDE.md's `plan `slug``.
-    Later backticked tokens — commit ids, PR numbers, file names — are never the thread.
-    Measured over every turn since 2026-10-10 carrying a banner Thread row (95): the first
-    version read 24 (6 of 73 step rows); this one reads 91. The 4 it cannot read hold no
-    well-formed slug (`` `two words` ``, `/clear`, a `**bold**` target with no backticks).
+  * The slug is read where the convention writes it, by PRECEDENCE (⟳ r2 Codex 1): an explicit
+    destination (`→ `slug``, `SWITCHED [back] to [plan] `slug``) beats `plan `slug``, which beats
+    the row's leading slug (bare, or after `↳` [RESUMED]). Two DIFFERENT slugs at the deciding
+    level are unreadable. Lower levels are never consulted, so a later commit id, PR number or file
+    name is never the thread. Measured over every turn since 2026-10-10 carrying a banner Thread
+    row (95): the first version read 24 (6 of 73 step rows); this one reads 91. The 4 it cannot
+    read hold no well-formed slug (`` `two words` ``, `/clear`, a `**bold**` target).
   * ⛔ QUIET WHEN THE NAME CANNOT BE EXTRACTED — zero or several candidate slugs. Guessing a name
     would false-alarm, and this repo has switched off a gate red from birth (backlog #56).
   * ⚠ THE LAST ROW ONLY: it is the thread the turn ENDED on. A switch to an unknown thread followed
     in the same turn by a banner on a KNOWN thread is not seen, and an unreadable last row does
     not fall back to an earlier one.
-  * ⚠ ONE ROOT CAUSE, ONE LOG ROW (r1 Claude F4). When an original class fired for the turn this
-    class is not consulted — the turn is already counted, and the remedy is the same command.
+  * ⟳ r2 Codex 3 — ALWAYS EVALUATED. r1 suppressed this class whenever an original class fired;
+    that lost real findings (`unarmed` admits a finished-job false alarm, this names a missing
+    plan) and bypassed BLOCK. Now each class logs its own row, and this class's row carries
+    `also=<class>` naming any original class that fired the same turn (`also=-` for none), so the
+    count of turns ONLY this class caught is one grep (`thread_log_line`).
+  * ⭐ EVERY CHECKOUT (owner's decision 2026-10-22, option A). The plan files are those of every
+    checkout `git worktree list` reports, via `gen-work-lines.plan_dirs` — the page's own reader,
+    so the two cannot disagree. Measured: two `chrome-bar-fold` turns warned while that plan sat in
+    a worktree's `.claude/plans/`. If git cannot answer, only this checkout is read and the warning
+    SAYS so; a missing checkout or an unlistable directory is skipped and named. If NOTHING could be
+    read it is CANNOT RUN (only when there is a readable thread to look up), never a warning.
   * ⚠ THE PLAN FILES ARE READ AT JUDGING TIME, NOT SAMPLED: a plan created after the turn ended
-    already answers the question, so that turn is not warned about. An UNLISTABLE `.claude/plans/`
-    is CANNOT RUN (only when there is a readable thread to look up), never a warning.
-  * ⚠ A thread NAMED like a plan that exists for other reasons is quiet — the check is the
-    filename, not whether that plan describes this work.
+    already answers the question, so that turn is not warned about.
+  * ⚠ A REUSED SLUG IS NOT SEEN — a documented bound, accepted by the coordinator (r2 Codex 2). A
+    new side job named like an OLD plan's slug is hidden behind the old file: the check is the
+    filename, not whether that plan describes this work, and the page then shows the new work
+    under the old plan. No lifecycle is tracked to close this.
 
 MODE: WARN through the same channel and log as the rest (`unknown-thread`, detail
 `<kind> <slug>`), naming the command that creates the plan. BLOCK is ONE named switch,
@@ -174,7 +184,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 219 cases
+    python3 scripts/check-banner-armed.py --self-test  # 231 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD UNKNOWN TO THE WORK-LINES PAGE, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -196,7 +206,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import observer_log  # noqa: E402  — the ONE owner of the record grammar (backlog #166, #170)
 SENTINEL = ROOT / ".claude/executing-plan"
-PLAN_DIR = ROOT / ".claude/plans"     # what gen-work-lines.py reads; the thread class's population
 WARN_LOG = ROOT / ".claude/banner-warnings.log"
 # ⛔ A SEPARATE FILE, AND THAT IS THE POINT (backlog #97). The late flush is an OBSERVATION, not a
 # warning: it fires on the ordinary case, whereas WARN_LOG's stated job (`:451-454`) is to be the
@@ -577,28 +586,33 @@ SWITCHED = "⤳ SWITCHED"
 def thread_name(body: str) -> tuple[str, str] | None:
     """PURE. -> (kind, slug) for the thread a `**Thread:**` row names, or None when unreadable.
 
-    The rules are tried IN ORDER; the first that matches decides. A rule matching SEVERAL slugs is
-    unreadable (None) rather than a guess — a check that false-alarms from birth gets switched off
-    (backlog #56). Only the slug in the position the convention writes it is read, so later
-    backticked tokens — commit ids, PR numbers, file names — are never the thread. Every form below
-    is copied from a real transcript row:
-      1. `` `work-lines-page` · step 1 ✅ (`479114be`) ``   the slug FIRST — the common step form
-      2. `` ↳ `afk-staleplan-and-two-folds` · step 6 of 7 `` / `` ↳ RESUMED `chrome-bar-reachable` ``
-      3. `` ⤳ SWITCHED from `(session start)` → `chrome-bar-reachable` `` (the one slug after `→`)
-         or `` ⤳ SWITCHED to plan `afk-r6-lows-r7-and-r18-verdict` ``
-      4. `` … · plan `slice-a` · 2 of 5 done ``             CLAUDE.md's own example
-    kind is "switched" for rule 3 and "step" otherwise; it only labels the message and the log.
+    ⟳ r2 Codex 1 — PRECEDENCE, because a row can name more than one thing. The real row
+    `` `three-review-rounds` · step 5 of 6 · ⤳ SWITCHED to `plugins-handoff-citations` `` (turn
+    af0b134a) was read as its LEADING token, so a switch to a planless thread was quiet. In order:
+      1. an EXPLICIT DESTINATION — the slug after `→` anywhere in the row, or after
+         `SWITCHED [back] to [plan]` — kind "switched";
+      2. `plan `slug`` (CLAUDE.md's example form) — kind "step";
+      3. the row's LEADING slug, bare or after `↳` [RESUMED] — kind "step".
+    The first level that names anything decides. ⛔ If that level names TWO DIFFERENT slugs the row
+    is UNREADABLE (None), never a guess — a check that false-alarms from birth gets switched off
+    (backlog #56). A level below the deciding one is never consulted, so a later commit id, PR
+    number or file name in backticks is never the thread. Real rows, each a case:
+      `` `work-lines-page` · step 1 ✅ (`479114be`) ``        -> step work-lines-page
+      `` ↳ RESUMED `chrome-bar-reachable` Phase 6 · 1 of 6 `` -> step chrome-bar-reachable
+      `` ⤳ SWITCHED from `(session start)` → `chrome-bar-reachable` `` -> switched (the one `→`)
+      `` ⤳ SWITCHED to plan `afk-r6-lows-r7-and-r18-verdict` `` -> switched
+    kind only labels the message and the log.
     """
-    m = _LEADING_SLUG_RE.match(body) or _RETURN_RE.match(body)
-    if m:
-        return "step", m.group(1)
+    explicit = _SWITCH_ARROW_RE.findall(body)
     if SWITCHED in body:
-        after = body.split(SWITCHED, 1)[1]
-        found = _SWITCH_ARROW_RE.findall(after) or _SWITCH_TO_RE.findall(SWITCHED + after)
-        if found:
-            return ("switched", found[0]) if len(found) == 1 else None
-    found = _PLAN_NAMED_RE.findall(body)
-    return ("step", found[0]) if len(found) == 1 else None
+        explicit += _SWITCH_TO_RE.findall(SWITCHED + body.split(SWITCHED, 1)[1])
+    if explicit:
+        return ("switched", explicit[0]) if len(set(explicit)) == 1 else None
+    planned = _PLAN_NAMED_RE.findall(body)
+    if planned:
+        return ("step", planned[0]) if len(set(planned)) == 1 else None
+    m = _LEADING_SLUG_RE.match(body) or _RETURN_RE.match(body)
+    return ("step", m.group(1)) if m else None
 
 
 def thread_rows(texts: list[str]) -> list[str]:
@@ -684,21 +698,23 @@ THREAD_BLOCK_RC = 4
 
 
 def decide_thread(texts: list[str], known: set[str] | None,
-                  block: bool = False) -> tuple[int, str, str, str]:
+                  block: bool = False, notes: list[str] | None = None) -> tuple[int, str, str, str]:
     """PURE. -> (exit_code, message, reason, detail). QUIET is (0, "", "", "").
 
-    `known` is the set of plan slugs in `.claude/plans/` — the threads the work-lines page shows —
-    or None when that directory exists and could not be listed. None is CANNOT RUN, but only when
-    there is a readable thread to judge: with nothing to look up, nothing was missed.
+    `known` is the set of plan slugs across every checkout's `.claude/plans/` — the threads the
+    work-lines page shows — or None when none of them could be read. None is CANNOT RUN, but only
+    when there is a readable thread to judge: with nothing to look up, nothing was missed.
+    `notes` say what was not read; a warning or a CANNOT RUN carries them.
     `block` is passed in rather than read from THREAD_BLOCK so both modes are testable.
     """
     if known is None:
         rows = thread_rows(texts)
         if rows and thread_name(rows[-1]) is not None:
             return CANNOT_RUN, (
-                "CANNOT RUN: .claude/plans/ exists but could not be listed, so this check cannot "
+                "CANNOT RUN: no checkout's .claude/plans/ could be read, so this check cannot "
                 "tell whether the thread the previous turn ended on is on the work-lines page. "
-                "TREAT THE THREAD CHECK AS NOT RUN."), "", ""
+                "TREAT THE THREAD CHECK AS NOT RUN." + "".join(f"\n     · {n}" for n in notes or [])
+            ), "", ""
         return QUIET, "", "", ""
     hit = unknown_thread(texts, known)
     if hit is None:
@@ -709,8 +725,8 @@ def decide_thread(texts: list[str], known: set[str] | None,
     head = "⛔ THREAD UNKNOWN TO THE WORK-LINES PAGE (BLOCKING)" if block else \
         "⚠ THREAD UNKNOWN TO THE WORK-LINES PAGE"
     msg = (
-        f"{head} — the previous turn ended on thread `{name}` ({how}), and there is no "
-        f".claude/plans/{name}.md.\n"
+        f"{head} — the previous turn ended on thread `{name}` ({how}), and no checkout "
+        f"has .claude/plans/{name}.md.\n"
         "\n"
         "   The work-lines page (scripts/gen-work-lines.py) shows a thread only when its plan\n"
         "   file exists, so this thread's work is invisible there. Create its plan:\n"
@@ -719,7 +735,9 @@ def decide_thread(texts: list[str], known: set[str] | None,
         "\n"
         + ("   This stop is BLOCKED (THREAD_BLOCK is on), once. " if block else
            "   This does not block your stop (warn-only until the owner flips THREAD_BLOCK). ")
-        + f"Logged to {WARN_LOG.relative_to(ROOT)} as `{REASON_THREAD}`.")
+        + f"Logged to {WARN_LOG.relative_to(ROOT)} as `{REASON_THREAD}`."
+        + ("\n   ⚠ NOT EVERY CHECKOUT WAS READ, so this may be a false alarm:"
+           + "".join(f"\n     · {n}" for n in notes) if notes else ""))
     return (THREAD_BLOCK_RC if block else WARN), msg, REASON_THREAD, f"{kind} {name}"
 
 
@@ -869,6 +887,17 @@ def log_line(reason: str, detail: str, when: str, session: str) -> str:
     return observer_log.record(session, reason, detail, when=when)
 
 
+def thread_log_line(detail: str, also: str, when: str, session: str) -> str:
+    """The thread class's warn row. -> `v1⇥when⇥session⇥unknown-thread⇥<kind> <slug>⇥also=<class>`
+
+    ⟳ r2 Codex 3: the thread class is never suppressed by an original class, so a turn can produce
+    two rows. `also=` names the original class that ALSO fired that turn (`also=-` for none), so
+    the owner counts turns this class ALONE caught with one grep — `grep -c 'also=-$'` over the
+    `unknown-thread` rows — and nothing is lost by counting.
+    """
+    return observer_log.record(session, REASON_THREAD, detail, f"also={also or '-'}", when=when)
+
+
 def flush_line(before: int, after: int, when: str, session: str) -> str:
     """One appended observation, over the same shared grammar. A DIFFERENT file.
 
@@ -966,13 +995,10 @@ def _paused_from_text(text: str) -> bool:
 
 
 def known_threads(plan_dir: Path) -> set[str] | None:
-    """The slugs the work-lines page shows: every `*.md` FILE in `plan_dir`, by stem.
+    """The slugs ONE plan directory holds: every `*.md` FILE in it, by stem.
 
-    -> set() when the directory does not exist (no plans yet is a real state), None when it exists
-    and cannot be listed — which `decide_thread` reports as CANNOT RUN rather than reading as "no
-    plans", because that reading would turn a permissions fault into a warning about every thread.
-    ⚠ READ AT JUDGING TIME, NOT SAMPLED, and deliberately: the question is whether the page knows
-    the thread NOW. A plan created after the turn ended answers it, so the turn is not warned about.
+    -> set() when the directory does not exist (no plans there is a real state), None when it exists
+    and cannot be listed — the caller names it rather than reading it as "no plans".
     """
     try:
         with os.scandir(plan_dir) as it:
@@ -981,6 +1007,40 @@ def known_threads(plan_dir: Path) -> set[str] | None:
         return set()
     except OSError:
         return None
+
+
+def known_everywhere() -> tuple[set[str] | None, list[str]]:
+    """The threads the work-lines page shows: the plan slugs of EVERY checkout. -> (known, notes).
+
+    ⭐ The owner's decision 2026-10-22 (option A). The directories come from
+    `gen-work-lines.plan_dirs` — the page's own reader, so this check and the page cannot disagree
+    about which checkouts count. `notes` name what was NOT read (a missing checkout, git unable to
+    list worktrees, a directory that could not be listed); a warning carries them.
+    ⚠ READ AT JUDGING TIME, NOT SAMPLED: a plan created after the turn ended already answers it.
+    -> (None, notes) when NOTHING could be read — the generator would not load, or every directory
+    refused — which `decide_thread` reports as CANNOT RUN.
+    """
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_gen_work_lines_for_banner", Path(__file__).resolve().parent / "gen-work-lines.py")
+        if spec is None or spec.loader is None:
+            raise ImportError("cannot load scripts/gen-work-lines.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        dirs, notes = mod.plan_dirs(ROOT)
+    except Exception as exc:                       # noqa: BLE001 - reported as CANNOT RUN
+        return None, [f"scripts/gen-work-lines.py could not be used ({type(exc).__name__}: {exc})"]
+    known: set[str] = set()
+    read_any = False
+    for _checkout, pd in dirs:
+        got = known_threads(pd)
+        if got is None:
+            notes.append(f"{pd} exists but could not be listed")
+            continue
+        read_any = True
+        known |= got
+    return (known if read_any else None), notes
 
 
 def _paused():
@@ -1294,16 +1354,14 @@ def run_decide(payload: str) -> int:
                         texts, armed_then, steps=steps_then, edited=edited,
                         tool_uses=tool_uses_of(judged.body), paused=paused_then)
                     steps = steps_then           # the log block below reads it
-                    # ⛔ ONE ROOT CAUSE, ONE LOG ROW (r1 Claude F4). When an original class
-                    # fired for this turn, the thread class is not consulted: both would tell the
-                    # same turn to run begin-plan.py, and a turn counted twice inflates the
-                    # `unknown-thread` count the owner reads to decide BLOCK. Suppressing, rather
-                    # than logging a "same cause" marker, keeps that count a plain `grep -c` —
-                    # a count that needs a second column to be read honestly will be read without
-                    # it. The cost: such a turn is not counted as this class at all.
-                    if not reason:
-                        t_code, t_msg, _t_reason, t_detail = decide_thread(
-                            texts, known_threads(PLAN_DIR), block=THREAD_BLOCK)
+                    # ⟳ r2 Codex 3 — ALWAYS EVALUATED, never suppressed by an original class.
+                    # r1's suppression lost real findings (the two are not interchangeable: the
+                    # `unarmed` warning admits a finished-job false alarm, this one names a missing
+                    # plan) and bypassed BLOCK. Co-firing is RECORDED instead, in the log row's
+                    # `also=` field (`thread_log_line`), so unique causes are one grep away.
+                    _known, _notes = known_everywhere()
+                    t_code, t_msg, _t_reason, t_detail = decide_thread(
+                        texts, _known, block=THREAD_BLOCK, notes=_notes)
                     # ⛔ NOTE WHAT IS *NOT* HERE: the QUIET -> WARN promotion this shipped with
                     # (backlog #97). A late flush is backlog #96's own mechanism — the NORMAL case
                     # — so escalating it warned on ten consecutive turns, which is the cry-wolf
@@ -1409,7 +1467,7 @@ def run_decide(payload: str) -> int:
     elif t_code != QUIET:
         try:
             observer_log.append_or_raise(
-                WARN_LOG, log_line(REASON_THREAD, t_detail, observer_log.now(), session_id))
+                WARN_LOG, thread_log_line(t_detail, reason, observer_log.now(), session_id))
         except OSError as e:
             t_msg += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
                      f"rate the BLOCK decision reads is not being recorded."
@@ -1609,6 +1667,30 @@ def _self_test() -> int:
     case("TN11 a SWITCHED row with TWO arrow targets is unreadable — picking one is a guess",
          safe(lambda: thread_name(" ⤳ SWITCHED from `a1` → `b1` → `c1`") is None))
 
+    # ⟳ r2 Codex 1 — PRECEDENCE: an explicit destination, then `plan `x``, then the leading slug.
+    case("TN12 the REAL mixed row from turn af0b134a reads its SWITCH destination, not its "
+         "leading slug",
+         safe(lambda: thread_name(" `three-review-rounds` · step 5 of 6 · ⤳ SWITCHED to "
+                                  "`plugins-handoff-citations`")
+              == ("switched", "plugins-handoff-citations")))
+    case("TN13 `plan `x`` beats a bare leading token — Codex's `gpt-6` input",
+         safe(lambda: thread_name(" `gpt-6` · plan `real-plan`") == ("step", "real-plan")))
+    case("TN14 a bare `→ `b`` with no SWITCHED marker is an explicit destination too",
+         safe(lambda: thread_name(" `from-row` → `to-row` · 1 of 3") == ("switched", "to-row")))
+    case("TN15 two DIFFERENT explicit destinations are unreadable, never a guess",
+         safe(lambda: thread_name(" ⤳ SWITCHED to `dest-one` · then → `dest-two`") is None))
+    case("TN16 ...and the SAME destination named twice is not a conflict",
+         safe(lambda: thread_name(" ⤳ SWITCHED to `dest-same` → `dest-same`")
+              == ("switched", "dest-same")))
+    case("TN17 two DIFFERENT `plan` slugs are unreadable too",
+         safe(lambda: thread_name(" `lead-x` · plan `pl-one` · plan `pl-two`") is None))
+
+    case("TN18 the FROM side of a switch is never the thread — a real row whose destination has "
+         "no backticks is unreadable",
+         safe(lambda: thread_name(" ⤳ SWITCHED from `backlog-249-260-fixes` round-11 folding → "
+                                  "**Phase 6 architecture review** · armed by thrashing, sequenced "
+                                  "by you") is None))
+
     # ── which rows BELONG TO A BANNER (r1 Codex 2, Codex 4) ───────────────────────────────
     case("TR1 a Thread row under a stamped `## ▶` heading is read",
          safe(lambda: thread_rows(["## ▶ [10-22 10:27] STEP 3 of 4 — Review round 1\n\n"
@@ -1694,6 +1776,66 @@ def _self_test() -> int:
                  safe(lambda: known_threads(_kp) is None))
         finally:
             _kp.chmod(0o755)
+
+    # ── EVERY CHECKOUT'S PLANS — a REAL `git worktree add` (owner's decision, option A) ─────
+    # The measured case: two `chrome-bar-fold` turns warned while that plan sat in a worktree's
+    # `.claude/plans/`. ROOT is swapped to the temp repo's MAIN checkout for `known_everywhere`.
+    import os as _osw, subprocess as _spw
+    with _tfk.TemporaryDirectory() as _gw:
+        _genv = {**_osw.environ, "HOME": _gw, "GIT_CONFIG_NOSYSTEM": "1"}
+
+        def _git(cwd, *args):
+            return _spw.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                             "-c", "commit.gpgsign=false", "-C", str(cwd), *args],
+                            capture_output=True, text=True, env=_genv, timeout=60)
+
+        _gm = Path(_gw).resolve() / "repo"
+        _gm.mkdir()
+        _git(_gm, "init", "-q")
+        _git(_gm, "commit", "-q", "--allow-empty", "-m", "root")
+        _gt = Path(_gw).resolve() / "wt-chrome"
+        _git(_gm, "worktree", "add", "-q", str(_gt), "-b", "chrome")
+        (_gm / ".claude" / "plans").mkdir(parents=True)
+        (_gm / ".claude/plans/main-plan.md").write_text("- [ ] a\n")
+        (_gt / ".claude" / "plans").mkdir(parents=True)
+        (_gt / ".claude/plans/chrome-bar-fold.md").write_text("- [ ] a\n")
+        _sroot = globals()["ROOT"]
+        globals()["ROOT"] = _gm
+        try:
+            _kw, _nw = known_everywhere()
+        finally:
+            globals()["ROOT"] = _sroot
+        _row = "## ▶ [10-22 12:00] STEP 2 of 4 — t\n\n> **Thread:** `{}` · 2 of 4"
+        case("TW1 a plan that exists ONLY in another worktree is KNOWN — the chrome-bar-fold case",
+             safe(lambda: _kw is not None and {"main-plan", "chrome-bar-fold"} <= _kw
+                  and _nw == []
+                  and decide_thread([_row.format("chrome-bar-fold")], _kw, notes=_nw)[0]
+                  == QUIET))
+        case("TW2 ...while a thread in NO checkout still warns, with no 'not every checkout' note",
+             safe(lambda: (lambda r: r[0] == WARN and "NOT EVERY CHECKOUT" not in r[1])(
+                 decide_thread([_row.format("in-no-checkout")], _kw, notes=_nw))))
+        _lone = Path(_gw).resolve() / "plain-dir"
+        (_lone / ".claude" / "plans").mkdir(parents=True)
+        globals()["ROOT"] = _lone
+        try:
+            _kl, _nl = known_everywhere()
+        finally:
+            globals()["ROOT"] = _sroot
+        (_gt / ".claude" / "plans").chmod(0)
+        globals()["ROOT"] = _gm
+        try:
+            _kp4, _np4 = known_everywhere()
+        finally:
+            globals()["ROOT"] = _sroot
+            (_gt / ".claude" / "plans").chmod(0o755)
+        case("TW4 a checkout whose plans cannot be listed is SKIPPED and NAMED — the others still "
+             "count",
+             safe(lambda: _kp4 == {"main-plan"}
+                  and any(str(_gt) in n and "could not be listed" in n for n in _np4)))
+        case("TW3 outside a git repository only THIS checkout is read, and the warning SAYS so",
+             safe(lambda: _kl == set() and any("only this checkout" in n for n in _nl)
+                  and "NOT EVERY CHECKOUT WAS READ" in
+                  decide_thread([_row.format("solo-w3")], _kl, notes=_nl)[1]))
 
     # ── THE STAMPED BANNER (2026-10-22): the three ORIGINAL classes see today's form ──────────
     # CLAUDE.md settled `## ▶ [mm-dd hh:mm] STEP n of N` on 2026-10-16 and BANNER_RE matched none
@@ -2232,15 +2374,16 @@ def _self_test() -> int:
         # stops), so an un-redirected constant would append to the reader's REAL observation log
         # on every suite run — including every mutation run — and quietly manufacture the very
         # evidence F11 is supposed to gather. Same class as the HOME-redirect finding.
-        _saved = (ROOT, SENTINEL, WARN_LOG, FLUSH_LOG, JOURNAL_DIR, PLAN_DIR)
+        _saved = (ROOT, SENTINEL, WARN_LOG, FLUSH_LOG, JOURNAL_DIR)
         globals()["ROOT"] = _fx
         globals()["SENTINEL"] = _fx / ".claude/executing-plan"
         globals()["WARN_LOG"] = _fx / ".claude/banner-warnings.log"
         globals()["FLUSH_LOG"] = _fx / ".claude/banner-flush-observations.log"
         globals()["JOURNAL_DIR"] = _fx / ".claude/banner-turn-state"
-        # ⛔ PLAN_DIR TOO: un-redirected, every thread case would read the reader's REAL
-        # `.claude/plans/`, and a verdict would depend on which plans happen to exist there.
-        globals()["PLAN_DIR"] = _fx / ".claude/plans"
+        # ⛔ The thread class finds its plan directories from ROOT (`known_everywhere`), so the
+        # ROOT redirect above is what keeps every thread case off the reader's REAL
+        # `.claude/plans/` — _fx is not a git repository, so `plan_dirs` falls back to
+        # `_fx/.claude/plans` alone and SAYS so in each warning.
         try:
             _subject = _turn("t1", [_edit_block(str(_fx / "scripts" / "x.py"))])
 
@@ -2824,12 +2967,11 @@ def _self_test() -> int:
                  _rcS == WARN
                  and _logtext().rstrip("\n").endswith("\tunbannered\t2 unticked"))
             # ── THE THREAD CLASS, END TO END (r1 round fold) ───────────────────────────────
-            # Through run_decide, against a redirected PLAN_DIR. The sentinel names `plans/p.md`
+            # Through run_decide, against the fixture's own `.claude/plans/`. The sentinel names `plans/p.md`
             # with steps unticked, and these turns edit nothing, so `unbannered` stays quiet and
             # every verdict below is the thread class's — except TE7, which is about co-firing.
             _pd = _fx / ".claude" / "plans"
             _pd.mkdir(parents=True, exist_ok=True)
-            globals()["PLAN_DIR"] = _pd
             _ARM_P = "plan: plans/p.md\narmed: t\n"
 
             def _th_turn(uid: str, text: str) -> list:
@@ -2847,7 +2989,7 @@ def _self_test() -> int:
             case("TE1 a slug-first banner row on a thread with NO plan file WARNS while another "
                  "plan is armed, and logs `unknown-thread` with its name",
                  _rcE1 == WARN and _thlog()[-1:] != []
-                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep work-lines-page"))
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep work-lines-page\talso=-"))
             (_pd / "work-lines-page.md").write_text("- [x] one\n- [ ] two\n")
             _n2 = len(_thlog())
             _rcE2 = _drive(_fx / "te2.jsonl", _th_turn("te2", _wl), before=_ARM_P, after=_ARM_P)
@@ -2862,7 +3004,8 @@ def _self_test() -> int:
                 "## ▶ [10-22 11:02] STEP 1 of 3 — start the side job\n\n"
                 "> **Thread:** `side-b-e3` · 0 of 3 done"), before=_ARM_P, after=_ARM_P)
             case("TE3 a switch followed IN THE SAME TURN by the side job's first step banner WARNS",
-                 _rcE3 == WARN and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep side-b-e3"))
+                 _rcE3 == WARN
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep side-b-e3\talso=-"))
 
             # Claude S7 — a parent resumed after its child plan completed: nothing armed, the
             # parent's plan file exists. `STEP 3 of 3`, so no original class fires either.
@@ -2908,14 +3051,24 @@ def _self_test() -> int:
             case("TE6 a STANDALONE quoted switch row is QUIET end to end, and logs nothing",
                  _rcE6 == QUIET and len(_thlog()) == _n6)
 
-            # Claude F4 / S8 — one root cause, one log row.
+            # ⟳ r2 Codex 3 — NO SUPPRESSION. An unarmed partway banner naming a planless thread
+            # is TWO findings, and both are logged; the thread row says which class co-fired.
             _n7, _u7 = len(_thlog()), _logtext().count("\tunarmed\t")
-            _rcE7 = _drive(_fx / "te7.jsonl", _th_turn("te7",
-                "## ▶ [10-22 11:05] STEP 2 of 3 — t\n\n"
-                "> **Thread:** ↳ RESUMED `side-b-e7`"), before=None, after=None)
-            case("TE7 when `unarmed` fires for a turn, `unknown-thread` is NOT logged for it too",
+            _te7 = _th_turn("te7", "## ▶ [10-22 11:05] STEP 2 of 3 — t\n\n"
+                                   "> **Thread:** ↳ RESUMED `side-b-e7`")
+            _rcE7 = _drive(_fx / "te7.jsonl", _te7, before=None, after=None)
+            case("TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row "
+                 "naming the co-fired class",
                  _rcE7 == WARN and _logtext().count("\tunarmed\t") == _u7 + 1
-                 and len(_thlog()) == _n7)
+                 and len(_thlog()) == _n7 + 1
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep side-b-e7\talso=unarmed"))
+            globals()["THREAD_BLOCK"] = True
+            try:
+                _rcE7b = _drive(_fx / "te7b.jsonl", _te7, before=None, after=None)
+            finally:
+                globals()["THREAD_BLOCK"] = False
+            case("TE7b ...and BLOCK applies to that turn regardless — Codex's end-to-end input",
+                 _rcE7b == THREAD_BLOCK_RC)
 
             # BLOCK, end to end, and what it does on the CONTINUATION stop.
             globals()["THREAD_BLOCK"] = True
@@ -2946,7 +3099,7 @@ def _self_test() -> int:
             (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
             (globals()["ROOT"], globals()["SENTINEL"], globals()["WARN_LOG"],
-             globals()["FLUSH_LOG"], globals()["JOURNAL_DIR"], globals()["PLAN_DIR"]) = _saved
+             globals()["FLUSH_LOG"], globals()["JOURNAL_DIR"]) = _saved
 
     # ── F6: reachability. STRUCTURAL, not an execution test — see the plan. ────────────────
     # ⛔ THIS CASE'S SUBJECT IS THE REPO, NOT THIS SCRIPT, AND THAT BROKE THE MUTATION HARNESS

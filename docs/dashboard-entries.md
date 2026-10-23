@@ -17105,15 +17105,21 @@ for some manifest defects, not this one). So the rule names no command; **backlo
 cheap pre-check, which must reuse the harness's own anchor rule rather than restate it.
 
 ## 2026-10-22
-When work runs on a thread that has no plan, so the work-lines page cannot show it, the Stop
-check now notices and says so, naming the one command that creates the plan. A thread that already
-has a plan is left alone, whether it is still running, finished, or picked up again later. For now
-it only warns, and every warning is logged. Making it stop the turn is a one-line switch, and you
-decide when to flip it from how often the log shows it warning wrongly. Replayed over this
-project's last twelve days, it would have warned on up to 35 of 95 turns that carried a thread
-line (an upper bound: which plan was armed back then cannot be recovered, so turns another warning
-already covered are not taken out), mostly threads named after a branch rather than a plan. That is
-the number to watch.
+When work runs on a thread that has no plan in any checkout, so the work-lines page cannot show it,
+the Stop check now notices and says so, naming the one command that creates the plan. A thread that
+already has a plan is left alone, whether it is running, finished, or picked up again later. That
+now includes plans made inside a separate worktree: the work-lines page shows those plans too, and
+when two checkouts hold a plan with the same name, it shows both, each labelled with its checkout.
+
+For now it only warns, and every warning is logged. Making it stop the turn is a one-line switch,
+and you decide when to flip it from how often the log shows it warning wrongly. Each logged warning
+also says whether another banner warning fired on the same turn, so you can count the turns only
+this one caught. Replayed over this project's last twelve days, it would have warned on up to 34 of
+95 turns that carried a thread line, mostly threads named after a branch rather than a plan. That
+is the number to watch.
+
+One known gap, accepted: if a new side job reuses the name of an old plan, the check sees the old
+plan and stays quiet, and the page shows the new work under the old plan.
 
 While building it I found and fixed a blind spot: the existing banner check could not see banners
 carrying a timestamp (`## ▶ [10-22 09:00] STEP …`), the required form since 2026-10-16. It still
@@ -17121,21 +17127,29 @@ saw the older untimestamped ones, which were used until 2026-10-19. So its recor
 partial, and a quiet stretch in it does not mean nothing was missed.
 <!--tech-->
 `scripts/check-banner-armed.py` gains a fourth class, `unknown-thread`: `thread_name`,
-`thread_rows`, `unknown_thread`, `decide_thread`, `known_threads`. It judges the LAST
-`**Thread:**` row that sits under a `## ▶` heading (within `BANNER_WINDOW` lines; fences closed per
-CommonMark), and fires only when `.claude/plans/<slug>.md` does not exist and no original class
-fired for that turn. The slug is read where the convention writes it — first in the row, after
-`↳`, the one target after `→` in a `⤳ SWITCHED` row, or `plan `slug`` — and an unreadable row is
-quiet. Replayed read-only over the 95 turns since 2026-10-10 that carry a banner Thread row: the
-first version read 24 of them, this one reads 91; the 4 left hold no well-formed slug.
-`THREAD_BLOCK = False` is the switch; on, the class returns 4, which
-`.claude/hooks/block-idle-stop.sh` maps to `exit 2` — and because the guard judges the PREVIOUS
-turn, that block lands once, on the NEXT turn's stop.
+`thread_rows`, `unknown_thread`, `decide_thread`, `known_threads`, `known_everywhere`,
+`thread_log_line`. It judges the LAST `**Thread:**` row under a `## ▶` heading (within
+`BANNER_WINDOW` lines; fences closed per CommonMark) and fires when no checkout has
+`.claude/plans/<slug>.md`. The slug is read by precedence — an explicit destination (`→ `b``,
+`SWITCHED to `b``), then `plan `x``, then the row's leading slug — and two different slugs at the
+deciding level are unreadable, hence quiet. It is evaluated on every judged turn; its log row ends
+`also=<class>` (`also=-` when no original class co-fired). `THREAD_BLOCK = False` is the switch;
+on, the class returns 4, which `.claude/hooks/block-idle-stop.sh` maps to `exit 2` — once, on the
+NEXT turn's stop, because the guard judges the previous turn.
+
+Every checkout: `scripts/gen-work-lines.py` gains `plan_dirs` (`git worktree list --porcelain`,
+main first; a missing checkout is skipped and named; if git cannot answer, this checkout only, and
+a note says so) and `read_plans_noted`, which the page and this check both use. A slug held in two
+checkouts is two rows, `<slug> @ <checkout>`, and a child's parent points at the copy in its own
+checkout. Measured: the two `chrome-bar-fold` turns that warned while that plan sat in a worktree
+are now quiet. Over the 95 replayed turns, 36 would warn on the main checkout's plans alone and
+34 on every checkout's (an upper bound — which plan was armed then cannot be recovered); the last
+row is readable in 91 of the 95, against 24 for the first version.
 
 `BANNER_RE` now accepts the optional `[mm-dd hh:mm]` stamp and is the one banner pattern. ⚠ From
 2026-10-16 until this fix the three original classes (`unarmed`, `unbannered`, `unheralded`) could
 not see a STAMPED banner; unstamped ones, last emitted 2026-10-19 19:07Z, were still seen.
 Measured over judgable turns since 2026-10-16: 67 carry a banner the fixed pattern matches, 21 one
 the old pattern matched. The warn log over that span is therefore partial, not evidence of no
-misses. Self-test 160 -> 219 cases; mutation manifest 48 -> 77, every entry killed and attributed
-in a scoped run.
+misses. Self-test 160 -> 231 cases (`gen-work-lines` 40 -> 48); mutation manifests 48 -> 87 and
+16 -> 23, every entry killed and attributed in a scoped run.

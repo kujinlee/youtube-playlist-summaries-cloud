@@ -848,11 +848,19 @@ EXPECTED_MUTATIONS = {
     # `STEP_BANNER_RE` to `BANNER_RE`, not retired — its subject still exists.
     # ⟳ r1 fold, same day, 65 -> 77: the thread class was REDESIGNED by the coordinator's
     # decision (compare against `.claude/plans/` files, read the real row shapes, rows only under
-    # a banner, CommonMark fence closing, one log row per root cause). All 15 surviving
-    # `thread class:` entries are RETIRED WITH THEIR SUBJECT — they pinned the sentinel
-    # comparison and the journalled slug, both deleted — and 27 replace them, one per decision
-    # branch, every `expect` read from a real run. Net +12. The two BANNER_RE entries are kept.
-    "scripts/check-banner-armed.py": 77,
+    # a banner, CommonMark fence closing). The 15 `thread class:` entries were removed and 27
+    # added. ⟳ r2 Codex 5 — CORRECTED: that is NOT "all 15 retired with their subject". Only the
+    # sentinel comparison and the journalled slug were deleted; BLOCK, last-row selection, fence
+    # exclusion and unreadable-is-quiet SURVIVED, and their entries were REWRITTEN against the new
+    # code under new names, not retired. Net +12 either way. The two BANNER_RE entries were kept.
+    # ⟳ r2 fold, 77 -> 87. Six entries lost their anchors to this round's rewrites: FIVE were
+    # RE-ANCHORED to the same property in the new code (`SWITCHED to plan`, guessing between two
+    # destinations, the `switched` label, run_decide ignoring THREAD_BLOCK, run_decide dropping the
+    # known set), and ONE was RETIRED WITH ITS SUBJECT — the r1 suppression is gone (Codex 3), and
+    # its replacement entry asserts the opposite: re-introducing the suppression is killed. Eleven
+    # are new: precedence (explicit > `plan` > leading, conflicts unreadable), the `also=` field and
+    # its wiring, the every-checkout union, its notes and its CANNOT RUN. Net -6 +16 = +10.
+    "scripts/check-banner-armed.py": 87,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -936,7 +944,12 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
-    "scripts/gen-work-lines.py": 16,
+    # ⟳ 2026-10-22, banner-thread-armed r2 fold, 16 -> 23: `plan_dirs` (every checkout's plans,
+    # owner's decision option A) and the union `read_plans_noted`. Seven entries, one per branch —
+    # git's order kept, a missing checkout named, the git fallback named, the union itself,
+    # duplicate slugs labelled, a duplicated parent re-pointed at the child's own checkout, and
+    # the page showing its notes — every `expect` read from a real `git worktree add` run.
+    "scripts/gen-work-lines.py": 23,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5608,7 +5621,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1812)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1829)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

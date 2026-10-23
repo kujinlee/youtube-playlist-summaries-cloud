@@ -707,47 +707,7 @@
       ]
     ],
     "expect": [
-      "TN5 a SWITCHED row's target is the one slug after `→`, never the `from` side",
-      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read"
-    ]
-  },
-  {
-    "name": "thread class: `SWITCHED to plan `x`` is no longer read",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "        found = _SWITCH_ARROW_RE.findall(after) or _SWITCH_TO_RE.findall(SWITCHED + after)",
-        "        found = _SWITCH_ARROW_RE.findall(after)"
-      ]
-    ],
-    "expect": [
-      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read"
-    ]
-  },
-  {
-    "name": "thread class: several arrow targets are GUESSED (the first) instead of unreadable",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "            return (\"switched\", found[0]) if len(found) == 1 else None",
-        "            return (\"switched\", found[0])"
-      ]
-    ],
-    "expect": [
-      "TN11 a SWITCHED row with TWO arrow targets is unreadable — picking one is a guess"
-    ]
-  },
-  {
-    "name": "thread class: a SWITCHED row is labelled `step`, so the log loses which shape fired",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "return (\"switched\", found[0]) if",
-        "return (\"step\", found[0]) if"
-      ]
-    ],
-    "expect": [
-      "TD4 a SWITCHED target with no plan file fires as kind `switched`"
+      "TN18 the FROM side of a switch is never the thread — a real row whose destination has no backticks is unreadable"
     ]
   },
   {
@@ -885,19 +845,6 @@
     ]
   },
   {
-    "name": "thread class: run_decide ignores THREAD_BLOCK and always warns",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "block=THREAD_BLOCK)\n",
-        "block=False)\n"
-      ]
-    ],
-    "expect": [
-      "TE8 with THREAD_BLOCK on the turn returns THREAD_BLOCK_RC, the code the hook maps to exit 2"
-    ]
-  },
-  {
     "name": "thread class: an unlistable plan directory is read as 'no plans' and warns",
     "file": "scripts/check-banner-armed.py",
     "edits": [
@@ -964,33 +911,6 @@
     ]
   },
   {
-    "name": "thread class: run_decide drops the known set, so every thread reads as unknown — finished plans included",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "known_threads(PLAN_DIR), block",
-        "set(), block"
-      ]
-    ],
-    "expect": [
-      "TE2 ...and the SAME turn is quiet once `.claude/plans/work-lines-page.md` exists",
-      "TE5 after a real `begin-plan.py --finish`, the finished thread is QUIET — the sentinel is gone and the plan file is what the page reads"
-    ]
-  },
-  {
-    "name": "thread class: it is consulted even when an original class fired, so one turn is logged twice",
-    "file": "scripts/check-banner-armed.py",
-    "edits": [
-      [
-        "                    if not reason:\n                        t_code, t_msg, _t_reason, t_detail = decide_thread(",
-        "                    if True:\n                        t_code, t_msg, _t_reason, t_detail = decide_thread("
-      ]
-    ],
-    "expect": [
-      "TE7 when `unarmed` fires for a turn, `unknown-thread` is NOT logged for it too"
-    ]
-  },
-  {
     "name": "thread class: a thread WARN is never surfaced as WARN when the other classes are quiet",
     "file": "scripts/check-banner-armed.py",
     "edits": [
@@ -1015,6 +935,217 @@
     ],
     "expect": [
       "TE9 an UNLISTABLE `.claude/plans/` is CANNOT RUN, not a warning about the thread"
+    ]
+  },
+  {
+    "name": "thread class: `SWITCHED to plan `x`` is no longer read",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        explicit += _SWITCH_TO_RE.findall(SWITCHED + body.split(SWITCHED, 1)[1])",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read",
+      "TN12 the REAL mixed row from turn af0b134a reads its SWITCH destination, not its leading slug"
+    ]
+  },
+  {
+    "name": "thread class: several explicit destinations are GUESSED (the first) instead of unreadable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "return (\"switched\", explicit[0]) if len(set(explicit)) == 1 else None",
+        "return (\"switched\", explicit[0])"
+      ]
+    ],
+    "expect": [
+      "TN15 two DIFFERENT explicit destinations are unreadable, never a guess"
+    ]
+  },
+  {
+    "name": "thread class: a SWITCHED row is labelled `step`, so the log loses which shape fired",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "return (\"switched\", explicit[0]) if",
+        "return (\"step\", explicit[0]) if"
+      ]
+    ],
+    "expect": [
+      "TD4 a SWITCHED target with no plan file fires as kind `switched`"
+    ]
+  },
+  {
+    "name": "thread class: run_decide ignores THREAD_BLOCK and always warns",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "block=THREAD_BLOCK, notes=_notes)",
+        "block=False, notes=_notes)"
+      ]
+    ],
+    "expect": [
+      "TE8 with THREAD_BLOCK on the turn returns THREAD_BLOCK_RC, the code the hook maps to exit 2"
+    ]
+  },
+  {
+    "name": "thread class: run_decide drops the known set, so every thread reads as unknown — finished plans included",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "texts, _known, block",
+        "texts, set(), block"
+      ]
+    ],
+    "expect": [
+      "TE2 ...and the SAME turn is quiet once `.claude/plans/work-lines-page.md` exists",
+      "TE5 after a real `begin-plan.py --finish`, the finished thread is QUIET — the sentinel is gone and the plan file is what the page reads"
+    ]
+  },
+  {
+    "name": "thread class: the r1 SUPPRESSION is re-introduced — the class is skipped when an original class fired",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "                    _known, _notes = known_everywhere()\n",
+        "                    _known, _notes = known_everywhere()\n                    if reason:\n                        texts = []\n"
+      ]
+    ],
+    "expect": [
+      "TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row naming the co-fired class",
+      "TE7b ...and BLOCK applies to that turn regardless — Codex's end-to-end input"
+    ]
+  },
+  {
+    "name": "thread class: `plan `x`` no longer beats a bare leading token",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    planned = _PLAN_NAMED_RE.findall(body)\n    if planned:",
+        "    planned = []\n    if planned:"
+      ]
+    ],
+    "expect": [
+      "TN13 `plan `x`` beats a bare leading token — Codex's `gpt-6` input"
+    ]
+  },
+  {
+    "name": "thread class: two different `plan` slugs are GUESSED instead of unreadable",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "return (\"step\", planned[0]) if len(set(planned)) == 1 else None",
+        "return (\"step\", planned[0])"
+      ]
+    ],
+    "expect": [
+      "TN17 two DIFFERENT `plan` slugs are unreadable too"
+    ]
+  },
+  {
+    "name": "thread class: a bare `→ `b`` counts only inside a SWITCHED row",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    explicit = _SWITCH_ARROW_RE.findall(body)\n",
+        "    explicit = _SWITCH_ARROW_RE.findall(body) if SWITCHED in body else []\n"
+      ]
+    ],
+    "expect": [
+      "TN14 a bare `→ `b`` with no SWITCHED marker is an explicit destination too"
+    ]
+  },
+  {
+    "name": "thread class: the LEADING token beats an explicit destination again — the af0b134a row",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    if explicit:\n        return",
+        "    if explicit and not _LEADING_SLUG_RE.match(body):\n        return"
+      ]
+    ],
+    "expect": [
+      "TN12 the REAL mixed row from turn af0b134a reads its SWITCH destination, not its leading slug"
+    ]
+  },
+  {
+    "name": "thread class: the log row's `also=` field is frozen to `-`, so co-fired turns read as this class alone",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "f\"also={also or '-'}\"",
+        "\"also=-\""
+      ]
+    ],
+    "expect": [
+      "TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row naming the co-fired class"
+    ]
+  },
+  {
+    "name": "thread class: run_decide never passes the co-fired class to the log row",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "thread_log_line(t_detail, reason,",
+        "thread_log_line(t_detail, \"\","
+      ]
+    ],
+    "expect": [
+      "TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row naming the co-fired class"
+    ]
+  },
+  {
+    "name": "thread class: the checkouts' plan sets are not UNIONED — the last one read wins",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        known |= got\n",
+        "        known = got\n"
+      ]
+    ],
+    "expect": [
+      "TW1 a plan that exists ONLY in another worktree is KNOWN — the chrome-bar-fold case"
+    ]
+  },
+  {
+    "name": "thread class: a checkout whose plans cannot be listed is dropped SILENTLY",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "            notes.append(f\"{pd} exists but could not be listed\")\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "TW4 a checkout whose plans cannot be listed is SKIPPED and NAMED — the others still count"
+    ]
+  },
+  {
+    "name": "thread class: reading NOTHING is treated as 'no plans', so it warns instead of CANNOT RUN",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    return (known if read_any else None), notes",
+        "    return known, notes"
+      ]
+    ],
+    "expect": [
+      "TE9 an UNLISTABLE `.claude/plans/` is CANNOT RUN, not a warning about the thread"
+    ]
+  },
+  {
+    "name": "thread class: the warning drops the 'not every checkout was read' notes",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        + (\"\\n   ⚠ NOT EVERY CHECKOUT WAS READ, so this may be a false alarm:\"\n           + \"\".join(f\"\\n     · {n}\" for n in notes) if notes else \"\"))",
+        "        )"
+      ]
+    ],
+    "expect": [
+      "TW3 outside a git repository only THIS checkout is read, and the warning SAYS so"
     ]
   }
 ]

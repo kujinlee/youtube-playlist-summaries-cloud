@@ -206,5 +206,96 @@
     "expect": [
       "⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome"
     ]
+  },
+  {
+    "name": "plan_dirs no longer skips a MISSING checkout with a note",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        if not t.is_dir():\n            notes.append(",
+        "        if False:\n            notes.append("
+      ]
+    ],
+    "expect": [
+      "WT5 a checkout whose directory is MISSING is skipped and NAMED, never fatal"
+    ]
+  },
+  {
+    "name": "plan_dirs falls back to this checkout SILENTLY when git cannot answer",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        return [own], [f\"git could not list the worktrees ({why}), so only this checkout's plans \"\n                       f\"were read\"]",
+        "        return [own], []"
+      ]
+    ],
+    "expect": [
+      "WT7 when git cannot answer, the result is THIS checkout only — and a note SAYS so"
+    ]
+  },
+  {
+    "name": "plan_dirs reverses git's order, so the main checkout is no longer first",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    for t in trees:\n",
+        "    for t in reversed(trees):\n"
+      ]
+    ],
+    "expect": [
+      "WT1 plan_dirs lists EVERY checkout from a real `git worktree add`, main first"
+    ]
+  },
+  {
+    "name": "read_plans reads only its own checkout again — the chrome-bar-fold miss",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        dirs, notes = plan_dirs(d.parent.parent)",
+        "        dirs, notes = [(d.parent, d)], []"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH copies of a slug held twice, never merging them"
+    ]
+  },
+  {
+    "name": "read_plans no longer labels a slug held in two checkouts, so the copies collide",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    if not dup:\n        return [r for _, r in found], notes",
+        "    if True:\n        return [r for _, r in found], notes"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH copies of a slug held twice, never merging them"
+    ]
+  },
+  {
+    "name": "read_plans re-points a duplicated parent at the FIRST copy, not the child's own checkout's",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            r[\"parent\"] = by_place.get((par, str(checkout)), first[par])",
+        "            r[\"parent\"] = first[par]"
+      ]
+    ],
+    "expect": [
+      "WT3 a child's parent points at the copy in ITS OWN checkout"
+    ]
+  },
+  {
+    "name": "the page drops the notes saying what was NOT read",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        parts.append(f'<p class=\"warn\">⚠ {esc(note)}</p>')",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "WT6 ...and the PAGE says so, rather than silently covering less"
+    ]
   }
 ]
