@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 121 cases
+    scripts/begin-plan.py --self-test  # 122 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -1860,6 +1860,30 @@ def _self_test() -> int:
              _we is None
              and _lines.get("wt-dup") == "> **Line:** _(no objective recorded)_ `dup @ wt-dup`"
              and _lines.get("main") == "> **Line:** _(no objective recorded)_ `dup @ main`")
+
+    # ── r4 Codex (Major): identical children of DIFFERENT parents, through `_banner_line` ──────
+    # The SIDE checkout's banner for `kid` must name the SIDE parent. With the r3 collapse the two
+    # identical `kid.md` files merged and the side banner showed `parent @ main` → `kid`.
+    with tempfile.TemporaryDirectory() as _tdc:
+        _cm = Path(_tdc).resolve() / "main"
+        _cm.mkdir()
+        _ce = pp.make_test_repo(_cm, "bp/codex-main")
+        _cs = Path(_tdc).resolve() / "side"
+        _ce = _ce or pp.test_git(_cm, "worktree", "add", "-q", str(_cs), "-b", "bp/side")
+        for _co, _pb in ((_cm, "- [x] main's parent\n"), (_cs, "- [x] side's parent\n")):
+            (_co / ".claude/plans").mkdir(parents=True, exist_ok=True)
+            (_co / ".claude/plans/parent.md").write_text("<!-- parent: - -->\n" + _pb)
+            (_co / ".claude/plans/kid.md").write_text("<!-- parent: parent -->\n- [ ] follow-up\n")
+        _saved_rc = (ROOT, PLAN_DIR)
+        try:
+            ROOT, PLAN_DIR = _cs, _cs / ".claude/plans"
+            _side = _banner_line(PLAN_DIR / "kid.md")
+        finally:
+            ROOT, PLAN_DIR = _saved_rc
+        case("F5b the SIDE checkout's banner for an identical `kid` names the SIDE parent — equal "
+             "content is not identity (r4 Codex)",
+             _ce is None
+             and _side == "> **Line:** _(no objective recorded)_ `parent @ side` → `kid @ side`")
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

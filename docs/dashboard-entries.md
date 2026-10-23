@@ -17109,8 +17109,8 @@ When work runs on a thread that has no plan in any checkout, so the work-lines p
 the Stop check now notices and says so, naming the one command that creates the plan. A thread that
 already has a plan is left alone, whether it is running, finished, or picked up again later. That
 now includes plans made inside a separate worktree: the work-lines page shows those plans too.
-When two checkouts hold a plan with the same name, the page shows it once if the two files are
-identical, and twice, each labelled with its checkout, if they differ.
+When two checkouts hold a plan with the same name, the page shows it twice, each labelled with its
+checkout.
 
 For now it only warns, and every warning is logged. Making it stop the turn is a one-line switch,
 and you decide when to flip it from how often the log shows it warning wrongly. Each logged warning
@@ -17119,7 +17119,11 @@ this one caught. Replayed over this project's last twelve days, it would have wa
 95 turns that carried a thread line, mostly threads named after a branch rather than a plan. That
 is the number to watch.
 
-Two known limits:
+Three known limits:
+- **Identical copy shown twice (accepted).** An identical copy of a plan in two checkouts is shown
+  and counted twice. Having the same content does not prove two plans are the same plan; an earlier
+  attempt to merge such copies attached a follow-up step to the wrong parent and made a line that
+  still owed work look finished, so it was removed.
 - **Reused plan name (accepted).** If a new side job reuses the name of an old plan, the check sees
   the old plan and stays quiet, and the page shows the new work under the old plan.
 - **Deleted worktree (your decision, not yet made).** Removing a worktree with
@@ -17146,8 +17150,10 @@ NEXT turn's stop, because the guard judges the previous turn.
 Every checkout: `scripts/gen-work-lines.py` gains `plan_dirs` (`git worktree list --porcelain`,
 main first, inherited `GIT_*` dropped; a checkout whose folder is gone is skipped silently, since
 it holds no plans; if git cannot answer, this checkout only, and a note says so) and
-`read_plans_noted`, which the page and this check both use. Byte-identical copies of a slug are one
-row; differing copies are two, `<slug> @ main` / `<slug> @ <folder>`. `row_for` is the one
+`read_plans_noted`, which the page and this check both use. Plan identity is (checkout, slug): a
+slug in two checkouts is two rows, `<slug> @ main` / `<slug> @ <folder>`, even when the files are
+identical — equal content does not establish identity (r4 Codex: the collapse that tried merged
+children of different parents, and was removed). `row_for` is the one
 resolver for a duplicated slug: a child's parent and `begin-plan`'s banner `Line:` both take the
 copy in their own checkout, else main. The thread check runs on every judged turn, including one
 with no saved record. An arrow is a destination only after `⤳ SWITCHED` or directly after the
@@ -17163,6 +17169,6 @@ row is readable in 91 of the 95, against 24 for the first version.
 not see a STAMPED banner; unstamped ones, last emitted 2026-10-19 19:07Z, were still seen.
 Measured over judgable turns since 2026-10-16: 67 carry a banner the fixed pattern matches, 21 one
 the old pattern matched. The warn log over that span is therefore partial, not evidence of no
-misses. Self-tests: this guard 160 -> 236, `gen-work-lines` 40 -> 55, `begin-plan` 120 -> 121.
+misses. Self-tests: this guard 160 -> 236, `gen-work-lines` 40 -> 56, `begin-plan` 120 -> 122.
 Mutation manifests 48 -> 91, 16 -> 28 and 56 -> 57, every entry killed and attributed in a scoped
 run.

@@ -274,19 +274,6 @@
     ]
   },
   {
-    "name": "read_plans no longer labels DIFFERING copies of a slug, so they collide",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "            if len(gs) > 1:\n",
-        "            if False:\n"
-      ]
-    ],
-    "expect": [
-      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
-    ]
-  },
-  {
     "name": "row_for ignores the asking checkout and always takes the first copy",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -298,33 +285,6 @@
     "expect": [
       "WT3 a child's parent points at the copy in ITS OWN checkout",
       "WT4d row_for resolves a duplicated slug in the asking checkout, else main"
-    ]
-  },
-  {
-    "name": "byte-identical copies are no longer collapsed, so one plan counts as two lines",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "            if g[1][\"sha\"] == r[\"sha\"]:",
-        "            if False:"
-      ]
-    ],
-    "expect": [
-      "WT4b BYTE-IDENTICAL copies are ONE row, holding both checkouts (r3 Claude F4)",
-      "WT4c ...so the identical pair is counted as ONE line, the differing pair as two"
-    ]
-  },
-  {
-    "name": "labels use the checkout's absolute path instead of a short name",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "                  else pathlib.Path(c).name for c, _, _ in gs]",
-        "                  else str(c) for c, _, _ in gs]"
-      ]
-    ],
-    "expect": [
-      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
     ]
   },
   {
@@ -364,6 +324,46 @@
     ],
     "expect": [
       "WT9 an inherited GIT_DIR (a hook context) does not redirect plan_dirs — `root` decides"
+    ]
+  },
+  {
+    "name": "read_plans no longer labels a slug held in two checkouts, so the copies collide",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            if len(copies) > 1:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name",
+      "WT10 identical children of DIFFERENT parents stay apart: each kid under its own checkout's parent, and BOTH lines are open"
+    ]
+  },
+  {
+    "name": "labels use the checkout's absolute path instead of a short name",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "                  else pathlib.Path(c).name for c, _ in copies]",
+        "                  else str(c) for c, _ in copies]"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
+    ]
+  },
+  {
+    "name": "a collapse is RE-INTRODUCED: copies that parse identically become one row, merging children of different parents",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        by_name.setdefault(r[\"slug\"], []).append((checkout, r))",
+        "        if not any(c[1] == r for c in by_name.get(r[\"slug\"], [])):\n            by_name.setdefault(r[\"slug\"], []).append((checkout, r))"
+      ]
+    ],
+    "expect": [
+      "WT10 identical children of DIFFERENT parents stay apart: each kid under its own checkout's parent, and BOTH lines are open"
     ]
   }
 ]

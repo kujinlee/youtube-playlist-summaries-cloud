@@ -2,7 +2,7 @@
 """How did we get here, and what did we never walk back to? — the work lines, from the plan files.
 
     python3 scripts/gen-work-lines.py              # write the page
-    python3 scripts/gen-work-lines.py --self-test  # 55 cases
+    python3 scripts/gen-work-lines.py --self-test  # 56 cases
 
 WHY THIS EXISTS
 ---------------
@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import hashlib
 import html
 import pathlib
 import os
@@ -352,9 +351,7 @@ def _read_dir(d: pathlib.Path) -> list[dict]:
         except OSError as exc:
             raise ValueError(f"{f.name} could not be read: {exc}") from exc
         touched = _dt.date.fromtimestamp(f.stat().st_mtime).isoformat()
-        rec = parse_plan(f.stem, text, touched)
-        rec["sha"] = hashlib.sha256(text.encode()).hexdigest()
-        out.append(rec)
+        out.append(parse_plan(f.stem, text, touched))
     return out
 
 
@@ -380,11 +377,14 @@ def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], 
     When `plan_dir` is a checkout's own `.claude/plans/` (the default, and every real caller), the
     plans of EVERY checkout are read through `plan_dirs`. Any other directory — a test fixture —
     is read alone, because it belongs to no checkout.
-    ⛔ ONE SLUG IN TWO CHECKOUTS WITH DIFFERENT CONTENT IS TWO ROWS, NEVER MERGED: each is renamed
-    `<slug> @ <checkout>` (`main`, or the checkout's folder name), and a child's `parent:` is
-    re-pointed at the copy in ITS OWN checkout when there is one, else at the first (main first) —
-    `row_for`. Byte-identical copies are ONE row. Every record carries `name` (the bare slug) and
-    `checkouts` (where it is held).
+    ⛔ ONE SLUG IN TWO CHECKOUTS IS TWO ROWS, NEVER MERGED — plan identity is (checkout, slug). Each
+    is renamed `<slug> @ <checkout>` (`main`, or the checkout's folder name), and a child's
+    `parent:` is re-pointed at the copy in ITS OWN checkout when there is one, else at the first
+    (main first) — `row_for`. Every record carries `name` (the bare slug) and `checkouts` (the one
+    checkout that holds it).
+    ⚠ KNOWN LIMIT, stated rather than patched: an IDENTICAL copy of a plan in two checkouts is shown
+    and counted TWICE. Equal content does not establish identity (r4 Codex: collapsing on it merged
+    children of different parents), and nothing here records provenance that could.
     ⚠ Another checkout whose `.claude/plans/` cannot be listed is skipped with a note, never fatal.
     """
     d = PLAN_DIR if plan_dir is None else plan_dir
@@ -414,35 +414,29 @@ def read_plans_noted(plan_dir: pathlib.Path | None = None) -> tuple[list[dict], 
         # which is what a label built from it used to name.
         found = [(d.parent.parent, r) for r in _read_dir(d)] + found
     main = dirs[0][0] if dirs else d.parent.parent
-    # ⟳ r3 Claude F4 — BYTE-IDENTICAL COPIES ARE ONE PLAN. A copied file is the same plan held twice;
-    # showing it twice counted one open line as two (measured: `chrome-r2-fold` in two checkouts,
-    # identical). Copies are grouped by (slug, content hash): one group is one row, keeping the bare
-    # slug and every checkout that holds it; only DIFFERING copies become labelled rows.
-    groups: dict[str, list[list]] = {}
+    # ⛔ PLAN IDENTITY IS (checkout, slug), ALWAYS. ⟳ r4 Codex (Major), resolved by REMOVAL: the r3
+    # fold collapsed byte-identical copies into one row, and two identical `kid.md` files whose
+    # `parent.md` differed then merged into one child under ONE parent — the other line read done
+    # while it still owed a step, and its banner showed the wrong ancestry. Equal content does not
+    # establish that two independently made plans are the same plan, so nothing is collapsed.
+    by_name: dict[str, list[tuple[pathlib.Path, dict]]] = {}
     for checkout, r in found:
-        gs = groups.setdefault(r["slug"], [])
-        for g in gs:
-            if g[1]["sha"] == r["sha"]:
-                g[2].append(str(pathlib.Path(checkout).resolve()))
-                break
-        else:
-            gs.append([checkout, r, [str(pathlib.Path(checkout).resolve())]])
+        by_name.setdefault(r["slug"], []).append((checkout, r))
     out = []
-    for name, gs in groups.items():
+    for name, copies in by_name.items():
         labels = ["main" if pathlib.Path(c).resolve() == pathlib.Path(main).resolve()
-                  else pathlib.Path(c).name for c, _, _ in gs]
+                  else pathlib.Path(c).name for c, _ in copies]
         if len(set(labels)) < len(labels):          # two checkouts share a folder name
-            labels = [str(c) for c, _, _ in gs]
-        for (checkout, r, held), label in zip(gs, labels):
-            r = dict(r, name=name, checkouts=tuple(held))
-            if len(gs) > 1:
-                # ⛔ DIFFERING copies stay TWO ROWS, NEVER MERGED — merging would show one plan's
-                # ticks under the other's name. A short checkout name, not an absolute path.
+            labels = [str(c) for c, _ in copies]
+        for (checkout, r), label in zip(copies, labels):
+            r = dict(r, name=name, checkouts=(str(pathlib.Path(checkout).resolve()),))
+            if len(copies) > 1:
+                # ⛔ TWO ROWS, NEVER MERGED — a short checkout name, not an absolute path.
                 r["slug"] = f"{name} @ {label}"
             out.append(r)
     for r in out:
         par = r["parent"]
-        if par is not None and len(groups.get(par, ())) > 1:
+        if par is not None and len(by_name.get(par, ())) > 1:
             r["parent"] = row_for(out, par, r["checkouts"][0])
     return out, notes
 
@@ -772,8 +766,8 @@ def _self_test() -> int:
         _slugs = _try(lambda: sorted(r["slug"] for r in read_plans(_main / ".claude/plans")))
         case("WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold "
              "case — and labels BOTH differing copies of a slug with a SHORT checkout name",
-             _slugs, sorted(["main-only", "wt-only", "kid", "twin", "both @ main",
-                             "both @ wt-side"]))
+             _slugs, sorted(["main-only", "wt-only", "kid", "twin @ main", "twin @ wt-side",
+                             "both @ main", "both @ wt-side"]))
         _kid = _try(lambda: [r["parent"] for r in read_plans(_main / ".claude/plans")
                              if r["slug"] == "kid"])
         case("WT3 a child's parent points at the copy in ITS OWN checkout",
@@ -784,20 +778,21 @@ def _self_test() -> int:
              sorted([(1, 1), (0, 2)]))
         _tw = _try(lambda: [r["checkouts"] for r in read_plans(_main / ".claude/plans")
                             if r["name"] == "twin"])
-        case("WT4b BYTE-IDENTICAL copies are ONE row, holding both checkouts (r3 Claude F4)",
-             _tw, [(str(_main), str(_wt))])
+        case("WT4b BYTE-IDENTICAL copies are still TWO rows, one per checkout — equal content is "
+             "not identity (r4 Codex; the stated limit)",
+             sorted(_tw or []), sorted([(str(_main),), (str(_wt),)]))
         _o4 = pathlib.Path(_dw) / "w4.html"
         _r4 = write_page(_o4, _main / ".claude/plans")
-        case("WT4c ...so the identical pair is counted as ONE line, the differing pair as two",
-             (_r4[0], (_o4.read_text() if _o4.exists() else "").count("<code>twin</code>"),
-              (_o4.read_text() if _o4.exists() else "").count("<code>both @ ")), (0, 1, 2))
+        case("WT4c ...so the identical pair is counted TWICE, like the differing pair",
+             (_r4[0], (_o4.read_text() if _o4.exists() else "").count("<code>twin @ "),
+              (_o4.read_text() if _o4.exists() else "").count("<code>both @ ")), (0, 2, 2))
         _rows = _try(lambda: read_plans(_main / ".claude/plans"))
         case("WT4d row_for resolves a duplicated slug in the asking checkout, else main",
              _try(lambda: (row_for(_rows, "both", _wt), row_for(_rows, "both", _dw),
                            row_for(_rows, "twin", _wt), row_for(_rows, "nowhere", _main),
                            row_for([{"slug": "solo", "name": "solo", "checkouts": ()}], "solo",
                                    _wt))),
-             ("both @ wt-side", "both @ main", "twin", None, "solo"))
+             ("both @ wt-side", "both @ main", "twin @ wt-side", None, "solo"))
         _sub = _main / "sub" / ".claude" / "plans"
         _sub.mkdir(parents=True)
         (_sub / "both.md").write_text("# b\n- [ ] sub copy")
@@ -847,6 +842,29 @@ def _self_test() -> int:
         case("WT6d a directory git does not list, read after the gone checkout, carries no note "
              "either",
              _try(lambda: read_plans_noted(_sub)[1]), [])
+        # ⟳ r4 Codex (Major) — HIS FIXTURE. Identical `kid.md` in two checkouts, each under ITS OWN,
+        # different, fully ticked `parent.md`. Each child belongs to its own checkout's parent, so
+        # there are TWO open lines; collapsing the identical children made one line read done.
+        _cm = pathlib.Path(_dw).resolve() / "codex-main"
+        _cm.mkdir()
+        _git(_cm, "init", "-q")
+        _git(_cm, "commit", "-q", "--allow-empty", "-m", "root")
+        _cs = pathlib.Path(_dw).resolve() / "side"
+        _git(_cm, "worktree", "add", "-q", str(_cs), "-b", "side")
+        for _co, _pb in ((_cm, "# p\n- [x] main's parent"), (_cs, "# p\n- [x] side's parent")):
+            (_co / ".claude" / "plans").mkdir(parents=True)
+            (_co / ".claude/plans/parent.md").write_text(_pb)
+            (_co / ".claude/plans/kid.md").write_text(
+                "# k\n<!-- parent: parent -->\n- [ ] follow-up")
+        _cr = _try(lambda: read_plans(_cm / ".claude/plans"))
+        _croots = _try(lambda: build_forest(_cr)[0])
+        case("WT10 identical children of DIFFERENT parents stay apart: each kid under its own "
+             "checkout's parent, and BOTH lines are open",
+             (_try(lambda: sorted((r["slug"], r["parent"]) for r in _cr)),
+              _try(lambda: sorted((n["slug"], line_state(n)) for n in _croots))),
+             ([("kid @ main", "parent @ main"), ("kid @ side", "parent @ side"),
+               ("parent @ main", None), ("parent @ side", None)],
+              [("parent @ main", "open"), ("parent @ side", "open")]))
         _lone = pathlib.Path(_dw) / "not-a-repo"
         (_lone / ".claude" / "plans").mkdir(parents=True)
         _dirs3, _notes3 = plan_dirs(_lone)

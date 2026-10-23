@@ -961,6 +961,10 @@ EXPECTED_MUTATIONS = {
     # Six are new: byte-identical copies collapse (F4), short labels, the not-listed directory's
     # label (F6), another checkout's unreadable plans named (F6), and inherited GIT_* dropped.
     # Net -1 +6 = +5.
+    # ⟳ r4 fold, 28 -> 28: the byte-identical collapse was REMOVED (r4 Codex, Major — it merged
+    # children of different parents), and its ONE entry is RETIRED WITH THE CODE. Two entries were
+    # RE-ANCHORED to the replacement loop (copies labelled; short labels). ONE is new: it
+    # RE-INTRODUCES a collapse and is killed by WT10, Codex's own fixture. Net -1 +1 = 0.
     "scripts/gen-work-lines.py": 28,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
