@@ -1366,7 +1366,15 @@ EXPECTED_MUTATIONS = {
     # acknowledgment; a second acknowledgment; its round count, twice; the acknowledged/unlogged
     # split). Nine RE-POINTED with the rename, and t10's retroactive WARN branch — unreachable
     # from any valid log — went with no entry of its own to retire.
-    "scripts/check-decision-scheme.py": 113,
+    # ⟳ 2026-10-23 r2 fold: 113 -> 128. An acknowledgment now counts only while the review
+    # corpus ON DISK shows its subject ended, converged, at the round it names. FIFTEEN added
+    # (each refutation branch of `acknowledgment_rejection`, the rejected class and its reader,
+    # main's corpus read and its CANNOT RUN, `review_rounds`' two refusals, and `half_verdict`'s
+    # last-line and bold-line rules). Seven RE-POINTED to the signatures that gained `rounds`.
+    # Two candidates REJECTED as equivalent: dropping `w != "coordinator"` (a coordinator entry's
+    # verdict is always None, so the `v is not None` clause already excludes it) and reading
+    # coordinator documents in `review_rounds` (their verdict is never read).
+    "scripts/check-decision-scheme.py": 128,
     "scripts/check-goal-status.py": 7,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5659,7 +5667,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1869)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1884)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

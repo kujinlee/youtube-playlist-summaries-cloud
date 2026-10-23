@@ -1160,7 +1160,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "\"acknowledged\" if acked else \"unlogged\"",
+        "\"rejected\" if why else \"acknowledged\"",
         "\"unlogged\""
       ]
     ],
@@ -1173,8 +1173,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    unlogged = [k for k, how in lost_bets(rows) if how == \"unlogged\"]",
-        "    unlogged = [k for k, how in lost_bets(rows) if how == \"acknowledged\"]"
+        "    unlogged = [k for k, how, _ in found if how == \"unlogged\"]",
+        "    unlogged = [k for k, how, _ in found if how == \"acknowledged\"]"
       ]
     ],
     "expect": [
@@ -1186,7 +1186,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if not unlogged:\n        return None",
+        "    if not unlogged and not rejected:\n        return None",
         "    if True:\n        return None"
       ]
     ],
@@ -1199,8 +1199,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    acked = [k for k, how in lost_bets(rows) if how == \"acknowledged\"]",
-        "    acked = [k for k, how in lost_bets(rows) if how == \"unlogged\"]"
+        "    acked = [k for k, how, _ in lost_bets(rows, rounds) if how == \"acknowledged\"]",
+        "    acked = [k for k, how, _ in lost_bets(rows, rounds) if how == \"unlogged\"]"
       ]
     ],
     "expect": [
@@ -1225,7 +1225,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "(\"3 LOST BET NOT ESCALATED\", t3_lost_bet_not_escalated(rows)),",
+        "(\"3 LOST BET NOT ESCALATED\", t3_lost_bet_not_escalated(rows, on_disk)),",
         "(\"3 LOST BET NOT ESCALATED\", None),"
       ]
     ],
@@ -1238,8 +1238,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "(\"10 MISSED ESCALATION ACKNOWLEDGED\", t10_missed_escalation_acknowledged(rows)),",
-        "(\"10 MISSED ESCALATION ACKNOWLEDGED\", None),"
+        "         t10_missed_escalation_acknowledged(rows, on_disk)),",
+        "         None),"
       ]
     ],
     "expect": [
@@ -1485,12 +1485,207 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "            acked = any(is_acknowledgment(x) for x in later)",
-        "            acked = True"
+        "            if not acks:\n                out.append((key, \"unlogged\", None))",
+        "            if False:\n                out.append((key, \"unlogged\", None))"
       ]
     ],
     "expect": [
       "⭐ a FIRST bet the stream continued past, with no later row, FAILS naming its unit"
+    ]
+  },
+  {
+    "name": "a later review round no longer refutes an acknowledgment, so ongoing review stays a WARN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if top > n:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a LATER round on disk revokes the acknowledgment: trigger 3 FAILs again, naming why"
+    ]
+  },
+  {
+    "name": "a round count the corpus never reached is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if top < n:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a count the corpus never reached refutes the acknowledgment"
+    ]
+  },
+  {
+    "name": "the EARLIEST round is read as the subject's last, so a sibling's later round is missed",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    top = max(by_round)",
+        "    top = min(by_round)"
+      ]
+    ],
+    "expect": [
+      "⭐ a TERMINATED unit whose SIBLING is still being reviewed is refuted — per subject"
+    ]
+  },
+  {
+    "name": "a final round with no verdict-bearing half is accepted as converged",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not verdicts:\n        return (f\"r{top}",
+        "    if False:\n        return (f\"r{top}"
+      ]
+    ],
+    "expect": [
+      "a final round whose only document is the coordinator's is not evidence of convergence"
+    ]
+  },
+  {
+    "name": "one CONVERGED half outvotes a NOT CONVERGED one in the final round",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if any(v != \"CONVERGED\" for v in verdicts):",
+        "    if all(v != \"CONVERGED\" for v in verdicts):"
+      ]
+    ],
+    "expect": [
+      "...and so does one where the two halves DISAGREE, on another subject"
+    ]
+  },
+  {
+    "name": "a half with NO verdict line is counted as a verdict, so silence reads as non-convergence",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "if w != \"coordinator\" and v is not None]",
+        "if w != \"coordinator\"]"
+      ]
+    ],
+    "expect": [
+      "...nor is one whose halves carry no verdict line, on another subject"
+    ]
+  },
+  {
+    "name": "a subject with no review round on disk is not refused before it is measured",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not by_round:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...and so does a subject with no review round on disk at all"
+    ]
+  },
+  {
+    "name": "a REFUTED acknowledgment is still classed as acknowledged, so the corpus cannot revoke it",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "out.append((key, \"rejected\" if why",
+        "out.append((key, \"acknowledged\" if why"
+      ]
+    ],
+    "expect": [
+      "⭐ a LATER round on disk revokes the acknowledgment: trigger 3 FAILs again, naming why"
+    ]
+  },
+  {
+    "name": "trigger 3 drops the refuted acknowledgments, so their bets go quiet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    rejected = [(k, why) for k, how, why in found if how == \"rejected\"]",
+        "    rejected = []"
+      ]
+    ],
+    "expect": [
+      "⭐ a final round that did NOT converge refutes the acknowledgment"
+    ]
+  },
+  {
+    "name": "main() never reads the corpus, so every acknowledgment is judged against nothing",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if any(is_acknowledgment(r) for r in rows):\n        on_disk, rounds_why = rounds()",
+        "    if False:\n        on_disk, rounds_why = rounds()"
+      ]
+    ],
+    "expect": [
+      "⭐ an acknowledged bet reaches the CLI as trigger 10's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "an unreadable review corpus is not refused, so an acknowledgment is judged against nothing",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if rounds_why:\n            print(f\"CANNOT RUN — the review corpus could not be read to verify",
+        "        if False:\n            print(f\"CANNOT RUN — the review corpus could not be read to verify"
+      ]
+    ],
+    "expect": [
+      "⛔ an UNREADABLE review corpus with an acknowledgment to verify is CANNOT RUN"
+    ]
+  },
+  {
+    "name": "review_rounds swallows the corpus refusal and returns an empty corpus",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if why:\n        return None, why\n    out: dict[str, dict[int, list]] = {}",
+        "    if False:\n        return None, why\n    out: dict[str, dict[int, list]] = {}"
+      ]
+    ],
+    "expect": [
+      "⛔ a MISSING corpus directory is CANNOT RUN, never an empty corpus"
+    ]
+  },
+  {
+    "name": "an unreadable review half is read as having no verdict",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "                return None, f\"review half {path} could not be read: {exc}\"",
+        "                verdict = None"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and so is an UNREADABLE half, whose verdict would otherwise go missing"
+    ]
+  },
+  {
+    "name": "a half's FIRST verdict line is read, so a quoted earlier verdict overrides its own",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return found[-1] if found else None",
+        "    return found[0] if found else None"
+      ]
+    ],
+    "expect": [
+      "the LAST verdict line is the document's own, not one it quotes above it"
+    ]
+  },
+  {
+    "name": "a bold verdict line is not recognised",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "HALF_VERDICT_RE = re.compile(r\"^\\W*VERDICT",
+        "HALF_VERDICT_RE = re.compile(r\"^VERDICT"
+      ]
+    ],
+    "expect": [
+      "...and a bold one, NOT CONVERGED"
     ]
   }
 ]
