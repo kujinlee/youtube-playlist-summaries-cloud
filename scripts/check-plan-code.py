@@ -1390,10 +1390,10 @@ EXPECTED_MUTATIONS = {
     # `rounds_at_termination` CLOSES its unit: trigger 2 FAILs only OPEN exhausted units, the new
     # trigger 11 WARNs on closed ones, and `validate_row` refuses a bet after a close. EIGHT added
     # (both triggers' filters, t11's guard and wiring, `closes_unit`, the named closed refusal,
-    # and the field's two shape rules). One candidate REJECTED as equivalent: dropping the
-    # `continued` clause of `closes_unit` — `exhausted_units` already admits only continued
-    # last bets, and a bet after a stopped DEFER is refused by exhaustion either way.
-    # ⟳ 2026-10-23 r5 fold, second containment: 119 -> 126. A NEW unit on a subject after one of
+    # and the field's two shape rules). Dropping the `continued` clause of `closes_unit` was first
+    # written off here as equivalent; ⟳ r6 Codex measured it is NOT — a stopped DEFER followed by a
+    # new unit then warns trigger 12 — and two existing cases already go red on it (269/271).
+    # ⟳ 2026-10-23 r5 fold, second containment: 119 -> 125. A NEW unit on a subject after one of
     # its units was CLOSED is trigger 12's WARN (a restarted ladder, seen, not forbidden). SIX
     # added: the closure record, the began-after test, the same-subject test, the first-row
     # rule, t12's guard and its wiring. An `unit == closed` exclusion was DELETED rather than
