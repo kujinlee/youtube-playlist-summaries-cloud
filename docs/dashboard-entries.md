@@ -17129,11 +17129,13 @@ actually held at a moment, the replay compares its own answer with what was seen
 disagree, it corrects itself and drops any links it had worked out since the last check.
 
 A second review still found three ways to a wrong link, so the replay now trusts a stretch of
-history only when every command in it is on a short list of read-only tools. Anything else, such
-as running a script or `git checkout`, could have changed what was being tracked. Any plan started
-after one of those commands is left unlinked. That is much safer and much thinner: 15 links from
-the replay and 4 from a "switched from" line, with 104 unlinked. It no longer reproduces the one
-link recorded live today, because a script ran between the two plans. Two plans already had a recorded
+history only when every command in it is the project's own reviewed code or a harmless tool. A
+throwaway script typed into the session (`python3 -`, `python3 -c`, a file in /tmp) could have
+changed what was being tracked. Any plan started after one of those is left unlinked. The
+project's own scripts and ordinary git commands are trusted. A search of the whole history
+confirmed that none of those scripts ever touched the tracking file outside a test. The result is
+20 links from the replay and 7 from a "switched from" line, with 96 unlinked. It reproduces the
+link recorded live today. Two plans already had a recorded
 link and are untouched. It also reproduces the one link the live tool recorded today exactly.
 
 **Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the

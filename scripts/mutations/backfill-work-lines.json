@@ -576,11 +576,11 @@
     ]
   },
   {
-    "name": "an unknown command is treated as read-only",
+    "name": "an unknown command is treated as safe",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "        opaque(f\"`{name}` is not on the read-only allow-list, so it may run code\", None)",
+        "        opaque(f\"`{name}` is ad-hoc code: not a tracked script and not a SAFE tool\", None)",
         "        return"
       ]
     ],
@@ -589,24 +589,24 @@
     ]
   },
   {
-    "name": "every git subcommand is read-only",
+    "name": "git clean and git stash are safe",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "        return bool(a) and (a[0] in GIT_READ or",
-        "        return True or (a[0] in GIT_READ or"
+        "        return bool(rest) and rest[0] not in (\"clean\", \"stash\")",
+        "        return True"
       ]
     ],
     "expect": [
-      "an opaque op makes the checkout UNKNOWN: git checkout -b x"
+      "an opaque op makes the checkout UNKNOWN: git clean -fdx"
     ]
   },
   {
-    "name": "sed -i is read-only",
+    "name": "sed -i is safe",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "        return \"-n\" in args and not any(x.startswith(\"-i\") for x in args)",
+        "        return not any(x.startswith(\"-i\") or x == \"--in-place\" for x in args)",
         "        return True"
       ]
     ],
@@ -628,16 +628,16 @@
     ]
   },
   {
-    "name": "command substitution is not opaque",
+    "name": "the commands inside a substitution are never judged",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            opaque(\"a command substitution runs code\", None)",
+        "            ops.extend(parse_command(inner, cur))",
         "            pass"
       ]
     ],
     "expect": [
-      "an opaque op makes the checkout UNKNOWN: echo $(date)"
+      "an opaque op makes the checkout UNKNOWN: echo $(python3 -c 'print(1)')"
     ]
   },
   {
@@ -690,6 +690,123 @@
     ],
     "expect": [
       "⛔ ...but not beside another opaque op — then the whole command is UNKNOWN"
+    ]
+  },
+  {
+    "name": "a tracked repository script is ad hoc",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    and os.path.basename(p) in tracked_scripts()):\n                return",
+        "                    and os.path.basename(p) in tracked_scripts()):\n                pass"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 scripts/recall-llm.py --arm 2>&1 | tail -5"
+    ]
+  },
+  {
+    "name": "ANY script under scripts/ is trusted, tracked or not",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    and os.path.basename(p) in tracked_scripts()):\n",
+        "                    and True):\n"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 scripts/untracked-adhoc.py"
+    ]
+  },
+  {
+    "name": "a script anywhere is trusted, not only under a checkout's scripts/",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    and os.path.basename(os.path.dirname(p)) == \"scripts\"",
+        "                    and True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 /tmp/recall-llm.py"
+    ]
+  },
+  {
+    "name": "a heredoc fed to a tracked script is trusted",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if (p is not None and not fed",
+        "            if (p is not None"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 scripts/recall-llm.py <<'EOF'"
+    ]
+  },
+  {
+    "name": "git is not safe at all",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    \"git\": \"every subcommand but `clean` and `stash`",
+        "    \"git-\": \"every subcommand but `clean` and `stash`"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: git checkout -b x"
+    ]
+  },
+  {
+    "name": "sort -o is a pure print",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(x.startswith(\"-o\") or x == \"--output\" for x in args)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: sort -o .claude/executing-plan docs/x.md"
+    ]
+  },
+  {
+    "name": "uniq's output operand is not a write",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return len([x for x in args if not x.startswith(\"-\")]) < 2",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: uniq docs/x.md .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "export is not safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "\"export\": \"sets variables in the shell only\",",
+        "\"export-\": \"sets variables in the shell only\","
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: export X=1"
+    ]
+  },
+  {
+    "name": "an unresolved interpreter variable is trusted",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        w0 = expand(ws[0], env)",
+        "        w0 = expand(ws[0], env) or \"python3\""
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: $P scripts/check-docs.py"
     ]
   }
 ]

@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 135 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 185 cases
 
 WHY THIS EXISTS
 ---------------
@@ -61,20 +61,42 @@ and time, never `transcript`, so the page can say what the link rests on. Every 
 disagreement stays unlinked and listed, and a banner never overrides a parent the replay found
 ARMED at the time.
 
-⛔ THE ALLOW-LIST (review round 2 — the coordinator's decision to stop patching shapes). A Bash
-command keeps a checkout's state KNOWN only if EVERY simple command in it (split on `;`, `&&`,
-`||`, `|` and newlines) is a `begin-plan.py` / `check-plan-progress.py` call or a member of
-`READ_ONLY`, under that member's own condition. Anything else — an interpreter, `eval`, `source`,
-`xargs`, a non-read `git`, an unknown command, command substitution — may run code and makes
-EVERY checkout UNKNOWN. A file operation or output redirection makes UNKNOWN only the checkouts
-whose sentinel or plans its paths name (an unresolvable path reaches all). This happens BEFORE any
-arm in the same command is processed. A lone `rm -f` of a sentinel stays a known "nothing armed",
-but only when nothing else in the command is opaque. Every plan first armed while its checkout is
-UNKNOWN gets NO marker, with the reason named. Every Bash command is parsed, not only those
-naming begin-plan, because any of them may run code. A call inside a loop ran an unknown number of
-times, so it too makes its checkout UNKNOWN. Each checkout's sentinel is replayed separately, and
-output from calls spanning two checkouts is attributed to neither. A banner counts only as live
-text in the banner block under a `## ▶` heading.
+⛔ THE LINE: REVIEWED REPOSITORY CODE vs AD-HOC CODE (round 3; round 2 drew it at "read-only
+tools" and lost 63 of 82 links, including the one recorded live). A Bash command keeps a
+checkout's state KNOWN only if EVERY simple command in it (split on `;`, `&&`, `||`, `|` and
+newlines, and recursively inside `$(…)` and backticks) is one of:
+  * a `begin-plan.py` / `check-plan-progress.py` call (these ARE the events);
+  * a TRACKED repository script run as `python3 <checkout>/scripts/<name>.py`, where `<name>`
+    was committed under `scripts/` on some branch (`tracked_scripts`);
+  * a member of `SAFE`, under that member's own condition (one constant, a reason per member).
+Anything else is AD-HOC code: `python3 -`, `-c` or `-m`, a script outside a checkout's
+`scripts/` (Codex r2's real instance was `/tmp/steps.py`, 2026-10-17), an untracked name, any
+interpreter fed a heredoc, `node`, `bash`/`sh`/`zsh`, `eval`, `source`/`.`, `xargs`, or an
+unknown command. Ad-hoc code makes EVERY checkout UNKNOWN. A file operation or output
+redirection makes UNKNOWN only the checkouts whose sentinel or plans its paths name; an
+unresolvable path reaches all. This happens BEFORE any arm in that command is processed. A lone
+`rm -f` of a sentinel stays a known "nothing armed", but only when nothing else in the command is
+opaque. Every plan first armed while its checkout is UNKNOWN gets NO marker, with the reason
+named. A call inside a loop ran an unknown number of times, so it makes its checkout UNKNOWN.
+
+⭐ THE PREMISE, VERIFIED ACROSS HISTORY (2026-10-22). It is that no tracked script but begin-plan
+and check-plan-progress ever wrote the REAL sentinel. Every added line in `git log --all -p --
+scripts/` that writes, unlinks or renames an `executing-plan` path was searched. Outside those
+two scripts, every one targets a TEMPORARY root inside a self-test:
+  * `check-banner-armed.py`: `(_fx / ".claude" / "executing-plan").write_text(…)`/`.unlink()`,
+    with `_fx = Path(_d)` from a TemporaryDirectory. Its own `SENTINEL = ROOT /
+    ".claude/executing-plan"` is only ever READ (`SENTINEL.read_text()`). It also runs
+    `begin-plan.py --finish` with `str(_fx / "scripts" / "begin-plan.py")`, a staged copy.
+  * `recall-llm.py`: `(root / ".claude" / "executing-plan").write_text(…)` in its self-test
+    world. Its `SENTINEL` is only read (`is_file()`, `read_or_refuse`).
+  * `check-plan-code.py`: `(_s / PROJECT_STATE / "executing-plan").write_text(…)` in a staged
+    tree.
+  * `check-ci-watched.py`: its `SENTINEL` is a different file (`_repo_sentinel()`, the CI-watch
+    marker), not the plan sentinel.
+  * `mutations/*.json`: anchors quoting begin-plan's and check-plan-progress's own writes.
+No script was found writing the real sentinel in production, so none is treated as opaque by
+date. ⚠ A tracked name is judged by its CURRENT history: a script run before its first commit
+(still ad hoc then) is trusted as if reviewed. That is a stated bound, not a measured absence.
 
 ⭐ CHECKPOINTS COME ONLY FROM THE TOOLS' OWN STATE LINES: begin-plan's arm / tick / `--status` /
 `--finish` output, `check-plan-progress.py --status`, and the Stop hook's `Clearing` message in a
@@ -189,6 +211,28 @@ def _read_word(cmd: str, i: int) -> tuple[str, int]:
     return "".join(out), i
 
 
+def _subst_end(cmd: str, i: int) -> int:
+    """The index of the character closing the command substitution that opens at `i`."""
+    n = len(cmd)
+    if cmd[i] == "`":
+        j = cmd.find("`", i + 1)
+        return n - 1 if j < 0 else j
+    depth, j = 0, i + 1
+    while j < n:
+        if cmd[j] == "(":
+            depth += 1
+        elif cmd[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return n - 1
+
+
+def _subst_inner(cmd: str, i: int, j: int) -> str:
+    return cmd[i + 1:j] if cmd[i] == "`" else cmd[i + 2:j]
+
+
 def tokenize(cmd: str) -> list[tuple[str, str]]:
     """[(kind, text)]: 'w' a word (quotes removed), 'op' an operator, 'redir' a redirection's
     TARGET — so `2>&1` is never an argument, and `>> .claude/executing-plan` is a visible write."""
@@ -222,25 +266,17 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
                     word.append(cmd[i + 1]); i += 2
                     continue
                 if cmd[i] == "`" or cmd[i:i + 2] == "$(":
-                    toks.append(("subst", ""))      # command substitution RUNS code
+                    # command substitution RUNS code: its inner command is judged on its own
+                    j = _subst_end(cmd, i)
+                    toks.append(("subst", _subst_inner(cmd, i, j)))
+                    word.append(cmd[i:j + 1]); i = j + 1
+                    continue
                 word.append(cmd[i]); i += 1
             has_word = True; i += 1
             continue
-        if c == "`":
-            toks.append(("subst", ""))
-            word.append(c); has_word = True; i += 1
-            continue
-        if c == "$" and i + 1 < n and cmd[i + 1] == "(":
-            toks.append(("subst", ""))
-            depth, j = 0, i
-            while j < n:
-                if cmd[j] == "(":
-                    depth += 1
-                elif cmd[j] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                j += 1
+        if c == "`" or (c == "$" and i + 1 < n and cmd[i + 1] == "("):
+            j = _subst_end(cmd, i)
+            toks.append(("subst", _subst_inner(cmd, i, j)))
             word.append(cmd[i:j + 1]); has_word = True; i = j + 1
             continue
         if c in " \t":
@@ -264,7 +300,8 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
             while i < n and cmd[i] in " \t":
                 i += 1
             target, i = _read_word(cmd, i)
-            toks.append(("redir" if out else "inredir", target))
+            toks.append(("redir" if out else
+                         "heredoc" if cmd[start:start + 2] == "<<" else "inredir", target))
             continue
         if c in ";|&()\n":
             flush()
@@ -305,46 +342,84 @@ _LOOP_OPEN = {"for", "while", "until", "select"}
 _SCRIPTS = {"begin-plan.py": "begin-plan", "check-plan-progress.py": "progress"}
 _SENT_TAIL = "/" + SENTINEL_REL
 
-# ⛔ THE ALLOW-LIST (round 2, the coordinator's decision: stop patching shapes). A command keeps a
-# checkout's state KNOWN only if every simple command in it is a begin-plan / check-plan-progress
-# call or one of these. Each reason says why the tool CANNOT change a sentinel. Anything else —
-# an interpreter, `eval`, `source`, `xargs`, an unknown command, a non-read `git` (hooks run
-# code), command substitution — may run arbitrary code and makes EVERY checkout unknown.
-READ_ONLY: dict[str, str] = {
-    "git": "only the subcommands in GIT_READ: they print history and state, and run no hooks",
+# ⛔ THE LINE IS REVIEWED REPOSITORY CODE vs AD-HOC CODE (round 3, the coordinator's decision; the
+# round-2 allow-list drew it at "read-only tools" and cost 63 of 82 links, including the live one).
+# A command keeps a checkout's state KNOWN only if every simple command in it is a begin-plan /
+# check-plan-progress call, a TRACKED repository script, or a SAFE member below under that
+# member's own condition. Each reason says why the tool CANNOT change a sentinel. Anything else —
+# `python3 -`/`-c`/`-m`, a script outside a checkout's `scripts/` or never tracked, any interpreter
+# fed a heredoc, `node`, `bash`/`sh`/`zsh`, `eval`, `source`/`.`, `xargs`, an unknown command —
+# is AD-HOC code and makes EVERY checkout unknown, before any arm in that command.
+TRACKED_SCRIPTS: frozenset[str] | None = None   # None: ask git (see tracked_scripts)
+SAFE: dict[str, str] = {
+    "git": "every subcommand but `clean` and `stash`: `.claude/` is gitignored, so commit, push, "
+           "merge, checkout and reset cannot touch it; `clean -x` deletes ignored files and "
+           "`stash -u`/`-a` stashes them. Hooks run, but they are reviewed repository code",
     "ls": "lists directory entries; it writes nothing",
     "cat": "prints files to stdout; a redirection of that output is judged on its own",
-    "head": "prints the start of files to stdout",
-    "tail": "prints the end of files to stdout",
-    "grep": "prints matching lines to stdout",
-    "wc": "prints counts to stdout",
-    "sed": "only with -n and never -i: it prints selected lines and edits no file",
+    "head": "prints the start of files", "tail": "prints the end of files",
+    "grep": "prints matching lines", "wc": "prints counts",
+    "cut": "prints fields", "sort": "prints sorted lines (an `-o FILE` is judged as a write)",
+    "uniq": "prints lines (a second operand is an OUTPUT file, judged as a write)",
+    "tr": "translates stdin to stdout", "jq": "prints JSON", "column": "prints columns",
+    "sed": "never `-i`: without it sed prints its result and edits no file",
     "awk": "only with no `system`, `getline`, `>` or `|` in its program: it prints text",
-    "echo": "prints its arguments",
-    "printf": "prints its arguments",
-    "date": "prints the time",
+    "echo": "prints its arguments", "printf": "prints its arguments", "date": "prints the time",
+    "sleep": "waits", "pgrep": "lists processes",
+    "pkill": "signals processes; it writes no file",
+    "gh": "talks to GitHub; it writes nothing under `.claude/`",
+    "true": "does nothing", "false": "does nothing", "test": "evaluates a condition",
+    "[": "evaluates a condition", "diff": "prints differences", "comm": "prints common lines",
+    "basename": "prints a name", "dirname": "prints a name", "realpath": "prints a path",
+    "stat": "prints metadata", "xxd": "prints a hex dump", "od": "prints a dump",
+    "file": "prints a file type", "which": "prints a path", "type": "prints a command's kind",
+    "exit": "ends the shell", "export": "sets variables in the shell only",
     "cd": "moves the shell only; a path that cannot be resolved makes the cwd unknown",
 }
-GIT_READ = {"log", "show", "diff", "status", "rev-parse", "ls-remote", "fetch"}
 # File operations reach only the sentinels and plan files their PATHS name (or a directory
 # containing them). They run no code, so a target elsewhere cannot change a sentinel.
 FILE_OPS = {"rm", "unlink", "mv", "cp", "tee", "truncate", "touch", "mkdir", "ln", "chmod",
-            "sed"}
+            "sed", "sort", "uniq"}
 
 
-def _read_only(name: str, args: list[str]) -> bool:
-    """Is this simple command a READ_ONLY member, under that member's own condition?"""
-    if name not in READ_ONLY or name == "cd":
+def tracked_scripts() -> frozenset[str]:
+    """Every `scripts/*.py` name ever committed on any branch of this repository — REVIEWED
+    code. Asked of git once; an unanswerable git gives the empty set, so every script is ad hoc
+    (the safe direction)."""
+    global TRACKED_SCRIPTS
+    if TRACKED_SCRIPTS is None:
+        try:
+            r = subprocess.run(["git", "log", "--all", "--name-only", "--format=", "--",
+                                "scripts/*.py"], cwd=ROOT, capture_output=True, text=True,
+                               timeout=60)
+            names = r.stdout.split() if r.returncode == 0 else []
+        except (OSError, subprocess.SubprocessError):
+            names = []
+        TRACKED_SCRIPTS = frozenset(os.path.basename(x) for x in names
+                                    if os.path.dirname(x) == "scripts" and x.endswith(".py"))
+    return TRACKED_SCRIPTS
+
+
+def _safe(name: str, args: list[str]) -> bool:
+    """Is this simple command a SAFE member, under that member's own condition?"""
+    if name not in SAFE or name == "cd":
         return False
     if name == "git":
-        a = [x for x in args if not x.startswith("-")]
-        return bool(a) and (a[0] in GIT_READ or a[0] == "branch" and args[-1:] == [
-            "--show-current"] and len(a) == 1)
+        rest = list(args)
+        while rest and rest[0].startswith("-"):
+            flag = rest.pop(0)
+            if flag in ("-C", "-c") and rest:
+                rest.pop(0)
+        return bool(rest) and rest[0] not in ("clean", "stash")
     if name == "sed":
-        return "-n" in args and not any(x.startswith("-i") for x in args)
+        return not any(x.startswith("-i") or x == "--in-place" for x in args)
     if name == "awk":
         prog = [x for x in args if not x.startswith("-")]
         return not any(k in x for x in prog for k in ("system", "getline", ">", "|"))
+    if name == "sort":
+        return not any(x.startswith("-o") or x == "--output" for x in args)
+    if name == "uniq":
+        return len([x for x in args if not x.startswith("-")]) < 2
     return True
 
 
@@ -375,11 +450,11 @@ def _resolve(word: str, env: dict[str, str], cur: str | None) -> str | None:
     return os.path.normpath(p if os.path.isabs(p) else os.path.join(cur, p))
 
 
-def parse_command(cmd: str, cwd: str) -> list[Op]:
+def parse_command(cmd: str, cwd: str | None) -> list[Op]:
     """Every call and every operation that could change a sentinel, IN ORDER. Each call is
     resolved to its checkout (`begin-plan.ROOT` is the script's own); a path is resolved against
-    the record's cwd as changed by `cd`. A command made only of READ_ONLY members and calls
-    yields only calls."""
+    the record's cwd as changed by `cd`. A command made only of SAFE members, tracked scripts
+    and calls yields only calls. A command substitution is judged by the commands INSIDE it."""
     toks = tokenize(strip_heredocs(cmd))
     ops: list[Op] = []
     env: dict[str, str] = {}
@@ -387,12 +462,13 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
     depth = 0
     words: list[str] = []
     redirs: list[str] = []
-    subst = False
+    substs: list[str] = []
+    heredoc = False
 
     def opaque(why: str, paths: list[str] | None) -> None:
         ops.append(Op("opaque", paths=paths, why=why))
 
-    def finish(ws: list[str], rs: list[str], sub: bool) -> None:
+    def finish(ws: list[str], rs: list[str], subs: list[str], fed: bool) -> None:
         nonlocal cur, depth
         while ws and (ws[0] in _RESERVED or ws[0] in _LOOP_OPEN):
             w = ws.pop(0)
@@ -402,8 +478,9 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
                     ws = []            # the loop's header names values; it runs nothing
             elif w == "done":
                 depth = max(0, depth - 1)
-        if sub:
-            opaque("a command substitution runs code", None)
+        for inner in subs:
+            # ⭐ round 3: a substitution is safe iff every command inside it is
+            ops.extend(parse_command(inner, cur))
         while ws and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ws[0]):
             k, v = ws[0].split("=", 1)
             env[k] = expand(v, env) or v
@@ -424,18 +501,42 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
                 continue
             if not all(_INTERP.match(w) or w.startswith("$") or w == "env" for w in ws[:k]):
                 break
+            if fed:
+                break                  # a heredoc fed to it: whatever runs is not the script
             p = _resolve(ws[k], env, cur)
             root = None if p is None else os.path.dirname(os.path.dirname(p))
             ops.append(Op("call", root, call=Call(ws[k + 1:], root, depth > 0, script)))
             return
-        name, args = os.path.basename(ws[0]), ws[1:]
-        if _read_only(name, args):
+        while ws and ws[0] == "env":
+            ws = [w for w in ws[1:] if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)] or []
+        if not ws:
             return
-        if name in FILE_OPS and not (name == "sed" and not any(a.startswith("-i")
-                                                                for a in args)):
+        w0 = expand(ws[0], env)
+        if w0 is not None and _INTERP.match(w0):
+            # ⭐ ROUND 3: TRACKED repository code is reviewed code. Measured across `git log --all
+            # -p -- scripts/`: no script but begin-plan and check-plan-progress ever wrote the
+            # REAL sentinel (see the module docstring), so running one changes no sentinel.
+            # `-`, `-c`, `-m`, a path outside a checkout's `scripts/`, an untracked name, or a
+            # heredoc on stdin is ad-hoc code.
+            a = ws[1:]
+            p = _resolve(a[0], env, cur) if a and not a[0].startswith("-") else None
+            if (p is not None and not fed
+                    and os.path.basename(os.path.dirname(p)) == "scripts"
+                    and os.path.basename(p) in tracked_scripts()):
+                return
+            opaque(f"`{' '.join(ws[:2])[:60]}` runs ad-hoc code", None)
+            return
+        name, args = os.path.basename(ws[0]), ws[1:]
+        if _safe(name, args):
+            return
+        if name in FILE_OPS:
             files = [a for a in args if a and not a.startswith("-")]
             if name == "sed":
                 files = files[1:]          # the first operand is sed's SCRIPT, not a file
+            if name == "sort":
+                files = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-o", "--output")]
+            if name == "uniq":
+                files = files[1:2]         # `uniq IN OUT`: only OUT is written
             paths = [_resolve(a, env, cur) for a in files]
             sents = [p for p in paths if p and p.endswith(_SENT_TAIL)]
             if name in ("rm", "unlink") and paths and len(sents) == len(paths):
@@ -444,7 +545,7 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
                 return
             opaque(f"`{name}` writes files", None if None in paths else paths)
             return
-        opaque(f"`{name}` is not on the read-only allow-list, so it may run code", None)
+        opaque(f"`{name}` is ad-hoc code: not a tracked script and not a SAFE tool", None)
 
     for kind, text in toks + [("op", ";")]:
         if kind == "w":
@@ -452,12 +553,14 @@ def parse_command(cmd: str, cwd: str) -> list[Op]:
         elif kind == "redir":
             redirs.append(text)
         elif kind == "subst":
-            subst = True
+            substs.append(text)
+        elif kind == "heredoc":
+            heredoc = True
         elif kind == "inredir":
             continue
         else:
-            finish(words, redirs, subst)
-            words, redirs, subst = [], [], False
+            finish(words, redirs, substs, heredoc)
+            words, redirs, substs, heredoc = [], [], [], False
     return ops
 
 
@@ -1409,6 +1512,10 @@ def _self_test() -> int:
     BP = "python3 scripts/begin-plan.py"
 
     NONE_OUT = "no plan is being executed (no .claude/executing-plan)"
+    # The self-test never asks git: these are the "tracked" scripts of its constructed world.
+    global TRACKED_SCRIPTS
+    _saved_tracked = TRACKED_SCRIPTS
+    TRACKED_SCRIPTS = frozenset({"recall-llm.py", "gen-work-lines.py", "check-docs.py"})
 
     def world(build, root="/w/repo", stats=None, start=True):
         """Replay a constructed transcript; slug -> parent. It opens with an OBSERVED empty
@@ -1601,13 +1708,34 @@ def _self_test() -> int:
                  "grep -n plan docs/x.md", "wc -l docs/x.md", "sed -n 1,3p docs/x.md",
                  "awk '{print $1}' docs/x.md", "echo hi", "printf 'x\\n'", "date '+%H:%M'",
                  "cd docs && ls", "cat docs/x.md > /dev/null 2>&1", "W=/w/repo; ls $W",
-                 "echo done > /tmp/note.txt", "sed -i '' s/a/b/ docs/x.md"):
+                 "echo done > /tmp/note.txt", "sed -i '' s/a/b/ docs/x.md",
+                 # ⟳ round 3 (the coordinator's line: REVIEWED repository code vs AD-HOC code)
+                 "python3 scripts/recall-llm.py --arm 2>&1 | tail -5",
+                 "python3 /w/repo/scripts/gen-work-lines.py --out /tmp/w.html",
+                 "/usr/local/bin/python3.12 scripts/check-docs.py",
+                 "cut -d: -f1 docs/x.md", "sort docs/x.md | uniq -c", "tr a b < docs/x.md",
+                 "jq . docs/x.json", "column -t docs/x.md", "sleep 1", "pgrep -f x",
+                 "pkill -f x", "gh pr list", "true", "false", "test -f docs/x.md",
+                 "[ -f docs/x.md ]", "diff docs/a docs/b", "comm docs/a docs/b",
+                 "basename docs/x.md", "dirname docs/x.md", "realpath docs", "stat docs/x.md",
+                 "xxd docs/x.md", "od -c docs/x.md", "file docs/x.md", "which python3",
+                 "type ls", "sed -E 's/a/b/' .claude/executing-plan", "git checkout -b x",
+                 "git commit -qm m", "git push -u origin x", "git reset --hard HEAD",
+                 "git -C /w/repo merge --ff-only x", "echo $(git rev-parse HEAD)",
+                 "echo `date`", "exit 0", "export X=1", "X=1 git status"):
         case(f"allow-listed, or reaching no sentinel, keeps the state known: {_cmd}",
              world(_between(_cmd))[0]["two"], "one")
     for _cmd in ("python3 - <<'PY'\nprint(1)\nPY", "python3 scripts/other.py", "node x.js",
                  "bash run.sh", "sh -c 'true'", "eval x", "source env.sh", "xargs echo < f",
-                 "git checkout -b x", "echo $(date)", "awk 'BEGIN{system(\"true\")}'",
-                 "sleep 1", "echo x >> .claude/executing-plan",
+                 "awk 'BEGIN{system(\"true\")}'", "echo x >> .claude/executing-plan",
+                 # ⟳ round 3: AD-HOC code stays opaque, wherever it hides
+                 "python3 -c 'print(1)'", "python3 /tmp/steps.py", "python3 /tmp/recall-llm.py",
+                 "python3 scripts/untracked-adhoc.py",
+                 "python3 scripts/recall-llm.py <<'EOF'\nx\nEOF",
+                 "python3 -m pytest", "git clean -fdx", "git stash -u",
+                 "echo $(python3 -c 'print(1)')", "echo `node x.js`", ". env.sh",
+                 "zsh x.sh", "sort -o .claude/executing-plan docs/x.md",
+                 "uniq docs/x.md .claude/executing-plan", "$P scripts/check-docs.py",
                  "printf 'p\\n' > /w/repo/.claude/executing-plan",
                  "sed -i '' s/a/b/ .claude/executing-plan", "tee .claude/executing-plan < f",
                  "mv .claude/executing-plan /tmp/x", "cp /tmp/x .claude/executing-plan",
@@ -2040,6 +2168,7 @@ def _self_test() -> int:
         case("...and FAILS (1) when it does not",
              ground_truth(fx2.write(Path(d) / "gt2"), "/w/repo")[0], 1)
 
+    TRACKED_SCRIPTS = _saved_tracked
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     drift = _count_drift(cases)
     if drift:
