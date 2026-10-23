@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 185 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 233 cases
 
 WHY THIS EXISTS
 ---------------
@@ -69,10 +69,17 @@ newlines, and recursively inside `$(…)` and backticks) is one of:
   * a TRACKED repository script run as `python3 <checkout>/scripts/<name>.py`, where `<name>`
     was committed under `scripts/` on some branch (`tracked_scripts`);
   * a member of `SAFE`, under that member's own condition (one constant, a reason per member).
-Anything else is AD-HOC code: `python3 -`, `-c` or `-m`, a script outside a checkout's
-`scripts/` (Codex r2's real instance was `/tmp/steps.py`, 2026-10-17), an untracked name, any
-interpreter fed a heredoc, `node`, `bash`/`sh`/`zsh`, `eval`, `source`/`.`, `xargs`, or an
-unknown command. Ad-hoc code makes EVERY checkout UNKNOWN. A file operation or output
+  * INLINE Python whose text is in the command — a `python3 -` heredoc, `python3 -c '…'`, or a
+    heredoc fed to a tracked script — when `inline_safe` finds none of `INLINE_UNSAFE`, no
+    `Path(` beside a write/delete/move method, and no `open()` writing to a computed path
+    (round 4). The threat model is ACCIDENT, not adversary: this reconstructs the owner's own
+    history, and the code that ran is right there to read. A body that cannot be extracted
+    (unterminated, or a `-c` holding a `$` the shell expanded) stays opaque.
+Anything else is AD-HOC code: inline code that fails that inspection, `-m`, a script outside a
+checkout's `scripts/` (Codex r2's real instance was `/tmp/steps.py`, 2026-10-17), an untracked
+name, a variable-built interpreter path, `node`, `bash`/`sh`/`zsh`, `eval`, `source`/`.`,
+`xargs`, or an unknown command. `env` and `timeout` prefixes are judged by the command they
+run. Ad-hoc code makes EVERY checkout UNKNOWN. A file operation or output
 redirection makes UNKNOWN only the checkouts whose sentinel or plans its paths name; an
 unresolvable path reaches all. This happens BEFORE any arm in that command is processed. A lone
 `rm -f` of a sentinel stays a known "nothing armed", but only when nothing else in the command is
@@ -194,6 +201,67 @@ def strip_heredocs(cmd: str) -> str:
                 i += 1
             i += 1
     return "\n".join(out)
+
+
+def heredoc_bodies(cmd: str) -> list[str | None]:
+    """Each heredoc's BODY, in marker order; None for one whose terminator never comes (an
+    unterminated body cannot be inspected, so what it feeds stays opaque)."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        ln = lines[i]
+        i += 1
+        for m in _HEREDOC.finditer(ln):
+            body = []
+            while i < len(lines) and lines[i].strip() != m.group(2):
+                body.append(lines[i])
+                i += 1
+            out.append("\n".join(body) if i < len(lines) else None)
+            i += 1
+    return out
+
+
+# ⭐ INLINE CODE IS INSPECTED, NOT ASSUMED OPAQUE (round 4, the coordinator's decision). THE
+# THREAT MODEL IS ACCIDENT, NOT ADVERSARY: this reconstructs the owner's own history, and an
+# inline script's full TEXT is in the transcript. A body naming none of these cannot have touched
+# a sentinel by accident; one naming any of them may have, so it stays opaque. Each reason says
+# why the token is on the list.
+INLINE_UNSAFE: dict[str, str] = {
+    r"executing-plan": "names the sentinel itself",
+    r"\.claude": "names the directory holding the sentinel and the plans",
+    r"begin-plan": "may run the tool that writes the sentinel",
+    r"check-plan-progress": "may run the tool that clears the sentinel",
+    r"\bsubprocess\b": "runs other programs, whose text is not here",
+    r"\bos\.system\b": "runs a shell command", r"\bos\.popen\b": "runs a shell command",
+    r"\bos\.exec": "replaces the process with another program",
+    r"\bos\.spawn": "runs another program", r"\bpty\b": "runs another program on a terminal",
+    r"(?<![\w.])exec\(": "runs code built at run time",
+    r"(?<![\w.])eval\(": "runs code built at run time (`ast.literal_eval` is not this)",
+    r"(?<![\w.])compile\(": "builds code at run time (`re.compile` is not this)",
+    r"__import__": "imports a module named at run time",
+    r"\bimportlib\b": "imports a module named at run time",
+    r"\bshutil\b": "copies, moves and deletes trees",
+    r"\bos\.remove\b": "deletes a file", r"\bos\.unlink\b": "deletes a file",
+    r"\bos\.rename\b": "moves a file", r"\bos\.replace\b": "moves a file over another",
+}
+_INLINE_UNSAFE = re.compile("|".join(f"(?:{k})" for k in INLINE_UNSAFE))
+# `Path(` beside a method that writes, deletes or moves: the path could be the sentinel
+_PATH_WRITE = re.compile(r"\.(?:unlink|write_|rename|replace)")
+_OPEN_CALL = re.compile(r"\bopen\(\s*([^,)]*?)\s*(?:,\s*([^)]*))?\)")
+_WRITE_MODE = re.compile(r"(?:mode\s*=\s*)?[rRbBtT]*['\"][rbt]*[wax+][rbt+]*['\"]")
+_LITERAL = re.compile(r"""[rRbBuU]?(['"]).*\1""")
+
+
+def inline_safe(code: str | None) -> bool:
+    """Can this inline Python (a heredoc body, a `-c` argument) NOT have touched a sentinel?
+    None — a body that could not be extracted — is never safe."""
+    if code is None or _INLINE_UNSAFE.search(code):
+        return False
+    if "Path(" in code and _PATH_WRITE.search(code):
+        return False
+    for m in _OPEN_CALL.finditer(code):
+        if _WRITE_MODE.search(m.group(2) or "") and not _LITERAL.fullmatch(m.group(1)):
+            return False       # a write to a path computed at run time
+    return True
 
 
 def _read_word(cmd: str, i: int) -> tuple[str, int]:
@@ -374,12 +442,17 @@ SAFE: dict[str, str] = {
     "stat": "prints metadata", "xxd": "prints a hex dump", "od": "prints a dump",
     "file": "prints a file type", "which": "prints a path", "type": "prints a command's kind",
     "exit": "ends the shell", "export": "sets variables in the shell only",
+    "pwd": "prints the directory", "ps": "lists processes",
+    "mktemp": "creates a NEW temp path; one under `.claude/` named by an argument is a write",
+    "find": "never with -delete, -exec, -execdir, -ok, -okdir, -fprint* or -fls: it prints paths",
     "cd": "moves the shell only; a path that cannot be resolved makes the cwd unknown",
 }
 # File operations reach only the sentinels and plan files their PATHS name (or a directory
 # containing them). They run no code, so a target elsewhere cannot change a sentinel.
 FILE_OPS = {"rm", "unlink", "mv", "cp", "tee", "truncate", "touch", "mkdir", "ln", "chmod",
-            "sed", "sort", "uniq"}
+            "sed", "sort", "uniq", "mktemp"}
+# Interpreter flags that take no code: `python3 -u -c …` is still `-c`.
+_PY_FLAGS = {"-u", "-B", "-E", "-I", "-s", "-S", "-O", "-OO", "-q", "-b", "-bb", "-W", "-X"}
 
 
 def tracked_scripts() -> frozenset[str]:
@@ -420,6 +493,11 @@ def _safe(name: str, args: list[str]) -> bool:
         return not any(x.startswith("-o") or x == "--output" for x in args)
     if name == "uniq":
         return len([x for x in args if not x.startswith("-")]) < 2
+    if name == "mktemp":
+        return not any(".claude" in x for x in args)
+    if name == "find":
+        return not any(x in ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fls")
+                       or x.startswith("-fprint") for x in args)
     return True
 
 
@@ -456,6 +534,11 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
     the record's cwd as changed by `cd`. A command made only of SAFE members, tracked scripts
     and calls yields only calls. A command substitution is judged by the commands INSIDE it."""
     toks = tokenize(strip_heredocs(cmd))
+    bodies = heredoc_bodies(cmd)
+    # a body can be matched to the command it feeds only when every marker became a token
+    aligned = len(bodies) == sum(1 for k, _t in toks if k == "heredoc")
+    fed_count = 0
+    body: str | None = None
     ops: list[Op] = []
     env: dict[str, str] = {}
     cur: str | None = cwd
@@ -468,7 +551,8 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
     def opaque(why: str, paths: list[str] | None) -> None:
         ops.append(Op("opaque", paths=paths, why=why))
 
-    def finish(ws: list[str], rs: list[str], subs: list[str], fed: bool) -> None:
+    def finish(ws: list[str], rs: list[str], subs: list[str], fed: bool,
+               body: str | None) -> None:
         nonlocal cur, depth
         while ws and (ws[0] in _RESERVED or ws[0] in _LOOP_OPEN):
             w = ws.pop(0)
@@ -491,6 +575,20 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
             opaque("an output redirection", None if None in paths else paths)
         if not ws:
             return
+        # ⭐ PREFIXES: `env [VAR=…]` and `timeout [opts] <dur>` run the command after them, so
+        # it is that command that is judged (round 4).
+        while ws and ws[0] in ("env", "timeout"):
+            if ws[0] == "env":
+                ws = ws[1:]
+                while ws and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ws[0]) or ws[0] == "-i"):
+                    ws = ws[1:]
+            else:
+                ws = ws[1:]
+                while ws and ws[0].startswith("-"):
+                    ws = ws[2:] if ws[0] in ("-s", "-k", "--signal", "--kill-after") else ws[1:]
+                ws = ws[1:]        # the duration
+        if not ws:
+            return
         if ws[0] == "cd":
             d = expand(ws[1], env) if len(ws) >= 2 else None
             cur = None if d is None or cur is None else os.path.normpath(os.path.join(cur, d))
@@ -501,15 +599,9 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
                 continue
             if not all(_INTERP.match(w) or w.startswith("$") or w == "env" for w in ws[:k]):
                 break
-            if fed:
-                break                  # a heredoc fed to it: whatever runs is not the script
             p = _resolve(ws[k], env, cur)
             root = None if p is None else os.path.dirname(os.path.dirname(p))
             ops.append(Op("call", root, call=Call(ws[k + 1:], root, depth > 0, script)))
-            return
-        while ws and ws[0] == "env":
-            ws = [w for w in ws[1:] if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)] or []
-        if not ws:
             return
         w0 = expand(ws[0], env)
         if w0 is not None and _INTERP.match(w0):
@@ -518,12 +610,25 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
             # REAL sentinel (see the module docstring), so running one changes no sentinel.
             # `-`, `-c`, `-m`, a path outside a checkout's `scripts/`, an untracked name, or a
             # heredoc on stdin is ad-hoc code.
+            # ⭐ ROUND 4: INLINE code (`-c`, a heredoc on stdin) is INSPECTED by `inline_safe`.
             a = ws[1:]
-            p = _resolve(a[0], env, cur) if a and not a[0].startswith("-") else None
-            if (p is not None and not fed
-                    and os.path.basename(os.path.dirname(p)) == "scripts"
-                    and os.path.basename(p) in tracked_scripts()):
-                return
+            while a and a[0] in _PY_FLAGS:
+                a = a[2:] if a[0] in ("-W", "-X") else a[1:]
+            stdin_ok = not fed or inline_safe(body)
+            if a and a[0] == "-c":
+                code = a[1] if len(a) > 1 else None
+                # a `$` may be a variable the shell expanded: the text that ran is not here
+                if code is not None and "$" not in code and inline_safe(code) and stdin_ok:
+                    return
+            elif not a or a[0] == "-":
+                if fed and inline_safe(body):
+                    return
+            elif not a[0].startswith("-"):
+                p = _resolve(a[0], env, cur)
+                if (p is not None and stdin_ok
+                        and os.path.basename(os.path.dirname(p)) == "scripts"
+                        and os.path.basename(p) in tracked_scripts()):
+                    return
             opaque(f"`{' '.join(ws[:2])[:60]}` runs ad-hoc code", None)
             return
         name, args = os.path.basename(ws[0]), ws[1:]
@@ -531,6 +636,9 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
             return
         if name in FILE_OPS:
             files = [a for a in args if a and not a.startswith("-")]
+            if name == "mktemp":
+                files = files + [args[i + 1] for i, a in enumerate(args[:-1])
+                                 if a in ("-p", "--tmpdir")]
             if name == "sed":
                 files = files[1:]          # the first operand is sed's SCRIPT, not a file
             if name == "sort":
@@ -556,11 +664,13 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
             substs.append(text)
         elif kind == "heredoc":
             heredoc = True
+            body = bodies[fed_count] if aligned else None
+            fed_count += 1
         elif kind == "inredir":
             continue
         else:
-            finish(words, redirs, substs, heredoc)
-            words, redirs, substs, heredoc = [], [], [], False
+            finish(words, redirs, substs, heredoc, body)
+            words, redirs, substs, heredoc, body = [], [], [], False, None
     return ops
 
 
@@ -1722,26 +1832,64 @@ def _self_test() -> int:
                  "type ls", "sed -E 's/a/b/' .claude/executing-plan", "git checkout -b x",
                  "git commit -qm m", "git push -u origin x", "git reset --hard HEAD",
                  "git -C /w/repo merge --ff-only x", "echo $(git rev-parse HEAD)",
-                 "echo `date`", "exit 0", "export X=1", "X=1 git status"):
-        case(f"allow-listed, or reaching no sentinel, keeps the state known: {_cmd}",
+                 "echo `date`", "exit 0", "export X=1", "X=1 git status",
+                 # ⟳ round 4: INLINE code is INSPECTED (the threat model is accident, not
+                 # adversary, and the code's full text is in the transcript)
+                 "python3 - <<'PY'\nimport re, json\nprint(re.compile('x').pattern)\nPY",
+                 "python3 -c 'print(1)'", "python3 -u -c 'import sys; print(sys.argv)'",
+                 "python3 scripts/recall-llm.py <<'EOF'\nx\nEOF",
+                 "python3 - <<'PY'\nopen('/tmp/out.txt', 'w').write('x')\nPY",
+                 "python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('docs').read_text())\nPY",
+                 "echo $(python3 -c 'print(2)')", "python3 -c 'from ast import literal_eval'",
+                 "pwd", "ps aux", "mktemp -d", "mktemp /tmp/x.XXXX",
+                 "find docs -name '*.md'", "timeout 60 git status",
+                 "timeout -s KILL 5 python3 scripts/check-docs.py"):
+        case(f"allow-listed, or reaching no sentinel, keeps the state known: "
+             f"{_cmd.replace(chr(10), ' ⏎ ')[:100]}",
              world(_between(_cmd))[0]["two"], "one")
-    for _cmd in ("python3 - <<'PY'\nprint(1)\nPY", "python3 scripts/other.py", "node x.js",
+    for _cmd in ("python3 - <<'PY'\nimport subprocess\nPY", "python3 scripts/other.py", "node x.js",
                  "bash run.sh", "sh -c 'true'", "eval x", "source env.sh", "xargs echo < f",
                  "awk 'BEGIN{system(\"true\")}'", "echo x >> .claude/executing-plan",
                  # ⟳ round 3: AD-HOC code stays opaque, wherever it hides
-                 "python3 -c 'print(1)'", "python3 /tmp/steps.py", "python3 /tmp/recall-llm.py",
+                 "python3 -c 'import os; os.system(\"x\")'", "python3 /tmp/steps.py",
+                 "python3 /tmp/recall-llm.py",
                  "python3 scripts/untracked-adhoc.py",
-                 "python3 scripts/recall-llm.py <<'EOF'\nx\nEOF",
+                 "python3 scripts/recall-llm.py <<'EOF'\nimport shutil\nEOF",
                  "python3 -m pytest", "git clean -fdx", "git stash -u",
-                 "echo $(python3 -c 'print(1)')", "echo `node x.js`", ". env.sh",
+                 "echo $(python3 -c 'import pty')", "echo `node x.js`", ". env.sh",
                  "zsh x.sh", "sort -o .claude/executing-plan docs/x.md",
                  "uniq docs/x.md .claude/executing-plan", "$P scripts/check-docs.py",
+                 # ⟳ round 4: each INLINE token class, and the shapes that stay opaque
+                 "python3 - <<'PY'\nprint(open('.claude/executing-plan').read())\nPY",
+                 "python3 - <<'PY'\nprint('executing-plan')\nPY",
+                 "python3 -c 'print(\"begin-plan\")'", "python3 -c 'x=\"check-plan-progress\"'",
+                 "python3 -c 'import os; os.popen(\"ls\")'",
+                 "python3 -c 'import os; os.execv(\"a\", [])'",
+                 "python3 -c 'import os; os.spawnl(0, \"a\")'", "python3 -c 'exec(\"1\")'",
+                 "python3 -c 'eval(\"1\")'", "python3 -c 'compile(\"1\", \"f\", \"exec\")'",
+                 "python3 -c '__import__(\"os\")'", "python3 -c 'import importlib'",
+                 "python3 -c 'import os; os.remove(\"x\")'",
+                 "python3 -c 'import os; os.unlink(\"x\")'",
+                 "python3 -c 'import os; os.rename(\"a\", \"b\")'",
+                 "python3 -c 'import os; os.replace(\"a\", \"b\")'",
+                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('x').unlink()\nPY",
+                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('x').write_text('y')\nPY",
+                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('a').rename('b')\nPY",
+                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('a').replace('b')\nPY",
+                 "python3 - <<'PY'\nf = 'x'\nopen(f, 'w').write('y')\nPY",
+                 "python3 - <<'PY'\nprint(1)\n", "python3 -c \"$CODE\"", "python3",
+                 "find docs -delete", "find . -exec rm {} ;", "find . -execdir true ;",
+                 "find . -ok true ;", "find . -fprint /tmp/x", "mktemp .claude/executing-plan",
+                 "timeout 60 python3 -c 'import subprocess'", "timeout 5 node x.js",
                  "printf 'p\\n' > /w/repo/.claude/executing-plan",
                  "sed -i '' s/a/b/ .claude/executing-plan", "tee .claude/executing-plan < f",
                  "mv .claude/executing-plan /tmp/x", "cp /tmp/x .claude/executing-plan",
                  "rm -f .claude/plans/one.md", "rm -rf .claude", "cd \"$NOPE\" && rm -f x"):
-        case(f"an opaque op makes the checkout UNKNOWN: {_cmd.splitlines()[0]}",
+        case(f"an opaque op makes the checkout UNKNOWN: {_cmd.replace(chr(10), ' ⏎ ')[:100]}",
              world(_between(_cmd))[0]["two"], None)
+    case("⛔ the SECOND heredoc's body is the one its command is fed",
+         world(_between("cat <<'A'\nx\nA\npython3 - <<'B'\nimport subprocess\nB"))[0]["two"],
+         None)
     case("⭐ `rm -f` of the sentinel ALONE is a known removal: the next arm starts a line",
          world(_between("rm -f .claude/executing-plan"))[0]["two"], STARTED)
     case("⛔ ...but not beside another opaque op — then the whole command is UNKNOWN",

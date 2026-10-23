@@ -942,7 +942,11 @@ EXPECTED_MUTATIONS = {
     # outside scripts/, heredoc-fed interpreters, git clean/stash, sort -o, uniq's output,
     # export, and `$P`. (A tenth, `-c` read as a path, was EQUIVALENT — measured surviving: a
     # flag never resolves to `<checkout>/scripts/<tracked>.py` — and was not kept.)
-    "scripts/backfill-work-lines.py": 62,
+    # ⟳ same day, round 4 (inline code INSPECTED): 62 -> 76 — two rebound onto the inspected
+    # interpreter branch; fourteen added: the token list, an unterminated body, `Path(` writes,
+    # computed vs literal `open()` paths, a `$` in `-c`, both clean inline shapes, interpreter
+    # flags, heredoc order, `timeout`, `pwd`, `find -delete/-exec`, `mktemp` under `.claude/`.
+    "scripts/backfill-work-lines.py": 76,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5617,7 +5621,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1855)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1869)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -17133,9 +17133,11 @@ history only when every command in it is the project's own reviewed code or a ha
 throwaway script typed into the session (`python3 -`, `python3 -c`, a file in /tmp) could have
 changed what was being tracked. Any plan started after one of those is left unlinked. The
 project's own scripts and ordinary git commands are trusted. A search of the whole history
-confirmed that none of those scripts ever touched the tracking file outside a test. The result is
-20 links from the replay and 7 from a "switched from" line, with 96 unlinked. It reproduces the
-link recorded live today. Two plans already had a recorded
+confirmed that none of those scripts ever touched the tracking file outside a test. Throwaway
+scripts are now read rather than assumed dangerous. Their full text is in the record, so one that
+never mentions the tracking file, never runs another program and never deletes or moves files is
+trusted. The result is 23 links from the replay and 8 from a "switched from" line, with 92
+unlinked. It reproduces the link recorded live today. Two plans already had a recorded
 link and are untouched. It also reproduces the one link the live tool recorded today exactly.
 
 **Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the
