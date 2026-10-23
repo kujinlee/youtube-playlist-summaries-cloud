@@ -793,7 +793,7 @@
       ]
     ],
     "expect": [
-      "allow-listed, or reaching no sentinel, keeps the state known: export X=1"
+      "allow-listed, or reaching no sentinel, keeps the state known: export -p"
     ]
   },
   {
@@ -1015,6 +1015,162 @@
     ],
     "expect": [
       "allow-listed, or reaching no sentinel, keeps the state known: python3 - <<'PY' ⏎ import subprocess ⏎ print(subprocess.run(['git', 'log', '-1'], capture_output=Tru"
+    ]
+  },
+  {
+    "name": "a window never holds the checkout unknown",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                states[r] = unknown(f\"a command that may change it was still running (until \"\n                                    f\"{until})\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after its completion record does"
+    ]
+  },
+  {
+    "name": "a background command's window ends when it starts",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                ev.data[\"until\"] = ((ended.get(ev.data.get(\"task\", \"\")) or last_ts)\n                                    if ev.data[\"bg\"] else (ev.end or ev.ts))",
+        "                ev.data[\"until\"] = ev.ts"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after its completion record does"
+    ]
+  },
+  {
+    "name": "a background command's completion record is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                ev.data[\"until\"] = ((ended.get(ev.data.get(\"task\", \"\")) or last_ts)",
+        "                ev.data[\"until\"] = ((last_ts)"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after its completion record does"
+    ]
+  },
+  {
+    "name": "a TaskStop does not end a background task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        tid = inp.get(\"task_id\") or inp.get(\"shell_id\") or inp.get(\"bash_id\")",
+        "                        tid = None"
+      ]
+    ],
+    "expect": [
+      "...and a TaskStop ends the window like a completion record"
+    ]
+  },
+  {
+    "name": "a shell & op's window ends with its command",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            o_until = max(until, e.data.get(\"session_end\") or until) if o.bg else until",
+        "            o_until = until"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a shell `&` has no end record — unknown until the session's last event"
+    ]
+  },
+  {
+    "name": "a window binds only OTHER streams",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if w[0] in (r, None) and w[1] < e.ts < w[2]:",
+        "            if w[0] in (r, None) and w[1] < e.ts < w[2] and w[3] != e.stream:"
+      ]
+    ],
+    "expect": [
+      "⛔ a PARALLEL sibling call in the same session, started before the opaque one returned, is inside its window"
+    ]
+  },
+  {
+    "name": "& backgrounds the whole command, not its pipeline",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if text != \"|\":\n                seg = len(ops)",
+        "            if False:\n                seg = len(ops)"
+      ]
+    ],
+    "expect": [
+      "a shell `&` leaves only ITS pipeline running: the foreground op before it ends with the command"
+    ]
+  },
+  {
+    "name": "every turn end is a Stop, hook evidence or not",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                      if not (ev.kind == \"stop\" and not ev.data[\"hook\"] and not hooks))",
+        "                      if True)"
+      ]
+    ],
+    "expect": [
+      "⛔ L1: a turn end in a session with NO hook evidence clears nothing"
+    ]
+  },
+  {
+    "name": "hook attachments are not evidence of the Stop hook",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    if a.get(\"hookEvent\") or str(a.get(\"type\", \"\")).startswith(\"hook_\"):\n                        hooks = True",
+        "                    if a.get(\"hookEvent\") or str(a.get(\"type\", \"\")).startswith(\"hook_\"):\n                        pass"
+      ]
+    ],
+    "expect": [
+      "...and a hook ATTACHMENT (any hook) is evidence the session runs the Stop hook"
+    ]
+  },
+  {
+    "name": "a comment is read as a command",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if c == \"#\" and not has_word:",
+        "        if c == \"#\" and False:"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: # a note to self ⏎ ls docs"
+    ]
+  },
+  {
+    "name": "export assignments are not resolved",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            ws = [w for w in ws[1:] if \"=\" in w]",
+        "            ws = [\"export\"] + [w for w in ws[1:] if \"=\" in w]"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: export D=/tmp/d && echo x > \"$D/log\""
+    ]
+  },
+  {
+    "name": "nohup is not a prefix",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        while ws and ws[0] in (\"env\", \"timeout\", \"nohup\"):",
+        "        while ws and ws[0] in (\"env\", \"timeout\"):"
+      ]
+    ],
+    "expect": [
+      "a shell `&` leaves only ITS pipeline running: the foreground op before it ends with the command"
     ]
   }
 ]

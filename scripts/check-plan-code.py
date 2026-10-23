@@ -950,7 +950,11 @@ EXPECTED_MUTATIONS = {
     # whole-tree delete): 76 -> 78 — three entries RETIRED WITH THE CHECKS THEY GUARDED (`Path(`
     # write methods, `open()` to a computed path, `open()` to a literal path); the token-list
     # entry rebound; five added, one per remaining token and one pinning `subprocess` OFF it.
-    "scripts/backfill-work-lines.py": 78,
+    # ⟳ same day, round-3 (Claude) fold: 78 -> 90 — background and long-running commands
+    # hold their windows (the window itself, a background end, completion records, TaskStop, a
+    # shell `&` to the session's end, the foreground stream exemption, pipeline-scoped `&`),
+    # hookless sessions clear nothing, hook-attachment evidence, comments, `export`, `nohup`.
+    "scripts/backfill-work-lines.py": 90,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5625,7 +5629,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1871)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1883)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

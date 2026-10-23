@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 229 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 243 cases
 
 WHY THIS EXISTS
 ---------------
@@ -113,11 +113,20 @@ replay and unmarks every plan first armed since the last checkpoint. A checkpoin
 to known, but it never authorises a parent for an arm made while unknown. Before the first
 checkpoint the state is UNKNOWN.
 
+⛔ A COMMAND IS NOT OVER WHEN IT STARTS (r3 Claude M1). Each opaque or uncertain command has an
+END: a foreground one's tool result, a background one's completion or `TaskStop` record, or —
+when neither is found, as for a shell `&` — the last event of its session. Until then, the
+checkouts it can reach stay UNKNOWN, and a checkpoint inside that window resolves nothing. And a
+turn end counts as the Stop hook's clear ONLY in a session that shows the hook at all (r3 Claude
+L1): 272 SDK security-review transcripts here record no hook of any kind.
+
 ⚠ THE RESIDUAL BOUND, STATED PLAINLY. An arm made outside any transcript — another tool, an editor,
 a human in a shell — is invisible to this replay. And agreeing checkpoints do NOT prove the
 interval between them: an invisible arm followed by a visible one leaves every later checkpoint
 agreeing. The allow-list closes what the transcripts can show; it cannot close what they never
-recorded.
+recorded. The replay models what begin-plan PRINTED; when a working-tree copy of begin-plan was
+edited and then run (2026-10-22, before the parent field merged), its event semantics are not
+verified, only its output read (r3 Claude I1).
 
 ⚠ A STATED BOUND (r1 Claude F6, not fixed). A plan's parent is taken from its FIRST recorded arm.
 A plan file deleted and re-created by a later arm carries the later arm's live parent; the birth
@@ -158,7 +167,8 @@ BIRTH_SLACK_S = 120.0
 PARENT_LINE = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
 SOURCE_LINE = re.compile(r"^<!--\s*parent-source:\s*(.+?)\s*-->\s*$", re.M)
 BANNER = re.compile(r"SWITCHED\s+from\s+\*?`([^`]+)`[^\n]*?→\s*\*{0,2}`([^`]+)`")
-_PREFILTER = ('"Bash"', "begin-plan", "SWITCHED", '"end_turn"', "stop_hook_summary",
+_PREFILTER = ('"Bash"', "<task-id>", "TaskStop", "KillShell", '"hookEvent"', "begin-plan",
+              "SWITCHED", '"end_turn"', "stop_hook_summary",
               "executing-plan",
               ".claude/plans/")
 _TOOL_RESULT_ID = re.compile(r'"tool_use_id"\s*:\s*"([^"]+)"')
@@ -333,6 +343,12 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
         if c in " \t":
             flush(); i += 1
             continue
+        if c == "#" and not has_word:
+            # a comment runs to the end of the line; it is not a command (measured: `# note`
+            # lines were read as an unknown command `#` and poisoned the checkout)
+            while i < n and cmd[i] != "\n":
+                i += 1
+            continue
         if c in "<>" or (c == "&" and i + 1 < n and cmd[i + 1] == ">"):
             # a redirection: an all-digit word before it is its fd, not an argument
             if has_word and "".join(word).isdigit():
@@ -403,9 +419,14 @@ _SENT_TAIL = "/" + SENTINEL_REL
 # is AD-HOC code and makes EVERY checkout unknown, before any arm in that command.
 TRACKED_SCRIPTS: frozenset[str] | None = None   # None: ask git (see tracked_scripts)
 SAFE: dict[str, str] = {
-    "git": "every subcommand but `clean` and `stash`: `.claude/` is gitignored, so commit, push, "
-           "merge, checkout and reset cannot touch it; `clean -x` deletes ignored files and "
-           "`stash -u`/`-a` stashes them. Hooks run, but they are reviewed repository code",
+    # ⟳ r3 Claude L2: `.claude/` is NOT wholly gitignored — its hooks and settings.json are
+    # tracked. What IS ignored is exactly the two paths that matter here: `.claude/executing-plan`
+    # (.gitignore:89) and `.claude/plans/` (:96). An ignored, untracked path is never written by
+    # commit, push, merge, checkout or reset; `clean -x` deletes ignored files and `stash -a`
+    # (or `-u`) stashes untracked ones, so those two stay opaque.
+    "git": "every subcommand but `clean` and `stash`: the sentinel and `.claude/plans/` are "
+           "ignored and untracked, so no other subcommand writes them. Hooks run, but they are "
+           "reviewed repository code",
     "ls": "lists directory entries; it writes nothing",
     "cat": "prints files to stdout; a redirection of that output is judged on its own",
     "head": "prints the start of files", "tail": "prints the end of files",
@@ -502,6 +523,7 @@ class Op:
     call: Call | None = None
     paths: list[str] | None = None    # opaque: the file paths it writes; None = it runs code
     why: str = ""
+    bg: bool = False                  # left running by a shell `&`
 
 
 def _resolve(word: str, env: dict[str, str], cur: str | None) -> str | None:
@@ -530,6 +552,7 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
     redirs: list[str] = []
     substs: list[str] = []
     heredoc = False
+    seg = 0                             # where the current pipeline's ops begin
 
     def opaque(why: str, paths: list[str] | None) -> None:
         ops.append(Op("opaque", paths=paths, why=why))
@@ -548,6 +571,12 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
         for inner in subs:
             # ⭐ round 3: a substitution is safe iff every command inside it is
             ops.extend(parse_command(inner, cur))
+        if ws and ws[0] == "export" and all(
+                re.match(r"^[A-Za-z_][A-Za-z0-9_]*(=|$)", w) for w in ws[1:]):
+            # `export VAR=…` is an assignment the rest of the command can resolve
+            ws = [w for w in ws[1:] if "=" in w]
+            if not ws:
+                return
         while ws and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ws[0]):
             k, v = ws[0].split("=", 1)
             env[k] = expand(v, env) or v
@@ -558,10 +587,12 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
             opaque("an output redirection", None if None in paths else paths)
         if not ws:
             return
-        # ⭐ PREFIXES: `env [VAR=…]` and `timeout [opts] <dur>` run the command after them, so
-        # it is that command that is judged (round 4).
-        while ws and ws[0] in ("env", "timeout"):
-            if ws[0] == "env":
+        # ⭐ PREFIXES: `env [VAR=…]`, `timeout [opts] <dur>` and `nohup` run the command after
+        # them, so it is that command that is judged (round 4; `nohup` added in the r3 fold).
+        while ws and ws[0] in ("env", "timeout", "nohup"):
+            if ws[0] == "nohup":
+                ws = ws[1:]
+            elif ws[0] == "env":
                 ws = ws[1:]
                 while ws and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ws[0]) or ws[0] == "-i"):
                     ws = ws[1:]
@@ -654,6 +685,12 @@ def parse_command(cmd: str, cwd: str | None) -> list[Op]:
         else:
             finish(words, redirs, substs, heredoc, body)
             words, redirs, substs, heredoc, body = [], [], [], False, None
+            if text == "&":
+                # ⛔ r3 Claude M1: a shell `&` leaves the pipeline before it RUNNING
+                for o in ops[seg:]:
+                    o.bg = True
+            if text != "|":
+                seg = len(ops)
     return ops
 
 
@@ -883,6 +920,11 @@ def live_banners(text: str) -> list[tuple[str, str]]:
     return out
 
 
+_TS = re.compile(r'"timestamp"\s*:\s*"([^"]+)"')
+_TASK_ID = re.compile(r"<task-id>([\w-]+)</task-id>")
+_BG_ID = re.compile(r"running in background with ID: ([\w-]+)")
+
+
 _CLEARING = re.compile(r"every step in `([^`]+)` is ticked \((\d+)/(\d+)\)\. Clearing")
 
 
@@ -897,8 +939,18 @@ def read_transcripts(tdir: Path) -> list[Event]:
     for f in files:
         top = f.parent == tdir
         pending: dict[str, Event] = {}
+        mine: list[Event] = []          # this file's events; filtered below, then kept
+        hooks = False                   # does this session show the project's Stop hook?
+        ended: dict[str, str] = {}      # background task id -> when it completed or was stopped
+        last_line = ""
         with open(f, encoding="utf-8", errors="replace") as fh:
             for no, line in enumerate(fh):
+                if '"timestamp"' in line:
+                    last_line = line
+                if "<task-id>" in line and "<status>" in line:
+                    tsm = _TS.search(line)
+                    for tid in _TASK_ID.findall(line):
+                        ended.setdefault(tid, tsm.group(1) if tsm else "")
                 is_tr = '"tool_result"' in line
                 if is_tr:
                     ids = [i for i in _TOOL_RESULT_ID.findall(line) if i in pending]
@@ -922,33 +974,39 @@ def read_transcripts(tdir: Path) -> list[Event]:
                             ev.end = ts
                             ev.data["result"] = _text_of(c.get("content"))
                             ev.data["is_error"] = bool(c.get("is_error"))
+                            m = _BG_ID.search(ev.data["result"])
+                            if m:
+                                ev.data["task"] = m.group(1)
                     continue
                 if typ == "user" and top and not r.get("isMeta"):
                     content = msg.get("content")
                     if isinstance(content, str) or (isinstance(content, list) and all(
                             isinstance(c, dict) and c.get("type") == "text" for c in content)):
-                        events.append(Event(kind="prompt", **base))
+                        mine.append(Event(kind="prompt", **base))
                     continue
                 if typ == "system" and r.get("subtype") == "stop_hook_summary" and top:
-                    events.append(Event(kind="stop", data={"cwd": cwd}, **base))
+                    hooks = True
+                    mine.append(Event(kind="stop", data={"cwd": cwd, "hook": True}, **base))
                     continue
                 if typ == "attachment" and top:
                     a = r.get("attachment") or {}
+                    if a.get("hookEvent") or str(a.get("type", "")).startswith("hook_"):
+                        hooks = True
                     m = _CLEARING.search(str(a.get("content") or a.get("stdout") or ""))
                     if a.get("hookEvent") == "Stop" and m:
-                        events.append(Event(kind="clearing", data={
+                        mine.append(Event(kind="clearing", data={
                             "cwd": cwd, "rel": m.group(1)}, **base))
                     continue
                 if typ != "assistant":
                     continue
                 if top and msg.get("stop_reason") == "end_turn":
-                    events.append(Event(kind="stop", data={"cwd": cwd}, **base))
+                    mine.append(Event(kind="stop", data={"cwd": cwd, "hook": False}, **base))
                 for c in msg.get("content") or []:
                     if not isinstance(c, dict):
                         continue
                     if c.get("type") == "text" and "SWITCHED" in c.get("text", ""):
                         for frm, to in live_banners(c["text"]):
-                            events.append(Event(kind="banner", data={"frm": frm, "to": to},
+                            mine.append(Event(kind="banner", data={"frm": frm, "to": to},
                                                 **base))
                     if c.get("type") != "tool_use":
                         continue
@@ -959,15 +1017,34 @@ def read_transcripts(tdir: Path) -> list[Event]:
                         cmd = inp.get("command") or ""
                         ops = parse_command(cmd, cwd)
                         if ops:
-                            ev = Event(kind="cmd", data={"ops": ops, "cmd": cmd}, **base)
-                            events.append(ev)
-                            if any(o.kind == "call" for o in ops):
-                                pending[c.get("id", "")] = ev
+                            ev = Event(kind="cmd", data={
+                                "ops": ops, "cmd": cmd,
+                                "bg": bool(inp.get("run_in_background"))}, **base)
+                            mine.append(ev)
+                            pending[c.get("id", "")] = ev
+                    elif c.get("name") in ("TaskStop", "KillShell", "KillBash"):
+                        tid = inp.get("task_id") or inp.get("shell_id") or inp.get("bash_id")
+                        if tid:
+                            ended.setdefault(tid, ts)
                     elif c.get("name") in _WRITE_TOOLS:
                         p = os.path.normpath(inp.get("file_path") or inp.get("notebook_path")
                                              or "/")
                         if SENTINEL_REL in p or ".claude/plans/" in p or p.endswith("/.claude"):
-                            events.append(Event(kind="tool", data={"paths": [p]}, **base))
+                            mine.append(Event(kind="tool", data={"paths": [p]}, **base))
+        last = _TS.search(last_line)
+        last_ts = last.group(1) if last else ""
+        for ev in mine:
+            if ev.kind == "cmd":
+                # ⛔ r3 Claude M1: a command is not over when it STARTS. A foreground one ends at
+                # its result; a background one at its completion or stop record — or, when none
+                # is found, at the last event of its session.
+                ev.data["until"] = ((ended.get(ev.data.get("task", "")) or last_ts)
+                                    if ev.data["bg"] else (ev.end or ev.ts))
+                ev.data["session_end"] = last_ts       # where a shell `&`'s window ends
+        # ⛔ r3 Claude L1: a turn end is the Stop hook's clear only in a session that shows the
+        # hook at all. 272 SDK security-review sessions here record no hook of any kind.
+        events.extend(ev for ev in mine
+                      if not (ev.kind == "stop" and not ev.data["hook"] and not hooks))
     events.sort(key=lambda e: (e.ts, e.stream, e.order))
     return events
 
@@ -1032,7 +1109,8 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
     cleared: dict[str, str | None] = {}
     seen: dict[str, dict[str, dict]] = {}
     pending: dict[str, list[str]] = {}
-    counts: dict = {"agree": 0, "disagree": 0, "resolved": 0, "resync": 0, "where": []}
+    counts: dict = {"agree": 0, "disagree": 0, "resolved": 0, "resync": 0, "where": [],
+                    "in_window": 0}
 
     def get(r: str) -> object:
         return states.get(r, START)
@@ -1105,7 +1183,28 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
                 return True
         return False
 
+    # ⛔ r3 Claude M1: WINDOWS. (root or None = every checkout, start, until, stream, bg). While a
+    # command that may change a checkout is still running, that checkout stays UNKNOWN, and a
+    # checkpoint inside the window resolves nothing.
+    windows: list[tuple] = []
+
+    def active(r: str, e: Event) -> str | None:
+        # ⚠ no exemption for the command's own stream: tool calls in one message can run in
+        # PARALLEL, so a sibling call may start before this one's result. Sequential calls start
+        # after it ends, so they are outside the window anyway.
+        for w in windows:
+            if w[0] in (r, None) and w[1] < e.ts < w[2]:
+                return w[2]
+        return None
+
     for e in events:
+        windows[:] = [w for w in windows if w[2] > e.ts]
+        for r in known_roots():
+            until = active(r, e)
+            if until:
+                counts["in_window"] += 1 if e.kind == "cmd" and r == root else 0
+                states[r] = unknown(f"a command that may change it was still running (until "
+                                    f"{until})")
         if last is not None and get(root) != snap:
             trail.append((last.ts, f"{last.kind} in {Path(last.stream).stem[:8]}",
                           describe(get(root))))
@@ -1160,6 +1259,20 @@ def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[st
         # the same command derives no parent. A lone `rm -f` of a sentinel stays a known removal
         # only when nothing else in the command is opaque.
         opaques = [o for o in ops if o.kind == "opaque"]
+        until = e.data.get("until") or e.end or e.ts
+        bg = e.data.get("bg", False)
+        if bg:
+            # a call left running in the background printed nothing yet: its checkout is unknown
+            for o in calls:
+                if _sub(o.call)[0] != "ro":
+                    poison(o.root, "a begin-plan call ran in the background")
+                    windows.append((o.root, e.ts, until, e.stream, True))
+        for o in opaques:
+            reach = reaches(o, known_roots())
+            # a shell `&` op has no end record of its own: its window runs to the session's end
+            o_until = max(until, e.data.get("session_end") or until) if o.bg else until
+            for r in ([None] if reach is None else reach):
+                windows.append((r, e.ts, o_until, e.stream, bg or o.bg))
         if opaques:
             for o in opaques + [Op("opaque", paths=[x.root + _SENT_TAIL], why="`rm`")
                                 for x in ops if x.kind == "rmsent"]:
@@ -1525,7 +1638,7 @@ class _Fx:
         self.lines.setdefault(stream, []).append(json.dumps(rec))
 
     def bash(self, cmd: str, result: str | None, *, stream="sess-aaaa1111", cwd=None,
-             is_error=False, run_s: float = 1.0) -> str:
+             is_error=False, run_s: float = 1.0, bg: bool = False) -> str:
         self.n += 1
         tid = f"toolu_{self.n:04d}"
         ts = self._ts()
@@ -1533,13 +1646,21 @@ class _Fx:
         self._put(stream, {"type": "assistant", "timestamp": ts, "sessionId": sess,
                            "cwd": cwd or self.root, "message": {"role": "assistant",
                            "stop_reason": "tool_use", "content": [{"type": "tool_use",
-                           "id": tid, "name": "Bash", "input": {"command": cmd}}]}})
+                           "id": tid, "name": "Bash", "input": dict(
+                               {"command": cmd}, **({"run_in_background": True} if bg else {}))}]}})
         if result is not None:
             end = (self.t + _dt.timedelta(seconds=run_s)).strftime("%Y-%m-%dT%H:%M:%S.500Z")
             self._put(stream, {"type": "user", "timestamp": end, "sessionId": sess,
                                "message": {"role": "user", "content": [{"type": "tool_result",
                                "tool_use_id": tid, "is_error": is_error, "content": result}]}})
         return ts
+
+    def tool_stop(self, task_id: str, *, stream="sess-aaaa1111") -> None:
+        self.n += 1
+        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": stream,
+                           "cwd": self.root, "message": {"role": "assistant", "content": [
+                               {"type": "tool_use", "id": f"toolu_{self.n:04d}",
+                                "name": "TaskStop", "input": {"task_id": task_id}}]}})
 
     def tool(self, name: str, path: str, *, stream="sess-aaaa1111") -> None:
         self.n += 1
@@ -1563,12 +1684,26 @@ class _Fx:
                            "stop_reason": "end_turn", "content": [{"type": "text",
                                                                    "text": text}]}})
 
-    def clearing(self, slug: str, d: int, n: int, *, stream="sess-aaaa1111") -> None:
+    def task_done(self, task_id: str, *, stream="sess-aaaa1111", status="completed") -> None:
+        """The harness's notice that a background task ended."""
+        self._put(stream, {"type": "user", "timestamp": self._ts(), "sessionId": stream,
+                           "message": {"role": "user", "content": (
+                               f"<task-notification>\n<task-id>{task_id}</task-id>\n"
+                               f"<status>{status}</status>\n</task-notification>")}})
+
+    def hook_note(self, *, stream="sess-aaaa1111") -> None:
+        """Some project hook ran in this session (a PostToolUse one, say)."""
+        self._put(stream, {"type": "attachment", "timestamp": self._ts(), "sessionId": stream,
+                           "cwd": self.root, "attachment": {"type": "hook_success",
+                           "hookEvent": "PostToolUse", "content": "ok"}})
+
+    def clearing(self, slug: str, d: int, n: int, *, stream="sess-aaaa1111",
+                 kind: str = "hook_success") -> None:
         """The Stop hook's own message when it clears a fully-ticked plan."""
         msg = (f"✅ every step in `.claude/plans/{slug}.md` is ticked ({d}/{n}). "
                f"Clearing .claude/executing-plan.")
         self._put(stream, {"type": "attachment", "timestamp": self._ts(), "sessionId": stream,
-                           "cwd": self.root, "attachment": {"type": "hook_success",
+                           "cwd": self.root, "attachment": {"type": kind,
                            "hookEvent": "Stop", "content": msg, "stdout": msg + "\n"}})
 
     def write(self, tdir: Path) -> Path:
@@ -1816,6 +1951,8 @@ def _self_test() -> int:
                  "git commit -qm m", "git push -u origin x", "git reset --hard HEAD",
                  "git -C /w/repo merge --ff-only x", "echo $(git rev-parse HEAD)",
                  "echo `date`", "exit 0", "export X=1", "X=1 git status",
+                 "# a note to self\nls docs", "export D=/tmp/d && echo x > \"$D/log\"",
+                 "export X", "export -p",
                  # ⟳ round 4: INLINE code is INSPECTED (the threat model is accident, not
                  # adversary, and the code's full text is in the transcript)
                  "python3 - <<'PY'\nimport re, json\nprint(re.compile('x').pattern)\nPY",
@@ -1898,6 +2035,96 @@ def _self_test() -> int:
          world(_between("rm -f .claude/executing-plan; python3 x.py"))[0]["two"], None)
     case("a reachable checkout is poisoned; ANOTHER checkout's sentinel write leaves this one known",
          world(_between("echo x >> /w/other/.claude/executing-plan"))[0]["two"], "one")
+
+    # ── review round 3 (Claude): background commands, hookless sessions, real shapes ──────
+    BG_OUT = "Command running in background with ID: bx1. Output is being written to: /tmp/x"
+
+    def _bg_window(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("for g in a b; do python3 scripts/$g.py; done", BG_OUT, bg=True)
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+        f.task_done("bx1")
+        f.bash(f"{BP} --status", ".claude/plans/two.md: 0/1 steps ticked, 1 remaining")
+        f.bash(f"{BP} three a", _arm_out("three", 1))
+    _bw = world(_bg_window)[0]
+    case("⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after "
+         "its completion record does", (_bw["two"], _bw["three"]), (None, "two"))
+
+    def _bg_stopped(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+        f.tool_stop("bx1")
+        f.bash(f"{BP} --status", ".claude/plans/two.md: 0/1 steps ticked, 1 remaining")
+        f.bash(f"{BP} three a", _arm_out("three", 1))
+    _bs = world(_bg_stopped)[0]
+    case("...and a TaskStop ends the window like a completion record",
+         (_bs["two"], _bs["three"]), (None, "two"))
+
+    def _shell_bg(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")' &", "")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ M1: a shell `&` has no end record — unknown until the session's last event",
+         world(_shell_bg)[0]["two"], None)
+
+    def _fg_other_stream(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", "", run_s=100, stream="sess-bbbb2222")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ M1: another session's checkpoint during a long FOREGROUND opaque command does not "
+         "resolve it", world(_fg_other_stream)[0]["two"], None)
+
+    def _amp_scope(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("kill 1; (nohup python3 scripts/check-docs.py > /tmp/l 2>&1 &)", "")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("a shell `&` leaves only ITS pipeline running: the foreground op before it ends with "
+         "the command", world(_amp_scope)[0]["two"], STARTED)
+
+    def _parallel_sibling(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", "", run_s=100)
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ a PARALLEL sibling call in the same session, started before the opaque one returned, "
+         "is inside its window", world(_parallel_sibling)[0]["two"], None)
+
+    def _attachment_evidence(f):
+        f.hook_note()
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash(f"{BP} --tick", _tick_out(1, 1, "one"))
+        f.say("done")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("...and a hook ATTACHMENT (any hook) is evidence the session runs the Stop hook",
+         world(_attachment_evidence)[0]["two"], STARTED)
+
+    def _hookless(evidence):
+        def b(f):
+            if evidence:
+                f.stop()               # a Stop-hook record: this session runs the project's hooks
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash(f"{BP} --tick", _tick_out(1, 1, "one"))
+            f.say("done")              # an end_turn
+            f.bash(f"{BP} two a", _arm_out("two", 1))
+        return b
+    case("⛔ L1: a turn end in a session with NO hook evidence clears nothing",
+         world(_hookless(False))[0]["two"], "one")
+    case("...and one in a session that shows the Stop hook clears the fully-ticked plan",
+         world(_hookless(True))[0]["two"], STARTED)
+
+    def _nonblocking_clear(f):
+        f.bash(f"{BP} one a b", _arm_out("one", 2))
+        f.bash(f"{BP} --tick | tail -0", "")
+        f.clearing("one", 2, 2, kind="hook_non_blocking_error")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("I1: a Clearing message wrapped as `hook_non_blocking_error` is still a checkpoint",
+         world(_nonblocking_clear)[0]["two"], STARTED)
 
     # ── the shell: finding the call and where it ran ─────────────────────────────────────────
     case("a relative script path resolves against ITS cwd",

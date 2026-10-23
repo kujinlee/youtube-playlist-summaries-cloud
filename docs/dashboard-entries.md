@@ -17136,8 +17136,11 @@ project's own scripts and ordinary git commands are trusted. A search of the who
 confirmed that none of those scripts ever touched the tracking file outside a test. Throwaway
 scripts are now read rather than assumed dangerous. Their full text is in the record. Changing
 the tracking file by accident would mean naming it, naming the planning tools, or deleting a whole
-folder, so a script that does none of those is trusted. The result is 25 links from the replay and
-11 from a "switched from" line, with 87 unlinked. It reproduces the link recorded live today. Two plans already had a recorded
+folder, so a script that does none of those is trusted. A third review confirmed every link
+against the record. It also showed that a command left running in the background is not finished
+when it starts, so the replay now waits for it to end before trusting anything again. The final
+count is 24 links from the replay and 8 from a "switched from" line, with 91 unlinked. It
+reproduces the link recorded live today. Two plans already had a recorded
 link and are untouched. It also reproduces the one link the live tool recorded today exactly.
 
 **Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the
