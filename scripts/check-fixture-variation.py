@@ -657,6 +657,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # to it goes WITH its subject — `acknowledgment_rejection`, `half_verdict`, `review_rounds`,
     # `main.rounds` and the `rounds` parameter of the trigger-3 readers. t10 is renamed
     # `t10_pre_trigger_lost_bet`; the readers take `pinned`, and `pinned_lost_bets` joins.
+    # ⟳ r5 fold: trigger 2's WARN half, `t11_ladder_exhausted_closed`, joins; so do
+    # `ladder_restarts` and `t12_ladder_restarted`, the owner's restart containment.
     'check-decision-scheme.py': (
         'component_rounds.rounds',
         'derive_outcome.after_round',
@@ -668,6 +670,7 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'empty_listing_refusal.sha',
         'group_by_unit.rows',
         'invalid_rows.rows',
+        'ladder_restarts.rows',
         'lost_bets.rows',
         'main.argv',
         'main.baseline_path',
@@ -690,6 +693,8 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         't2_non_termination.rows',
         't10_pre_trigger_lost_bet.pinned',
         't10_pre_trigger_lost_bet.rows',
+        't11_ladder_exhausted_closed.rows',
+        't12_ladder_restarted.rows',
         't3_lost_bet_not_escalated.pinned',
         't3_lost_bet_not_escalated.rows',
         't4_no_improvement.baseline_median',

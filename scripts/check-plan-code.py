@@ -1386,7 +1386,19 @@ EXPECTED_MUTATIONS = {
     # loss on a pinned unit is not excused; and a PRESENT null pin list is refused. FOUR added
     # (the route carried by `lost_bets`, the route check, the three-part key, null-vs-absent);
     # THREE re-pointed to the parser's new presence test.
-    "scripts/check-decision-scheme.py": 111,
+    # ⟳ 2026-10-23 r5 fold: 111 -> 119, the owner's option A. A `continued` DEFER that records
+    # `rounds_at_termination` CLOSES its unit: trigger 2 FAILs only OPEN exhausted units, the new
+    # trigger 11 WARNs on closed ones, and `validate_row` refuses a bet after a close. EIGHT added
+    # (both triggers' filters, t11's guard and wiring, `closes_unit`, the named closed refusal,
+    # and the field's two shape rules). One candidate REJECTED as equivalent: dropping the
+    # `continued` clause of `closes_unit` — `exhausted_units` already admits only continued
+    # last bets, and a bet after a stopped DEFER is refused by exhaustion either way.
+    # ⟳ 2026-10-23 r5 fold, second containment: 119 -> 126. A NEW unit on a subject after one of
+    # its units was CLOSED is trigger 12's WARN (a restarted ladder, seen, not forbidden). SIX
+    # added: the closure record, the began-after test, the same-subject test, the first-row
+    # rule, t12's guard and its wiring. An `unit == closed` exclusion was DELETED rather than
+    # mutated: the closed unit's first row is never after its own closing row, so it was dead.
+    "scripts/check-decision-scheme.py": 125,
     "scripts/check-goal-status.py": 7,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5679,7 +5691,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1867)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1881)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

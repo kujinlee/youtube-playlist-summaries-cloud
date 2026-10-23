@@ -1466,5 +1466,187 @@
     "expect": [
       "⭐ always-on's pinned bet ESCALATED and its successor LOST: trigger 3 FAILs on it"
     ]
+  },
+  {
+    "name": "trigger 2 fails CLOSED units too, so an honest deferral stays a permanent red",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    bad = [k for k, closed in exhausted_units(rows) if not closed]",
+        "    bad = [k for k, closed in exhausted_units(rows) if True]"
+      ]
+    ],
+    "expect": [
+      "⭐ a continued DEFER that records rounds_at_termination CLOSES the unit: WARN, not FAIL"
+    ]
+  },
+  {
+    "name": "trigger 11 names the OPEN units instead of the closed ones",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    closed = [k for k, c in exhausted_units(rows) if c]",
+        "    closed = [k for k, c in exhausted_units(rows) if not c]"
+      ]
+    ],
+    "expect": [
+      "...and so does a skipped-to-defer unit that closes, on another unit"
+    ]
+  },
+  {
+    "name": "trigger 11 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not closed:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a CLOSED exhausted unit reaches the CLI as trigger 11's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "nothing is recognised as closing its unit",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return row.get(\"outcome\") == \"continued\" and \"rounds_at_termination\" in row",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "⭐ a bet after a CLOSED unit is refused — a closed unit cannot be reopened"
+    ]
+  },
+  {
+    "name": "a closed unit is not refused by name, so a reader is told only that the ladder ran out",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if prior and isinstance(prior[-1], dict) and closes_unit(prior[-1]):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...whatever its route, after a skipped-to-defer close on another unit"
+    ]
+  },
+  {
+    "name": "a zero round count is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "or isinstance(n_rounds, bool) or n_rounds < 1):",
+        "or isinstance(n_rounds, bool)):"
+      ]
+    ],
+    "expect": [
+      "⛔ rounds_at_termination must be an integer >= 1 — zero, and a bool posing as one"
+    ]
+  },
+  {
+    "name": "a continued non-DEFER row may record rounds_at_termination, so it closes nothing it claims to",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            and row[\"route\"] != LADDER[-1]):",
+        "            and False):"
+      ]
+    ],
+    "expect": [
+      "⛔ rounds_at_termination on a continued NON-DEFER row is refused — a rung is left"
+    ]
+  },
+  {
+    "name": "trigger 11 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"11 LADDER EXHAUSTED, CLOSED\", t11_ladder_exhausted_closed(rows)),",
+        "(\"11 LADDER EXHAUSTED, CLOSED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ a CLOSED exhausted unit reaches the CLI as trigger 11's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "a closure is never recorded, so a restarted ladder goes unseen",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if closes_unit(r):\n            closed_at.setdefault(unit_key(r), i)",
+        "        if False:\n            closed_at.setdefault(unit_key(r), i)"
+      ]
+    ],
+    "expect": [
+      "⭐ a NEW unit after a closure WARNS, naming the subject, the closed unit and the new one"
+    ]
+  },
+  {
+    "name": "a sibling that PREDATES the closure is reported as a restart",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if began > at:",
+        "            if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ a sibling unit that PREDATES the closure does not warn"
+    ]
+  },
+  {
+    "name": "a unit on ANOTHER subject is read as a sibling of the closed unit",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if other_subject != subject:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a new unit on ANOTHER subject after a closure does not warn"
+    ]
+  },
+  {
+    "name": "a unit's first row is taken as its LAST, so a sibling that kept betting reads as new",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        first.setdefault(unit_key(r), i)",
+        "        first[unit_key(r)] = i"
+      ]
+    ],
+    "expect": [
+      "...nor does one that began before it and kept betting after it"
+    ]
+  },
+  {
+    "name": "trigger 12 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    found = ladder_restarts(rows)\n    if not found:\n        return None",
+        "    found = ladder_restarts(rows)\n    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a restarted ladder reaches the CLI as trigger 12's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "trigger 12 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"12 LADDER RESTARTED\", t12_ladder_restarted(rows)),",
+        "(\"12 LADDER RESTARTED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ a restarted ladder reaches the CLI as trigger 12's WARN and exits 0"
+    ]
   }
 ]
