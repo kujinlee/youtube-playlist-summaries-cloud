@@ -121,8 +121,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\" and top:",
-        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\":"
+        "                    stop_sessions.add(sess)\n                    if top:\n                        mine.append(Event(kind=\"stop\", data={\"cwd\": cwd, \"hook\": True}, **base))",
+        "                    stop_sessions.add(sess)\n                    if True:\n                        mine.append(Event(kind=\"stop\", data={\"cwd\": cwd, \"hook\": True}, **base))"
       ]
     ],
     "expect": [
@@ -1035,7 +1035,7 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                ev.data[\"until\"] = ((ended.get(ev.data.get(\"task\", \"\")) or last_ts)\n                                    if ev.data[\"bg\"] else (ev.end or ev.ts))",
+        "                ev.data[\"until\"] = after[0] if task and after else end_of_session",
         "                ev.data[\"until\"] = ev.ts"
       ]
     ],
@@ -1048,8 +1048,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                ev.data[\"until\"] = ((ended.get(ev.data.get(\"task\", \"\")) or last_ts)",
-        "                ev.data[\"until\"] = ((last_ts)"
+        "                after = sorted(t for t, use in terminal.get((ev.session, task), [])",
+        "                after = sorted(t for t, use in terminal.get((\"\", task), [])"
       ]
     ],
     "expect": [
@@ -1066,7 +1066,7 @@
       ]
     ],
     "expect": [
-      "...and a TaskStop ends the window like a completion record"
+      "...and a SUCCESSFUL TaskStop ends the window like a completion record"
     ]
   },
   {
@@ -1113,8 +1113,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                      if not (ev.kind == \"stop\" and not ev.data[\"hook\"] and not hooks))",
-        "                      if True)"
+        "                      and ev.session not in stop_sessions)]",
+        "                      and False)]"
       ]
     ],
     "expect": [
@@ -1122,16 +1122,16 @@
     ]
   },
   {
-    "name": "hook attachments are not evidence of the Stop hook",
+    "name": "a Stop-hook attachment is not evidence of the Stop hook",
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                    if a.get(\"hookEvent\") or str(a.get(\"type\", \"\")).startswith(\"hook_\"):\n                        hooks = True",
-        "                    if a.get(\"hookEvent\") or str(a.get(\"type\", \"\")).startswith(\"hook_\"):\n                        pass"
+        "                    if a.get(\"hookEvent\") == \"Stop\":\n                        stop_sessions.add(sess)",
+        "                    if a.get(\"hookEvent\") == \"Stop\":\n                        pass"
       ]
     ],
     "expect": [
-      "...and a hook ATTACHMENT (any hook) is evidence the session runs the Stop hook"
+      "...and a STOP-hook attachment is evidence the session runs the Stop hook"
     ]
   },
   {
@@ -1171,6 +1171,149 @@
     ],
     "expect": [
       "a shell `&` leaves only ITS pipeline running: the foreground op before it ends with the command"
+    ]
+  },
+  {
+    "name": "ANY hook is taken as evidence of the Stop hook",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    if a.get(\"hookEvent\") == \"Stop\":",
+        "                    if a.get(\"hookEvent\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 3: a PostToolUse hook is NOT evidence of the Stop hook"
+    ]
+  },
+  {
+    "name": "Stop evidence is counted per FILE, not per session",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\":",
+        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\" and top:"
+      ]
+    ],
+    "expect": [
+      "Stop evidence is grouped by SESSION across files"
+    ]
+  },
+  {
+    "name": "a non-terminal status ends the task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    if tm and sm and sm.group(1).lower() in TERMINAL_STATUSES:",
+        "                    if tm and sm:"
+      ]
+    ],
+    "expect": [
+      "...and a NON-TERMINAL status ends nothing"
+    ]
+  },
+  {
+    "name": "a quoted notice counts as one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if isinstance(note, str) and note.lstrip().startswith(\"<task-notification>\"):",
+        "                if isinstance(note, str) and \"<task-notification>\" in note:"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 1: notification text QUOTED in a message is not a terminal record"
+    ]
+  },
+  {
+    "name": "queue-operation notices are ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                note = (r.get(\"content\") if typ == \"queue-operation\" else",
+        "                note = (None if typ == \"queue-operation\" else"
+      ]
+    ],
+    "expect": [
+      "a completion notice as a QUEUE-OPERATION ends the window (the harness's real form)"
+    ]
+  },
+  {
+    "name": "queued_command attachment notices are ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        att.get(\"prompt\") if typ == \"attachment\"",
+        "                        None if typ == \"attachment\""
+      ]
+    ],
+    "expect": [
+      "...and as a QUEUED_COMMAND attachment"
+    ]
+  },
+  {
+    "name": "a notice for ANOTHER tool call ends this one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               if t > ev.ts and use in (None, ev.data[\"tuid\"]))",
+        "                               if t > ev.ts)"
+      ]
+    ],
+    "expect": [
+      "⛔ a notice naming ANOTHER tool call is not this task's END"
+    ]
+  },
+  {
+    "name": "an END before START ends the task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               if t > ev.ts and use in",
+        "                               if use in"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 1: an END from an EARLIER task with a reused id does not end a later one"
+    ]
+  },
+  {
+    "name": "a FAILED TaskStop ends the task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                                if not ev.data[\"is_error\"]:",
+        "                                if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 1: a TaskStop that FAILED ends nothing; the completion after it does"
+    ]
+  },
+  {
+    "name": "a backgrounded RESULT without the input flag is foreground",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if ev.data[\"bg\"] or task:",
+        "            if ev.data[\"bg\"]:"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 2: a result saying it was BACKGROUNDED is background, flag or not"
+    ]
+  },
+  {
+    "name": "a foreground command with no result ends at its START",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                ev.data[\"until\"] = ev.end or end_of_session",
+        "                ev.data[\"until\"] = ev.end or ev.ts"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 2: a foreground command with NO result stays open to its session's end"
     ]
   }
 ]

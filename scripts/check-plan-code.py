@@ -954,7 +954,12 @@ EXPECTED_MUTATIONS = {
     # hold their windows (the window itself, a background end, completion records, TaskStop, a
     # shell `&` to the session's end, the foreground stream exemption, pipeline-scoped `&`),
     # hookless sessions clear nothing, hook-attachment evidence, comments, `export`, `nohup`.
-    "scripts/backfill-work-lines.py": 90,
+    # ⟳ 2026-10-23, round-4 (Codex) fold: 90 -> 101 — five entries rebound onto the session-
+    # keyed END and Stop-evidence code; eleven added: Stop-hook-only evidence grouped by session,
+    # terminal statuses, quoted notices, the queue-operation and queued_command forms, the
+    # tool-use-id match, END after START, a failed TaskStop, auto-backgrounded results, and a
+    # foreground command with no result.
+    "scripts/backfill-work-lines.py": 101,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5629,7 +5634,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1883)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1894)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

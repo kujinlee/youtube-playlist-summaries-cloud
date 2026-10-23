@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 243 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 256 cases
 
 WHY THIS EXISTS
 ---------------
@@ -113,12 +113,21 @@ replay and unmarks every plan first armed since the last checkpoint. A checkpoin
 to known, but it never authorises a parent for an arm made while unknown. Before the first
 checkpoint the state is UNKNOWN.
 
-⛔ A COMMAND IS NOT OVER WHEN IT STARTS (r3 Claude M1). Each opaque or uncertain command has an
-END: a foreground one's tool result, a background one's completion or `TaskStop` record, or —
-when neither is found, as for a shell `&` — the last event of its session. Until then, the
-checkouts it can reach stay UNKNOWN, and a checkpoint inside that window resolves nothing. And a
-turn end counts as the Stop hook's clear ONLY in a session that shows the hook at all (r3 Claude
-L1): 272 SDK security-review transcripts here record no hook of any kind.
+⛔ A COMMAND IS NOT OVER WHEN IT STARTS (r3 Claude M1, tightened by r4 Codex). Each opaque or
+uncertain command has an END, matched by SESSION ID across files:
+  * a foreground command ends at its own tool result;
+  * a background one (by the input flag OR a result saying `running in background with ID`)
+    ends at the FIRST terminal record of the SAME session and task id AFTER it started. That is
+    a `<task-notification>` whose record IS the notice (a queue-operation enqueue, a
+    `queued_command` attachment or a user message, never a message quoting one), with a
+    terminal status, naming this command's tool-use id when it names one; or a TaskStop at its
+    SUCCESSFUL result, never at the request;
+  * anything without such an END (a shell `&` job, a foreground command with no result, a task
+    with no notice) stays open until the last event of its session, never back to START.
+Until its END, the checkouts it can reach stay UNKNOWN, and a checkpoint inside that window
+resolves nothing. A turn end counts as the Stop hook's clear ONLY in a session that shows the
+STOP hook specifically — a Stop record or a Clearing message, in any of its files (r3 Claude
+L1, r4 Codex 3). 272 SDK security-review transcripts here record no hook of any kind.
 
 ⚠ THE RESIDUAL BOUND, STATED PLAINLY. An arm made outside any transcript — another tool, an editor,
 a human in a shell — is invisible to this replay. And agreeing checkpoints do NOT prove the
@@ -923,6 +932,17 @@ def live_banners(text: str) -> list[tuple[str, str]]:
 _TS = re.compile(r'"timestamp"\s*:\s*"([^"]+)"')
 _TASK_ID = re.compile(r"<task-id>([\w-]+)</task-id>")
 _BG_ID = re.compile(r"running in background with ID: ([\w-]+)")
+_STATUS = re.compile(r"<status>(\w+)</status>")
+_TOOL_USE_ID = re.compile(r"<tool-use-id>([\w-]+)</tool-use-id>")
+_SESSION = re.compile(r'"sessionId"\s*:\s*"([^"]+)"')
+# A notice with one of these ENDED its task; anything else (a progress event) did not.
+TERMINAL_STATUSES = {"completed", "failed", "killed", "stopped", "cancelled", "canceled",
+                     "error", "timeout", "timed_out"}
+
+
+def _session_of(line: str) -> str:
+    m = _SESSION.search(line)
+    return m.group(1) if m else ""
 
 
 _CLEARING = re.compile(r"every step in `([^`]+)` is ticked \((\d+)/(\d+)\)\. Clearing")
@@ -936,21 +956,20 @@ def read_transcripts(tdir: Path) -> list[Event]:
     """
     files = sorted(tdir.glob("*.jsonl")) + sorted(tdir.glob("*/subagents/*.jsonl"))
     events: list[Event] = []
+    # ⛔ r4 Codex: everything below is keyed by SESSION ID, across files — a subagent's file
+    # belongs to its parent's session.
+    session_end: dict[str, str] = {}        # session -> its last timestamp anywhere
+    terminal: dict[tuple, list[str]] = {}   # (session, task id) -> when a terminal record says
+    stop_sessions: set[str] = set()         # sessions that show the STOP hook specifically
     for f in files:
         top = f.parent == tdir
         pending: dict[str, Event] = {}
-        mine: list[Event] = []          # this file's events; filtered below, then kept
-        hooks = False                   # does this session show the project's Stop hook?
-        ended: dict[str, str] = {}      # background task id -> when it completed or was stopped
+        mine: list[Event] = []          # this file's events
         last_line = ""
         with open(f, encoding="utf-8", errors="replace") as fh:
             for no, line in enumerate(fh):
                 if '"timestamp"' in line:
                     last_line = line
-                if "<task-id>" in line and "<status>" in line:
-                    tsm = _TS.search(line)
-                    for tid in _TASK_ID.findall(line):
-                        ended.setdefault(tid, tsm.group(1) if tsm else "")
                 is_tr = '"tool_result"' in line
                 if is_tr:
                     ids = [i for i in _TOOL_RESULT_ID.findall(line) if i in pending]
@@ -974,24 +993,47 @@ def read_transcripts(tdir: Path) -> list[Event]:
                             ev.end = ts
                             ev.data["result"] = _text_of(c.get("content"))
                             ev.data["is_error"] = bool(c.get("is_error"))
+                            if ev.kind == "taskstop":
+                                # ⛔ a TaskStop ends a task only at its SUCCESSFUL result
+                                if not ev.data["is_error"]:
+                                    terminal.setdefault((ev.session, ev.data["task"]),
+                                                        []).append((ts, None))
+                                continue
                             m = _BG_ID.search(ev.data["result"])
                             if m:
                                 ev.data["task"] = m.group(1)
                     continue
+                # ⛔ A STRUCTURED NOTICE — a record that IS one, never a message quoting one. The
+                # harness writes it three ways (measured 2026-10-23): a `queue-operation`
+                # enqueue's content, a `queued_command` attachment's prompt, and a user message.
+                att = r.get("attachment") or {}
+                note = (r.get("content") if typ == "queue-operation" else
+                        att.get("prompt") if typ == "attachment"
+                        and att.get("type") == "queued_command" else
+                        _text_of(msg.get("content")) if typ == "user" else None)
+                if isinstance(note, str) and note.lstrip().startswith("<task-notification>"):
+                    tm, sm = _TASK_ID.search(note), _STATUS.search(note)
+                    um = _TOOL_USE_ID.search(note)
+                    if tm and sm and sm.group(1).lower() in TERMINAL_STATUSES:
+                        terminal.setdefault((sess, tm.group(1)), []).append(
+                            (ts, um.group(1) if um else None))
                 if typ == "user" and top and not r.get("isMeta"):
                     content = msg.get("content")
                     if isinstance(content, str) or (isinstance(content, list) and all(
                             isinstance(c, dict) and c.get("type") == "text" for c in content)):
                         mine.append(Event(kind="prompt", **base))
                     continue
-                if typ == "system" and r.get("subtype") == "stop_hook_summary" and top:
-                    hooks = True
-                    mine.append(Event(kind="stop", data={"cwd": cwd, "hook": True}, **base))
+                if typ == "system" and r.get("subtype") == "stop_hook_summary":
+                    stop_sessions.add(sess)
+                    if top:
+                        mine.append(Event(kind="stop", data={"cwd": cwd, "hook": True}, **base))
                     continue
-                if typ == "attachment" and top:
+                if typ == "attachment":
                     a = r.get("attachment") or {}
-                    if a.get("hookEvent") or str(a.get("type", "")).startswith("hook_"):
-                        hooks = True
+                    if a.get("hookEvent") == "Stop":
+                        stop_sessions.add(sess)    # the STOP hook — not any hook (r4 Codex 3)
+                    if not top:
+                        continue
                     m = _CLEARING.search(str(a.get("content") or a.get("stdout") or ""))
                     if a.get("hookEvent") == "Stop" and m:
                         mine.append(Event(kind="clearing", data={
@@ -1018,33 +1060,48 @@ def read_transcripts(tdir: Path) -> list[Event]:
                         ops = parse_command(cmd, cwd)
                         if ops:
                             ev = Event(kind="cmd", data={
-                                "ops": ops, "cmd": cmd,
+                                "ops": ops, "cmd": cmd, "tuid": c.get("id", ""),
                                 "bg": bool(inp.get("run_in_background"))}, **base)
                             mine.append(ev)
                             pending[c.get("id", "")] = ev
                     elif c.get("name") in ("TaskStop", "KillShell", "KillBash"):
                         tid = inp.get("task_id") or inp.get("shell_id") or inp.get("bash_id")
                         if tid:
-                            ended.setdefault(tid, ts)
+                            # the REQUEST ends nothing; its successful result does (above)
+                            pending[c.get("id", "")] = Event(kind="taskstop",
+                                                             data={"task": tid}, **base)
                     elif c.get("name") in _WRITE_TOOLS:
                         p = os.path.normpath(inp.get("file_path") or inp.get("notebook_path")
                                              or "/")
                         if SENTINEL_REL in p or ".claude/plans/" in p or p.endswith("/.claude"):
                             mine.append(Event(kind="tool", data={"paths": [p]}, **base))
         last = _TS.search(last_line)
-        last_ts = last.group(1) if last else ""
-        for ev in mine:
-            if ev.kind == "cmd":
-                # ⛔ r3 Claude M1: a command is not over when it STARTS. A foreground one ends at
-                # its result; a background one at its completion or stop record — or, when none
-                # is found, at the last event of its session.
-                ev.data["until"] = ((ended.get(ev.data.get("task", "")) or last_ts)
-                                    if ev.data["bg"] else (ev.end or ev.ts))
-                ev.data["session_end"] = last_ts       # where a shell `&`'s window ends
-        # ⛔ r3 Claude L1: a turn end is the Stop hook's clear only in a session that shows the
-        # hook at all. 272 SDK security-review sessions here record no hook of any kind.
-        events.extend(ev for ev in mine
-                      if not (ev.kind == "stop" and not ev.data["hook"] and not hooks))
+        if last:
+            for k in {e.session for e in mine} | {_session_of(last_line)} - {""}:
+                session_end[k] = max(session_end.get(k, ""), last.group(1))
+        events.extend(mine)
+    for ev in events:
+        if ev.kind == "cmd":
+            end_of_session = session_end.get(ev.session, "") or ev.ts
+            # ⛔ r3 Claude M1 / r4 Codex 1-2: a command is not over when it STARTS. A result
+            # saying it was backgrounded makes it background, flag or not. A background one ends
+            # at the FIRST terminal record of the SAME session and task id AFTER it started (a
+            # reused id's earlier END is not this task's). A foreground one ends at its result.
+            # Anything without such an END stays open to its session's last event — never START.
+            task = ev.data.get("task")
+            if ev.data["bg"] or task:
+                # a notice naming its originating tool call must name THIS one
+                after = sorted(t for t, use in terminal.get((ev.session, task), [])
+                               if t > ev.ts and use in (None, ev.data["tuid"]))
+                ev.data["until"] = after[0] if task and after else end_of_session
+            else:
+                ev.data["until"] = ev.end or end_of_session
+            ev.data["session_end"] = end_of_session    # where a shell `&`'s window ends
+    # ⛔ r3 Claude L1 / r4 Codex 3: a turn end is the Stop hook's clear only in a SESSION that
+    # shows the STOP hook — a Stop record or a Clearing message, in any of its files.
+    events = [ev for ev in events
+              if not (ev.kind == "stop" and not ev.data["hook"]
+                      and ev.session not in stop_sessions)]
     events.sort(key=lambda e: (e.ts, e.stream, e.order))
     return events
 
@@ -1655,16 +1712,9 @@ class _Fx:
                                "tool_use_id": tid, "is_error": is_error, "content": result}]}})
         return ts
 
-    def tool_stop(self, task_id: str, *, stream="sess-aaaa1111") -> None:
-        self.n += 1
-        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": stream,
-                           "cwd": self.root, "message": {"role": "assistant", "content": [
-                               {"type": "tool_use", "id": f"toolu_{self.n:04d}",
-                                "name": "TaskStop", "input": {"task_id": task_id}}]}})
-
     def tool(self, name: str, path: str, *, stream="sess-aaaa1111") -> None:
         self.n += 1
-        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": stream,
+        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": stream.split("/")[0],
                            "cwd": self.root, "message": {"role": "assistant", "content": [
                                {"type": "tool_use", "id": f"toolu_{self.n:04d}", "name": name,
                                 "input": {"file_path": path}}]}})
@@ -1675,34 +1725,57 @@ class _Fx:
                            "cwd": cwd or self.root})
 
     def prompt(self, text="go on", *, stream="sess-aaaa1111") -> None:
-        self._put(stream, {"type": "user", "timestamp": self._ts(), "sessionId": stream,
+        self._put(stream, {"type": "user", "timestamp": self._ts(), "sessionId": stream.split("/")[0],
                            "message": {"role": "user", "content": text}})
 
     def say(self, text: str, *, stream="sess-aaaa1111") -> None:
-        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": stream,
+        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": stream.split("/")[0],
                            "cwd": self.root, "message": {"role": "assistant",
                            "stop_reason": "end_turn", "content": [{"type": "text",
                                                                    "text": text}]}})
 
-    def task_done(self, task_id: str, *, stream="sess-aaaa1111", status="completed") -> None:
-        """The harness's notice that a background task ended."""
-        self._put(stream, {"type": "user", "timestamp": self._ts(), "sessionId": stream,
-                           "message": {"role": "user", "content": (
-                               f"<task-notification>\n<task-id>{task_id}</task-id>\n"
-                               f"<status>{status}</status>\n</task-notification>")}})
+    def task_done(self, task_id: str, *, stream="sess-aaaa1111", status="completed",
+                  form: str = "user", use: str | None = None) -> None:
+        """The harness's notice that a background task ended, in one of its three real forms."""
+        text = (f"<task-notification>\n<task-id>{task_id}</task-id>\n"
+                + (f"<tool-use-id>{use}</tool-use-id>\n" if use else "")
+                + f"<status>{status}</status>\n</task-notification>")
+        rec = {"timestamp": self._ts(), "sessionId": stream.split("/")[0]}
+        if form == "queue":
+            rec.update(type="queue-operation", operation="enqueue", content=text)
+        elif form == "attachment":
+            rec.update(type="attachment", attachment={"type": "queued_command", "prompt": text})
+        else:
+            rec.update(type="user", message={"role": "user", "content": text})
+        self._put(stream, rec)
 
-    def hook_note(self, *, stream="sess-aaaa1111") -> None:
-        """Some project hook ran in this session (a PostToolUse one, say)."""
-        self._put(stream, {"type": "attachment", "timestamp": self._ts(), "sessionId": stream,
-                           "cwd": self.root, "attachment": {"type": "hook_success",
-                           "hookEvent": "PostToolUse", "content": "ok"}})
+    def hook_note(self, event: str = "PostToolUse", *, stream="sess-aaaa1111") -> None:
+        """A project hook ran in this session (`event` names which one)."""
+        self._put(stream, {"type": "attachment", "timestamp": self._ts(),
+                           "sessionId": stream.split("/")[0], "cwd": self.root,
+                           "attachment": {"type": "hook_success", "hookEvent": event,
+                                          "content": "ok"}})
+
+    def stop_result(self, task_id: str, ok: bool, *, stream="sess-aaaa1111") -> None:
+        """A TaskStop request AND its result — successful or not."""
+        self.n += 1
+        tid = f"toolu_{self.n:04d}"
+        sess = stream.split("/")[0]
+        self._put(stream, {"type": "assistant", "timestamp": self._ts(), "sessionId": sess,
+                           "cwd": self.root, "message": {"role": "assistant", "content": [
+                               {"type": "tool_use", "id": tid, "name": "TaskStop",
+                                "input": {"task_id": task_id}}]}})
+        self._put(stream, {"type": "user", "timestamp": self._ts(), "sessionId": sess,
+                           "message": {"role": "user", "content": [{
+                               "type": "tool_result", "tool_use_id": tid, "is_error": not ok,
+                               "content": "stopped" if ok else "Error: no such task"}]}})
 
     def clearing(self, slug: str, d: int, n: int, *, stream="sess-aaaa1111",
                  kind: str = "hook_success") -> None:
         """The Stop hook's own message when it clears a fully-ticked plan."""
         msg = (f"✅ every step in `.claude/plans/{slug}.md` is ticked ({d}/{n}). "
                f"Clearing .claude/executing-plan.")
-        self._put(stream, {"type": "attachment", "timestamp": self._ts(), "sessionId": stream,
+        self._put(stream, {"type": "attachment", "timestamp": self._ts(), "sessionId": stream.split("/")[0],
                            "cwd": self.root, "attachment": {"type": kind,
                            "hookEvent": "Stop", "content": msg, "stdout": msg + "\n"}})
 
@@ -2056,11 +2129,11 @@ def _self_test() -> int:
         f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
         f.bash(f"{BP} --status", NONE_OUT)
         f.bash(f"{BP} two a", _arm_out("two", 1))
-        f.tool_stop("bx1")
+        f.stop_result("bx1", True)
         f.bash(f"{BP} --status", ".claude/plans/two.md: 0/1 steps ticked, 1 remaining")
         f.bash(f"{BP} three a", _arm_out("three", 1))
     _bs = world(_bg_stopped)[0]
-    case("...and a TaskStop ends the window like a completion record",
+    case("...and a SUCCESSFUL TaskStop ends the window like a completion record",
          (_bs["two"], _bs["three"]), (None, "two"))
 
     def _shell_bg(f):
@@ -2095,14 +2168,107 @@ def _self_test() -> int:
     case("⛔ a PARALLEL sibling call in the same session, started before the opaque one returned, "
          "is inside its window", world(_parallel_sibling)[0]["two"], None)
 
-    def _attachment_evidence(f):
-        f.hook_note()
+    def _attachment_evidence(event):
+        def b(f):
+            f.hook_note(event)
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash(f"{BP} --tick", _tick_out(1, 1, "one"))
+            f.say("done")
+            f.bash(f"{BP} two a", _arm_out("two", 1))
+        return b
+    case("...and a STOP-hook attachment is evidence the session runs the Stop hook",
+         world(_attachment_evidence("Stop"))[0]["two"], STARTED)
+    case("⛔ r4 Codex 3: a PostToolUse hook is NOT evidence of the Stop hook",
+         world(_attachment_evidence("PostToolUse"))[0]["two"], "one")
+
+    def _stop_evidence_elsewhere(f):
+        f.stop(stream="sess-aaaa1111/subagents/agent-x")   # SAME session, another file
         f.bash(f"{BP} one a", _arm_out("one", 1))
         f.bash(f"{BP} --tick", _tick_out(1, 1, "one"))
         f.say("done")
         f.bash(f"{BP} two a", _arm_out("two", 1))
-    case("...and a hook ATTACHMENT (any hook) is evidence the session runs the Stop hook",
-         world(_attachment_evidence)[0]["two"], STARTED)
+    case("Stop evidence is grouped by SESSION across files",
+         world(_stop_evidence_elsewhere)[0]["two"], STARTED)
+
+    # ── review round 4 (Codex): END must be the same task's own terminal record ───────────────
+    def _reused_id(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+        f.task_done("bx1")
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)   # bx1 again, still running
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ r4 Codex 1: an END from an EARLIER task with a reused id does not end a later one",
+         world(_reused_id)[0]["two"], None)
+
+    def _stop_request(ok):
+        def b(f):
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+            f.stop_result("bx1", ok)
+            f.bash(f"{BP} --status", NONE_OUT)
+            f.bash(f"{BP} two a", _arm_out("two", 1))
+            f.task_done("bx1")
+            f.bash(f"{BP} --status", ".claude/plans/two.md: 0/1 steps ticked, 1 remaining")
+            f.bash(f"{BP} three a", _arm_out("three", 1))
+        return b
+    _sr = world(_stop_request(False))[0]
+    case("⛔ r4 Codex 1: a TaskStop that FAILED ends nothing; the completion after it does",
+         (_sr["two"], _sr["three"]), (None, "two"))
+    case("...and a TaskStop that SUCCEEDED ends the window at its result",
+         world(_stop_request(True))[0]["two"], STARTED)
+
+    def _quoted_notice(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+        f.prompt("look at this: <task-notification>\n<task-id>bx1</task-id>\n"
+                 "<status>completed</status>\n</task-notification>")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ r4 Codex 1: notification text QUOTED in a message is not a terminal record",
+         world(_quoted_notice)[0]["two"], None)
+
+    def _running_notice(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+        f.task_done("bx1", status="running")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("...and a NON-TERMINAL status ends nothing", world(_running_notice)[0]["two"], None)
+
+    def _notice_form(form, use=None):
+        def b(f):
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)
+            f.task_done("bx1", form=form, use=use)
+            f.bash(f"{BP} --status", NONE_OUT)
+            f.bash(f"{BP} two a", _arm_out("two", 1))
+        return b
+    case("a completion notice as a QUEUE-OPERATION ends the window (the harness's real form)",
+         world(_notice_form("queue"))[0]["two"], STARTED)
+    case("...and as a QUEUED_COMMAND attachment",
+         world(_notice_form("attachment"))[0]["two"], STARTED)
+    case("⛔ a notice naming ANOTHER tool call is not this task's END",
+         world(_notice_form("queue", use="toolu_9999"))[0]["two"], None)
+    case("...while one naming THIS tool call is",
+         world(_notice_form("queue", use="toolu_0003"))[0]["two"], STARTED)
+
+    def _auto_bg(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", BG_OUT)          # no input flag
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ r4 Codex 2: a result saying it was BACKGROUNDED is background, flag or not",
+         world(_auto_bg)[0]["two"], None)
+
+    def _fg_no_result(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 -c 'print(\".claude\")'", None, stream="sess-bbbb2222")
+        f.bash(f"{BP} --status", NONE_OUT)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+        f.prompt("still here", stream="sess-bbbb2222")   # that session went on
+    case("⛔ r4 Codex 2: a foreground command with NO result stays open to its session's end",
+         world(_fg_no_result)[0]["two"], None)
 
     def _hookless(evidence):
         def b(f):
