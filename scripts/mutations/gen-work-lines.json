@@ -26,6 +26,19 @@
     ]
   },
   {
+    "name": "a dangling parent is dropped, so the middle of an old line becomes a new one",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            orphans.append(p[\"parent\"])",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a parent that does not exist is REPORTED, and the child still renders"
+    ]
+  },
+  {
     "name": "a line is judged by its TIP alone, so an unfinished parent under a finished tip hides",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -88,6 +101,19 @@
     ],
     "expect": [
       "a slug is HTML-escaped, so a plan name cannot inject markup"
+    ]
+  },
+  {
+    "name": "a cycle's edge is never cut, so its members keep their circular children and the page hangs",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        par[\"children\"] = [c for c in par[\"children\"] if plan_key(c) != cut]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ a two-node cycle becomes a tree: each plan appears EXACTLY once"
     ]
   },
   {
@@ -179,6 +205,110 @@
     ],
     "expect": [
       "⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome"
+    ]
+  },
+  {
+    "name": "a parent-source with no parent marker is read as a link",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    src = SOURCE.search(text) if p else None",
+        "    src = SOURCE.search(text)"
+      ]
+    ],
+    "expect": [
+      "...a live marker has none, and a source with NO parent marker is not a link"
+    ]
+  },
+  {
+    "name": "a reconstructed node is drawn like a live one",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    li = ('<li class=\"from-banner\">' if banner else '<li class=\"rebuilt\">') if src else \"<li>\"",
+        "    li = ('<li class=\"from-banner\">' if banner else \"<li>\") if src else \"<li>\""
+      ]
+    ],
+    "expect": [
+      "⛔ a RECONSTRUCTED node is drawn distinctly and says where it came from; a live one is not"
+    ]
+  },
+  {
+    "name": "the caveat no longer says what the mark means",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        'was rebuilt afterwards from the session transcripts by replaying every plan command; and '",
+        "        'was rebuilt; and '"
+      ]
+    ],
+    "expect": [
+      "...and the page's caveat says, once, what the dashed mark means"
+    ]
+  },
+  {
+    "name": "a reconstructed start of a line reads as live",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "'recorded' + (' (reconstructed)' if r.get(\"source\") else '') + '</p>')",
+        "'recorded</p>')"
+      ]
+    ],
+    "expect": [
+      "a reconstructed START of a line says it was reconstructed; a live one does not"
+    ]
+  },
+  {
+    "name": "the provenance is not escaped",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        rec = (f' <span class=\"recon\" title=\"reconstructed from {esc(src)}\">reconstructed'",
+        "        rec = (f' <span class=\"recon\" title=\"reconstructed from {src}\">reconstructed'"
+      ]
+    ],
+    "expect": [
+      "the provenance is HTML-escaped, so a transcript id cannot inject markup"
+    ]
+  },
+  {
+    "name": "a banner link is drawn as a transcript replay",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    banner = bool(src) and src.startswith(\"banner\")",
+        "    banner = False"
+      ]
+    ],
+    "expect": [
+      "⭐ THREE kinds of link, each drawn and labelled differently"
+    ]
+  },
+  {
+    "name": "a banner link's tooltip does not say it is a banner",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        rec = (f' <span class=\"from-banner-tag\" title=\"from a banner: {esc(src)}\">from banner'",
+        "        rec = (f' <span class=\"from-banner-tag\" title=\"{esc(src)}\">from banner'"
+      ]
+    ],
+    "expect": [
+      "...a banner link's tooltip names the banner it rests on"
+    ]
+  },
+  {
+    "name": "the caveat stops naming the banner kind",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        'one drawn <span class=\"banner-key\">double and marked “from banner”</span> rests only on a '",
+        "        'one drawn <span class=\"banner-key\">double</span> rests only on a '"
+      ]
+    ],
+    "expect": [
+      "...and the caveat says in one sentence what each of the three kinds rests on"
     ]
   },
   {
@@ -310,32 +440,6 @@
     ],
     "expect": [
       "WT10 identical children of DIFFERENT parents stay apart: each kid under its own checkout's parent, and BOTH lines are open"
-    ]
-  },
-  {
-    "name": "a dangling parent is dropped, so the middle of an old line becomes a new one",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "            orphans.append(p[\"parent\"])",
-        "            pass"
-      ]
-    ],
-    "expect": [
-      "⛔ a parent that does not exist is REPORTED, and the child still renders"
-    ]
-  },
-  {
-    "name": "a cycle's edge is never cut, so its members keep their circular children and the page hangs",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        par[\"children\"] = [c for c in par[\"children\"] if plan_key(c) != cut]\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⛔ a two-node cycle becomes a tree: each plan appears EXACTLY once"
     ]
   },
   {

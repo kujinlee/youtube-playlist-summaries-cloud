@@ -950,6 +950,10 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
+    # ⟳ 2026-10-22 (work-lines backfill): 16 -> 21 — a reconstructed link is read only under a
+    # parent, drawn distinctly, explained by the caveat, labelled on a started line, and escaped.
+    # ⟳ 2026-10-22, backlog option A for banners: 21 -> 24 — the third link kind (drawn,
+    # tooltip, caveat).
     # ⟳ 2026-10-22, banner-thread-armed r2 fold, 16 -> 23: `plan_dirs` (every checkout's plans,
     # owner's decision option A) and the union `read_plans_noted`. Seven entries, one per branch —
     # git's order kept, a missing checkout named, the git fallback named, the union itself,
@@ -971,7 +975,53 @@ EXPECTED_MUTATIONS = {
     # RE-ANCHORED to the same property (dangling parent, cycle cut, the asking checkout in
     # `row_for`, the checkout label); two are NEW: `build_forest` re-keyed by label (killed by
     # WT11, Codex's fixture) and `row_for` returning a label. Net +2.
-    "scripts/gen-work-lines.py": 30,
+    # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 24 + 14 = 38 — both
+    # branches' entries kept, none retired; the render line now prints `label(n)`.
+    "scripts/gen-work-lines.py": 38,
+    # ⟳ 2026-10-22, the work-lines backfill: one entry per decision branch of the replay (the
+    # sentinel rule, the Stop-hook clear, unreadable output, other checkouts, overlap, banners,
+    # the birth check, the dry run, mtime, the last-plan fingerprint, CANNOT RUN).
+    # ⟳ same day, the owner's option A for banners: 25 -> 33 — both clear sites remember the
+    # plan they cleared, a fresh start is no clear, the banner must name EXACTLY that plan, an
+    # ARMED parent is never overridden, the `banner` label, the banner's own time, and --write.
+    # ⟳ same day, review round 1 fold: 33 -> 48 — loops and reserved words, sentinel writes in
+    # command order, checkouts attributed separately, live banners only, an UNKNOWN start, the
+    # checkpoints (status, reads, the Clearing message, an inferred --finish), and atomic --write.
+    # ⟳ same day, review round 2 (the allow-list): 48 -> 53 — three entries retired with the read
+    # checkpoints and the heredoc detector they guarded; three more retired as EQUIVALENT under
+    # the allow-list (an unstripped `do` is itself opaque; `/dev/null` and sed's script operand
+    # reach no sentinel either way — measured: each survived with the suite green); eleven added.
+    # ⟳ same day, round 3 (the reviewed-code line): 53 -> 62 — four allow-list entries rebound
+    # onto SAFE / tracked-script code; nine added for the tracked-script rule, a tracked NAME
+    # outside scripts/, heredoc-fed interpreters, git clean/stash, sort -o, uniq's output,
+    # export, and `$P`. (A tenth, `-c` read as a path, was EQUIVALENT — measured surviving: a
+    # flag never resolves to `<checkout>/scripts/<tracked>.py` — and was not kept.)
+    # ⟳ same day, round 4 (inline code INSPECTED): 62 -> 76 — two rebound onto the inspected
+    # interpreter branch; fourteen added: the token list, an unterminated body, `Path(` writes,
+    # computed vs literal `open()` paths, a `$` in `-c`, both clean inline shapes, interpreter
+    # flags, heredoc order, `timeout`, `pwd`, `find -delete/-exec`, `mktemp` under `.claude/`.
+    # ⟳ same day, round 5 (the premise: an accident NAMES the sentinel, a plan tool, or a
+    # whole-tree delete): 76 -> 78 — three entries RETIRED WITH THE CHECKS THEY GUARDED (`Path(`
+    # write methods, `open()` to a computed path, `open()` to a literal path); the token-list
+    # entry rebound; five added, one per remaining token and one pinning `subprocess` OFF it.
+    # ⟳ same day, round-3 (Claude) fold: 78 -> 90 — background and long-running commands
+    # hold their windows (the window itself, a background end, completion records, TaskStop, a
+    # shell `&` to the session's end, the foreground stream exemption, pipeline-scoped `&`),
+    # hookless sessions clear nothing, hook-attachment evidence, comments, `export`, `nohup`.
+    # ⟳ 2026-10-23, round-4 (Codex) fold: 90 -> 101 — five entries rebound onto the session-
+    # keyed END and Stop-evidence code; eleven added: Stop-hook-only evidence grouped by session,
+    # terminal statuses, quoted notices, the queue-operation and queued_command forms, the
+    # tool-use-id match, END after START, a failed TaskStop, auto-backgrounded results, and a
+    # foreground command with no result.
+    # ⟳ 2026-10-23, round-5 (Claude) fold: 101 -> 107 — a task's END found across sessions by
+    # its tool-use id, the session-id grouping, the real tick count and "all ticked", and the
+    # --backup copy (content and mtimes). The backup's exists-refusal has no entry: removing it
+    # still refuses, through copytree's own FileExistsError (measured equivalent).
+    # ⟳ 2026-10-23, round-6 (Codex) fold: 107 -> 108 — ONE entry RETIRED WITH THE CODE it
+    # guarded (the cross-session tool-use-id END match, removed as thrashing's answer); four
+    # rebound onto the simplified lookup and the per-form notice rule; two added for the
+    # one-notice user-message rule.
+    "scripts/backfill-work-lines.py": 108,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1755,11 +1805,14 @@ EXPECTED_MUTATIONS = {
     # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
     # the full CommonMark escape set, and --finish never querying the branch.
+    # ⟳ 2026-10-22, work-lines backfill: 56 -> 58 — a re-arm keeps a reconstructed link's
+    # `parent-source:` label (read on re-arm, and written by render_plan).
     # ⟳ 2026-10-22, banner-thread-armed r3 fold, 56 -> 57: the banner `Line:` resolves a slug
     # held in two checkouts through `gen-work-lines.row_for` (r3 Claude F5); the new entry puts the
     # bare-stem lookup back and is killed by the two-checkout case.
     # ⟳ r6 fold, 57 -> 58: `work_line` re-keyed by the display label is killed by F5c.
-    "scripts/begin-plan.py": 58,
+    # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 58 + 2 = 60, both kept.
+    "scripts/begin-plan.py": 60,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -3864,7 +3917,8 @@ def _self_test() -> int:
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
-         sorted(EXPECTED_MUTATIONS), ["scripts/begin-plan.py",
+         sorted(EXPECTED_MUTATIONS), ["scripts/backfill-work-lines.py",
+                                      "scripts/begin-plan.py",
                                       "scripts/brief-compose.py",
                                       "scripts/check-anchors.py",
                                       "scripts/check-anon-exposure.py",
@@ -5691,7 +5745,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1881)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1999)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

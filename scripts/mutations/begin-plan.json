@@ -736,6 +736,32 @@
     ]
   },
   {
+    "name": "a re-arm drops a reconstructed link's label",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        parent_source = src.group(1) if src else None",
+        "        parent_source = None"
+      ]
+    ],
+    "expect": [
+      "⛔ a re-arm KEEPS a reconstructed link's `parent-source:` label, under its parent"
+    ]
+  },
+  {
+    "name": "render_plan never writes the label",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if parent and parent_source:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a re-arm KEEPS a reconstructed link's `parent-source:` label, under its parent"
+    ]
+  },
+  {
     "name": "the banner Line looks up the bare stem again, so a slug held in two checkouts is 'not found'",
     "file": "scripts/begin-plan.py",
     "edits": [

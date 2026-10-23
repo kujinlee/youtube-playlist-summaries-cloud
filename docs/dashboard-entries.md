@@ -17104,6 +17104,62 @@ up front, contrary to my memory note that it refuses a bad manifest in under a s
 for some manifest defects, not this one). So the rule names no command; **backlog #342** files the
 cheap pre-check, which must reuse the harness's own anchor rule rather than restate it.
 
+## 2026-10-22 [needs-you]
+The work-lines page can now be given back the history it was missing, rebuilt from the saved
+session transcripts. Plans written before the page existed showed up as lines of one, with no
+link to the work they branched from. A new script replays every time a plan was started, ticked,
+paused or finished, in order, using the same rule the live tool uses. From that it works out
+which plan was active when each new one began.
+
+It only links a plan when the evidence is clean. Where a step's output was cut off, the plan file
+existed before its first recorded start, or another session was changing plans at the same
+moment, it leaves the plan unlinked. It also checks the "switched from X" lines written at the
+time. If one of those names a different parent from the replay, the plan stays unlinked and is
+listed. Every rebuilt link is labelled, and the page draws it dashed and marked "reconstructed",
+so it can never be mistaken for one recorded live.
+
+Over the real transcripts it would link 56 plans from the replay alone. You then chose to link
+the cases where the earlier plan had just been closed and the "switched from" line named exactly
+that plan. Those links are labelled "from banner" and drawn in their own style, so the page shows
+three kinds of link and says what each rests on. The two plans where the line named a plan other
+than the one the replay found active stay unlinked.
+
+After review, the replay also checks itself. Wherever the transcripts show what the tracking file
+actually held at a moment, the replay compares its own answer with what was seen. If the two
+disagree, it corrects itself and drops any links it had worked out since the last check.
+
+A second review still found three ways to a wrong link, so the replay now trusts a stretch of
+history only when every command in it is the project's own reviewed code or a harmless tool. A
+throwaway script typed into the session (`python3 -`, `python3 -c`, a file in /tmp) could have
+changed what was being tracked. Any plan started after one of those is left unlinked. The
+project's own scripts and ordinary git commands are trusted. A search of the whole history
+confirmed that none of those scripts ever touched the tracking file outside a test. Throwaway
+scripts are now read rather than assumed dangerous. Their full text is in the record. Changing
+the tracking file by accident would mean naming it, naming the planning tools, or deleting a whole
+folder, so a script that does none of those is trusted. A third review confirmed every link
+against the record. It also showed that a command left running in the background is not finished
+when it starts, so the replay now waits for it to end before trusting anything again. A fourth
+review tightened how that end is found: it must be the same task's own finish record, after it
+started. The final count is 24 links from the replay and 7 from a "switched from" line, with 92
+unlinked. It reproduces the link recorded live today. Two plans already had a recorded
+link and are untouched. It also reproduces the one link the live tool recorded today exactly.
+
+**Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the
+plan files change only when you say so.
+<!--tech-->
+`scripts/backfill-work-lines.py` — dry run by default, `--write`, `--plans DIR`, `--root`,
+`--explain SLUG`, `--ground-truth` (exit 2 CANNOT RUN when the transcripts are absent). Writes
+`<!-- parent: … -->` + `<!-- parent-source: transcript <session-8> <ISO> -->` only on plans with no
+`parent:` marker, keeps each file's mtime, and skips the plan `.claude/last-plan` fingerprints.
+`gen-work-lines.py` reads `parent-source:` (dashed connector, "reconstructed" tag, source in the
+tooltip). A `parent-source: banner <session-8> <ISO>` link — written only when the replay's `-`
+follows a clear and every slug-shaped banner in the arm's turn names exactly the cleared plan — is
+drawn double and tagged "from banner". One caveat sentence covers all three kinds. `begin-plan.py` carries `parent-source:` through a re-arm, so a
+rebuilt link never becomes a live-looking one.
+
+Divergence from the live rule, by the owner's decision: with nothing armed the backfill records
+`-`. It does not ask whether the last finished plan's PR was open, because no transcript holds a
+past PR state.
 ## 2026-10-22
 When work runs on a thread that has no plan in any checkout, so the work-lines page cannot show it,
 the Stop check now notices and says so, naming the one command that creates the plan. A thread that

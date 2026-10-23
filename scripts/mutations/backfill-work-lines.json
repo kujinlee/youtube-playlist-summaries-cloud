@@ -1,0 +1,1410 @@
+[
+  {
+    "name": "with nothing armed the new plan records NO marker instead of starting a line",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                            par, why = STARTED, \"\"",
+        "                            par, why = None, \"\""
+      ]
+    ],
+    "expect": [
+      "...and arming with NOTHING armed records `-` (a started line)"
+    ]
+  },
+  {
+    "name": "the armed plan is never taken as the parent",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                            par = _slug_of(st.rel)\n",
+        "                            par = None\n"
+      ]
+    ],
+    "expect": [
+      "⭐ arming while another plan is armed records the armed plan as the parent"
+    ]
+  },
+  {
+    "name": "a turn boundary never clears a fully-ticked plan",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                elif full:\n                    cleared[r], states[r] = _slug_of(st.rel), None",
+        "                elif False:\n                    cleared[r], states[r] = _slug_of(st.rel), None"
+      ]
+    ],
+    "expect": [
+      "⭐ a fully-ticked plan is CLEARED at the turn boundary, so the next arm is `-`"
+    ]
+  },
+  {
+    "name": "the boundary clears a PAUSED plan too",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if not isinstance(st, Armed) or st.paused is True:\n                    continue\n                maybe_full",
+        "                if not isinstance(st, Armed):\n                    continue\n                maybe_full"
+      ]
+    ],
+    "expect": [
+      "⭐ a PAUSED plan survives the boundary and stays the parent"
+    ]
+  },
+  {
+    "name": "--finish leaves the plan armed",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                states[r] = (None if oc == \"ok\" else\n                             unknown(\"the output of --finish was not readable\"))",
+        "                states[r] = (get(r) if oc == \"ok\" else\n                             unknown(\"the output of --finish was not readable\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ --finish clears the sentinel: the next arm starts a line"
+    ]
+  },
+  {
+    "name": "every arm re-derives the parent, so a re-arm rewrites lineage",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if slug not in mine:",
+        "                if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ re-arming an existing plan KEEPS its first parent"
+    ]
+  },
+  {
+    "name": "a refusal is read as unreadable output, so a failed call poisons the state",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if first is no:\n            out.append((\"refused\", {})); pos = no.end()",
+        "        if first is no:\n            out.append((\"unknown\", {})); pos = no.end()"
+      ]
+    ],
+    "expect": [
+      "⭐ a FAILED begin-plan call is ignored: the refused --finish cleared nothing"
+    ]
+  },
+  {
+    "name": "an unread tick is assumed NOT to have advanced the plan",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    hi = st.hi + 1 if st.n is None else min(st.n, st.hi + 1)",
+        "                    hi = st.hi"
+      ]
+    ],
+    "expect": [
+      "⛔ an unread tick that MAY have been the last makes the boundary's effect unknown"
+    ]
+  },
+  {
+    "name": "a call in another checkout is replayed against this sentinel",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            ops.append(Op(\"call\", root, call=Call(ws[k + 1:], root, depth > 0, script)))",
+        "            ops.append(Op(\"call\", cwd, call=Call(ws[k + 1:], cwd, depth > 0, script)))"
+      ]
+    ],
+    "expect": [
+      "⛔ calls in ANOTHER checkout touch another sentinel and are not replayed here"
+    ]
+  },
+  {
+    "name": "a subagent's turn end runs the Stop hook",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    stop_sessions.add(sess)\n                    if top:\n                        mine.append(Event(kind=\"stop\", data={\"cwd\": cwd, \"hook\": True}, **base))",
+        "                    stop_sessions.add(sess)\n                    if True:\n                        mine.append(Event(kind=\"stop\", data={\"cwd\": cwd, \"hook\": True}, **base))"
+      ]
+    ],
+    "expect": [
+      "a SUBAGENT's turn end runs no Stop hook, so it clears nothing"
+    ]
+  },
+  {
+    "name": "a heredoc body is parsed as commands",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    toks = tokenize(strip_heredocs(cmd))",
+        "    toks = tokenize(cmd)"
+      ]
+    ],
+    "expect": [
+      "⛔ a heredoc BODY that names begin-plan.py is data, not a call"
+    ]
+  },
+  {
+    "name": "any armed file is taken as a plan, wherever it lives",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    return b[:-3] if d == PLAN_REL and b.endswith(\".md\") else None",
+        "    return b[:-3]"
+      ]
+    ],
+    "expect": [
+      "⛔ a sentinel naming a non-plan file records NO parent, and says why"
+    ]
+  },
+  {
+    "name": "a file operation on a sentinel goes unseen",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            opaque(f\"`{name}` writes files\", None if None in paths else paths)",
+        "            return"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: mv .claude/executing-plan /tmp/x"
+    ]
+  },
+  {
+    "name": "another session changing state mid-arm is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        if par is not None and overlapping(e, r):",
+        "                        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ another session changing state WHILE the arm ran: no marker, and the reason says so"
+    ]
+  },
+  {
+    "name": "a bare state line is taken by the FIRST call that could print one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        " and idx == printers[-1] else None)",
+        " else None)"
+      ]
+    ],
+    "expect": [
+      "⭐ `--finish && begin-plan next | tail`: the bare state line is the ARM's, and the finish it got past cleared the sentinel"
+    ]
+  },
+  {
+    "name": "a --finish cut by tail is never inferred to have run",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            out[i] = (\"ok\", {\"inferred\": True})",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ `--finish && begin-plan next | tail`: the bare state line is the ARM's, and the finish it got past cleared the sentinel"
+    ]
+  },
+  {
+    "name": "a disagreeing banner is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        elif any(b != rep for b in banners if SLUG.fullmatch(b)):",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a banner that DISAGREES: no marker, and the row names both witnesses"
+    ]
+  },
+  {
+    "name": "only banners naming a plan ON DISK are witnesses",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "for b in banners if SLUG.fullmatch(b)):",
+        "for b in banners if b in plans):"
+      ]
+    ],
+    "expect": [
+      "⛔ ...but a SLUG naming no plan on disk still disagrees (a thread in another checkout)"
+    ]
+  },
+  {
+    "name": "a plan that already has a marker is reconstructed over",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if PARENT_LINE.search(text):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a plan that ALREADY has a marker is untouched, whatever the replay says"
+    ]
+  },
+  {
+    "name": "a file born before its first recorded arm is still linked",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        elif births[slug] < _epoch(rec[\"ts\"]) - BIRTH_SLACK_S:",
+        "        elif False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a file BORN before its first recorded arm: that arm was a re-arm, so no marker"
+    ]
+  },
+  {
+    "name": "the dry run writes",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if write:\n        n = 0",
+        "    if True:\n        n = 0"
+      ]
+    ],
+    "expect": [
+      "⛔ the DRY RUN writes nothing"
+    ]
+  },
+  {
+    "name": "--write moves every plan's date to today",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            os.utime(tmp, (st.st_atime, st.st_mtime))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ --write keeps the file's mtime: the page dates plans by it"
+    ]
+  },
+  {
+    "name": "--write changes the plan .claude/last-plan fingerprints",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if r[\"slug\"] == last:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ --write SKIPS the plan .claude/last-plan fingerprints, and says why"
+    ]
+  },
+  {
+    "name": "--ground-truth over transcripts with no begin-plan call is a FAIL, not CANNOT RUN",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if not any(e.kind == \"cmd\" and any(o.kind == \"call\" and o.root == root",
+        "    if False and any(e.kind == \"cmd\" and any(o.kind == \"call\" and o.root == root"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and with transcripts that hold no begin-plan call, also CANNOT RUN (2)"
+    ]
+  },
+  {
+    "name": "the marker drops its provenance label",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                       marker=(f\"<!-- parent: {rep} -->\\n<!-- parent-source: transcript \"",
+        "                       marker=(f\"<!-- parent: {rep} -->\\n<!-- parent-source: \""
+      ]
+    ],
+    "expect": [
+      "⭐ the marker is labelled: parent line + `parent-source: transcript <8> <ISO>`"
+    ]
+  },
+  {
+    "name": "the Stop hook's clear forgets which plan it cleared",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "cleared[r], states[r] = _slug_of(st.rel), None",
+        "states[r] = None"
+      ]
+    ],
+    "expect": [
+      "...and the same when the Stop hook's turn-end clear was what cleared it"
+    ]
+  },
+  {
+    "name": "--finish forgets which plan it cleared",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    cleared[r] = _slug_of(st.rel) if agree and isinstance(st, Armed) else None",
+        "                    cleared[r] = None"
+      ]
+    ],
+    "expect": [
+      "⭐ just CLEARED by --finish + a banner naming exactly that plan: linked, sourced `banner`"
+    ]
+  },
+  {
+    "name": "a fresh start is treated as a clear",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "\"cleared\": cleared.get(r)}",
+        "\"cleared\": cleared.get(r) or \"prev\"}"
+      ]
+    ],
+    "expect": [
+      "⛔ nothing was cleared (a fresh start) + a banner: no marker — `-` was not a clear"
+    ]
+  },
+  {
+    "name": "the banner need not name the cleared plan",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    if not rec.get(\"cleared\") or named != [rec[\"cleared\"]]:",
+        "    if not rec.get(\"cleared\") or not named:"
+      ],
+      [
+        "    return next((b for b in rec.get(\"banner_src\", []) if b[\"frm\"] == rec[\"cleared\"]), None)",
+        "    return next((b for b in rec.get(\"banner_src\", [])), None)"
+      ]
+    ],
+    "expect": [
+      "⛔ just cleared + a banner naming ANOTHER plan: no marker, and still listed"
+    ]
+  },
+  {
+    "name": "a banner overrides a parent the replay found ARMED",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        elif rep == STARTED and _banner_link(rec, banners):",
+        "        elif _banner_link(rec, banners):"
+      ]
+    ],
+    "expect": [
+      "⛔ a banner never overrides a replay that found a parent ARMED at the time"
+    ]
+  },
+  {
+    "name": "a banner link is labelled as a transcript replay",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                       marker=(f\"<!-- parent: {rec['cleared']} -->\\n<!-- parent-source: banner \"",
+        "                       marker=(f\"<!-- parent: {rec['cleared']} -->\\n<!-- parent-source: transcript \""
+      ]
+    ],
+    "expect": [
+      "⭐ just CLEARED by --finish + a banner naming exactly that plan: linked, sourced `banner`"
+    ]
+  },
+  {
+    "name": "a banner link carries the ARM's session and time",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               f\"{src['session'][:8]} {src['ts']} -->\"))",
+        "                               f\"{rec['session'][:8]} {rec['ts']} -->\"))"
+      ]
+    ],
+    "expect": [
+      "⛔ the banner's OWN session and time are the source — never the arm's"
+    ]
+  },
+  {
+    "name": "--write skips keep-banner rows",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if r[\"verdict\"] not in (\"keep\", \"keep-banner\"):",
+        "            if r[\"verdict\"] != \"keep\":"
+      ]
+    ],
+    "expect": [
+      "--write applies a `keep-banner` row too, labelled `banner`"
+    ]
+  },
+  {
+    "name": "a call in a loop is counted once",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if ambiguous or op.call.loop:",
+        "            if ambiguous:"
+      ]
+    ],
+    "expect": [
+      "⛔ F1: a call inside a shell LOOP ran an unknown number of times — no marker after it"
+    ]
+  },
+  {
+    "name": "a sentinel rm is not a known removal",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    states[op.root], cleared[op.root] = None, None",
+        "                    pass"
+      ]
+    ],
+    "expect": [
+      "⭐ `rm -f` of the sentinel ALONE is a known removal: the next arm starts a line"
+    ]
+  },
+  {
+    "name": "output spanning two checkouts is attributed anyway",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        ambiguous = len(roots) > 1 or None in roots",
+        "        ambiguous = None in roots"
+      ]
+    ],
+    "expect": [
+      "⛔ Codex 1: output from a command spanning TWO checkouts is attributed to neither"
+    ]
+  },
+  {
+    "name": "a fenced block is read as live text",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            fenced, in_banner = not fenced, False",
+        "            in_banner = False"
+      ]
+    ],
+    "expect": [
+      "⛔ Codex 3: a banner counts only as LIVE text under a `## ▶` heading — fenced, quoted and prose mentions do not"
+    ]
+  },
+  {
+    "name": "the replay starts as nothing armed",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "START = (UNKNOWN, \"before the first transcript, so not yet observed\")",
+        "START = None"
+      ]
+    ],
+    "expect": [
+      "⛔ F3: before any checkpoint the state is UNKNOWN — the first arm gets no marker"
+    ]
+  },
+  {
+    "name": "a contradicted replay keeps the links it derived",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                rec[\"parent\"], rec[\"why\"] = None, (f\"replay contradicted by an observation \"",
+        "                rec[\"why\"] = (f\"replay contradicted by an observation \""
+      ]
+    ],
+    "expect": [
+      "⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed since the last agreeing checkpoint"
+    ]
+  },
+  {
+    "name": "a disagreement is not counted as resolved",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            counts[\"resolved\"] += 1",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed since the last agreeing checkpoint"
+    ]
+  },
+  {
+    "name": "--status is not a checkpoint",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if oc == \"ok\":\n                    obs = (\"none\",) if data.get(\"none\") else (\"armed\", data[\"rel\"])",
+        "                if False:\n                    obs = (\"none\",) if data.get(\"none\") else (\"armed\", data[\"rel\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ F1/F4: ...and the `--status` after the loop is a CHECKPOINT that resyncs it"
+    ]
+  },
+  {
+    "name": "the Stop hook's Clearing message is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            cleared[root], states[root] = _slug_of(rel), None",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ F4: the Stop hook's own `Clearing` message is a checkpoint: the plan WAS cleared"
+    ]
+  },
+  {
+    "name": "a discarded --finish reply is taken as an observation",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if oc == \"ok\" and data.get(\"inferred\"):",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a --finish whose output was discarded is no OBSERVATION: finishing an already-cleared plan is not a disagreement, and the banner link survives"
+    ]
+  },
+  {
+    "name": "--write truncates in place instead of replacing",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            os.replace(tmp, p)",
+        "            p.write_text(tmp.read_text()); tmp.unlink()"
+      ]
+    ],
+    "expect": [
+      "⛔ F5: --write REPLACES the file (a new inode, via os.replace) and leaves no temp file"
+    ]
+  },
+  {
+    "name": "an unknown command is treated as safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        opaque(f\"`{name}` is ad-hoc code: not a tracked script and not a SAFE tool\", None)",
+        "        return"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: node x.js"
+    ]
+  },
+  {
+    "name": "git clean and git stash are safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return bool(rest) and rest[0] not in (\"clean\", \"stash\")",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: git clean -fdx"
+    ]
+  },
+  {
+    "name": "sed -i is safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(x.startswith(\"-i\") or x == \"--in-place\" for x in args)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: sed -i '' s/a/b/ .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "awk with system() is read-only",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(k in x for x in prog for k in (\"system\", \"getline\", \">\", \"|\"))",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: awk 'BEGIN{system(\"true\")}'"
+    ]
+  },
+  {
+    "name": "the commands inside a substitution are never judged",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            ops.extend(parse_command(inner, cur))",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: echo $(python3 -c 'print(\".claude\")')"
+    ]
+  },
+  {
+    "name": "an output redirection is not opaque",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            opaque(\"an output redirection\", None if None in paths else paths)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: echo x >> .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "a file op reaches every checkout whatever its path",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if p == guarded[0] or p.startswith",
+        "            if True or p == guarded[0] or p.startswith"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: echo done > /tmp/note.txt"
+    ]
+  },
+  {
+    "name": "an opaque op in a command poisons nothing",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if opaques:\n            for o in opaques",
+        "        if False:\n            for o in opaques"
+      ]
+    ],
+    "expect": [
+      "⛔ Codex r2-3: an opaque op poisons the checkout BEFORE an arm in the same command"
+    ]
+  },
+  {
+    "name": "a sentinel rm beside an opaque op is still a known removal",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if not opaques:",
+        "                if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ ...but not beside another opaque op — then the whole command is UNKNOWN"
+    ]
+  },
+  {
+    "name": "a tracked repository script is ad hoc",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        and os.path.basename(p) in tracked_scripts()):\n                    return",
+        "                        and os.path.basename(p) in tracked_scripts()):\n                    pass"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 scripts/recall-llm.py --arm 2>&1 | tail -5"
+    ]
+  },
+  {
+    "name": "ANY script under scripts/ is trusted, tracked or not",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    and os.path.basename(p) in tracked_scripts()):\n",
+        "                    and True):\n"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 scripts/untracked-adhoc.py"
+    ]
+  },
+  {
+    "name": "a script anywhere is trusted, not only under a checkout's scripts/",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    and os.path.basename(os.path.dirname(p)) == \"scripts\"",
+        "                    and True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 /tmp/recall-llm.py"
+    ]
+  },
+  {
+    "name": "a heredoc fed to a tracked script is trusted",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            stdin_ok = not fed or inline_safe(body)",
+        "            stdin_ok = True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 scripts/recall-llm.py <<'EOF' ⏎ print('.claude') ⏎ EOF"
+    ]
+  },
+  {
+    "name": "git is not safe at all",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    \"git\": \"every subcommand but `clean` and `stash`",
+        "    \"git-\": \"every subcommand but `clean` and `stash`"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: git checkout -b x"
+    ]
+  },
+  {
+    "name": "sort -o is a pure print",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(x.startswith(\"-o\") or x == \"--output\" for x in args)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: sort -o .claude/executing-plan docs/x.md"
+    ]
+  },
+  {
+    "name": "uniq's output operand is not a write",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return len([x for x in args if not x.startswith(\"-\")]) < 2",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: uniq docs/x.md .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "export is not safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "\"export\": \"sets variables in the shell only\",",
+        "\"export-\": \"sets variables in the shell only\","
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: export -p"
+    ]
+  },
+  {
+    "name": "an unresolved interpreter variable is trusted",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        w0 = expand(ws[0], env)",
+        "        w0 = expand(ws[0], env) or \"python3\""
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: $P scripts/check-docs.py"
+    ]
+  },
+  {
+    "name": "the inline token list is never consulted",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    return code is not None and not _INLINE_UNSAFE.search(code)",
+        "    return code is not None"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 -c 'print(\"begin-plan\")'"
+    ]
+  },
+  {
+    "name": "an unterminated heredoc body is inspected as if complete",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            out.append(\"\\n\".join(body) if i < len(lines) else None)",
+        "            out.append(\"\\n\".join(body))"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ print(1) ⏎"
+    ]
+  },
+  {
+    "name": "a -c argument holding a shell variable is inspected as if literal",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if code is not None and \"$\" not in code and inline_safe(code) and stdin_ok:",
+        "                if code is not None and inline_safe(code) and stdin_ok:"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 -c \"$CODE\""
+    ]
+  },
+  {
+    "name": "a clean -c argument is still opaque",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if code is not None and \"$\" not in code and inline_safe(code) and stdin_ok:\n                    return",
+        "                if code is not None and \"$\" not in code and inline_safe(code) and stdin_ok:\n                    pass"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 -c 'print(1)'"
+    ]
+  },
+  {
+    "name": "a clean heredoc on stdin is still opaque",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if fed and inline_safe(body):\n                    return",
+        "                if fed and inline_safe(body):\n                    pass"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 - <<'PY' ⏎ import re, json ⏎ print(re.compile('x').pattern) ⏎ PY"
+    ]
+  },
+  {
+    "name": "interpreter flags hide the -c",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            while a and a[0] in _PY_FLAGS:",
+        "            while False:"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 -u -c 'import sys; print(sys.argv)'"
+    ]
+  },
+  {
+    "name": "every heredoc is matched to the FIRST body",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            fed_count += 1",
+        "            fed_count += 0"
+      ]
+    ],
+    "expect": [
+      "⛔ the SECOND heredoc's body is the one its command is fed"
+    ]
+  },
+  {
+    "name": "timeout's duration is read as the command",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                ws = ws[1:]        # the duration",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: timeout 60 git status"
+    ]
+  },
+  {
+    "name": "pwd is not safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    \"pwd\": \"prints the directory\",",
+        "    \"pwd-\": \"prints the directory\","
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: pwd"
+    ]
+  },
+  {
+    "name": "find -delete and -exec are safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(x in (\"-delete\", \"-exec\", \"-execdir\", \"-ok\", \"-okdir\", \"-fls\")",
+        "        return True or not any(x in (\"-delete\", \"-exec\", \"-execdir\", \"-ok\", \"-okdir\", \"-fls\")"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: find docs -delete"
+    ]
+  },
+  {
+    "name": "mktemp under .claude is safe",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        return not any(\".claude\" in x for x in args)",
+        "        return True"
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: mktemp .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "whole-tree deletes are not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"\\bshutil\\.rmtree\\b\": \"deletes a whole tree without naming what is inside it\",",
+        "    r\"\\bshutil\\.rmtree-\\b\": \"deletes a whole tree without naming what is inside it\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ import shutil ⏎ shutil.rmtree('build') ⏎ PY"
+    ]
+  },
+  {
+    "name": "naming .claude is not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"\\.claude\": \"names the directory holding the sentinel and the plans\",",
+        "    r\"\\.claude-\": \"names the directory holding the sentinel and the plans\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ from pathlib import Path ⏎ print(list(Path('.claude/plans').glob('*'))) ⏎ PY"
+    ]
+  },
+  {
+    "name": "naming the sentinel is not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"executing-plan\": \"names the sentinel itself\",",
+        "    r\"executing-plan-\": \"names the sentinel itself\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: timeout 60 python3 -c 'print(\"executing-plan\")'"
+    ]
+  },
+  {
+    "name": "naming the clearing tool is not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"check-plan-progress\": \"names the tool that clears the sentinel\",",
+        "    r\"check-plan-progress-\": \"names the tool that clears the sentinel\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 -c 'x=\"check-plan-progress\"'"
+    ]
+  },
+  {
+    "name": "subprocess is still on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"\\bshutil\\.rmtree\\b\": \"deletes a whole tree without naming what is inside it\",\n}",
+        "    r\"\\bshutil\\.rmtree\\b\": \"deletes a whole tree without naming what is inside it\",\n    r\"subprocess\": \"x\",\n}"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 - <<'PY' ⏎ import subprocess ⏎ print(subprocess.run(['git', 'log', '-1'], capture_output=Tru"
+    ]
+  },
+  {
+    "name": "a window never holds the checkout unknown",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                states[r] = unknown(f\"a command that may change it was still running (until \"\n                                    f\"{until})\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after its completion record does"
+    ]
+  },
+  {
+    "name": "a background command's window ends when it starts",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                ev.data[\"until\"] = after[0] if task and after else end_of_session",
+        "                ev.data[\"until\"] = ev.ts"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after its completion record does"
+    ]
+  },
+  {
+    "name": "a background command's completion record is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                after = sorted(t for t, use in terminal.get((ev.session, task), [])",
+        "                after = sorted(t for t, use in terminal.get((\"\", task), [])"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a checkpoint INSIDE a background command's run does not resolve it; one after its completion record does"
+    ]
+  },
+  {
+    "name": "a TaskStop does not end a background task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        tid = inp.get(\"task_id\") or inp.get(\"shell_id\") or inp.get(\"bash_id\")",
+        "                        tid = None"
+      ]
+    ],
+    "expect": [
+      "...and a SUCCESSFUL TaskStop ends the window like a completion record"
+    ]
+  },
+  {
+    "name": "a shell & op's window ends with its command",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            o_until = max(until, e.data.get(\"session_end\") or until) if o.bg else until",
+        "            o_until = until"
+      ]
+    ],
+    "expect": [
+      "⛔ M1: a shell `&` has no end record — unknown until the session's last event"
+    ]
+  },
+  {
+    "name": "a window binds only OTHER streams",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if w[0] in (r, None) and w[1] < e.ts < w[2]:",
+        "            if w[0] in (r, None) and w[1] < e.ts < w[2] and w[3] != e.stream:"
+      ]
+    ],
+    "expect": [
+      "⛔ a PARALLEL sibling call in the same session, started before the opaque one returned, is inside its window"
+    ]
+  },
+  {
+    "name": "& backgrounds the whole command, not its pipeline",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if text != \"|\":\n                seg = len(ops)",
+        "            if False:\n                seg = len(ops)"
+      ]
+    ],
+    "expect": [
+      "a shell `&` leaves only ITS pipeline running: the foreground op before it ends with the command"
+    ]
+  },
+  {
+    "name": "every turn end is a Stop, hook evidence or not",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                      and ev.session not in stop_sessions)]",
+        "                      and False)]"
+      ]
+    ],
+    "expect": [
+      "⛔ L1: a turn end in a session with NO hook evidence clears nothing"
+    ]
+  },
+  {
+    "name": "a Stop-hook attachment is not evidence of the Stop hook",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    if a.get(\"hookEvent\") == \"Stop\":\n                        stop_sessions.add(sess)",
+        "                    if a.get(\"hookEvent\") == \"Stop\":\n                        pass"
+      ]
+    ],
+    "expect": [
+      "...and a STOP-hook attachment is evidence the session runs the Stop hook"
+    ]
+  },
+  {
+    "name": "a comment is read as a command",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if c == \"#\" and not has_word:",
+        "        if c == \"#\" and False:"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: # a note to self ⏎ ls docs"
+    ]
+  },
+  {
+    "name": "export assignments are not resolved",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            ws = [w for w in ws[1:] if \"=\" in w]",
+        "            ws = [\"export\"] + [w for w in ws[1:] if \"=\" in w]"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: export D=/tmp/d && echo x > \"$D/log\""
+    ]
+  },
+  {
+    "name": "nohup is not a prefix",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        while ws and ws[0] in (\"env\", \"timeout\", \"nohup\"):",
+        "        while ws and ws[0] in (\"env\", \"timeout\"):"
+      ]
+    ],
+    "expect": [
+      "a shell `&` leaves only ITS pipeline running: the foreground op before it ends with the command"
+    ]
+  },
+  {
+    "name": "ANY hook is taken as evidence of the Stop hook",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    if a.get(\"hookEvent\") == \"Stop\":",
+        "                    if a.get(\"hookEvent\"):"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 3: a PostToolUse hook is NOT evidence of the Stop hook"
+    ]
+  },
+  {
+    "name": "Stop evidence is counted per FILE, not per session",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\":",
+        "                if typ == \"system\" and r.get(\"subtype\") == \"stop_hook_summary\" and top:"
+      ]
+    ],
+    "expect": [
+      "Stop evidence is grouped by SESSION across files"
+    ]
+  },
+  {
+    "name": "a non-terminal status ends the task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                    if tm and sm and sm.group(1).lower() in TERMINAL_STATUSES:",
+        "                    if tm and sm:"
+      ]
+    ],
+    "expect": [
+      "...and a NON-TERMINAL status ends nothing"
+    ]
+  },
+  {
+    "name": "a quoted notice counts as one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                                              note.lstrip().startswith(\"<task-notification>\")):",
+        "                                              \"<task-notification>\" in note):"
+      ]
+    ],
+    "expect": [
+      "⛔ a queued command that only QUOTES a notice is not an END"
+    ]
+  },
+  {
+    "name": "queue-operation notices are ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                note = (r.get(\"content\") if typ == \"queue-operation\" else",
+        "                note = (None if typ == \"queue-operation\" else"
+      ]
+    ],
+    "expect": [
+      "a completion notice as a QUEUE-OPERATION ends the window (the harness's real form)"
+    ]
+  },
+  {
+    "name": "queued_command attachment notices are ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        att.get(\"prompt\") if typ == \"attachment\"",
+        "                        None if typ == \"attachment\""
+      ]
+    ],
+    "expect": [
+      "...and as a QUEUED_COMMAND attachment"
+    ]
+  },
+  {
+    "name": "a notice for ANOTHER tool call ends this one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               if t > ev.ts and use in (None, ev.data[\"tuid\"]))",
+        "                               if t > ev.ts)"
+      ]
+    ],
+    "expect": [
+      "⛔ a notice naming ANOTHER tool call is not this task's END"
+    ]
+  },
+  {
+    "name": "an END before START ends the task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               if t > ev.ts and use in",
+        "                               if use in"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 1: an END from an EARLIER task with a reused id does not end a later one"
+    ]
+  },
+  {
+    "name": "a FAILED TaskStop ends the task",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                                if not ev.data[\"is_error\"]:",
+        "                                if True:"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 1: a TaskStop that FAILED ends nothing; the completion after it does"
+    ]
+  },
+  {
+    "name": "a backgrounded RESULT without the input flag is foreground",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if ev.data[\"bg\"] or task:",
+        "            if ev.data[\"bg\"]:"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 2: a result saying it was BACKGROUNDED is background, flag or not"
+    ]
+  },
+  {
+    "name": "a foreground command with no result ends at its START",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                ev.data[\"until\"] = ev.end or end_of_session",
+        "                ev.data[\"until\"] = ev.end or ev.ts"
+      ]
+    ],
+    "expect": [
+      "⛔ r4 Codex 2: a foreground command with NO result stays open to its session's end"
+    ]
+  },
+  {
+    "name": "the empty session id survives the grouping",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    return ({e.session for e in mine} | {_session_of(last_line)}) - {\"\"}",
+        "    return {e.session for e in mine} | {_session_of(last_line)} - {\"\"}"
+      ]
+    ],
+    "expect": [
+      "r5 L2: the sessions a file holds never include the empty id, from either source"
+    ]
+  },
+  {
+    "name": "the tick's printed count is dropped for the ✅ line",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        info.update(n=seen_n, done=seen_n)   # ✅ prints no count; the tick did",
+        "                        pass"
+      ]
+    ],
+    "expect": [
+      "nit: --explain shows a plan's REAL count once its last tick printed it"
+    ]
+  },
+  {
+    "name": "a ✅-only plan is described with a made-up count",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        count = \"all ticked\" if state.full_only else f\"{tick}/{n}\"",
+        "        count = f\"{tick}/{n}\""
+      ]
+    ],
+    "expect": [
+      "...and says ALL TICKED, not a made-up count, when only the ✅ line survived"
+    ]
+  },
+  {
+    "name": "--backup copies nothing",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            shutil.copytree(plan_dir, backup, copy_function=shutil.copy2)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "--backup copies the plans, content AND mtime, BEFORE anything is written"
+    ]
+  },
+  {
+    "name": "--backup copies content without mtimes",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "copy_function=shutil.copy2",
+        "copy_function=shutil.copyfile"
+      ]
+    ],
+    "expect": [
+      "--backup copies the plans, content AND mtime, BEFORE anything is written"
+    ]
+  },
+  {
+    "name": "a user message that merely STARTS with a notice is an END",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if isinstance(note, str) and (_ONE_NOTICE.fullmatch(note) if typ == \"user\" else",
+        "                if isinstance(note, str) and (note.lstrip().startswith(\"<task-notification>\") if typ == \"user\" else"
+      ]
+    ],
+    "expect": [
+      "⛔ r6 Codex 1: a user message that STARTS with a notice but goes on is quoted text, not an END"
+    ]
+  },
+  {
+    "name": "a user message holding TWO notices is an END",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "_ONE_NOTICE = re.compile(r\"\\s*<task-notification>(?:(?!<task-notification>).)*?\"",
+        "_ONE_NOTICE = re.compile(r\"\\s*<task-notification>(?:.)*?\""
+      ]
+    ],
+    "expect": [
+      "...and so is one holding TWO notices"
+    ]
+  }
+]
