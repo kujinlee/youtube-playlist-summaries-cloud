@@ -1303,8 +1303,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if raw is None:\n        return frozenset(), None",
-        "    if raw is None:\n        return None, \"absent\""
+        "    if PRE_TRIGGER_PINS not in baseline:\n        return frozenset(), None",
+        "    if PRE_TRIGGER_PINS not in baseline:\n        return None, \"absent\""
       ]
     ],
     "expect": [
@@ -1316,8 +1316,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if not isinstance(raw, list):\n        return None, f\"{PRE_TRIGGER_PINS} is",
-        "    if False:\n        return None, f\"{PRE_TRIGGER_PINS} is"
+        "    if not isinstance(raw, list):\n        return None, (f\"{PRE_TRIGGER_PINS} is",
+        "    if False:\n        return None, (f\"{PRE_TRIGGER_PINS} is"
       ]
     ],
     "expect": [
@@ -1368,8 +1368,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if not isinstance(baseline, dict):\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    raw = baseline.get(PRE_TRIGGER_PINS)",
-        "    if False:\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    raw = baseline.get(PRE_TRIGGER_PINS)"
+        "    if not isinstance(baseline, dict):\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    if PRE_TRIGGER_PINS not in baseline:",
+        "    if False:\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    if PRE_TRIGGER_PINS not in baseline:"
       ]
     ],
     "expect": [
@@ -1413,6 +1413,58 @@
     ],
     "expect": [
       "⛔ the SHIPPED pin list is exactly the two lost bets that predate trigger 3"
+    ]
+  },
+  {
+    "name": "a PRESENT null pin list is read as absent, so it silently becomes no pins",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "PRE_TRIGGER_PINS not in baseline",
+        "baseline.get(PRE_TRIGGER_PINS) is None"
+      ]
+    ],
+    "expect": [
+      "⛔ a PRESENT null pin list is refused, never read as empty"
+    ]
+  },
+  {
+    "name": "a pin without a ladder route is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if item.get(\"route\") not in LADDER:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin with no ROUTE is refused — it would name a unit, not a bet"
+    ]
+  },
+  {
+    "name": "a pin is keyed on its UNIT again, so it cannot match a bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        key = (item[\"subject\"], item[\"unit\"], item[\"route\"])",
+        "        key = (item[\"subject\"], item[\"unit\"])"
+      ]
+    ],
+    "expect": [
+      "pinned_lost_bets reads the pins as a closed set of (subject, unit, route)"
+    ]
+  },
+  {
+    "name": "every lost bet is reported as the unit's first rung, so a pin excuses its successor's loss",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            out.append(key + (r.get(\"route\"),))",
+        "            out.append(key + (\"accrete\",))"
+      ]
+    ],
+    "expect": [
+      "⭐ always-on's pinned bet ESCALATED and its successor LOST: trigger 3 FAILs on it"
     ]
   }
 ]

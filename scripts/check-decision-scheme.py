@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 245 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 250 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -329,7 +329,11 @@ def t2_non_termination(rows: list[dict]) -> str | None:
 
 
 def lost_bets(rows: list[dict]) -> list[tuple]:
-    """PURE. Every prospective bet the stream CONTINUED past with no next bet: its (subject, unit).
+    """PURE. Every prospective bet the stream CONTINUED past with no next bet: (subject, unit, route).
+
+    ⟳ r4 Codex Major: the identity is the BET, not the unit. Keyed on (subject, unit), a pin on a
+    unit's historical loss also excused every LATER loss on that unit. (subject, unit, route)
+    names exactly one bet, because `route_next` never lets a unit repeat a route.
 
     "Lost" here means `outcome: continued` and nothing more: the route's FAILURE_OBSERVATION was
     seen, so the ladder says escalate. ⚠ It is NOT a claim that the bet's PREDICTION failed — a
@@ -359,7 +363,7 @@ def lost_bets(rows: list[dict]) -> list[tuple]:
                 continue                 # nothing to escalate to — trigger 2's verdict
             if prospective(unit_rows[i + 1:]):
                 continue                 # a real next bet was placed — escalated in time
-            out.append(key)
+            out.append(key + (r.get("route"),))
     return out
 
 
@@ -396,7 +400,7 @@ def t3_lost_bet_not_escalated(rows: list[dict], pinned: frozenset) -> str | None
     unlogged = [k for k in lost_bets(rows) if k not in pinned]
     if not unlogged:
         return None
-    names = ", ".join(f"{a}/{b}" for a, b in unlogged[:4])
+    names = ", ".join(f"{a}/{b}" for a, b, _ in unlogged[:4])
     return (f"{len(unlogged)} bet(s) the stream continued past with no next route logged "
             f"({names}) — the route's failure observation was seen and the ladder's escalation "
             f"was never recorded, so the work kept going on a route the log records as failed")
@@ -422,12 +426,12 @@ def t10_pre_trigger_lost_bet(rows: list[dict], pinned: frozenset) -> str | None:
         return None
     parts = []
     if hit:
-        names = ", ".join(f"{a}/{b}" for a, b in hit)
+        names = ", ".join(f"{a}/{b} ({c})" for a, b, c in hit)
         parts.append(f"{len(hit)} lost bet(s) PREDATE trigger 3 and are pinned in baseline.json "
                      f"({names}) — their next route was never logged, and they are history the "
                      f"rule could not have governed")
     if unused:
-        names = ", ".join(f"{a}/{b}" for a, b in unused)
+        names = ", ".join(f"{a}/{b} ({c})" for a, b, c in unused)
         parts.append(f"{len(unused)} pin(s) match no unescalated lost bet in this log ({names}) "
                      f"— expected while that bet's row is on a branch not merged here; otherwise "
                      f"a later bet escalated it and the pin is stale and should be deleted")
@@ -1129,33 +1133,44 @@ def pinned_inventory(baseline: object) -> "tuple[set[tuple[str, int]] | None, st
 
 
 def pinned_lost_bets(baseline: object) -> "tuple[frozenset | None, str | None]":
-    """PURE. The CLOSED set of (subject, unit) lost bets that predate trigger 3, or (None, why).
+    """PURE. The CLOSED set of (subject, unit, route) lost bets that predate trigger 3, or (None, why).
 
     ⛔ PINNED, LIKE `rounds_at_arming`, AND FOR THE SAME REASON: it is history, and a list a
     script could grow at run time would be an exemption anyone could write. It lives in
     `baseline.json` beside the other pins, each entry with a written `reason`; nothing in this
     file adds to it, and a case pins the shipped list to its two entries.
 
-    An absent key is the empty set — a repository with no pre-trigger history. A key of the
-    wrong SHAPE is a refusal, never an empty set and never a partial one.
+    ⟳ r4 Codex Major: each pin names ONE BET — (subject, unit, route), unique because
+    `route_next` never lets a unit repeat a route — so a later loss on a pinned unit is not
+    excused. A pin without a ladder `route` is refused.
+
+    ⟳ r4 Codex Low: only an ABSENT key is the empty set — a repository with no pre-trigger
+    history. A PRESENT key must be a list; `null` is a wrong shape, never an empty list. A key of
+    the wrong shape is a refusal, never an empty set and never a partial one.
     """
     if not isinstance(baseline, dict):
         return None, f"the pinned baseline is {type(baseline).__name__}, not an object"
-    raw = baseline.get(PRE_TRIGGER_PINS)
-    if raw is None:
+    if PRE_TRIGGER_PINS not in baseline:
         return frozenset(), None
+    raw = baseline[PRE_TRIGGER_PINS]
     if not isinstance(raw, list):
-        return None, f"{PRE_TRIGGER_PINS} is {type(raw).__name__}, not a list"
+        return None, (f"{PRE_TRIGGER_PINS} is {type(raw).__name__}, not a list — a PRESENT key "
+                      f"must be a list; only an absent key means no pins")
     out = set()
     for item in raw:
         if (not isinstance(item, dict) or not isinstance(item.get("subject"), str)
                 or not isinstance(item.get("unit"), str)):
-            return None, f"{PRE_TRIGGER_PINS} holds {item!r}, not a {{subject, unit, reason}}"
+            return None, (f"{PRE_TRIGGER_PINS} holds {item!r}, not a "
+                          f"{{subject, unit, route, reason}}")
         why = item.get("reason")
         if not isinstance(why, str) or not any(ch.isalnum() for ch in why):
             return None, (f"the pin on {item['subject']}/{item['unit']} has no reason — an "
                           f"exemption from trigger 3 must say why it is history")
-        key = (item["subject"], item["unit"])
+        if item.get("route") not in LADDER:
+            return None, (f"the pin on {item['subject']}/{item['unit']} names route "
+                          f"{item.get('route')!r}, not one of {list(LADDER)} — a pin names ONE "
+                          f"bet, and a bet is (subject, unit, route)")
+        key = (item["subject"], item["unit"], item["route"])
         if key in out:
             return None, f"{item['subject']}/{item['unit']} is pinned twice"
         out.add(key)
@@ -1771,22 +1786,23 @@ def _self_test() -> int:
          ("refuted" in (_try(lambda: t2_non_termination(_defer2)) or ""),
           _try(lambda: t3_lost_bet_not_escalated(_defer2, _NO_PINS))), (True, None))
     case("lost_bets reads each UNIT apart — a next bet on another unit does not escalate this one",
-         _try(lambda: lost_bets(_apart)), [("s", "u")])
-    case("...and names a SECOND-rung loss by its own unit",
-         _try(lambda: lost_bets(_fail2)), [("t", "v")])
+         _try(lambda: lost_bets(_apart)), [("s", "u", "accrete")])
+    case("...and names a SECOND-rung loss by its own unit AND route",
+         _try(lambda: lost_bets(_fail2)), [("t", "v", "redesign")])
     case("a bet row carrying the redesign plan's `kind` is judged like any other bet",
          _try(lambda: t3_lost_bet_not_escalated(_kinded, _NO_PINS)) is not None, True)
 
     # ── the PINNED pre-trigger lost bets: history, not an exemption anyone can write ─────────
-    # ⟳ r3: replaces the in-log acknowledgment, REMOVED for thrashing.
-    _pin_s = frozenset({("s", "u")})
-    _pin_t = frozenset({("t", "v")})
+    # ⟳ r3: replaces the in-log acknowledgment, REMOVED for thrashing. ⟳ r4: a pin names ONE
+    # BET, (subject, unit, route) — a pin on the unit would excuse its every later loss too.
+    _pin_s = frozenset({("s", "u", "accrete")})
+    _pin_t = frozenset({("t", "v", "redesign")})
     case("⭐ a PINNED lost bet does not FAIL trigger 3, and trigger 10 names it as history",
          (_try(lambda: t3_lost_bet_not_escalated(_fail1, _pin_s)),
           _try(lambda: t10_pre_trigger_lost_bet(_fail1, _pin_s))),
-         (None, "1 lost bet(s) PREDATE trigger 3 and are pinned in baseline.json (s/u) — their "
-                "next route was never logged, and they are history the rule could not have "
-                "governed"))
+         (None, "1 lost bet(s) PREDATE trigger 3 and are pinned in baseline.json (s/u "
+                "(accrete)) — their next route was never logged, and they are history the rule "
+                "could not have governed"))
     case("...and so is a pinned SECOND-rung loss on another unit",
          (_try(lambda: t3_lost_bet_not_escalated(_fail2, _pin_t)),
           "PREDATE trigger 3" in (_try(lambda: t10_pre_trigger_lost_bet(_fail2, _pin_t)) or "")),
@@ -1796,47 +1812,88 @@ def _self_test() -> int:
              _fail1 + [_b("s", "w", "accrete", "continued")], _pin_s)) or ""), True)
     case("...and a pin on another unit of the SAME subject does not cover it",
          "(t/v)" in (_try(lambda: t3_lost_bet_not_escalated(
-             _fail2, frozenset({("t", "other")}))) or ""), True)
+             _fail2, frozenset({("t", "other", "redesign")}))) or ""), True)
+    # ⛔⛔ r4 Codex Major, with BOTH shipped histories: the pinned bet ESCALATED and its successor
+    # LOST. The successor is a new loss and FAILs; the pin no longer matches an unescalated loss,
+    # so it is reported UNUSED — "a later bet escalated it and the pin is stale" is exactly true.
+    _AO = ("work-lines-always-on", "last-plan lifecycle + Stop-hook optional steps")
+    _BF = ("work-lines-backfill", "transcript replay (event intake + END windows + checkpoints)")
+    _ship = frozenset({_AO + ("accrete",), _BF + ("accrete",)})
+    _succ_ao = [_b(*_AO, "accrete", "continued"), _b(*_AO, "redesign", "continued"),
+                _b(*_BF, "accrete", "continued")]
+    _succ_bf = [_b(*_AO, "accrete", "continued"), _b(*_BF, "accrete", "continued"),
+                _b(*_BF, "redesign", "continued"), _b(*_BF, "split", "continued")]
+    case("⭐ always-on's pinned bet ESCALATED and its successor LOST: trigger 3 FAILs on it",
+         (_try(lambda: t3_lost_bet_not_escalated(_succ_ao, _ship)),
+          "1 pin(s) match no unescalated lost bet in this log (work-lines-always-on/last-plan "
+          "lifecycle + Stop-hook optional steps (accrete))" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_succ_ao, _ship)) or "")),
+         ("1 bet(s) the stream continued past with no next route logged (work-lines-always-on/"
+          "last-plan lifecycle + Stop-hook optional steps) — the route's failure observation was "
+          "seen and the ladder's escalation was never recorded, so the work kept going on a "
+          "route the log records as failed", True))
+    case("...and so does backfill's, two rungs on, its pin reported UNUSED and always-on's HIT",
+         ("(work-lines-backfill/" in (_try(lambda: t3_lost_bet_not_escalated(_succ_bf, _ship))
+                                       or ""),
+          "match no unescalated lost bet in this log (work-lines-backfill/" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_succ_bf, _ship)) or ""),
+          "pinned in baseline.json (work-lines-always-on/" in (
+              _try(lambda: t10_pre_trigger_lost_bet(_succ_bf, _ship)) or "")),
+         (True, True, True))
     # A pin whose bet was ESCALATED in time matches nothing: trigger 3 is quiet regardless, and
     # trigger 10 reports the pin as UNUSED, because a pin that matches nothing is stale.
     case("⭐ a pin on a unit that ESCALATED is quiet on trigger 3 and reported UNUSED by trigger 10",
          (_try(lambda: t3_lost_bet_not_escalated(_quiet1, _pin_s)),
           _try(lambda: t10_pre_trigger_lost_bet(_quiet1, _pin_s))),
-         (None, "1 pin(s) match no unescalated lost bet in this log (s/u) — expected while "
-                "that bet's row is on a branch not merged here; otherwise a later bet escalated "
-                "it and the pin is stale and should be deleted"))
+         (None, "1 pin(s) match no unescalated lost bet in this log (s/u (accrete)) — expected "
+                "while that bet's row is on a branch not merged here; otherwise a later bet "
+                "escalated it and the pin is stale and should be deleted"))
     case("...and so is one whose escalation ended in a won split, on another unit",
          (_try(lambda: t3_lost_bet_not_escalated(_quiet2, _pin_t)),
-          "match no unescalated lost bet in this log (t/v)" in (
+          "match no unescalated lost bet in this log (t/v (redesign))" in (
               _try(lambda: t10_pre_trigger_lost_bet(_quiet2, _pin_t)) or "")), (None, True))
     case("⭐ a pin on a unit ABSENT from the log WARNS as unused and does not crash",
-         "match no unescalated lost bet in this log (gone/u)" in (_try(
-             lambda: t10_pre_trigger_lost_bet(_forced, frozenset({("gone", "u")}))) or ""), True)
+         "match no unescalated lost bet in this log (gone/u (accrete))" in (_try(
+             lambda: t10_pre_trigger_lost_bet(_forced, frozenset({("gone", "u", "accrete")})))
+             or ""), True)
     case("...including over an EMPTY log",
-         "match no unescalated lost bet in this log (t/v)" in (_try(
+         "match no unescalated lost bet in this log (t/v (redesign))" in (_try(
              lambda: t10_pre_trigger_lost_bet([], _pin_t)) or ""), True)
     case("no pins and no lost bets: trigger 10 is quiet",
          (_try(lambda: t10_pre_trigger_lost_bet(_quiet1, _NO_PINS)),
           _try(lambda: t10_pre_trigger_lost_bet(_forced, _NO_PINS))), (None, None))
     case("...and an UNPINNED lost bet is trigger 3's alone, never trigger 10's",
          _try(lambda: t10_pre_trigger_lost_bet(_fail1, _NO_PINS)), None)
-    _pins_ok = {PRE_TRIGGER_PINS: [{"subject": "s", "unit": "u", "reason": "predates it"},
-                                   {"subject": "t", "unit": "v", "reason": "also predates"}]}
-    case("pinned_lost_bets reads the pins as a closed set of (subject, unit)",
-         pinned_lost_bets(_pins_ok), (frozenset({("s", "u"), ("t", "v")}), None))
+    _pins_ok = {PRE_TRIGGER_PINS: [
+        {"subject": "s", "unit": "u", "route": "accrete", "reason": "predates it"},
+        {"subject": "t", "unit": "v", "route": "redesign", "reason": "also predates"}]}
+    case("pinned_lost_bets reads the pins as a closed set of (subject, unit, route)",
+         pinned_lost_bets(_pins_ok),
+         (frozenset({("s", "u", "accrete"), ("t", "v", "redesign")}), None))
     case("...and an ABSENT key is the empty set, a repository with no pre-trigger history",
          pinned_lost_bets({"armed_at": "x"}), (frozenset(), None))
+    # ⛔ r4 Codex Low: a PRESENT key must be a list — `null` is not "no pins".
+    case("⛔ a PRESENT null pin list is refused, never read as empty",
+         "is NoneType, not a list" in str(_try(lambda: pinned_lost_bets(
+             {PRE_TRIGGER_PINS: None}))), True)
     case("⛔ a pin with no REASON is refused — an exemption must say why it is history",
          ("has no reason" in (pinned_lost_bets(
-             {PRE_TRIGGER_PINS: [{"subject": "s", "unit": "u"}]})[1] or ""),
+             {PRE_TRIGGER_PINS: [{"subject": "s", "unit": "u", "route": "accrete"}]})[1] or ""),
           "has no reason" in (pinned_lost_bets(
-              {PRE_TRIGGER_PINS: [{"subject": "t", "unit": "v", "reason": " !! "}]})[1] or "")),
+              {PRE_TRIGGER_PINS: [{"subject": "t", "unit": "v", "route": "split",
+                                   "reason": " !! "}]})[1] or "")),
          (True, True))
+    case("⛔ a pin with no ROUTE is refused — it would name a unit, not a bet",
+         ("names route None" in str(_try(lambda: pinned_lost_bets(
+             {PRE_TRIGGER_PINS: [{"subject": "s", "unit": "u", "reason": "x"}]}))),
+          "names route 'retry'" in str(_try(lambda: pinned_lost_bets(
+              {PRE_TRIGGER_PINS: [{"subject": "t", "unit": "v", "route": "retry",
+                                   "reason": "y"}]})))), (True, True))
     case("⛔ a pin list of the wrong SHAPE is refused, never read as empty",
          "is str, not a list" in str(_try(lambda: pinned_lost_bets({PRE_TRIGGER_PINS: "s/u"}))),
          True)
     case("⛔ ...and so is a pin ENTRY of the wrong shape",
-         "not a {subject, unit, reason}" in str(_try(lambda: pinned_lost_bets(
+         "not a {subject, unit, route, reason}" in str(_try(lambda: pinned_lost_bets(
              {PRE_TRIGGER_PINS: [["s", "u"]]}))), True)
     case("⛔ a pin written TWICE is refused",
          "is pinned twice" in (pinned_lost_bets(
@@ -1847,14 +1904,17 @@ def _self_test() -> int:
     _shipped = pinned_lost_bets(json.loads(BASELINE.read_text()))
     case("⛔ the SHIPPED pin list is exactly the two lost bets that predate trigger 3",
          _shipped, (frozenset({
-             ("work-lines-always-on", "last-plan lifecycle + Stop-hook optional steps"),
+             ("work-lines-always-on", "last-plan lifecycle + Stop-hook optional steps",
+              "accrete"),
              ("work-lines-backfill",
-              "transcript replay (event intake + END windows + checkpoints)")}), None))
+              "transcript replay (event intake + END windows + checkpoints)", "accrete")}),
+             None))
     case("every log this block drives is one main() ACCEPTS — no branch is tested off-domain",
          [n for n, lg in (("fail1", _fail1), ("fail2", _fail2), ("quiet1", _quiet1),
                           ("quiet2", _quiet2), ("forced", _forced), ("retro_lost", _retro_lost),
                           ("defer1", _defer1), ("defer2", _defer2), ("apart", _apart),
-                          ("inflight", _inflight), ("kinded", _kinded))
+                          ("inflight", _inflight), ("kinded", _kinded),
+                          ("succ_ao", _succ_ao), ("succ_bf", _succ_bf))
           if _try(lambda: invalid_rows(lg))], [])
     case("invalid_rows NAMES a row the ladder refuses, by its 1-based number",
          [n for n, _ in invalid_rows([_b("s", "u", "accrete", "continued"),
@@ -2683,7 +2743,8 @@ def _self_test() -> int:
              (_rc, "FAIL  trigger 3 LOST BET NOT ESCALATED" in _o, "(lost/u)" in _o),
              (1, True, True))
         _rc, _o = _run_log("pinned", [_b("pinned", "u", "accrete", "continued")],
-                           [{"subject": "pinned", "unit": "u", "reason": "predates trigger 3"}])
+                           [{"subject": "pinned", "unit": "u", "route": "accrete",
+                             "reason": "predates trigger 3"}])
         case("⭐ a PINNED lost bet reaches the CLI as trigger 10's WARN and exits 0",
              (_rc, "WARN  trigger 10 PRE-TRIGGER LOST BET" in _o, "FAIL" in _o),
              (0, True, False))
@@ -2691,6 +2752,20 @@ def _self_test() -> int:
                            [{"subject": "badpin", "unit": "u"}])
         case("⛔ a MALFORMED pin list is CANNOT RUN at the CLI, never an empty one",
              (_rc, "CANNOT RUN" in _o, "has no reason" in _o), (2, True, True))
+        # ⛔ r4 Codex Low, at the CLI: a PRESENT null is CANNOT RUN, not "no pins" — measured
+        # before the fix, it exited 0 "all triggers quiet" over an empty log.
+        _bp_null = Path(_wd) / "nullpin2-baseline.json"
+        _bp_null.write_text(_json.dumps({**_ARMED, PRE_TRIGGER_PINS: None}))
+        _lp_null = Path(_wd) / "nullpin2-log.jsonl"
+        _lp_null.write_text(_json.dumps(_b("np", "u", "accrete", "continued")) + "\n")
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = _try(lambda: main([], baseline_path=_bp_null, log_path=_lp_null,
+                                    corpus=lambda: {"median": 4, "mean": 4.6, "subjects": 57},
+                                    starved=lambda since, **_: ([], None)))
+        _o = _buf.getvalue()
+        case("⛔ a PRESENT null pin list is CANNOT RUN at the CLI, not an empty exemption list",
+             (_rc, "CANNOT RUN" in _o, "is NoneType, not a list" in _o), (2, True, True))
         _bp_starved = Path(_wd) / "starved-baseline.json"
         _bp_starved.write_text(_json.dumps({"rounds_to_termination": {"median": 9}, "armed_at": "2026-01-01T00:00:00Z"}))
         _lp_starved = Path(_wd) / "starved-log.jsonl"

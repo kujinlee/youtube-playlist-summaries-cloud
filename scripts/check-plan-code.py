@@ -1382,7 +1382,11 @@ EXPECTED_MUTATIONS = {
     # (the only non-bet row it skipped is gone). EIGHT re-pointed — three of them back to the
     # text they had on master. FOURTEEN added on its replacement: the closed pin list in
     # `baseline.json` (`pinned_lost_bets`), trigger 3's exemption, and trigger 10's two halves.
-    "scripts/check-decision-scheme.py": 107,
+    # ⟳ 2026-10-23 r4 fold: 107 -> 111. A pin names ONE BET, (subject, unit, route), so a later
+    # loss on a pinned unit is not excused; and a PRESENT null pin list is refused. FOUR added
+    # (the route carried by `lost_bets`, the route check, the three-part key, null-vs-absent);
+    # THREE re-pointed to the parser's new presence test.
+    "scripts/check-decision-scheme.py": 111,
     "scripts/check-goal-status.py": 7,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5675,7 +5679,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1863)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1867)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

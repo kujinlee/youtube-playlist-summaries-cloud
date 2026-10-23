@@ -1749,13 +1749,15 @@
     {
       "subject": "work-lines-always-on",
       "unit": "last-plan lifecycle + Stop-hook optional steps",
+      "route": "accrete",
       "reason": "lost bet predates trigger 3 (2026-10-23); next route was not logged; the work converged at round 4"
     },
     {
       "subject": "work-lines-backfill",
       "unit": "transcript replay (event intake + END windows + checkpoints)",
+      "route": "accrete",
       "reason": "lost bet predates trigger 3 (2026-10-23); next route was not logged; the work converged at round 8"
     }
   ],
-  "_lost_bets_before_trigger3_means": "The prospective bets the stream CONTINUED past whose next route was never logged, placed BEFORE trigger 3 (LOST BET NOT ESCALATED) existed on 2026-10-23 — a bet placed before the rule could not have obeyed it. Trigger 3 does not FAIL on these; trigger 10 (PRE-TRIGGER LOST BET) WARNS on them, and WARNS on any pin that matches no lost bet in the log, so a stale pin cannot pass forever. ⛔ CLOSED: nothing adds to this list at run time, a self-test case pins it to these two entries, and a bet placed after the trigger shipped is never added — it must escalate. The work-lines-backfill pin is UNUSED until feat/work-lines-backfill merges, because its bet row lives only on that branch. Chosen 2026-10-23 in place of an in-log acknowledgment row, which was removed after two consecutive fold-induced review rounds (thrashing)."
+  "_lost_bets_before_trigger3_means": "The prospective bets the stream CONTINUED past whose next route was never logged, placed BEFORE trigger 3 (LOST BET NOT ESCALATED) existed on 2026-10-23 — a bet placed before the rule could not have obeyed it. Each pin names ONE BET — (subject, unit, route), unique because the ladder never repeats a route on a unit — so a later loss on the same unit is NOT excused (r4). Trigger 3 does not FAIL on these; trigger 10 (PRE-TRIGGER LOST BET) WARNS on them, and WARNS on any pin that matches no lost bet in the log, so a stale pin cannot pass forever. ⛔ CLOSED: nothing adds to this list at run time, a self-test case pins it to these two entries, and a bet placed after the trigger shipped is never added — it must escalate. The work-lines-backfill pin is UNUSED until feat/work-lines-backfill merges, because its bet row lives only on that branch. Chosen 2026-10-23 in place of an in-log acknowledgment row, which was removed after two consecutive fold-induced review rounds (thrashing)."
 }
