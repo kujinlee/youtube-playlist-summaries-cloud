@@ -26,19 +26,6 @@
     ]
   },
   {
-    "name": "a dangling parent is dropped, so the middle of an old line becomes a new one",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "            orphans.append(par)",
-        "            pass"
-      ]
-    ],
-    "expect": [
-      "⛔ a parent that does not exist is REPORTED, and the child still renders"
-    ]
-  },
-  {
     "name": "a line is judged by its TIP alone, so an unfinished parent under a finished tip hides",
     "file": "scripts/gen-work-lines.py",
     "edits": [
@@ -101,19 +88,6 @@
     ],
     "expect": [
       "a slug is HTML-escaped, so a plan name cannot inject markup"
-    ]
-  },
-  {
-    "name": "a cycle's edge is never cut, so its members keep their circular children and the page hangs",
-    "file": "scripts/gen-work-lines.py",
-    "edits": [
-      [
-        "        par[\"children\"] = [c for c in par[\"children\"] if c[\"slug\"] != cut]\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⛔ a two-node cycle becomes a tree: each plan appears EXACTLY once"
     ]
   },
   {
@@ -205,6 +179,217 @@
     ],
     "expect": [
       "⭐ the page carries a Refresh button for the `work-lines` key, wired by the shared chrome"
+    ]
+  },
+  {
+    "name": "plan_dirs falls back to this checkout SILENTLY when git cannot answer",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        return [own], [f\"git could not list the worktrees ({why}), so only this checkout's plans \"\n                       f\"were read\"]",
+        "        return [own], []"
+      ]
+    ],
+    "expect": [
+      "WT7 when git cannot answer, the result is THIS checkout only — and a note SAYS so"
+    ]
+  },
+  {
+    "name": "plan_dirs reverses git's order, so the main checkout is no longer first",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    for t in trees:\n",
+        "    for t in reversed(trees):\n"
+      ]
+    ],
+    "expect": [
+      "WT1 plan_dirs lists EVERY checkout from a real `git worktree add`, main first"
+    ]
+  },
+  {
+    "name": "read_plans reads only its own checkout again — the chrome-bar-fold miss",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        dirs, notes = plan_dirs(d.parent.parent)",
+        "        dirs, notes = [(d.parent, d)], []"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
+    ]
+  },
+  {
+    "name": "the page drops the notes saying what was NOT read",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        parts.append(f'<p class=\"warn\">⚠ {esc(note)}</p>')",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — and the PAGE says so"
+    ]
+  },
+  {
+    "name": "plan_dirs NOTES a checkout whose folder is gone again, hedging every warning",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            continue            # gone, so it holds no plans",
+        "            notes.append(f\"the checkout {t} is missing, so its plans were not read\"); continue  # gone"
+      ]
+    ],
+    "expect": [
+      "WT5 a registered checkout whose folder is GONE is skipped with NO note — it holds no plans to miss (r3 Claude F2)",
+      "WT6c ...and the page carries no 'not read' warning for it"
+    ]
+  },
+  {
+    "name": "a plan directory git does not list is labelled by its `.claude` folder, not its checkout",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        found = [(d.parent.parent, r) for r in _read_dir(d)] + found",
+        "        found = [(d.parent, r) for r in _read_dir(d)] + found"
+      ]
+    ],
+    "expect": [
+      "WT8 a plan directory git does not list is read under ITS checkout's name, not `.claude` (r3 Claude F6)"
+    ]
+  },
+  {
+    "name": "another checkout whose plans cannot be read is dropped SILENTLY",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            notes.append(f\"the plans in {pd} could not be read ({exc}), so they are not shown\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "WT6 another checkout whose plans cannot be READ is skipped with a note — not fatal — and the PAGE says so"
+    ]
+  },
+  {
+    "name": "plan_dirs inherits GIT_* again, so a hook's GIT_DIR redirects it to another repository",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "env={k: v for k, v in os.environ.items() if not k.startswith(\"GIT_\")})",
+        "env=None)"
+      ]
+    ],
+    "expect": [
+      "WT9 an inherited GIT_DIR (a hook context) does not redirect plan_dirs — `root` decides"
+    ]
+  },
+  {
+    "name": "labels use the checkout's absolute path instead of a short name",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "                  else pathlib.Path(c).name for c, _ in copies]",
+        "                  else str(c) for c, _ in copies]"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name"
+    ]
+  },
+  {
+    "name": "a collapse is RE-INTRODUCED: copies that parse identically become one row, merging children of different parents",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        by_name.setdefault(r[\"slug\"], []).append((checkout, r))",
+        "        if not any(c[1] == r for c in by_name.get(r[\"slug\"], [])):\n            by_name.setdefault(r[\"slug\"], []).append((checkout, r))"
+      ]
+    ],
+    "expect": [
+      "WT10 identical children of DIFFERENT parents stay apart: each kid under its own checkout's parent, and BOTH lines are open"
+    ]
+  },
+  {
+    "name": "a dangling parent is dropped, so the middle of an old line becomes a new one",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            orphans.append(p[\"parent\"])",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ a parent that does not exist is REPORTED, and the child still renders"
+    ]
+  },
+  {
+    "name": "a cycle's edge is never cut, so its members keep their circular children and the page hangs",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        par[\"children\"] = [c for c in par[\"children\"] if plan_key(c) != cut]\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⛔ a two-node cycle becomes a tree: each plan appears EXACTLY once"
+    ]
+  },
+  {
+    "name": "row_for ignores the asking checkout and always takes the first copy",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "        if want in r.get(\"checkouts\", ()):\n            return plan_key(r)",
+        "        if False:\n            return plan_key(r)"
+      ]
+    ],
+    "expect": [
+      "WT3 a child's parent points at the copy in ITS OWN checkout",
+      "WT4d row_for resolves a duplicated slug in the asking checkout, else main"
+    ]
+  },
+  {
+    "name": "a slug held in two checkouts is no longer LABELLED with its checkout",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "                     where=where if len(copies) > 1 else None)",
+        "                     where=None)"
+      ]
+    ],
+    "expect": [
+      "WT2 the page reads a plan that exists ONLY in another worktree — the chrome-bar-fold case — and labels BOTH differing copies of a slug with a SHORT checkout name",
+      "WT10 identical children of DIFFERENT parents stay apart: each kid under its own checkout's parent, and BOTH lines are open"
+    ]
+  },
+  {
+    "name": "build_forest is RE-KEYED BY THE DISPLAY LABEL, so a file named like a generated label overwrites it",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "    by_slug = {plan_key(p): dict(p, children=[]) for p in plans}",
+        "    by_slug = {label(p): dict(p, children=[]) for p in plans}"
+      ]
+    ],
+    "expect": [
+      "WT11 a hand-named `kid @ main.md` beside `kid` held twice: THREE nodes kept, ONE open line, and the page says 1 still owing"
+    ]
+  },
+  {
+    "name": "row_for returns a DISPLAY LABEL instead of the plan key",
+    "file": "scripts/gen-work-lines.py",
+    "edits": [
+      [
+        "            return plan_key(r)\n    return plan_key(copies[0]) if copies else None",
+        "            return label(r)\n    return label(copies[0]) if copies else None"
+      ]
+    ],
+    "expect": [
+      "WT4d row_for resolves a duplicated slug in the asking checkout, else main"
     ]
   }
 ]

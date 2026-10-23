@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 120 cases
+    scripts/begin-plan.py --self-test  # 123 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -308,7 +308,7 @@ def _load_work_lines():
     return mod
 
 
-def work_line(slug: str, plans: list[dict]) -> str:
+def work_line(slug, plans: list[dict]) -> str:
     """PURE. The banner's `> **Line:**` row: the chain from `slug` back to its root.
 
     ⭐ Asked 2026-10-22 alongside the page: the page answers "what did I never walk back to"
@@ -316,27 +316,34 @@ def work_line(slug: str, plans: list[dict]) -> str:
     where the reader actually is. Built from the plan files' own parent markers.
 
     ⛔ IT NEVER INVENTS A CHAIN. Three ways a walk can stop short, and each is SAID in the line:
-    the plan is not in `.claude/plans/` (no record at all), a plan on the chain records no
+    the plan is not in any checkout's `.claude/plans/` (no record at all), a plan on the chain records no
     parent (written before the field, or the parent could not be decided), or a recorded parent
     no longer exists. A cycle (only reachable by hand-editing) is cut and named, never looped.
     `plans` are `gen-work-lines.parse_plan` records, so "started a line" is ITS reading of `-`.
+
+    ⛔ `slug` IS A PLAN KEY (`gen-work-lines.plan_key`: `(checkout, slug)` from `read_plans`, or a
+    bare slug), and every lookup here goes through that key — ⟳ r6 Codex (Major): keyed by the
+    display label, a file NAMED `kid @ main.md` overwrote the generated label for `kid` in main and
+    the banner described the completed copy. Names are emitted through `label()` only.
     """
-    by = {p["slug"]: p for p in plans}
+    wl = _load_work_lines()
+    by = {wl.plan_key(p): p for p in plans}
     if slug not in by:
-        return ("> **Line:** _(this plan is not in .claude/plans/, so no line is recorded for "
-                "it)_")
+        return ("> **Line:** _(this plan is not in any checkout's .claude/plans/, so no line is "
+                "recorded for it)_")
     chain, cur, note = [slug], by[slug], ""
     while True:
-        par = cur["parent"]
-        if par is None:
+        name = cur["parent"]
+        if name is None:
             if not cur["started"]:
-                note = f"_(no parent recorded above `{cur['slug']}`)_ "
+                note = f"_(no parent recorded above `{wl.label(cur)}`)_ "
             break
+        par = wl.parent_key(cur)
         if par in chain:
-            note = f"_(`{cur['slug']}`'s recorded parent `{par}` leads back into this line)_ "
+            note = f"_(`{wl.label(cur)}`'s recorded parent `{name}` leads back into this line)_ "
             break
-        if par not in by:
-            note = f"_(continues `{par}`, which no longer exists)_ "
+        if par is None or par not in by:
+            note = f"_(continues `{name}`, which no longer exists)_ "
             break
         chain.insert(0, par)
         cur = by[par]
@@ -349,7 +356,7 @@ def work_line(slug: str, plans: list[dict]) -> str:
         head = "_(no objective recorded)_ "
     else:
         head = note
-    return "> **Line:** " + head + " → ".join(f"`{c}`" for c in chain)
+    return "> **Line:** " + head + " → ".join(f"`{wl.label(by[c])}`" for c in chain)
 
 
 def _banner_line(plan_abs: Path) -> str:
@@ -362,7 +369,11 @@ def _banner_line(plan_abs: Path) -> str:
         return f"> **Line:** _(the work line could not be read: {type(exc).__name__}: {exc})_"
     if plan_abs.resolve().parent != PLAN_DIR.resolve():
         return work_line("", plans)
-    return work_line(plan_abs.stem, plans)
+    # ⟳ r3 Claude F5: `read_plans` reads EVERY checkout, and a slug held in two of them is
+    # labelled `slug @ <checkout>` — so the bare stem found nothing and the banner said "not in
+    # .claude/plans/" about a file in its own directory. `row_for` is the page's own resolver
+    # (THIS checkout's copy, else main), so the banner and the page name the same row.
+    return work_line(wl.row_for(plans, plan_abs.stem, ROOT) or plan_abs.stem, plans)
 
 
 def tick(plan_text: str, index: int) -> str:
@@ -1808,7 +1819,7 @@ def _self_test() -> int:
     case("...and a hand-made cycle is cut and named, never looped",
          "leads back into this line" in work_line("x", _pl))
     case("...and a plan outside .claude/plans/ says it has no line rather than inventing one",
-         "not in .claude/plans/" in work_line("elsewhere", _pl))
+         "not in any checkout's .claude/plans/" in work_line("elsewhere", _pl))
     case("...and the root's words are TRUNCATED to the banner's width, marked with an ellipsis",
          work_line("long", _pl) == '> **Line:** "' + "w" * (SERVING_SHOWN - 1) + '…" → `long`')
     case("⛔ the root's words are ESCAPED, so Markdown in them renders literally — emphasis, a "
@@ -1830,6 +1841,83 @@ def _self_test() -> int:
     case("render_banner puts the Line row under the title and ABOVE Doing",
          -1 < _bl.find("> **Line:** `r` → `kid`") < _bl.find("> **Doing:**")
          and "**Line:**" not in render_banner(steps, 0))
+
+    # ── r3 Claude F5: a slug held in TWO checkouts, through the real `_banner_line` ─────────────
+    # A REAL `git worktree add` (pp.test_git strips the caller's GIT_* and hooks). Each copy differs,
+    # so the page labels both; each checkout's banner must name ITS OWN copy, by a short name.
+    with tempfile.TemporaryDirectory() as _tdw:
+        _m = Path(_tdw).resolve() / "main"
+        _m.mkdir()
+        _we = pp.make_test_repo(_m, "bp/main")
+        _w = Path(_tdw).resolve() / "wt-dup"
+        _we = _we or pp.test_git(_m, "worktree", "add", "-q", str(_w), "-b", "bp/wt")
+        for _co, _body in ((_m, "- [ ] main copy\n"), (_w, "- [ ] worktree copy\n- [ ] b\n")):
+            (_co / ".claude/plans").mkdir(parents=True, exist_ok=True)
+            (_co / ".claude/plans/dup.md").write_text("<!-- parent: - -->\n" + _body)
+        _saved_rp = (ROOT, PLAN_DIR)
+        _lines = {}
+        try:
+            for _co in (_w, _m):
+                ROOT, PLAN_DIR = _co, _co / ".claude/plans"
+                _lines[_co.name] = _banner_line(PLAN_DIR / "dup.md")
+        finally:
+            ROOT, PLAN_DIR = _saved_rp
+        case("F5 a slug held in two checkouts: each checkout's banner Line names ITS OWN copy, by a "
+             "SHORT checkout name — never 'not in .claude/plans/', never an absolute path",
+             _we is None
+             and _lines.get("wt-dup") == "> **Line:** _(no objective recorded)_ `dup @ wt-dup`"
+             and _lines.get("main") == "> **Line:** _(no objective recorded)_ `dup @ main`")
+
+    # ── r4 Codex (Major): identical children of DIFFERENT parents, through `_banner_line` ──────
+    # The SIDE checkout's banner for `kid` must name the SIDE parent. With the r3 collapse the two
+    # identical `kid.md` files merged and the side banner showed `parent @ main` → `kid`.
+    with tempfile.TemporaryDirectory() as _tdc:
+        _cm = Path(_tdc).resolve() / "main"
+        _cm.mkdir()
+        _ce = pp.make_test_repo(_cm, "bp/codex-main")
+        _cs = Path(_tdc).resolve() / "side"
+        _ce = _ce or pp.test_git(_cm, "worktree", "add", "-q", str(_cs), "-b", "bp/side")
+        for _co, _pb in ((_cm, "- [x] main's parent\n"), (_cs, "- [x] side's parent\n")):
+            (_co / ".claude/plans").mkdir(parents=True, exist_ok=True)
+            (_co / ".claude/plans/parent.md").write_text("<!-- parent: - -->\n" + _pb)
+            (_co / ".claude/plans/kid.md").write_text("<!-- parent: parent -->\n- [ ] follow-up\n")
+        _saved_rc = (ROOT, PLAN_DIR)
+        try:
+            ROOT, PLAN_DIR = _cs, _cs / ".claude/plans"
+            _side = _banner_line(PLAN_DIR / "kid.md")
+        finally:
+            ROOT, PLAN_DIR = _saved_rc
+        case("F5b the SIDE checkout's banner for an identical `kid` names the SIDE parent — equal "
+             "content is not identity (r4 Codex)",
+             _ce is None
+             and _side == "> **Line:** _(no objective recorded)_ `parent @ side` → `kid @ side`")
+
+    # ── r6 Codex (Major): a hand-named file whose name equals a generated LABEL ────────────
+    # `kid @ main.md` (unfinished, with its own objective) beside `kid` held in two checkouts. Its
+    # banner must describe IT — keyed by label, it described the completed `kid` in main.
+    with tempfile.TemporaryDirectory() as _tdk:
+        _km = Path(_tdk).resolve() / "main"
+        _km.mkdir()
+        _ke = pp.make_test_repo(_km, "bp/collide-main")
+        _ks = Path(_tdk).resolve() / "side"
+        _ke = _ke or pp.test_git(_km, "worktree", "add", "-q", str(_ks), "-b", "bp/collide-side")
+        for _co in (_km, _ks):
+            (_co / ".claude/plans").mkdir(parents=True, exist_ok=True)
+            (_co / ".claude/plans/kid.md").write_text("<!-- parent: - -->\n- [x] done\n")
+        (_km / ".claude/plans/kid @ main.md").write_text(
+            "<!-- parent: - -->\n<!-- serving: unrelated unfinished work -->\n- [ ] open\n")
+        _saved_rk = (ROOT, PLAN_DIR)
+        try:
+            ROOT, PLAN_DIR = _km, _km / ".claude/plans"
+            _kline = _banner_line(PLAN_DIR / "kid @ main.md")
+            _kmain = _banner_line(PLAN_DIR / "kid.md")
+        finally:
+            ROOT, PLAN_DIR = _saved_rk
+        case("F5c a file NAMED like a generated label gets ITS OWN banner — its objective, not the "
+             "completed copy's (r6 Codex)",
+             _ke is None
+             and _kline == '> **Line:** "unrelated unfinished work" → `kid @ main`'
+             and _kmain == "> **Line:** _(no objective recorded)_ `kid @ main`")
 
     passed = sum(1 for _, ok in cases if ok)
     print(f"\n{passed}/{len(cases)} self-test cases passed")

@@ -835,7 +835,38 @@ EXPECTED_MUTATIONS = {
     # ratchet is what proves the cases can fail* to the passthrough properties it found missing, and
     # not to the delegation it introduced in the same commit. Measured: neutering the call reds 9
     # named cases, no crash.
-    "scripts/check-banner-armed.py": 48,
+    # ⟳ 2026-10-22: 48 -> 64, the THREAD class (`unarmed-thread`). Sixteen entries, one per
+    # firing branch and per quiet rule, every `expect` read from a real run of the mutant. ⚠ The
+    # seventeenth — deleting the hook's `BANNER_RC == 4 -> exit 2` mapping — is NOT here: a
+    # manifest's entries must all target the manifest's own file, and the hook is shell. F6d
+    # covers it structurally; nothing mutates it.
+    # ⟳ same day, 64 -> 65: BANNER_RE itself now accepts the `[mm-dd hh:mm]` stamp, so the
+    # thread class's private copy `STEP_BANNER_RE` is gone and its entry is RETIRED WITH ITS
+    # SUBJECT (-1). Two entries pin the one pattern instead (+2): reverting it to the unstamped
+    # form (the 2026-10-16 blindness, killed by an ORIGINAL class's stamped case) and making the
+    # stamp mandatory (killed by the unstamped cases). The fence-skip entry was RE-ANCHORED from
+    # `STEP_BANNER_RE` to `BANNER_RE`, not retired — its subject still exists.
+    # ⟳ r1 fold, same day, 65 -> 77: the thread class was REDESIGNED by the coordinator's
+    # decision (compare against `.claude/plans/` files, read the real row shapes, rows only under
+    # a banner, CommonMark fence closing). The 15 `thread class:` entries were removed and 27
+    # added. ⟳ r2 Codex 5 — CORRECTED: that is NOT "all 15 retired with their subject". Only the
+    # sentinel comparison and the journalled slug were deleted; BLOCK, last-row selection, fence
+    # exclusion and unreadable-is-quiet SURVIVED, and their entries were REWRITTEN against the new
+    # code under new names, not retired. Net +12 either way. The two BANNER_RE entries were kept.
+    # ⟳ r2 fold, 77 -> 87. Six entries lost their anchors to this round's rewrites: FIVE were
+    # RE-ANCHORED to the same property in the new code (`SWITCHED to plan`, guessing between two
+    # destinations, the `switched` label, run_decide ignoring THREAD_BLOCK, run_decide dropping the
+    # known set), and ONE was RETIRED WITH ITS SUBJECT — the r1 suppression is gone (Codex 3), and
+    # its replacement entry asserts the opposite: re-introducing the suppression is killed. Eleven
+    # are new: precedence (explicit > `plan` > leading, conflicts unreadable), the `also=` field and
+    # its wiring, the every-checkout union, its notes and its CANNOT RUN. Net -6 +16 = +10.
+    # ⟳ r3 fold, 87 -> 91. Four entries lost their anchors and were RE-ANCHORED to the same
+    # property in the new code (`SWITCHED to plan`, the dropped known set, the r1 suppression —
+    # now expressed at the log step, since the thread check runs BEFORE decide() — and the
+    # leading-slug arrow). Four are new: an arrow in prose is not a destination (r3 F7, two
+    # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
+    # the warning (F6). Net +4.
+    "scripts/check-banner-armed.py": 91,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -919,7 +950,28 @@ EXPECTED_MUTATIONS = {
     # The other two close unfalsifiable fixtures: a `tag` class the case matched but never
     # captured, and a fan-out threshold whose boundary value was absent from the fixture.
     # ⟳ 2026-10-22: 15 -> 16, the Refresh button.
-    "scripts/gen-work-lines.py": 16,
+    # ⟳ 2026-10-22, banner-thread-armed r2 fold, 16 -> 23: `plan_dirs` (every checkout's plans,
+    # owner's decision option A) and the union `read_plans_noted`. Seven entries, one per branch —
+    # git's order kept, a missing checkout named, the git fallback named, the union itself,
+    # duplicate slugs labelled, a duplicated parent re-pointed at the child's own checkout, and
+    # the page showing its notes — every `expect` read from a real `git worktree add` run.
+    # ⟳ r3 fold, 23 -> 28. The missing-checkout entry is RETIRED WITH ITS SUBJECT — the rule
+    # inverted (r3 F2: a gone folder is skipped SILENTLY), and a new entry re-adds the note and is
+    # killed. Two were RE-ANCHORED (differing copies labelled; the parent resolver, now `row_for`).
+    # Six are new: byte-identical copies collapse (F4), short labels, the not-listed directory's
+    # label (F6), another checkout's unreadable plans named (F6), and inherited GIT_* dropped.
+    # Net -1 +6 = +5.
+    # ⟳ r4 fold, 28 -> 28: the byte-identical collapse was REMOVED (r4 Codex, Major — it merged
+    # children of different parents), and its ONE entry is RETIRED WITH THE CODE. Two entries were
+    # RE-ANCHORED to the replacement loop (copies labelled; short labels). ONE is new: it
+    # RE-INTRODUCES a collapse and is killed by WT10, Codex's own fixture. Net -1 +1 = 0.
+    # ⟳ r6 fold, 28 -> 30: identity is now the KEY `(checkout, slug)` (r6 Codex, Major — the
+    # display label was the dict key, so a file NAMED `kid @ main.md` overwrote the generated label
+    # and an unfinished plan vanished). Four entries lost their anchors to the re-keying and were
+    # RE-ANCHORED to the same property (dangling parent, cycle cut, the asking checkout in
+    # `row_for`, the checkout label); two are NEW: `build_forest` re-keyed by label (killed by
+    # WT11, Codex's fixture) and `row_for` returning a label. Net +2.
+    "scripts/gen-work-lines.py": 30,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -1659,7 +1711,11 @@ EXPECTED_MUTATIONS = {
     # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
     # the full CommonMark escape set, and --finish never querying the branch.
-    "scripts/begin-plan.py": 56,
+    # ⟳ 2026-10-22, banner-thread-armed r3 fold, 56 -> 57: the banner `Line:` resolves a slug
+    # held in two checkouts through `gen-work-lines.row_for` (r3 Claude F5); the new entry puts the
+    # bare-stem lookup back and is killed by the two-checkout case.
+    # ⟳ r6 fold, 57 -> 58: `work_line` re-keyed by the display label is killed by F5c.
+    "scripts/begin-plan.py": 58,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5591,7 +5647,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1783)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1842)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
