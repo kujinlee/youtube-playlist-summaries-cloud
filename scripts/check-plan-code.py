@@ -1374,7 +1374,15 @@ EXPECTED_MUTATIONS = {
     # Two candidates REJECTED as equivalent: dropping `w != "coordinator"` (a coordinator entry's
     # verdict is always None, so the `v is not None` clause already excludes it) and reading
     # coordinator documents in `review_rounds` (their verdict is never read).
-    "scripts/check-decision-scheme.py": 128,
+    # ⟳ 2026-10-23 r3 fold: 128 -> 107 — the ONE permitted kind of fall. Rounds 2 and 3 were
+    # consecutive fold-induced rounds in the acknowledgment, THRASHING, and it was REMOVED.
+    # THIRTY-FIVE entries RETIRED WITH THEIR SUBJECT: the acknowledgment row and its validation,
+    # `acknowledgment_rejection`, `review_rounds`, `half_verdict`, main's corpus read, the
+    # acknowledged/rejected classes and their trigger-10 reader, and trigger 2's last-BET read
+    # (the only non-bet row it skipped is gone). EIGHT re-pointed — three of them back to the
+    # text they had on master. FOURTEEN added on its replacement: the closed pin list in
+    # `baseline.json` (`pinned_lost_bets`), trigger 3's exemption, and trigger 10's two halves.
+    "scripts/check-decision-scheme.py": 107,
     "scripts/check-goal-status.py": 7,
     # ⟳ 2026-09-16, backlog #137: 43 -> 47. The anti-drift falsifier changed AUTHORITY — it used to
     # read `schema-gates.yml`'s `docs/` path filters, and that file no longer has path filters,
@@ -5667,7 +5675,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1884)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1863)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

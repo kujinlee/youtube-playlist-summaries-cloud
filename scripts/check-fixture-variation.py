@@ -653,12 +653,11 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # with its subject; `lost_bets`, `t3_lost_bet_not_escalated` and `t10_escalated_in_hindsight`
     # join, each varied by two distinct inputs per branch. ⟳ r1 fold: t10 is renamed
     # `t10_missed_escalation_acknowledged`, and `invalid_rows` (extracted from `main`) joins.
-    # ⟳ r2 fold: the acknowledgment is judged against the corpus on disk, so `rounds` joins the
-    # three trigger-3 readers and `main`, with `acknowledgment_rejection`, `half_verdict` and
-    # `review_rounds`.
+    # ⟳ r3 fold: the in-log acknowledgment is REMOVED (thrashing), and every key that belonged
+    # to it goes WITH its subject — `acknowledgment_rejection`, `half_verdict`, `review_rounds`,
+    # `main.rounds` and the `rounds` parameter of the trigger-3 readers. t10 is renamed
+    # `t10_pre_trigger_lost_bet`; the readers take `pinned`, and `pinned_lost_bets` joins.
     'check-decision-scheme.py': (
-        'acknowledgment_rejection.ack',
-        'acknowledgment_rejection.rounds',
         'component_rounds.rounds',
         'derive_outcome.after_round',
         'derive_outcome.seen',
@@ -668,19 +667,16 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         'empty_listing_refusal.paths',
         'empty_listing_refusal.sha',
         'group_by_unit.rows',
-        'half_verdict.text',
         'invalid_rows.rows',
-        'lost_bets.rounds',
         'lost_bets.rows',
         'main.argv',
         'main.baseline_path',
         'main.corpus',
         'main.log_path',
-        'main.rounds',
         'main.starved',
         'parse_armed_at.raw',
+        'pinned_lost_bets.baseline',
         'read_log.path',
-        'review_rounds.reviews',
         'rounds_in_paths.paths',
         'rounds_in_paths.shapes',
         'route_next.tried',
@@ -692,9 +688,9 @@ EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
         't1_not_fed.rows',
         't1_not_fed.subjects_since_arming',
         't2_non_termination.rows',
-        't10_missed_escalation_acknowledged.rounds',
-        't10_missed_escalation_acknowledged.rows',
-        't3_lost_bet_not_escalated.rounds',
+        't10_pre_trigger_lost_bet.pinned',
+        't10_pre_trigger_lost_bet.rows',
+        't3_lost_bet_not_escalated.pinned',
         't3_lost_bet_not_escalated.rows',
         't4_no_improvement.baseline_median',
         't4_no_improvement.rows',

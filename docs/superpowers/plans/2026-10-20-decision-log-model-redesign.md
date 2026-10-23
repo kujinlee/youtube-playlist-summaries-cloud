@@ -160,12 +160,11 @@ another rung (a route that was never attempted) or edits an append-only row.
   "rounds_at_termination": int              # iff stopped
 ```
 
-> ⟳ **2026-10-23 (branch `feat/trigger3-lost-bet`, not this plan's work):** the live log gained a
-> third, NON-BET row — `{"subject", "unit", "acknowledges": "missed-escalation",
-> "rounds_at_termination", "observed"}` — which closes a unit whose escalation was not logged in
-> time. It deliberately does **not** use `kind`, so it cannot collide with this schema; if this
-> plan resumes, its `kind` must coexist with `acknowledges` (an acknowledgment is neither an
-> attempt nor an observation).
+> ⟳ **2026-10-23 (branch `feat/trigger3-lost-bet`, not this plan's work):** `kind` is FREE for
+> this schema. That branch briefly added a non-bet "missed-escalation acknowledgment" row, first
+> under `kind` and then under a separate field, and then REMOVED it; the live log has no non-bet
+> row, and a bet row carrying `kind` is accepted by today's validator. The lost bets that predate
+> the new trigger 3 are pinned in `baseline.json` (`lost_bets_before_trigger3`) instead.
 
 ⛔ **THE EPOCH, which is what keeps the instrument alive (XB1/CB1).** Every clause above is required
 **iff `schema >= 2`**. A row with no `schema` is epoch 1 and is validated by the v1 rules exactly as

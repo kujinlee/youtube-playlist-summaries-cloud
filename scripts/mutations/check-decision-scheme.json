@@ -190,7 +190,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "        if bets and bets[-1].get(\"outcome\") == \"continued\":",
+        "        if unit_rows[-1].get(\"outcome\") == \"continued\":",
         "        if True:"
       ]
     ],
@@ -900,7 +900,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "f\"({retro} retroactive, so {len(scoreable)} scoreable{ack_note}); \"",
+        "f\"({retro} retroactive, so {len(scoreable)} scoreable); \"",
         "f\"\""
       ]
     ],
@@ -913,7 +913,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    retro = len(rows) - len(prospective(rows)) - acks",
+        "    retro = len(rows) - len(prospective(rows))",
         "    retro = 0"
       ]
     ],
@@ -1143,38 +1143,25 @@
     ]
   },
   {
-    "name": "ANY later row counts as an escalation in time, so an acknowledgment silences the warning",
+    "name": "a later prospective bet no longer escalates, so every continued bet FAILs",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "            if prospective(later):",
-        "            if later:"
+        "            if prospective(unit_rows[i + 1:]):",
+        "            if False:"
       ]
     ],
     "expect": [
-      "⭐ an ACKNOWLEDGMENT after the bet WARNS on trigger 10, and does not FAIL"
+      "⭐ a bet followed by a PROSPECTIVE next bet is quiet on trigger 3"
     ]
   },
   {
-    "name": "an acknowledged unit is classed as unlogged, so an acknowledgment cannot downgrade the FAIL",
+    "name": "trigger 3 reads only the PINNED lost bets, inverting the exemption",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "\"rejected\" if why else \"acknowledged\"",
-        "\"unlogged\""
-      ]
-    ],
-    "expect": [
-      "⭐ an ACKNOWLEDGMENT after the bet WARNS on trigger 10, and does not FAIL"
-    ]
-  },
-  {
-    "name": "trigger 3 reads the ACKNOWLEDGED bets instead of the unlogged ones",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    unlogged = [k for k, how, _ in found if how == \"unlogged\"]",
-        "    unlogged = [k for k, how, _ in found if how == \"acknowledged\"]"
+        "    unlogged = [k for k in lost_bets(rows) if k not in pinned]",
+        "    unlogged = [k for k in lost_bets(rows) if k in pinned]"
       ]
     ],
     "expect": [
@@ -1186,7 +1173,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if not unlogged and not rejected:\n        return None",
+        "    if not unlogged:\n        return None",
         "    if True:\n        return None"
       ]
     ],
@@ -1195,37 +1182,11 @@
     ]
   },
   {
-    "name": "trigger 10 reads the UNLOGGED bets instead of the acknowledged ones",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    acked = [k for k, how, _ in lost_bets(rows, rounds) if how == \"acknowledged\"]",
-        "    acked = [k for k, how, _ in lost_bets(rows, rounds) if how == \"unlogged\"]"
-      ]
-    ],
-    "expect": [
-      "...and so does one closing a unit after its SECOND rung, on another unit"
-    ]
-  },
-  {
-    "name": "trigger 10 never fires",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if not acked:\n        return None",
-        "    if True:\n        return None"
-      ]
-    ],
-    "expect": [
-      "⭐ an ACKNOWLEDGMENT after the bet WARNS on trigger 10, and does not FAIL"
-    ]
-  },
-  {
     "name": "trigger 3 is computed and then DISCARDED before it reaches a reader",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "(\"3 LOST BET NOT ESCALATED\", t3_lost_bet_not_escalated(rows, on_disk)),",
+        "(\"3 LOST BET NOT ESCALATED\", t3_lost_bet_not_escalated(rows, pins)),",
         "(\"3 LOST BET NOT ESCALATED\", None),"
       ]
     ],
@@ -1238,168 +1199,12 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "         t10_missed_escalation_acknowledged(rows, on_disk)),",
-        "         None),"
+        "(\"10 PRE-TRIGGER LOST BET\", t10_pre_trigger_lost_bet(rows, pins)),",
+        "(\"10 PRE-TRIGGER LOST BET\", None),"
       ]
     ],
     "expect": [
-      "⭐ an acknowledged bet reaches the CLI as trigger 10's WARN and exits 0"
-    ]
-  },
-  {
-    "name": "an acknowledgment is validated as a BET, so it is refused for having no route",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if \"acknowledges\" in row:",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "⭐ an acknowledgment after a continued FIRST bet is accepted"
-    ]
-  },
-  {
-    "name": "an unknown acknowledgment value is validated as a missed escalation",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        if row[\"acknowledges\"] != ACKNOWLEDGMENT:",
-        "        if False:"
-      ]
-    ],
-    "expect": [
-      "an unknown acknowledgment is NAMED, not read as a bet or as a missed escalation"
-    ]
-  },
-  {
-    "name": "an acknowledgment may carry bet fields, so it can enter the ladder",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if carried:",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "an acknowledgment carrying a ROUTE is refused — it would enter the ladder"
-    ]
-  },
-  {
-    "name": "`retroactive` is dropped from the bet fields, so an acknowledgment may claim a provenance",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "              \"prediction\", \"retroactive\")",
-        "              \"prediction\")"
-      ]
-    ],
-    "expect": [
-      "...and one flagged retroactive is refused too — it is hindsight BY KIND"
-    ]
-  },
-  {
-    "name": "an acknowledgment's account need only be a string, so punctuation passes as one",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if not isinstance(obs, str) or not any(ch.isalnum() for ch in obs):",
-        "    if not isinstance(obs, str):"
-      ]
-    ],
-    "expect": [
-      "...and so is one whose account has no words in it"
-    ]
-  },
-  {
-    "name": "a RETROACTIVE row counts as the bet an acknowledgment may follow",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    bets = prospective(prior)",
-        "    bets = list(prior)"
-      ]
-    ],
-    "expect": [
-      "an acknowledgment on a unit with NO prospective bet is refused"
-    ]
-  },
-  {
-    "name": "an acknowledgment on a unit with no bet at all is not refused",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if not bets:",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "...including a unit with no rows at all"
-    ]
-  },
-  {
-    "name": "the FIRST bet is checked instead of the last, so an in-flight bet can be acknowledged as lost",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if bets[-1].get(\"outcome\") != \"continued\":",
-        "    if bets[0].get(\"outcome\") != \"continued\":"
-      ]
-    ],
-    "expect": [
-      "...and after an IN-FLIGHT bet, the last bet on the unit being the one that counts"
-    ]
-  },
-  {
-    "name": "prospective() keeps acknowledgments, so a record reads as a bet placed in time",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    dicts = [r for r in dicts if not is_acknowledgment(r)]",
-        "    dicts = list(dicts)"
-      ]
-    ],
-    "expect": [
-      "prospective() drops an acknowledgment — it is not a bet placed in time"
-    ]
-  },
-  {
-    "name": "nothing is recognised as an acknowledgment",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    return isinstance(row, dict) and row.get(\"acknowledges\") == ACKNOWLEDGMENT",
-        "    return False"
-      ]
-    ],
-    "expect": [
-      "prospective() drops an acknowledgment — it is not a bet placed in time"
-    ]
-  },
-  {
-    "name": "trigger 2 reads the last ROW, so an acknowledgment hides an exhausted, still-losing unit",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        bets = [r for r in unit_rows if not is_acknowledgment(r)]",
-        "        bets = unit_rows"
-      ]
-    ],
-    "expect": [
-      "⭐ an exhausted unit whose last bet lost STILL refutes the design after an acknowledgment"
-    ]
-  },
-  {
-    "name": "the acknowledgment count is hardcoded to zero in the one line a reader sees",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    acks = sum(1 for r in rows if is_acknowledgment(r))",
-        "    acks = 0"
-      ]
-    ],
-    "expect": [
-      "⭐ an acknowledged bet reaches the CLI as trigger 10's WARN and exits 0"
+      "⭐ a PINNED lost bet reaches the CLI as trigger 10's WARN and exits 0"
     ]
   },
   {
@@ -1429,263 +1234,185 @@
     ]
   },
   {
-    "name": "a bet may follow an acknowledgment, so the closing statement licenses more accretion",
+    "name": "trigger 3 ignores the pins, so history FAILs like a new lost bet",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if any(is_acknowledgment(r) for r in prior):\n        return (f\"{unit_key(row)} is CLOSED",
-        "    if False:\n        return (f\"{unit_key(row)} is CLOSED"
+        "lost_bets(rows) if k not in pinned",
+        "lost_bets(rows) if True"
       ]
     ],
     "expect": [
-      "⭐ a BET after an acknowledgment is refused — the unit is CLOSED"
+      "⭐ a PINNED lost bet does not FAIL trigger 3, and trigger 10 names it as history"
     ]
   },
   {
-    "name": "a second acknowledgment is accepted, so one unit can be closed twice",
+    "name": "trigger 10 never names a pinned lost bet, so history is exempted in silence",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if any(is_acknowledgment(r) for r in prior):\n        return (f\"{unit_key(row)} is already closed",
-        "    if False:\n        return (f\"{unit_key(row)} is already closed"
+        "    hit = sorted(k for k in pinned if k in found)",
+        "    hit = []"
       ]
     ],
     "expect": [
-      "⭐ a SECOND acknowledgment on the same unit is refused — there is one per unit"
+      "⭐ a PINNED lost bet does not FAIL trigger 3, and trigger 10 names it as history"
     ]
   },
   {
-    "name": "an acknowledgment's round count need only be present, so zero and True pass as one",
+    "name": "trigger 10 never names an UNUSED pin, so a stale pin passes forever",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if not isinstance(n, int) or isinstance(n, bool) or n < 1:",
-        "    if n is None:"
+        "    unused = sorted(k for k in pinned if k not in found)",
+        "    unused = []"
       ]
     ],
     "expect": [
-      "...and so is one whose count is not an integer >= 1 (zero, and a bool posing as one)"
+      "⭐ a pin on a unit ABSENT from the log WARNS as unused and does not crash"
     ]
   },
   {
-    "name": "an acknowledgment's round count is never read, so a closing statement need not say how it ended",
+    "name": "trigger 10 never fires",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    n = row.get(\"rounds_at_termination\")",
-        "    n = 1"
+        "    if not hit and not unused:\n        return None",
+        "    if True:\n        return None"
       ]
     ],
     "expect": [
-      "⭐ an acknowledgment WITHOUT rounds_at_termination is refused — it closes the unit"
+      "...including over an EMPTY log"
     ]
   },
   {
-    "name": "every later row counts as an acknowledgment, so an unlogged escalation is downgraded to a WARN",
+    "name": "trigger 10 sees no lost bets, so every pin reads as unused",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "            if not acks:\n                out.append((key, \"unlogged\", None))",
-        "            if False:\n                out.append((key, \"unlogged\", None))"
+        "    found = set(lost_bets(rows))",
+        "    found = set()"
       ]
     ],
     "expect": [
-      "⭐ a FIRST bet the stream continued past, with no later row, FAILS naming its unit"
+      "...and so is a pinned SECOND-rung loss on another unit"
     ]
   },
   {
-    "name": "a later review round no longer refutes an acknowledgment, so ongoing review stays a WARN",
+    "name": "an ABSENT pin list is refused, so a repository with no history cannot run",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if top > n:",
+        "    if raw is None:\n        return frozenset(), None",
+        "    if raw is None:\n        return None, \"absent\""
+      ]
+    ],
+    "expect": [
+      "...and an ABSENT key is the empty set, a repository with no pre-trigger history"
+    ]
+  },
+  {
+    "name": "a pin list that is not a list is iterated anyway",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(raw, list):\n        return None, f\"{PRE_TRIGGER_PINS} is",
+        "    if False:\n        return None, f\"{PRE_TRIGGER_PINS} is"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin list of the wrong SHAPE is refused, never read as empty"
+    ]
+  },
+  {
+    "name": "a pin entry that is not an object is read as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if (not isinstance(item, dict) or not isinstance(item.get(\"subject\"), str)",
+        "        if (not isinstance(item.get(\"subject\"), str)"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and so is a pin ENTRY of the wrong shape"
+    ]
+  },
+  {
+    "name": "a pin's reason need only be a string, so punctuation passes as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(why, str) or not any(ch.isalnum() for ch in why):",
+        "        if not isinstance(why, str):"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin with no REASON is refused — an exemption must say why it is history"
+    ]
+  },
+  {
+    "name": "a pin written twice is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if key in out:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin written TWICE is refused"
+    ]
+  },
+  {
+    "name": "a baseline that is not an object is read as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(baseline, dict):\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    raw = baseline.get(PRE_TRIGGER_PINS)",
+        "    if False:\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    raw = baseline.get(PRE_TRIGGER_PINS)"
+      ]
+    ],
+    "expect": [
+      "a baseline that is not an object is refused"
+    ]
+  },
+  {
+    "name": "a malformed pin list is not refused at the CLI, so trigger 3 runs over no pins",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if pins_why:",
         "    if False:"
       ]
     ],
     "expect": [
-      "⭐ a LATER round on disk revokes the acknowledgment: trigger 3 FAILs again, naming why"
+      "⛔ a MALFORMED pin list is CANNOT RUN at the CLI, never an empty one"
     ]
   },
   {
-    "name": "a round count the corpus never reached is accepted",
+    "name": "main() never reads the pins from the baseline",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if top < n:",
-        "    if False:"
+        "    pins, pins_why = pinned_lost_bets(pinned)",
+        "    pins, pins_why = frozenset(), None"
       ]
     ],
     "expect": [
-      "a count the corpus never reached refutes the acknowledgment"
+      "⭐ a PINNED lost bet reaches the CLI as trigger 10's WARN and exits 0"
     ]
   },
   {
-    "name": "the EARLIEST round is read as the subject's last, so a sibling's later round is missed",
+    "name": "the pins are read from the wrong baseline key, so the shipped list goes missing",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    top = max(by_round)",
-        "    top = min(by_round)"
+        "PRE_TRIGGER_PINS = \"lost_bets_before_trigger3\"",
+        "PRE_TRIGGER_PINS = \"lost_bets\""
       ]
     ],
     "expect": [
-      "⭐ a TERMINATED unit whose SIBLING is still being reviewed is refuted — per subject"
-    ]
-  },
-  {
-    "name": "a final round with no verdict-bearing half is accepted as converged",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if not verdicts:\n        return (f\"r{top}",
-        "    if False:\n        return (f\"r{top}"
-      ]
-    ],
-    "expect": [
-      "a final round whose only document is the coordinator's is not evidence of convergence"
-    ]
-  },
-  {
-    "name": "one CONVERGED half outvotes a NOT CONVERGED one in the final round",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if any(v != \"CONVERGED\" for v in verdicts):",
-        "    if all(v != \"CONVERGED\" for v in verdicts):"
-      ]
-    ],
-    "expect": [
-      "...and so does one where the two halves DISAGREE, on another subject"
-    ]
-  },
-  {
-    "name": "a half with NO verdict line is counted as a verdict, so silence reads as non-convergence",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "if w != \"coordinator\" and v is not None]",
-        "if w != \"coordinator\"]"
-      ]
-    ],
-    "expect": [
-      "...nor is one whose halves carry no verdict line, on another subject"
-    ]
-  },
-  {
-    "name": "a subject with no review round on disk is not refused before it is measured",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if not by_round:",
-        "    if False:"
-      ]
-    ],
-    "expect": [
-      "...and so does a subject with no review round on disk at all"
-    ]
-  },
-  {
-    "name": "a REFUTED acknowledgment is still classed as acknowledged, so the corpus cannot revoke it",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "out.append((key, \"rejected\" if why",
-        "out.append((key, \"acknowledged\" if why"
-      ]
-    ],
-    "expect": [
-      "⭐ a LATER round on disk revokes the acknowledgment: trigger 3 FAILs again, naming why"
-    ]
-  },
-  {
-    "name": "trigger 3 drops the refuted acknowledgments, so their bets go quiet",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    rejected = [(k, why) for k, how, why in found if how == \"rejected\"]",
-        "    rejected = []"
-      ]
-    ],
-    "expect": [
-      "⭐ a final round that did NOT converge refutes the acknowledgment"
-    ]
-  },
-  {
-    "name": "main() never reads the corpus, so every acknowledgment is judged against nothing",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if any(is_acknowledgment(r) for r in rows):\n        on_disk, rounds_why = rounds()",
-        "    if False:\n        on_disk, rounds_why = rounds()"
-      ]
-    ],
-    "expect": [
-      "⭐ an acknowledged bet reaches the CLI as trigger 10's WARN and exits 0"
-    ]
-  },
-  {
-    "name": "an unreadable review corpus is not refused, so an acknowledgment is judged against nothing",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "        if rounds_why:\n            print(f\"CANNOT RUN — the review corpus could not be read to verify",
-        "        if False:\n            print(f\"CANNOT RUN — the review corpus could not be read to verify"
-      ]
-    ],
-    "expect": [
-      "⛔ an UNREADABLE review corpus with an acknowledgment to verify is CANNOT RUN"
-    ]
-  },
-  {
-    "name": "review_rounds swallows the corpus refusal and returns an empty corpus",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if why:\n        return None, why\n    out: dict[str, dict[int, list]] = {}",
-        "    if False:\n        return None, why\n    out: dict[str, dict[int, list]] = {}"
-      ]
-    ],
-    "expect": [
-      "⛔ a MISSING corpus directory is CANNOT RUN, never an empty corpus"
-    ]
-  },
-  {
-    "name": "an unreadable review half is read as having no verdict",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "                return None, f\"review half {path} could not be read: {exc}\"",
-        "                verdict = None"
-      ]
-    ],
-    "expect": [
-      "⛔ ...and so is an UNREADABLE half, whose verdict would otherwise go missing"
-    ]
-  },
-  {
-    "name": "a half's FIRST verdict line is read, so a quoted earlier verdict overrides its own",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    return found[-1] if found else None",
-        "    return found[0] if found else None"
-      ]
-    ],
-    "expect": [
-      "the LAST verdict line is the document's own, not one it quotes above it"
-    ]
-  },
-  {
-    "name": "a bold verdict line is not recognised",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "HALF_VERDICT_RE = re.compile(r\"^\\W*VERDICT",
-        "HALF_VERDICT_RE = re.compile(r\"^VERDICT"
-      ]
-    ],
-    "expect": [
-      "...and a bold one, NOT CONVERGED"
+      "⛔ the SHIPPED pin list is exactly the two lost bets that predate trigger 3"
     ]
   }
 ]
