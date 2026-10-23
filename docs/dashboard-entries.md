@@ -17120,9 +17120,15 @@ so it can never be mistaken for one recorded live.
 
 Over the real transcripts it would link 56 plans from the replay alone. You then chose to link
 the cases where the earlier plan had just been closed and the "switched from" line named exactly
-that plan. Those 24 links are labelled "from banner" and drawn in their own style, so the page shows
-three kinds of link and says what each rests on. 43 plans stay unlinked, including the two where
-the line named a plan other than the one the replay found active. Two plans already had a recorded
+that plan. Those links are labelled "from banner" and drawn in their own style, so the page shows
+three kinds of link and says what each rests on. The two plans where the line named a plan other
+than the one the replay found active stay unlinked.
+
+After review, the replay also checks itself. Wherever the transcripts show what the tracking file
+actually held at a moment, the replay compares its own answer with what was seen. If the two
+disagree, it corrects itself and drops any links it had worked out since the last check. With that
+in place, the reviewers' two wrong links are gone. The current count is 56 links from the replay,
+26 from a "switched from" line, and 41 unlinked. Two plans already had a recorded
 link and are untouched. It also reproduces the one link the live tool recorded today exactly.
 
 **Waiting on you:** nothing has been written yet. The table is ready for you to look at, and the

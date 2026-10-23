@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 70 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 85 cases
 
 WHY THIS EXISTS
 ---------------
@@ -61,10 +61,33 @@ and time, never `transcript`, so the page can say what the link rests on. Every 
 disagreement stays unlinked and listed, and a banner never overrides a parent the replay found
 ARMED at the time.
 
+⭐ CHECKPOINTS (review round 1, Claude F4 — the structural fix). The transcripts also hold direct
+OBSERVATIONS of the sentinel: a `cat`/`sed -n` of it, `--status` (either script), the state line
+of an arm or tick, `--finish`'s reply, and the Stop hook's own `✅ … Clearing` message. At each the
+replayed state is compared with the observation. A disagreement RESETS the replay to what was
+observed and leaves NO MARKER on every plan first armed since the last checkpoint ("replay
+contradicted by an observation"). Before the first checkpoint the state is UNKNOWN, not "nothing
+armed" (F3) — the transcripts begin mid-history.
+
+⛔ ALSO FROM ROUND 1. Every call in a command is found, in order, including inside `for … done`; a
+call in a loop ran an unknown number of times, so the state is UNKNOWN until the next checkpoint
+(F1). A sentinel write in the same command as a call is applied IN COMMAND ORDER — `rm` is a known
+"nothing armed" (but no clear a banner may cite), any other edit is UNKNOWN; a Python heredoc that
+writes a sentinel cannot be ordered and makes every checkout UNKNOWN (F2). Each checkout's sentinel
+is replayed SEPARATELY, and output from a command whose calls span two checkouts is attributed to
+neither (Codex 1). A banner counts only as the assistant's live text in the banner block under a
+`## ▶` heading — never fenced, block-quoted or in a tool result (Codex 3). `--write` is atomic.
+
+⚠ A STATED BOUND (r1 Claude F6, not fixed). A plan's parent is taken from its FIRST recorded arm.
+A plan file deleted and re-created by a later arm carries the later arm's live parent; the birth
+check cannot see this, because the new file is born after the first arm. No such case was found
+on 2026-10-22 (the one inspected gave `-` at both arms).
+
 FAILS IF
 --------
   * `--ground-truth`: the replay over the real transcripts does not reproduce the link the live
-    code recorded on 2026-10-22 (`work-lines-backfill` <- `banner-thread-armed`) -> exit 1;
+    code recorded on 2026-10-22 (`work-lines-backfill` <- `banner-thread-armed`), or a checkpoint
+    disagreement was not resolved -> exit 1 (the agree/disagree counts are printed either way);
     the transcripts are absent or hold no `begin-plan` call -> exit 2, CANNOT RUN, never a pass.
   * any run: the plans directory or the transcripts directory cannot be read -> exit 2.
 """
@@ -138,9 +161,39 @@ def strip_heredocs(cmd: str) -> str:
     return "\n".join(out)
 
 
+def heredoc_bodies(cmd: str) -> str:
+    """Every heredoc BODY, joined — what `strip_heredocs` removes. Data to the shell, but a Python
+    body can still WRITE the sentinel, and where it does the order is not knowable."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        ln = lines[i]
+        i += 1
+        for m in _HEREDOC.finditer(ln):
+            while i < len(lines) and lines[i].strip() != m.group(2):
+                out.append(lines[i])
+                i += 1
+            i += 1
+    return "\n".join(out)
+
+
+def _read_word(cmd: str, i: int) -> tuple[str, int]:
+    """One shell word starting at `i`, quotes removed, and the index just past it."""
+    n, out = len(cmd), []
+    while i < n and cmd[i] not in " \t;|&()\n":
+        if cmd[i] in "'\"":
+            j = cmd.find(cmd[i], i + 1)
+            j = n if j < 0 else j
+            out.append(cmd[i + 1:j])
+            i = j + 1
+            continue
+        out.append(cmd[i])
+        i += 1
+    return "".join(out), i
+
+
 def tokenize(cmd: str) -> list[tuple[str, str]]:
-    """[(kind, text)] with kind 'w' (a word, quotes removed) or 'op'. Redirections are DROPPED
-    with their target, so `2>&1` and `> out` never become arguments."""
+    """[(kind, text)]: 'w' a word (quotes removed), 'op' an operator, 'redir' a redirection's
+    TARGET — so `2>&1` is never an argument, and `>> .claude/executing-plan` is a visible write."""
     toks: list[tuple[str, str]] = []
     i, n = 0, len(cmd)
     word, has_word = [], False
@@ -188,7 +241,7 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
         if c in " \t":
             flush(); i += 1
             continue
-        if c in "<>":
+        if c in "<>" or (c == "&" and i + 1 < n and cmd[i + 1] == ">"):
             # a redirection: an all-digit word before it is its fd, not an argument
             if has_word and "".join(word).isdigit():
                 word, has_word = [], False
@@ -196,22 +249,15 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
             i += 1
             while i < n and cmd[i] in "<>":
                 i += 1
-            if i < n and cmd[i] == "&":
+            if i < n and cmd[i] == "&" and c != "&":
                 i += 1
                 while i < n and (cmd[i].isdigit() or cmd[i] == "-"):
                     i += 1
                 continue
             while i < n and cmd[i] in " \t":
                 i += 1
-            # swallow the target word
-            sub = tokenize_word(cmd, i)
-            i = sub
-            continue
-        if c == "&" and i + 1 < n and cmd[i + 1] == ">":
-            flush(); i += 2
-            while i < n and cmd[i] in " \t":
-                i += 1
-            i = tokenize_word(cmd, i)
+            target, i = _read_word(cmd, i)
+            toks.append(("redir", target))
             continue
         if c in ";|&()\n":
             flush()
@@ -223,18 +269,6 @@ def tokenize(cmd: str) -> list[tuple[str, str]]:
         word.append(c); has_word = True; i += 1
     flush()
     return toks
-
-
-def tokenize_word(cmd: str, i: int) -> int:
-    """The index just past one shell word starting at `i` (a redirection target)."""
-    n = len(cmd)
-    while i < n and cmd[i] not in " \t;|&()\n":
-        if cmd[i] in "'\"":
-            j = cmd.find(cmd[i], i + 1)
-            i = n if j < 0 else j + 1
-            continue
-        i += 1
-    return i
 
 
 _VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
@@ -257,60 +291,148 @@ def expand(word: str, env: dict[str, str]) -> str | None:
 
 
 _INTERP = re.compile(r"^(?:\S*/)?python[0-9.]*$")
+# ⟳ r1 Claude F1: `do python3 scripts/begin-plan.py --tick` was not a call, because `do` is not
+# an interpreter — and `for i in 1 2 3 4; do … --tick; done` is how steps are ticked in bulk here.
+_RESERVED = {"do", "then", "else", "elif", "!", "time", "{", "}", "if", "fi", "esac", "done"}
+_LOOP_OPEN = {"for", "while", "until", "select"}
+_SCRIPTS = {"begin-plan.py": "begin-plan", "check-plan-progress.py": "progress"}
+_SENT_TAIL = "/" + SENTINEL_REL
+_PLAN_FILE = re.compile(r"^(.*)/\.claude/plans/([a-z0-9][a-z0-9-]*)\.md$")
 
 
 @dataclass
 class Call:
-    """One `begin-plan.py` invocation: its arguments and the checkout whose sentinel it touched."""
+    """One invocation of `begin-plan.py` (or `check-plan-progress.py`): its arguments, the
+    checkout whose sentinel it touches, and whether it ran inside a loop."""
     args: list[str]
     root: str | None      # None: the script path or cwd could not be resolved
+    loop: bool = False
+    script: str = "begin-plan"
 
 
-def find_calls(cmd: str, cwd: str) -> list[Call]:
-    """Every `begin-plan.py` executed by a Bash command, in order, with the root it ran against.
+@dataclass
+class Op:
+    """One step of a Bash command, in COMMAND ORDER. ⟳ r1 Claude F2 / Codex 2: a write and a call
+    in one command were examined by an `if`/`elif`, so the write was never seen at all."""
+    kind: str             # 'call' | 'write' | 'read' | 'planwrite'
+    root: str | None
+    call: Call | None = None
+    effect: str = ""      # write: 'rm' (removed — nothing armed) | 'edit' (content unknown)
+    slug: str = ""        # planwrite
 
-    The ROOT is the script's own checkout (`begin-plan.ROOT = Path(__file__).parent.parent`): the
-    path is resolved against the record's cwd as changed by `cd` earlier in the same command.
-    """
+
+def _target(word: str, env: dict[str, str], cur: str | None) -> tuple | None:
+    """('sentinel', root) / ('plan', root, slug) when `word` names one of those files; root None
+    when the path cannot be resolved. None when it names neither."""
+    if not (word.endswith(SENTINEL_REL) or ".claude/plans/" in word):
+        return None
+    p = expand(word, env)
+    full = (None if p is None or (cur is None and not os.path.isabs(p))
+            else os.path.normpath(os.path.join(cur or "/", p)))
+    if word.endswith(SENTINEL_REL) and (full is None or full.endswith(_SENT_TAIL)):
+        return ("sentinel", None if full is None else full[:-len(_SENT_TAIL)])
+    m = _PLAN_FILE.match(full or "")
+    return ("plan", m.group(1), m.group(2)) if m else None
+
+
+def parse_command(cmd: str, cwd: str) -> list[Op]:
+    """Every call, sentinel write, sentinel read and plan-file write a Bash command makes, IN
+    ORDER, each against the checkout it resolves to (`begin-plan.ROOT` is the script's own
+    checkout; a path is resolved against the record's cwd as changed by `cd` in the command)."""
     toks = tokenize(strip_heredocs(cmd))
-    calls: list[Call] = []
+    ops: list[Op] = []
     env: dict[str, str] = {}
-    cur = cwd
-    simple: list[str] = []
+    cur: str | None = cwd
+    depth = 0
+    words: list[str] = []
+    redirs: list[str] = []
 
-    def finish(words: list[str]) -> None:
-        nonlocal cur
-        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
-            k, v = words[0].split("=", 1)
+    def finish(ws: list[str], rs: list[str]) -> None:
+        nonlocal cur, depth
+        while ws and (ws[0] in _RESERVED or ws[0] in _LOOP_OPEN):
+            w = ws.pop(0)
+            if w in _LOOP_OPEN:
+                depth += 1
+                if w in ("for", "select"):
+                    ws = []            # the loop's header, not a command
+            elif w == "done":
+                depth = max(0, depth - 1)
+        while ws and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ws[0]):
+            k, v = ws[0].split("=", 1)
             env[k] = expand(v, env) or v
-            words = words[1:]
-        if not words:
+            ws = ws[1:]
+        for r in rs:
+            t = _target(r, env, cur)
+            if t and t[0] == "sentinel":
+                ops.append(Op("write", t[1], effect="edit"))
+            elif t:
+                ops.append(Op("planwrite", t[1], slug=t[2]))
+        if not ws:
             return
-        if words[0] == "cd" and len(words) >= 2:
-            d = expand(words[1], env)
+        if ws[0] == "cd" and len(ws) >= 2:
+            d = expand(ws[1], env)
             cur = None if d is None or cur is None else os.path.normpath(os.path.join(cur, d))
             return
-        for k in range(min(3, len(words))):
-            if os.path.basename(words[k]) != "begin-plan.py":
+        for k in range(min(3, len(ws))):
+            script = _SCRIPTS.get(os.path.basename(ws[k]))
+            if script is None:
                 continue
-            lead = words[:k]
-            if not all(_INTERP.match(w) or w.startswith("$") or w == "env" for w in lead):
+            if not all(_INTERP.match(w) or w.startswith("$") or w == "env" for w in ws[:k]):
                 return
-            p = expand(words[k], env)
-            if p is None or cur is None and not os.path.isabs(p or ""):
-                calls.append(Call(words[k + 1:], None))
-                return
-            full = os.path.normpath(p if os.path.isabs(p) else os.path.join(cur, p))
-            calls.append(Call(words[k + 1:], os.path.dirname(os.path.dirname(full))))
+            p = expand(ws[k], env)
+            root = (None if p is None or (cur is None and not os.path.isabs(p)) else
+                    os.path.dirname(os.path.dirname(os.path.normpath(
+                        p if os.path.isabs(p) else os.path.join(cur, p)))))
+            ops.append(Op("call", root, call=Call(ws[k + 1:], root, depth > 0, script)))
             return
+        name = os.path.basename(ws[0])
+        args = ws[1:]
+        targets = [(i, _target(a, env, cur)) for i, a in enumerate(args)]
+        targets = [(i, t) for i, t in targets if t]
+        for i, t in targets:
+            last = i == len(args) - 1
+            if name in ("rm", "unlink") or (name == "mv" and not last):
+                kind = "rm"
+            elif name in ("truncate", "tee") or (name in ("mv", "cp") and last) or (
+                    name == "sed" and any(a.startswith("-i") for a in args)):
+                kind = "edit"
+            elif name in ("cat", "head", "tail", "grep", "sed", "awk", "nl"):
+                kind = "read"
+            else:
+                continue
+            if t[0] == "plan":
+                if kind != "read":
+                    ops.append(Op("planwrite", t[1], slug=t[2]))
+            elif kind == "read":
+                ops.append(Op("read", t[1]))
+            else:
+                ops.append(Op("write", t[1], effect=kind))
 
     for kind, text in toks + [("op", ";")]:
         if kind == "w":
-            simple.append(text)
+            words.append(text)
+        elif kind == "redir":
+            redirs.append(text)
         else:
-            finish(simple)
-            simple = []
-    return calls
+            finish(words, redirs)
+            words, redirs = [], []
+    return ops
+
+
+def find_calls(cmd: str, cwd: str) -> list[Call]:
+    """The `begin-plan.py` calls a command makes, in order (a view of `parse_command`)."""
+    return [o.call for o in parse_command(cmd, cwd)
+            if o.kind == "call" and o.call.script == "begin-plan"]
+
+
+_OPAQUE_WRITE = re.compile(r"executing-plan[\"']?\)?\s*\.\s*(?:write_text|unlink|open)|"
+                           r"executing-plan[\"'][^\n]*[\"'][wa]\+?[\"']")
+
+
+def opaque_sentinel_write(cmd: str) -> bool:
+    """A heredoc body (a Python script) that writes or removes a sentinel. Its target and its
+    order against the shell's own steps cannot be resolved."""
+    return bool(_OPAQUE_WRITE.search(heredoc_bodies(cmd)))
 
 
 def classify(args: list[str]) -> tuple[str, str | None]:
@@ -329,8 +451,12 @@ def classify(args: list[str]) -> tuple[str, str | None]:
             a = ap.parse_args(args)
     except SystemExit:
         return "ro", None
-    if a.help or a.self_test or a.banner or a.status:
+    if a.help or a.self_test or a.banner:
         return "ro", None
+    if a.status:
+        # ⟳ r1 Claude F4: `--status` was "read-only" and its output thrown away — but it is a
+        # direct OBSERVATION of the sentinel, so it is a checkpoint.
+        return "status", None
     if a.tick:
         return "tick", None
     if a.pause is not None:
@@ -361,7 +487,9 @@ _PRIMARY = {
     "pause": re.compile(r"^paused: |The Stop guard will now allow the turn to end|WHEN THE WORK "
                         r"RESUMES, run `scripts/begin-plan.py --resume` FIRST", re.M),
     "resume": re.compile(r"^resumed:", re.M),
-    "finish": re.compile(r"cleared \.claude/executing-plan|nothing was armed\."),
+    "finish": re.compile(r"cleared \.claude/executing-plan|(nothing was armed\.)"),
+    "status": re.compile(r"^(\S+\.md): (\d+)/(\d+) steps ticked|^(no plan is being executed)",
+                         re.M),
 }
 _ANY_PRIMARY = re.compile("|".join(f"(?:{p.pattern})" for p in _PRIMARY.values()), re.M)
 _NOT_RUN = re.compile(r"doesn't want to proceed|tool use was rejected|"
@@ -416,6 +544,16 @@ def read_outcomes(calls: list[tuple[str, str | None]], text: str | None,
                 info = {"rel": g[0], "done": 0, "n": int(g[1]), "full": False}
             elif sub == "plan":
                 info = {"rel": g[0], "done": None, "n": None, "full": None}
+            elif sub == "finish":
+                info = {"none": bool(g[0])}
+            elif sub == "status":
+                if g[3]:
+                    info = {"none": True}
+                else:
+                    nxt = _ANY_PRIMARY.search(text, end)
+                    tail = text[end:nxt.start() if nxt else len(text)]
+                    info = {"rel": g[0], "done": int(g[1]), "n": int(g[2]),
+                            "paused": bool(re.search(r"^PAUSED: ", tail, re.M))}
             elif sub == "tick":
                 if g[4]:
                     out.append(("refused", {})); pos = end
@@ -442,7 +580,7 @@ def read_outcomes(calls: list[tuple[str, str | None]], text: str | None,
     for i, ((sub, _v), (oc, _info)) in enumerate(zip(calls, out)):
         if sub == "finish" and oc == "unknown" and any(o in ("ok", "refused")
                                                        for o, _ in out[i + 1:]):
-            out[i] = ("ok", {})
+            out[i] = ("ok", {"inferred": True})
     return out
 
 
@@ -454,9 +592,9 @@ class Event:
     stream: str           # the transcript FILE — a subagent is its own stream
     order: int
     session: str
-    kind: str             # 'bp' | 'mut' | 'stop' | 'prompt' | 'banner'
+    kind: str             # 'cmd' | 'tool' | 'stop' | 'clearing' | 'prompt' | 'banner'
     data: dict = field(default_factory=dict)
-    end: str = ""         # when its result arrived (bp)
+    end: str = ""         # when its result arrived (cmd)
 
 
 def _text_of(content) -> str:
@@ -467,8 +605,44 @@ def _text_of(content) -> str:
     return ""
 
 
-def read_transcripts(tdir: Path, root: str) -> list[Event]:
-    """Every event that can move the sentinel at `root`, from every transcript under `tdir`.
+_HEADING = re.compile(r"^## ▶")
+_THREAD = re.compile(r"^> \*\*Thread:\*\*")
+_FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+def live_banners(text: str) -> list[tuple[str, str]]:
+    """(from, to) of each `⤳ SWITCHED` banner in the assistant's OWN live text: the `> **Thread:**`
+    line of a banner block directly under a `## ▶` heading, outside any fenced block.
+
+    ⟳ r1 Codex 3: any `SWITCHED from … → …` in the text counted, so an old transcript quoted in a
+    fence fabricated the evidence a banner link rests on. A quote of a banner is not a banner."""
+    out, fenced, in_banner = [], False, False
+    for ln in text.split("\n"):
+        if _FENCE.match(ln):
+            fenced, in_banner = not fenced, False
+            continue
+        if fenced:
+            continue
+        if _HEADING.match(ln):
+            in_banner = True
+            continue
+        if not in_banner:
+            continue
+        if not ln.strip():
+            continue
+        if not ln.startswith("> "):
+            in_banner = False
+            continue
+        if _THREAD.match(ln):
+            out += [(m.group(1).strip(), m.group(2).strip()) for m in BANNER.finditer(ln)]
+    return out
+
+
+_CLEARING = re.compile(r"every step in `([^`]+)` is ticked \((\d+)/(\d+)\)\. Clearing")
+
+
+def read_transcripts(tdir: Path) -> list[Event]:
+    """Every event that can move or OBSERVE any checkout's sentinel, from every transcript.
 
     ⚡ 638 MB on 2026-10-22: lines are filtered by substring BEFORE `json.loads`, and a tool
     result is parsed only when its `tool_use_id` is one this file is waiting for.
@@ -513,6 +687,13 @@ def read_transcripts(tdir: Path, root: str) -> list[Event]:
                 if typ == "system" and r.get("subtype") == "stop_hook_summary" and top:
                     events.append(Event(kind="stop", data={"cwd": cwd}, **base))
                     continue
+                if typ == "attachment" and top:
+                    a = r.get("attachment") or {}
+                    m = _CLEARING.search(str(a.get("content") or a.get("stdout") or ""))
+                    if a.get("hookEvent") == "Stop" and m:
+                        events.append(Event(kind="clearing", data={
+                            "cwd": cwd, "rel": m.group(1)}, **base))
+                    continue
                 if typ != "assistant":
                     continue
                 if top and msg.get("stop_reason") == "end_turn":
@@ -521,70 +702,32 @@ def read_transcripts(tdir: Path, root: str) -> list[Event]:
                     if not isinstance(c, dict):
                         continue
                     if c.get("type") == "text" and "SWITCHED" in c.get("text", ""):
-                        for m in BANNER.finditer(c["text"]):
-                            events.append(Event(kind="banner", data={"frm": m.group(1).strip(),
-                                                                     "to": m.group(2).strip()},
+                        for frm, to in live_banners(c["text"]):
+                            events.append(Event(kind="banner", data={"frm": frm, "to": to},
                                                 **base))
                     if c.get("type") != "tool_use":
                         continue
                     inp = c.get("input") or {}
                     if c.get("name") == "Bash":
                         cmd = inp.get("command") or ""
-                        if "begin-plan.py" in cmd:
-                            mine = [k for k in find_calls(cmd, cwd)
-                                    if k.root is None or k.root == root]
-                            subs = [classify(k.args) for k in mine]
-                            if any(s != "ro" for s, _ in subs):
-                                ev = Event(kind="bp", data={"calls": mine, "subs": subs}, **base)
-                                events.append(ev)
-                                pending[c.get("id", "")] = ev
-                        elif "executing-plan" in cmd or ".claude/plans/" in cmd:
-                            what = bash_mutation(cmd, cwd, root)
-                            if what:
-                                events.append(Event(kind="mut", data={"what": what}, **base))
+                        if not any(k in cmd for k in ("begin-plan", "check-plan-progress",
+                                                      "executing-plan", ".claude/plans/")):
+                            continue
+                        ops = parse_command(cmd, cwd)
+                        opaque = opaque_sentinel_write(cmd)
+                        if ops or opaque:
+                            ev = Event(kind="cmd", data={"ops": ops, "opaque": opaque,
+                                                         "cmd": cmd}, **base)
+                            events.append(ev)
+                            pending[c.get("id", "")] = ev
                     elif c.get("name") in _WRITE_TOOLS:
                         p = os.path.normpath(inp.get("file_path") or inp.get("notebook_path")
-                                             or "")
-                        if p == os.path.join(root, SENTINEL_REL):
-                            events.append(Event(kind="mut", data={"what": ("sentinel",)}, **base))
-                        elif os.path.dirname(p) == os.path.join(root, PLAN_REL) and \
-                                p.endswith(".md"):
-                            events.append(Event(kind="mut", data={
-                                "what": ("plan", Path(p).stem)}, **base))
+                                             or "/")
+                        t = _target(p, {}, "/")
+                        if t:
+                            events.append(Event(kind="tool", data={"target": t}, **base))
     events.sort(key=lambda e: (e.ts, e.stream, e.order))
     return events
-
-
-_SENT = r"\S*\.claude/executing-plan(?!\.state)\b"
-_SENTINEL_WRITE = re.compile(
-    r"\b(?:rm|mv|unlink|truncate|tee(?:\s+-a)?)\b[^;&|\n]*" + _SENT  # removes / moves / writes it
-    + r"|\bcp\b[^;&|\n]*\s" + _SENT + r"\s*(?:$|[;&|)])"           # copied ONTO it
-    + r"|>>?\s*" + _SENT                                            # redirected into it
-    + r"|\bsed\s+-i\b[^;&|\n]*" + _SENT
-    + r"|[\"']" + r"\.claude/executing-plan[\"']\)?\s*\.\s*(?:write_text|unlink)", re.M)
-_PLAN_WRITE = re.compile(
-    r"(?:\bsed\s+-i\b[^;&|\n]*|>>?\s*|\btee(?:\s+-a)?\s+|\b(?:cp|mv)\b[^;&|\n]*\s)"
-    r"\S*\.claude/plans/([a-z0-9][a-z0-9-]*)\.md")
-_CD = re.compile(r"(?:^|[;&|(]\s*)cd\s+(\S+)", re.M)
-
-
-def bash_mutation(cmd: str, cwd: str, root: str) -> tuple | None:
-    """A non-`begin-plan` Bash command that WROTE the sentinel or a plan file at `root`.
-
-    ⚠ Leans over-inclusive: a false hit only turns a link into NO marker; a missed write could
-    turn one into a WRONG marker, which is the failure this script must not have. But a READ
-    (`cat`, `ls`, `2>/dev/null`) is not a write — measured 2026-10-22, matching any `>` on the
-    line flagged 175 commands, nearly all of them reads."""
-    here = cwd
-    for m in _CD.finditer(cmd):
-        d = m.group(1).strip("'\"")
-        here = None if "$" in d else os.path.normpath(os.path.join(here or "/", os.path.expanduser(d)))
-    if here != root and root + "/.claude/" not in cmd:
-        return None
-    if _SENTINEL_WRITE.search(cmd):
-        return ("sentinel",)
-    m = _PLAN_WRITE.search(cmd)
-    return ("plan", m.group(1)) if m else None
 
 
 # ── the replay ────────────────────────────────────────────────────────────────────────────────
@@ -599,6 +742,7 @@ class Armed:
 
 
 UNKNOWN = "UNKNOWN"
+START = (UNKNOWN, "before the first transcript, so not yet observed")
 
 
 def _slug_of(rel: str) -> str | None:
@@ -631,125 +775,295 @@ def describe(state: object) -> str:
     return f"UNKNOWN ({state[1]})"
 
 
-def replay(events: list[Event], root: str) -> dict[str, dict]:
-    """slug -> {parent, why, session, ts, stream, banners}. `parent` None means NO MARKER."""
-    state: object = None                       # None | Armed | (UNKNOWN, why)
-    seen: dict[str, dict] = {}
-    bps = [e for e in events if e.kind == "bp"]
+_PLAN_LINE = re.compile(r"^plan:\s*(\S+)\s*$", re.M)
+_NO_FILE = re.compile(r"executing-plan[^\n]*No such file|No such file[^\n]*executing-plan")
+_FALLBACK = re.compile(r"executing-plan[^\n|;&]*\|\|\s*echo\s+(['\"])(.+?)\1")
+
+
+def read_observation(cmd: str, text: str | None) -> tuple | None:
+    """What a READ of the sentinel printed: ('armed', rel, paused) / ('none',) / None (no clean
+    reading). Exactly one `plan:` line, or the command's own `|| echo …` fallback / `No such
+    file`, with no `plan:` line at all."""
+    # ⛔ ONE sentinel named in the whole command. Measured 2026-10-22: a command reading BOTH the
+    # main checkout's sentinel (inside `$(…)`, unparsed) and a worktree's printed the main one's
+    # "No such file", which was read as the worktree's — a false disagreement.
+    if text is None or "last-plan" in cmd or strip_heredocs(cmd).count("executing-plan") != 1:
+        return None
+    plans = _PLAN_LINE.findall(text)
+    if len(plans) == 1:
+        return ("armed", plans[0], bool(re.search(r"^paused:", text, re.M)))
+    if plans:
+        return None
+    fb = _FALLBACK.search(cmd)
+    if _NO_FILE.search(text) or (fb and fb.group(2) in text):
+        return ("none",)
+    return None
+
+
+def replay(events: list[Event], root: str, stats: dict | None = None) -> dict[str, dict]:
+    """`root`'s plans: slug -> {parent, why, session, ts, stream, banners, …}. `parent` None
+    means NO MARKER. Every checkout's sentinel is replayed SEPARATELY (r1 Codex 1).
+
+    ⭐ CHECKPOINTS (r1 Claude F4 — the structural fix). The transcripts hold direct OBSERVATIONS
+    of the sentinel: a `cat` of it, `--status`, the state line of an arm or tick, `--finish`'s
+    reply, and the Stop hook's own `Clearing` message. At each, the replayed state is compared
+    with what was observed. A disagreement RESETS the replay to the observation and UNMARKS every
+    plan first armed since the last checkpoint — those parents were derived from a state now known
+    to be wrong. Before the first checkpoint the state is UNKNOWN (r1 Claude F3).
+    """
+    states: dict[str, object] = {}
+    cleared: dict[str, str | None] = {}
+    seen: dict[str, dict[str, dict]] = {}
+    pending: dict[str, list[str]] = {}
+    counts: dict = {"agree": 0, "disagree": 0, "resolved": 0, "resync": 0, "where": []}
+
+    def get(r: str) -> object:
+        return states.get(r, START)
 
     def unknown(why: str) -> tuple:
         return (UNKNOWN, why)
 
-    def overlapping(e: Event) -> bool:
-        """Did another stream change plan state while `e` ran?"""
+    def poison(r: str | None, why: str) -> None:
+        """`r`'s state is unknown from here; None = no checkout can be named, so all of them."""
+        if r is None:
+            for k in list(states):
+                states[k] = unknown(why)
+            states[None] = unknown(why)    # type: ignore[index]
+        else:
+            states[r] = unknown(why)
+
+    def checkpoint(r: str, obs: tuple, ts: str, label: str) -> bool:
+        """Compare `r`'s replayed state with an observation. Returns whether it agreed (a
+        resync from UNKNOWN counts as agreeing). The CALLER then sets the observed state."""
+        cur = get(r)
+        if isinstance(cur, tuple):
+            counts["resync"] += 1
+            agree = True
+        elif obs[0] == "none":
+            agree = cur is None
+        elif obs[0] == "cleared":      # the hook / --finish saw THIS plan armed and cleared it
+            agree = (isinstance(cur, Armed) and (obs[1] is None or os.path.normpath(cur.rel)
+                                                 == os.path.normpath(obs[1]))) or (
+                cur is None and obs[1] is not None and cleared.get(r) == _slug_of(obs[1]))
+        else:
+            agree = isinstance(cur, Armed) and (
+                os.path.normpath(cur.rel) == os.path.normpath(obs[1]))
+        if not isinstance(cur, tuple):
+            counts["agree" if agree else "disagree"] += 1
+        if not agree:
+            counts["where"].append(f"{ts} {label}: replay had {describe(cur)}, observed "
+                                   f"{' '.join(str(x) for x in obs)}")
+            for slug in pending.get(r, []):
+                rec = seen[r][slug]
+                rec["parent"], rec["why"] = None, (f"replay contradicted by an observation "
+                                                   f"({label}) at {ts}")
+            counts["resolved"] += 1
+        pending[r] = []
+        return agree
+
+    trail: list[tuple[str, str, str]] = []     # (when, what moved it, the state after) — --explain
+    snap, last = get(root), None
+    bps = [e for e in events if e.kind == "cmd"]
+
+    def overlapping(e: Event, r: str) -> bool:
+        """Did another stream change `r`'s plan state while `e` ran?"""
         lo, hi = e.ts, e.end or e.ts
         for o in bps:
-            if o.stream == e.stream:
+            if o.stream == e.stream or not (o.ts <= hi and (o.end or o.ts) >= lo):
                 continue
-            if any(s != "ro" for s, _ in o.data["subs"]) and o.ts <= hi and (o.end or o.ts) >= lo:
+            if o.data["opaque"] or any(op.kind == "write" and op.root in (r, None)
+                                       or op.kind == "call" and op.root in (r, None)
+                                       and _sub(op.call)[0] != "ro" for op in o.data["ops"]):
                 return True
         for o in events:
             if o.stream == e.stream or not lo <= o.ts <= hi:
                 continue
-            # a turn ending elsewhere matters only if it could have cleared the armed plan
-            if o.kind == "mut" or (o.kind == "stop" and isinstance(state, Armed)
-                                   and state.paused is not True
-                                   and (state.n is None or state.hi >= state.n)):
+            st = get(r)
+            if o.kind in ("tool", "clearing") or (o.kind == "stop" and isinstance(st, Armed)
+                                                  and st.paused is not True
+                                                  and (st.n is None or st.hi >= st.n)):
                 return True
         return False
 
-    trail: list[tuple[str, str, str]] = []     # (when, what moved it, the state after) — --explain
-    snap, last = state, None
-    # ⭐ OPTION A (owner, 2026-10-22): the plan a CLEAR just removed. A `-` that follows one is
-    # what a banner may overturn; a `-` from a fresh start is not. Only a clear sets it, and it
-    # holds only while nothing is armed — anything that arms or obscures the sentinel resets it.
-    # It is set at BOTH transitions to "nothing armed" (the Stop clear and `--finish`) and read
-    # only while nothing is armed, so a stale value can never be read.
-    cleared: str | None = None
     for e in events:
-        if last is not None and state != snap:
-            trail.append((last.ts, f"{last.kind} in {Path(last.stream).stem[:8]}", describe(state)))
+        if last is not None and get(root) != snap:
+            trail.append((last.ts, f"{last.kind} in {Path(last.stream).stem[:8]}",
+                          describe(get(root))))
             del trail[:-6]
-        snap, last = state, e
+        snap, last = get(root), e
         if e.kind == "stop":
-            if not isinstance(state, Armed) or state.paused is True:
+            # The Stop hook runs in the session's project (`root`) — or in its cwd. Where both
+            # readings name the same checkout its clear is CERTAIN; anywhere else it MAY have
+            # happened, so a plan that may be fully ticked becomes unknown.
+            for r in [k for k in states if k is not None]:
+                st = get(r)
+                if not isinstance(st, Armed) or st.paused is True:
+                    continue
+                maybe_full = st.n is None or st.hi >= st.n
+                full = st.n is not None and st.lo >= st.n
+                certain = r == root and e.data.get("cwd") == root
+                if not certain or st.paused is None:
+                    if maybe_full and (certain or r in (root, e.data.get("cwd"))):
+                        states[r] = unknown("a turn ended where the Stop hook's effect "
+                                            "cannot be known")
+                elif full:
+                    cleared[r], states[r] = _slug_of(st.rel), None
+                elif maybe_full:
+                    states[r] = unknown("a turn ended after a tick whose result was not read")
+            continue
+        if e.kind == "clearing":
+            if e.data["cwd"] != root:
                 continue
-            maybe_full = state.n is None or state.hi >= state.n
-            full = state.n is not None and state.lo >= state.n
-            elsewhere = e.data.get("cwd") != root
-            if state.paused is None or elsewhere:
-                if maybe_full:
-                    state = unknown("a turn ended where the Stop hook's effect cannot be known")
-            elif full:
-                cleared, state = _slug_of(state.rel), None
-            elif maybe_full:
-                state = unknown("a turn ended after a tick whose result was not read")
+            rel = e.data["rel"]
+            checkpoint(root, ("cleared", rel), e.ts, "the Stop hook's Clearing message")
+            cleared[root], states[root] = _slug_of(rel), None
             continue
-        if e.kind == "mut":
-            what = e.data["what"]
-            if what[0] == "sentinel":
-                state = unknown("the sentinel was written by hand")
-            elif isinstance(state, Armed) and _slug_of(state.rel) == what[1]:
-                state = Armed(state.rel, None, 0, 0, state.paused)
+        if e.kind == "tool":
+            t = e.data["target"]
+            if t[0] == "sentinel":
+                poison(t[1], "the sentinel was written by an edit tool")
+            elif isinstance(get(t[1]), Armed) and _slug_of(get(t[1]).rel) == t[2]:
+                st = get(t[1])
+                states[t[1]] = Armed(st.rel, None, 0, 0, st.paused)
             continue
-        if e.kind != "bp":
+        if e.kind != "cmd":
             continue
-        outs = read_outcomes(e.data["subs"], e.data.get("result"), e.data.get("is_error", False))
-        for (sub, val), call, (oc, data) in zip(e.data["subs"], e.data["calls"], outs):
+        ops = e.data["ops"]
+        calls = [o for o in ops if o.kind == "call"]
+        subs = [_sub(o.call) for o in calls]
+        changing = [o for o, (s_, _v) in zip(calls, subs) if s_ != "ro"]
+        roots = {o.root for o in changing}
+        # ⛔ r1 Codex 1: output is one stream. When the calls that print span more than one
+        # checkout (or one that cannot be resolved), no line of it can be attributed.
+        ambiguous = len(roots) > 1 or None in roots
+        outs = (read_outcomes(subs, e.data.get("result"), e.data.get("is_error", False))
+                if not ambiguous else [("unknown", {})] * len(calls))
+        by_call = {id(o): (s_, oc) for o, s_, oc in zip(calls, subs, outs)}
+        mutated: set = set()
+        for op in ops:
+            if op.kind == "write":
+                mutated.add(op.root)
+                if op.effect == "rm" and op.root is not None:
+                    # a removal is a KNOWN state — but a hand `rm` is no clear a banner may cite
+                    states[op.root], cleared[op.root] = None, None
+                else:
+                    poison(op.root, "the sentinel was written by hand")
+                continue
+            if op.kind == "planwrite":
+                st = get(op.root) if op.root is not None else None
+                if isinstance(st, Armed) and _slug_of(st.rel) == op.slug:
+                    states[op.root] = Armed(st.rel, None, 0, 0, st.paused)
+                continue
+            if op.kind != "call":
+                continue
+            (sub, val), (oc, data) = by_call[id(op)]
+            r = op.root
             if sub == "ro":
                 continue
-            if call.root is None:
-                if oc != "refused":
-                    state = unknown("a begin-plan call ran in a checkout that cannot be resolved")
+            if ambiguous or op.call.loop:
+                why = ("its output could not be attributed to one checkout" if ambiguous else
+                       "a begin-plan call inside a shell loop ran an unknown number of times")
+                if sub == "arm" and r is not None and val not in seen.get(r, {}):
+                    seen.setdefault(r, {})[val] = {"parent": None, "why": why, "cleared": None,
+                                                   "session": e.session, "ts": e.ts,
+                                                   "stream": e.stream}
+                if sub != "status":
+                    poison(r, why)
                 continue
             if oc == "refused":
                 continue
+            if sub == "status":
+                if oc == "ok":
+                    obs = ("none",) if data.get("none") else ("armed", data["rel"])
+                    checkpoint(r, obs, e.ts, "--status")
+                    states[r] = (None if data.get("none") else
+                                 Armed(_rel(data["rel"], r), data["n"], data["done"],
+                                       data["done"], data["paused"]))
+                continue
             if sub == "arm":
                 slug = val
-                if slug not in seen:
+                mine = seen.setdefault(r, {})
+                if slug not in mine:
+                    st = get(r)
                     if oc == "unknown":
-                        seen[slug] = {"parent": None, "why": "its first arm's output was not "
+                        mine[slug] = {"parent": None, "why": "its first arm's output was not "
                                       "readable, so whether it armed then cannot be told"}
                     else:
-                        if state is None:
+                        if st is None:
                             par, why = STARTED, ""
-                        elif isinstance(state, Armed):
-                            par = _slug_of(state.rel)
-                            why = "" if par else (f"the sentinel named {state.rel}, which is "
+                        elif isinstance(st, Armed):
+                            par = _slug_of(st.rel)
+                            why = "" if par else (f"the sentinel named {st.rel}, which is "
                                                   f"not a plan file")
                         else:
-                            par, why = None, f"the sentinel's state was unknown: {state[1]}"
-                        if par is not None and overlapping(e):
+                            par, why = None, f"the sentinel's state was unknown: {st[1]}"
+                        if par is not None and overlapping(e, r):
                             par, why = None, ("another session or agent changed plan state "
                                               "while this arm ran")
-                        seen[slug] = {"parent": par, "why": why,
-                                      "cleared": cleared}
-                    seen[slug].update(session=e.session, ts=e.ts, stream=e.stream,
-                                      before=describe(state), trail=list(trail))
-                state = (unknown(f"the output of arming {slug} was not readable")
-                         if oc == "unknown" else observed(data, root))
+                        mine[slug] = {"parent": par, "why": why, "cleared": cleared.get(r)}
+                        pending.setdefault(r, []).append(slug)
+                    mine[slug].update(session=e.session, ts=e.ts, stream=e.stream,
+                                      before=describe(st),
+                                      trail=list(trail) if r == root else [])
+                states[r] = (unknown(f"the output of arming {slug} was not readable")
+                             if oc == "unknown" else observed(data, r))
             elif sub == "plan":
-                state = (unknown("the output of --plan was not readable")
-                         if oc == "unknown" else observed(data, root))
+                states[r] = (unknown("the output of --plan was not readable")
+                             if oc == "unknown" else observed(data, r))
             elif sub == "tick":
                 if oc == "ok":
-                    # a tick that SUCCEEDED proves the plan was not paused (`cmd_tick` refuses)
-                    state = observed(data, root)
-                elif isinstance(state, Armed):
-                    hi = state.hi + 1 if state.n is None else min(state.n, state.hi + 1)
-                    state = Armed(state.rel, state.n, state.lo, hi, state.paused)
+                    # the state line OBSERVES which plan was armed — a checkpoint — and a tick
+                    # that succeeded proves it was not paused (`cmd_tick` refuses)
+                    checkpoint(r, ("armed", data["rel"]), e.ts, "a tick's state line")
+                    states[r] = observed(data, r)
+                elif isinstance(get(r), Armed):
+                    st = get(r)
+                    hi = st.hi + 1 if st.n is None else min(st.n, st.hi + 1)
+                    states[r] = Armed(st.rel, st.n, st.lo, hi, st.paused)
             elif sub in ("pause", "resume"):
-                if isinstance(state, Armed):
+                if isinstance(get(r), Armed):
+                    st = get(r)
                     p = (sub == "pause") if oc == "ok" else None
-                    state = Armed(state.rel, state.n, state.lo, state.hi, p)
+                    states[r] = Armed(st.rel, st.n, st.lo, st.hi, p)
             elif sub == "finish":
-                if oc == "ok" and isinstance(state, Armed):
-                    cleared = _slug_of(state.rel)
-                elif oc == "ok" and state is not None:
-                    cleared = None             # it cleared SOMETHING, but nobody knows what
-                state = None if oc == "ok" else unknown("the output of --finish was not readable")
-    _attach_banners(seen, events)
-    return seen
+                if oc == "ok" and data.get("inferred"):
+                    # it ran, but printed nothing that survived: no OBSERVATION, only the effect.
+                    # Finishing nothing changes nothing, so `cleared` survives a finish of None.
+                    st = get(r)
+                    if not (st is None):
+                        cleared[r] = _slug_of(st.rel) if isinstance(st, Armed) else None
+                elif oc == "ok" and data.get("none"):
+                    checkpoint(r, ("none",), e.ts, "--finish: nothing was armed")
+                elif oc == "ok":
+                    st = get(r)
+                    agree = checkpoint(r, ("cleared", None), e.ts, "--finish cleared a plan")
+                    cleared[r] = _slug_of(st.rel) if agree and isinstance(st, Armed) else None
+                states[r] = (None if oc == "ok" else
+                             unknown("the output of --finish was not readable"))
+        # A READ of the sentinel is a checkpoint only when nothing in the command changed that
+        # checkout — then where it sits in the command does not matter.
+        reads = [op for op in ops if op.kind == "read" and op.root is not None]
+        if len(reads) == 1 and reads[0].root not in mutated and reads[0].root not in roots:
+            obs = read_observation(e.data["cmd"], e.data.get("result"))
+            r = reads[0].root
+            if obs:
+                checkpoint(r, obs[:2], e.ts, "a read of the sentinel")
+                states[r] = (None if obs[0] == "none" else
+                             Armed(_rel(obs[1], r), None, 0, 0, obs[2]))
+        if e.data["opaque"]:
+            # ⛔ a Python heredoc wrote some sentinel: neither which one nor when is knowable
+            poison(None, "a script in the command wrote a sentinel")
+    if stats is not None:
+        stats.update(counts)
+    mine = seen.get(root, {})
+    _attach_banners(mine, events)
+    return mine
+
+
+def _sub(call: Call) -> tuple[str, str | None]:
+    if call.script == "progress":
+        return ("status", None) if "--status" in call.args else ("ro", None)
+    return classify(call.args)
 
 
 def _attach_banners(seen: dict[str, dict], events: list[Event]) -> None:
@@ -765,7 +1079,7 @@ def _attach_banners(seen: dict[str, dict], events: list[Event]) -> None:
         evs = by_stream.get(rec["stream"], [])
         before = [p.ts for p in evs if p.kind == "prompt" and p.ts <= rec["ts"]]
         after = [p.ts for p in evs if p.kind == "prompt" and p.ts > rec["ts"]]
-        lo, hi = (max(before) if before else ""), (min(after) if after else "\uffff")
+        lo, hi = (max(before) if before else ""), (min(after) if after else "￿")
         mine = [b for b in evs
                 if b.kind == "banner" and b.data["to"] == slug and lo <= b.ts < hi]
         rec["banners"] = [b.data["frm"] for b in mine]
@@ -883,7 +1197,7 @@ def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None) -> tupl
         return 2, f"CANNOT RUN — {exc}"
     if not tdir.is_dir():
         return 2, f"CANNOT RUN — no transcripts at {tdir}"
-    seen = replay(read_transcripts(tdir, root), root)
+    seen = replay(read_transcripts(tdir), root)
     if births is None:
         births = {s: birth_time(plan_dir / f"{s}.md") for s in plans}
     rows = decide(plans, seen, births)
@@ -903,9 +1217,13 @@ def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None) -> tupl
                 continue
             p = plan_dir / f"{r['slug']}.md"
             st = p.stat()
-            p.write_text(apply_marker(plans[r["slug"]], r["marker"]))
+            # ⟳ r1 Claude F5: ATOMIC — a temp file beside it, then `os.replace`, so an interrupted
+            # run leaves the old plan or the new one, never a truncated one.
+            tmp = p.with_name(f".{p.name}.backfill-tmp")
+            tmp.write_text(apply_marker(plans[r["slug"]], r["marker"]))
             # ⛔ the page dates a plan by its mtime: a backfill must not make every plan "today"
-            os.utime(p, (st.st_atime, st.st_mtime))
+            os.utime(tmp, (st.st_atime, st.st_mtime))
+            os.replace(tmp, p)
             n += 1
         report += f"\nwrote {n} plan file(s) in {plan_dir}"
     else:
@@ -923,17 +1241,27 @@ def _last_plan_slug(path: Path) -> str | None:
 
 
 def ground_truth(tdir: Path, root: str) -> tuple[int, str]:
+    """The replay must reproduce the live link, and every checkpoint DISAGREEMENT must have been
+    resolved — reset to the observation, with the plans armed since the last checkpoint unmarked.
+    The agree/disagree counts are reported either way: a disagreement is a measured error rate."""
     if not tdir.is_dir():
         return 2, f"CANNOT RUN — no transcripts at {tdir}. Treat the ground-truth check as NOT RUN."
-    events = read_transcripts(tdir, root)
-    if not any(e.kind == "bp" for e in events):
+    events = read_transcripts(tdir)
+    if not any(e.kind == "cmd" and any(o.kind == "call" and o.root == root
+                                       for o in e.data["ops"]) for e in events):
         return 2, (f"CANNOT RUN — {tdir} holds no begin-plan call for {root}. Treat the "
                    f"ground-truth check as NOT RUN.")
-    got = replay(events, root).get(GROUND_TRUTH[0], {}).get("parent")
+    stats: dict = {}
+    got = replay(events, root, stats).get(GROUND_TRUTH[0], {}).get("parent")
+    line = (f"checkpoints: agree {stats['agree']}, disagree {stats['disagree']} (resolved "
+            f"{stats['resolved']}), resync from unknown {stats['resync']}")
+    if stats["disagree"] != stats["resolved"]:
+        return 1, f"FAIL — {stats['disagree'] - stats['resolved']} disagreement(s) unresolved\n{line}"
     if got != GROUND_TRUTH[1]:
         return 1, (f"FAIL — the replay gives {GROUND_TRUTH[0]} the parent {got!r}; the live code "
-                   f"recorded {GROUND_TRUTH[1]!r}")
-    return 0, f"OK — the replay reproduces {GROUND_TRUTH[0]} <- {GROUND_TRUTH[1]}"
+                   f"recorded {GROUND_TRUTH[1]!r}\n{line}")
+    return 0, (f"OK — the replay reproduces {GROUND_TRUTH[0]} <- {GROUND_TRUTH[1]}\n{line}"
+               + "".join(f"\n  disagreement {w}" for w in stats["where"]))
 
 
 def main(argv: list[str]) -> int:
@@ -952,7 +1280,7 @@ def main(argv: list[str]) -> int:
     root = (a.root or main_checkout()).resolve()
     tdir = a.transcripts or transcripts_for(root)
     if a.explain:
-        rec = replay(read_transcripts(tdir, str(root)), str(root)).get(a.explain)
+        rec = replay(read_transcripts(tdir), str(root)).get(a.explain)
         if rec is None:
             print(f"{a.explain}: no recorded arm in the transcripts")
             return 0
@@ -1027,6 +1355,14 @@ class _Fx:
                            "stop_reason": "end_turn", "content": [{"type": "text",
                                                                    "text": text}]}})
 
+    def clearing(self, slug: str, d: int, n: int, *, stream="sess-aaaa1111") -> None:
+        """The Stop hook's own message when it clears a fully-ticked plan."""
+        msg = (f"✅ every step in `.claude/plans/{slug}.md` is ticked ({d}/{n}). "
+               f"Clearing .claude/executing-plan.")
+        self._put(stream, {"type": "attachment", "timestamp": self._ts(), "sessionId": stream,
+                           "cwd": self.root, "attachment": {"type": "hook_success",
+                           "hookEvent": "Stop", "content": msg, "stdout": msg + "\n"}})
+
     def write(self, tdir: Path) -> Path:
         for stream, lines in self.lines.items():
             p = tdir / (stream + ".jsonl")
@@ -1060,19 +1396,173 @@ def _self_test() -> int:
 
     BP = "python3 scripts/begin-plan.py"
 
-    def world(build, root="/w/repo"):
-        """Replay a constructed transcript; slug -> parent."""
+    NONE_OUT = "no plan is being executed (no .claude/executing-plan)"
+
+    def world(build, root="/w/repo", stats=None, start=True):
+        """Replay a constructed transcript; slug -> parent. It opens with an OBSERVED empty
+        sentinel unless `start` is False — the replay no longer assumes one (r1 Claude F3)."""
         fx = _Fx(root)
+        if start:
+            fx.bash("python3 scripts/begin-plan.py --status", NONE_OUT)
         build(fx)
         with tempfile.TemporaryDirectory() as d:
-            seen = replay(read_transcripts(fx.write(Path(d)), root), root)
+            seen = replay(read_transcripts(fx.write(Path(d))), root, stats)
         return {k: v["parent"] for k, v in seen.items()}, seen
+
+    # ── review round 1: each reviewer's path to a WRONG link, reproduced ─────────────────────
+
+    def fresh(build):
+        """Start from an OBSERVED empty sentinel — the replay no longer assumes one (F3)."""
+        def b(f):
+            f.bash(f"{BP} --status", NONE_OUT)
+            build(f)
+        return b
+
+    def _loop_unread(f):
+        f.bash(f"{BP} one a b", _arm_out("one", 2))
+        f.bash(f"for i in 1 2; do {BP} --tick >/dev/null 2>&1; done", "")
+        f.stop()
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ F1: a call inside a shell LOOP ran an unknown number of times — no marker after it",
+         world(fresh(_loop_unread))[0]["two"], None)
+
+    def _loop_status(f):
+        f.bash(f"{BP} one a b", _arm_out("one", 2))
+        f.bash(f"for i in 1 2; do {BP} --tick; done; {BP} --status",
+               "ticked step 2 of 2 in .claude/plans/one.md\n"
+               ".claude/plans/one.md: 2/2 steps ticked, 0 remaining")
+        f.stop()
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⭐ F1/F4: ...and the `--status` after the loop is a CHECKPOINT that resyncs it",
+         world(fresh(_loop_status))[0]["two"], STARTED)
+
+    def _rm_then_arm(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash(f"rm -f .claude/executing-plan && {BP} two a b c", _arm_out("two", 3))
+    case("⛔ F2: a sentinel `rm` in the SAME command as an arm is applied, in order, before it",
+         world(fresh(_rm_then_arm))[0]["two"], STARTED)
+
+    def _status_then_rm(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash(f"{BP} --status; rm -f .claude/executing-plan",
+               ".claude/plans/one.md: 0/1 steps ticked, 1 remaining")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ Codex 2: `--status; rm -f .claude/executing-plan` — the rm is not hidden by the call",
+         world(fresh(_status_then_rm))[0]["two"], STARTED)
+
+    def _pause_by_hand(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash(f"{BP} --tick", _tick_out(1, 1, "one"))
+        f.bash(f"sed -i '' '/^paused:/d' .claude/executing-plan && printf 'paused: x\\n' >> "
+               f".claude/executing-plan && {BP} --banner", "## ▶ STEP 1")
+        f.stop()
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ F2: a hand edit beside a call makes the state UNKNOWN — the turn end may not clear it",
+         world(fresh(_pause_by_hand))[0]["two"], None)
+
+    def _two_roots(f):
+        f.bash(f"{BP} one a b", _arm_out("one", 2))
+        f.bash(f"( {BP} --tick; cd /w/other; {BP} side a ) | tail -1",
+               "(plan: .claude/plans/side.md — 0/1 ticked. `scripts/begin-plan.py --tick` …)")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    _tr = world(fresh(_two_roots))[0]
+    case("⛔ Codex 1: output from a command spanning TWO checkouts is attributed to neither",
+         (_tr["two"], "side" in _tr), (None, False))
+
+    def _quoted_banner(fence):
+        def b(f):
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash(f"{BP} --finish", "cleared .claude/executing-plan")
+            f.prompt()
+            f.say(fence)
+            f.bash(f"{BP} two a", _arm_out("two", 1))
+        return b
+    _pl3 = {s_: f"# {s_}\n\n- [ ] a\n" for s_ in ("one", "two")}
+    _bi3 = {s_: _dt.datetime(2026, 10, 1, 13, tzinfo=_dt.timezone.utc).timestamp() for s_ in _pl3}
+    _qb = [{r["slug"]: r["verdict"] for r in decide(_pl3, world(fresh(_quoted_banner(t_)))[1],
+                                                     _bi3)}["two"] for t_ in (
+        "Old transcript:\n```\n## ▶ STEP 1\n\n> **Thread:** ⤳ SWITCHED from `one` → `two`\n```",
+        "> ## ▶ STEP 1\n>\n> > **Thread:** ⤳ SWITCHED from `one` → `two`",
+        "As I said: ⤳ SWITCHED from `one` → `two`",
+        "## ▶ STEP 1\n\n> **Thread:** ⤳ SWITCHED from `one` (done) → `two` · 0 of 1")]
+    case("⛔ Codex 3: a banner counts only as LIVE text under a `## ▶` heading — fenced, quoted "
+         "and prose mentions do not", _qb, ["keep", "keep", "keep", "keep-banner"])
+
+    def _no_start(f):
+        f.bash(f"{BP} first a", _arm_out("first", 1))
+    case("⛔ F3: before any checkpoint the state is UNKNOWN — the first arm gets no marker",
+         world(_no_start, start=False)[0]["first"], None)
+
+    def _contradicted(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash(f"{BP} mid a", _arm_out("mid", 1))
+        f.bash('cat .claude/executing-plan 2>/dev/null || echo "(none armed)"', "(none armed)\n")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    _ct_stats: dict = {}
+    _ct = world(fresh(_contradicted), stats=_ct_stats)
+    case("⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed "
+         "since the last agreeing checkpoint",
+         (_ct[0], "contradicted by an observation" in _ct[1]["mid"]["why"],
+          {k: _ct_stats.get(k) for k in ("disagree", "resolved")}),
+         ({"one": None, "mid": None, "two": STARTED}, True,
+          {"disagree": 1, "resolved": 1}))
+
+    def _agreed(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("cat .claude/executing-plan", "plan: .claude/plans/one.md\narmed: 2026\n")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    _ag_stats: dict = {}
+    case("...and one that AGREES leaves the replay's links standing",
+         (world(fresh(_agreed), stats=_ag_stats)[0], _ag_stats.get("agree", 0) >= 1),
+         ({"one": STARTED, "two": "one"}, True))
+
+    def _two_sentinels(f):
+        f.bash(f"cd /w/wt && {BP} side a", _arm_out("side", 1))
+        f.bash('echo "[$(cat /w/repo/.claude/executing-plan)]"; cat /w/wt/.claude/executing-plan',
+               "cat: /w/repo/.claude/executing-plan: No such file or directory\n[]\n")
+        f.bash(f"cd /w/wt && {BP} two a", _arm_out("two", 1))
+    _ts_stats: dict = {}
+    case("⛔ a command naming TWO sentinels is no observation of either — one's reply is not the "
+         "other's", (world(_two_sentinels, root="/w/wt", stats=_ts_stats, start=False)[0]["two"],
+                      _ts_stats.get("disagree")), ("side", 0))
+
+    def _opaque(f):
+        f.bash(f"{BP} one a", _arm_out("one", 1))
+        f.bash("python3 - <<'EOF'\nfrom pathlib import Path\n"
+               "Path('.claude/executing-plan').write_text('plan: x')\nEOF", "")
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⛔ F2: a Python heredoc that writes a sentinel cannot be ordered — no marker after it",
+         world(_opaque)[0]["two"], None)
+
+    def _hook_cleared(f):
+        f.bash(f"{BP} one a b", _arm_out("one", 2))
+        f.bash(f"{BP} --tick | tail -0", "")
+        f.clearing("one", 2, 2)
+        f.bash(f"{BP} two a", _arm_out("two", 1))
+    case("⭐ F4: the Stop hook's own `Clearing` message is a checkpoint: the plan WAS cleared",
+         world(fresh(_hook_cleared))[0]["two"], STARTED)
+
+    def _finish_after_clear(f):
+        f.bash(f"{BP} prev a", _arm_out("prev", 1))
+        f.bash(f"{BP} --tick", _tick_out(1, 1, "prev"))
+        f.stop()
+        f.prompt()
+        f.say("## ▶ STEP 1\n\n> **Thread:** ⤳ SWITCHED from `prev` (done) → `nxt` · 0 of 1")
+        f.bash(f"{BP} --finish >/dev/null 2>&1; {BP} nxt a", _arm_out("nxt", 1))
+    _fa_stats: dict = {}
+    _fa = world(_finish_after_clear, stats=_fa_stats)[1]
+    case("⛔ a --finish whose output was discarded is no OBSERVATION: finishing an already-cleared "
+         "plan is not a disagreement, and the banner link survives",
+         (_fa_stats.get("disagree"), {r["slug"]: r["verdict"] for r in decide(
+             {"prev": "# prev\n", "nxt": "# nxt\n"}, _fa,
+             {"prev": _epoch("2026-10-01T12:00:00Z"), "nxt": _epoch("2026-10-01T12:00:00Z")})}
+          ["nxt"]), (0, "keep-banner"))
 
     # ── the shell: finding the call and where it ran ─────────────────────────────────────────
     case("a relative script path resolves against ITS cwd",
          [c.root for c in find_calls(f"{BP} --finish", "/w/elsewhere")], ["/w/elsewhere"])
     case("--finish is a state change; --status reads only",
-         (classify(["--finish"]), classify(["--status"])), (("finish", None), ("ro", None)))
+         (classify(["--finish"]), classify(["--banner"])), (("finish", None), ("ro", None)))
     case("a plain call is found, with its arguments, against the record's cwd",
          [(c.args, c.root) for c in find_calls(f'{BP} kid "a|b|c" 2>&1 | tail -3', "/w/repo")],
          [(["kid", "a|b|c"], "/w/repo")])
@@ -1233,7 +1723,7 @@ def _self_test() -> int:
 
     def _handrm(f):
         f.bash(f"{BP} one a", _arm_out("one", 1))
-        f.bash("rm -f .claude/executing-plan", "")
+        f.bash("printf 'plan: .claude/plans/x.md\\n' > .claude/executing-plan", "")
         f.bash(f"{BP} two a", _arm_out("two", 1))
     case("⛔ a hand edit of the sentinel makes its state unknown", world(_handrm)[0]["two"], None)
 
@@ -1270,12 +1760,12 @@ def _self_test() -> int:
     _fx_b.bash(f"{BP} bb a", _arm_out("bb", 1))
     _fx_b.bash(f"cd /w/other && {BP} cc a", _arm_out("cc", 1))
     with tempfile.TemporaryDirectory() as d:
-        _ev = {k: read_transcripts(f.write(Path(d) / k), "/w/repo")
-               for k, f in (("a", _fx_a), ("b", _fx_b))}
-        _evo = read_transcripts(Path(d) / "b", "/w/other")
+        _ev = {k: read_transcripts(f.write(Path(d) / k)) for k, f in (("a", _fx_a), ("b", _fx_b))}
+        _evo = _ev["b"]
     case("read_transcripts reads ITS directory: two dirs, two different call sets",
-         [sorted(e.data["subs"][0][1] for e in _ev[k] if e.kind == "bp") for k in ("a", "b")],
-         [["aa"], ["bb"]])
+         [sorted(o.call.args[0] for e in _ev[k] if e.kind == "cmd" for o in e.data["ops"])
+          for k in ("a", "b")],
+         [["aa"], ["bb", "cc"]])
     case("replay replays against ITS root: the same events, another root, another answer",
          (sorted(replay(_ev["b"], "/w/repo")), sorted(replay(_evo, "/w/other"))),
          (["bb"], ["cc"]))
@@ -1321,7 +1811,7 @@ def _self_test() -> int:
                     f.bash(f"{BP} --tick", _tick_out(1, 1, first))
                     f.stop()
             f.prompt()
-            f.say(f"> **Thread:** ⤳ SWITCHED from `{frm}` (1/1 done) → `nxt` · 0 of 1")
+            f.say(f"## ▶ STEP 1\n\n> **Thread:** ⤳ SWITCHED from `{frm}` (1/1 done) → `nxt` · 0 of 1")
             f.bash(f"{BP} nxt a", _arm_out("nxt", 1))
         return b
     _pl2 = {s: f"# {s}\n\n- [ ] a\n" for s in ("prev", "nxt", "elsewhere")}
@@ -1408,6 +1898,7 @@ def _self_test() -> int:
         (pd / "live.md").write_text("# live\n\n<!-- parent: - -->\n- [ ] a\n")
         os.utime(pd / "one.md", (1_700_000_000, 1_700_000_000))
         fx = _Fx(str(root))
+        fx.bash(f"{BP} --status", NONE_OUT)
         fx.bash(f"{BP} one a", _arm_out("one", 1))
         fx.bash(f"{BP} two a", _arm_out("two", 1))
         fx.bash(f"{BP} live a", _arm_out("live", 1))
@@ -1415,6 +1906,7 @@ def _self_test() -> int:
         births = {s: _dt.datetime(2026, 10, 1, 12, tzinfo=_dt.timezone.utc).timestamp()
                   for s in ("one", "two", "live")}
         before = {p.name: p.read_text() for p in pd.iterdir()}
+        _ino_before = {p.name: p.stat().st_ino for p in pd.iterdir()}
         rc, rep = run(pd, tdir, str(root), False, births)
         case("⛔ the DRY RUN writes nothing", (rc, {p.name: p.read_text() for p in pd.iterdir()}
                                               == before, "DRY RUN" in rep), (0, True, True))
@@ -1425,6 +1917,9 @@ def _self_test() -> int:
              (0, "<!-- parent: one -->", True, True))
         case("⛔ --write keeps the file's mtime: the page dates plans by it",
              int((pd / "one.md").stat().st_mtime), 1_700_000_000)
+        case("⛔ F5: --write REPLACES the file (a new inode, via os.replace) and leaves no temp file",
+             ((pd / "two.md").stat().st_ino != _ino_before["two.md"],
+              [x.name for x in pd.iterdir() if "backfill-tmp" in x.name]), (True, []))
         (pd / "three.md").write_text("# three\n\n- [x] a\n")
         (root / ".claude" / "last-plan").write_text("plan: .claude/plans/three.md\nsha256: x\n")
         fx.bash(f"{BP} three a", _arm_out("three", 1))
@@ -1453,6 +1948,7 @@ def _self_test() -> int:
         for s_ in ("prev", "nxt"):
             (pd / f"{s_}.md").write_text(f"# {s_}\n\n- [ ] a\n")
         fx = _Fx(str(root))
+        fx.bash(f"{BP} --status", NONE_OUT)
         _after_clear("finish", "prev")(fx)
         bi = {s_: _births["one"] for s_ in ("prev", "nxt")}
         run(pd, fx.write(Path(d) / "t"), str(root), True, bi)
@@ -1468,11 +1964,13 @@ def _self_test() -> int:
         case("⛔ ...and with transcripts that hold no begin-plan call, also CANNOT RUN (2)",
              ground_truth(Path(d), "/w/repo")[0], 2)
         fx = _Fx("/w/repo")
+        fx.bash(f"{BP} --status", NONE_OUT)
         fx.bash(f"{BP} {GROUND_TRUTH[1]} a", _arm_out(GROUND_TRUTH[1], 1))
         fx.bash(f"{BP} {GROUND_TRUTH[0]} a", _arm_out(GROUND_TRUTH[0], 1))
         case("--ground-truth passes when the replay reproduces the link",
              ground_truth(fx.write(Path(d) / "gt"), "/w/repo")[0], 0)
         fx2 = _Fx("/w/repo")
+        fx2.bash(f"{BP} --status", NONE_OUT)
         fx2.bash(f"{BP} {GROUND_TRUTH[0]} a", _arm_out(GROUND_TRUTH[0], 1))
         case("--ground-truth replays ITS root: the same transcripts, another root, CANNOT RUN",
              ground_truth(Path(d) / "gt", "/w/not-the-root")[0], 2)

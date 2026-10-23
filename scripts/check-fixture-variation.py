@@ -314,11 +314,13 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
+    # ⟳ r1 fold: `read_transcripts.root` left — every checkout is read now, keyed in `replay`.
     "backfill-work-lines.py": (
         "apply_marker.marker", "apply_marker.text", "classify.args", "decide.births",
         "decide.plans", "decide.seen", "find_calls.cmd", "find_calls.cwd", "ground_truth.root",
-        "ground_truth.tdir", "read_transcripts.root", "read_transcripts.tdir",
-        "render_table.rows", "replay.events", "replay.root", "run.births", "run.plan_dir",
+        "ground_truth.tdir", "read_transcripts.tdir",
+        "render_table.rows", "replay.events", "replay.root", "replay.stats", "run.births",
+        "run.plan_dir",
         "run.root", "run.tdir", "run.write",
     ),
     # The work-lines generator. Every parameter is varied by a case; none is exempt.

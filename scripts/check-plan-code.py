@@ -930,7 +930,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ same day, the owner's option A for banners: 25 -> 33 — both clear sites remember the
     # plan they cleared, a fresh start is no clear, the banner must name EXACTLY that plan, an
     # ARMED parent is never overridden, the `banner` label, the banner's own time, and --write.
-    "scripts/backfill-work-lines.py": 33,
+    # ⟳ same day, review round 1 fold: 33 -> 48 — loops and reserved words, sentinel writes in
+    # command order, checkouts attributed separately, live banners only, an UNKNOWN start, the
+    # checkpoints (status, reads, the Clearing message, an inferred --finish), and atomic --write.
+    "scripts/backfill-work-lines.py": 48,
     "scripts/gen-goals-page.py": 25,
     # ⟳ 2026-09-19, the feature hub. TEN. ⚠ The plan assumed this file would need the
     # `NO-MUTATIONS:` escape instead — "it renders; it decides nothing" — and that was wrong on
@@ -5605,7 +5608,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1826)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1841)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

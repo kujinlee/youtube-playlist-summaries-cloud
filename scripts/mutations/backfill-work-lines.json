@@ -17,7 +17,7 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                            par = _slug_of(state.rel)\n",
+        "                            par = _slug_of(st.rel)\n",
         "                            par = None\n"
       ]
     ],
@@ -30,8 +30,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            elif full:\n                cleared, state = _slug_of(state.rel), None",
-        "            elif False:\n                cleared, state = _slug_of(state.rel), None"
+        "                elif full:\n                    cleared[r], states[r] = _slug_of(st.rel), None",
+        "                elif False:\n                    cleared[r], states[r] = _slug_of(st.rel), None"
       ]
     ],
     "expect": [
@@ -43,8 +43,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            if not isinstance(state, Armed) or state.paused is True:\n                continue\n            maybe_full",
-        "            if not isinstance(state, Armed):\n                continue\n            maybe_full"
+        "                if not isinstance(st, Armed) or st.paused is True:\n                    continue\n                maybe_full",
+        "                if not isinstance(st, Armed):\n                    continue\n                maybe_full"
       ]
     ],
     "expect": [
@@ -56,8 +56,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                state = None if oc == \"ok\" else unknown(\"the output of --finish was not readable\")",
-        "                state = state if oc == \"ok\" else unknown(\"the output of --finish was not readable\")"
+        "                states[r] = (None if oc == \"ok\" else\n                             unknown(\"the output of --finish was not readable\"))",
+        "                states[r] = (get(r) if oc == \"ok\" else\n                             unknown(\"the output of --finish was not readable\"))"
       ]
     ],
     "expect": [
@@ -69,7 +69,7 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                if slug not in seen:",
+        "                if slug not in mine:",
         "                if True:"
       ]
     ],
@@ -95,8 +95,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                    hi = state.hi + 1 if state.n is None else min(state.n, state.hi + 1)",
-        "                    hi = state.hi"
+        "                    hi = st.hi + 1 if st.n is None else min(st.n, st.hi + 1)",
+        "                    hi = st.hi"
       ]
     ],
     "expect": [
@@ -108,8 +108,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                                    if k.root is None or k.root == root]",
-        "                                    if True]"
+        "            ops.append(Op(\"call\", root, call=Call(ws[k + 1:], root, depth > 0, script)))",
+        "            ops.append(Op(\"call\", cwd, call=Call(ws[k + 1:], cwd, depth > 0, script)))"
       ]
     ],
     "expect": [
@@ -160,8 +160,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "    if _SENTINEL_WRITE.search(cmd):\n        return (\"sentinel\",)",
-        "    if _SENTINEL_WRITE.search(cmd):\n        return None"
+        "                else:\n                    poison(op.root, \"the sentinel was written by hand\")",
+        "                else:\n                    pass"
       ]
     ],
     "expect": [
@@ -173,7 +173,7 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                        if par is not None and overlapping(e):",
+        "                        if par is not None and overlapping(e, r):",
         "                        if False:"
       ]
     ],
@@ -199,7 +199,7 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            out[i] = (\"ok\", {})",
+        "            out[i] = (\"ok\", {\"inferred\": True})",
         "            pass"
       ]
     ],
@@ -277,7 +277,7 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "            os.utime(p, (st.st_atime, st.st_mtime))",
+        "            os.utime(tmp, (st.st_atime, st.st_mtime))",
         "            pass"
       ]
     ],
@@ -303,8 +303,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "    if not any(e.kind == \"bp\" for e in events):",
-        "    if False:"
+        "    if not any(e.kind == \"cmd\" and any(o.kind == \"call\" and o.root == root",
+        "    if False and any(e.kind == \"cmd\" and any(o.kind == \"call\" and o.root == root"
       ]
     ],
     "expect": [
@@ -329,8 +329,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                cleared, state = _slug_of(state.rel), None",
-        "                state = None"
+        "cleared[r], states[r] = _slug_of(st.rel), None",
+        "states[r] = None"
       ]
     ],
     "expect": [
@@ -342,8 +342,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                    cleared = _slug_of(state.rel)\n",
-        "                    pass\n"
+        "                    cleared[r] = _slug_of(st.rel) if agree and isinstance(st, Armed) else None",
+        "                    cleared[r] = None"
       ]
     ],
     "expect": [
@@ -355,8 +355,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "    cleared: str | None = None\n",
-        "    cleared: str | None = \"prev\"\n"
+        "\"cleared\": cleared.get(r)}",
+        "\"cleared\": cleared.get(r) or \"prev\"}"
       ]
     ],
     "expect": [
@@ -430,6 +430,201 @@
     ],
     "expect": [
       "--write applies a `keep-banner` row too, labelled `banner`"
+    ]
+  },
+  {
+    "name": "`do` is not stripped, so a loop's call is invisible",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "_RESERVED = {\"do\", \"then\",",
+        "_RESERVED = {\"then\","
+      ]
+    ],
+    "expect": [
+      "⛔ F1: a call inside a shell LOOP ran an unknown number of times — no marker after it"
+    ]
+  },
+  {
+    "name": "a call in a loop is counted once",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            if ambiguous or op.call.loop:",
+        "            if ambiguous:"
+      ]
+    ],
+    "expect": [
+      "⛔ F1: a call inside a shell LOOP ran an unknown number of times — no marker after it"
+    ]
+  },
+  {
+    "name": "a sentinel rm is not a known removal",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if op.effect == \"rm\" and op.root is not None:",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ F2: a sentinel `rm` in the SAME command as an arm is applied, in order, before it"
+    ]
+  },
+  {
+    "name": "output spanning two checkouts is attributed anyway",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        ambiguous = len(roots) > 1 or None in roots",
+        "        ambiguous = None in roots"
+      ]
+    ],
+    "expect": [
+      "⛔ Codex 1: output from a command spanning TWO checkouts is attributed to neither"
+    ]
+  },
+  {
+    "name": "a fenced block is read as live text",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            fenced, in_banner = not fenced, False",
+        "            in_banner = False"
+      ]
+    ],
+    "expect": [
+      "⛔ Codex 3: a banner counts only as LIVE text under a `## ▶` heading — fenced, quoted and prose mentions do not"
+    ]
+  },
+  {
+    "name": "the replay starts as nothing armed",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "START = (UNKNOWN, \"before the first transcript, so not yet observed\")",
+        "START = None"
+      ]
+    ],
+    "expect": [
+      "⛔ F3: before any checkpoint the state is UNKNOWN — the first arm gets no marker"
+    ]
+  },
+  {
+    "name": "a contradicted replay keeps the links it derived",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                rec[\"parent\"], rec[\"why\"] = None, (f\"replay contradicted by an observation \"",
+        "                rec[\"why\"] = (f\"replay contradicted by an observation \""
+      ]
+    ],
+    "expect": [
+      "⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed since the last agreeing checkpoint"
+    ]
+  },
+  {
+    "name": "a disagreement is not counted as resolved",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            counts[\"resolved\"] += 1",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed since the last agreeing checkpoint"
+    ]
+  },
+  {
+    "name": "--status is not a checkpoint",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if oc == \"ok\":\n                    obs = (\"none\",) if data.get(\"none\") else (\"armed\", data[\"rel\"])",
+        "                if False:\n                    obs = (\"none\",) if data.get(\"none\") else (\"armed\", data[\"rel\"])"
+      ]
+    ],
+    "expect": [
+      "⭐ F1/F4: ...and the `--status` after the loop is a CHECKPOINT that resyncs it"
+    ]
+  },
+  {
+    "name": "the Stop hook's Clearing message is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            cleared[root], states[root] = _slug_of(rel), None",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ F4: the Stop hook's own `Clearing` message is a checkpoint: the plan WAS cleared"
+    ]
+  },
+  {
+    "name": "a read of the sentinel is not a checkpoint",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        if len(reads) == 1 and reads[0].root not in mutated and reads[0].root not in roots:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ F4: an observation that CONTRADICTS the replay resets it, and unmarks every plan armed since the last agreeing checkpoint"
+    ]
+  },
+  {
+    "name": "a command naming two sentinels is read as observing one",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        " or strip_heredocs(cmd).count(\"executing-plan\") != 1:",
+        ":"
+      ]
+    ],
+    "expect": [
+      "⛔ a command naming TWO sentinels is no observation of either — one's reply is not the other's"
+    ]
+  },
+  {
+    "name": "a discarded --finish reply is taken as an observation",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                if oc == \"ok\" and data.get(\"inferred\"):",
+        "                if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a --finish whose output was discarded is no OBSERVATION: finishing an already-cleared plan is not a disagreement, and the banner link survives"
+    ]
+  },
+  {
+    "name": "--write truncates in place instead of replacing",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            os.replace(tmp, p)",
+        "            p.write_text(tmp.read_text()); tmp.unlink()"
+      ]
+    ],
+    "expect": [
+      "⛔ F5: --write REPLACES the file (a new inode, via os.replace) and leaves no temp file"
+    ]
+  },
+  {
+    "name": "a heredoc write of the sentinel is ignored",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            poison(None, \"a script in the command wrote a sentinel\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⛔ F2: a Python heredoc that writes a sentinel cannot be ordered — no marker after it"
     ]
   }
 ]
