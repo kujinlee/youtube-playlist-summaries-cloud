@@ -1048,8 +1048,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                after = sorted(t for t, use in terminal.get((ev.session, task), [])",
-        "                after = sorted(t for t, use in terminal.get((\"\", task), [])"
+        "                after = sorted([t for t, use in terminal.get((ev.session, task), [])",
+        "                after = sorted([t for t, use in terminal.get((\"\", task), [])"
       ]
     ],
     "expect": [
@@ -1256,8 +1256,8 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "                               if t > ev.ts and use in (None, ev.data[\"tuid\"]))",
-        "                               if t > ev.ts)"
+        "                                if t > ev.ts and use in (None, ev.data[\"tuid\"])]",
+        "                                if t > ev.ts]"
       ]
     ],
     "expect": [
@@ -1314,6 +1314,84 @@
     ],
     "expect": [
       "⛔ r4 Codex 2: a foreground command with NO result stays open to its session's end"
+    ]
+  },
+  {
+    "name": "a task's notice in ANOTHER session is never found",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                               + [t for t in by_use.get(ev.data[\"tuid\"], []) if t > ev.ts])",
+        "                               + [])"
+      ]
+    ],
+    "expect": [
+      "⛔ r5 M1: a background task that OUTLIVES its session ends at its notice in the next session, matched by the launching tool-use id"
+    ]
+  },
+  {
+    "name": "the empty session id survives the grouping",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    return ({e.session for e in mine} | {_session_of(last_line)}) - {\"\"}",
+        "    return {e.session for e in mine} | {_session_of(last_line)} - {\"\"}"
+      ]
+    ],
+    "expect": [
+      "r5 L2: the sessions a file holds never include the empty id, from either source"
+    ]
+  },
+  {
+    "name": "the tick's printed count is dropped for the ✅ line",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "                        info.update(n=seen_n, done=seen_n)   # ✅ prints no count; the tick did",
+        "                        pass"
+      ]
+    ],
+    "expect": [
+      "nit: --explain shows a plan's REAL count once its last tick printed it"
+    ]
+  },
+  {
+    "name": "a ✅-only plan is described with a made-up count",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "        count = \"all ticked\" if state.full_only else f\"{tick}/{n}\"",
+        "        count = f\"{tick}/{n}\""
+      ]
+    ],
+    "expect": [
+      "...and says ALL TICKED, not a made-up count, when only the ✅ line survived"
+    ]
+  },
+  {
+    "name": "--backup copies nothing",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "            shutil.copytree(plan_dir, backup, copy_function=shutil.copy2)",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "--backup copies the plans, content AND mtime, BEFORE anything is written"
+    ]
+  },
+  {
+    "name": "--backup copies content without mtimes",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "copy_function=shutil.copy2",
+        "copy_function=shutil.copyfile"
+      ]
+    ],
+    "expect": [
+      "--backup copies the plans, content AND mtime, BEFORE anything is written"
     ]
   }
 ]

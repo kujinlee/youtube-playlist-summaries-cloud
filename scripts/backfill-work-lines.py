@@ -3,9 +3,10 @@
 
     python3 scripts/backfill-work-lines.py                  # DRY RUN: print the table, write nothing
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
+    python3 scripts/backfill-work-lines.py --write --backup DIR   # ...after copying the plans to DIR
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 256 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 265 cases
 
 WHY THIS EXISTS
 ---------------
@@ -122,6 +123,9 @@ uncertain command has an END, matched by SESSION ID across files:
     `queued_command` attachment or a user message, never a message quoting one), with a
     terminal status, naming this command's tool-use id when it names one; or a TaskStop at its
     SUCCESSFUL result, never at the request;
+  * a task can OUTLIVE its session (`/clear`, resume start a new session id), so a notice in
+    ANY session naming this command's launching tool-use id also ends it (r5 M1; measured, 796
+    of 796 real notices for a known launch name it). It must still come after START;
   * anything without such an END (a shell `&` job, a foreground command with no result, a task
     with no notice) stays open until the last event of its session, never back to START.
 Until its END, the checkouts it can reach stay UNKNOWN, and a checkpoint inside that window
@@ -159,6 +163,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -857,7 +862,10 @@ def read_outcomes(calls: list[tuple[str, str | None]], text: str | None,
                 nxt = _STATE.search(text, end)
                 other = _ANY_PRIMARY.search(text, end)
                 if nxt and (not other or nxt.start() < other.start()):
+                    seen_n = info.get("n")
                     info = _state_info(nxt); end = nxt.end()
+                    if info["n"] is None and info["full"] and seen_n:
+                        info.update(n=seen_n, done=seen_n)   # ✅ prints no count; the tick did
         else:
             info = _state_info(st)
         if sub == "arm" and os.path.normpath(info["rel"]) != f"{PLAN_REL}/{val}.md":
@@ -940,6 +948,12 @@ TERMINAL_STATUSES = {"completed", "failed", "killed", "stopped", "cancelled", "c
                      "error", "timeout", "timed_out"}
 
 
+def _file_sessions(mine: list, last_line: str) -> set[str]:
+    """The session ids a file's events and its last record name — never the empty id (r5 L2:
+    `A | B - {""}` parsed as `A | (B - {""})`, so an empty id from the events was kept)."""
+    return ({e.session for e in mine} | {_session_of(last_line)}) - {""}
+
+
 def _session_of(line: str) -> str:
     m = _SESSION.search(line)
     return m.group(1) if m else ""
@@ -961,6 +975,7 @@ def read_transcripts(tdir: Path) -> list[Event]:
     session_end: dict[str, str] = {}        # session -> its last timestamp anywhere
     terminal: dict[tuple, list[str]] = {}   # (session, task id) -> when a terminal record says
     stop_sessions: set[str] = set()         # sessions that show the STOP hook specifically
+    by_use: dict[str, list[str]] = {}       # launching tool-use id -> its terminal notices
     for f in files:
         top = f.parent == tdir
         pending: dict[str, Event] = {}
@@ -1017,6 +1032,10 @@ def read_transcripts(tdir: Path) -> list[Event]:
                     if tm and sm and sm.group(1).lower() in TERMINAL_STATUSES:
                         terminal.setdefault((sess, tm.group(1)), []).append(
                             (ts, um.group(1) if um else None))
+                        if um:
+                            # ⛔ r5 M1: a task can OUTLIVE its session (/clear, resume); its
+                            # notice then lands in the next one. The tool-use id is global.
+                            by_use.setdefault(um.group(1), []).append(ts)
                 if typ == "user" and top and not r.get("isMeta"):
                     content = msg.get("content")
                     if isinstance(content, str) or (isinstance(content, list) and all(
@@ -1077,7 +1096,7 @@ def read_transcripts(tdir: Path) -> list[Event]:
                             mine.append(Event(kind="tool", data={"paths": [p]}, **base))
         last = _TS.search(last_line)
         if last:
-            for k in {e.session for e in mine} | {_session_of(last_line)} - {""}:
+            for k in _file_sessions(mine, last_line):
                 session_end[k] = max(session_end.get(k, ""), last.group(1))
         events.extend(mine)
     for ev in events:
@@ -1091,8 +1110,9 @@ def read_transcripts(tdir: Path) -> list[Event]:
             task = ev.data.get("task")
             if ev.data["bg"] or task:
                 # a notice naming its originating tool call must name THIS one
-                after = sorted(t for t, use in terminal.get((ev.session, task), [])
-                               if t > ev.ts and use in (None, ev.data["tuid"]))
+                after = sorted([t for t, use in terminal.get((ev.session, task), [])
+                                if t > ev.ts and use in (None, ev.data["tuid"])]
+                               + [t for t in by_use.get(ev.data["tuid"], []) if t > ev.ts])
                 ev.data["until"] = after[0] if task and after else end_of_session
             else:
                 ev.data["until"] = ev.end or end_of_session
@@ -1115,6 +1135,7 @@ class Armed:
     lo: int
     hi: int
     paused: bool | None
+    full_only: bool = False     # only "every step is ticked" was printed, not the count
 
 
 UNKNOWN = "UNKNOWN"
@@ -1136,7 +1157,9 @@ def observed(info: dict, root: str) -> Armed:
     """The sentinel a call's output OBSERVED: armed, un-paused, at the printed count."""
     rel = _rel(info["rel"], root)
     if info["n"] is None:
-        return Armed(rel, 1, 1, 1, False) if info["full"] else Armed(rel, None, 0, 0, False)
+        # ✅ alone prints no count: "fully ticked" is all that is known (n=lo=hi=1 encodes it)
+        return (Armed(rel, 1, 1, 1, False, full_only=True) if info["full"]
+                else Armed(rel, None, 0, 0, False))
     return Armed(rel, info["n"], info["done"], info["done"], False)
 
 
@@ -1146,7 +1169,8 @@ def describe(state: object) -> str:
     if isinstance(state, Armed):
         n = "?" if state.n is None else state.n
         tick = f"{state.lo}" if state.lo == state.hi else f"{state.lo}-{state.hi}"
-        return (f"{state.rel} {tick}/{n}"
+        count = "all ticked" if state.full_only else f"{tick}/{n}"
+        return (f"{state.rel} {count}"
                 + {True: " paused", None: " paused?", False: ""}[state.paused])
     return f"UNKNOWN ({state[1]})"
 
@@ -1567,8 +1591,14 @@ def render_table(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
-def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None) -> tuple[int, str]:
-    """(rc, report). rc 2 = CANNOT RUN and nothing is written."""
+def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None,
+        backup: Path | None = None) -> tuple[int, str]:
+    """(rc, report). rc 2 = CANNOT RUN and nothing is written.
+
+    ⚠ `--write` IS ONE-SHOT (r5 L1): `.claude/plans/` is gitignored, and a plan with a marker is
+    never touched again, so git cannot undo it and a later run cannot revise it. `backup` copies
+    the whole plans directory there FIRST (content and mtimes, like `cp -Rp`), refusing a
+    directory that already exists; if the copy fails, nothing is written."""
     try:
         plans = read_plans(plan_dir)
     except (ValueError, OSError) as exc:
@@ -1580,6 +1610,15 @@ def run(plan_dir: Path, tdir: Path, root: str, write: bool, births=None) -> tupl
         births = {s: birth_time(plan_dir / f"{s}.md") for s in plans}
     rows = decide(plans, seen, births)
     report = render_table(rows)
+    if write and backup is not None:
+        if backup.exists():
+            return 2, (f"CANNOT RUN — the backup directory {backup} already exists; it is never "
+                       f"overwritten. Nothing was written.")
+        try:
+            shutil.copytree(plan_dir, backup, copy_function=shutil.copy2)
+        except OSError as exc:
+            return 2, f"CANNOT RUN — the backup to {backup} failed ({exc}). Nothing was written."
+        report += f"\nbacked up {sum(1 for _ in backup.glob('*'))} plan file(s) to {backup}"
     if write:
         n = 0
         # ⛔ `.claude/last-plan` FINGERPRINTS the last finished plan (`check-plan-progress.
@@ -1648,7 +1687,11 @@ def main(argv: list[str]) -> int:
                     "(default: the main working tree)")
     ap.add_argument("--plans", type=Path, help="the plans directory (default: ROOT/.claude/plans)")
     ap.add_argument("--transcripts", type=Path, help="default: ~/.claude/projects/<root>")
-    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--write", action="store_true",
+                    help="apply the keep rows. ONE-SHOT: .claude/plans/ is gitignored, so take "
+                         "a backup first (--backup DIR, or `cp -Rp .claude/plans DIR`)")
+    ap.add_argument("--backup", type=Path, metavar="DIR",
+                    help="with --write: copy the plans directory to DIR first (it must not exist)")
     ap.add_argument("--ground-truth", action="store_true")
     ap.add_argument("--explain", metavar="SLUG", help="print how the replay decided one plan")
     ap.add_argument("--self-test", action="store_true")
@@ -1673,7 +1716,7 @@ def main(argv: list[str]) -> int:
         rc, msg = ground_truth(tdir, str(root))
         print(msg)
         return rc
-    rc, msg = run(a.plans or root / PLAN_REL, tdir, str(root), a.write)
+    rc, msg = run(a.plans or root / PLAN_REL, tdir, str(root), a.write, backup=a.backup)
     print(msg)
     return rc
 
@@ -2253,6 +2296,52 @@ def _self_test() -> int:
     case("...while one naming THIS tool call is",
          world(_notice_form("queue", use="toolu_0003"))[0]["two"], STARTED)
 
+    # ── review round 5 (Claude) ───────────────────────────────────────────────────────────────
+    def _outlives(use):
+        def b(f):
+            f.bash(f"{BP} one a", _arm_out("one", 1))
+            f.bash("python3 -c 'print(\".claude\")'", BG_OUT, bg=True)    # toolu_0003
+            # the launching session ENDS here; the task runs on, and its notice lands in the
+            # NEXT session (a /clear or resume starts a new session id)
+            f.bash(f"{BP} --status", NONE_OUT, stream="sess-cccc3333")
+            f.bash(f"{BP} two a", _arm_out("two", 1), stream="sess-cccc3333")
+            f.task_done("bx1", form="queue", use=use, stream="sess-cccc3333")
+            f.bash(f"{BP} --status", ".claude/plans/two.md: 0/1 steps ticked, 1 remaining",
+                   stream="sess-cccc3333")
+            f.bash(f"{BP} three a", _arm_out("three", 1), stream="sess-cccc3333")
+            if use != "toolu_0003":
+                f.prompt("later", stream="sess-aaaa1111")   # the launching session goes on
+        return b
+    _ol = world(_outlives("toolu_0003"))[0]
+    case("⛔ r5 M1: a background task that OUTLIVES its session ends at its notice in the next "
+         "session, matched by the launching tool-use id", (_ol["two"], _ol["three"]),
+         (None, "two"))
+    _ol2 = world(_outlives("toolu_9999"))[0]
+    case("...and a notice in another session for ANOTHER tool call ends nothing",
+         (_ol2["two"], _ol2["three"]), (None, None))
+    case("r5 L2: the sessions a file holds never include the empty id, from either source",
+         _file_sessions([Event(ts="t", stream="s", order=0, session="", kind="cmd"),
+                         Event(ts="t", stream="s", order=1, session="abc", kind="cmd")],
+                        '{"sessionId": ""}'), {"abc"})
+    case("...and both sources are read: an event's session and the last line's",
+         _file_sessions([Event(ts="t", stream="s", order=0, session="abc", kind="cmd")],
+                        '{"sessionId": "xyz"}'), {"abc", "xyz"})
+    case("nit: --explain shows a plan's REAL count once its last tick printed it",
+         describe(observed(read_outcomes([("tick", None)],
+                                         _tick_out(6, 6, "six"), False)[0][1], "/w/repo")),
+         ".claude/plans/six.md 6/6")
+    case("...and says ALL TICKED, not a made-up count, when only the ✅ line survived",
+         describe(observed(read_outcomes([("tick", None)],
+                                         "✅ every step in .claude/plans/six.md is ticked.",
+                                         False)[0][1], "/w/repo")),
+         ".claude/plans/six.md all ticked")
+
+    case("read_outcomes reads ITS calls and error flag; observed names the plan relative to ITS "
+         "root", (read_outcomes([("finish", None)], "The user doesn't want to proceed", True),
+                  describe(observed({"rel": "/w/other/.claude/plans/x.md", "done": 1, "n": 2,
+                                     "full": False}, "/w/other"))),
+         ([("refused", {})], ".claude/plans/x.md 1/2"))
+
     def _auto_bg(f):
         f.bash(f"{BP} one a", _arm_out("one", 1))
         f.bash("python3 -c 'print(\".claude\")'", BG_OUT)          # no input flag
@@ -2644,6 +2733,20 @@ def _self_test() -> int:
         rc, rep = run(pd, tdir, str(root), False, births)
         case("⛔ the DRY RUN writes nothing", (rc, {p.name: p.read_text() for p in pd.iterdir()}
                                               == before, "DRY RUN" in rep), (0, True, True))
+        _bk = Path(d) / "backup"
+        _before_bk = {q.name: (q.read_text(), int(q.stat().st_mtime)) for q in pd.iterdir()}
+        rc_b, rep_b = run(pd, tdir, str(root), True, births, backup=_bk)
+        case("--backup copies the plans, content AND mtime, BEFORE anything is written",
+             (rc_b, ({q.name: (q.read_text(), int(q.stat().st_mtime)) for q in _bk.iterdir()}
+                     if _bk.is_dir() else None) == _before_bk, f"backed up {len(_before_bk)} plan file(s) to {_bk}" in rep_b),
+             (0, True, True))
+        _after_bk = {q.name: q.read_text() for q in pd.iterdir()}
+        rc_x, rep_x = run(pd, tdir, str(root), True, births, backup=_bk)
+        case("⛔ --backup into a directory that already exists refuses, and writes NOTHING",
+             (rc_x, {q.name: q.read_text() for q in pd.iterdir()} == _after_bk), (2, True))
+        for q in pd.iterdir():
+            q.write_text(before[q.name])
+            os.utime(q, (1_700_000_000, 1_700_000_000)) if q.name == "one.md" else None
         rc, rep = run(pd, tdir, str(root), True, births)
         case("--write applies the `keep` rows, and only them",
              (rc, (pd / "two.md").read_text().split("\n")[2], (pd / "live.md").read_text()
