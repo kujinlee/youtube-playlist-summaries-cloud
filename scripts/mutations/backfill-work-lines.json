@@ -637,7 +637,7 @@
       ]
     ],
     "expect": [
-      "an opaque op makes the checkout UNKNOWN: echo $(python3 -c 'import pty')"
+      "an opaque op makes the checkout UNKNOWN: echo $(python3 -c 'print(\".claude\")')"
     ]
   },
   {
@@ -741,7 +741,7 @@
       ]
     ],
     "expect": [
-      "an opaque op makes the checkout UNKNOWN: python3 scripts/recall-llm.py <<'EOF' ⏎ import shutil ⏎ EOF"
+      "an opaque op makes the checkout UNKNOWN: python3 scripts/recall-llm.py <<'EOF' ⏎ print('.claude') ⏎ EOF"
     ]
   },
   {
@@ -814,12 +814,12 @@
     "file": "scripts/backfill-work-lines.py",
     "edits": [
       [
-        "    if code is None or _INLINE_UNSAFE.search(code):",
-        "    if code is None:"
+        "    return code is not None and not _INLINE_UNSAFE.search(code)",
+        "    return code is not None"
       ]
     ],
     "expect": [
-      "an opaque op makes the checkout UNKNOWN: python3 -c 'import os; os.popen(\"ls\")'"
+      "an opaque op makes the checkout UNKNOWN: python3 -c 'print(\"begin-plan\")'"
     ]
   },
   {
@@ -833,45 +833,6 @@
     ],
     "expect": [
       "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ print(1) ⏎"
-    ]
-  },
-  {
-    "name": "Path( beside a write method is safe",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        "    if \"Path(\" in code and _PATH_WRITE.search(code):\n        return False",
-        "    if \"Path(\" in code and _PATH_WRITE.search(code):\n        pass"
-      ]
-    ],
-    "expect": [
-      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ from pathlib import Path ⏎ Path('x').unlink() ⏎ PY"
-    ]
-  },
-  {
-    "name": "open() writing to a computed path is safe",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        "            return False       # a write to a path computed at run time",
-        "            pass"
-      ]
-    ],
-    "expect": [
-      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ f = 'x' ⏎ open(f, 'w').write('y') ⏎ PY"
-    ]
-  },
-  {
-    "name": "open() writing to a LITERAL path is opaque",
-    "file": "scripts/backfill-work-lines.py",
-    "edits": [
-      [
-        "        if _WRITE_MODE.search(m.group(2) or \"\") and not _LITERAL.fullmatch(m.group(1)):",
-        "        if _WRITE_MODE.search(m.group(2) or \"\"):"
-      ]
-    ],
-    "expect": [
-      "allow-listed, or reaching no sentinel, keeps the state known: python3 - <<'PY' ⏎ open('/tmp/out.txt', 'w').write('x') ⏎ PY"
     ]
   },
   {
@@ -989,6 +950,71 @@
     ],
     "expect": [
       "an opaque op makes the checkout UNKNOWN: mktemp .claude/executing-plan"
+    ]
+  },
+  {
+    "name": "whole-tree deletes are not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"\\bshutil\\.rmtree\\b\": \"deletes a whole tree without naming what is inside it\",",
+        "    r\"\\bshutil\\.rmtree-\\b\": \"deletes a whole tree without naming what is inside it\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ import shutil ⏎ shutil.rmtree('build') ⏎ PY"
+    ]
+  },
+  {
+    "name": "naming .claude is not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"\\.claude\": \"names the directory holding the sentinel and the plans\",",
+        "    r\"\\.claude-\": \"names the directory holding the sentinel and the plans\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 - <<'PY' ⏎ from pathlib import Path ⏎ print(list(Path('.claude/plans').glob('*'))) ⏎ PY"
+    ]
+  },
+  {
+    "name": "naming the sentinel is not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"executing-plan\": \"names the sentinel itself\",",
+        "    r\"executing-plan-\": \"names the sentinel itself\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: timeout 60 python3 -c 'print(\"executing-plan\")'"
+    ]
+  },
+  {
+    "name": "naming the clearing tool is not on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"check-plan-progress\": \"names the tool that clears the sentinel\",",
+        "    r\"check-plan-progress-\": \"names the tool that clears the sentinel\","
+      ]
+    ],
+    "expect": [
+      "an opaque op makes the checkout UNKNOWN: python3 -c 'x=\"check-plan-progress\"'"
+    ]
+  },
+  {
+    "name": "subprocess is still on the list",
+    "file": "scripts/backfill-work-lines.py",
+    "edits": [
+      [
+        "    r\"\\bshutil\\.rmtree\\b\": \"deletes a whole tree without naming what is inside it\",\n}",
+        "    r\"\\bshutil\\.rmtree\\b\": \"deletes a whole tree without naming what is inside it\",\n    r\"subprocess\": \"x\",\n}"
+      ]
+    ],
+    "expect": [
+      "allow-listed, or reaching no sentinel, keeps the state known: python3 - <<'PY' ⏎ import subprocess ⏎ print(subprocess.run(['git', 'log', '-1'], capture_output=Tru"
     ]
   }
 ]

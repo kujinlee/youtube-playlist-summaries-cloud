@@ -5,7 +5,7 @@
     python3 scripts/backfill-work-lines.py --write          # apply the `keep`/`keep-banner` rows
     python3 scripts/backfill-work-lines.py --plans DIR      # read (and with --write, change) DIR
     python3 scripts/backfill-work-lines.py --ground-truth   # the replay must reproduce a live link
-    python3 scripts/backfill-work-lines.py --self-test  # 233 cases
+    python3 scripts/backfill-work-lines.py --self-test  # 229 cases
 
 WHY THIS EXISTS
 ---------------
@@ -70,10 +70,10 @@ newlines, and recursively inside `$(…)` and backticks) is one of:
     was committed under `scripts/` on some branch (`tracked_scripts`);
   * a member of `SAFE`, under that member's own condition (one constant, a reason per member).
   * INLINE Python whose text is in the command — a `python3 -` heredoc, `python3 -c '…'`, or a
-    heredoc fed to a tracked script — when `inline_safe` finds none of `INLINE_UNSAFE`, no
-    `Path(` beside a write/delete/move method, and no `open()` writing to a computed path
-    (round 4). The threat model is ACCIDENT, not adversary: this reconstructs the owner's own
-    history, and the code that ran is right there to read. A body that cannot be extracted
+    heredoc fed to a tracked script — when `inline_safe` finds none of `INLINE_UNSAFE` (round
+    4, narrowed in round 5). The threat model is ACCIDENT, not adversary: an accidental change
+    to the sentinel needs the code to NAME it, a plan tool, or a whole-tree delete. Code that
+    builds the path from pieces that never spell it would defeat this, and that is accepted. A body that cannot be extracted
     (unterminated, or a `-c` holding a `$` the shell expanded) stays opaque.
 Anything else is AD-HOC code: inline code that fails that inspection, `-m`, a script outside a
 checkout's `scripts/` (Codex r2's real instance was `/tmp/steps.py`, 2026-10-17), an untracked
@@ -220,48 +220,31 @@ def heredoc_bodies(cmd: str) -> list[str | None]:
     return out
 
 
-# ⭐ INLINE CODE IS INSPECTED, NOT ASSUMED OPAQUE (round 4, the coordinator's decision). THE
-# THREAT MODEL IS ACCIDENT, NOT ADVERSARY: this reconstructs the owner's own history, and an
-# inline script's full TEXT is in the transcript. A body naming none of these cannot have touched
-# a sentinel by accident; one naming any of them may have, so it stays opaque. Each reason says
-# why the token is on the list.
+# ⭐ INLINE CODE IS INSPECTED, NOT ASSUMED OPAQUE (round 4; narrowed in round 5 — the
+# coordinator's decision). THE THREAT MODEL IS ACCIDENT, NOT ADVERSARY: this reconstructs the
+# owner's own history, and an inline script's full TEXT is in the transcript. THE PREMISE: an
+# accidental change to `.claude/executing-plan` needs that path, or a plan tool, to appear in the
+# code's text — or a whole-tree delete, which removes files it never names. Code that writes
+# scratch files, imports repository modules to read them, or runs `git` names none of these, and
+# measured on 2026-10-22 that was most inline code: the round-4 list (`subprocess`, `importlib`,
+# `Path(…).write_…`, …) kept 92 plans unlinked for code that only READ.
+# ⚠ STATED PLAINLY: code that assembles the path from pieces that never spell `.claude` or
+# `executing-plan` — `ROOT / ('.cl' + 'aude') / …` — defeats this. That is accepted, because no
+# accident does that; only an adversary would, and the owner is not one.
 INLINE_UNSAFE: dict[str, str] = {
     r"executing-plan": "names the sentinel itself",
     r"\.claude": "names the directory holding the sentinel and the plans",
-    r"begin-plan": "may run the tool that writes the sentinel",
-    r"check-plan-progress": "may run the tool that clears the sentinel",
-    r"\bsubprocess\b": "runs other programs, whose text is not here",
-    r"\bos\.system\b": "runs a shell command", r"\bos\.popen\b": "runs a shell command",
-    r"\bos\.exec": "replaces the process with another program",
-    r"\bos\.spawn": "runs another program", r"\bpty\b": "runs another program on a terminal",
-    r"(?<![\w.])exec\(": "runs code built at run time",
-    r"(?<![\w.])eval\(": "runs code built at run time (`ast.literal_eval` is not this)",
-    r"(?<![\w.])compile\(": "builds code at run time (`re.compile` is not this)",
-    r"__import__": "imports a module named at run time",
-    r"\bimportlib\b": "imports a module named at run time",
-    r"\bshutil\b": "copies, moves and deletes trees",
-    r"\bos\.remove\b": "deletes a file", r"\bos\.unlink\b": "deletes a file",
-    r"\bos\.rename\b": "moves a file", r"\bos\.replace\b": "moves a file over another",
+    r"begin-plan": "names the tool that writes the sentinel",
+    r"check-plan-progress": "names the tool that clears the sentinel",
+    r"\bshutil\.rmtree\b": "deletes a whole tree without naming what is inside it",
 }
 _INLINE_UNSAFE = re.compile("|".join(f"(?:{k})" for k in INLINE_UNSAFE))
-# `Path(` beside a method that writes, deletes or moves: the path could be the sentinel
-_PATH_WRITE = re.compile(r"\.(?:unlink|write_|rename|replace)")
-_OPEN_CALL = re.compile(r"\bopen\(\s*([^,)]*?)\s*(?:,\s*([^)]*))?\)")
-_WRITE_MODE = re.compile(r"(?:mode\s*=\s*)?[rRbBtT]*['\"][rbt]*[wax+][rbt+]*['\"]")
-_LITERAL = re.compile(r"""[rRbBuU]?(['"]).*\1""")
 
 
 def inline_safe(code: str | None) -> bool:
-    """Can this inline Python (a heredoc body, a `-c` argument) NOT have touched a sentinel?
-    None — a body that could not be extracted — is never safe."""
-    if code is None or _INLINE_UNSAFE.search(code):
-        return False
-    if "Path(" in code and _PATH_WRITE.search(code):
-        return False
-    for m in _OPEN_CALL.finditer(code):
-        if _WRITE_MODE.search(m.group(2) or "") and not _LITERAL.fullmatch(m.group(1)):
-            return False       # a write to a path computed at run time
-    return True
+    """Can this inline Python (a heredoc body, a `-c` argument) NOT have touched a sentinel by
+    accident? None — a body that could not be extracted — is never safe."""
+    return code is not None and not _INLINE_UNSAFE.search(code)
 
 
 def _read_word(cmd: str, i: int) -> tuple[str, int]:
@@ -1843,44 +1826,63 @@ def _self_test() -> int:
                  "echo $(python3 -c 'print(2)')", "python3 -c 'from ast import literal_eval'",
                  "pwd", "ps aux", "mktemp -d", "mktemp /tmp/x.XXXX",
                  "find docs -name '*.md'", "timeout 60 git status",
-                 "timeout -s KILL 5 python3 scripts/check-docs.py"):
+                 "timeout -s KILL 5 python3 scripts/check-docs.py",
+                 # ⟳ round 5: ordinary analysis code is SAFE — it names no sentinel or plan tool
+                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('/tmp/scratch.json').write_text('{}')\nPY",
+                 "python3 - <<'PY'\nimport importlib.util\nspec = importlib.util.spec_from_file_location('g', 'scripts/gen-work-lines.py')\nPY",
+                 "python3 - <<'PY'\nimport subprocess\nprint(subprocess.run(['git', 'log', '-1'], capture_output=True).stdout)\nPY",
+                 "python3 -c 'import os; os.system(\"git status\")'",
+                 "python3 scripts/recall-llm.py <<'EOF'\nimport shutil\nEOF",
+                 "python3 -c 'import os; os.popen(\"ls\")'", "python3 -c 'exec(\"1\")'",
+                 "python3 -c 'eval(\"1\")'", "python3 -c 'import importlib'",
+                 "python3 - <<'PY'\nf = 'x'\nopen(f, 'w').write('y')\nPY",
+                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('a').rename('b')\nPY",
+                 "timeout 60 python3 -c 'import subprocess'"):
         case(f"allow-listed, or reaching no sentinel, keeps the state known: "
              f"{_cmd.replace(chr(10), ' ⏎ ')[:100]}",
              world(_between(_cmd))[0]["two"], "one")
-    for _cmd in ("python3 - <<'PY'\nimport subprocess\nPY", "python3 scripts/other.py", "node x.js",
+    for _cmd in ("python3 - <<'PY'\nimport os\nos.remove('.claude/x')\nPY", "python3 scripts/other.py",
+                 "node x.js",
                  "bash run.sh", "sh -c 'true'", "eval x", "source env.sh", "xargs echo < f",
                  "awk 'BEGIN{system(\"true\")}'", "echo x >> .claude/executing-plan",
                  # ⟳ round 3: AD-HOC code stays opaque, wherever it hides
-                 "python3 -c 'import os; os.system(\"x\")'", "python3 /tmp/steps.py",
+                 "python3 /tmp/steps.py",
                  "python3 /tmp/recall-llm.py",
                  "python3 scripts/untracked-adhoc.py",
-                 "python3 scripts/recall-llm.py <<'EOF'\nimport shutil\nEOF",
+                 
+                 "python3 scripts/recall-llm.py <<'EOF'\nprint('.claude')\nEOF",
+                 "echo $(python3 -c 'print(\".claude\")')",
                  "python3 -m pytest", "git clean -fdx", "git stash -u",
-                 "echo $(python3 -c 'import pty')", "echo `node x.js`", ". env.sh",
+                 # ⟳ round 5: the premise is that an ACCIDENT names the sentinel, a plan tool or
+                 # a whole-tree delete — these name one, so they stay opaque
+                 "python3 - <<'PY'\nfrom pathlib import Path\nprint(list(Path('.claude/plans').glob('*')))\nPY",
+                 "python3 - <<'PY'\nimport shutil\nshutil.rmtree('build')\nPY",
+                 "timeout 60 python3 -c 'print(\"executing-plan\")'",
+                 "echo `node x.js`", ". env.sh",
                  "zsh x.sh", "sort -o .claude/executing-plan docs/x.md",
                  "uniq docs/x.md .claude/executing-plan", "$P scripts/check-docs.py",
                  # ⟳ round 4: each INLINE token class, and the shapes that stay opaque
                  "python3 - <<'PY'\nprint(open('.claude/executing-plan').read())\nPY",
                  "python3 - <<'PY'\nprint('executing-plan')\nPY",
                  "python3 -c 'print(\"begin-plan\")'", "python3 -c 'x=\"check-plan-progress\"'",
-                 "python3 -c 'import os; os.popen(\"ls\")'",
-                 "python3 -c 'import os; os.execv(\"a\", [])'",
-                 "python3 -c 'import os; os.spawnl(0, \"a\")'", "python3 -c 'exec(\"1\")'",
-                 "python3 -c 'eval(\"1\")'", "python3 -c 'compile(\"1\", \"f\", \"exec\")'",
-                 "python3 -c '__import__(\"os\")'", "python3 -c 'import importlib'",
-                 "python3 -c 'import os; os.remove(\"x\")'",
-                 "python3 -c 'import os; os.unlink(\"x\")'",
-                 "python3 -c 'import os; os.rename(\"a\", \"b\")'",
-                 "python3 -c 'import os; os.replace(\"a\", \"b\")'",
-                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('x').unlink()\nPY",
-                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('x').write_text('y')\nPY",
-                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('a').rename('b')\nPY",
-                 "python3 - <<'PY'\nfrom pathlib import Path\nPath('a').replace('b')\nPY",
-                 "python3 - <<'PY'\nf = 'x'\nopen(f, 'w').write('y')\nPY",
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
+                 
                  "python3 - <<'PY'\nprint(1)\n", "python3 -c \"$CODE\"", "python3",
                  "find docs -delete", "find . -exec rm {} ;", "find . -execdir true ;",
                  "find . -ok true ;", "find . -fprint /tmp/x", "mktemp .claude/executing-plan",
-                 "timeout 60 python3 -c 'import subprocess'", "timeout 5 node x.js",
+                 "timeout 5 node x.js",
                  "printf 'p\\n' > /w/repo/.claude/executing-plan",
                  "sed -i '' s/a/b/ .claude/executing-plan", "tee .claude/executing-plan < f",
                  "mv .claude/executing-plan /tmp/x", "cp /tmp/x .claude/executing-plan",
@@ -1888,7 +1890,7 @@ def _self_test() -> int:
         case(f"an opaque op makes the checkout UNKNOWN: {_cmd.replace(chr(10), ' ⏎ ')[:100]}",
              world(_between(_cmd))[0]["two"], None)
     case("⛔ the SECOND heredoc's body is the one its command is fed",
-         world(_between("cat <<'A'\nx\nA\npython3 - <<'B'\nimport subprocess\nB"))[0]["two"],
+         world(_between("cat <<'A'\nx\nA\npython3 - <<'B'\nprint('.claude')\nB"))[0]["two"],
          None)
     case("⭐ `rm -f` of the sentinel ALONE is a known removal: the next arm starts a line",
          world(_between("rm -f .claude/executing-plan"))[0]["two"], STARTED)
