@@ -1117,7 +1117,7 @@
     ]
   },
   {
-    "name": "trigger 3 counts a RETROACTIVE lost bet as a bet, so hindsight owes an escalation",
+    "name": "trigger 3 counts a RETROACTIVE bet as a bet, so hindsight owes an escalation",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
@@ -1126,7 +1126,7 @@
       ]
     ],
     "expect": [
-      "a RETROACTIVE lost bet is not a bet, so nothing is owed after it"
+      "a RETROACTIVE bet is not a bet, so nothing is owed after it"
     ]
   },
   {
@@ -1152,33 +1152,33 @@
       ]
     ],
     "expect": [
-      "⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL"
+      "⭐ an ACKNOWLEDGMENT after the bet WARNS on trigger 10, and does not FAIL"
     ]
   },
   {
-    "name": "a hindsight escalation is classed as unlogged, so an acknowledgment cannot downgrade the FAIL",
+    "name": "an acknowledged unit is classed as unlogged, so an acknowledgment cannot downgrade the FAIL",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "\"hindsight\" if later else \"unlogged\"",
+        "\"acknowledged\" if acked else \"unlogged\"",
         "\"unlogged\""
       ]
     ],
     "expect": [
-      "⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL"
+      "⭐ an ACKNOWLEDGMENT after the bet WARNS on trigger 10, and does not FAIL"
     ]
   },
   {
-    "name": "trigger 3 reads the HINDSIGHT bets instead of the unlogged ones",
+    "name": "trigger 3 reads the ACKNOWLEDGED bets instead of the unlogged ones",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
         "    unlogged = [k for k, how in lost_bets(rows) if how == \"unlogged\"]",
-        "    unlogged = [k for k, how in lost_bets(rows) if how == \"hindsight\"]"
+        "    unlogged = [k for k, how in lost_bets(rows) if how == \"acknowledged\"]"
       ]
     ],
     "expect": [
-      "⭐ a lost FIRST bet with no later row FAILS, naming its unit"
+      "⭐ a FIRST bet the stream continued past, with no later row, FAILS naming its unit"
     ]
   },
   {
@@ -1191,20 +1191,20 @@
       ]
     ],
     "expect": [
-      "...and so does a lost SECOND bet, while the first — escalated in time — stays quiet"
+      "...and so does a SECOND such bet, while the first — escalated in time — stays quiet"
     ]
   },
   {
-    "name": "trigger 10 reads the UNLOGGED bets instead of the hindsight ones",
+    "name": "trigger 10 reads the UNLOGGED bets instead of the acknowledged ones",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    late = [k for k, how in lost_bets(rows) if how == \"hindsight\"]",
-        "    late = [k for k, how in lost_bets(rows) if how == \"unlogged\"]"
+        "    acked = [k for k, how in lost_bets(rows) if how == \"acknowledged\"]",
+        "    acked = [k for k, how in lost_bets(rows) if how == \"unlogged\"]"
       ]
     ],
     "expect": [
-      "...and so does one followed only by a RETROACTIVE route row, on another unit"
+      "...and so does one closing a unit after its SECOND rung, on another unit"
     ]
   },
   {
@@ -1212,12 +1212,12 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if not late:\n        return None",
+        "    if not acked:\n        return None",
         "    if True:\n        return None"
       ]
     ],
     "expect": [
-      "⭐ a lost bet followed only by an ACKNOWLEDGMENT warns in hindsight, and does not FAIL"
+      "⭐ an ACKNOWLEDGMENT after the bet WARNS on trigger 10, and does not FAIL"
     ]
   },
   {
@@ -1238,12 +1238,12 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "(\"10 ESCALATED IN HINDSIGHT\", t10_escalated_in_hindsight(rows)),",
-        "(\"10 ESCALATED IN HINDSIGHT\", None),"
+        "(\"10 MISSED ESCALATION ACKNOWLEDGED\", t10_missed_escalation_acknowledged(rows)),",
+        "(\"10 MISSED ESCALATION ACKNOWLEDGED\", None),"
       ]
     ],
     "expect": [
-      "⭐ an acknowledged lost bet reaches the CLI as trigger 10's WARN and exits 0"
+      "⭐ an acknowledged bet reaches the CLI as trigger 10's WARN and exits 0"
     ]
   },
   {
@@ -1251,25 +1251,25 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    if \"kind\" in row:",
+        "    if \"acknowledges\" in row:",
         "    if False:"
       ]
     ],
     "expect": [
-      "⭐ an acknowledgment after a LOST first bet is accepted"
+      "⭐ an acknowledgment after a continued FIRST bet is accepted"
     ]
   },
   {
-    "name": "an unknown row kind is validated as an acknowledgment",
+    "name": "an unknown acknowledgment value is validated as a missed escalation",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "        if row[\"kind\"] != ACKNOWLEDGMENT:",
+        "        if row[\"acknowledges\"] != ACKNOWLEDGMENT:",
         "        if False:"
       ]
     ],
     "expect": [
-      "an unknown row kind is NAMED, not read as a bet or an acknowledgment"
+      "an unknown acknowledgment is NAMED, not read as a bet or as a missed escalation"
     ]
   },
   {
@@ -1290,8 +1290,8 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "\"rounds_at_termination\", \"prediction\", \"retroactive\")",
-        "\"rounds_at_termination\", \"prediction\")"
+        "              \"prediction\", \"retroactive\")",
+        "              \"prediction\")"
       ]
     ],
     "expect": [
@@ -1368,7 +1368,7 @@
     "file": "scripts/check-decision-scheme.py",
     "edits": [
       [
-        "    return isinstance(row, dict) and row.get(\"kind\") == ACKNOWLEDGMENT",
+        "    return isinstance(row, dict) and row.get(\"acknowledges\") == ACKNOWLEDGMENT",
         "    return False"
       ]
     ],
@@ -1399,7 +1399,98 @@
       ]
     ],
     "expect": [
-      "⭐ an acknowledged lost bet reaches the CLI as trigger 10's WARN and exits 0"
+      "⭐ an acknowledged bet reaches the CLI as trigger 10's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "a continued DEFER is held to escalate, so trigger 3 names trigger 2's defect a second time",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if route_next(routes_accounted(unit_rows[:i + 1])) is None:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "⭐ a continued DEFER reached by SKIP is trigger 2's FAIL, and trigger 3 is silent"
+    ]
+  },
+  {
+    "name": "the ladder position is read BEFORE the bet, so a walked-to-defer unit still owes a rung",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "routes_accounted(unit_rows[:i + 1])",
+        "routes_accounted(unit_rows[:i])"
+      ]
+    ],
+    "expect": [
+      "...and so is one at the end of a fully WALKED ladder, on another unit"
+    ]
+  },
+  {
+    "name": "a bet may follow an acknowledgment, so the closing statement licenses more accretion",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if any(is_acknowledgment(r) for r in prior):\n        return (f\"{unit_key(row)} is CLOSED",
+        "    if False:\n        return (f\"{unit_key(row)} is CLOSED"
+      ]
+    ],
+    "expect": [
+      "⭐ a BET after an acknowledgment is refused — the unit is CLOSED"
+    ]
+  },
+  {
+    "name": "a second acknowledgment is accepted, so one unit can be closed twice",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if any(is_acknowledgment(r) for r in prior):\n        return (f\"{unit_key(row)} is already closed",
+        "    if False:\n        return (f\"{unit_key(row)} is already closed"
+      ]
+    ],
+    "expect": [
+      "⭐ a SECOND acknowledgment on the same unit is refused — there is one per unit"
+    ]
+  },
+  {
+    "name": "an acknowledgment's round count need only be present, so zero and True pass as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(n, int) or isinstance(n, bool) or n < 1:",
+        "    if n is None:"
+      ]
+    ],
+    "expect": [
+      "...and so is one whose count is not an integer >= 1 (zero, and a bool posing as one)"
+    ]
+  },
+  {
+    "name": "an acknowledgment's round count is never read, so a closing statement need not say how it ended",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    n = row.get(\"rounds_at_termination\")",
+        "    n = 1"
+      ]
+    ],
+    "expect": [
+      "⭐ an acknowledgment WITHOUT rounds_at_termination is refused — it closes the unit"
+    ]
+  },
+  {
+    "name": "every later row counts as an acknowledgment, so an unlogged escalation is downgraded to a WARN",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            acked = any(is_acknowledgment(x) for x in later)",
+        "            acked = True"
+      ]
+    ],
+    "expect": [
+      "⭐ a FIRST bet the stream continued past, with no later row, FAILS naming its unit"
     ]
   }
 ]
