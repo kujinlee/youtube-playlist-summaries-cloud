@@ -117,14 +117,80 @@ WHAT IT CANNOT SEE, stated rather than hidden:
   * the hook's RUNTIME behaviour. The reachability case is STRUCTURAL — it reads the hook as text
     and proves order in the file, nothing more.
 
+THE THREAD CLASS (`unknown-thread`, owner's decision 2026-10-22 — option A: warn first, then block)
+---------------------------------------------------------------------------------------------------
+The work-lines page (`scripts/gen-work-lines.py`) shows a thread exactly when
+`.claude/plans/<slug>.md` exists in ANY checkout — armed or not, finished or not. On 2026-10-22 a side job was run
+on banners alone, so it had no plan file and never reached that page, and none of the three
+classes above could notice: they ask whether a bannered job STOPPED PARTWAY, not whether the
+thread it ran on is one the page knows. The rule:
+
+    warn  <=>  the judged turn's LAST banner `> **Thread:**` row names a READABLE slug, AND
+               no checkout's `.claude/plans/<slug>.md` exists.
+
+  * ⟳ r1 (Codex 1, Codex 2, Claude F2): the first version compared against the ARMED sentinel.
+    That fired on correct sequences — a plan closed with `--finish`, a parent resumed after its
+    child completed — and its printed remedy, run on an existing slug, rewrote that plan's ticked
+    steps. Comparing against the plan files removes both: the remedy is printed only when no plan
+    file exists, so it cannot clobber one.
+  * A row is read only when it BELONGS TO A BANNER: the quote block directly under a `## ▶`
+    heading, within BANNER_WINDOW lines (blank lines and `---` allowed, anything else ends it);
+    one row per banner. A standalone quoted row — a reviewer's example, prose — is not read.
+    Fenced code is skipped, a fence closing only on its own character at no shorter a length.
+  * The slug is read where the convention writes it, by PRECEDENCE (⟳ r2 Codex 1): an explicit
+    destination (`→ `slug`` in a switch context — after `⤳ SWITCHED`, or directly after the row's
+    leading slug — or `SWITCHED [back] to [plan] `slug``) beats `plan `slug``, which beats
+    the row's leading slug (bare, or after `↳` [RESUMED]). Two DIFFERENT slugs at the deciding
+    level are unreadable. Lower levels are never consulted, so a later commit id, PR number or file
+    name is never the thread. Measured over every turn since 2026-10-10 carrying a banner Thread
+    row (95): the first version read 24 (6 of 73 step rows); this one reads 91. The 4 it cannot
+    read hold no well-formed slug (`` `two words` ``, `/clear`, a `**bold**` target).
+  * ⛔ QUIET WHEN THE NAME CANNOT BE EXTRACTED — zero or several candidate slugs. Guessing a name
+    would false-alarm, and this repo has switched off a gate red from birth (backlog #56).
+  * ⚠ THE LAST ROW ONLY: it is the thread the turn ENDED on. A switch to an unknown thread followed
+    in the same turn by a banner on a KNOWN thread is not seen, and an unreadable last row does
+    not fall back to an earlier one.
+  * ⟳ r2 Codex 3 — ALWAYS EVALUATED, on every judged turn — ⟳ r3 Claude F1: including one with
+    NO saved record (a resumed session, a failed journal write), since this class needs only the
+    turn's text and the plan files. r1 suppressed this class whenever an original class fired;
+    that lost real findings (`unarmed` admits a finished-job false alarm, this names a missing
+    plan) and bypassed BLOCK. Now each class logs its own row, and this class's row carries
+    `also=<class>` naming any original class that fired the same turn (`also=-` for none), so the
+    count of turns ONLY this class caught is one grep (`thread_log_line`).
+  * ⭐ EVERY CHECKOUT (owner's decision 2026-10-22, option A). The plan files are those of every
+    checkout `git worktree list` reports, via `gen-work-lines.plan_dirs` — the page's own reader,
+    so the two cannot disagree. Measured: two `chrome-bar-fold` turns warned while that plan sat in
+    a worktree's `.claude/plans/`. If git cannot answer, only this checkout is read and the warning
+    SAYS so; an unlistable directory is skipped and named. A registered checkout whose folder is
+    GONE is skipped silently — it holds no plans to miss (r3 Claude F2). If NOTHING could be
+    read it is CANNOT RUN (only when there is a readable thread to look up), never a warning.
+  * ⚠ THE PLAN FILES ARE READ AT JUDGING TIME, NOT SAMPLED: a plan created after the turn ended
+    already answers the question, so that turn is not warned about.
+  * ⚠ A REUSED SLUG IS NOT SEEN — a documented bound, accepted by the coordinator (r2 Codex 2). A
+    new side job named like an OLD plan's slug is hidden behind the old file: the check is the
+    filename, not whether that plan describes this work, and the page then shows the new work
+    under the old plan. No lifecycle is tracked to close this.
+
+MODE: WARN through the same channel and log as the rest (`unknown-thread`, detail
+`<kind> <slug>`), naming the command that creates the plan. BLOCK is ONE named switch,
+`THREAD_BLOCK`, default False; when True this class returns `THREAD_BLOCK_RC` (4), which
+`block-idle-stop.sh` maps to `exit 2`. ⛔ THE OWNER DECIDES WHEN to flip it, from the
+`unknown-thread` false-alarm count in the warn log — not the implementer, and not a reviewer.
+⚠ WHAT BLOCKING MEANS, because this guard judges the PREVIOUS turn: the block lands on the stop
+of the turn AFTER the one that named the thread — possibly an unrelated reply — and holds it
+ONCE. The continuation stop it causes does not re-judge that turn (one verdict per turn), so the
+block is cleared by continuing, and creating the plan during that continuation is what it asks
+for; nothing re-checks that it was done.
+
 FAILS CLOSED ON ITS OWN BLINDNESS. No transcript, an unreadable one, or zero assistant text parsed
 -> exit 2 with CANNOT RUN. A check that cannot reach what it measures is never a pass (CLAUDE.md),
 and "no banner found" is indistinguishable from "could not read the file" unless it says so.
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 160 cases
+    python3 scripts/check-banner-armed.py --self-test  # 236 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
+                          4 = THREAD UNKNOWN TO THE WORK-LINES PAGE, BLOCKING — only while THREAD_BLOCK is True
 """
 from __future__ import annotations
 
@@ -134,6 +200,7 @@ import datetime as _dt
 import importlib.util
 import io                  # self-test only: see `contextlib` above
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -155,10 +222,19 @@ QUIET, WARN, CANNOT_RUN = 0, 1, 2
 
 _UNSET = object()   # `steps` was not consulted. Distinct from None = "unreadable".
 
-# The banner CLAUDE.md mandates: `## ▶ STEP 3 of 6 — title`. The separator between the numbers is
-# matched loosely (`of`), but the `## ▶ STEP` opener is not — a looser opener would match prose
+# The banner CLAUDE.md mandates: `## ▶ [10-22 13:35] STEP 3 of 6 — title`. The separator between
+# the numbers is matched loosely (`of`), but the opener is not — a looser opener would match prose
 # ABOUT the convention, and this file, the skill docs and the dashboard all discuss it.
-BANNER_RE = re.compile(r"^##\s*▶\s*STEP\s+(\d+)\s+of\s+(\d+)\b", re.M)
+# ⟳ 2026-10-22 — THE `[mm-dd hh:mm]` STAMP IS OPTIONAL HERE, AND ITS ABSENCE WAS A BLINDNESS.
+# CLAUDE.md settled on PREPENDING the stamp on 2026-10-16; this pattern required `▶` then `STEP`
+# with only whitespace between, so from that day until this fix the three original classes could
+# not see a STAMPED banner — `unarmed` could not fire on one, and `unbannered` / `unheralded` read
+# one as NO banner. ⟳ r1 Claude F3: unstamped banners were still emitted, and seen, until
+# 2026-10-19 19:07Z — measured over judgable turns since 2026-10-16: 67 carried a banner this
+# pattern now matches, 21 one the old pattern matched. So the log over that span is PARTIAL, not
+# silent, and its quiet is not evidence of no misses. The unstamped form still matches. This is the ONE banner pattern; the
+# thread class reads it too (a second copy, `STEP_BANNER_RE`, lived for one commit and is retired).
+BANNER_RE = re.compile(r"^##\s*▶\s*(?:\[[^\]\n]*\]\s*)?STEP\s+(\d+)\s+of\s+(\d+)\b", re.M)
 
 
 # ── Pure core ─────────────────────────────────────────────────────────────────────────────────
@@ -490,6 +566,127 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
     return best
 
 
+# ── THE FOURTH CLASS: a THREAD the work-lines page does not know (added 2026-10-22) ──────────
+# The banner's `> **Thread:**` row names the thread from the PLAN SLUG (CLAUDE.md), and
+# `scripts/gen-work-lines.py` shows a thread exactly when `.claude/plans/<slug>.md` exists —
+# armed or not, finished or not. A thread switched to by banner alone has no such file and never
+# reaches that page. See the module docstring, section THE THREAD CLASS, for the rule and bounds.
+THREAD_RE = re.compile(r"^>\s*\*\*Thread:\*\*(.*)$")
+_SLUG = r"`([A-Za-z0-9][A-Za-z0-9._-]*)`"
+_LEADING_SLUG_RE = re.compile(r"^\s*" + _SLUG)
+_RETURN_RE = re.compile(r"^\s*↳\s*(?:RESUMED\s+)?" + _SLUG)
+_SWITCH_ARROW_RE = re.compile(r"→\s*" + _SLUG)
+_SWITCH_TO_RE = re.compile(r"SWITCHED\s+(?:back\s+)?to\s+(?:plan\s+)?" + _SLUG)
+_LEAD_ARROW_RE = re.compile(r"^\s*`[A-Za-z0-9][A-Za-z0-9._-]*`\s*→\s*" + _SLUG)
+_PLAN_NAMED_RE = re.compile(r"\bplan\s+" + _SLUG)
+# Any `## ▶` heading opens a banner for this class — wider than BANNER_RE on purpose: a Thread
+# row belongs to the heading above it whether or not that heading parses as `STEP n of N`.
+_BANNER_HEAD_RE = re.compile(r"^##\s*▶")
+BANNER_WINDOW = 8     # lines after the heading in which its quote block may carry the Thread row
+_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FENCE_CLOSE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
+SWITCHED = "⤳ SWITCHED"
+
+
+def thread_name(body: str) -> tuple[str, str] | None:
+    """PURE. -> (kind, slug) for the thread a `**Thread:**` row names, or None when unreadable.
+
+    ⟳ r2 Codex 1 — PRECEDENCE, because a row can name more than one thing. The real row
+    `` `three-review-rounds` · step 5 of 6 · ⤳ SWITCHED to `plugins-handoff-citations` `` (turn
+    af0b134a) was read as its LEADING token, so a switch to a planless thread was quiet. In order:
+      1. an EXPLICIT DESTINATION — the slug after `→` IN A SWITCH CONTEXT (after the `⤳ SWITCHED`
+         marker, or directly after the row's leading slug), or after `SWITCHED [back] to [plan]`
+         — kind "switched". An arrow in prose (`step 3 → `abc1234``) is not one (r3 Claude F7);
+      2. `plan `slug`` (CLAUDE.md's example form) — kind "step";
+      3. the row's LEADING slug, bare or after `↳` [RESUMED] — kind "step".
+    The first level that names anything decides. ⛔ If that level names TWO DIFFERENT slugs the row
+    is UNREADABLE (None), never a guess — a check that false-alarms from birth gets switched off
+    (backlog #56). A level below the deciding one is never consulted, so a later commit id, PR
+    number or file name in backticks is never the thread. Real rows, each a case:
+      `` `work-lines-page` · step 1 ✅ (`479114be`) ``        -> step work-lines-page
+      `` ↳ RESUMED `chrome-bar-reachable` Phase 6 · 1 of 6 `` -> step chrome-bar-reachable
+      `` ⤳ SWITCHED from `(session start)` → `chrome-bar-reachable` `` -> switched (the one `→`)
+      `` ⤳ SWITCHED to plan `afk-r6-lows-r7-and-r18-verdict` `` -> switched
+    kind only labels the message and the log.
+    """
+    # ⟳ r3 Claude F7: an arrow is a destination ONLY in a switch context — after the `⤳ SWITCHED`
+    # marker, or directly after the row's leading slug (`` `a` → `b` ``). Anywhere else it is prose,
+    # and `` `slice-a` · step 3 of 5 → `abc1234` pushed `` made a commit id the thread.
+    if SWITCHED in body:
+        explicit = _SWITCH_ARROW_RE.findall(body.split(SWITCHED, 1)[1])
+    else:
+        lead = _LEAD_ARROW_RE.match(body)
+        explicit = [lead.group(1)] if lead else []
+    explicit += _SWITCH_TO_RE.findall(body)
+    if explicit:
+        return ("switched", explicit[0]) if len(set(explicit)) == 1 else None
+    planned = _PLAN_NAMED_RE.findall(body)
+    if planned:
+        return ("step", planned[0]) if len(set(planned)) == 1 else None
+    m = _LEADING_SLUG_RE.match(body) or _RETURN_RE.match(body)
+    return ("step", m.group(1)) if m else None
+
+
+def thread_rows(texts: list[str]) -> list[str]:
+    """PURE. -> the `**Thread:**` row bodies that BELONG TO A BANNER, in emission order.
+
+    A row belongs to a banner when it sits in the quote block directly under a `## ▶` heading,
+    within BANNER_WINDOW lines of it; blank lines and a `---` rule may separate them, anything else
+    ends the block. One row per banner (the first). ⛔ A standalone quoted row is NOT read: prose
+    that quotes the convention — a reviewer's example, a summary — is not a banner.
+    Fenced code is skipped. A fence closes only on the SAME character at no shorter a length
+    (CommonMark), so a ``` line inside a ~~~~ block does not close it.
+    """
+    rows: list[str] = []
+    for text in texts:
+        fence: str | None = None          # the opening run, e.g. "~~~~"
+        since: int | None = None          # lines since the last banner heading, None = not in one
+        for line in text.splitlines():
+            if fence is not None:
+                close = _FENCE_CLOSE_RE.match(line)
+                if close and close.group(1)[0] == fence[0] and len(close.group(1)) >= len(fence):
+                    fence = None
+                continue
+            m = _FENCE_OPEN_RE.match(line)
+            if m:
+                fence, since = m.group(1), None
+                continue
+            if _BANNER_HEAD_RE.match(line):
+                since = 0
+                continue
+            if since is None:
+                continue
+            since += 1
+            if since > BANNER_WINDOW:
+                since = None
+                continue
+            t = THREAD_RE.match(line)
+            if t:
+                rows.append(t.group(1))
+                since = None
+            elif line.strip() and not line.lstrip().startswith(">") and line.strip() != "---":
+                since = None
+    return rows
+
+
+def unknown_thread(texts: list[str], known: set[str]) -> tuple[str, str] | None:
+    """PURE. -> (kind, slug) when the turn's LAST banner Thread row names a thread with no plan file.
+
+    ⚠ THE LAST ROW ONLY. It is the thread the turn ENDED on; an earlier row in the same turn may
+    name a thread that has a plan by now or never needed one. If the last row is unreadable this
+    is quiet and does NOT fall back to an earlier row — that would be guessing which thread the
+    turn ended on. A switch to an unknown thread followed in the same turn by a banner on a KNOWN
+    thread is therefore not seen.
+    """
+    rows = thread_rows(texts)
+    if not rows:
+        return None
+    hit = thread_name(rows[-1])
+    if hit is None or hit[1] in known:
+        return None
+    return hit
+
+
 # The log's `reason` column. ⛔ THESE ARE RETURNED BY `decide()`, NEVER RE-DERIVED FROM ITS OUTPUT,
 # and that is a repair rather than a style choice. Until 2026-09-22 `run_decide` reconstructed the
 # class by asking "was there a banner?" — which worked only while the two classes happened to differ
@@ -500,6 +697,60 @@ def highest_banner(texts: list[str]) -> tuple[int, int] | None:
 REASON_UNARMED = "unarmed"          # a banner ran, nothing was armed
 REASON_UNBANNERED = "unbannered"    # a plan was armed and edits happened, no banner
 REASON_UNHERALDED = "unheralded"    # NEITHER armed NOR bannered, and the turn was large
+REASON_THREAD = "unknown-thread"    # the turn ENDED on a thread with no `.claude/plans/<slug>.md`
+
+# ⛔ THE BLOCK SWITCH FOR THE THREAD CLASS — ONE LINE, DEFAULT OFF (owner's decision 2026-10-22,
+# option A: warn first, then block). The OWNER flips it, from the `unknown-thread` false-alarm
+# count in WARN_LOG; nobody else does. When True the class returns THREAD_BLOCK_RC, which
+# `.claude/hooks/block-idle-stop.sh` maps to `exit 2` (block the stop, stderr to Claude) — the
+# only code this guard returns that the hook does not collapse to a non-blocking `exit 1`.
+# ⚠ What blocking MEANS here is in the module docstring (MODE): it holds the NEXT stop, once.
+THREAD_BLOCK = False
+THREAD_BLOCK_RC = 4
+
+
+def decide_thread(texts: list[str], known: set[str] | None,
+                  block: bool = False, notes: list[str] | None = None) -> tuple[int, str, str, str]:
+    """PURE. -> (exit_code, message, reason, detail). QUIET is (0, "", "", "").
+
+    `known` is the set of plan slugs across every checkout's `.claude/plans/` — the threads the
+    work-lines page shows — or None when none of them could be read. None is CANNOT RUN, but only
+    when there is a readable thread to judge: with nothing to look up, nothing was missed.
+    `notes` say what was not read; a warning or a CANNOT RUN carries them.
+    `block` is passed in rather than read from THREAD_BLOCK so both modes are testable.
+    """
+    if known is None:
+        rows = thread_rows(texts)
+        if rows and thread_name(rows[-1]) is not None:
+            return CANNOT_RUN, (
+                "CANNOT RUN: no checkout's .claude/plans/ could be read, so this check cannot "
+                "tell whether the thread the previous turn ended on is on the work-lines page. "
+                "TREAT THE THREAD CHECK AS NOT RUN." + "".join(f"\n     · {n}" for n in notes or [])
+            ), "", ""
+        return QUIET, "", "", ""
+    hit = unknown_thread(texts, known)
+    if hit is None:
+        return QUIET, "", "", ""
+    kind, name = hit
+    how = ("a `⤳ SWITCHED` row names it as the target" if kind == "switched"
+           else "the last banner's `**Thread:**` row names it")
+    head = "⛔ THREAD UNKNOWN TO THE WORK-LINES PAGE (BLOCKING)" if block else \
+        "⚠ THREAD UNKNOWN TO THE WORK-LINES PAGE"
+    msg = (
+        f"{head} — the previous turn ended on thread `{name}` ({how}), and no checkout "
+        f"has .claude/plans/{name}.md.\n"
+        "\n"
+        "   The work-lines page (scripts/gen-work-lines.py) shows a thread only when its plan\n"
+        "   file exists, so this thread's work is invisible there. Create its plan:\n"
+        "\n"
+        f"     python3 scripts/begin-plan.py {name} \"title|doing|why\" ...\n"
+        "\n"
+        + ("   This stop is BLOCKED (THREAD_BLOCK is on), once. " if block else
+           "   This does not block your stop (warn-only until the owner flips THREAD_BLOCK). ")
+        + f"Logged to {WARN_LOG.relative_to(ROOT)} as `{REASON_THREAD}`."
+        + ("\n   ⚠ NOT EVERY CHECKOUT WAS READ, so this may be a false alarm:"
+           + "".join(f"\n     · {n}" for n in notes) if notes else ""))
+    return (THREAD_BLOCK_RC if block else WARN), msg, REASON_THREAD, f"{kind} {name}"
 
 
 def decide(texts: list[str] | None, armed: bool,
@@ -648,6 +899,17 @@ def log_line(reason: str, detail: str, when: str, session: str) -> str:
     return observer_log.record(session, reason, detail, when=when)
 
 
+def thread_log_line(detail: str, also: str, when: str, session: str) -> str:
+    """The thread class's warn row. -> `v1⇥when⇥session⇥unknown-thread⇥<kind> <slug>⇥also=<class>`
+
+    ⟳ r2 Codex 3: the thread class is never suppressed by an original class, so a turn can produce
+    two rows. `also=` names the original class that ALSO fired that turn (`also=-` for none), so
+    the owner counts turns this class ALONE caught with one grep — `grep -c 'also=-$'` over the
+    `unknown-thread` rows — and nothing is lost by counting.
+    """
+    return observer_log.record(session, REASON_THREAD, detail, f"also={also or '-'}", when=when)
+
+
 def flush_line(before: int, after: int, when: str, session: str) -> str:
     """One appended observation, over the same shared grammar. A DIFFERENT file.
 
@@ -742,6 +1004,55 @@ def _paused_from_text(text: str) -> bool:
         if line.split(":", 1)[0].strip() == "paused":
             return True
     return False
+
+
+def known_threads(plan_dir: Path) -> set[str] | None:
+    """The slugs ONE plan directory holds: every `*.md` FILE in it, by stem.
+
+    -> set() when the directory does not exist (no plans there is a real state), None when it exists
+    and cannot be listed — the caller names it rather than reading it as "no plans".
+    """
+    try:
+        with os.scandir(plan_dir) as it:
+            return {Path(e.name).stem for e in it if e.name.endswith(".md") and e.is_file()}
+    except FileNotFoundError:
+        return set()
+    except OSError:
+        return None
+
+
+def known_everywhere() -> tuple[set[str] | None, list[str]]:
+    """The threads the work-lines page shows: the plan slugs of EVERY checkout. -> (known, notes).
+
+    ⭐ The owner's decision 2026-10-22 (option A). The directories come from
+    `gen-work-lines.plan_dirs` — the page's own reader, so this check and the page cannot disagree
+    about which checkouts count. `notes` name what was NOT read (git unable to list worktrees, a
+    directory that exists and could not be listed); a warning carries them.
+    ⚠ READ AT JUDGING TIME, NOT SAMPLED: a plan created after the turn ended already answers it.
+    -> (None, notes) when NOTHING could be read — the generator would not load, or every directory
+    refused — which `decide_thread` reports as CANNOT RUN.
+    """
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_gen_work_lines_for_banner", Path(__file__).resolve().parent / "gen-work-lines.py")
+        if spec is None or spec.loader is None:
+            raise ImportError("cannot load scripts/gen-work-lines.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        dirs, notes = mod.plan_dirs(ROOT)
+    except Exception as exc:                       # noqa: BLE001 - reported as CANNOT RUN
+        return None, [f"scripts/gen-work-lines.py could not be used ({type(exc).__name__}: {exc})"]
+    known: set[str] = set()
+    read_any = False
+    for _checkout, pd in dirs:
+        got = known_threads(pd)
+        if got is None:
+            notes.append(f"{pd} exists but could not be listed")
+            continue
+        read_any = True
+        known |= got
+    return (known if read_any else None), notes
 
 
 def _paused():
@@ -1022,10 +1333,23 @@ def run_decide(payload: str) -> int:
     code, message = QUIET, ""
     reason = ""                    # set ONLY by decide(); see REASON_* for why it is not re-derived
     steps = _UNSET                 # bound before the log block below can read it
+    t_code, t_msg, t_detail = QUIET, "", ""   # the THREAD class; set only where decide() ran
     if judged is not None:
         if already and already.get("last_judged_uuid") == judged_uuid and judged_uuid:
             code, message = QUIET, ""        # exactly one verdict per turn (§3.4b)
         else:
+            # ⟳ r2 Codex 3 — ALWAYS EVALUATED, never suppressed by an original class. r1's
+            # suppression lost real findings (the two are not interchangeable: the `unarmed`
+            # warning admits a finished-job false alarm, this one names a missing plan) and
+            # bypassed BLOCK. Co-firing is RECORDED instead, in the log row's `also=` field
+            # (`thread_log_line`), so unique causes are one grep away.
+            # ⟳ r3 Claude F1 — AND AHEAD OF THE SAMPLE. It needs only the judged turn's text and
+            # the plan files, never the journalled sentinel, so a turn with NO saved record (a
+            # resumed session, a failed journal write) is judged too — it used to be skipped,
+            # which let a missing sample bypass BLOCK. The one-verdict-per-turn gate above holds.
+            _known, _notes = known_everywhere()
+            t_code, t_msg, _t_reason, t_detail = decide_thread(
+                texts_of(judged.body), _known, block=THREAD_BLOCK, notes=_notes)
             sample = sample_for(already, judged_uuid)
             if sample is None:
                 code, message = CANNOT_RUN, (
@@ -1147,6 +1471,28 @@ def run_decide(payload: str) -> int:
         message = f"{message}\n\n   {extra}" if message else extra
         code = CANNOT_RUN
 
+    # ── 5. the THREAD class — logged and voiced HERE, ahead of every early return ─────────────
+    # A CANNOT RUN above is about the journal or the flush record, not about this verdict, so it
+    # must not swallow it. BLOCK outranks every other code: it is the one the owner chose to make
+    # the stop wait on, and a failed journal write is not a reason to let it through.
+    if t_code == CANNOT_RUN:
+        # The plan directory could not be listed. Not a warning, so it is never LOGGED as one.
+        message = f"{message}\n\n   {t_msg}" if message else t_msg
+        if code != THREAD_BLOCK_RC:
+            code = CANNOT_RUN
+    elif t_code != QUIET:
+        try:
+            observer_log.append_or_raise(
+                WARN_LOG, thread_log_line(t_detail, reason, observer_log.now(), session_id))
+        except OSError as e:
+            t_msg += f"\n\n   ⚠ AND THE LOG COULD NOT BE WRITTEN ({e}) — the false-alarm " \
+                     f"rate the BLOCK decision reads is not being recorded."
+        message = f"{message}\n\n{t_msg}" if message else t_msg
+        if t_code == THREAD_BLOCK_RC:
+            code = THREAD_BLOCK_RC
+        elif code == QUIET:
+            code = WARN
+
     if code == CANNOT_RUN:
         if message:
             print(message, file=sys.stderr)
@@ -1160,7 +1506,10 @@ def run_decide(payload: str) -> int:
 
     texts = texts_of(judged.body) if judged is not None else []
 
-    if code == WARN:
+    if reason:
+        # ⛔ `if reason`, NOT `if code == WARN` (2026-10-22): the THREAD class can promote `code`
+        # to WARN with no decide() class firing, or to THREAD_BLOCK_RC while one did. `reason` is
+        # non-empty exactly when decide() returned WARN, which is what this block logs.
         # ⛔ `reason` COMES FROM decide(). It used to be reconstructed here by asking "was there a
         # banner?", which silently became wrong the moment a THIRD class shared `banner is None`
         # with `unbannered` — see the REASON_* constants. Only `detail` is derived, and each class
@@ -1292,6 +1641,260 @@ def _self_test() -> int:
          decide(["just some prose, no banner here"], armed=False)[0] == QUIET)
     case("a 1-of-1 job is finished, not partway",
          decide([B.format(1, 1)], armed=False)[0] == QUIET)
+
+    # ── THE THREAD CLASS: which rows are READ (r1 Codex 3, Claude F1) ──────────────────────
+    # ⛔ Every row literal below is COPIED from a real transcript (replayed read-only, 2026-10-22),
+    # each at its own call site. The first suite parsed only CLAUDE.md's `plan `x`` example, a
+    # form that occurs ZERO times as a real step row; its fixtures could not see that.
+    case("TN1 the slug-FIRST step row names its slug, and the later commit id is not the thread",
+         safe(lambda: thread_name(" `work-lines-page` · step 1 ✅ (`479114be`) · step 2 ⏳ still "
+                                  "running · step 3 just dispatched") == ("step", "work-lines-page")))
+    case("TN2 ...the same form with a plain progress tail",
+         safe(lambda: thread_name(" `phase6-chrome-instrument` · 5 of 6 done")
+              == ("step", "phase6-chrome-instrument")))
+    case("TN3 a `↳` row WITHOUT `RESUMED` names its slug",
+         safe(lambda: thread_name(" ↳ `afk-staleplan-and-two-folds` · step 6 of 7 · ▸ 3.1 — "
+                                  "sizing H5") == ("step", "afk-staleplan-and-two-folds")))
+    case("TN4 a `↳ RESUMED` row names its slug",
+         safe(lambda: thread_name(" ↳ RESUMED `chrome-bar-reachable` Phase 6 · 1 of 6 done")
+              == ("step", "chrome-bar-reachable")))
+    case("TN5 a SWITCHED row's target is the one slug after `→`, never the `from` side",
+         safe(lambda: thread_name(" ⤳ SWITCHED from `(session start)` → `chrome-bar-reachable` "
+                                  "Phase 6 · plan not yet armed")
+              == ("switched", "chrome-bar-reachable")))
+    case("TN6 `SWITCHED to plan `x`` names x, and a later backticked worktree name is not read",
+         safe(lambda: thread_name(" ⤳ SWITCHED to plan `afk-r6-lows-r7-and-r18-verdict` · 1 of 5 "
+                                  "· (r18 Claude half still running in `wt-backlog`)")
+              == ("switched", "afk-r6-lows-r7-and-r18-verdict")))
+    case("TN7 a SWITCHED row naming no slug is UNREADABLE — `/clear` is not a thread",
+         safe(lambda: thread_name(" ⤳ SWITCHED — fresh session after `/clear`; no plan armed yet")
+              is None))
+    case("TN8 a slug-first row that later says SWITCHED keeps its LEADING slug",
+         safe(lambda: thread_name(" `three-review-rounds` · step 4 of 6 · ⤳ SWITCHED back to "
+                                  "`#371` after reading all three Codex halves")
+              == ("step", "three-review-rounds")))
+    case("TN9 a `↳` row that later mentions another slug keeps the `↳` slug",
+         safe(lambda: thread_name(" ↳ `afk-staleplan-and-two-folds` · step **7 of 7** · ⤳ "
+                                  "SWITCHED subject — `plugins-handoff-citations` is done")
+              == ("step", "afk-staleplan-and-two-folds")))
+    case("TN10 CLAUDE.md's own example form still reads",
+         safe(lambda: thread_name(" comprehensibility → Slice A · plan `slice-a` · 2 of 5 done")
+              == ("step", "slice-a")))
+    case("TN11 a SWITCHED row with TWO arrow targets is unreadable — picking one is a guess",
+         safe(lambda: thread_name(" ⤳ SWITCHED from `a1` → `b1` → `c1`") is None))
+
+    # ⟳ r2 Codex 1 — PRECEDENCE: an explicit destination, then `plan `x``, then the leading slug.
+    case("TN12 the REAL mixed row from turn af0b134a reads its SWITCH destination, not its "
+         "leading slug",
+         safe(lambda: thread_name(" `three-review-rounds` · step 5 of 6 · ⤳ SWITCHED to "
+                                  "`plugins-handoff-citations`")
+              == ("switched", "plugins-handoff-citations")))
+    case("TN13 `plan `x`` beats a bare leading token — Codex's `gpt-6` input",
+         safe(lambda: thread_name(" `gpt-6` · plan `real-plan`") == ("step", "real-plan")))
+    case("TN14 a bare `→ `b`` with no SWITCHED marker is an explicit destination too",
+         safe(lambda: thread_name(" `from-row` → `to-row` · 1 of 3") == ("switched", "to-row")))
+    case("TN15 two DIFFERENT explicit destinations are unreadable, never a guess",
+         safe(lambda: thread_name(" ⤳ SWITCHED to `dest-one` · then → `dest-two`") is None))
+    case("TN16 ...and the SAME destination named twice is not a conflict",
+         safe(lambda: thread_name(" ⤳ SWITCHED to `dest-same` → `dest-same`")
+              == ("switched", "dest-same")))
+    case("TN17 two DIFFERENT `plan` slugs are unreadable too",
+         safe(lambda: thread_name(" `lead-x` · plan `pl-one` · plan `pl-two`") is None))
+
+    case("TN19 an arrow in PROSE is not a destination — the commit id after `→` is not the thread "
+         "(r3 Claude F7)",
+         safe(lambda: thread_name(" `slice-a` · step 3 of 5 → `abc1234` pushed")
+              == ("step", "slice-a")))
+    case("TN20 an arrow BEFORE the `⤳ SWITCHED` marker is prose; the switch's own target decides",
+         safe(lambda: thread_name(" `lead-z` · 3 → `pushed-z1` · ⤳ SWITCHED to `dest-z2`")
+              == ("switched", "dest-z2")))
+    case("TN18 the FROM side of a switch is never the thread — a real row whose destination has "
+         "no backticks is unreadable",
+         safe(lambda: thread_name(" ⤳ SWITCHED from `backlog-249-260-fixes` round-11 folding → "
+                                  "**Phase 6 architecture review** · armed by thrashing, sequenced "
+                                  "by you") is None))
+
+    # ── which rows BELONG TO A BANNER (r1 Codex 2, Codex 4) ───────────────────────────────
+    case("TR1 a Thread row under a stamped `## ▶` heading is read",
+         safe(lambda: thread_rows(["## ▶ [10-22 10:27] STEP 3 of 4 — Review round 1\n\n"
+                                   "> **Thread:** `rows-one` · step 1"]) == [" `rows-one` · step 1"]))
+    case("TR2 a STANDALONE quoted switch row is NOT read — Codex's quoted-example input",
+         safe(lambda: thread_rows(["This was the reviewer’s quoted example:\n"
+                                   "> **Thread:** ⤳ SWITCHED from `old` → `historical`"]) == []))
+    case("TR3 prose between the heading and the row ends the banner",
+         safe(lambda: thread_rows(["## ▶ STEP 1 of 2 — t\nsome prose\n"
+                                   "> **Thread:** `rows-three`"]) == []))
+    case("TR4 a row further than BANNER_WINDOW lines below the heading is not the banner's",
+         safe(lambda: thread_rows(["## ▶ STEP 1 of 2 — t\n" + ">\n" * BANNER_WINDOW
+                                   + "> **Thread:** `rows-four`"]) == []))
+    case("TR5 a `---` rule between the heading and its quote block is allowed",
+         safe(lambda: thread_rows(["## ▶ STEP 1 of 2 — t\n---\n> **Doing:** x\n"
+                                   "> **Thread:** `rows-five`"]) == [" `rows-five`"]))
+    case("TR6 one row per banner — a second Thread row under the same heading is not read",
+         safe(lambda: thread_rows(["## ▶ STEP 1 of 2 — t\n> **Thread:** `rows-six`\n"
+                                   "> **Thread:** `rows-six-b`"]) == [" `rows-six`"]))
+    case("TR7 a ``` line inside a ~~~~ fence does NOT close it — Codex's four-tilde input",
+         safe(lambda: thread_rows(["~~~~\n```\n## ▶ STEP 1 of 2 — t\n"
+                                   "> **Thread:** ⤳ SWITCHED from `old` → `historical`\n~~~~"])
+              == []))
+    case("TR7b ...nor does a ``` line of the SAME length close a ~~~ fence — the character matters",
+         safe(lambda: thread_rows(["~~~\n```\n## ▶ STEP 1 of 2 — t\n"
+                                   "> **Thread:** `rows-sevenb`\n~~~"]) == []))
+    case("TR8 ...while a fence closed by its own kind ends, and a banner after it is read",
+         safe(lambda: thread_rows(["```\nexample\n```\n## ▶ STEP 1 of 2 — t\n"
+                                   "> **Thread:** `rows-eight`"]) == [" `rows-eight`"]))
+    case("TR9 a SHORTER closing run does not close a longer fence",
+         safe(lambda: thread_rows(["````\n```\n## ▶ STEP 1 of 2 — t\n"
+                                   "> **Thread:** `rows-nine`\n````"]) == []))
+
+    # ── what FIRES: no plan file, never "not armed" (r1 Codex 1, Claude F2) ──────────────
+    _BN = "## ▶ [10-22 11:00] STEP 2 of 4 — t\n\n> **Thread:** {}"
+    case("TD1 a thread WITH a plan file is quiet, armed or not",
+         safe(lambda: decide_thread([_BN.format("`has-plan` · 2 of 4")], {"has-plan"})[0]
+              == QUIET))
+    case("TD2 a thread with NO plan file WARNS, as `unknown-thread`, naming the missing file",
+         safe(lambda: (lambda r: r[0] == WARN and r[2] == REASON_THREAD == "unknown-thread"
+                       and r[3] == "step no-plan-a" and ".claude/plans/no-plan-a.md" in r[1]
+                       and "begin-plan.py no-plan-a" in r[1])(
+             decide_thread([_BN.format("`no-plan-a` · 2 of 4")], {"other"}))))
+    case("TD3 the message never claims the thread is 'not armed' — the question is the plan file",
+         safe(lambda: (lambda m: "NOT ARMED" not in m and "Arm it" not in m)(
+             decide_thread([_BN.format("`no-plan-b`")], set())[1])))
+    case("TD4 a SWITCHED target with no plan file fires as kind `switched`",
+         safe(lambda: decide_thread([_BN.format("⤳ SWITCHED from `x` → `no-plan-c`")], {"x"})[3]
+              == "switched no-plan-c"))
+    case("TD5 only the LAST banner row is judged: an earlier unknown thread, then a known one, "
+         "is quiet",
+         safe(lambda: decide_thread([_BN.format("`no-plan-d`"), _BN.format("`known-d`")],
+                                    {"known-d"})[0] == QUIET))
+    case("TD6 an unreadable LAST row is quiet and does NOT fall back to an earlier unknown one",
+         safe(lambda: decide_thread([_BN.format("`no-plan-e`"),
+                                     _BN.format("⤳ SWITCHED — fresh session after `/clear`")],
+                                    set())[0] == QUIET))
+    case("TD7 BLOCK off -> WARN; on -> THREAD_BLOCK_RC, which is neither WARN nor CANNOT RUN",
+         safe(lambda: decide_thread([_BN.format("`no-plan-f`")], set(), block=False)[0] == WARN
+              and decide_thread([_BN.format("`no-plan-f`")], set(), block=True)[0]
+              == THREAD_BLOCK_RC and THREAD_BLOCK_RC not in (QUIET, WARN, CANNOT_RUN)))
+    case("TD8 the BLOCK switch ships OFF — turning it on is the owner's one reviewed line",
+         THREAD_BLOCK is False)
+    case("TD9 an UNLISTABLE plan directory is CANNOT RUN when there is a thread to look up",
+         safe(lambda: decide_thread([_BN.format("`no-plan-g`")], None)[0] == CANNOT_RUN))
+    case("TD10 ...and QUIET when there is nothing to look up",
+         safe(lambda: decide_thread(["no banner here"], None)[0] == QUIET))
+
+    import tempfile as _tfk
+    with _tfk.TemporaryDirectory() as _kd:
+        _kp = Path(_kd) / "plans"
+        case("TK1 no plan directory at all is the empty set, not CANNOT RUN",
+             safe(lambda: known_threads(Path(_kd) / "never-made") == set()))
+        _kp.mkdir()
+        (_kp / "k-one.md").write_text("- [ ] a\n")
+        (_kp / "k-notes.txt").write_text("x")
+        (_kp / "k-dir.md").mkdir()
+        case("TK2 the known threads are the `*.md` FILES, by stem",
+             safe(lambda: known_threads(_kp) == {"k-one"}))
+        _kp.chmod(0)
+        try:
+            case("TK3 a plan directory that exists and cannot be listed is None",
+                 safe(lambda: known_threads(_kp) is None))
+        finally:
+            _kp.chmod(0o755)
+
+    # ── EVERY CHECKOUT'S PLANS — a REAL `git worktree add` (owner's decision, option A) ─────
+    # The measured case: two `chrome-bar-fold` turns warned while that plan sat in a worktree's
+    # `.claude/plans/`. ROOT is swapped to the temp repo's MAIN checkout for `known_everywhere`.
+    import os as _osw, subprocess as _spw
+    with _tfk.TemporaryDirectory() as _gw:
+        _genv = {**{k: v for k, v in _osw.environ.items() if not k.startswith("GIT_")},
+                 "HOME": _gw, "GIT_CONFIG_NOSYSTEM": "1"}
+
+        def _git(cwd, *args):
+            return _spw.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                             "-c", "commit.gpgsign=false", "-C", str(cwd), *args],
+                            capture_output=True, text=True, env=_genv, timeout=60)
+
+        _gm = Path(_gw).resolve() / "repo"
+        _gm.mkdir()
+        _git(_gm, "init", "-q")
+        _git(_gm, "commit", "-q", "--allow-empty", "-m", "root")
+        _gt = Path(_gw).resolve() / "wt-chrome"
+        _git(_gm, "worktree", "add", "-q", str(_gt), "-b", "chrome")
+        (_gm / ".claude" / "plans").mkdir(parents=True)
+        (_gm / ".claude/plans/main-plan.md").write_text("- [ ] a\n")
+        (_gt / ".claude" / "plans").mkdir(parents=True)
+        (_gt / ".claude/plans/chrome-bar-fold.md").write_text("- [ ] a\n")
+        _sroot = globals()["ROOT"]
+        globals()["ROOT"] = _gm
+        try:
+            _kw, _nw = known_everywhere()
+        finally:
+            globals()["ROOT"] = _sroot
+        _row = "## ▶ [10-22 12:00] STEP 2 of 4 — t\n\n> **Thread:** `{}` · 2 of 4"
+        case("TW1 a plan that exists ONLY in another worktree is KNOWN — the chrome-bar-fold case",
+             safe(lambda: _kw is not None and {"main-plan", "chrome-bar-fold"} <= _kw
+                  and _nw == []
+                  and decide_thread([_row.format("chrome-bar-fold")], _kw, notes=_nw)[0]
+                  == QUIET))
+        case("TW2 ...while a thread in NO checkout still warns, with no 'not every checkout' note",
+             safe(lambda: (lambda r: r[0] == WARN and "NOT EVERY CHECKOUT" not in r[1])(
+                 decide_thread([_row.format("in-no-checkout")], _kw, notes=_nw))))
+        _lone = Path(_gw).resolve() / "plain-dir"
+        (_lone / ".claude" / "plans").mkdir(parents=True)
+        globals()["ROOT"] = _lone
+        try:
+            _kl, _nl = known_everywhere()
+        finally:
+            globals()["ROOT"] = _sroot
+        (_gt / ".claude" / "plans").chmod(0)
+        globals()["ROOT"] = _gm
+        try:
+            _kp4, _np4 = known_everywhere()
+        finally:
+            globals()["ROOT"] = _sroot
+            (_gt / ".claude" / "plans").chmod(0o755)
+        case("TW4 a checkout whose plans cannot be listed is SKIPPED and NAMED — the others still "
+             "count",
+             safe(lambda: _kp4 == {"main-plan"}
+                  and any(str(_gt) in n and "could not be listed" in n for n in _np4)))
+        case("TW3 outside a git repository only THIS checkout is read, and the warning SAYS so",
+             safe(lambda: _kl == set() and any("only this checkout" in n for n in _nl)
+                  and "NOT EVERY CHECKOUT WAS READ" in
+                  decide_thread([_row.format("solo-w3")], _kl, notes=_nl)[1]))
+
+    # ── THE STAMPED BANNER (2026-10-22): the three ORIGINAL classes see today's form ──────────
+    # CLAUDE.md settled `## ▶ [mm-dd hh:mm] STEP n of N` on 2026-10-16 and BANNER_RE matched none
+    # of it, so from then until this fix the three original classes saw NO current banner. Each
+    # pair below writes the UNSTAMPED and the STAMPED literal at its own call site: the stamp must
+    # change nothing but visibility.
+    case("ST1 `unarmed` WARNS on an unstamped partway banner, as it always has",
+         decide(["## ▶ STEP 2 of 5 — doing a thing"], armed=False)[2] == REASON_UNARMED)
+    case("ST1b ...and WARNS on the STAMPED form of the same banner",
+         decide(["## ▶ [10-22 13:35] STEP 2 of 5 — doing a thing"], armed=False)[2]
+         == REASON_UNARMED)
+    case("ST2 `unarmed` is quiet on a finished unstamped banner",
+         decide(["## ▶ STEP 4 of 4 — done"], armed=False)[0] == QUIET)
+    case("ST2b ...and quiet on the STAMPED finished banner — the stamp moves nothing else",
+         decide(["## ▶ [10-22 13:36] STEP 4 of 4 — done"], armed=False)[0] == QUIET)
+    case("ST3 `unbannered` is quiet when an unstamped banner was emitted",
+         decide(["## ▶ STEP 1 of 3 — t"], armed=True, steps=(0, 3), edited=True)[0] == QUIET)
+    case("ST3b ...and quiet when the STAMPED banner was emitted — it used to read as NO banner",
+         decide(["## ▶ [10-22 13:37] STEP 1 of 3 — t"], armed=True, steps=(0, 3),
+                edited=True)[0] == QUIET)
+    case("ST3c ...while with NO banner it still fires",
+         decide(["prose only"], armed=True, steps=(0, 3), edited=True)[2] == REASON_UNBANNERED)
+    case("ST4 `unheralded` is quiet on a large turn that emitted an unstamped finished banner",
+         decide(["## ▶ STEP 6 of 6 — t"], armed=False, tool_uses=LARGE_TURN + 3)[0] == QUIET)
+    case("ST4b ...and quiet when that banner was STAMPED — it used to fire as bannerless work",
+         decide(["## ▶ [10-22 13:38] STEP 6 of 6 — t"], armed=False,
+                tool_uses=LARGE_TURN + 4)[0] == QUIET)
+    case("ST4c ...while with NO banner it still fires",
+         decide(["prose only"], armed=False, tool_uses=LARGE_TURN + 5)[2] == REASON_UNHERALDED)
+    case("ST5 highest_banner reads the numbers out of a STAMPED banner",
+         highest_banner(["## ▶ [10-22 13:39] STEP 3 of 7 — t"]) == (3, 7))
+    case("ST6 a stamp with no STEP after it is still not a banner",
+         highest_banner(["## ▶ [10-22 13:40] — a note, not a step"]) is None)
+    case("ST7 the stamped opener is still line-anchored — mid-sentence does not count",
+         highest_banner(["as I said ## ▶ [10-22 13:41] STEP 2 of 5 — nope"]) is None)
 
     # ── HIGHEST, not last ──────────────────────────────────────────────────────────────────
     case("the HIGHEST banner decides, not the last one printed",
@@ -1801,6 +2404,10 @@ def _self_test() -> int:
         globals()["WARN_LOG"] = _fx / ".claude/banner-warnings.log"
         globals()["FLUSH_LOG"] = _fx / ".claude/banner-flush-observations.log"
         globals()["JOURNAL_DIR"] = _fx / ".claude/banner-turn-state"
+        # ⛔ The thread class finds its plan directories from ROOT (`known_everywhere`), so the
+        # ROOT redirect above is what keeps every thread case off the reader's REAL
+        # `.claude/plans/` — _fx is not a git repository, so `plan_dirs` falls back to
+        # `_fx/.claude/plans` alone and SAYS so in each warning.
         try:
             _subject = _turn("t1", [_edit_block(str(_fx / "scripts" / "x.py"))])
 
@@ -2383,6 +2990,168 @@ def _self_test() -> int:
                  "constant satisfies this case and F4 at once",
                  _rcS == WARN
                  and _logtext().rstrip("\n").endswith("\tunbannered\t2 unticked"))
+            # ── THE THREAD CLASS, END TO END (r1 round fold) ───────────────────────────────
+            # Through run_decide, against the fixture's own `.claude/plans/`. The sentinel names `plans/p.md`
+            # with steps unticked, and these turns edit nothing, so `unbannered` stays quiet and
+            # every verdict below is the thread class's — except TE7, which is about co-firing.
+            _pd = _fx / ".claude" / "plans"
+            _pd.mkdir(parents=True, exist_ok=True)
+            _ARM_P = "plan: plans/p.md\narmed: t\n"
+
+            def _th_turn(uid: str, text: str) -> list:
+                return _turn(uid, [{"type": "text", "text": text}])
+
+            def _thlog() -> list:
+                return [ln for ln in _logtext().splitlines() if f"\t{REASON_THREAD}\t" in ln]
+
+            # Codex 3 / Claude S2 — a side job bannered in the REAL row shape while another plan
+            # is armed. The first version returned (0, '', '', '') for exactly this row.
+            _wl = ("## ▶ [10-22 10:27] STEP 3 of 4 — Review round 1\n\n"
+                   "> **Thread:** `work-lines-page` · step 1 ✅ (`479114be`) · step 2 ⏳ still "
+                   "running · step 3 just dispatched")
+            _rcE1 = _drive(_fx / "te1.jsonl", _th_turn("te1", _wl), before=_ARM_P, after=_ARM_P)
+            case("TE1 a slug-first banner row on a thread with NO plan file WARNS while another "
+                 "plan is armed, and logs `unknown-thread` with its name",
+                 _rcE1 == WARN and _thlog()[-1:] != []
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep work-lines-page\talso=-"))
+            (_pd / "work-lines-page.md").write_text("- [x] one\n- [ ] two\n")
+            _n2 = len(_thlog())
+            _rcE2 = _drive(_fx / "te2.jsonl", _th_turn("te2", _wl), before=_ARM_P, after=_ARM_P)
+            case("TE2 ...and the SAME turn is quiet once `.claude/plans/work-lines-page.md` exists",
+                 _rcE2 == QUIET and len(_thlog()) == _n2)
+
+            # Claude S3 — the switch and the side job's first step banner in ONE turn, both in
+            # real shapes. The last row used to be unreadable, so the readable switch was lost.
+            _rcE3 = _drive(_fx / "te3.jsonl", _th_turn("te3",
+                "## ▶ [10-22 11:01] STEP 4 of 4 — wrap up\n\n"
+                "> **Thread:** ⤳ SWITCHED from `p` → `side-b-e3`\n\n"
+                "## ▶ [10-22 11:02] STEP 1 of 3 — start the side job\n\n"
+                "> **Thread:** `side-b-e3` · 0 of 3 done"), before=_ARM_P, after=_ARM_P)
+            case("TE3 a switch followed IN THE SAME TURN by the side job's first step banner WARNS",
+                 _rcE3 == WARN
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep side-b-e3\talso=-"))
+
+            # Claude S7 — a parent resumed after its child plan completed: nothing armed, the
+            # parent's plan file exists. `STEP 3 of 3`, so no original class fires either.
+            (_pd / "slice-a-e4.md").write_text("- [x] one\n- [ ] two\n")
+            _n4 = len(_thlog())
+            _rcE4 = _drive(_fx / "te4.jsonl", _th_turn("te4",
+                "## ▶ [10-22 11:03] STEP 3 of 3 — back on the parent\n\n"
+                "> **Thread:** ↳ RESUMED `slice-a-e4` after the side job · 2 of 2 done"),
+                before=None, after=None)
+            case("TE4 a RESUMED parent with a plan file is QUIET with NOTHING armed — the false "
+                 "alarm r1 executed, and its remedy would have rewritten that plan",
+                 _rcE4 == QUIET and len(_thlog()) == _n4)
+
+            # Codex 1 — a plan FINISHED with the real `begin-plan.py --finish`, end to end.
+            import subprocess as _sp
+            _sh.copy(Path(__file__).resolve().parent / "begin-plan.py", _fx / "scripts")
+            (_pd / "current-e5.md").write_text("- [x] one\n- [x] two\n")
+            (_fx / ".claude" / "executing-plan").write_text(
+                "plan: .claude/plans/current-e5.md\narmed: t\n")
+            _home = _fx / "home"
+            _home.mkdir(exist_ok=True)
+            _fin = _sp.run([sys.executable, str(_fx / "scripts" / "begin-plan.py"), "--finish"],
+                           capture_output=True, text=True, timeout=60,
+                           env={**__import__("os").environ, "HOME": str(_home)})
+            # ⚠ The `plan `x`` form ON PURPOSE: the first version could read it, so TE5 is red there
+            # for the reason it names (the finished plan) and not because the row was unreadable.
+            _done = "## ▶ [10-22 11:04] STEP 2 of 2 — done\n\n> **Thread:** plan `{}` · 2 of 2 done"
+            _rcE5 = _drive(_fx / "te5.jsonl", _th_turn("te5", _done.format("current-e5")))
+            case("TE5 after a real `begin-plan.py --finish`, the finished thread is QUIET — the "
+                 "sentinel is gone and the plan file is what the page reads",
+                 _fin.returncode == 0
+                 and not (_fx / ".claude" / "executing-plan").exists() and _rcE5 == QUIET)
+            _rcE5b = _drive(_fx / "te5b.jsonl", _th_turn("te5b", _done.format("never-planned-e5")))
+            case("TE5b ...while the same finished-state turn on a thread that NEVER had a plan "
+                 "WARNS",
+                 _rcE5b == WARN)
+
+            # Codex 2 — a quoted example in prose is not a switch.
+            _n6 = len(_thlog())
+            _rcE6 = _drive(_fx / "te6.jsonl", _th_turn("te6",
+                "This was the reviewer’s quoted example:\n"
+                "> **Thread:** ⤳ SWITCHED from `old` → `historical`"), before=_ARM_P, after=_ARM_P)
+            case("TE6 a STANDALONE quoted switch row is QUIET end to end, and logs nothing",
+                 _rcE6 == QUIET and len(_thlog()) == _n6)
+
+            # ⟳ r2 Codex 3 — NO SUPPRESSION. An unarmed partway banner naming a planless thread
+            # is TWO findings, and both are logged; the thread row says which class co-fired.
+            _n7, _u7 = len(_thlog()), _logtext().count("\tunarmed\t")
+            _te7 = _th_turn("te7", "## ▶ [10-22 11:05] STEP 2 of 3 — t\n\n"
+                                   "> **Thread:** ↳ RESUMED `side-b-e7`")
+            _rcE7 = _drive(_fx / "te7.jsonl", _te7, before=None, after=None)
+            case("TE7 when `unarmed` ALSO fires, `unknown-thread` is still logged, as its own row "
+                 "naming the co-fired class",
+                 _rcE7 == WARN and _logtext().count("\tunarmed\t") == _u7 + 1
+                 and len(_thlog()) == _n7 + 1
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep side-b-e7\talso=unarmed"))
+            globals()["THREAD_BLOCK"] = True
+            try:
+                _rcE7b = _drive(_fx / "te7b.jsonl", _te7, before=None, after=None)
+            finally:
+                globals()["THREAD_BLOCK"] = False
+            case("TE7b ...and BLOCK applies to that turn regardless — Codex's end-to-end input",
+                 _rcE7b == THREAD_BLOCK_RC)
+
+            # ⟳ r3 Claude F1 — NO SAVED RECORD for the judged turn (a resumed session, a failed
+            # journal write). The thread class needs no sample, so it is judged anyway; it used
+            # to be skipped, which let this path bypass BLOCK.
+            def _no_record(path: Path, text: str) -> int:
+                for _st in JOURNAL_DIR.glob("*.json"):
+                    _st.unlink()
+                path.write_text("\n".join(_th_turn("nr1", text)
+                                          + _turn("later", [{"type": "text", "text": "x"}])))
+                return run_decide(json.dumps({"transcript_path": str(path), "session_id": "s"}))
+            _n10 = len(_thlog())
+            _rcE10 = _no_record(_fx / "te10.jsonl", _BN.format("`no-record-e10`"))
+            case("TE10 with NO saved record the stop is still CANNOT RUN — and the thread row IS "
+                 "logged",
+                 _rcE10 == CANNOT_RUN and len(_thlog()) == _n10 + 1
+                 and _thlog()[-1].endswith(f"\t{REASON_THREAD}\tstep no-record-e10\talso=-"))
+            globals()["THREAD_BLOCK"] = True
+            try:
+                _rcE10b = _no_record(_fx / "te10b.jsonl", _BN.format("`no-record-e10b`"))
+            finally:
+                globals()["THREAD_BLOCK"] = False
+            case("TE10b ...and with BLOCK on, a missing record no longer bypasses it",
+                 _rcE10b == THREAD_BLOCK_RC)
+
+            # ⟳ r3 Claude F6 — the "not every checkout was read" caveat must REACH the warning
+            # run_decide prints. _fx is not a git repository, so `plan_dirs` falls back and says so.
+            _err11 = io.StringIO()
+            with contextlib.redirect_stderr(_err11):
+                _rcE11 = _drive(_fx / "te11.jsonl", _th_turn("te11", _BN.format("`no-plan-e11`")),
+                                before=_ARM_P, after=_ARM_P)
+            case("TE11 run_decide's warning carries the partial-read caveat from known_everywhere",
+                 _rcE11 == WARN and "NOT EVERY CHECKOUT WAS READ" in _err11.getvalue()
+                 and "only this checkout" in _err11.getvalue())
+
+            # BLOCK, end to end, and what it does on the CONTINUATION stop.
+            globals()["THREAD_BLOCK"] = True
+            try:
+                _rcE8 = _drive(_fx / "te8.jsonl", _th_turn("te8", _BN.format("`no-plan-e8`")),
+                               before=_ARM_P, after=_ARM_P)
+                _rcE8c = run_decide(json.dumps({"transcript_path": str(_fx / "te8.jsonl"),
+                                                "session_id": "s"}))
+            finally:
+                globals()["THREAD_BLOCK"] = False
+            case("TE8 with THREAD_BLOCK on the turn returns THREAD_BLOCK_RC, the code the hook "
+                 "maps to exit 2",
+                 _rcE8 == THREAD_BLOCK_RC)
+            case("TE8b ...and the CONTINUATION stop does not re-judge it — the block holds ONCE",
+                 _rcE8c == QUIET)
+
+            # An unlistable plan directory: CANNOT RUN, and never a logged warning.
+            _n9 = len(_thlog())
+            _pd.chmod(0)
+            try:
+                _rcE9 = _drive(_fx / "te9.jsonl", _th_turn("te9", _BN.format("`no-plan-e9`")),
+                               before=_ARM_P, after=_ARM_P)
+            finally:
+                _pd.chmod(0o755)
+            case("TE9 an UNLISTABLE `.claude/plans/` is CANNOT RUN, not a warning about the thread",
+                 _rcE9 == CANNOT_RUN and len(_thlog()) == _n9)
             (_fx / ".claude" / "executing-plan").write_text("plan: plans/p.md\narmed: t\n")
             (_fx / ".claude" / "executing-plan").unlink(missing_ok=True)
         finally:
@@ -2434,6 +3203,14 @@ def _self_test() -> int:
     # layer out. Structural, like F6.
         case("F6c BANNER_RC reaches the hook's exit arithmetic, not just the invocation",
              '"$BANNER_RC" != "0"' in _hook)
+        # F6d — THREAD_BLOCK is a switch only if the hook honours the code it returns. Without
+        # this mapping, flipping the switch would return 4, the arithmetic below would collapse
+        # it to `exit 1`, and the "blocking" mode would warn — a switch that lies. Structural,
+        # and ORDER is part of it: the mapping must follow the CI observer, the last to run.
+        _blkmap = '"$BANNER_RC" == "' + str(THREAD_BLOCK_RC) + '" ]]; then\n    exit 2'
+        case("F6d the hook maps THREAD_BLOCK_RC to exit 2, AFTER every observer has run",
+             _blkmap in _hook and 'check-ci-watched.py" --decide' in _hook
+             and _hook.index('check-ci-watched.py" --decide') < _hook.index(_blkmap))
 
 
     # ── an ATTEMPTED edit is not an edit (code review r1) ──────────────────────────────────

@@ -17160,3 +17160,76 @@ rebuilt link never becomes a live-looking one.
 Divergence from the live rule, by the owner's decision: with nothing armed the backfill records
 `-`. It does not ask whether the last finished plan's PR was open, because no transcript holds a
 past PR state.
+## 2026-10-22
+When work runs on a thread that has no plan in any checkout, so the work-lines page cannot show it,
+the Stop check now notices and says so, naming the one command that creates the plan. A thread that
+already has a plan is left alone, whether it is running, finished, or picked up again later. That
+now includes plans made inside a separate worktree: the work-lines page shows those plans too.
+When two checkouts hold a plan with the same name, the page shows it twice, each labelled with its
+checkout.
+
+For now it only warns, and every warning is logged. Making it stop the turn is a one-line switch,
+and you decide when to flip it from how often the log shows it warning wrongly. Each logged warning
+also says whether another banner warning fired on the same turn, so you can count the turns only
+this one caught. Replayed over this project's last twelve days, it would have warned on up to 34 of
+95 turns that carried a thread line, mostly threads named after a branch rather than a plan. That
+is the number to watch.
+
+Three known limits:
+- **Identical copy shown twice (accepted).** An identical copy of a plan in two checkouts is shown
+  and counted twice. Having the same content does not prove two plans are the same plan; an earlier
+  attempt to merge such copies attached a follow-up step to the wrong parent and made a line that
+  still owed work look finished, so it was removed.
+- **Reused plan name (accepted).** If a new side job reuses the name of an old plan, the check sees
+  the old plan and stays quiet, and the page shows the new work under the old plan.
+- **Deleted worktree (your decision, not yet made).** Removing a worktree with
+  `git worktree remove` also deletes the plans saved inside it, because they are not tracked by
+  git. Those lines then disappear from the work-lines page with no note. The alternative is to have
+  plans always saved in the main checkout, which changes how the "every checkout" choice works.
+
+While building it I found and fixed a blind spot: the existing banner check could not see banners
+carrying a timestamp (`## ▶ [10-22 09:00] STEP …`), the required form since 2026-10-16. It still
+saw the older untimestamped ones, which were used until 2026-10-19. So its record for those days is
+partial, and a quiet stretch in it does not mean nothing was missed.
+<!--tech-->
+`scripts/check-banner-armed.py` gains a fourth class, `unknown-thread`: `thread_name`,
+`thread_rows`, `unknown_thread`, `decide_thread`, `known_threads`, `known_everywhere`,
+`thread_log_line`. It judges the LAST `**Thread:**` row under a `## ▶` heading (within
+`BANNER_WINDOW` lines; fences closed per CommonMark) and fires when no checkout has
+`.claude/plans/<slug>.md`. The slug is read by precedence — an explicit destination (`→ `b``,
+`SWITCHED to `b``), then `plan `x``, then the row's leading slug — and two different slugs at the
+deciding level are unreadable, hence quiet. It is evaluated on every judged turn; its log row ends
+`also=<class>` (`also=-` when no original class co-fired). `THREAD_BLOCK = False` is the switch;
+on, the class returns 4, which `.claude/hooks/block-idle-stop.sh` maps to `exit 2` — once, on the
+NEXT turn's stop, because the guard judges the previous turn.
+
+Every checkout: `scripts/gen-work-lines.py` gains `plan_dirs` (`git worktree list --porcelain`,
+main first, inherited `GIT_*` dropped; a checkout whose folder is gone is skipped silently, since
+it holds no plans; if git cannot answer, this checkout only, and a note says so) and
+`read_plans_noted`, which the page and this check both use. Plan identity is the key
+`(checkout, slug)` (`plan_key`), carried through parent resolution (`row_for`), `build_forest`
+and `begin-plan.work_line`; the display name `<slug> @ main` / `<slug> @ <folder>` comes from
+`label()` only when text is emitted, and is never a key (r6 Codex: keyed by the label, a file
+NAMED `kid @ main.md` overwrote the generated label for `kid` and an unfinished plan vanished).
+⚠ Two different plans can therefore DISPLAY alike; they stay separate rows. A slug in two
+checkouts is two rows even when the files are identical — equal content does not establish
+identity (r4 Codex: the collapse that tried merged children of different parents, and was
+removed). `row_for` is the one
+resolver for a duplicated slug: a child's parent and `begin-plan`'s banner `Line:` both take the
+copy in their own checkout, else main. The thread check runs on every judged turn, including one
+with no saved record. An arrow is a destination only after `⤳ SWITCHED` or directly after the
+row's leading slug; replayed over 251 distinct real rows, that changed none. ⚠ Known limit:
+`git worktree remove` deletes a worktree's git-ignored plans, so its lines leave the page with no
+note (an owner question). Measured: the two `chrome-bar-fold` turns that warned while that plan sat in a worktree
+are now quiet. Over the 95 replayed turns, 36 would warn on the main checkout's plans alone and
+34 on every checkout's (an upper bound — which plan was armed then cannot be recovered); the last
+row is readable in 91 of the 95, against 24 for the first version.
+
+`BANNER_RE` now accepts the optional `[mm-dd hh:mm]` stamp and is the one banner pattern. ⚠ From
+2026-10-16 until this fix the three original classes (`unarmed`, `unbannered`, `unheralded`) could
+not see a STAMPED banner; unstamped ones, last emitted 2026-10-19 19:07Z, were still seen.
+Measured over judgable turns since 2026-10-16: 67 carry a banner the fixed pattern matches, 21 one
+the old pattern matched. The warn log over that span is therefore partial, not evidence of no
+misses. Self-tests: this guard 160 -> 236, `gen-work-lines` 40 -> 58, `begin-plan` 120 -> 123.
+Mutation manifests 48 -> 91, 16 -> 30 and 56 -> 58, every entry killed and attributed in a scoped
+run.
