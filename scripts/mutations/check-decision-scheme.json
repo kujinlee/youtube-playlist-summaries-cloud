@@ -26,19 +26,6 @@
     ]
   },
   {
-    "name": "the collapse floor moves to six, so a five-row collapse passes",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    if len(scored) < 5:",
-        "    if len(scored) < 6:"
-      ]
-    ],
-    "expect": [
-      "five scored rows on one route is a collapse"
-    ]
-  },
-  {
     "name": "equalling the pinned baseline counts as an improvement",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -752,19 +739,6 @@
     ]
   },
   {
-    "name": "the route-collapse trigger counts retroactive rows, so history buys off a live collapse",
-    "file": "scripts/check-decision-scheme.py",
-    "edits": [
-      [
-        "    scored = [r for r in prospective(rows) if r.get(\"outcome\") in OUTCOMES]",
-        "    scored = [r for r in rows if r.get(\"outcome\") in OUTCOMES]"
-      ]
-    ],
-    "expect": [
-      "⭐ t3 cannot be bought off by a retroactive row on another route"
-    ]
-  },
-  {
     "name": "the improvement trigger counts retroactive terminations, so a deferral displaces a subject",
     "file": "scripts/check-decision-scheme.py",
     "edits": [
@@ -1140,6 +1114,539 @@
     ],
     "expect": [
       "⛔ a MALFORMED pin is CANNOT RUN (2), never a quiet fallback to git"
+    ]
+  },
+  {
+    "name": "trigger 3 counts a RETROACTIVE bet as a bet, so hindsight owes an escalation",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if not prospective([r]):\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "a RETROACTIVE bet is not a bet, so nothing is owed after it"
+    ]
+  },
+  {
+    "name": "a WON bet is read as lost, reinstating the forced-first-rung false alarm",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if r.get(\"outcome\") != \"continued\":",
+        "            if r.get(\"outcome\") is None:"
+      ]
+    ],
+    "expect": [
+      "⭐ five first-rung accrete bets that all STOPPED are quiet — the forced rung is not a conveyor"
+    ]
+  },
+  {
+    "name": "a later prospective bet no longer escalates, so every continued bet FAILs",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if prospective(unit_rows[i + 1:]):",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a bet followed by a PROSPECTIVE next bet is quiet on trigger 3"
+    ]
+  },
+  {
+    "name": "trigger 3 reads only the PINNED lost bets, inverting the exemption",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    unlogged = [k for k in lost_bets(rows) if k not in pinned]",
+        "    unlogged = [k for k in lost_bets(rows) if k in pinned]"
+      ]
+    ],
+    "expect": [
+      "⭐ a FIRST bet the stream continued past, with no later row, FAILS naming its unit"
+    ]
+  },
+  {
+    "name": "trigger 3 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not unlogged:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "...and so does a SECOND such bet, while the first — escalated in time — stays quiet"
+    ]
+  },
+  {
+    "name": "trigger 3 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"3 LOST BET NOT ESCALATED\", t3_lost_bet_not_escalated(rows, pins)),",
+        "(\"3 LOST BET NOT ESCALATED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 3's verdict REACHES the CLI as a FAIL and fails the run"
+    ]
+  },
+  {
+    "name": "trigger 10 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"10 PRE-TRIGGER LOST BET\", t10_pre_trigger_lost_bet(rows, pins)),",
+        "(\"10 PRE-TRIGGER LOST BET\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ a PINNED lost bet reaches the CLI as trigger 10's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "a continued DEFER is held to escalate, so trigger 3 names trigger 2's defect a second time",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if route_next(routes_accounted(unit_rows[:i + 1])) is None:\n                continue",
+        "            if False:\n                continue"
+      ]
+    ],
+    "expect": [
+      "⭐ a continued DEFER reached by SKIP is trigger 2's FAIL, and trigger 3 is silent"
+    ]
+  },
+  {
+    "name": "the ladder position is read BEFORE the bet, so a walked-to-defer unit still owes a rung",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "routes_accounted(unit_rows[:i + 1])",
+        "routes_accounted(unit_rows[:i])"
+      ]
+    ],
+    "expect": [
+      "...and so is one at the end of a fully WALKED ladder, on another unit"
+    ]
+  },
+  {
+    "name": "trigger 3 ignores the pins, so history FAILs like a new lost bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "lost_bets(rows) if k not in pinned",
+        "lost_bets(rows) if True"
+      ]
+    ],
+    "expect": [
+      "⭐ a PINNED lost bet does not FAIL trigger 3, and trigger 10 names it as history"
+    ]
+  },
+  {
+    "name": "trigger 10 never names a pinned lost bet, so history is exempted in silence",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    hit = sorted(k for k in pinned if k in found)",
+        "    hit = []"
+      ]
+    ],
+    "expect": [
+      "⭐ a PINNED lost bet does not FAIL trigger 3, and trigger 10 names it as history"
+    ]
+  },
+  {
+    "name": "trigger 10 never names an UNUSED pin, so a stale pin passes forever",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    unused = sorted(k for k in pinned if k not in found)",
+        "    unused = []"
+      ]
+    ],
+    "expect": [
+      "⭐ a pin on a unit ABSENT from the log WARNS as unused and does not crash"
+    ]
+  },
+  {
+    "name": "trigger 10 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not hit and not unused:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "...including over an EMPTY log"
+    ]
+  },
+  {
+    "name": "trigger 10 sees no lost bets, so every pin reads as unused",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    found = set(lost_bets(rows))",
+        "    found = set()"
+      ]
+    ],
+    "expect": [
+      "...and so is a pinned SECOND-rung loss on another unit"
+    ]
+  },
+  {
+    "name": "an ABSENT pin list is refused, so a repository with no history cannot run",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if PRE_TRIGGER_PINS not in baseline:\n        return frozenset(), None",
+        "    if PRE_TRIGGER_PINS not in baseline:\n        return None, \"absent\""
+      ]
+    ],
+    "expect": [
+      "...and an ABSENT key is the empty set, a repository with no pre-trigger history"
+    ]
+  },
+  {
+    "name": "a pin list that is not a list is iterated anyway",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(raw, list):\n        return None, (f\"{PRE_TRIGGER_PINS} is",
+        "    if False:\n        return None, (f\"{PRE_TRIGGER_PINS} is"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin list of the wrong SHAPE is refused, never read as empty"
+    ]
+  },
+  {
+    "name": "a pin entry that is not an object is read as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if (not isinstance(item, dict) or not isinstance(item.get(\"subject\"), str)",
+        "        if (not isinstance(item.get(\"subject\"), str)"
+      ]
+    ],
+    "expect": [
+      "⛔ ...and so is a pin ENTRY of the wrong shape"
+    ]
+  },
+  {
+    "name": "a pin's reason need only be a string, so punctuation passes as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if not isinstance(why, str) or not any(ch.isalnum() for ch in why):",
+        "        if not isinstance(why, str):"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin with no REASON is refused — an exemption must say why it is history"
+    ]
+  },
+  {
+    "name": "a pin written twice is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if key in out:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin written TWICE is refused"
+    ]
+  },
+  {
+    "name": "a baseline that is not an object is read as one",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not isinstance(baseline, dict):\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    if PRE_TRIGGER_PINS not in baseline:",
+        "    if False:\n        return None, f\"the pinned baseline is {type(baseline).__name__}, not an object\"\n    if PRE_TRIGGER_PINS not in baseline:"
+      ]
+    ],
+    "expect": [
+      "a baseline that is not an object is refused"
+    ]
+  },
+  {
+    "name": "a malformed pin list is not refused at the CLI, so trigger 3 runs over no pins",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if pins_why:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a MALFORMED pin list is CANNOT RUN at the CLI, never an empty one"
+    ]
+  },
+  {
+    "name": "main() never reads the pins from the baseline",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    pins, pins_why = pinned_lost_bets(pinned)",
+        "    pins, pins_why = frozenset(), None"
+      ]
+    ],
+    "expect": [
+      "⭐ a PINNED lost bet reaches the CLI as trigger 10's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "the pins are read from the wrong baseline key, so the shipped list goes missing",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "PRE_TRIGGER_PINS = \"lost_bets_before_trigger3\"",
+        "PRE_TRIGGER_PINS = \"lost_bets\""
+      ]
+    ],
+    "expect": [
+      "⛔ the SHIPPED pin list is exactly the two lost bets that predate trigger 3"
+    ]
+  },
+  {
+    "name": "a PRESENT null pin list is read as absent, so it silently becomes no pins",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "PRE_TRIGGER_PINS not in baseline",
+        "baseline.get(PRE_TRIGGER_PINS) is None"
+      ]
+    ],
+    "expect": [
+      "⛔ a PRESENT null pin list is refused, never read as empty"
+    ]
+  },
+  {
+    "name": "a pin without a ladder route is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if item.get(\"route\") not in LADDER:",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⛔ a pin with no ROUTE is refused — it would name a unit, not a bet"
+    ]
+  },
+  {
+    "name": "a pin is keyed on its UNIT again, so it cannot match a bet",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        key = (item[\"subject\"], item[\"unit\"], item[\"route\"])",
+        "        key = (item[\"subject\"], item[\"unit\"])"
+      ]
+    ],
+    "expect": [
+      "pinned_lost_bets reads the pins as a closed set of (subject, unit, route)"
+    ]
+  },
+  {
+    "name": "every lost bet is reported as the unit's first rung, so a pin excuses its successor's loss",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            out.append(key + (r.get(\"route\"),))",
+        "            out.append(key + (\"accrete\",))"
+      ]
+    ],
+    "expect": [
+      "⭐ always-on's pinned bet ESCALATED and its successor LOST: trigger 3 FAILs on it"
+    ]
+  },
+  {
+    "name": "trigger 2 fails CLOSED units too, so an honest deferral stays a permanent red",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    bad = [k for k, closed in exhausted_units(rows) if not closed]",
+        "    bad = [k for k, closed in exhausted_units(rows) if True]"
+      ]
+    ],
+    "expect": [
+      "⭐ a continued DEFER that records rounds_at_termination CLOSES the unit: WARN, not FAIL"
+    ]
+  },
+  {
+    "name": "trigger 11 names the OPEN units instead of the closed ones",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    closed = [k for k, c in exhausted_units(rows) if c]",
+        "    closed = [k for k, c in exhausted_units(rows) if not c]"
+      ]
+    ],
+    "expect": [
+      "...and so does a skipped-to-defer unit that closes, on another unit"
+    ]
+  },
+  {
+    "name": "trigger 11 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if not closed:\n        return None",
+        "    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a CLOSED exhausted unit reaches the CLI as trigger 11's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "nothing is recognised as closing its unit",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    return row.get(\"outcome\") == \"continued\" and \"rounds_at_termination\" in row",
+        "    return False"
+      ]
+    ],
+    "expect": [
+      "⭐ a bet after a CLOSED unit is refused — a closed unit cannot be reopened"
+    ]
+  },
+  {
+    "name": "a closed unit is not refused by name, so a reader is told only that the ladder ran out",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    if prior and isinstance(prior[-1], dict) and closes_unit(prior[-1]):",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "...whatever its route, after a skipped-to-defer close on another unit"
+    ]
+  },
+  {
+    "name": "a zero round count is accepted",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "or isinstance(n_rounds, bool) or n_rounds < 1):",
+        "or isinstance(n_rounds, bool)):"
+      ]
+    ],
+    "expect": [
+      "⛔ rounds_at_termination must be an integer >= 1 — zero, and a bool posing as one"
+    ]
+  },
+  {
+    "name": "a continued non-DEFER row may record rounds_at_termination, so it closes nothing it claims to",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            and row[\"route\"] != LADDER[-1]):",
+        "            and False):"
+      ]
+    ],
+    "expect": [
+      "⛔ rounds_at_termination on a continued NON-DEFER row is refused — a rung is left"
+    ]
+  },
+  {
+    "name": "trigger 11 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"11 LADDER EXHAUSTED, CLOSED\", t11_ladder_exhausted_closed(rows)),",
+        "(\"11 LADDER EXHAUSTED, CLOSED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ a CLOSED exhausted unit reaches the CLI as trigger 11's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "a closure is never recorded, so a restarted ladder goes unseen",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        if closes_unit(r):\n            closed_at.setdefault(unit_key(r), i)",
+        "        if False:\n            closed_at.setdefault(unit_key(r), i)"
+      ]
+    ],
+    "expect": [
+      "⭐ a NEW unit after a closure WARNS, naming the subject, the closed unit and the new one"
+    ]
+  },
+  {
+    "name": "a sibling that PREDATES the closure is reported as a restart",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if began > at:",
+        "            if True:"
+      ]
+    ],
+    "expect": [
+      "⭐ a sibling unit that PREDATES the closure does not warn"
+    ]
+  },
+  {
+    "name": "a unit on ANOTHER subject is read as a sibling of the closed unit",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "            if other_subject != subject:",
+        "            if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a new unit on ANOTHER subject after a closure does not warn"
+    ]
+  },
+  {
+    "name": "a unit's first row is taken as its LAST, so a sibling that kept betting reads as new",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "        first.setdefault(unit_key(r), i)",
+        "        first[unit_key(r)] = i"
+      ]
+    ],
+    "expect": [
+      "...nor does one that began before it and kept betting after it"
+    ]
+  },
+  {
+    "name": "trigger 12 never fires",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "    found = ladder_restarts(rows)\n    if not found:\n        return None",
+        "    found = ladder_restarts(rows)\n    if True:\n        return None"
+      ]
+    ],
+    "expect": [
+      "⭐ a restarted ladder reaches the CLI as trigger 12's WARN and exits 0"
+    ]
+  },
+  {
+    "name": "trigger 12 is computed and then DISCARDED before it reaches a reader",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"12 LADDER RESTARTED\", t12_ladder_restarted(rows)),",
+        "(\"12 LADDER RESTARTED\", None),"
+      ]
+    ],
+    "expect": [
+      "⭐ a restarted ladder reaches the CLI as trigger 12's WARN and exits 0"
     ]
   }
 ]

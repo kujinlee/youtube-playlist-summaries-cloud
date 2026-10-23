@@ -17233,3 +17233,21 @@ the old pattern matched. The warn log over that span is therefore partial, not e
 misses. Self-tests: this guard 160 -> 236, `gen-work-lines` 40 -> 58, `begin-plan` 120 -> 123.
 Mutation manifests 48 -> 91, 16 -> 30 and 56 -> 58, every entry killed and attributed in a scoped
 run.
+
+## 2026-10-23
+The check that watches whether the review decision log still means anything was firing on the
+wrong thing. A first bet on any piece of work can only ever be "keep fixing", so "every bet took
+the same route" was guaranteed, not a sign of a problem. It now asks the question that is a real
+decision: after a bet loses, was the next approach written down before the next round? If not,
+it fails. Two older lost bets from before this rule are listed by name and only warn.
+
+A piece of work that has tried every approach and is set down now warns instead of staying red
+forever, and starting a fresh piece of work on the same subject after that is shown, not hidden.
+Getting here took seven review rounds: one approach (an "acknowledgment" entry) kept producing new
+problems, so it was removed rather than patched a third time, and one of my own log entries was
+corrected after a reviewer showed it had been scored to keep a check quiet.
+<!--tech-->
+`scripts/check-decision-scheme.py`: trigger 3 LOST BET NOT ESCALATED (FAIL), 10 PRE-TRIGGER LOST
+BET (WARN, pinned in `baseline.json` by subject, unit and route), 11 LADDER EXHAUSTED, CLOSED
+(WARN), 12 LADDER RESTARTED (WARN); trigger 2 fails only an open exhausted unit. 271 cases,
+125 mutations.
