@@ -1659,7 +1659,9 @@ EXPECTED_MUTATIONS = {
     # The arm-time `branch:` entry re-anchored onto `render_sentinel`, whose call it shared.
     # ⟳ 2026-10-22, work-lines-always-on r2 fold: 53 -> 56 — OPEN in the second `gh` answer,
     # the full CommonMark escape set, and --finish never querying the branch.
-    "scripts/begin-plan.py": 56,
+    # ⟳ 2026-10-23, plan-ruled-out: 56 -> 61 — the section is written, kept across a re-arm,
+    # refused without a reason or across two lines, and appended in order.
+    "scripts/begin-plan.py": 61,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5591,7 +5593,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1783)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1788)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -734,5 +734,70 @@
     "expect": [
       "⛔ --finish never queries the current branch — ZERO calls to the lookup across both runs; the record's branch is the sentinel's"
     ]
+  },
+  {
+    "name": "a new plan is written with no Ruled out section",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    out += [RULED_OUT_HEADER, \"\"] + (ruled_out or [RULED_OUT_NONE]) + [\"\"]\n",
+        "    pass\n"
+      ]
+    ],
+    "expect": [
+      "a new plan carries a `## Ruled out` section, saying how to add to it"
+    ]
+  },
+  {
+    "name": "re-arming a plan forgets what was ruled out",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        ruled_out = _RULED_OUT_ITEM.findall(old)\n",
+        "        ruled_out = []\n"
+      ]
+    ],
+    "expect": [
+      "⛔ re-arming the plan keeps what was ruled out — a walk-back must not erase why"
+    ]
+  },
+  {
+    "name": "--ruled-out accepts a dead end with no reason",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    complete = bool(sep and what and why)\n",
+        "    complete = bool(sep and what)\n"
+      ]
+    ],
+    "expect": [
+      "⛔ --ruled-out 'what|'… is REFUSED and the plan is untouched"
+    ]
+  },
+  {
+    "name": "--ruled-out accepts a second line, which can smuggle in a counted step",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    one_line = len(arg.splitlines()) == 1\n",
+        "    one_line = True\n"
+      ]
+    ],
+    "expect": [
+      "⛔ --ruled-out 'a|b\\n- [ ] smug'… is REFUSED and the plan is untouched"
+    ]
+  },
+  {
+    "name": "a new entry is inserted ahead of earlier ones",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "            at = i + 1\n",
+        "            pass\n"
+      ]
+    ],
+    "expect": [
+      "...and an entry goes AFTER earlier ones, above anything that follows the section"
+    ]
   }
 ]

@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 120 cases
+    scripts/begin-plan.py --self-test  # 130 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -165,7 +165,8 @@ def split_step(arg: str) -> tuple[str, str, str]:
 
 
 def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str,
-                parent: str | None = None, serving: str | None = None) -> str:
+                parent: str | None = None, serving: str | None = None,
+                ruled_out: list[str] | None = None) -> str:
     """The plan file. One `### Task N:` heading per step, so the guard's block message can name
     the step it is waiting on rather than a whole task's worth of work.
 
@@ -213,6 +214,7 @@ def render_plan(slug: str, steps: list[tuple[str, str, str]], today: str,
         if why:
             out.append(f"  - **Why:** {why}")
         out.append("")
+    out += [RULED_OUT_HEADER, ""] + (ruled_out or [RULED_OUT_NONE]) + [""]
     return "\n".join(out)
 
 
@@ -448,6 +450,13 @@ def _print_state(plan_abs: Path, plan_rel: str) -> int:
 
 _PARENT_LINE = re.compile(r"^<!--\s*parent:\s*(.+?)\s*-->\s*$", re.M)
 _SERVING_LINE = re.compile(r"^<!--\s*serving:\s*(.+?)\s*-->\s*$", re.M)
+# ⭐ WHAT WAS TRIED AND DROPPED, asked for 2026-10-23: a compaction summary keeps decisions and
+# loses the reasons around them, and the reason an approach was REMOVED is the one a later session
+# needs most — without it, the next session re-proposes the dead end. The plan file is what
+# survives compaction, so the dead end is recorded there, next to the work it belongs to.
+RULED_OUT_HEADER = "## Ruled out"
+RULED_OUT_NONE = "_(nothing yet — record one with `scripts/begin-plan.py --ruled-out \"what|why\"`)_"
+_RULED_OUT_ITEM = re.compile(r"^- ⊘ .+$", re.M)
 STARTED = "-"   # the parent value for a plan armed with nothing else armed
 
 
@@ -684,14 +693,62 @@ def cmd_begin(slug_raw: str, step_args: list[str], serving: str | None = None) -
         if serving is None:
             was = _SERVING_LINE.search(old)
             serving = was.group(1) if was else None
+        # A re-arm rewrites the steps; it must not forget what was already ruled out, or walking
+        # back to a plan would erase the very record of why the walk-back was needed.
+        ruled_out = _RULED_OUT_ITEM.findall(old)
     else:
         parent = _derive_parent()
+        ruled_out = []
     plan_abs.write_text(render_plan(slug, steps, _dt.date.today().isoformat(),
-                                    parent=parent, serving=serving))
+                                    parent=parent, serving=serving, ruled_out=ruled_out))
     plan_rel = str(plan_abs.relative_to(ROOT))
     _arm(plan_rel)
     print(f"armed: {SENTINEL.relative_to(ROOT)} -> {plan_rel} ({len(steps)} steps)\n")
     return _print_state(plan_abs, plan_rel)
+
+
+def add_ruled_out(plan_text: str, entry: str) -> str:
+    """`plan_text` with `entry` appended under `## Ruled out`, after any earlier entries; the
+    placeholder is dropped, and a plan with no such section (one armed with `--plan`) gains it at
+    the end."""
+    lines = [ln for ln in plan_text.splitlines() if ln != RULED_OUT_NONE]
+    if RULED_OUT_HEADER not in lines:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines += ["", RULED_OUT_HEADER, ""]
+    head = lines.index(RULED_OUT_HEADER)
+    at = head + 2 if head + 1 < len(lines) and not lines[head + 1].strip() else head + 1
+    for i in range(head + 1, len(lines)):
+        if _RULED_OUT_ITEM.match(lines[i]):
+            at = i + 1
+        elif lines[i].strip():
+            break
+    lines.insert(at, entry)
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def cmd_ruled_out(arg: str) -> int:
+    armed = _armed_plan()
+    if armed is None:
+        print("refusing: nothing is armed, so there is no plan to record this in. Arm one first "
+              "with `scripts/begin-plan.py <slug> \"step\" ...` or `--plan PATH`.", file=sys.stderr)
+        return REFUSED
+    plan_abs, _plan_rel, _fields = armed
+    what, sep, why = arg.partition("|")
+    what, why = what.strip(), why.strip()
+    # ONE line, asked of `splitlines()` like `--pause` and `--serving`: a second line starting
+    # `- [ ]` would become a step the Stop guard counts.
+    complete = bool(sep and what and why)
+    one_line = len(arg.splitlines()) == 1
+    if not complete or not one_line:
+        print("refusing: `--ruled-out` takes ONE line, \"what|why\" — what was dropped, and why. "
+              "A dead end recorded without its reason is the half a later session cannot use.",
+              file=sys.stderr)
+        return REFUSED
+    entry = f"- ⊘ **{what}** — {why} _({_dt.date.today().isoformat()})_"
+    plan_abs.write_text(add_ruled_out(plan_abs.read_text(), entry))
+    print(f"ruled out, in {plan_abs.name}: {what}")
+    return OK
 
 
 def cmd_plan(path_arg: str) -> int:
@@ -1217,6 +1274,37 @@ def _self_test() -> int:
             cmd_tick()
             case("cmd_tick advances the plan ON DISK, not just in memory",
                  pp.count_steps((ROOT / armed["plan"]).read_text()) == (1, 2))
+
+            # ── ruled out: a dead end is recorded in the plan, next to the work (2026-10-23) ──
+            _w = ROOT / armed["plan"]
+            _fresh = _w.read_text()
+            case("a new plan carries a `## Ruled out` section, saying how to add to it",
+                 RULED_OUT_HEADER in _fresh.splitlines() and RULED_OUT_NONE in _fresh)
+            with contextlib.redirect_stdout(io.StringIO()):
+                _rc_ro = cmd_ruled_out("keyed by display label|two checkouts share a slug")
+                cmd_ruled_out("cross-session END match|it thrashed for two rounds")
+            _ro = _w.read_text()
+            case("--ruled-out records what AND why under the section, in order, and drops the "
+                 "placeholder",
+                 _rc_ro == OK and RULED_OUT_NONE not in _ro
+                 and _RULED_OUT_ITEM.findall(_ro)[0].startswith(
+                     "- ⊘ **keyed by display label** — two checkouts share a slug")
+                 and "cross-session END match" in _RULED_OUT_ITEM.findall(_ro)[1])
+            case("⛔ recording a dead end changes NO step: the Stop guard counts what it did before",
+                 pp.count_steps(_ro) == (1, 2) and len(parse_steps(_ro)) == 2)
+            for _bad in ("no separator", "what|", "|why only", "a|b\n- [ ] smuggled step"):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    _rc_bad = cmd_ruled_out(_bad)
+                case(f"⛔ --ruled-out {_bad[:14]!r}… is REFUSED and the plan is untouched",
+                     (_rc_bad, _w.read_text()) == (REFUSED, _ro))
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_begin("wiring", ["One|d1|w1", "Two|d2|w2", "Three|d3|w3"])
+            case("⛔ re-arming the plan keeps what was ruled out — a walk-back must not erase why",
+                 _RULED_OUT_ITEM.findall(_w.read_text()) == _RULED_OUT_ITEM.findall(_ro)
+                 and pp.count_steps(_w.read_text()) == (0, 3))
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_begin("wiring", ["One|d1|w1", "Two|d2|w2"])
+                cmd_tick()
 
             # ── backlog #99: a PAUSED plan cannot be advanced ──────────────────────────────
             # The measured failure: `--pause` was written at a checkpoint, work resumed, and
@@ -1826,6 +1914,12 @@ def _self_test() -> int:
           md_literal("".join(chr(c) for c in range(33, 127) if not chr(c).isalnum())))
          == ("ship \\~\\~deleted\\~\\~ a \\&copy\\; b",
              "".join("\\" + chr(c) for c in range(33, 127) if not chr(c).isalnum())))
+    _hand = add_ruled_out("# A hand plan\n\n- [ ] **Step 1**\n\n\n", "- ⊘ **x** — y _(d)_")
+    case("a hand-written plan with no section GAINS one at the end, its steps untouched",
+         _hand == "# A hand plan\n\n- [ ] **Step 1**\n\n## Ruled out\n\n- ⊘ **x** — y _(d)_\n")
+    case("...and an entry goes AFTER earlier ones, above anything that follows the section",
+         add_ruled_out("## Ruled out\n\n- ⊘ **a** — b _(d)_\n\n## Notes\n", "- ⊘ **c** — d _(d)_")
+         == "## Ruled out\n\n- ⊘ **a** — b _(d)_\n- ⊘ **c** — d _(d)_\n\n## Notes\n")
     _bl = render_banner(steps, 0, "> **Line:** `r` → `kid`")
     case("render_banner puts the Line row under the title and ABOVE Doing",
          -1 < _bl.find("> **Line:** `r` → `kid`") < _bl.find("> **Doing:**")
@@ -1877,6 +1971,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--pause", metavar="WHY")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--finish", action="store_true")
+    ap.add_argument("--ruled-out", metavar="WHAT|WHY",
+                    help="record, in the armed plan, an approach that was dropped and why")
     ap.add_argument("--serving", metavar="WHY",
                     help="the human's own words that started this work line. Recorded on a "
                          "ROOT plan so `gen-work-lines.py` can show what a branch was "
@@ -1899,6 +1995,8 @@ def main(argv: list[str]) -> int:
         rc = cmd_resume()
     elif a.finish:
         rc = cmd_finish()
+    elif a.ruled_out is not None:
+        rc = cmd_ruled_out(a.ruled_out)
     elif a.plan:
         rc = cmd_plan(a.plan)
     elif a.slug:
