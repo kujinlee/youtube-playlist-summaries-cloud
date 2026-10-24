@@ -17364,19 +17364,28 @@ Two CI time limits that were close to cancelling required checks now have room a
 
 The first: the main check installs a video tool before running the tests, and last night a slow
 download server made that one step take 27 minutes, so the whole check was cut off at its 30-minute
-limit and showed red without having tested anything. Each install attempt now has its own short time
-limit and is tried up to three times. If all three fail, the step stops with a message saying the
-checks did not run, rather than eating the whole budget.
+limit and showed red without having tested anything. Now only the download is retried, up to three
+times, each with its own short limit. The install itself then runs once from the downloaded files,
+with its own limit. If any part fails, the step stops with a message saying which part failed and
+that the checks did not run. It no longer blames a slow server for a problem that was local.
 
 The second: the mutation tests run split across 8 machines, and the slowest one took 27 of its 30
 minutes. They now run across 12, which should bring the slowest down to about 20 minutes. That figure
 is a prediction; the first CI run of this branch is where it gets measured.
 <!--tech-->
-Backlog #343 and #231, branch `fix/ci-time-limits`, `.github/workflows/ci.yml` only (plus a one-line
-docstring in `scripts/check-plan-code.py`). #343: `Install ffmpeg` gets `timeout-minutes: 15`, and
-each of 3 attempts runs `timeout 120 apt-get update` and `timeout 150 apt-get install`; evidence is run
-40023350011 (step 27m31s, `verify` cancelled at 30m14s). Falsifier run on the delivered step text in
-`ubuntu:24.04` with a hanging `apt-get` stub: rc=1 with CANNOT RUN after 3 bounded attempts; the old
-text was still running when an outer limit killed it. #231: matrix `shard: [1..8]` to `[1..12]`;
-evidence is run 40031532664 (slowest shard 1621s, three shards over the 1,500s trigger). N is derived
-everywhere else from `strategy.job-total`, so the matrix list is the only copy.
+Backlog #343 and #231, branch `fix/ci-time-limits`, `.github/workflows/ci.yml` (plus a one-line
+docstring in `scripts/check-plan-code.py`). Evidence for #343 is run 40023350011 (step 27m31s, `verify`
+cancelled at 30m14s). After the round 1 fold the step bounds and retries only the network: `apt-get
+update` <= 120s and `install --download-only` <= 150s, 3 attempts. It then runs `install --no-download`
+once, <= 180s. Every operation passes `DPkg::Lock::Timeout=60` and there is no repair step. The budget
+is 990s inside a step `timeout-minutes: 18`. Tested on the delivered step text in `ubuntu:26.04`
+(resolute, the runner's release) with real `sudo-rs`, real uutils `timeout` and real apt, faults
+injected by an `apt-get` wrapper on sudo's `secure_path`. Ten cases: update, download and dpkg hangs,
+a fast download failure, hang-then-succeed, a lock held long, briefly and from inside the install
+phase, a real dpkg killed mid-install, and a healthy install. Each failure names its own phase. The
+round 1 version's record said "`ubuntu:24.04`, `apt-get` stubbed", and that was with a sudo shim, so
+it overstated what ran. Testing also found that `| tee` hangs the step when a lock-holder outlives
+the kill; output now goes to a file. #231: matrix `shard: [1..8]` to `[1..12]`; evidence is run
+40031532664 (slowest shard 1621s, three shards over the 1,500s trigger). N is derived everywhere
+else from `strategy.job-total`, so the matrix list is the only copy. Concurrent-job queueing with
+14 jobs per push is noted on backlog #231 as unmeasured.

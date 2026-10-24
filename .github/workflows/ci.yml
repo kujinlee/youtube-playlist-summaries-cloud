@@ -106,39 +106,101 @@ jobs:
       # on master run 40023350011 (40b765e4): this step ran 27m31s (20:59:06 -> 21:26:37) and
       # `verify` was CANCELLED at 30m14s by the job's `timeout-minutes: 30`, so every check
       # behind it reported nothing and the run read as a red `verify`. A healthy install is
-      # ~23s (run 40031532664: 22:07:33 -> 22:07:56). So each attempt is bounded by `timeout`,
-      # attempts are bounded by FFMPEG_ATTEMPTS, and the step's own `timeout-minutes` is the
-      # backstop over all of it: worst case 3 x (120 + 150)s = 13.5 min, leaving the ~5 min
-      # the rest of this job needs. Exhausting the attempts is a FAILURE by name with a
-      # CANNOT RUN message — never a skip, because the slide-crop tests need the binaries.
-      # `dpkg --configure -a` repairs an install the timeout interrupted mid-unpack.
+      # ~23s (run 40031532664: 22:07:33 -> 22:07:56).
+      #
+      # ⛔ ONLY THE NETWORK IS RETRIED; THE LOCAL dpkg PHASE RUNS ONCE (round 1, both halves).
+      # The first version wrapped the whole `apt-get install` in a per-attempt `timeout`, which
+      # also covers unpack/configure: a kill there left an orphaned dpkg holding the lock, the
+      # `|| true` repair failed on that lock, the retry collided, and the message blamed a mirror
+      # that had run at 21.6 MB/s. And the repair itself had no bound. So now:
+      #   1. `apt-get update`                   <= APT_UPDATE_LIMIT_S   per attempt   (network)
+      #   2. `apt-get install --download-only`  <= APT_DOWNLOAD_LIMIT_S per attempt   (network)
+      #      — up to FFMPEG_ATTEMPTS attempts; a finished update is not repeated, so the .debs
+      #        a partial attempt fetched are kept. A killed download runs no dpkg, so no repair.
+      #   3. `apt-get install --no-download`    <= APT_INSTALL_LIMIT_S, ONCE          (local dpkg)
+      #      — `--no-download` makes it fail rather than reach the network.
+      #   Every operation passes `DPkg::Lock::Timeout`, so it WAITS for a lock instead of
+      #   colliding, and that wait sits inside its bound. Measured: `--download-only` takes the
+      #   dpkg frontend lock too, so without this a held lock failed the DOWNLOAD instantly and
+      #   was reported as a slow mirror. A lock failure is now named as one.
+      # There is NO repair step: nothing retried runs dpkg, so there is nothing to repair, and a
+      # repair is the one operation round 1 measured hanging with no bound.
+      # BUDGET, summed: 3 x (120 + 150) + 180 = 990s = 16.5 min, inside this step's
+      # `timeout-minutes: 18` (1,080s), which is the backstop over all of it; 18 + the ~5 min
+      # the rest of the job needs is ~23 min, inside the job's 30. Exhausting any phase is a
+      # FAILURE that names THAT phase with CANNOT RUN — never a skip, because the slide-crop
+      # tests need the binaries.
       - name: Install ffmpeg (required by the slide-crop tests)
-        timeout-minutes: 15
+        timeout-minutes: 18
         env:
           FFMPEG_ATTEMPTS: 3
           APT_UPDATE_LIMIT_S: 120
-          APT_INSTALL_LIMIT_S: 150
+          APT_DOWNLOAD_LIMIT_S: 150
+          APT_INSTALL_LIMIT_S: 180
+          DPKG_LOCK_WAIT_S: 60
         run: |
-          installed=no
+          cannot_run() {
+            echo "::error::CANNOT RUN — $1"
+            echo "Every check after this step did NOT RUN: treat this as NOT CHECKED, not as a verdict on the commit."
+            exit 1
+          }
+          # Runs one apt operation under its own bound, keeps its output, and sets `why` to what
+          # went wrong: a held lock is named as one, never as a slow mirror (round 1 fold:
+          # `--download-only` takes the dpkg frontend lock too — measured).
+          # ⚠ A FILE, NOT `| tee`. Measured: a process that outlives the kill (the orphaned dpkg
+          # round 1 found) keeps a pipe's write end open, so `tee` never sees EOF and the step
+          # hangs to its cap with no CANNOT RUN — the defect this step exists to remove. The
+          # price is that an attempt's output appears when it ends, not while it runs.
+          log=$(mktemp)
+          bounded() {
+            local limit=$1 what=$2 rc=0
+            shift 2
+            sudo timeout "$limit" "$@" > "$log" 2>&1 || rc=$?
+            cat "$log"
+            [ "$rc" = 0 ] && return 0
+            if grep -qE 'Could not get lock|Unable to acquire the dpkg frontend lock|Unable to lock' "$log"; then
+              why="$what: the apt/dpkg lock was held by another process for over ${DPKG_LOCK_WAIT_S}s — NOT a mirror problem"
+            elif [ "$rc" = 124 ]; then
+              why="$what exceeded its ${limit}s bound and was killed"
+            else
+              why="$what failed (exit $rc)"
+            fi
+            return 1
+          }
+          lock=(-o DPkg::Lock::Timeout="$DPKG_LOCK_WAIT_S")
+          updated=no
+          downloaded=no
+          why=""
           for attempt in $(seq 1 "$FFMPEG_ATTEMPTS"); do
-            if sudo timeout "$APT_UPDATE_LIMIT_S" apt-get update \
-                 -o Dir::Etc::sourceparts="-" \
-                 -o APT::Get::List-Cleanup="0" \
-               && sudo timeout "$APT_INSTALL_LIMIT_S" apt-get install -y --no-install-recommends ffmpeg
+            if [ "$updated" != yes ]; then
+              if bounded "$APT_UPDATE_LIMIT_S" "apt-get update (network)" apt-get update "${lock[@]}" \
+                   -o Dir::Etc::sourceparts="-" \
+                   -o APT::Get::List-Cleanup="0"
+              then
+                updated=yes
+              else
+                echo "::warning::attempt $attempt of $FFMPEG_ATTEMPTS: $why"
+                continue
+              fi
+            fi
+            if bounded "$APT_DOWNLOAD_LIMIT_S" "downloading ffmpeg's packages (network)" \
+                 apt-get install -y --no-install-recommends --download-only "${lock[@]}" ffmpeg
             then
-              installed=yes
+              downloaded=yes
               break
             fi
-            echo "::warning::ffmpeg install attempt $attempt of $FFMPEG_ATTEMPTS failed or exceeded its ${APT_UPDATE_LIMIT_S}s/${APT_INSTALL_LIMIT_S}s limit"
-            sudo dpkg --configure -a || true
+            echo "::warning::attempt $attempt of $FFMPEG_ATTEMPTS: $why"
           done
-          if [ "$installed" != yes ]; then
-            echo "::error::CANNOT RUN — ffmpeg could not be installed in $FFMPEG_ATTEMPTS bounded attempts (an apt mirror is slow or down)."
-            echo "Every check after this step did NOT RUN: treat this as NOT CHECKED, not as a verdict on the commit. Re-run the job."
-            exit 1
+          if [ "$downloaded" != yes ]; then
+            cannot_run "on all $FFMPEG_ATTEMPTS attempts, the last: $why. Re-run the job."
           fi
-          ffmpeg -version > /dev/null
-          ffprobe -version > /dev/null
+          if ! bounded "$APT_INSTALL_LIMIT_S" "installing ffmpeg from the local package cache (dpkg, no network — the download had completed)" \
+               apt-get install -y --no-install-recommends --no-download "${lock[@]}" ffmpeg
+          then
+            cannot_run "$why. Read the dpkg output above."
+          fi
+          ffmpeg -version > /dev/null || cannot_run "ffmpeg was installed but does not execute"
+          ffprobe -version > /dev/null || cannot_run "ffprobe was installed but does not execute"
 
       # ⛔ FIRST, because every guard below runs on this interpreter. If the pin did not take
       # effect, their results are not evidence about anything — and a `setup-python` step that is
