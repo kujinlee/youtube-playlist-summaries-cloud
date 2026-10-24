@@ -17251,3 +17251,41 @@ corrected after a reviewer showed it had been scored to keep a check quiet.
 BET (WARN, pinned in `baseline.json` by subject, unit and route), 11 LADDER EXHAUSTED, CLOSED
 (WARN), 12 LADDER RESTARTED (WARN); trigger 2 fails only an open exhausted unit. 271 cases,
 125 mutations.
+
+## 2026-10-23 [needs-you]
+The to-do list for the review process was checked item by item against the code, and much of it was out of date.
+Thirty-six open items were checked against what is actually in the repository today. Two were
+already fixed and are now closed: the one that claimed it blocked every pull request (it no longer
+does), and a missing cross-reference that had already been added. Seven more were partly done and
+now say which part is left. Eleven had numbers or line references that had gone stale and were
+updated, and one of those, the check that downloads a database image, is still failing on the
+main branch today.
+
+The list on the features page for "the review loop" had also become a catch-all: any item tagged
+"process" landed there whatever it was about. Seventeen items were moved to where they belong (guard
+tooling, the status pages, the process harness, deploy checks), so that list went from 35 open
+items to 17, all of which are actually about the review loop.
+
+**Waiting on you:** six decisions, none of them urgent.
+- Backlog #327: you deferred it until two other items were fixed, and both now are. Reopen it or close it.
+- Backlog #337: its cheap half shipped. The other half (a third way to record how a review ended) was always yours to decide.
+- Backlog #290: the three-way choice about where the comprehensibility work is registered is still open.
+- Backlog #66: 92 old notes in `.superpowers/sdd/` exist nowhere else. Keeping or deleting them is your call, because deleting cannot be undone.
+- Backlog #104: whether it folds into backlog #100 or stays separate needs deciding before anyone builds it.
+- The decision-log redesign plan: you paused it, the reason for pausing is gone, and none of its nine tasks has started. Resume it or retire it.
+<!--tech-->
+Audit of 36 rows at master `92c78bff` (three read-only audits, sets A/B/C). Verdicts: 2 FIXED,
+7 PARTLY, the rest still open. `docs/backlog.md`: closed backlog #341 (PR #382, `cc2795d2`,
+`pinned_inventory`; edge: `tree_at` remains the fallback where no pin exists) and backlog #319
+(PR #381, `ee0e461b`, `docs/review-method.md:322`/`:328`); PARTLY notes on backlog #136, #314,
+#325, #334, #337 (NEEDS-OWNER option b), #234 and #327 (YH4 moot by PR #387, YH6 fixed; NEEDS-OWNER);
+refreshed facts on backlog #112 (569 to 588), #199, #340, #18 (50 of 61, with an undercount caveat on
+`skill-usage-audit.py`), #39 (26 of 223), #66 (98 days), #323, #324 (dependency on backlog #321
+struck), #108 (third instance), #200 and #312. Re-tagged 17 rows out of `(process)` so that
+`gen-features-page.py` files them by subject; review-loop went from 41 rows (35 open) to 24 (17 open).
+Backlog #117 stays `(tooling)` although it is arguably review-loop. Plan
+`2026-10-20-decision-log-model-redesign.md` moved from `🟠 current` to `🟠 needs-you`, and its t3 row
+now notes that `t3_routes_collapsed` was removed by PR #387 (`40b765e4`).
+⚠ Found while editing: `gen-backlog-page.py` treats ANY ✅ in a Status cell as closed (`closed=("✅"
+in status)`), so a status note that merely mentions another row being closed with a ✅ silently
+closes this row. Two of these edits did that and were reworded before commit.
