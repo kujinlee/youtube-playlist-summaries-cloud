@@ -125,19 +125,25 @@ jobs:
       #   was reported as a slow mirror. A lock failure is now named as one.
       # There is NO repair step: nothing retried runs dpkg, so there is nothing to repair, and a
       # repair is the one operation round 1 measured hanging with no bound.
-      # BUDGET, summed: 3 x (120 + 150) + 180 = 990s = 16.5 min, inside this step's
-      # `timeout-minutes: 18` (1,080s), which is the backstop over all of it; 18 + the ~5 min
-      # the rest of the job needs is ~23 min, inside the job's 30. Exhausting any phase is a
+      # Every bound is HARD: `timeout --kill-after=KILL_GRACE_S` sends SIGKILL if the operation
+      # ignores SIGTERM (round 2 — without it a TERM-resistant process outlived its bound and the
+      # step cap cut it off before any diagnostic printed; a SIGKILL is rc 137, a TERM kill 124).
+      # BUDGET, summed WITH the kill grace on each of the 7 operations:
+      #   3 x (120+10 + 150+10) + (180+10) = 870 + 190 = 1,060s = 17.7 min
+      # inside this step's `timeout-minutes: 20` (1,200s) — the backstop over all of it, leaving
+      # 140s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
+      # inside the job's 30. Exhausting any phase is a
       # FAILURE that names THAT phase with CANNOT RUN — never a skip, because the slide-crop
       # tests need the binaries.
       - name: Install ffmpeg (required by the slide-crop tests)
-        timeout-minutes: 18
+        timeout-minutes: 20
         env:
           FFMPEG_ATTEMPTS: 3
           APT_UPDATE_LIMIT_S: 120
           APT_DOWNLOAD_LIMIT_S: 150
           APT_INSTALL_LIMIT_S: 180
           DPKG_LOCK_WAIT_S: 60
+          KILL_GRACE_S: 10
         run: |
           cannot_run() {
             echo "::error::CANNOT RUN — $1"
@@ -155,13 +161,15 @@ jobs:
           bounded() {
             local limit=$1 what=$2 rc=0
             shift 2
-            sudo timeout "$limit" "$@" > "$log" 2>&1 || rc=$?
+            sudo timeout --kill-after="$KILL_GRACE_S" "$limit" "$@" > "$log" 2>&1 || rc=$?
             cat "$log"
             [ "$rc" = 0 ] && return 0
             if grep -qE 'Could not get lock|Unable to acquire the dpkg frontend lock|Unable to lock' "$log"; then
               why="$what: the apt/dpkg lock was held by another process for over ${DPKG_LOCK_WAIT_S}s — NOT a mirror problem"
             elif [ "$rc" = 124 ]; then
               why="$what exceeded its ${limit}s bound and was killed"
+            elif [ "$rc" = 137 ]; then
+              why="$what exceeded its ${limit}s bound, ignored SIGTERM, and was SIGKILLed ${KILL_GRACE_S}s later"
             else
               why="$what failed (exit $rc)"
             fi

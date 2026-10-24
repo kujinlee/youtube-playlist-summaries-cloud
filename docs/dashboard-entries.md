@@ -17409,10 +17409,11 @@ Backlog #343 and #231, branch `fix/ci-time-limits`, `.github/workflows/ci.yml` (
 docstring in `scripts/check-plan-code.py`). Evidence for #343 is run 40023350011 (step 27m31s, `verify`
 cancelled at 30m14s). After the round 1 fold the step bounds and retries only the network: `apt-get
 update` <= 120s and `install --download-only` <= 150s, 3 attempts. It then runs `install --no-download`
-once, <= 180s. Every operation passes `DPkg::Lock::Timeout=60` and there is no repair step. The budget
-is 990s inside a step `timeout-minutes: 18`. Tested on the delivered step text in `ubuntu:26.04`
+once, <= 180s. Every operation passes `DPkg::Lock::Timeout=60`, runs under `timeout --kill-after=10`
+(round 2: a SIGTERM-resistant process otherwise outlived its bound), and there is no repair step. The
+budget including the grace is 1,060s inside a step `timeout-minutes: 20`. Tested on the delivered step text in `ubuntu:26.04`
 (resolute, the runner's release) with real `sudo-rs`, real uutils `timeout` and real apt, faults
-injected by an `apt-get` wrapper on sudo's `secure_path`. Ten cases: update, download and dpkg hangs,
+injected by an `apt-get` wrapper on sudo's `secure_path`. Twelve cases: update, download and dpkg hangs, SIGTERM ignored in either phase,
 a fast download failure, hang-then-succeed, a lock held long, briefly and from inside the install
 phase, a real dpkg killed mid-install, and a healthy install. Each failure names its own phase. The
 round 1 version's record said "`ubuntu:24.04`, `apt-get` stubbed", and that was with a sudo shim, so
