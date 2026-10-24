@@ -48,7 +48,7 @@ findings:
 | `halves.<name>` | `ran`, or a string starting `GAP:` | whether each half ran; a gap carries its reason |
 | `severity` | `Blocking` `High` `Medium` `Low` | as filed by the reviewer |
 | `aim` | `deliverable` `instrument` | does the finding sit in code the branch **ships**, or in a test, guard or harness that **measures** it? |
-| `fix_induced` | `true` `false` | was the defect introduced by a fix written **after** a previous round? ⚠ **UNDECIDED:** whether a fix written inside the SAME round — by its first half's fold, reviewed by its second half — counts; see backlog #345 |
+| `fix_induced` | `true` `false` | was the defect introduced by a fix written **after** a previous round? ⚠ **UNDECIDED:** whether a fix written inside the SAME round — by its first half's fold, reviewed by its second half — counts; see backlog #347 |
 | `component` | string | the unit the finding is in — thrashing is judged per component, not per round |
 | `disposition` | `fixed` `filed` `declined` `refuted` | what Q3 decided; the reason goes in prose below the header. **`declined`** = real, and not being fixed; **`refuted`** = checked and NOT a defect (backlog #318) — keep them apart. `fixed`, `declined` and `refuted` answer a finding; `filed` leaves it OPEN, because a backlog deferral is not an answer about this branch |
 

@@ -17270,7 +17270,7 @@ that branch kept notes for only three of its eight rounds. Closing that gap mean
 notes after the fact or changing what the tool demands, and that is a choice. The tool also now
 accepts "refuted" (this was not a real problem) as an outcome; the one subject that needed it uses
 three more words the tool does not know yet. A new open question was filed too: whether a problem
-caused by a fix made earlier in the SAME round counts as "caused by a fix" (backlog #345).
+caused by a fix made earlier in the SAME round counts as "caused by a fix" (backlog #347).
 <!--tech-->
 backlog #339 PARTLY, NEEDS-OWNER: `check-review-rounds.PAIRING_RULE` names both readings in round
 2+ solo-half lines (not round 1); `docs/review-method.md` *The protocol* step 4 and `docs/plugins.md`
@@ -17282,4 +17282,4 @@ refused at `redesigned`; `retreat` and `moot` follow.
 backlog #306 PARTLY: headers on `chrome-bar-reachable-r{3,5,6}-coordinator.md` with provenance;
 `decide` -> CANNOT_RUN, *rounds are not gapless: found [3, 5, 6]*. Round-1 fold corrected r3 L1 and
 r5 L1 to `fix_induced: true` from git (`d2e5db17`, `4f4e2748`).
-backlog #345 filed: within-round fixes and `fix_induced`. `EXPECTED_MUTATIONS` sum 1999 -> 2003.
+backlog #347 filed: within-round fixes and `fix_induced`. `EXPECTED_MUTATIONS` sum 1999 -> 2003.
