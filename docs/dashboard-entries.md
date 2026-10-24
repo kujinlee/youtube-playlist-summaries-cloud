@@ -17252,6 +17252,113 @@ BET (WARN, pinned in `baseline.json` by subject, unit and route), 11 LADDER EXHA
 (WARN), 12 LADDER RESTARTED (WARN); trigger 2 fails only an open exhausted unit. 271 cases,
 125 mutations.
 
+## 2026-10-23 [needs-you]
+The to-do list for the review process was checked item by item against the code, and much of it was out of date.
+Thirty-six open items were checked against what is actually in the repository today. Two were
+already fixed and are now closed: the one that claimed it blocked every pull request (it no longer
+does), and a missing cross-reference that had already been added. Seven more were partly done and
+now say which part is left. Eleven had numbers or line references that had gone stale and were
+updated, and one of those, the check that downloads a database image, is still failing on the
+main branch today.
+
+The list on the features page for "the review loop" had also become a catch-all: any item tagged
+"process" landed there whatever it was about. Seventeen items were moved to where they belong (guard
+tooling, the status pages, the process harness, deploy checks), so that list went from 35 open
+items to 17, all of which are actually about the review loop.
+
+**Waiting on you:** six decisions, none of them urgent.
+- Backlog #327: you deferred it until two other items were fixed, and both now are. Reopen it or close it.
+- Backlog #337: its cheap half shipped. The other half (a third way to record how a review ended) was always yours to decide.
+- Backlog #290: the three-way choice about where the comprehensibility work is registered is still open.
+- Backlog #66: 92 old notes in `.superpowers/sdd/` exist nowhere else. Keeping or deleting them is your call, because deleting cannot be undone.
+- Backlog #104: whether it folds into backlog #100 or stays separate needs deciding before anyone builds it.
+- The decision-log redesign plan: you paused it, the reason for pausing is gone, and none of its nine tasks has started. Resume it or retire it.
+<!--tech-->
+Audit of 36 rows at master `92c78bff` (three read-only audits, sets A/B/C). Verdicts: 2 FIXED,
+7 PARTLY, the rest still open. `docs/backlog.md`: closed backlog #341 (PR #382, `cc2795d2`,
+`pinned_inventory`; edge: `tree_at` remains the fallback where no pin exists) and backlog #319
+(PR #381, `ee0e461b`, `docs/review-method.md:322`/`:328`); PARTLY notes on backlog #136, #314,
+#325, #334, #337 (NEEDS-OWNER option b), #234 and #327 (YH4 moot by PR #387, YH6 fixed; NEEDS-OWNER);
+refreshed facts on backlog #112 (569 to 588), #199, #340, #18 (50 of 61, with an undercount caveat on
+`skill-usage-audit.py`), #39 (26 of 223), #66 (98 days), #323, #324 (dependency on backlog #321
+struck), #108 (third instance), #200 and #312. Re-tagged 17 rows out of `(process)` so that
+`gen-features-page.py` files them by subject; review-loop went from 41 rows (35 open) to 24 (17 open).
+Backlog #117 stays `(tooling)` although it is arguably review-loop. Plan
+`2026-10-20-decision-log-model-redesign.md` moved from `🟠 current` to `🟠 needs-you`, and its t3 row
+now notes that `t3_routes_collapsed` was removed by PR #387 (`40b765e4`).
+⚠ Found while editing: `gen-backlog-page.py` treats ANY ✅ in a Status cell as closed (`closed=("✅"
+in status)`), so a status note that merely mentions another row being closed with a ✅ silently
+closes this row. Two of these edits did that and were reworded before commit.
+
+## 2026-10-23
+The database check that every pull request must pass kept failing for a reason that had nothing
+to do with this project. To build its test database, CI downloaded a Postgres image from
+Amazon's public registry without logging in, and that kind of download has a shared allowance.
+GitHub's CI machines share their internet addresses with many other projects, so the allowance
+was often used up by strangers. On 2026-10-23 the check failed three times in three hours on
+"Data limit exceeded", which blocked merging even though nothing was wrong with the schema.
+
+CI now downloads the same image from a copy in this account's GitHub package registry. It is
+pinned to the exact fingerprint (digest) of Amazon's original. The copy was made in a way that
+keeps that fingerprint, so the check still tests the identical database. The copy has to be public, because CI downloads it without logging in. If the copy ever stopped
+matching, the download would fail rather than quietly test something different. Local runs
+still use Amazon's original.
+
+<!--tech-->
+`.github/workflows/schema-gates.yml`: workflow-level `SCHEMA_DB_IMAGE:
+ghcr.io/kujinlee/supabase-postgres@sha256:ac581882…aaca` (the ECR index digest, preserved by
+`docker buildx imagetools create`), read by `scripts/ci/start-schema-db.sh:42` and by the
+`prod-drift` psql-client step (now exiting 2 = CANNOT RUN if the image cannot be started). The pull carries no login, so the package must be public; this PR's own `schema-gates` run going green is the verification. Fixes backlog #340
+(remedy a); backlog #310 closed as its duplicate.
+
+## 2026-10-24 [needs-you]
+The backlog was scrubbed tonight, and it now says less that is not true. Seventeen items were closed
+because the work was already done or no longer applies. Fifty-six items had their severity changed
+because the risk they described has moved since they were filed. The open list went from 225 items to
+208.
+
+The biggest change is in the red items. Eight were marked as the most urgent, and five of those
+turned out not to be: the fix had partly shipped, or there is a simple way around them. Three are
+still red. Backlog #139 is a deploy that can use up a job's only attempt. Backlog #251 is about a
+change to the code that the mutation tests never exercise. Backlog #312 is about Python version drift that once took
+down the whole required check. Three more items the scrub thinks should be red (backlog #62, a failed
+correction that still costs money; #231, the mutation sweep is close to its time limit; and #343, a
+slow ffmpeg install that cancelled a required check today) were left alone here, because other
+branches are fixing them tonight.
+
+**Waiting on you:** six decisions, none of them urgent.
+- Backlog #8: retire the "deep-dive as aligned visuals" vision, or narrow it to the local app only. Most of it now exists as dig-deeper, and the hosted half was ruled out by ADR-0005.
+- Backlog #26: choose which of the three attempt-limit options to use. This has to be settled before the M5 work reaches that step.
+- Backlog #27: decide how long old source versions are kept. Decide it together with the cleanup job.
+- Backlog #28: you deferred this until there is real traffic to measure. It stays deferred.
+- Backlog #53: decide whether a single mismatch between the deployed commit and master is reason enough to build this check.
+- Backlog #144: choose one of the two ways the row offers to check for completeness.
+<!--tech-->
+Scrub of 189 rows in four read-only sets (scrub-0..3) at master `92c78bff`, applied on
+`docs/backlog-scrub` off `c7c6672f`. All of it is in `docs/backlog.md`.
+Closed (✅, with `(was X)`): backlog #1, #3, #5, #6, #7, #41, #85, #89, #92, #93, #94, #115, #128, #228,
+#235 and #236, each with a quoted commit or code line that was re-checked. #342 was closed as a
+duplicate of #252, which is older and fuller, and its 60s measurement was carried onto #252. The citation
+at `process-checklists.md:121` now points at #252.
+Re-rated: 56 rows. The leading marker is now `NEW (filed OLD)` with a dated reason in Status.
+`gen-backlog-page.py` reads the first character, so the page files each row under its new severity;
+for example, #2 renders `data-sev="low"`.
+PARTLY ⟳ notes: 38 rows. NEEDS-OWNER: #8, #26, #27, #28, #53 and #144. #155 has a stale-status note,
+because #154 merged as `b7ec0c42`.
+Open by severity, before → after: 🔴 8→3, 🟠 97→63, 🟡 95→106, 🟢 24→35.
+Not touched: backlog #62, #63, #231, #306, #310, #318, #339, #340 and #343, which are owned by open branches.
+Declined: #124–#127 (not moot; #193 depends on them, and #125 is #193's blocker).
+Every bare `#N` in the 98 edited rows was qualified, because `check-reference-namespace.py` reads each
+edited row as added; on the branch the guard finds 0 bare references left (no per-namespace breakdown is
+stated: the first one written here did not reproduce — backlog-scrub r6). One could not
+be resolved and says so (in #289, `#290`); one ordinal was rewritten as `⑽` (in #213).
+⚠ `gen-backlog-page.py` warns that `GROUPS` still names #1, #3, #89 (and #49, which was already
+closed). This is warn-only, and the generator file was not changed.
+Round 1 fold (`docs/reviews/claude/backlog-scrub-r1-claude.md`, NOT CONVERGED):
+- #237 was reopened as PARTLY, because its prototype page still carries a private switcher copy.
+- Eight wrong labels were fixed. The six references to the serve-path-bounding slice in #28 and #30 now read PR #67, #192 now reads PR #317, and #85's quoted subject is verbatim again.
+- The re-rates of #139 and #253 were reverted, because the reason quoted was the filer's own argument for the original rating.
+
 ## 2026-10-24 [needs-you]
 Three small fixes to the review loop's bookkeeping, all three half-finished on purpose.
 

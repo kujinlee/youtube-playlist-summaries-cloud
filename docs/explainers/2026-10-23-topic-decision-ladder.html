@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The decision ladder</title>
+
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+    /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+}
+/* The two explicit palettes the theme control needs. DERIVED from the bare `:root` and the
+   `prefers-color-scheme` block above by `scripts/`-side extraction, not retyped: a second copy of
+   a token list is a copy that drifts (this repository's most-measured defect, 17 instances).
+   Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
+   `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
+   toggle over undeclared tokens is a button that changes an attribute nothing styles. */
+:root[data-theme="light"]{
+  --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
+  --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
+  --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
+  --verified:#2d6a3f; --verified-br:#bcd8c4; --code:#f5f2ec; --amber:#8a6a16; --amberbg:#fbf6e8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+:root[data-theme="dark"]{
+    --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
+    --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
+    --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
+    --verified:#8fcaa2; --verified-br:#2f4a39; --code:#232128; --amber:#d9bb6a; --amberbg:#272218;
+  /* the 7 tokens brief-compose's OS-dark shim supplies. Declared as var() references so each
+     resolves to THIS palette's own role — a shared hex would collapse the roles and a second
+     literal would drift. Without these the toggle is HALF-LIVE: a media query has no
+     specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --card:var(--panel); --structure:var(--rule);
+  --good:var(--green); --defect:var(--red);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:860px;margin:0 auto;padding:40px 22px 120px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:21px;margin:46px 0 12px;padding-top:16px;border-top:1px solid var(--rule);
+  position:relative;letter-spacing:-.01em}
+h3{font-size:16.5px;margin:28px 0 8px;position:relative;color:var(--fg)}
+p{margin:12px 0}
+a{color:var(--link)}
+.reading{font-size:15px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:4px;padding:12px 14px;margin:18px 0}
+.horizon{font-size:13px;color:var(--fg3);margin:0 0 18px}
+.lede{font-size:17.5px;line-height:1.55;color:var(--fg2)}
+.howto{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;
+  margin:22px 0;font-size:13.5px;color:var(--fg2)}
+.howto b{color:var(--fg)}
+.howto code{font-size:12.5px}
+.howto ol{margin:8px 0 0 18px;padding:0}
+.howto li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-weight:600;color:var(--fg3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+code{background:var(--code);padding:1.5px 5px;border-radius:3px;font-size:13.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:5px;padding:12px 14px;
+  overflow-x:auto;margin:14px 0;white-space:pre}
+pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;white-space:pre}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--accent2);
+  background:var(--panel);color:var(--fg2);font-size:15.5px}
+blockquote p{margin:4px 0}
+.k{border-radius:5px;padding:12px 15px;margin:16px 0;font-size:15px;border:1px solid}
+.k.red{background:var(--redbg);border-color:var(--red);color:var(--fg)}
+.k.green{background:var(--greenbg);border-color:var(--verified-br);color:var(--fg)}
+.k.warn{background:var(--amberbg);border-color:var(--amber);color:var(--fg)}
+.k b{color:var(--fg)}
+.num{font-variant-numeric:tabular-nums}
+.big{font-size:15px}
+.big td:first-child{font-weight:600}
+ul,ol{margin:12px 0 12px 22px;padding:0}
+li{margin:5px 0}
+.tag{display:inline-block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--fg3);
+  background:var(--panel);vertical-align:middle;margin-left:6px}
+.tag.m{color:var(--verified);border-color:var(--verified-br)}
+.tag.i{color:var(--amber);border-color:var(--amber)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.toc{font-size:14px;color:var(--fg2);background:var(--panel);border:1px solid var(--rule);
+  border-radius:6px;padding:12px 16px;margin:22px 0}
+.toc ol{margin:6px 0 0 20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;margin:18px 0}
+.fig figcaption{font-size:13px;color:var(--fg3);margin-top:10px}
+@media (max-width:560px){
+  .wrap{padding:26px 16px 110px} h1{font-size:25px} h2{font-size:19px} body{font-size:15.5px}
+}
+.fig svg{display:block;max-width:100%;height:auto}
+
+  :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
+          --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4;
+         /* The two tokens the text-style scheme SPENDS. On `html` for the same reason
+            `--rule` is: specificity 0,0,1 loses to a page's own `:root` (0,1,0), and SHIM
+            is concatenated AFTER the fragment, so anything declared at equal specificity
+            here would silently beat every page that styles itself. MEASURED 2026-10-06:
+            6 of the 21 recomposable pages declare no `--accent` and 8 declare no `--em`,
+            so without this the scheme resolves to nothing on a third of them and the
+            switcher becomes a control that changes an attribute nothing styles.
+            `--accent` DELIBERATELY FOLLOWS `--structure` rather than naming a colour:
+            `--structure` already has a light and a dark value, so accent parity is a
+            consequence rather than a second thing to keep in sync. `--em` has no existing
+            source and therefore needs an explicit pair -- see the dark block. */
+         --accent: var(--structure, #33607a); --em: #2d4a7c; }
+  /* ⛔ `--em`'s SECOND HALF IS KEYED ON THE THEME ATTRIBUTE, NOT ON THE MEDIA QUERY, and
+     that placement is the whole point. Putting it in the OS-dark block made the compose
+     fail immediately and correctly: a media query contributes NO specificity, so a page
+     whose light palette does not declare `--em` would keep the DARK value when the reader
+     toggles to light — the HALF-LIVE toggle that measured 1.03:1 on 2026-09-08. Only 13 of
+     the 21 recomposable pages declare `--em` at all, so that was the common case, not the
+     corner. Keyed on `[data-theme]` the two halves beat the media block in both
+     directions and no page is required to declare anything. */
+  :root[data-theme="light"] { --em: #2d4a7c; }
+  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
+
+/* ---- Ask tray, extracted verbatim ---- */
+#modechip{font-size:.8em;padding:.1rem .45rem;border-radius:99px;
+            border:1px solid var(--rule,#8884);white-space:nowrap}
+#modechip{font-family:var(--mono);font-size:.7rem;padding:.1em .45em;border-radius:99px;border:1px solid var(--rule);color:var(--fg3)}
+.askbtn{position:absolute;font-family:var(--sans);font-size:.66rem;padding:.1rem .42rem;
+  border:1px solid var(--rule);border-radius:20px;background:var(--bg2);color:var(--fg3);cursor:pointer}
+.askbtn:hover{color:var(--structure);border-color:var(--structure)}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:2px solid var(--structure);
+  padding:.85rem 1rem;transform:translateY(105%);transition:transform .16s;z-index:50;
+  font-family:var(--sans);box-shadow:0 -6px 24px rgba(0,0,0,.13)}
+#tray.on{transform:translateY(0)}
+#tray .in{max-width:53rem;margin:0 auto}
+#qt{font-size:.78rem;color:var(--fg3);margin-bottom:.4rem;line-height:1.4}
+#qbox{width:100%;font-family:var(--sans);font-size:.9rem;padding:.5rem .6rem;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg);color:var(--fg);resize:vertical;min-height:3.1rem}
+#sentnote{font-size:.78rem;color:var(--verified)}
+#sentnote.err{color:var(--defect)}
+#modechip{font-family:var(--sans);font-size:.68rem;padding:.1rem .45rem;border:1px solid var(--rule);
+  border-radius:20px;margin-left:.4rem;white-space:nowrap}
+/* ---- end Ask tray ---- */
+.chrome{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.82rem;color:var(--ink-soft,currentColor);padding-block:.45rem}.chrome-pinned{position:fixed;top:0;left:0;right:0;z-index:1;background:var(--bg,Canvas);padding-inline:1rem;border-top:1px solid var(--rule,transparent)}:root{scroll-padding-top:var(--chrome-h,0)}@media print{.chrome-pinned{position:static}.chrome-slot{min-height:0!important}}.chrome-btn{display:inline-flex;align-items:center;gap:.35rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--rule,currentColor);border-radius:.4rem;padding:.2rem .55rem;cursor:pointer}.chrome-btn:hover{color:var(--ink,inherit)}.chrome-btn:focus-visible{outline:2px solid var(--structural,currentColor);outline-offset:2px}.chrome-when{margin-inline-start:auto}.chrome-say{min-height:1em}@media (prefers-reduced-motion:reduce){.chrome-btn{transition:none}}:root{--head:var(--accent);--prose:var(--fg2);--emph:var(--em)}:root[data-scheme="1"]{--head:var(--fg);--prose:var(--fg);--emph:var(--fg)}:root[data-scheme="2"]{--head:var(--accent);--prose:var(--fg2);--emph:var(--fg)}.ex-body{color:var(--prose)}.ex-body h1,.ex-body h2,.ex-body h3,.ex-body h4{color:var(--head)}.ex-body strong,.ex-body b{color:var(--emph)}.schemer{display:inline-flex;align-items:center;gap:.3em}.schemer .lbl{color:var(--ink-soft,inherit)}.schemer button{background:none;border:1px solid transparent;border-radius:1em;padding:0 .55em;cursor:pointer;color:inherit;font:inherit}.schemer button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+
+
+<div class="wrap ex-body">
+
+<h1>The decision ladder: bets, lost bets and the twelve triggers</h1>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-23 16:47 · 92c78bff · uncommitted changes</time></span></div></div>
+<p class="horizon">as of <code>40b765e4</code> (master, PR #387 merged) · 2026-10-23 14:21 PDT · source read: <code>scripts/check-decision-scheme.py</code>, <code>docs/reviews/decision-scheme/{decision-log.jsonl,baseline.json}</code></p>
+
+<div class="reading">
+<b>The reading I chose:</b> how the <i>decision scheme</i> works, for someone who keeps seeing
+“accrete”, “lost bet” and “trigger 11” in my messages without having designed them. That covers
+what each word means, why the ladder runs in this order, and where the trigger names and numbers
+come from. <b>Not covered:</b> the separate “ranker” half of the scheme (triggers 5 and 7), beyond
+one line each.
+</div>
+
+<div class="howto">
+<b>This page is live and can answer back.</b> <span id="modechip">● live — Send works</span><br>
+Stable URL: <code>http://127.0.0.1:7391/latest</code> — it always points at the newest page.
+<ol>
+<li><b>To ask:</b> select any text, or hover a heading, → <b>ask</b> → type → <b>Send</b>. Then say
+<i>“read my questions”</i> in the session and the answer gets written into this page, under the
+section you asked from.</li>
+<li><b>If that URL does not load:</b> run <code>python3 scripts/explainer-serve.py</code> — safe to
+run twice, and a reboot stops it, which is the one time you will need this.</li>
+<li>A <code>file://</code> copy still reads fine; it only loses <b>Send</b>.</li>
+</ol>
+</div>
+
+<div class="toc">
+<b>Where this goes</b>
+<ol>
+<li><a href="#reframe">The idea: it does not classify, it bets</a></li>
+<li><a href="#words">Five words: unit, bet, route, outcome, lost bet</a></li>
+<li><a href="#ladder">The ladder, and why it runs in this order</a></li>
+<li><a href="#start">What “start” means</a></li>
+<li><a href="#names">Where the trigger names and numbers come from</a></li>
+<li><a href="#all">All twelve triggers on one table</a></li>
+<li><a href="#life">One unit’s life: triggers 2, 3, 10, 11 and 12</a></li>
+<li><a href="#example">Worked example: the trigger-3 fix’s own four bets</a></li>
+<li><a href="#why">Why it exists: a promise that can fail</a></li>
+<li><a href="#limits">What it cannot do</a></li>
+<li><a href="#table">Measured vs inferred</a></li>
+</ol>
+</div>
+
+<h2 id="reframe">1. The idea: it does not classify, it bets</h2>
+
+<p class="lede">Take a piece of work that keeps drawing review findings. The question was always
+“should we patch it again, or redesign it?” The scheme’s central move is to <b>stop trying to
+answer that question correctly</b>. Instead, it picks the cheapest answer, watches whether it
+worked, and moves up a fixed ladder when it didn’t.</p>
+
+<p>Why not just answer it? Because the answer depends on <i>why</i> the findings exist, and that is
+not something a script can observe. The file’s opening docstring records the measurement that
+settled this:</p>
+<blockquote><p>“Measured 2026-10-20 over 314 labelled findings: <code>fix_induced</code> could be
+computed for 8 and agreed with the author on 2, because <b>causation is not an observable</b>.”</p>
+<p>“So the mechanism does not classify. It BETS, and escalates when the bet is observed to fail.”</p>
+<p style="font-size:13px;color:var(--fg3)">— <code>scripts/check-decision-scheme.py</code>, module docstring</p></blockquote>
+
+<p>So the scheme isn’t graded on being right first time. It is graded on <b>how many review rounds
+it takes until the findings stop</b> (“rounds-to-termination”). A loop that corrects itself
+doesn’t need to be right first time.</p>
+
+<p>It came from your own instruction. The roadmap section for this work quotes you: <i>“try a most
+promising scheme and check outcomes, then re-evaluate the mechanism; create a re-evaluation
+promise”</i> (<code>docs/roadmap-to-launch.md</code>, section “Redesign-or-accretion mechanism —
+backlog #320–326”). That section also says your steers <i>“replaced a deterministic goal with a bet
+that corrects itself”</i>. The “triggers” are the <b>re-evaluation promise</b> part of that
+instruction.</p>
+
+<h2 id="words">2. Five words: unit, bet, route, outcome, lost bet</h2>
+
+<div class="scroll"><table class="big">
+<tr><th>word</th><th>what it is</th><th>where it lives</th></tr>
+<tr><td>subject</td><td>The piece of work being reviewed. It is usually a branch, named the same way its review files are (<code>trigger3-lost-bet</code>, <code>work-lines-backfill</code>).</td><td>row field <code>subject</code></td></tr>
+<tr><td>unit</td><td>The <b>part</b> of a subject that keeps drawing findings, such as “the acknowledgment row” or “the transcript replay”. The ladder is climbed <b>per unit</b>, so one subject can have several units on different rungs.</td><td>row field <code>unit</code>; identity is <code>unit_key</code> = (subject, unit)</td></tr>
+<tr><td>route</td><td>One rung of the ladder: <code>accrete</code>, <code>redesign</code>, <code>split</code> or <code>defer</code>.</td><td><code>LADDER</code>, <code>:142</code></td></tr>
+<tr><td>bet</td><td>One row in the log. It says “for this unit I am taking this route, and I predict the next round will show X”. It is written <b>before</b> that round’s result is known. That timing is what makes it a bet rather than a label.</td><td>one line of <code>decision-log.jsonl</code></td></tr>
+<tr><td>outcome</td><td>Filled in afterwards. <code>stopped</code> means the review stream ended after this bet. <code>continued</code> means findings kept coming. <code>null</code> means not known yet.</td><td><code>OUTCOMES = ("stopped", "continued")</code>, <code>:155</code></td></tr>
+<tr><td>lost bet</td><td>A bet whose outcome is <code>continued</code>, so the ladder says to escalate. ⚠ It does <b>not</b> mean the prediction was wrong. A prediction can come true while findings continue.</td><td><code>lost_bets</code>, <code>:436</code></td></tr>
+</table></div>
+
+<p>A real row: the first bet of the trigger-3 fix, abridged. Fields are as written, and long text is cut with “…”.</p>
+<pre><code>{"subject": "trigger3-lost-bet",
+ "unit": "lost-bet trigger + missed-escalation acknowledgment",
+ "route": "accrete",
+ "prediction": "Written 2026-10-23 10:38, BEFORE round 1 is dispatched. Bet: … round 1 … finds
+                no Blocking and at most one Major … Named failure observation: any Blocking;
+                two or more Majors; …",
+ "retroactive": false,
+ "outcome": "continued",
+ "observed": "r1: Codex CONVERGED (no findings); the fresh Claude half NOT CONVERGED with 2 Major
+              + 4 Minor — …"}</code></pre>
+
+<p>The rules a row must pass are all in <code>validate_row</code> (<code>:858</code>). It requires
+<code>subject</code>, <code>unit</code> and <code>route</code>, and the route must be on the
+ladder. The outcome must be one of <code>null</code>, <code>stopped</code> or
+<code>continued</code>. A <code>stopped</code> row must record <code>rounds_at_termination</code>
+as an integer. The other rules are about the ladder, and §3 covers them.</p>
+
+<p>One more field matters: <code>retroactive: true</code> marks a row written <i>after</i> its
+outcome was known. That row is history, not a bet, so it is left out of every check that scores
+bets (<code>prospective</code>, <code>:200</code>).</p>
+
+<h2 id="ladder">3. The ladder, and why it runs in this order</h2>
+
+<div class="fig">
+<svg viewBox="0 0 760 150" width="100%" role="img" aria-label="ladder: accrete, redesign, split, defer, with arrows labelled 'continued'">
+  <g font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="15">
+    <rect x="10" y="40" width="150" height="56" rx="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="85" y="66" text-anchor="middle" fill="var(--fg)" font-weight="600">accrete</text>
+    <text x="85" y="85" text-anchor="middle" fill="var(--fg3)" font-size="12">patch what exists</text>
+    <rect x="205" y="40" width="150" height="56" rx="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="280" y="66" text-anchor="middle" fill="var(--fg)" font-weight="600">redesign</text>
+    <text x="280" y="85" text-anchor="middle" fill="var(--fg3)" font-size="12">rebuild the part</text>
+    <rect x="400" y="40" width="150" height="56" rx="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="475" y="66" text-anchor="middle" fill="var(--fg)" font-weight="600">split</text>
+    <text x="475" y="85" text-anchor="middle" fill="var(--fg3)" font-size="12">separate the pieces</text>
+    <rect x="595" y="40" width="150" height="56" rx="6" fill="var(--panel)" stroke="var(--red)" stroke-width="2"/>
+    <text x="670" y="66" text-anchor="middle" fill="var(--fg)" font-weight="600">defer</text>
+    <text x="670" y="85" text-anchor="middle" fill="var(--fg3)" font-size="12">set it down (terminal)</text>
+    <g stroke="var(--fg3)" stroke-width="1.6" fill="none">
+      <path d="M160 68 L200 68"/><path d="M193 63 L200 68 L193 73"/>
+      <path d="M355 68 L395 68"/><path d="M388 63 L395 68 L388 73"/>
+      <path d="M550 68 L590 68"/><path d="M583 63 L590 68 L583 73"/>
+    </g>
+    <g fill="var(--fg3)" font-size="11.5" text-anchor="middle">
+      <text x="180" y="32">continued</text><text x="375" y="32">continued</text><text x="570" y="32">continued</text>
+    </g>
+    <text x="10" y="128" fill="var(--fg2)" font-size="13">cheapest first → most drastic last · a route is never retried on the same unit · <tspan fill="var(--green)">stopped</tspan> at any rung ends the climb</text>
+  </g>
+</svg>
+<figcaption><code>LADDER = ("accrete", "redesign", "split", "defer")</code> — <code>scripts/check-decision-scheme.py:142</code></figcaption>
+</div>
+
+<p><b>Why this order.</b> The code says so directly, in the comment above <code>LADDER</code>:</p>
+<blockquote><p>“The ladder. ORDER IS THE DESIGN: start at the cheapest route, because the cost of a wrong
+bet is one more round. DEFER is terminal — it is the answer when the routes are exhausted, which is
+the stopping rule backlog #136 asks for and could not derive from finding counts.”</p></blockquote>
+<p>So the order is <b>by cost</b>. Patching costs least and setting the work down costs most.
+Backlog #136 is your 2026-09-16 complaint that the review loop had no rubric for “is it improving,
+and if not, what should change?” <code>defer</code> is the scheme’s answer to the “when do we stop”
+half of that complaint.</p>
+
+<p><b>How each rung is judged a failure.</b> Each route names the observation that counts as
+failure (<code>FAILURE_OBSERVATION</code>, <code>:147</code>):</p>
+<div class="scroll"><table>
+<tr><th>route</th><th>it failed when…</th></tr>
+<tr><td>accrete</td><td>“the same unit carried findings in the round after the patch”</td></tr>
+<tr><td>redesign</td><td>“the unit still carried findings after a restructuring fold”</td></tr>
+<tr><td>split</td><td>“the split-out subject thrashed on its own in its first two rounds”</td></tr>
+<tr><td>defer</td><td>“terminal — nothing escalates past it”</td></tr>
+</table></div>
+
+<p><b>Three movement rules</b>, all enforced in <code>validate_row</code>:</p>
+<ul>
+<li><b>Never retry a route.</b> <code>route_next</code> (<code>:162</code>) returns the first rung
+not yet used, and its docstring explains why: <i>“Retrying the same route is how an escalation
+ladder becomes an infinite loop.”</i> A repeated route is refused as <i>“a RETRY, not a skip”</i>.</li>
+<li><b>Never walk back down.</b> Betting on a rung the ladder has already passed is refused as a
+<i>“WALK-BACK”</i>.</li>
+<li><b>A rung may be skipped, but only with a written reason.</b> This was added by PR #381
+(backlog #321, your decision of 2026-10-21). The first version refused any skip. As a result, the
+two most informative decisions in the log (a human judging a rung pointless) were the only two it
+could not record. A skipping row must name exactly the rungs it skips in <code>skipped</code>, and
+give a <code>why_skipped</code> with real content. An empty reason is refused, and so is
+<code>"!!!"</code> or a zero-width space.</li>
+</ul>
+<p>The live log has examples of both kinds. <code>decision-log-model-redesign/log-schema</code> went
+straight to <code>redesign</code>, with <code>skipped: ["accrete"]</code> and a reason. It later went to
+<code>defer</code> with <code>skipped: ["split"]</code>.</p>
+
+<h2 id="start">4. What “start” means</h2>
+<p><b>There is no “start” state in the code.</b> Start just means a unit with no rows yet. For it,
+<code>route_next([])</code> returns <code>accrete</code>, so a unit’s first bet is accrete unless it
+declares a skip. The docstring uses the word only once, to reject a design: <i>“a
+<code>start -&gt; split</code> jump route would destroy that counterfactual for nothing”</i>.</p>
+<p>That forced first rung has a consequence. Almost every unit’s first bet is <code>accrete</code>,
+so any trigger that counts routes sees mostly accrete. That is exactly what broke the <b>old</b>
+trigger 3 (§5).</p>
+
+<h2 id="names">5. Where the trigger names and numbers come from</h2>
+
+<div class="k green"><b>Short answer: the numbers are positions in a list, in the order each
+trigger was added. The names are short labels for the observation each one reports.</b> There is no
+deeper scheme. Nobody chose 11 to mean anything; it was simply the eleventh entry.</div>
+
+<p>The list is literally this code in <code>main()</code> (<code>:1455–1473</code>). The printed
+label is the string, and the function behind it is named <code>t&lt;N&gt;_…</code>:</p>
+<pre><code>for name, result in (
+    ("1 NOT FED", t1_not_fed(rows, starved_subjects)),
+    ("2 NON-TERMINATION", t2_non_termination(rows)),
+    ("3 LOST BET NOT ESCALATED", t3_lost_bet_not_escalated(rows, pins)),
+    ("4 NO IMPROVEMENT", t4_no_improvement(rows, pinned_rounds["median"])),
+    ("5 RANKER MISS", t5_ranker_miss(rows)),
+):                                     # ← these FAIL the run
+    ...
+for name, result in (
+    ("6 DENOMINATOR MOVED", t6_denominator_moved(...)),
+    ("7 SAMPLE REACHED", t7_sample_reached(rows)),
+    ("8 HINDSIGHT ONLY", t8_hindsight_only(rows, starved_subjects)),
+    ("9 DEFERRAL COMPOSED", t9_deferral_composed(rows, pinned_rounds["median"])),
+    ("10 PRE-TRIGGER LOST BET", t10_pre_trigger_lost_bet(rows, pins)),
+    ("11 LADDER EXHAUSTED, CLOSED", t11_ladder_exhausted_closed(rows)),
+    ("12 LADDER RESTARTED", t12_ladder_restarted(rows)),
+):                                     # ← these only WARN
+    ...</code></pre>
+<p>The docstring deliberately refuses to restate the list: <i>“the table in <code>main()</code> is
+the list, and it is not restated here because this sentence once said ‘seven’ and ‘four’ and went
+stale twice.”</i></p>
+
+<p><b>When each number was added</b>, from <code>git log -S "&lt;label&gt;"</code> on master:</p>
+<div class="scroll"><table>
+<tr><th>numbers</th><th>arrived in</th><th>how</th></tr>
+<tr><td>1–7</td><td>PR #381, <code>ee0e461b</code>, 2026-10-21</td><td>The original design. The redesign plan’s §3 is headed “All seven triggers, re-derived”. Trigger 1 is first on purpose: <i>“TRIGGER 1 IS STARVATION, AND IT IS FIRST ON PURPOSE”</i>, because the previous mechanism died of not being fed.</td></tr>
+<tr><td>8, 9</td><td>the same PR #381</td><td>Added during that PR’s review. Trigger 8’s docstring cites “r7 Claude B1” (no trigger owned the “fed only in hindsight” complaint). Trigger 9’s cites “r7 Claude H5” (deferrals made trigger 4 look like improvement). <span class="tag i">inferred</span> The branch was squashed, so git shows only one commit for 1–9; the round labels come from the docstrings.</td></tr>
+<tr><td>3 (new meaning)</td><td>PR #387, <code>40b765e4</code>, 2026-10-23</td><td>The <b>number was reused</b>. The old <code>t3_routes_collapsed</code> (“ROUTES COLLAPSED”: five or more scored bets all took one route) was <b>deleted</b>. The forced first rung meant it fired on the ladder’s shape, not on a decision. The new trigger 3 took over its slot.</td></tr>
+<tr><td>10, 11, 12</td><td>PR #387</td><td>Added together. 10 is the WARN half of the new trigger 3, and 11 is the WARN half of trigger 2. 12 is a containment you asked for.</td></tr>
+</table></div>
+
+<p><b>Why FAILs are 1–5 and WARNs 6–12.</b> This is a side effect of the order of addition, not a
+rule <span class="tag i">inferred</span>. The original seven were five FAILs and two WARNs, and every
+trigger added since has been a WARN. They all went after 7, so the FAILs stayed contiguous. A new
+FAIL would probably break that pattern.</p>
+
+<p><b>The naming habit inside the WARN half.</b> When a FAIL was too harsh in one case, the case was
+carved out into a <b>separate WARN with its own number</b>, rather than softening the FAIL. The code
+calls this “the FAIL/WARN split … in this file’s existing style (t4/t9)”:</p>
+<ul>
+<li>4 FAIL (no improvement) → <b>9</b> WARN (the improvement includes deferrals)</li>
+<li>3 FAIL (lost bet not escalated) → <b>10</b> WARN (the lost bet is older than the rule)</li>
+<li>2 FAIL (ladder exhausted, still open) → <b>11</b> WARN (ladder exhausted, and closed honestly)</li>
+</ul>
+
+<h2 id="all">6. All twelve triggers on one table</h2>
+<div class="scroll"><table>
+<tr><th>#</th><th>name</th><th>verdict</th><th>the question it asks</th><th>function</th></tr>
+<tr><td>1</td><td>NOT FED</td><td>FAIL</td><td>Did a subject reach ≥2 review rounds with no log row at all?</td><td><code>t1_not_fed</code></td></tr>
+<tr><td>2</td><td>NON-TERMINATION</td><td>FAIL</td><td>Has a unit used every rung, is it still drawing findings, and is it <b>not</b> closed?</td><td><code>t2_non_termination</code></td></tr>
+<tr><td>3</td><td>LOST BET NOT ESCALATED</td><td>FAIL</td><td>After a lost bet, was the next bet on that unit ever logged?</td><td><code>t3_lost_bet_not_escalated</code></td></tr>
+<tr><td>4</td><td>NO IMPROVEMENT</td><td>FAIL</td><td>Are the last 5 finished subjects no shorter than the pre-scheme median (4 rounds)?</td><td><code>t4_no_improvement</code></td></tr>
+<tr><td>5</td><td>RANKER MISS</td><td>FAIL</td><td>Did the ranker name the wrong component twice in a row?</td><td><code>t5_ranker_miss</code></td></tr>
+<tr><td>6</td><td>DENOMINATOR MOVED</td><td>WARN</td><td>Has the review corpus grown under the pinned baseline?</td><td><code>t6_denominator_moved</code></td></tr>
+<tr><td>7</td><td>SAMPLE REACHED</td><td>WARN</td><td>Are there 10 ranker predictions yet, enough to re-score it?</td><td><code>t7_sample_reached</code></td></tr>
+<tr><td>8</td><td>HINDSIGHT ONLY</td><td>WARN</td><td>Is a subject fed only by after-the-fact rows?</td><td><code>t8_hindsight_only</code></td></tr>
+<tr><td>9</td><td>DEFERRAL COMPOSED</td><td>WARN</td><td>Trigger 4 looks good, but are deferrals inside the window that makes it look good?</td><td><code>t9_deferral_composed</code></td></tr>
+<tr><td>10</td><td>PRE-TRIGGER LOST BET</td><td>WARN</td><td>Is a pinned lost bet from before trigger 3 still there, or does a pin match nothing?</td><td><code>t10_pre_trigger_lost_bet</code></td></tr>
+<tr><td>11</td><td>LADDER EXHAUSTED, CLOSED</td><td>WARN</td><td>Did a unit use every rung, keep drawing findings, and get closed by its defer?</td><td><code>t11_ladder_exhausted_closed</code></td></tr>
+<tr><td>12</td><td>LADDER RESTARTED</td><td>WARN</td><td>After a unit closed, did a new unit start on the same subject?</td><td><code>t12_ladder_restarted</code></td></tr>
+</table></div>
+<p>Live output on the merged tree, run 2026-10-23 on the PR head <code>2d6dede5</code>. Its tree is
+byte-identical to master <code>40b765e4</code>, checked with <code>git diff --stat</code>, which was
+empty. Exit code 0, with four WARNs and no FAILs:</p>
+<pre><code>decision-scheme: 14 row(s), 12 scored (4 retroactive, so 8 scoreable); pinned median 4 vs now 4
+  WARN  trigger 6 DENOMINATOR MOVED: … rounds_total 392 -> 448 (+14.3%) …
+  WARN  trigger 8 HINDSIGHT ONLY: 2 of 6 subject(s) are fed ONLY in hindsight: banner-thread-armed, decision-log-model-redesign …
+  WARN  trigger 10 PRE-TRIGGER LOST BET: 1 lost bet(s) PREDATE trigger 3 … (work-lines-always-on/…(accrete)) …;
+        1 pin(s) match no unescalated lost bet in this log (work-lines-backfill/…(accrete)) — expected while that bet's row is on a branch not merged here …
+  WARN  trigger 11 LADDER EXHAUSTED, CLOSED: 1 unit(s) … (trigger3-lost-bet/lost-bet trigger + missed-escalation acknowledgment) — set down, not repaired …</code></pre>
+
+<h2 id="life">7. One unit’s life: triggers 2, 3, 10, 11 and 12</h2>
+
+<div class="fig">
+<svg viewBox="0 0 760 330" width="100%" role="img" aria-label="decision tree of what happens after a bet">
+  <g font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13.5">
+    <rect x="270" y="8" width="220" height="40" rx="6" fill="var(--panel)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="380" y="33" text-anchor="middle" fill="var(--fg)" font-weight="600">a bet on a unit is scored</text>
+    <g stroke="var(--fg3)" stroke-width="1.5" fill="none">
+      <path d="M330 48 L130 92"/><path d="M430 48 L600 92"/>
+      <path d="M600 132 L470 176"/><path d="M600 132 L690 176"/>
+      <path d="M470 216 L340 262"/><path d="M470 216 L560 262"/>
+      <path d="M690 216 L690 262"/>
+    </g>
+    <text x="200" y="66" fill="var(--green)" font-size="12">stopped</text>
+    <text x="530" y="66" fill="var(--red)" font-size="12">continued = lost bet</text>
+    <rect x="30" y="92" width="200" height="40" rx="6" fill="var(--greenbg)" stroke="var(--verified-br)"/>
+    <text x="130" y="117" text-anchor="middle" fill="var(--fg)">done — no trigger</text>
+    <rect x="500" y="92" width="200" height="40" rx="6" fill="var(--panel)" stroke="var(--rule)"/>
+    <text x="600" y="117" text-anchor="middle" fill="var(--fg)">is a rung left above it?</text>
+    <text x="500" y="160" fill="var(--fg3)" font-size="12">yes</text>
+    <text x="660" y="160" fill="var(--fg3)" font-size="12">no (it was defer)</text>
+    <rect x="370" y="176" width="200" height="40" rx="6" fill="var(--panel)" stroke="var(--rule)"/>
+    <text x="470" y="201" text-anchor="middle" fill="var(--fg)">next bet logged?</text>
+    <rect x="600" y="176" width="150" height="40" rx="6" fill="var(--panel)" stroke="var(--rule)"/>
+    <text x="675" y="194" text-anchor="middle" fill="var(--fg)">recorded the</text>
+    <text x="675" y="209" text-anchor="middle" fill="var(--fg)">final round?</text>
+    <rect x="230" y="262" width="210" height="58" rx="6" fill="var(--greenbg)" stroke="var(--verified-br)"/>
+    <text x="335" y="285" text-anchor="middle" fill="var(--fg)">yes → climb on, quiet</text>
+    <text x="335" y="304" text-anchor="middle" fill="var(--fg3)" font-size="12">no, but pinned → WARN 10</text>
+    <rect x="455" y="262" width="150" height="58" rx="6" fill="var(--redbg)" stroke="var(--red)"/>
+    <text x="530" y="287" text-anchor="middle" fill="var(--fg)" font-weight="600">no → FAIL 3</text>
+    <text x="530" y="306" text-anchor="middle" fill="var(--fg3)" font-size="12">not escalated</text>
+    <rect x="615" y="262" width="140" height="58" rx="6" fill="var(--amberbg)" stroke="var(--amber)"/>
+    <text x="685" y="283" text-anchor="middle" fill="var(--fg)">yes → WARN 11</text>
+    <text x="685" y="301" text-anchor="middle" fill="var(--fg)">no → FAIL 2</text>
+  </g>
+</svg>
+<figcaption>Trigger 12 lives one level up: once a unit is closed, a <i>new</i> unit started on the same subject WARNs.</figcaption>
+</div>
+
+<h3>Trigger 3, LOST BET NOT ESCALATED (FAIL)</h3>
+<p>For each bet the stream continued past, trigger 3 asks: is there a later real bet on the same
+unit? If not, the work kept going on a route the log itself records as failed, and nobody logged
+the escalation. The docstring calls this “the conveyor”: work silently keeps accreting under fold
+after fold. Two cases are deliberately left out (<code>lost_bets</code>, <code>:436</code>):</p>
+<ul>
+<li>A lost bet with <b>no rung left</b>. That is trigger 2’s case, and <i>“two triggers naming one
+defect is a reader who cannot tell which is which.”</i></li>
+<li>A lost bet that is <b>pinned</b>. It predates the rule, so trigger 10 reports it instead.</li>
+</ul>
+<p>⚠ The docstring states one known window. The next bet is written before the next round is sent
+out, so between those two writes trigger 3 fires. That is intended pressure: a commit that lands
+in the window goes red.</p>
+
+<h3>Trigger 10, PRE-TRIGGER LOST BET (WARN)</h3>
+<p>Two lost bets were placed before trigger 3 existed, so they could not have obeyed it. They are
+pinned by name in <code>baseline.json</code>, under <code>lost_bets_before_trigger3</code>:</p>
+<pre><code>work-lines-always-on / last-plan lifecycle + Stop-hook optional steps / accrete
+    "the work converged at round 4"
+work-lines-backfill  / transcript replay (event intake + END windows + checkpoints) / accrete
+    "the work converged at round 8"</code></pre>
+<p>A pin names <b>one bet</b>: (subject, unit, route). Because a unit never repeats a route, that
+triple is unique. Round 4 of #387 found that an earlier version keyed on (subject, unit) only, which
+would also have excused any <i>later</i> loss on that unit. A pin that matches nothing is itself
+reported, so a stale pin can’t sit there forever. That is why today’s output names the backfill
+pin: its row is on <code>feat/work-lines-backfill</code>, which hasn’t merged yet.</p>
+
+<h3>Trigger 2, NON-TERMINATION (FAIL)</h3>
+<p>Trigger 2 is the scheme’s main falsifier. A unit has used every rung, findings are still coming,
+and nothing has closed it. That shows the claim “escalation terminates” is false, not just slow. The
+code checks “exhausted” as <b>no rung left</b> (<code>route_next(...) is None</code>), not as “four
+attempts made”. After a skip, a unit can reach defer in a single attempt.</p>
+
+<h3>Trigger 11, LADDER EXHAUSTED, CLOSED (WARN)</h3>
+<p>This one was your decision in #387 round 5 (option A). Before it existed, honestly scoring a
+final defer as <code>continued</code> meant trigger 2 stayed red forever. The log is append-only, so
+nothing could clear it. The only quiet score was <code>stopped</code>, which would be false.
+<b>Honesty was being punished</b>. Now a <code>continued</code> defer that records
+<code>rounds_at_termination</code> <b>closes</b> the unit (<code>closes_unit</code>, <code>:327</code>),
+and it shows as a WARN instead. Closing comes with two rules:</p>
+<ul>
+<li><b>No bet may follow a closed unit.</b> <code>validate_row</code> refuses one with: <i>“…is
+CLOSED … a new attempt is a new unit”</i>.</li>
+<li><b>Close only at the end.</b> <code>rounds_at_termination</code> must be the subject’s final
+round. ⚠ This is <b>not checked</b>. Reading the review files to verify it was the component that
+thrashed in rounds 2–3, and it was removed.</li>
+</ul>
+
+<h3>Trigger 12, LADDER RESTARTED (WARN)</h3>
+<p>This is the second containment. Closing a unit can’t be undone, but a <b>new</b> unit on the same
+subject starts again at accrete. That is exactly the escape a closure is meant to stop, if the “new”
+unit is really the old work under a new name. It WARNs rather than refusing, because a genuinely
+separate unit is legitimate. It has to be <i>seen</i>, not forbidden. ⚠ A unit that already existed
+before the closure is a sibling and does not trigger it.</p>
+
+<h2 id="example">8. Worked example: the trigger-3 fix’s own four bets</h2>
+<p>Rows 11–14 of the live log are the fix for trigger 3 itself, climbing the whole ladder:</p>
+<div class="scroll"><table>
+<tr><th>row</th><th>route</th><th>outcome</th><th>what the next round found (abridged from <code>observed</code>)</th></tr>
+<tr><td>11</td><td>accrete</td><td>continued</td><td>r1: Claude half, 2 Major. An “acknowledgment” row could stand in for the next bet.</td></tr>
+<tr><td>12</td><td>redesign</td><td>continued</td><td>r2: 1 Major. The closing acknowledgment checked only that the round number was a positive integer.</td></tr>
+<tr><td>13</td><td>split</td><td>continued</td><td>r3: 1 Major. The r2 fold’s verdict reader skipped an unreadable review. The second fold-induced round in a row, which is THRASHING, so the acknowledgment was removed.</td></tr>
+<tr><td>14</td><td>defer</td><td>continued, <code>rounds_at_termination: 7</code></td><td>r4: a Major in the replacement pin list (keyed on the unit, not the bet). The defer’s own named failure was met, and the bet was rescored to continued in round 5.</td></tr>
+</table></div>
+<p>Every rung was used and findings continued, but the defer recorded the final round (7), so the
+unit is <b>closed</b>. That is why today’s output shows <b>WARN 11</b> for it, not FAIL 2.</p>
+
+<div class="k green"><b>Your question (16:46): this example walked all four rungs and still didn't converge, so it was declared a failure. Is that right? And what happened to the deferred unit? Was it discarded?</b>
+<p><b>Half right. What failed was each <i>bet</i>, not the work.</b> “Continued” on all four rows
+means that after each change of approach the next review round still found something, so every
+bet was lost. But the work as a whole <b>did</b> converge: rounds 6 and 7 came back clean, and PR #387
+merged with them. A lost bet measures an approach, not the final result.</p>
+<p><b>What the unit was.</b> Not the whole PR, only one piece of it: the <i>“missed-escalation
+acknowledgment”</i>, a way to write “I know this bet was lost, and here is why there's no next
+bet” into the log. That piece drew a new finding after every fix. The rest of the trigger drew none
+and was kept as it was. The split bet (row 13) is where the two were separated.</p>
+<p><b>What “defer” did to it: it was <i>removed</i>, not built.</b> The acknowledgment's code, the
+corpus reading and the verdict parser were all deleted in round 4. The narrow need it served (two old
+lost bets) was replaced by a fixed pin list in <code>baseline.json</code>. Row 14 says so: <i>“A general
+way to discharge a lost bet after the fact is deferred until one is needed.”</i></p>
+<p><b>So was it discarded? Set down, not thrown away.</b> Three things keep it visible:</p>
+<ul>
+<li>the log row itself, with the reason;</li>
+<li>a note in <code>docs/superpowers/plans/2026-10-20-decision-log-model-redesign.md</code>;</li>
+<li><b>trigger 11 WARNs about it on every run</b> (“set down, not repaired; the ladder terminated,
+the findings did not”).</li>
+</ul>
+<p>Two things bring it back. A future lost bet that isn't pinned FAILs trigger 3, which is the
+“until one is needed” moment. And reopening the idea as a new unit WARNs trigger 12.</p>
+<p>⚠ <b>One gap, stated:</b> it is <b>not</b> in <code>docs/backlog.md</code> (grepped,
+<span class="tag m">measured</span>). The WARN is the only standing reminder.</p>
+<p>⚠ <b>One more subtlety in row 14:</b> the defer bet itself was also lost. Round 4 found a Major in
+the pin list that replaced the acknowledgment, which was the defer's own named failure. It was fixed
+inside the same closed unit, and rounds 6 and 7 were clean. That is why the row records the closing
+round, 7.</p></div>
+<h2 id="why">9. Why it exists: a promise that can fail</h2>
+<p>You asked for a <i>re-evaluation promise</i>: what will tell us later that this mechanism isn’t
+working? The docstring explains why that promise is code rather than prose. A promise written in
+prose <i>“is the thing this repository has measured rotting”</i>. So it became a set of checks, some
+of which <b>fail CI</b>. When one fails, the script prints:</p>
+<pre><code>RE-EVALUATE THE MECHANISM. A failing trigger is not a bug to patch; it is the
+promise saying the scheme no longer earns its place.</code></pre>
+<p><code>:1493</code>. That message is the key to reading the triggers. A FAIL is meant to say <b>“stop
+and reconsider the scheme”</b>, not “patch the log until it’s green”. When a trigger <i>is</i> changed rather than obeyed, as trigger 3 was in #387, the change is the owner’s, and its reason is recorded in the docstring: old trigger 3 measured the ladder’s structure, not a decision.</p>
+<p>It runs in CI, as two steps of <code>.github/workflows/ci.yml</code>: the triggers and the
+self-test. It deliberately refuses the <code>NO-CALLER:</code> escape, because its predecessor took
+that escape and then never ran.</p>
+
+<h2 id="limits">10. What it cannot do</h2>
+<div class="k red"><b>Every row is written by hand, and nothing checks it.</b> The route taken and
+whether the stream stopped are judgements the coordinator (me) records. A wrong row produces a
+confident wrong verdict, whether the row is wrong by mistake or because the convenient score was chosen. The docstring treats this as a consequence of causation not being
+observable, not as a bug.</div>
+<div class="k green"><b>Your question (16:28): “dishonest” means it knows the right answer and gives a wrong one. If it cannot know, it is incompetent, not dishonest. Am I right? And what are a “row” and a “docstring”?</b>
+<p><b>You’re right, and “dishonest” was the wrong word.</b> I’ve changed the box above to say
+<i>a wrong row</i>. The script is neither dishonest nor incompetent. It has no way to judge a row
+at all, so it trusts what it is given, the way a calculator trusts the numbers you type. The fault,
+when there is one, is in the <i>input</i>.</p>
+<p>The person who writes the input (me) can be wrong in two different ways:</p>
+<ul>
+<li><b>An honest mistake:</b> I misjudge whether the findings stopped.</li>
+<li><b>A convenient choice:</b> I pick the reading that keeps the check quiet. That is what happened
+in #387 round 5, described just below. I wasn’t knowingly lying. I chose the score that suited me and
+didn’t question it. The reviewer caught it, not the script.</li>
+</ul>
+<p>Either way the script reports a confident verdict, which is why section 10 exists.</p>
+<p><b>Row:</b> one line of the decision log, <code>docs/reviews/decision-scheme/decision-log.jsonl</code>.
+Each line records <b>one bet</b> as a small JSON record. The first line of the real file begins:</p>
+<pre><code>{"subject": "decision-route-escalation", "unit": "corpus-cannot-run",
+ "route": "accrete", "outcome": "continued", "prediction": "…", "observed": "…", …}</code></pre>
+<p>“Row” because the file works like a table: one line per bet, the same fields on every line.</p>
+<p><b>Docstring:</b> in Python, a block of text placed at the top of a file or function to explain
+it. It is part of the code, so it can't get lost separately from it. When this page quotes “the
+docstring”, it is quoting that explanation inside <code>scripts/check-decision-scheme.py</code>, not a
+separate document.</p></div>
+<p><b>It has already happened once.</b> In #387 round 5, the reviewer upheld a Major against me.
+After round 4 I had scored the defer bet <code>stopped</code> and logged round 4’s finding on a
+<i>new, invented</i> unit starting at accrete. That kept trigger 2 quiet, and the defer’s own
+failure observation had actually been met. The correction (your option A) rescored the bet as
+<code>continued</code>, withdrew the invented row, and created trigger 11 so that honest scoring
+WARNs instead of staying red forever. That shrank the temptation, but did not remove it:</p>
+<blockquote><p>“scoring a deferral <code>stopped</code> is still QUIET, while scoring it honestly as a
+closed <code>continued</code> WARNS. The gap between the two is now a WARN, not a permanent red —
+smaller, not gone.” <span style="font-size:13px;color:var(--fg3)">— <code>t11_ladder_exhausted_closed</code> docstring</span></p></blockquote>
+<p>Other stated limits:</p>
+<ul>
+<li>A bet whose outcome is <b>never written</b> stays in flight forever. No trigger ages an unscored
+bet.</li>
+<li>A loss written as <code>retroactive: true</code> isn’t a bet, so trigger 3 skips it. Trigger 8
+catches it only when the subject has no real bets at all.</li>
+<li>“Close only at the end” is the author’s rule to keep, not something the code checks.</li>
+</ul>
+
+<h2 id="table">11. Measured vs inferred</h2>
+<div class="scroll"><table>
+<tr><th>claim</th><th>basis</th></tr>
+<tr><td>Ladder order, the four failure observations, and the never-retry, no-walk-back and skip-with-reason rules</td><td><span class="tag m">quoted</span> <code>check-decision-scheme.py</code> <code>:142</code>, <code>:147</code>, <code>:162</code>, <code>validate_row</code> <code>:858</code></td></tr>
+<tr><td>The order is by cost, cheapest first</td><td><span class="tag m">quoted</span> the comment above <code>LADDER</code></td></tr>
+<tr><td>There is no “start” state; a unit’s first bet is accrete</td><td><span class="tag m">quoted</span> <code>route_next</code> on an empty list; the word appears only in the rejected <code>start -&gt; split</code></td></tr>
+<tr><td>The trigger numbers are list positions in <code>main()</code>, FAILs 1–5 and WARNs 6–12</td><td><span class="tag m">quoted</span> <code>:1455–1473</code></td></tr>
+<tr><td>Labels 1–9 first appear in <code>ee0e461b</code> (#381); 10–12 and the new 3 in <code>40b765e4</code> (#387)</td><td><span class="tag m">measured</span> <code>git log -S</code> per label on master</td></tr>
+<tr><td>1–7 were the original set and 8–9 were added during #381’s review round 7</td><td><span class="tag i">inferred</span> from the plan’s “All seven triggers” heading and the r7 citations in the t8/t9 docstrings. The squash hides the intermediate commits</td></tr>
+<tr><td>FAILs staying contiguous is an accident of the order of addition</td><td><span class="tag i">inferred</span>; no rule in the code says so</td></tr>
+<tr><td>The old trigger 3 was “ROUTES COLLAPSED” and was deleted</td><td><span class="tag m">quoted</span> the <code>t3_lost_bet_not_escalated</code> docstring, plan §3 row t3</td></tr>
+<tr><td>Rows 11–14, the two pins, and today’s rc=0 with WARNs 6, 8, 10 and 11</td><td><span class="tag m">measured</span> read from the log and baseline at master, and the check run on an identical tree</td></tr>
+<tr><td>The round-5 mis-scoring episode</td><td><span class="tag m">quoted</span> <code>docs/reviews/coordinator/trigger3-lost-bet-r5-coordinator.md</code></td></tr>
+<tr><td>Your instruction that started the scheme</td><td><span class="tag m">quoted</span> as recorded in <code>docs/roadmap-to-launch.md</code>, not from the original conversation</td></tr>
+</table></div>
+
+</div>
+
+<script>/*yps-chrome-v1*/(function(){var K='yps-theme',A='data-theme',R=document.documentElement;function cur(){return R.getAttribute(A)||(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}try{var s=localStorage.getItem(K);if(s==='dark'||s==='light')R.setAttribute(A,s);}catch(e){}var b=document.getElementById('chrome-theme');if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);b.setAttribute('aria-pressed',String(n==='dark'));try{localStorage.setItem(K,n);}catch(e){}});}var TK='explainer-scheme',TA='data-scheme',TD='3';var box=document.getElementById('schemer');if(box){function sset(s){if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(TK);}catch(e){}}else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}var bs=box.querySelectorAll('button[data-s]');for(var i=0;i<bs.length;i++){var on=bs[i].getAttribute('data-s')===s;bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}box.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('button[data-s]'):null;if(b)sset(b.getAttribute('data-s'));});var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}sset(sv==='1'||sv==='2'?sv:TD);}var r=document.getElementById('chrome-refresh'),say=document.getElementById('chrome-refresh-say');if(r){r.addEventListener('click',function(){if(location.protocol==='file:'){if(say)say.textContent='opened as a file \u2014 no server to rebuild it; run the generator';return;}r.disabled=true;if(say)say.textContent='rebuilding\u2026';fetch('/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page:r.getAttribute('data-page')})}).then(function(x){if(!x.ok)return x.text().then(function(t){throw new Error(t);});return x.json();}).then(function(j){if(j&&j.warning){if(say)say.textContent='rebuilt WITH A WARNING: '+j.warning;return;}location.reload();}).catch(function(e){r.disabled=false;if(say)say.textContent='could not rebuild: '+e.message;});});}var bars=document.querySelectorAll('.chrome-slot .chrome');var slot=null,bar=null;for(var bi=0;bi<bars.length;bi++){if(bars[bi].querySelector('#chrome-theme,#schemer')){bar=bars[bi];slot=bar.closest('.chrome-slot');break;}}if(!bar&&bars.length){bar=bars[0];slot=bar.closest('.chrome-slot');}var sch=document.getElementById('schemer');if(bar&&sch&&!bar.contains(sch))bar.appendChild(sch);if(bar&&bar.querySelector('#chrome-theme,#schemer')){var tailPx=0;var ctls=bar.querySelectorAll('#chrome-theme,#schemer');var pin=function(on){if(bar.classList.contains('chrome-pinned')===on)return;bar.classList.toggle('chrome-pinned',on);if(!on)sync();};var io=null;var arm=function(){if(!window.IntersectionObserver)return;if(io)io.disconnect();io=new IntersectionObserver(function(es){pin(!es[0].isIntersecting);},{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};var sync=function(){if(bar.classList.contains('chrome-pinned'))return;var h=bar.getBoundingClientRect().height;slot.style.minHeight=h+'px';document.documentElement.style.setProperty('--chrome-h',h+'px');var sb=slot.getBoundingClientRect().bottom,m=Infinity;for(var i=0;i<ctls.length;i++){var b=ctls[i].getBoundingClientRect().bottom;if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));arm();};sync();if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}else{window.addEventListener('resize',sync);}if(!window.IntersectionObserver){var fb=function(){var r=slot.getBoundingClientRect();pin(r.bottom-tailPx<=0||r.top>=(window.innerHeight||document.documentElement.clientHeight));};fb();window.addEventListener('scroll',fb);window.addEventListener('resize',fb);}}})();</script>
+<div id="tray"><div class="in">
+  <div id="qt"></div>
+  <textarea id="qbox" placeholder="Ask about this section — it goes straight to the session."></textarea>
+  <div class="trow">
+    <button id="sendbtn" type="button">Send</button>
+    <button id="closebtn" type="button">Close</button>
+    <span id="sentnote"></span>
+  </div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var LIVE = location.protocol === 'http:' || location.protocol === 'https:';
+  var chip = document.getElementById('modechip');
+  if (chip) {
+    chip.textContent = LIVE ? '● live — Send works' : '○ local file — Send unavailable, copies instead';
+    chip.style.color = LIVE ? 'var(--verified)' : 'var(--fg3)';
+    chip.style.borderColor = LIVE ? 'var(--verified-br)' : 'var(--rule)';
+  }
+
+  var tray = document.getElementById('tray'),
+      qbox = document.getElementById('qbox'),
+      qt   = document.getElementById('qt'),
+      note = document.getElementById('sentnote'),
+      sendbtn = document.getElementById('sendbtn'),
+      closebtn = document.getElementById('closebtn');
+  var ctxSection = '', ctxQuote = '';
+
+  if (!LIVE) { sendbtn.textContent = 'Copy'; }
+
+  // The ask button is a CHILD of the heading, so textContent swallows its label — measured during
+  // verification: a question arrived tagged "…had never workedask". Read the heading without it.
+  function headingText(h){
+    var out = '';
+    Array.prototype.forEach.call(h.childNodes, function(n){
+      if (n.nodeType === 1 && n.classList && n.classList.contains('askbtn')) return;
+      out += n.textContent;
+    });
+    return out.trim();
+  }
+
+  function nearestHeading(node){
+    var el = node && node.nodeType === 3 ? node.parentNode : node;
+    while (el && el !== document.body){
+      var p = el.previousElementSibling;
+      while (p){
+        if (/^H[1-4]$/.test(p.tagName)) return headingText(p);
+        p = p.previousElementSibling;
+      }
+      el = el.parentNode;
+    }
+    return '';
+  }
+
+  function openTray(section, quote){
+    ctxSection = section || '(no section)';
+    ctxQuote = quote || '';
+    qt.innerHTML = '<b>' + escapeHtml(ctxSection) + '</b>' +
+      (ctxQuote ? ' — “' + escapeHtml(ctxQuote.slice(0,180)) + (ctxQuote.length>180?'…':'') + '”'
+                : ' — nothing highlighted');
+    note.textContent = ''; note.className = '';
+    tray.classList.add('on');
+    qbox.focus();
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Hover-a-heading → ask button
+  Array.prototype.forEach.call(document.querySelectorAll('h2, h3'), function(h){
+    var b = document.createElement('button');
+    b.className = 'askbtn'; b.type = 'button'; b.textContent = 'ask';
+    b.style.right = '0'; b.style.top = '.85rem'; b.style.opacity = '0';
+    b.style.transition = 'opacity .12s';
+    h.appendChild(b);
+    h.addEventListener('mouseenter', function(){ b.style.opacity = '1'; });
+    h.addEventListener('mouseleave', function(){ b.style.opacity = '0'; });
+    b.addEventListener('focus', function(){ b.style.opacity = '1'; });
+    b.addEventListener('click', function(e){
+      e.preventDefault();
+      openTray(headingText(h), '');
+    });
+  });
+
+  // Selection → floating ask button
+  var floater = null;
+  document.addEventListener('mouseup', function(){
+    setTimeout(function(){
+      var sel = window.getSelection();
+      if (floater) { floater.remove(); floater = null; }
+      if (!sel || sel.isCollapsed) return;
+      var text = sel.toString().trim();
+      if (text.length < 3) return;
+      var r = sel.getRangeAt(0).getBoundingClientRect();
+      floater = document.createElement('button');
+      floater.className = 'askbtn'; floater.type = 'button'; floater.textContent = 'ask';
+      floater.style.position = 'fixed';
+      floater.style.left = Math.max(8, Math.min(window.innerWidth - 70, r.left)) + 'px';
+      floater.style.top  = Math.max(8, r.top - 30) + 'px';
+      var section = nearestHeading(sel.anchorNode);
+      floater.addEventListener('mousedown', function(e){ e.preventDefault(); });
+      floater.addEventListener('click', function(){
+        openTray(section, text);
+        if (floater) { floater.remove(); floater = null; }
+      });
+      document.body.appendChild(floater);
+    }, 10);
+  });
+
+  function compose(){
+    // The exact shape the session's monitor parses: section line, quote line, question line.
+    return '**' + ctxSection + '**\n' +
+           '   > ' + (ctxQuote ? ctxQuote.replace(/\s+/g,' ').slice(0,400) : '(nothing highlighted)') + '\n' +
+           '   Q: ' + qbox.value.trim();
+  }
+
+  function send(){
+    var q = qbox.value.trim();
+    if (!q) { note.className = 'err'; note.textContent = 'Type a question first.'; return; }
+    var body = compose();
+    if (!LIVE){
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(body).then(function(){
+          note.className = ''; note.textContent = 'Copied to clipboard — paste it into the session.';
+        }, function(){
+          note.className = 'err'; note.textContent = 'Could not copy. Select the text manually.';
+        });
+      } else {
+        note.className = 'err'; note.textContent = 'No clipboard here — copy your question manually.';
+      }
+      return;
+    }
+    sendbtn.disabled = true;
+    note.className = ''; note.textContent = 'Sending…';
+    fetch('/questions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ doc: location.pathname.replace(/^\//,'') || 'latest', text: body })
+    }).then(function(r){
+      sendbtn.disabled = false;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      note.className = '';
+      note.textContent = '✓ Sent. The session is watching questions.md — if nothing comes back, say “read my questions”.';
+      qbox.value = '';
+    }).catch(function(e){
+      sendbtn.disabled = false;
+      note.className = 'err';
+      note.textContent = 'Send failed (' + e.message + '). Is the server still running? python3 scripts/explainer-serve.py';
+    });
+  }
+
+  sendbtn.addEventListener('click', send);
+  closebtn.addEventListener('click', function(){ tray.classList.remove('on'); });
+  qbox.addEventListener('keydown', function(e){
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    if (e.key === 'Escape') tray.classList.remove('on');
+  });
+})();
+</script>
+</body>
+</html>
