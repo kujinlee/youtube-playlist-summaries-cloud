@@ -10,7 +10,7 @@ jest.mock('@google/generative-ai', () => ({
   GoogleGenerativeAI: jest.fn(() => ({ getGenerativeModel: mockGetGenerativeModel })),
 }));
 
-import { fixSummary } from '@/lib/gemini';
+import { fixSummary, type UsageMeter } from '@/lib/gemini';
 import { CORRECTION_CAPS } from '@/lib/corrections/apply-core';
 
 const ok = (text: string, usage?: { promptTokenCount: number; candidatesTokenCount: number }) => ({
@@ -95,18 +95,99 @@ describe('fixSummary caps and cancellation', () => {
   });
 });
 
-describe('fixSummary reports what the call actually used', () => {
-  it('returns the token counts the SDK reported', async () => {
-    mockGenerateContent.mockResolvedValue(ok('corrected', { promptTokenCount: 10_000, candidatesTokenCount: 4_000 }));
-    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+// Backlog #62. The usage of a press is EVERY attempt that was billed, not the one that won: both
+// retry triggers (truncation, empty content) fire AFTER generateContent returned, so the attempt
+// they discard has already been paid for. The meter is filled as each response arrives, so it is
+// still complete when fixSummary throws — the caller records spend from it on either path.
+const truncated = (usage?: { promptTokenCount: number; candidatesTokenCount: number }) => ({
+  response: {
+    text: () => 'half a docu',
+    candidates: [{ finishReason: 'MAX_TOKENS' }],
+    ...(usage ? { usageMetadata: usage } : {}),
+  },
+});
+
+describe('fixSummary meters every billed attempt (backlog #62)', () => {
+  const u = (p: number, o: number) => ({ promptTokenCount: p, candidatesTokenCount: o });
+
+  it('records the token counts the SDK reported', async () => {
+    mockGenerateContent.mockResolvedValue(ok('corrected', u(10_000, 4_000)));
+    const meter: UsageMeter = { attempts: [] };
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal, meter });
     expect(r.text).toBe('corrected');
-    expect(r.usage).toEqual({ promptTokens: 10_000, outputTokens: 4_000 });
+    expect(meter.attempts).toEqual([{ promptTokens: 10_000, outputTokens: 4_000 }]);
   });
 
-  it('returns usage: null — NOT zero — when the SDK reported no usageMetadata', async () => {
+  it('records the attempt with null counts — NOT zero, and NOT dropped — when the SDK reported no usageMetadata', async () => {
     mockGenerateContent.mockResolvedValue(ok('corrected'));
-    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
-    expect(r.usage).toBeNull();   // "could not measure" is not "cost nothing"
+    const meter: UsageMeter = { attempts: [] };
+    await fixSummary('md', 'c', { signal: new AbortController().signal, meter });
+    // billed, but "could not measure" is not "cost nothing" — and the attempt still COUNTS
+    expect(meter.attempts).toEqual([{ promptTokens: null, outputTokens: null }]);
+  });
+
+  it('keeps the HALF it could measure when only one usage field was reported (round 1, Codex H2)', async () => {
+    mockGenerateContent.mockResolvedValue({
+      response: { text: () => 'corrected', candidates: [{ finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 7_000 } },
+    });
+    const meter: UsageMeter = { attempts: [] };
+    await fixSummary('md', 'c', { signal: new AbortController().signal, meter });
+    expect(meter.attempts).toEqual([{ promptTokens: 7_000, outputTokens: null }]);
+  });
+
+  it('records the attempts a retry DISCARDED, not only the winner', async () => {
+    mockGenerateContent
+      .mockResolvedValueOnce(truncated(u(1_000, 100)))
+      .mockResolvedValueOnce(ok('   ', u(2_000, 200)))       // empty content — the other trigger
+      .mockResolvedValueOnce(ok('corrected', u(3_000, 300)));
+    const meter: UsageMeter = { attempts: [] };
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal, meter }, 2, 0);
+    expect(r.text).toBe('corrected');
+    expect(meter.attempts).toEqual([
+      { promptTokens: 1_000, outputTokens: 100 },
+      { promptTokens: 2_000, outputTokens: 200 },
+      { promptTokens: 3_000, outputTokens: 300 },
+    ]);
+  });
+
+  it('leaves the meter complete when every attempt fails — the throw path carries the spend', async () => {
+    mockGenerateContent.mockResolvedValue(truncated(u(1_000, 100)));
+    const meter: UsageMeter = { attempts: [] };
+    await expect(fixSummary('md', 'c', { signal: new AbortController().signal, meter }, 2, 0))
+      .rejects.toThrow(/summary fix failed/);
+    expect(meter.attempts).toHaveLength(3);
+  });
+
+  it('keeps the billed attempt when an abort lands during the backoff after it', async () => {
+    const ac = new AbortController();
+    mockGenerateContent.mockImplementationOnce(async () => { ac.abort(); return truncated(u(1_000, 100)); });
+    const meter: UsageMeter = { attempts: [] };
+    await expect(fixSummary('md', 'c', { signal: ac.signal, meter }, 2, 400))
+      .rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+    expect(meter.attempts).toEqual([{ promptTokens: 1_000, outputTokens: 100 }]);
+  });
+
+  // The cancel and timeout cases are NOT here. They live in gemini-fix-summary-real-sdk.test.ts,
+  // against the real SDK and a local server, because this file's mocked SDK can only throw the error
+  // shape a test author imagines — and round 2's hand-thrown shape was not the one the SDK produces
+  // for a body-read timeout (round 3, both halves).
+  it('charges a call that THREW at dispatch — every exit is metered, whatever the error (round 3)', async () => {
+    mockGenerateContent.mockRejectedValue(new Error('503 unavailable'));
+    const meter: UsageMeter = { attempts: [] };
+    await expect(fixSummary('md', 'c', { signal: new AbortController().signal, meter }, 1, 0)).rejects.toThrow();
+    // Two dispatched attempts, neither answered: both stay at unknown usage — the accepted over-count.
+    expect(meter.attempts).toEqual([
+      { promptTokens: null, outputTokens: null },
+      { promptTokens: null, outputTokens: null },
+    ]);
+  });
+
+  it('meters nothing for an attempt never dispatched — an abort before the first call', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const meter: UsageMeter = { attempts: [] };
+    await expect(fixSummary('md', 'c', { signal: ac.signal, meter })).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+    expect(meter.attempts).toEqual([]);
   });
 });
 

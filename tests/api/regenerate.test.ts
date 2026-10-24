@@ -89,7 +89,7 @@ beforeEach(() => {
       updateVideoAnnotations: mockUpdateVideoAnnotations,
     },
   } as unknown as ReturnType<typeof resolve.getStorageBundle>);
-  mockFixSummary.mockResolvedValue({ text: MD_CONTENT, usage: null });
+  mockFixSummary.mockResolvedValue({ text: MD_CONTENT });
   mockExtractQuickView.mockResolvedValue({
     tldr: 'This video teaches X.',
     takeaways: ['Point one', 'Point two'],
