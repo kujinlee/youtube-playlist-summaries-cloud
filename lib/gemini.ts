@@ -500,6 +500,20 @@ ${summaryMarkdown}
 export interface GeminiUsage { promptTokens: number; outputTokens: number }
 
 /**
+ * Every BILLED attempt of one fixSummary call, in order, owned by the CALLER (backlog #62).
+ *
+ * An attempt is pushed the moment `generateContent` returns — before `assertNotTruncated` or the
+ * empty-content check can throw it away — because by then it has been paid for. Returning usage
+ * instead reported only the winning attempt and nothing at all on a throw, so a press that retried
+ * under-reported and a press that failed recorded no spend. The caller reads this AFTER the call
+ * settles, on either path. `null` is "billed, but the SDK reported no usage", never "free".
+ *
+ * A `generateContent` that itself throws pushes nothing: no response arrived, so there is no usage
+ * to read. Whether such a call was billed is not observable from here.
+ */
+export interface UsageMeter { attempts: Array<GeminiUsage | null> }
+
+/**
  * Remove a code fence that wraps the ENTIRE response, and nothing else.
  *
  * MEASURED IN PRODUCTION 2026-08-24, on the first live press of the correction feature: of eight
@@ -536,10 +550,10 @@ export async function fixSummary(
   // REQUIRED third parameter. `signal` optional here would let a caller silently restore an
   // uncancellable ~181 s paid call; `caps` stays optional because the LOCAL pipeline passes none by
   // design (withCaps returns `base` unchanged when caps is undefined, :41).
-  opts: { signal: AbortSignal; caps?: CloudGeminiCaps },
+  opts: { signal: AbortSignal; caps?: CloudGeminiCaps; meter?: UsageMeter },
   retries = 2,
   baseDelayMs = 400,
-): Promise<{ text: string; usage: GeminiUsage | null }> {
+): Promise<{ text: string }> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
@@ -572,18 +586,19 @@ ${mdContent}
         timeout: REQUEST_TIMEOUT_MS,
         signal: opts.signal,
       });
+      // METER FIRST — this attempt is billed whether or not the two checks below keep it.
+      const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
+      // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
+      // facts, and collapsing them would understate spend exactly where it matters.
+      opts.meter?.attempts.push(um && um.promptTokenCount != null && um.candidatesTokenCount != null
+        ? { promptTokens: um.promptTokenCount, outputTokens: um.candidatesTokenCount }
+        : null);
       assertNotTruncated(result);
       // Unwrap BEFORE the empty check: '```\n\n```' is a non-empty string but an empty response,
       // and letting it through would report a structural failure for what is really nothing back.
       const corrected = unwrapFencedDocument(result.response.text().trim());
       if (!corrected) throw new Error('Gemini returned empty content');
-      const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
-      // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
-      // facts, and collapsing them would understate spend exactly where it matters.
-      const usage = um && um.promptTokenCount != null && um.candidatesTokenCount != null
-        ? { promptTokens: um.promptTokenCount, outputTokens: um.candidatesTokenCount }
-        : null;
-      return { text: corrected, usage };
+      return { text: corrected };
     } catch (err) {
       // Preserve AbortError identity unwrapped so the caller can distinguish cancellation from a
       // real failure (same rule as generateSummary's catch).

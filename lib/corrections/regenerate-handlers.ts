@@ -14,7 +14,36 @@ import { NonRetryableError } from '@/lib/job-queue/errors';
 import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { loadSummaryForServe } from '@/lib/html-doc/serve-summary-core';
-import { applyCorrection, CORRECTION_CAPS } from '@/lib/corrections/apply-core';
+import { applyCorrection, CORRECTION_CAPS, meteredCorrectionCents } from '@/lib/corrections/apply-core';
+import type { UsageMeter } from '@/lib/gemini';
+import { StructuralValidationError, type StructuralFailureReason } from '@/lib/corrections/structural-validation';
+
+/** What the reader is told when the model's corrected document failed structural validation
+ *  (backlog #63). The validator's own message is for the log — it names section indices and parsed
+ *  tuples the reader cannot act on. Typed by reason so a new reason is a compile error here, not a
+ *  raw string in the panel. 422, not 500: nothing failed on the server, and nothing was saved. */
+export const STRUCTURAL_REFUSALS: Record<StructuralFailureReason, { code: string; error: string }> = {
+  'missing-frontmatter': {
+    code: 'structure-missing-frontmatter',
+    error: 'The corrected summary came back without its metadata header, so it was not saved. Please try again.',
+  },
+  'missing-h1': {
+    code: 'structure-missing-h1',
+    error: 'The corrected summary came back without its title, so it was not saved. Please try again.',
+  },
+  'section-count': {
+    code: 'structure-section-count',
+    error: 'The correction added or removed a section, so it was not saved. Corrections can change wording, not which sections exist.',
+  },
+  'section-title': {
+    code: 'structure-section-title',
+    error: 'The correction changed a section heading, so it was not saved. Corrections cannot rename sections.',
+  },
+  'section-timestamp': {
+    code: 'structure-section-timestamp',
+    error: 'The correction changed a section\'s video timestamp link, so it was not saved. Please try again.',
+  },
+};
 
 /** The whole handler, LOCAL and CLOUD, lifted out of app/ so the route file holds no backend
  *  fork, no UUID literal and no serveLocal/serveCloud names — see lib/http/request-scope.ts for
@@ -195,6 +224,10 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     );
   }
 
+  // Filled by fixSummary as each paid attempt returns, and read in the `finally` below — so a press
+  // that throws AFTER paying still records what it paid (backlog #62).
+  const meter: UsageMeter = { attempts: [] };
+
   // EVERYTHING BELOW IS INSIDE THE TRY. On the local branch `getStorageBundle()` sits OUTSIDE it,
   // so a missing client 500s instead of returning an error.
   try {
@@ -241,6 +274,7 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
         tags: video.tags ?? [],
         signal: request.signal,
         caps: CORRECTION_CAPS,
+        meter,
       });
       tldr = applied.tldr;
       takeaways = applied.takeaways;
@@ -252,30 +286,6 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
       // `artifacts.summaryMd.key` and falls back to the top-level field, so writing to
       // `video.summaryMd` could target a blob the artifact record does not govern.
       await blobStore.put(principal, mdKey, Buffer.from(applied.content, 'utf-8'), 'text/markdown');
-
-      // Record ACTUAL spend, after the call returned (spec §5.2). Post-hoc, not pre-authorised:
-      // the guardrails see this on the NEXT decision, which is the accepted trade.
-      //
-      // ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST. The money is already spent and the corrected
-      // body is already durable in storage; a 500 here would report failure for work that landed and
-      // invite the user to press again — paying twice to fix a bookkeeping error. That includes
-      // hitting the per-owner daily bound: the correction still happened and the user still gets it.
-      // Log loudly instead. Same rule as the envelope-invalidation failure the spec settled in §2.
-      if (applied.actualCents != null) {
-        const { error: spendError } = await supabase.rpc('record_correction_spend', {
-          p_cents: applied.actualCents,
-        });
-        if (spendError) {
-          console.error(
-            `[correction-spend] FAILED to record owner=${principal.id} video=${videoId} `
-            + `cents=${applied.actualCents}: ${spendError.message}`,
-          );
-        }
-      } else {
-        // null is "the SDK reported no usage", NOT "free" (Task 5). Recording 0 would be a lie the
-        // ledger cannot distinguish from a genuinely free call.
-        console.warn(`[correction-spend] UNMEASURED owner=${principal.id} video=${videoId}`);
-      }
     } else {
       // Bare press or explicit clear: quick-view still refreshes (spec §3), but NOTHING is written to
       // the blob — the prose did not change and a rewritten callout would move the body hash, which
@@ -309,6 +319,53 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
         { status: 413 },
       );
     }
+    if (err instanceof StructuralValidationError) {
+      const { code, error } = STRUCTURAL_REFUSALS[err.reason];
+      return NextResponse.json({ error, code }, { status: 422 });
+    }
     return NextResponse.json({ error: errorSummary(err) }, { status: 500 });
+  } finally {
+    // AFTER the response is decided, on EVERY path: success, structural refusal, exhausted retries,
+    // a failed blob write, an abort. On success this still runs after `blobStore.put`.
+    await recordCorrectionSpend(supabase, meter, user.id, videoId);
+  }
+}
+
+/**
+ * Record ACTUAL spend, after the paid call settled (spec §5.2). Post-hoc, not pre-authorised: the
+ * guardrails see this on the NEXT decision, which is the accepted trade (reserve/settle is #61).
+ *
+ * ⚠ RUNS WHATEVER THE OUTCOME (backlog #62). It used to run only after a successful correction, and
+ * this RPC is the sole writer of both the per-owner-per-day counter and the `spend_ledger` the daily
+ * cap watches — so a correction made to fail deterministically spent in a loop while every guardrail
+ * read zero. Measured in production 2026-08-24: a failed press left 0 rows and the ledger unmoved.
+ *
+ * ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST — and it cannot, because it NEVER THROWS. The money
+ * is already spent; on success the corrected body is already durable, and a 500 would invite the user
+ * to press again, paying twice to fix a bookkeeping error. That includes hitting the per-owner daily
+ * bound. Log loudly instead. Same rule as the envelope-invalidation failure the spec settled in §2.
+ */
+async function recordCorrectionSpend(
+  supabase: ReturnType<typeof createServerSupabase>, meter: UsageMeter, ownerId: string, videoId: string,
+): Promise<void> {
+  if (meter.attempts.length === 0) return;   // bare press, preflight refusal, early 4xx: nothing paid
+  const { cents, unmeasured } = meteredCorrectionCents(meter);
+  if (unmeasured > 0) {
+    // null is "the SDK reported no usage", NOT "free" (Task 5). Recording 0 would be a lie the
+    // ledger cannot distinguish from a genuinely free call.
+    console.warn(`[correction-spend] UNMEASURED owner=${ownerId} video=${videoId} attempts=${unmeasured}`);
+  }
+  if (cents == null) return;
+  try {
+    const { error } = await supabase.rpc('record_correction_spend', { p_cents: cents });
+    if (error) {
+      console.error(
+        `[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${cents}: ${error.message}`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${cents}: ${errorSummary(err)}`,
+    );
   }
 }

@@ -17289,3 +17289,27 @@ now notes that `t3_routes_collapsed` was removed by PR #387 (`40b765e4`).
 ⚠ Found while editing: `gen-backlog-page.py` treats ANY ✅ in a Status cell as closed (`closed=("✅"
 in status)`), so a status note that merely mentions another row being closed with a ✅ silently
 closes this row. Two of these edits did that and were reworded before commit.
+
+## 2026-10-24
+A correction that fails now counts against the spending limits. Until now, when someone asked for a
+correction and the result was thrown away (for example because the model deleted a section), Gemini
+had already been paid but nothing was written down, so the daily limits never saw it and a person
+could keep spending while every counter read zero. Presses that retried were also under-counted,
+because only the last try was recorded. Now every paid try is counted, whether the correction worked
+or not, and if writing that record fails the user's answer does not change.
+
+The same branch replaces the confusing error a user saw when a correction was thrown away (*"corrected
+document does not start with a YAML frontmatter delimiter"*) with a plain sentence saying what
+happened and that nothing was saved.
+
+This is not live yet: production keeps the old behaviour until a release ships it.
+<!--tech-->
+Backlog #62 and #63, branch `fix/correction-spend-on-failure`. `fixSummary` pushes each billed
+attempt into a caller-owned `UsageMeter` before the retry triggers can discard it, and no longer
+returns `usage`; `serveCloud` records from the meter in a `finally` via `recordCorrectionSpend`,
+which never throws. Pricing is per attempt, summed (`meteredCorrectionCents`), matching 0026's
+3 × 3¢ derivation of its 12¢ ceiling. No migration. `STRUCTURAL_REFUSALS` maps each
+`StructuralFailureReason` to a 422 with `code: structure-<reason>`. Verified on the live local
+stack (17/17 across `corrections-cloud` and `record-correction-spend`): a refused press moves
+`spend_ledger` by 1¢ and writes `correction_spend` `calls=1, cents=1`. Reservation (backlog #61)
+deliberately not built.

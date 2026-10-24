@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fixSummary, extractQuickView, assertCorrectionInputWithinCap, SUMMARY_MODEL } from '@/lib/gemini';
+import type { UsageMeter } from '@/lib/gemini';
 import {
   MAX_TRANSCRIBE_INPUT_TOKENS, MAX_TRANSCRIBE_OUTPUT_TOKENS, MAX_TRANSCRIPT_INPUT_BYTES,
   MAX_SUMMARY_OUTPUT_TOKENS, correctionActualCents,
@@ -38,14 +39,36 @@ export interface ApplyCorrectionInput {
   signal: AbortSignal;
   /** Absent on the LOCAL branch by design — withCaps then returns the base config unchanged. */
   caps?: CloudGeminiCaps;
+  /** REQUIRED and CALLER-OWNED (backlog #62). It is filled as each paid attempt returns, so the
+   *  caller can record spend after this function THROWS — the structural validator, a failed
+   *  quick-view, an exhausted retry. A spend figure on the result would exist only on success. */
+  meter: UsageMeter;
 }
 
 export interface ApplyCorrectionResult {
   content: string;
   tldr: string;
   takeaways: string[];
-  /** null means "the SDK reported no usage", NOT "free". */
-  actualCents: number | null;
+}
+
+/**
+ * Price a correction from its meter. Each attempt is priced as its own call and the ceilings summed:
+ * that is how 0026 derives its 12¢ per-call ceiling (3 attempts × 3¢), and pricing the summed
+ * tokens once would round below it. `cents` is null when no billed attempt was measured — "the SDK
+ * reported nothing", not "free" — and `unmeasured` counts the attempts the figure cannot include.
+ *
+ * Counts fixSummary only. extractQuickView's usage is NOT included — the SDK reports it on a
+ * different call and nothing in this repo reads it yet; adding it is a separate measurement, not an
+ * assumption to bury here.
+ */
+export function meteredCorrectionCents(meter: UsageMeter): { cents: number | null; unmeasured: number } {
+  let cents: number | null = null;
+  let unmeasured = 0;
+  for (const usage of meter.attempts) {
+    if (usage) cents = (cents ?? 0) + correctionActualCents(usage);
+    else unmeasured++;
+  }
+  return { cents, unmeasured };
 }
 
 /**
@@ -69,8 +92,8 @@ export async function applyCorrection(input: ApplyCorrectionInput): Promise<Appl
     );
   }
 
-  const { text: fixed, usage } = await fixSummary(
-    stripped, input.corrections, { signal: input.signal, caps: input.caps },
+  const { text: fixed } = await fixSummary(
+    stripped, input.corrections, { signal: input.signal, caps: input.caps, meter: input.meter },
   );
   // Validate BEFORE paying for quick-view: a structural failure discards the correction, so there is
   // no reason to buy an extraction of a document that is about to be thrown away.
@@ -80,9 +103,5 @@ export async function applyCorrection(input: ApplyCorrectionInput): Promise<Appl
     content: insertQuickViewCallout(fixed, tldr, takeaways, input.tags),
     tldr,
     takeaways,
-    // Counts fixSummary only. extractQuickView's usage is NOT included — the SDK reports it on a
-    // different call and nothing in this repo reads it yet; adding it is a separate measurement, not
-    // an assumption to bury here.
-    actualCents: usage ? correctionActualCents(usage) : null,
   };
 }
