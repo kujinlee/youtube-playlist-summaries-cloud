@@ -490,6 +490,10 @@ nobody is looking at the repair.
    sentence after *"Fix."* never does.
 4. **Rounds 2+ alternate**, scoped to the delta, sent to the half that did NOT author the fix.
    Match the reviewer to the risk: reproduction and execution → Codex; experiment design → Claude.
+   ⚠ **"Alternate" has two readings on record, and which one governs is the OWNER's decision**
+   (backlog #339, open). *Pair-per-round:* both halves of round N run one after the other and are
+   filed as round N. *One-half-per-round:* each round carries one half, and records `REVIEW GAP:
+   <half> — alternation`. `check-review-rounds.py` accepts both today, and for a solo half in round 2 or later its failure line names both.
 5. **Stop when a round has seen the tree that will merge** and no code change follows it. Holding
    the last round's fixes uncommitted so the reviewer sees the final state satisfies this and is the
    documented way to do it.

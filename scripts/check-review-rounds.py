@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 87 cases
+    python3 scripts/check-review-rounds.py --self-test # 90 cases
 
 WHY THIS EXISTS
 ---------------
@@ -146,6 +146,19 @@ def by_subject_rounds(rows):
 # A coordinator file ADJUDICATES the two halves; it is not itself a half. Counting it would let a
 # round pass with one reviewer and its own summary — the shape this check exists to catch.
 HALVES = ("codex", "claude")
+
+# ⛔ backlog #339: the failure line is the only thing a person reads at the moment of the mistake,
+# and for a round 2+ solo half the usual cause is one of two readings of "rounds 2+ alternate".
+# The repository holds BOTH: some subjects file each round as a pair, ~40 round documents file one
+# half per round with a `REVIEW GAP: … alternation` line, and this gate accepts both. Which one
+# governs is the OWNER's decision (backlog #339), so the hint NAMES both and decides neither.
+# ⚠ Not printed for round 1, which is concurrent under every reading. ⚠ It cannot tell an
+# alternation question from a half that is still IN FLIGHT — nothing on disk distinguishes "not
+# written yet" from "never ran" — so a round 2+ half whose partner is still running gets it too.
+PAIRING_RULE = ("rounds 2+ alternate, and two readings of that are on record — EITHER file both "
+                "halves under this round number, OR record `REVIEW GAP: <half> — alternation` in "
+                "the one that ran; which reading governs is the owner's decision (backlog #339, "
+                "docs/review-method.md → *The protocol*, step 4)")
 
 # Emphasis may wrap the marker on EITHER side — `**REVIEW GAP:** codex — …` is the natural way to
 # write it in a review doc, and the first version only tolerated it on the left. Caught by the
@@ -595,6 +608,7 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
         problems.append(
             f"{key[0]} round {key[1]}: only {'+'.join(present) or 'nothing'} — "
             f"{'/'.join(missing)} neither ran nor recorded a `REVIEW GAP:` line"
+            + (f" — {PAIRING_RULE}" if key[1] > 1 else "")
         )
 
     for stale in sorted(known - exempt_used):
@@ -726,6 +740,26 @@ def self_test() -> int:
 
         d = tree({"p-r1-codex.md": "x"})
         check("solo half FAILS", len(audit(d, set())[0]) == 1, True)
+
+        # ⛔ backlog #339 — the row's own FALSIFIER: an alternating round filed one half per round
+        # number. r1 is a pair; r2 carries only Codex and r3 only Claude. Under one reading of
+        # "alternate" these are one round mis-numbered; under the other each needs a REVIEW GAP
+        # line. WHICH READING GOVERNS IS THE OWNER'S DECISION (backlog #339, r1 fold), so the gate
+        # names BOTH and decides neither — a message that picked one would settle the policy.
+        d = tree({"p-r1-codex.md": "x", "p-r1-claude.md": "y",
+                  "p-r2-codex.md": "x", "p-r3-claude.md": "y"})
+        _alt = audit(d, set())[0]
+        check("an alternating round filed under TWO numbers fails BOTH, not neither",
+              len(_alt) == 2, True)
+        check("⭐ …and each failure names BOTH readings of `alternate` and who decides (backlog #339)",
+              all(PAIRING_RULE in p for p in _alt) and "both halves under this round number"
+              in PAIRING_RULE and "REVIEW GAP:" in PAIRING_RULE and "owner" in PAIRING_RULE
+              and "backlog #339" in PAIRING_RULE, True)
+        # r1 fold, LOW 4: round 1 is CONCURRENT under every reading, so the alternation hint is
+        # noise there — a solo round 1 is a half that has not landed, or one that never ran.
+        d = tree({"p-r1-codex.md": "x"})
+        check("a solo ROUND 1 does not carry the alternation hint — round 1 never alternates",
+              any(PAIRING_RULE in p for p in audit(d, set())[0]), False)
 
         d = tree({"p-r1-codex.md": "REVIEW GAP: claude — not invoked; ran as r3"})
         check("solo half + gap line passes (the Codex-down path)", audit(d, set())[0] == [], True)
