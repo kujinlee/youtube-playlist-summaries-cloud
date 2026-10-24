@@ -17328,7 +17328,8 @@ Open by severity, before → after: 🔴 8→3, 🟠 97→63, 🟡 95→106, �
 Not touched: backlog #62, #63, #231, #306, #310, #318, #339, #340 and #343, which are owned by open branches.
 Declined: #124–#127 (not moot; #193 depends on them, and #125 is #193's blocker).
 Every bare `#N` in the 98 edited rows was qualified, because `check-reference-namespace.py` reads each
-edited row as added. That came to 351 references: 307 marked backlog, 40 PR and 4 task. One could not
+edited row as added; on the branch the guard finds 0 bare references left (no per-namespace breakdown is
+stated: the first one written here did not reproduce — backlog-scrub r6). One could not
 be resolved and says so (in #289, `#290`); one ordinal was rewritten as `⑽` (in #213).
 ⚠ `gen-backlog-page.py` warns that `GROUPS` still names #1, #3, #89 (and #49, which was already
 closed). This is warn-only, and the generator file was not changed.
