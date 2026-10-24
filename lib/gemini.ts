@@ -519,7 +519,10 @@ export interface GeminiUsage { promptTokens: number; outputTokens: number }
  * ⚠ THE ACCEPTED OVER-COUNT. An attempt that never reached Gemini, or was refused before generating
  * (a network fault, an HTTP 4xx/5xx), is charged at the bound too. That is the conservative direction
  * on purpose: Gemini's billing of a cut-off or failed request is not observable here, and an
- * under-count is a bound evasion while an over-count only spends the owner's allowance sooner.
+ * under-count is a bound evasion while an over-count errs toward stopping spend. ⚠ It is NOT confined to
+ * the owner: `record_correction_spend` also adds to `spend_ledger.actual_cents`, the GLOBAL daily-cap
+ * operand for summaries, serve charges and digs, so during a Gemini outage phantom cents (≤ 72¢ per owner
+ * per day: 8 presses × 9¢) consume everyone's headroom (correction-spend-on-failure r4 Claude F1).
  */
 export interface MeteredAttempt { promptTokens: number | null; outputTokens: number | null }
 export interface UsageMeter { attempts: MeteredAttempt[] }

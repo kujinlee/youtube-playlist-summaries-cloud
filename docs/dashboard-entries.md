@@ -17371,8 +17371,10 @@ cost the moment it is sent. If Gemini then answers and says how much it used, th
 replaces that estimate. So a try that is thrown away, cut off by a disconnect or a timeout, or
 answered without usage figures is still counted. Walking away from a correction no longer gets around
 the daily limit. The cost of this is that a try which failed before Gemini did any work is counted
-too. That is deliberate: it can only use up a person's allowance sooner, never let spending slip
-past it.
+too. That is deliberate: it errs toward stopping spending, never toward letting it slip past a limit.
+It is not free, though: those counted-but-unused cents also go into the shared daily total that every
+other kind of work is checked against, so during a Gemini outage they can use up that total sooner
+(at most 72¢ per person per day).
 
 The spending record is written on every outcome, success or failure. If writing it is slow, the
 person waits at most three extra seconds, and the answer they get does not change. Once the daily
