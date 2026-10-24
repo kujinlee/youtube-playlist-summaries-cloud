@@ -10,6 +10,8 @@ import { POST } from '../../app/api/videos/[id]/regenerate/route';
 import * as serverSupabase from '../../lib/supabase/server';
 import * as serveCore from '../../lib/html-doc/serve-summary-core';
 import * as gemini from '../../lib/gemini';
+import { CORRECTION_WORST_ATTEMPT_CENTS } from '../../lib/corrections/apply-core';
+import { CORRECTION_RPC_TIMEOUT_MS } from '../../lib/corrections/regenerate-handlers';
 
 const PLAYLIST_ID = '11111111-2222-3333-4444-555555555555';
 const VIDEO_ID = 'testVideoId1';
@@ -35,11 +37,21 @@ const mockPut = jest.fn();
 const mockUpdateVideoFields = jest.fn();
 const mockUpdateVideoAnnotations = jest.fn();
 const mockRpc = jest.fn();
+// Two RPCs reach this mock: the pre-call allowance read and the post-call recording. Each test
+// overrides only the one it is about, so a broken ledger cannot masquerade as a refused allowance.
+type RpcResult = Promise<{ data?: unknown; error: { message: string } | null }>;
+let allowanceRpc: () => RpcResult;
+let recordRpc: () => RpcResult;
+const allowance = (calls: number, max_calls = 8, max_cents = 12) =>
+  () => Promise.resolve({ data: { calls, max_calls, max_cents }, error: null });
+const recordCalls = () => mockRpc.mock.calls.filter(([name]) => name === 'record_correction_spend');
+const never = () => new Promise<never>(() => {});
 
 // fixSummary is mocked at the lib/gemini boundary, so the mock must do what the real one does with
 // the caller's meter: push one usage per BILLED attempt, before deciding whether that attempt won.
 const ONE_ATTEMPT = { promptTokens: 10_000, outputTokens: 4_000 };   // prices at 2¢
-type Usage = { promptTokens: number; outputTokens: number } | null;
+type Usage = { promptTokens: number | null; outputTokens: number | null };
+const UNMEASURED: Usage = { promptTokens: null, outputTokens: null };
 function billed(text: string, ...attempts: Usage[]) {
   return async (_md: string, _c: string, opts: { meter?: { attempts: Usage[] } }) => {
     opts.meter?.attempts.push(...attempts);
@@ -69,7 +81,10 @@ beforeEach(() => {
     auth: { getUser: async () => ({ data: { user: { id: 'owner-1' } } }) },
     rpc: mockRpc,
   } as never);
-  mockRpc.mockResolvedValue({ error: null });
+  allowanceRpc = allowance(0);
+  recordRpc = () => Promise.resolve({ error: null });
+  mockRpc.mockImplementation((name: string) =>
+    name === 'correction_allowance' ? allowanceRpc() : name === 'record_correction_spend' ? recordRpc() : Promise.reject(new Error(`unexpected rpc ${name}`)));
   mockPut.mockResolvedValue(undefined);
   mockUpdateVideoAnnotations.mockResolvedValue({ found: true });
   jest.mocked(serveCore.loadSummaryForServe).mockResolvedValue({
@@ -91,6 +106,8 @@ beforeEach(() => {
   } as never);
   jest.mocked(gemini.fixSummary).mockImplementation(billed(MD.replace('Clawcode', 'Claude Code'), ONE_ATTEMPT));
   jest.mocked(gemini.extractQuickView).mockResolvedValue({ tldr: 'New.', takeaways: ['P'] });
+  // clearAllMocks keeps implementations, so a test that makes the preflight refuse must not leak.
+  jest.mocked(gemini.assertCorrectionInputWithinCap).mockResolvedValue(undefined);
 });
 
 afterEach(() => { delete process.env.STORAGE_BACKEND; });
@@ -193,8 +210,9 @@ describe('regenerate — cloud branch', () => {
   });
 
   it('413s when the preflight refuses the document', async () => {
+    // Thrown from the PREFLIGHT, where production throws it — not from fixSummary (round 1, L2).
     const { NonRetryableError } = jest.requireActual('../../lib/job-queue/errors');
-    jest.mocked(gemini.fixSummary).mockRejectedValue(
+    jest.mocked(gemini.assertCorrectionInputWithinCap).mockRejectedValue(
       new NonRetryableError('correction input 9000 tokens exceeds cap 8192'),
     );
     const res = await post({ corrections: 'fix X' });
@@ -214,7 +232,9 @@ describe('spend recording (spec §5.2)', () => {
     // Beyond the plan. Post-hoc means post-hoc: recording before the write would book spend for a
     // correction that might not become durable. Call order is the only thing that shows it.
     await post({ corrections: 'fix Clawcode' });
-    expect(mockPut.mock.invocationCallOrder[0]).toBeLessThan(mockRpc.mock.invocationCallOrder[0]);
+    const recordAt = mockRpc.mock.calls.findIndex(([name]) => name === 'record_correction_spend');
+    expect(recordAt).toBeGreaterThanOrEqual(0);
+    expect(mockPut.mock.invocationCallOrder[0]).toBeLessThan(mockRpc.mock.invocationCallOrder[recordAt]);
   });
 
   // ⚠ THE TITLE OF THIS TEST USED TO SAY "no correction, no spend". THAT WAS FALSE.
@@ -227,21 +247,21 @@ describe('spend recording (spec §5.2)', () => {
     expect(jest.mocked(gemini.extractQuickView)).toHaveBeenCalledTimes(1);   // it DID run, and it DID cost
   });
 
-  it('does not record 0 when usage was unmeasured', async () => {
-    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, null));
+  it('records an UNMEASURED attempt at the worst case, never 0 and never nothing (round 1, Codex H2)', async () => {
+    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, UNMEASURED));
     await post({ corrections: 'fix X' });
-    expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+    expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: CORRECTION_WORST_ATTEMPT_CENTS });
   });
 
   it('still returns 200 when the ledger write fails — the correction landed', async () => {
-    mockRpc.mockResolvedValue({ error: { message: 'ceiling exceeded' } });
+    recordRpc = () => Promise.resolve({ error: { message: 'ceiling exceeded' } });
     const res = await post({ corrections: 'fix X' });
     expect(res.status).toBe(200);
     expect((await res.json()).outcome).toBe('applied');
   });
 
   it('still returns 200 when the owner hit their daily bound', async () => {
-    mockRpc.mockResolvedValue({ error: { message: 'owner daily correction limit 8 reached' } });
+    recordRpc = () => Promise.resolve({ error: { message: 'owner daily correction limit 8 reached' } });
     const res = await post({ corrections: 'fix X' });
     expect(res.status).toBe(200);   // the correction happened; only the bookkeeping was refused
   });
@@ -265,7 +285,7 @@ describe('spend is recorded whatever the outcome (backlog #62)', () => {
     );
     await post({ corrections: 'fix Clawcode' });
     expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 6 });
-    expect(mockRpc).toHaveBeenCalledTimes(1);                   // one press, one row
+    expect(recordCalls()).toHaveLength(1);                      // one press, one row
   });
 
   it('records the attempts of a fixSummary that exhausted its retries and THREW', async () => {
@@ -284,28 +304,53 @@ describe('spend is recorded whatever the outcome (backlog #62)', () => {
     expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 2 });
   });
 
-  it('records the measured part of a press with an unmeasured attempt', async () => {
-    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, null, ONE_ATTEMPT));
+  it('records the measured part PLUS the bound for the unmeasured attempt', async () => {
+    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, UNMEASURED, ONE_ATTEMPT));
     await post({ corrections: 'fix X' });
-    expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 2 });
+    expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: CORRECTION_WORST_ATTEMPT_CENTS + 2 });
   });
 
   it('records nothing when no attempt was billed — the preflight refused before any paid call', async () => {
+    // Thrown from the PREFLIGHT, where production throws it (round 1, L2). With fixSummary left
+    // billing, a meter filled ahead of the preflight would record here and fail this case.
     const { NonRetryableError } = jest.requireActual('../../lib/job-queue/errors');
-    jest.mocked(gemini.fixSummary).mockRejectedValue(new NonRetryableError('correction input 9000 tokens exceeds cap 8192'));
+    jest.mocked(gemini.assertCorrectionInputWithinCap).mockRejectedValue(
+      new NonRetryableError('correction input 9000 tokens exceeds cap 8192'),
+    );
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(413);
+    expect(jest.mocked(gemini.fixSummary)).not.toHaveBeenCalled();
+    expect(recordCalls()).toHaveLength(0);
+  });
+
+  // Round 1, Claude L1: 0026's ceiling is PER RPC CALL (`p_cents > v_cap` rejects, `calls + 1` per
+  // call). A press summing above it was rejected WHOLE and recorded 0¢. Split it across calls —
+  // each within the ceiling, the sum exact — at the cost of more of the owner's daily calls, which
+  // is the over-count direction.
+  it('splits a press above the per-call ceiling into calls that each fit, summing exactly', async () => {
+    allowanceRpc = allowance(0, 8, 3);
+    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, ONE_ATTEMPT, ONE_ATTEMPT, UNMEASURED)); // 2+2+3 = 7
     await post({ corrections: 'fix X' });
-    expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+    const cents = recordCalls().map(([, args]) => (args as { p_cents: number }).p_cents);
+    expect(cents).toEqual([3, 3, 1]);
+  });
+
+  it('records a press within the ceiling as ONE call', async () => {
+    allowanceRpc = allowance(0, 8, 12);
+    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, ONE_ATTEMPT, ONE_ATTEMPT, UNMEASURED));
+    await post({ corrections: 'fix X' });
+    expect(recordCalls().map(([, a]) => a)).toEqual([{ p_cents: 7 }]);
   });
 
   // A recording failure must not change the response, on EITHER path. Each case compares against
   // the same press with a healthy ledger, so "unchanged" is measured, not asserted as a constant.
   it.each([
-    ['the RPC returns an error', () => mockRpc.mockResolvedValue({ error: { message: 'owner daily correction limit 8 reached' } })],
-    ['the RPC itself throws',    () => mockRpc.mockRejectedValue(new Error('fetch failed'))],
+    ['the RPC returns an error', () => { recordRpc = () => Promise.resolve({ error: { message: 'owner daily correction limit 8 reached' } }); }],
+    ['the RPC itself throws',    () => { recordRpc = () => Promise.reject(new Error('fetch failed')); }],
   ])('leaves the response unchanged when %s', async (_label, breakLedger) => {
     for (const fix of [billed(MD.replace('Clawcode', 'Claude Code'), ONE_ATTEMPT), billed(LOST_SECTION, ONE_ATTEMPT)]) {
       jest.mocked(gemini.fixSummary).mockImplementation(fix);
-      mockRpc.mockResolvedValue({ error: null });
+      recordRpc = () => Promise.resolve({ error: null });
       const healthy = await post({ corrections: 'fix X' });
       const healthyBody = await healthy.json();
       breakLedger();
@@ -340,5 +385,73 @@ describe('a structural refusal maps to a user-facing message and a code (backlog
     const messages = Object.values(STRUCTURAL_REFUSALS as Record<string, { error: string }>).map((r) => r.error);
     expect(messages).toHaveLength(5);
     expect(new Set(messages).size).toBe(5);
+  });
+});
+
+// ── round 1, H1 (both halves): the daily limit must refuse the PRESS, not only the bookkeeping ──
+describe('the per-owner daily correction limit is checked BEFORE any paid call', () => {
+  it('429s at the limit, with a code, and never reaches Gemini or writes anything', async () => {
+    allowanceRpc = allowance(8, 8);
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(429);
+    expect((await res.json()).code).toBe('correction-limit-reached');
+    expect(jest.mocked(gemini.assertCorrectionInputWithinCap)).not.toHaveBeenCalled();
+    expect(jest.mocked(gemini.fixSummary)).not.toHaveBeenCalled();
+    expect(mockUpdateVideoAnnotations).not.toHaveBeenCalled();   // a refused press changes nothing
+    expect(mockPut).not.toHaveBeenCalled();
+    expect(recordCalls()).toHaveLength(0);
+  });
+
+  it('lets the LAST press under the limit through', async () => {
+    allowanceRpc = allowance(7, 8);
+    expect((await post({ corrections: 'fix X' })).status).toBe(200);
+    expect(jest.mocked(gemini.fixSummary)).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails CLOSED when the allowance cannot be read — no paid call without it', async () => {
+    allowanceRpc = () => Promise.resolve({ data: null, error: { message: 'boom' } });
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('correction-limit-unavailable');
+    expect(jest.mocked(gemini.fixSummary)).not.toHaveBeenCalled();
+  });
+
+  it('fails CLOSED on a malformed allowance rather than reading it as "no limit"', async () => {
+    allowanceRpc = () => Promise.resolve({ data: { calls: 0 }, error: null });
+    expect((await post({ corrections: 'fix X' })).status).toBe(503);
+    expect(jest.mocked(gemini.fixSummary)).not.toHaveBeenCalled();
+  });
+
+  it('does not consult the allowance on a bare press — no correction is being bought', async () => {
+    allowanceRpc = allowance(8, 8);
+    expect((await post({})).status).toBe(200);
+    expect(mockRpc).not.toHaveBeenCalledWith('correction_allowance');
+  });
+});
+
+// ── round 1, M1/M3 (both halves): a hung RPC must not hold the response ──────────────────────
+describe('both correction RPCs are bounded by a deadline', () => {
+  afterEach(() => { jest.useRealTimers(); });
+
+  it('delivers the response when the RECORDING never settles', async () => {
+    jest.useFakeTimers();
+    recordRpc = never;
+    let settled = false;
+    const p = post({ corrections: 'fix Clawcode' }).then((r) => { settled = true; return r; });
+    await jest.advanceTimersByTimeAsync(CORRECTION_RPC_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);                 // it IS waiting on the recording…
+    await jest.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);                  // …and stops at the deadline
+    expect((await p).status).toBe(200);
+  });
+
+  it('fails CLOSED when the ALLOWANCE read never settles, without a paid call', async () => {
+    jest.useFakeTimers();
+    allowanceRpc = never;
+    const p = post({ corrections: 'fix X' });
+    await jest.advanceTimersByTimeAsync(CORRECTION_RPC_TIMEOUT_MS);
+    const res = await p;
+    expect(res.status).toBe(503);
+    expect(jest.mocked(gemini.fixSummary)).not.toHaveBeenCalled();
   });
 });

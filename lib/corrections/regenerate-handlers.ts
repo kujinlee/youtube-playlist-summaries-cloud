@@ -16,6 +16,13 @@ import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { loadSummaryForServe } from '@/lib/html-doc/serve-summary-core';
 import { applyCorrection, CORRECTION_CAPS, meteredCorrectionCents } from '@/lib/corrections/apply-core';
 import type { UsageMeter } from '@/lib/gemini';
+import { raceRpc } from '@/lib/serve-rpc';
+
+/** The wait on EACH correction RPC — the allowance read before the paid call, the spend record after
+ *  it (round 1, M1/M3). Raced against our own timer by `raceRpc`, because a postgrest abort
+ *  RETURNS rather than throws (serve-rpc.ts, `RpcOutcome`). PROVISIONAL, like SERVE_RESERVE_RPC_TIMEOUT_MS:
+ *  one round trip, revise from observed p99. */
+export const CORRECTION_RPC_TIMEOUT_MS = 3_000;
 import { StructuralValidationError, type StructuralFailureReason } from '@/lib/corrections/structural-validation';
 
 /** What the reader is told when the model's corrected document failed structural validation
@@ -227,6 +234,8 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
   // Filled by fixSummary as each paid attempt returns, and read in the `finally` below — so a press
   // that throws AFTER paying still records what it paid (backlog #62).
   const meter: UsageMeter = { attempts: [] };
+  // 0026's per-CALL cents ceiling, read with the allowance. null until a correction is admitted.
+  let maxCentsPerCall: number | null = null;
 
   // EVERYTHING BELOW IS INSIDE THE TRY. On the local branch `getStorageBundle()` sits OUTSIDE it,
   // so a missing client 500s instead of returning an error.
@@ -255,6 +264,31 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     const mdContent = mdBytes.toString('utf-8');
 
     const trimmedCorrections = typeof corrections === 'string' ? corrections.trim() : undefined;
+
+    // ⚠ THE DAILY LIMIT REFUSES THE PRESS, BEFORE ANY PAID CALL (round 1, H1 — both halves). 0026's
+    // per-owner limit lives inside record_correction_spend, so on its own it refused only the
+    // BOOKKEEPING: from press N+1 Gemini was billed and nothing was written anywhere. Checked before
+    // the annotation write too, so a refused press changes nothing. Fails CLOSED — no readable
+    // allowance, no paid call.
+    // ⚠ A CHECK, NOT A RESERVATION: two concurrent presses at N-1 both pass, so the bound is
+    // N + concurrency. Closing that window is reserve/settle — backlog #61.
+    if (trimmedCorrections) {
+      const allowance = await readCorrectionAllowance(supabase);
+      if (!allowance.ok) {
+        return NextResponse.json(
+          { error: 'Corrections are temporarily unavailable. Please try again in a moment.', code: 'correction-limit-unavailable' },
+          { status: 503 },
+        );
+      }
+      if (allowance.calls >= allowance.maxCalls) {
+        return NextResponse.json(
+          { error: 'You have reached today\'s limit for corrections. Please try again tomorrow.', code: 'correction-limit-reached' },
+          { status: 429 },
+        );
+      }
+      maxCentsPerCall = allowance.maxCents;
+    }
+
     const storedCorrections = video.corrections ?? '';
     if (trimmedCorrections && trimmedCorrections !== storedCorrections) {
       const { found } = await store.updateVideoAnnotations(principal, videoId, { corrections: trimmedCorrections }, []);
@@ -327,45 +361,85 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
   } finally {
     // AFTER the response is decided, on EVERY path: success, structural refusal, exhausted retries,
     // a failed blob write, an abort. On success this still runs after `blobStore.put`.
-    await recordCorrectionSpend(supabase, meter, user.id, videoId);
+    await recordCorrectionSpend(supabase, meter, maxCentsPerCall, user.id, videoId);
   }
+}
+
+type Allowance = { ok: true; calls: number; maxCalls: number; maxCents: number } | { ok: false };
+
+/** Today's recorded correction count for the signed-in owner, and the two 0026 bounds (migration
+ *  0028). Anything other than three integers — an error, a timeout, a malformed row — is `ok: false`,
+ *  which the caller treats as a refusal: a missing limit must never read as "no limit". */
+async function readCorrectionAllowance(supabase: ReturnType<typeof createServerSupabase>): Promise<Allowance> {
+  // No `.abortSignal(signal)`: on a timeout the read is simply abandoned, which costs nothing.
+  const out = await raceRpc<unknown>(
+    () => supabase.rpc('correction_allowance'), CORRECTION_RPC_TIMEOUT_MS, 'correction_allowance',
+  );
+  if (!out.ok) {
+    console.error(`[correction-allowance] UNREADABLE (${out.reason}) — refusing the press`);
+    return { ok: false };
+  }
+  const d = out.data as { calls?: unknown; max_calls?: unknown; max_cents?: unknown } | null;
+  if (!d || !Number.isInteger(d.calls) || !Number.isInteger(d.max_calls) || !Number.isInteger(d.max_cents)) {
+    console.error(`[correction-allowance] MALFORMED ${JSON.stringify(d)} — refusing the press`);
+    return { ok: false };
+  }
+  return { ok: true, calls: d.calls as number, maxCalls: d.max_calls as number, maxCents: d.max_cents as number };
 }
 
 /**
  * Record ACTUAL spend, after the paid call settled (spec §5.2). Post-hoc, not pre-authorised: the
- * guardrails see this on the NEXT decision, which is the accepted trade (reserve/settle is #61).
+ * guardrails see this on the NEXT decision, which is the accepted trade (reserve/settle is backlog #61).
  *
  * ⚠ RUNS WHATEVER THE OUTCOME (backlog #62). It used to run only after a successful correction, and
  * this RPC is the sole writer of both the per-owner-per-day counter and the `spend_ledger` the daily
  * cap watches — so a correction made to fail deterministically spent in a loop while every guardrail
  * read zero. Measured in production 2026-08-24: a failed press left 0 rows and the ledger unmoved.
  *
- * ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST — and it cannot, because it NEVER THROWS. The money
- * is already spent; on success the corrected body is already durable, and a 500 would invite the user
- * to press again, paying twice to fix a bookkeeping error. That includes hitting the per-owner daily
- * bound. Log loudly instead. Same rule as the envelope-invalidation failure the spec settled in §2.
+ * EVERY billed attempt is charged, an unmeasured one at its bound (`meteredCorrectionCents`), so a
+ * press with attempts always records — never 0, never nothing (round 1, Codex H2).
+ *
+ * SPLIT AT THE PER-CALL CEILING (round 1, Claude L1). 0026's `correction_max_cents` is checked per
+ * RPC call and REJECTS the whole amount above it, so a press summing over it used to record 0¢.
+ * Under CORRECTION_CAPS a press is at most 3 × 3¢ = 9¢ against 12¢ (the cap-soundness case in
+ * record-correction-spend.int.test.ts pins that), so this is a guard for a config or price change:
+ * each call carries at most the ceiling and the calls sum to the exact figure. The cost is more of
+ * the owner's daily calls — the over-count direction.
+ *
+ * ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST — and it cannot: it NEVER THROWS, and every call is
+ * bounded by CORRECTION_RPC_TIMEOUT_MS and run concurrently, so the response waits at most one
+ * deadline. The money is already spent; on success the corrected body is already durable, and a 500
+ * (or a hang) would invite the user to press again, paying twice to fix a bookkeeping error. That
+ * includes hitting the per-owner daily bound. Log loudly instead. A timed-out call is not aborted, so
+ * it may still land — the safe direction for a record of spend that already happened.
  */
 async function recordCorrectionSpend(
-  supabase: ReturnType<typeof createServerSupabase>, meter: UsageMeter, ownerId: string, videoId: string,
+  supabase: ReturnType<typeof createServerSupabase>, meter: UsageMeter, maxCentsPerCall: number | null,
+  ownerId: string, videoId: string,
 ): Promise<void> {
   if (meter.attempts.length === 0) return;   // bare press, preflight refusal, early 4xx: nothing paid
-  const { cents, unmeasured } = meteredCorrectionCents(meter);
-  if (unmeasured > 0) {
-    // null is "the SDK reported no usage", NOT "free" (Task 5). Recording 0 would be a lie the
-    // ledger cannot distinguish from a genuinely free call.
-    console.warn(`[correction-spend] UNMEASURED owner=${ownerId} video=${videoId} attempts=${unmeasured}`);
+  const { cents, estimated } = meteredCorrectionCents(meter);
+  if (estimated > 0) {
+    // Charged at the cap bound, not 0 and not skipped — but still worth seeing, because a bound is
+    // not a measurement.
+    console.warn(`[correction-spend] ESTIMATED owner=${ownerId} video=${videoId} attempts=${estimated} cents=${cents}`);
   }
-  if (cents == null) return;
-  try {
-    const { error } = await supabase.rpc('record_correction_spend', { p_cents: cents });
-    if (error) {
-      console.error(
-        `[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${cents}: ${error.message}`,
-      );
-    }
-  } catch (err) {
+  const chunks: number[] = [];
+  if (maxCentsPerCall != null && maxCentsPerCall > 0) {
+    for (let left = cents; left > 0; left -= maxCentsPerCall) chunks.push(Math.min(left, maxCentsPerCall));
+  }
+  if (chunks.length === 0) chunks.push(cents);   // 0¢ still records the call; no ceiling read → one call
+  const outcomes = await Promise.all(chunks.map((p_cents) => raceRpc<unknown>(
+    () => supabase.rpc('record_correction_spend', { p_cents }), CORRECTION_RPC_TIMEOUT_MS, 'record_correction_spend',
+  )));
+  outcomes.forEach((out, i) => {
+    if (out.ok) return;
+    const why = out.reason === 'timeout'
+      ? `TIMED OUT after ${CORRECTION_RPC_TIMEOUT_MS}ms`
+      : (out.cause as { message?: string } | undefined)?.message ?? errorSummary(out.cause);
     console.error(
-      `[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${cents}: ${errorSummary(err)}`,
+      `[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${chunks[i]}`
+      + ` (part ${i + 1} of ${chunks.length}, press total ${cents}): ${why}`,
     );
-  }
+  });
 }

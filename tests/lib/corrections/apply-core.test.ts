@@ -1,6 +1,9 @@
 jest.mock('@/lib/gemini');
 
-import { applyCorrection, meteredCorrectionCents } from '@/lib/corrections/apply-core';
+import {
+  applyCorrection, meteredCorrectionCents, CORRECTION_CAPS, CORRECTION_WORST_ATTEMPT_CENTS,
+} from '@/lib/corrections/apply-core';
+import { correctionActualCents, PROMPT_SCHEMA_OVERHEAD_TOKENS } from '@/lib/gemini-cost';
 import { StructuralValidationError } from '@/lib/corrections/structural-validation';
 import * as gemini from '@/lib/gemini';
 import type { UsageMeter } from '@/lib/gemini';
@@ -101,26 +104,43 @@ describe('actual spend is measured, not estimated (backlog #62)', () => {
   it('prices the real token counts', () => {
     // 10_000 * 30/1e6 + 4_000 * 250/1e6 = 0.3 + 1.0 = 1.3¢ → ceil 2
     expect(meteredCorrectionCents({ attempts: [{ promptTokens: 10_000, outputTokens: 4_000 }] }))
-      .toEqual({ cents: 2, unmeasured: 0 });
+      .toEqual({ cents: 2, estimated: 0 });
   });
 
   it('sums EVERY billed attempt, each priced as its own call', () => {
     // Per-attempt ceiling, matching how 0026 derives its 12¢ ceiling (3 attempts × 3¢). Pricing the
     // summed tokens once would give ceil(3.9) = 4, under-reporting against that derivation.
     const one = { promptTokens: 10_000, outputTokens: 4_000 };
-    expect(meteredCorrectionCents({ attempts: [one, one, one] })).toEqual({ cents: 6, unmeasured: 0 });
+    expect(meteredCorrectionCents({ attempts: [one, one, one] })).toEqual({ cents: 6, estimated: 0 });
   });
 
-  it('reports null rather than zero when no billed attempt was measured', () => {
-    expect(meteredCorrectionCents({ attempts: [null] })).toEqual({ cents: null, unmeasured: 1 });
+  // Round 1, Codex H2: an unmeasured attempt was DROPPED, so a press with no usage metadata reached
+  // no counter at all. It is now charged at the bound the caps enforce — an over-count, never under.
+  it('charges an UNMEASURED attempt at the worst case CORRECTION_CAPS allows, never zero', () => {
+    const worst = correctionActualCents({
+      promptTokens: CORRECTION_CAPS.summaryOutputTokens + PROMPT_SCHEMA_OVERHEAD_TOKENS,
+      outputTokens: CORRECTION_CAPS.summaryOutputTokens,
+    });
+    expect(worst).toBe(3);   // the per-attempt figure 0026's header derives its ceiling from
+    expect(CORRECTION_WORST_ATTEMPT_CENTS).toBe(worst);
+    expect(meteredCorrectionCents({ attempts: [{ promptTokens: null, outputTokens: null }] }))
+      .toEqual({ cents: 3, estimated: 1 });
   });
 
-  it('records the measured part and COUNTS the unmeasured part rather than dropping the press', () => {
+  it('keeps the measured HALF of a partially reported attempt and bounds only the missing half', () => {
+    // output known (100 → 0.025¢), prompt unknown → bounded at 8192 + 4000 (0.366¢): ceil(0.391) = 1.
+    // Charging the whole attempt at worst would say 3, so this separates "keep the half" from "drop it".
+    expect(meteredCorrectionCents({ attempts: [{ promptTokens: null, outputTokens: 100 }] }))
+      .toEqual({ cents: 1, estimated: 1 });
+  });
+
+  it('mixes measured and estimated attempts in one sum', () => {
     const one = { promptTokens: 10_000, outputTokens: 4_000 };
-    expect(meteredCorrectionCents({ attempts: [null, one] })).toEqual({ cents: 2, unmeasured: 1 });
+    expect(meteredCorrectionCents({ attempts: [{ promptTokens: null, outputTokens: null }, one] }))
+      .toEqual({ cents: 5, estimated: 1 });
   });
 
   it('reports nothing billed for an empty meter', () => {
-    expect(meteredCorrectionCents({ attempts: [] })).toEqual({ cents: null, unmeasured: 0 });
+    expect(meteredCorrectionCents({ attempts: [] })).toEqual({ cents: 0, estimated: 0 });
   });
 });

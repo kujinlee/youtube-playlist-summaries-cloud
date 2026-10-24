@@ -118,11 +118,21 @@ describe('fixSummary meters every billed attempt (backlog #62)', () => {
     expect(meter.attempts).toEqual([{ promptTokens: 10_000, outputTokens: 4_000 }]);
   });
 
-  it('records null — NOT zero — when the SDK reported no usageMetadata', async () => {
+  it('records the attempt with null counts — NOT zero, and NOT dropped — when the SDK reported no usageMetadata', async () => {
     mockGenerateContent.mockResolvedValue(ok('corrected'));
     const meter: UsageMeter = { attempts: [] };
     await fixSummary('md', 'c', { signal: new AbortController().signal, meter });
-    expect(meter.attempts).toEqual([null]);   // billed, but "could not measure" is not "cost nothing"
+    // billed, but "could not measure" is not "cost nothing" — and the attempt still COUNTS
+    expect(meter.attempts).toEqual([{ promptTokens: null, outputTokens: null }]);
+  });
+
+  it('keeps the HALF it could measure when only one usage field was reported (round 1, Codex H2)', async () => {
+    mockGenerateContent.mockResolvedValue({
+      response: { text: () => 'corrected', candidates: [{ finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 7_000 } },
+    });
+    const meter: UsageMeter = { attempts: [] };
+    await fixSummary('md', 'c', { signal: new AbortController().signal, meter });
+    expect(meter.attempts).toEqual([{ promptTokens: 7_000, outputTokens: null }]);
   });
 
   it('records the attempts a retry DISCARDED, not only the winner', async () => {

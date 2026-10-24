@@ -17291,25 +17291,38 @@ in status)`), so a status note that merely mentions another row being closed wit
 closes this row. Two of these edits did that and were reworded before commit.
 
 ## 2026-10-24
-A correction that fails now counts against the spending limits. Until now, when someone asked for a
-correction and the result was thrown away (for example because the model deleted a section), Gemini
-had already been paid but nothing was written down, so the daily limits never saw it and a person
-could keep spending while every counter read zero. Presses that retried were also under-counted,
-because only the last try was recorded. Now every paid try is counted, whether the correction worked
-or not, and if writing that record fails the user's answer does not change.
+A correction that fails now counts against the spending limits, and once someone has used up
+today's corrections, the next one is refused before anything is paid for. Until now, when a
+correction was thrown away (for example because the model deleted a section), Gemini had already
+been paid and nothing was written down, so a person could keep spending while every counter read
+zero. Retried corrections were also under-counted, because only the last try was recorded.
+
+What is true now: every paid try is recorded. That includes failed tries, and tries where Gemini
+did not say how much it used, which are counted at the most they could have cost. When the daily
+limit of corrections is reached, the next one gets a plain "limit reached, try tomorrow" message
+and Gemini is never called. A slow or broken spending record no longer delays or changes what the
+user sees.
+
+What is still open: two corrections sent at exactly the same moment can both slip under the limit,
+because it is checked rather than reserved. That is filed as the existing reservation item, backlog
+#61. The overall daily spending cap is not checked before a correction yet either.
 
 The same branch replaces the confusing error a user saw when a correction was thrown away (*"corrected
 document does not start with a YAML frontmatter delimiter"*) with a plain sentence saying what
 happened and that nothing was saved.
 
-This is not live yet: production keeps the old behaviour until a release ships it.
+This is not live yet. When it ships, the new database function has to go out before the code, or
+every correction will be refused.
 <!--tech-->
-Backlog #62 and #63, branch `fix/correction-spend-on-failure`. `fixSummary` pushes each billed
-attempt into a caller-owned `UsageMeter` before the retry triggers can discard it, and no longer
-returns `usage`; `serveCloud` records from the meter in a `finally` via `recordCorrectionSpend`,
-which never throws. Pricing is per attempt, summed (`meteredCorrectionCents`), matching 0026's
-3 × 3¢ derivation of its 12¢ ceiling. No migration. `STRUCTURAL_REFUSALS` maps each
-`StructuralFailureReason` to a 422 with `code: structure-<reason>`. Verified on the live local
-stack (17/17 across `corrections-cloud` and `record-correction-spend`): a refused press moves
-`spend_ledger` by 1¢ and writes `correction_spend` `calls=1, cents=1`. Reservation (backlog #61)
-deliberately not built.
+Backlog #62 and #63, branch `fix/correction-spend-on-failure`, after review round 1. `fixSummary`
+pushes each billed attempt, fields independently nullable, into a caller-owned `UsageMeter` before
+the retry triggers can discard it. `serveCloud` records from the meter in a `finally` via
+`recordCorrectionSpend`, which never throws. Each RPC is bounded at `CORRECTION_RPC_TIMEOUT_MS`
+through `raceRpc`, and a press over 0026's per-call ceiling is split. A null field is charged
+at the `CORRECTION_CAPS` bound (`CORRECTION_WORST_ATTEMPT_CENTS` = 3¢). New migration
+`0028_correction_allowance.sql` is a SECURITY DEFINER read of the owner's count. The route reads it
+before any paid call and returns 429 `correction-limit-reached` at the limit, or 503
+`correction-limit-unavailable` when the read fails (fails closed). `STRUCTURAL_REFUSALS` maps each
+`StructuralFailureReason` to a 422 with `code: structure-<reason>`. Verified on the live local stack
+(23/23 across `corrections-cloud` and `record-correction-spend`) and with `check-schema-gates.sh`
+green. Reservation (backlog #61) deliberately not built; the race window is recorded there.

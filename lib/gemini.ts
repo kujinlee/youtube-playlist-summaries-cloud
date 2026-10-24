@@ -506,12 +506,19 @@ export interface GeminiUsage { promptTokens: number; outputTokens: number }
  * empty-content check can throw it away — because by then it has been paid for. Returning usage
  * instead reported only the winning attempt and nothing at all on a throw, so a press that retried
  * under-reported and a press that failed recorded no spend. The caller reads this AFTER the call
- * settles, on either path. `null` is "billed, but the SDK reported no usage", never "free".
+ * settles, on either path.
+ *
+ * EVERY returned attempt is pushed, measured or not (round 1, Codex H2): an attempt with no usage
+ * metadata used to vanish from every counter. A field the SDK did not report is `null` — "billed,
+ * amount unknown", never "free" — and each field is kept independently, so a response reporting
+ * only its prompt tokens keeps them. Pricing fills a `null` with the bound the caps enforce
+ * (`meteredCorrectionCents`, apply-core.ts).
  *
  * A `generateContent` that itself throws pushes nothing: no response arrived, so there is no usage
  * to read. Whether such a call was billed is not observable from here.
  */
-export interface UsageMeter { attempts: Array<GeminiUsage | null> }
+export interface MeteredAttempt { promptTokens: number | null; outputTokens: number | null }
+export interface UsageMeter { attempts: MeteredAttempt[] }
 
 /**
  * Remove a code fence that wraps the ENTIRE response, and nothing else.
@@ -590,9 +597,10 @@ ${mdContent}
       const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
       // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
       // facts, and collapsing them would understate spend exactly where it matters.
-      opts.meter?.attempts.push(um && um.promptTokenCount != null && um.candidatesTokenCount != null
-        ? { promptTokens: um.promptTokenCount, outputTokens: um.candidatesTokenCount }
-        : null);
+      opts.meter?.attempts.push({
+        promptTokens: um?.promptTokenCount ?? null,
+        outputTokens: um?.candidatesTokenCount ?? null,
+      });
       assertNotTruncated(result);
       // Unwrap BEFORE the empty check: '```\n\n```' is a non-empty string but an empty response,
       // and letting it through would report a structural failure for what is really nothing back.

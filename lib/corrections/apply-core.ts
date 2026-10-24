@@ -3,7 +3,7 @@ import { fixSummary, extractQuickView, assertCorrectionInputWithinCap, SUMMARY_M
 import type { UsageMeter } from '@/lib/gemini';
 import {
   MAX_TRANSCRIBE_INPUT_TOKENS, MAX_TRANSCRIBE_OUTPUT_TOKENS, MAX_TRANSCRIPT_INPUT_BYTES,
-  MAX_SUMMARY_OUTPUT_TOKENS, correctionActualCents,
+  MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS, correctionActualCents,
 } from '@/lib/gemini-cost';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import { stripQuickViewCallout, insertQuickViewCallout } from '@/lib/quick-view-callout';
@@ -51,24 +51,42 @@ export interface ApplyCorrectionResult {
   takeaways: string[];
 }
 
+/** The most one fixSummary attempt can cost under CORRECTION_CAPS — the figure 0026's header derives
+ *  its 12¢ per-call ceiling from (`correctionActualCents({8192+4000, 8192})` = 3¢, × 3 attempts).
+ *  Prompt: the preflight refuses a document over `summaryOutputTokens` tokens, and
+ *  PROMPT_SCHEMA_OVERHEAD_TOKENS (4,000) covers the instructions plus the ≤1,000-code-point
+ *  corrections field. Output: `maxOutputTokens` is set to `summaryOutputTokens`, thinking budget 0. */
+const CORRECTION_PROMPT_BOUND_TOKENS = CORRECTION_CAPS.summaryOutputTokens + PROMPT_SCHEMA_OVERHEAD_TOKENS;
+const CORRECTION_OUTPUT_BOUND_TOKENS = CORRECTION_CAPS.summaryOutputTokens;
+export const CORRECTION_WORST_ATTEMPT_CENTS = correctionActualCents({
+  promptTokens: CORRECTION_PROMPT_BOUND_TOKENS, outputTokens: CORRECTION_OUTPUT_BOUND_TOKENS,
+});
+
 /**
  * Price a correction from its meter. Each attempt is priced as its own call and the ceilings summed:
  * that is how 0026 derives its 12¢ per-call ceiling (3 attempts × 3¢), and pricing the summed
- * tokens once would round below it. `cents` is null when no billed attempt was measured — "the SDK
- * reported nothing", not "free" — and `unmeasured` counts the attempts the figure cannot include.
+ * tokens once would round below it.
+ *
+ * NEVER UNDER-COUNTS (round 1, Codex H2). A field the SDK did not report is charged at the bound
+ * CORRECTION_CAPS enforces for that field, and the field it DID report is kept — so an attempt with
+ * no metadata costs CORRECTION_WORST_ATTEMPT_CENTS, an over-count by construction, and is never
+ * dropped. `estimated` counts the attempts whose figure includes a bound.
  *
  * Counts fixSummary only. extractQuickView's usage is NOT included — the SDK reports it on a
  * different call and nothing in this repo reads it yet; adding it is a separate measurement, not an
  * assumption to bury here.
  */
-export function meteredCorrectionCents(meter: UsageMeter): { cents: number | null; unmeasured: number } {
-  let cents: number | null = null;
-  let unmeasured = 0;
-  for (const usage of meter.attempts) {
-    if (usage) cents = (cents ?? 0) + correctionActualCents(usage);
-    else unmeasured++;
+export function meteredCorrectionCents(meter: UsageMeter): { cents: number; estimated: number } {
+  let cents = 0;
+  let estimated = 0;
+  for (const a of meter.attempts) {
+    if (a.promptTokens == null || a.outputTokens == null) estimated++;
+    cents += correctionActualCents({
+      promptTokens: a.promptTokens ?? CORRECTION_PROMPT_BOUND_TOKENS,
+      outputTokens: a.outputTokens ?? CORRECTION_OUTPUT_BOUND_TOKENS,
+    });
   }
-  return { cents, unmeasured };
+  return { cents, estimated };
 }
 
 /**
