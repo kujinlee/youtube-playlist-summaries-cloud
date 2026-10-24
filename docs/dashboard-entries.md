@@ -17290,16 +17290,16 @@ now notes that `t3_routes_collapsed` was removed by PR #387 (`40b765e4`).
 in status)`), so a status note that merely mentions another row being closed with a ✅ silently
 closes this row. Two of these edits did that and were reworded before commit.
 
-## 2026-10-23 [needs-you]
-The backlog was scrubbed tonight, and it now says less that is not true. Eighteen items were closed
-because the work was already done or no longer applies. Fifty-eight items had their severity changed
+## 2026-10-24 [needs-you]
+The backlog was scrubbed tonight, and it now says less that is not true. Seventeen items were closed
+because the work was already done or no longer applies. Fifty-six items had their severity changed
 because the risk they described has moved since they were filed. The open list went from 225 items to
-207.
+208.
 
-The biggest change is in the red items. Eight were marked as the most urgent, and six of those
-turned out not to be: the fix had partly shipped, nobody is exposed to them yet, or there is a simple
-way around them. Two are still red. The first, backlog #251, is about a change to the code that the
-mutation tests never exercise. The second, backlog #312, is about Python version drift that once took
+The biggest change is in the red items. Eight were marked as the most urgent, and five of those
+turned out not to be: the fix had partly shipped, or there is a simple way around them. Three are
+still red. Backlog #139 is a deploy that can use up a job's only attempt. Backlog #251 is about a
+change to the code that the mutation tests never exercise. Backlog #312 is about Python version drift that once took
 down the whole required check. Three more items the scrub thinks should be red (backlog #62, a failed
 correction that still costs money; #231, the mutation sweep is close to its time limit; and #343, a
 slow ffmpeg install that cancelled a required check today) were left alone here, because other
@@ -17316,15 +17316,15 @@ branches are fixing them tonight.
 Scrub of 189 rows in four read-only sets (scrub-0..3) at master `92c78bff`, applied on
 `docs/backlog-scrub` off `c7c6672f`. All of it is in `docs/backlog.md`.
 Closed (✅, with `(was X)`): backlog #1, #3, #5, #6, #7, #41, #85, #89, #92, #93, #94, #115, #128, #228,
-#235, #236 and #237, each with a quoted commit or code line that was re-checked. #342 was closed as a
+#235 and #236, each with a quoted commit or code line that was re-checked. #342 was closed as a
 duplicate of #252, which is older and fuller, and its 60s measurement was carried onto #252. The citation
 at `process-checklists.md:121` now points at #252.
-Re-rated: 58 rows. The leading marker is now `NEW (filed OLD)` with a dated reason in Status.
+Re-rated: 56 rows. The leading marker is now `NEW (filed OLD)` with a dated reason in Status.
 `gen-backlog-page.py` reads the first character, so the page files each row under its new severity;
 for example, #2 renders `data-sev="low"`.
-PARTLY ⟳ notes: 37 rows. NEEDS-OWNER: #8, #26, #27, #28, #53 and #144. #155 has a stale-status note,
+PARTLY ⟳ notes: 38 rows. NEEDS-OWNER: #8, #26, #27, #28, #53 and #144. #155 has a stale-status note,
 because #154 merged as `b7ec0c42`.
-Open by severity, before → after: 🔴 8→2, 🟠 97→63, 🟡 95→106, 🟢 24→35.
+Open by severity, before → after: 🔴 8→3, 🟠 97→63, 🟡 95→106, 🟢 24→35.
 Not touched: backlog #62, #63, #231, #306, #310, #318, #339, #340 and #343, which are owned by open branches.
 Declined: #124–#127 (not moot; #193 depends on them, and #125 is #193's blocker).
 Every bare `#N` in the 98 edited rows was qualified, because `check-reference-namespace.py` reads each
@@ -17332,3 +17332,7 @@ edited row as added. That came to 351 references: 307 marked backlog, 40 PR and 
 be resolved and says so (in #289, `#290`); one ordinal was rewritten as `⑽` (in #213).
 ⚠ `gen-backlog-page.py` warns that `GROUPS` still names #1, #3, #89 (and #49, which was already
 closed). This is warn-only, and the generator file was not changed.
+Round 1 fold (`docs/reviews/claude/backlog-scrub-r1-claude.md`, NOT CONVERGED):
+- #237 was reopened as PARTLY, because its prototype page still carries a private switcher copy.
+- Eight wrong labels were fixed. The six references to the serve-path-bounding slice in #28 and #30 now read PR #67, #192 now reads PR #317, and #85's quoted subject is verbatim again.
+- The re-rates of #139 and #253 were reverted, because the reason quoted was the filer's own argument for the original rating.
