@@ -160,6 +160,10 @@ each half numbers from 1.
   table counts this note's own six-step sequence, two of whose steps — the wrap and the dropped
   brace — were found while folding and were never filed by a reviewer. The header counts filed
   findings only.
+  ⚠ **And five of the six `true`s — claude-B1, H1, H2, H3, L1 — were caused by this round's OWN
+  Codex-half folds** (`38e31fc6`, `a0fe9916`), not by a previous round's. The template does not say
+  whether a within-round fix counts; they are recorded `true` by its literal wording, and the
+  question is filed as backlog #345 rather than decided here.
 * **`aim`:** `deliverable` for the three in the emitted page or its script (codex-H1, codex-M1,
   claude-B1) and for claude-M1, whose file ships — conservatively, since the defect is a stale
   comment rather than behaviour and `deliverable` is the stricter reading. The rest sit in the

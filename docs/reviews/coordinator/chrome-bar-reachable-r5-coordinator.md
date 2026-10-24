@@ -6,7 +6,7 @@ fixes_nontrivial: true
 subject: chrome-bar-reachable
 halves:
   codex: ran
-  claude: "GAP: not invoked — the r5 Codex half records `REVIEW GAP: claude`, reading alternation as one half per round (the reading backlog #339 corrects)"
+  claude: "GAP: not invoked for round 5 — the r5 Codex half: single-reviewer round BY CONSTRUCTION, under the alternation rule"
 findings:
   - {id: H1, severity: High, aim: instrument, fix_induced: true, component: page_chrome, disposition: declined}
   - {id: H2, severity: High, aim: instrument, fix_induced: true, component: page_chrome, disposition: declined}
@@ -15,7 +15,7 @@ findings:
   - {id: M3, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
   - {id: M4, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: declined}
   - {id: M5, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: declined}
-  - {id: L1, severity: Low, aim: instrument, fix_induced: false, component: page_chrome, disposition: declined}
+  - {id: L1, severity: Low, aim: instrument, fix_induced: true, component: page_chrome, disposition: declined}
 ```
 
 ## Verdict: STOP PATCHING THE PARSER. Five generations is the evidence, not a feeling.
@@ -104,8 +104,13 @@ sections, and the fold commits `cfe586fb` and `8ea57020`.
   elements still contributing their own ids · M4 `<noscript><script></noscript>` · M5 the pin
   regex spanning a CSS comment · L1 a sixth masking mutation pair.
 * **`fix_induced`:** this note's table says **7 of 8**, all in the `_Scan` parser round 4 added,
-  and the half says the same of each of H1–M5 in its own words. L1 is the eighth — a harness limit
-  the half places *within the documented pair-coverage exclusion*, not something r4 wrote.
+  and the half says the same of each of H1–M5 in its own words. ⟳ **The header reads 8 of 8, and
+  L1 was corrected to `true` in round 1 of this backfill's review.** The first version called L1
+  *"not something r4 wrote"*, and git refutes it: both the mutation in the pair (*"the pin
+  selector must touch the brace again"*) and the grouped-selector case it masks were added by the
+  r4 fold `4f4e2748`. So the header disagrees with this note's own count, as r6's does with its.
+* **`halves.claude`:** the field quotes the Codex half's own reason only. That alternation
+  might instead mean a pair per round is backlog #339's question, and is undecided.
 * **`aim: instrument` for all eight:** each is the guard's parser disagreeing with Chromium.
 * **`disposition`:** M1 and M3 are the two this note folded. H1, H2, M2, M4 and M5 are the five it
   did *not*; the owner then chose option A — narrow the subject — and `8ea57020` records them as

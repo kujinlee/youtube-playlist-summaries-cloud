@@ -6,14 +6,14 @@ fixes_nontrivial: true
 subject: chrome-bar-reachable
 halves:
   codex: ran
-  claude: "GAP: not invoked — the r3 Codex half records `REVIEW GAP: claude`, reading alternation as one half per round (the reading backlog #339 corrects)"
+  claude: "GAP: not invoked for round 3 — the r3 Codex half: single-reviewer round BY CONSTRUCTION, under the alternation rule"
 findings:
   - {id: B1, severity: Blocking, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
   - {id: M1, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
   - {id: M2, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
   - {id: M3, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
   - {id: M4, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
-  - {id: L1, severity: Low, aim: instrument, fix_induced: false, component: page_chrome, disposition: declined}
+  - {id: L1, severity: Low, aim: instrument, fix_induced: true, component: page_chrome, disposition: declined}
 ```
 
 ## THRASHING OR PROSE FLOOR? — **THRASHING.** The condition in `dev-process.md` is met.
@@ -104,7 +104,14 @@ note's own *Introduced by* table (`fix_induced`), and the fold commit `03b78e94`
 * **Ids, in the half's order:** B1 equivalent CSS defeats the consumer guard · M1 the template's
   own id hidden · M2 `dict(attrs)` last-wins · M3 `<noscript>` contents counted live · M4
   `@media not all{…}` accepted · L1 a fifth masking mutation pair.
-* **`fix_induced`:** the table above marks B1 and M1–M4 *r2 fold*; L1 is not in it.
+* **`fix_induced`:** the table above marks B1 and M1–M4 *r2 fold*. ⟳ **L1 corrected to `true`
+  in round 1 of this backfill's review**: it had been set `false` because L1 is absent from the
+  table, which is an inference from absence. Git says otherwise — half of L1's masking pair,
+  *"a finished document is exempted like a fragment"*, was added by the r1 fold `d2e5db17` with
+  the `_is_document(page)` branch it mutates. Under the template's wording (*a fix written after a
+  previous round*) that is `true`; under the narrower thrashing reading (the PREVIOUS round's fix
+  only) it would not be, so it is a judgement, made here by the template's wording. The header now
+  reads **6 of 6** against this note's table, which counts 5.
 * **`aim: instrument` for all six:** every finding is in `assert_wired` / `missing_text_consumer`
   or the cases and mutations that defend them — a guard over the page, not the page.
 * **`disposition`:** `03b78e94` folds B1 (the caller supplies `scoped_css_emitted`) and M1–M3 on
@@ -112,3 +119,5 @@ note's own *Introduced by* table (`fix_induced`), and the fold commit `03b78e94`
   L1 is **declined**: *"pair-coverage NOT claimed"* — real, and not being fixed.
 * **`fixes_nontrivial: true`:** the fold changed the guard's contract (a new caller-supplied fact).
 * **`halves.claude`:** no Claude half exists for r3, and the Codex half says why in its own words.
+  The field quotes that reason only. The later reading — that alternation means a pair per
+  round, which would make this round incomplete — is backlog #339's, and is undecided.
