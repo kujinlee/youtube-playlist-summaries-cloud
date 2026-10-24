@@ -10,6 +10,7 @@ jest.mock('@google/generative-ai', () => ({
   GoogleGenerativeAI: jest.fn(() => ({ getGenerativeModel: mockGetGenerativeModel })),
 }));
 
+import { GoogleGenerativeAIAbortError } from '@google/generative-ai';
 import { fixSummary, type UsageMeter } from '@/lib/gemini';
 import { CORRECTION_CAPS } from '@/lib/corrections/apply-core';
 
@@ -165,6 +166,46 @@ describe('fixSummary meters every billed attempt (backlog #62)', () => {
     await expect(fixSummary('md', 'c', { signal: ac.signal, meter }, 2, 400))
       .rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
     expect(meter.attempts).toEqual([{ promptTokens: 1_000, outputTokens: 100 }]);
+  });
+
+  // Round 2, Claude High. MEASURED by that reviewer on SDK 0.24.1: a caller abort AND the SDK's own
+  // timeout both reject with GoogleGenerativeAIAbortError, whose `name` is 'Error' — so these cases
+  // throw the REAL class, not a hand-made AbortError that a name check would happen to catch.
+  it('meters an attempt the CALLER aborted mid-call, at unknown usage, and surfaces AbortError', async () => {
+    const ac = new AbortController();
+    mockGenerateContent.mockImplementationOnce(async () => {
+      ac.abort();
+      throw new GoogleGenerativeAIAbortError('Request aborted when fetching');
+    });
+    const meter: UsageMeter = { attempts: [] };
+    await expect(fixSummary('md', 'c', { signal: ac.signal, meter }, 2, 0))
+      .rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));   // Claude L2: identity kept
+    expect(meter.attempts).toEqual([{ promptTokens: null, outputTokens: null }]);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);                  // no second paid attempt
+  });
+
+  it('surfaces AbortError for an in-flight abort on the LAST attempt too (round 2, Claude L2)', async () => {
+    // With retries left, the loop-top guard rescues the identity on the next pass; on the last
+    // attempt there is no next pass, and the name check alone reported "summary fix failed".
+    const ac = new AbortController();
+    mockGenerateContent.mockImplementationOnce(async () => {
+      ac.abort();
+      throw new GoogleGenerativeAIAbortError('Request aborted when fetching');
+    });
+    await expect(fixSummary('md', 'c', { signal: ac.signal, meter: { attempts: [] } }, 0, 0))
+      .rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+  });
+
+  it('meters every attempt the SDK TIMED OUT mid-call — the signal never aborted', async () => {
+    mockGenerateContent.mockRejectedValue(new GoogleGenerativeAIAbortError('Request timed out'));
+    const meter: UsageMeter = { attempts: [] };
+    await expect(fixSummary('md', 'c', { signal: new AbortController().signal, meter }, 2, 0))
+      .rejects.toThrow(/summary fix failed/);                              // a timeout is retried, not a cancel
+    expect(meter.attempts).toEqual([
+      { promptTokens: null, outputTokens: null },
+      { promptTokens: null, outputTokens: null },
+      { promptTokens: null, outputTokens: null },
+    ]);
   });
 
   it('records nothing for a call that threw — no response arrived, so there is no usage to read', async () => {

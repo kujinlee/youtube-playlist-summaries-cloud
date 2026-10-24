@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { GoogleGenerativeAI, GoogleGenerativeAIAbortError, SchemaType } from '@google/generative-ai';
 import type { GenerativeModel, ResponseSchema, GenerationConfig, Content, ArraySchema, ObjectSchema } from '@google/generative-ai';
 import { RatingsSchema, VideoTypeSchema, AudienceSchema } from '../types';
 import type { GeminiSummaryResponse } from '../types';
@@ -514,11 +514,18 @@ export interface GeminiUsage { promptTokens: number; outputTokens: number }
  * only its prompt tokens keeps them. Pricing fills a `null` with the bound the caps enforce
  * (`meteredCorrectionCents`, apply-core.ts).
  *
- * A `generateContent` that itself throws pushes nothing: no response arrived, so there is no usage
- * to read. Whether such a call was billed is not observable from here.
+ * An attempt CANCELLED OR TIMED OUT while `generateContent` was in flight is pushed too, with both
+ * fields null (round 2, Claude High). Whether Gemini bills a request cut off mid-generation is not
+ * observable here, and this is the one outcome the CLIENT controls — leaving it unmetered let a
+ * caller repeat presses by disconnecting without ever moving the daily counter. Any other
+ * `generateContent` rejection (an HTTP 4xx/5xx, a network fault) pushes nothing: no generation ran.
  */
 export interface MeteredAttempt { promptTokens: number | null; outputTokens: number | null }
 export interface UsageMeter { attempts: MeteredAttempt[] }
+
+/** fixSummary's retry count — a press makes at most FIX_SUMMARY_RETRIES + 1 paid attempts. Exported
+ *  because the per-call spend ceiling must cover that many (tests/lib/corrections/correction-ceiling.test.ts). */
+export const FIX_SUMMARY_RETRIES = 2;
 
 /**
  * Remove a code fence that wraps the ENTIRE response, and nothing else.
@@ -558,7 +565,7 @@ export async function fixSummary(
   // uncancellable ~181 s paid call; `caps` stays optional because the LOCAL pipeline passes none by
   // design (withCaps returns `base` unchanged when caps is undefined, :41).
   opts: { signal: AbortSignal; caps?: CloudGeminiCaps; meter?: UsageMeter },
-  retries = 2,
+  retries = FIX_SUMMARY_RETRIES,
   baseDelayMs = 400,
 ): Promise<{ text: string }> {
   const client = new GoogleGenerativeAI(getApiKey());
@@ -589,10 +596,21 @@ ${mdContent}
     if (opts.signal.aborted) throw new DOMException('aborted', 'AbortError');
     try {
       // (2 of 3) Forward the signal to the call itself.
-      const result = await model.generateContent(prompt, {
-        timeout: REQUEST_TIMEOUT_MS,
-        signal: opts.signal,
-      });
+      let result: Awaited<ReturnType<typeof model.generateContent>>;
+      try {
+        result = await model.generateContent(prompt, {
+          timeout: REQUEST_TIMEOUT_MS,
+          signal: opts.signal,
+        });
+      } catch (err) {
+        // CUT OFF IN FLIGHT → metered at unknown usage (see UsageMeter). MEASURED on SDK 0.24.1 (round
+        // 2): a caller abort AND the SDK's own timeout both reject with GoogleGenerativeAIAbortError,
+        // whose `name` is 'Error' — so the class and the signal decide, never `err.name`.
+        if (err instanceof GoogleGenerativeAIAbortError || opts.signal.aborted) {
+          opts.meter?.attempts.push({ promptTokens: null, outputTokens: null });
+        }
+        throw err;
+      }
       // METER FIRST — this attempt is billed whether or not the two checks below keep it.
       const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
       // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
@@ -608,9 +626,12 @@ ${mdContent}
       if (!corrected) throw new Error('Gemini returned empty content');
       return { text: corrected };
     } catch (err) {
-      // Preserve AbortError identity unwrapped so the caller can distinguish cancellation from a
-      // real failure (same rule as generateSummary's catch).
+      // Preserve AbortError identity so the caller can distinguish cancellation from a real failure.
+      // ⚠ Keyed on the SIGNAL, not only on `err.name` (round 2, Claude Low): the SDK re-wraps an
+      // in-flight abort as GoogleGenerativeAIAbortError with name 'Error', so a name check alone never
+      // fired and a cancelled press was retried, then reported as "summary fix failed".
       if ((err as { name?: string })?.name === 'AbortError') throw err;
+      if (opts.signal.aborted) throw new DOMException('aborted', 'AbortError');
       lastErr = err;
       if (attempt < retries) {
         console.warn(`[gemini-retry] fix-summary: attempt ${attempt + 1} failed (${err instanceof Error ? err.message : String(err)}); retrying…`);

@@ -234,8 +234,6 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
   // Filled by fixSummary as each paid attempt returns, and read in the `finally` below — so a press
   // that throws AFTER paying still records what it paid (backlog #62).
   const meter: UsageMeter = { attempts: [] };
-  // 0026's per-CALL cents ceiling, read with the allowance. null until a correction is admitted.
-  let maxCentsPerCall: number | null = null;
 
   // EVERYTHING BELOW IS INSIDE THE TRY. On the local branch `getStorageBundle()` sits OUTSIDE it,
   // so a missing client 500s instead of returning an error.
@@ -270,8 +268,10 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     // BOOKKEEPING: from press N+1 Gemini was billed and nothing was written anywhere. Checked before
     // the annotation write too, so a refused press changes nothing. Fails CLOSED — no readable
     // allowance, no paid call.
-    // ⚠ A CHECK, NOT A RESERVATION: two concurrent presses at N-1 both pass, so the bound is
-    // N + concurrency. Closing that window is reserve/settle — backlog #61.
+    // ⚠ A CHECK, NOT A RESERVATION — and the window is UNBOUNDED (round 2, Claude M1): K concurrent
+    // presses at N-1 all pass and all pay; 0026 then refuses K-1 recordings, raising BEFORE its
+    // spend_ledger write, so those presses reach neither counter; and nothing rate-limits this route,
+    // so K is the client's choice. Closing it is reserve/settle — backlog #61.
     if (trimmedCorrections) {
       const allowance = await readCorrectionAllowance(supabase);
       if (!allowance.ok) {
@@ -286,7 +286,6 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
           { status: 429 },
         );
       }
-      maxCentsPerCall = allowance.maxCents;
     }
 
     const storedCorrections = video.corrections ?? '';
@@ -361,14 +360,15 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
   } finally {
     // AFTER the response is decided, on EVERY path: success, structural refusal, exhausted retries,
     // a failed blob write, an abort. On success this still runs after `blobStore.put`.
-    await recordCorrectionSpend(supabase, meter, maxCentsPerCall, user.id, videoId);
+    await recordCorrectionSpend(supabase, meter, user.id, videoId);
   }
 }
 
-type Allowance = { ok: true; calls: number; maxCalls: number; maxCents: number } | { ok: false };
+type Allowance = { ok: true; calls: number; maxCalls: number } | { ok: false };
 
-/** Today's recorded correction count for the signed-in owner, and the two 0026 bounds (migration
- *  0028). Anything other than three integers — an error, a timeout, a malformed row — is `ok: false`,
+/** Today's recorded correction count for the signed-in owner and 0026's per-owner call limit
+ *  (migration 0028; it also returns `max_cents`, which the route no longer needs since round 2
+ *  removed the split). Anything other than two integers — an error, a timeout, a malformed row — is `ok: false`,
  *  which the caller treats as a refusal: a missing limit must never read as "no limit". */
 async function readCorrectionAllowance(supabase: ReturnType<typeof createServerSupabase>): Promise<Allowance> {
   // No `.abortSignal(signal)`: on a timeout the read is simply abandoned, which costs nothing.
@@ -379,12 +379,12 @@ async function readCorrectionAllowance(supabase: ReturnType<typeof createServerS
     console.error(`[correction-allowance] UNREADABLE (${out.reason}) — refusing the press`);
     return { ok: false };
   }
-  const d = out.data as { calls?: unknown; max_calls?: unknown; max_cents?: unknown } | null;
-  if (!d || !Number.isInteger(d.calls) || !Number.isInteger(d.max_calls) || !Number.isInteger(d.max_cents)) {
+  const d = out.data as { calls?: unknown; max_calls?: unknown } | null;
+  if (!d || !Number.isInteger(d.calls) || !Number.isInteger(d.max_calls)) {
     console.error(`[correction-allowance] MALFORMED ${JSON.stringify(d)} — refusing the press`);
     return { ok: false };
   }
-  return { ok: true, calls: d.calls as number, maxCalls: d.max_calls as number, maxCents: d.max_cents as number };
+  return { ok: true, calls: d.calls as number, maxCalls: d.max_calls as number };
 }
 
 /**
@@ -396,26 +396,30 @@ async function readCorrectionAllowance(supabase: ReturnType<typeof createServerS
  * cap watches — so a correction made to fail deterministically spent in a loop while every guardrail
  * read zero. Measured in production 2026-08-24: a failed press left 0 rows and the ledger unmoved.
  *
- * EVERY billed attempt is charged, an unmeasured one at its bound (`meteredCorrectionCents`), so a
- * press with attempts always records — never 0, never nothing (round 1, Codex H2).
+ * Every METERED attempt is charged — a returned one at its reported usage (a missing field at its
+ * bound), and one cut off in flight by an abort or timeout at the per-attempt bound
+ * (`meteredCorrectionCents`, UsageMeter). So a press with attempts always records, never 0¢ and
+ * never nothing (round 1 Codex H2, round 2 Claude High).
  *
- * SPLIT AT THE PER-CALL CEILING (round 1, Claude L1). 0026's `correction_max_cents` is checked per
- * RPC call and REJECTS the whole amount above it, so a press summing over it used to record 0¢.
- * Under CORRECTION_CAPS a press is at most 3 × 3¢ = 9¢ against 12¢ (the cap-soundness case in
- * record-correction-spend.int.test.ts pins that), so this is a guard for a config or price change:
- * each call carries at most the ceiling and the calls sum to the exact figure. The cost is more of
- * the owner's daily calls — the over-count direction.
+ * ONE CALL PER PRESS, ALWAYS (round 2, Codex High). 0026 checks `correction_max_cents` per RPC call
+ * and REJECTS the whole amount above it. Round 1 split an over-ceiling press across calls, but each
+ * call spends one of the owner's daily slots, so at calls = N-1 a [3,3,1] press recorded 3¢ and lost
+ * 4. Removed. The ceiling is instead PROVED to cover the worst press —
+ * (FIX_SUMMARY_RETRIES + 1) × CORRECTION_WORST_ATTEMPT_CENTS = 9¢ against 0026's default 12¢ —
+ * by tests/lib/corrections/correction-ceiling.test.ts (the migration's declared default) and by the
+ * cap-soundness case in record-correction-spend.int.test.ts (the live config row). A change to the
+ * caps, the prices, the retries or the ceiling turns one of those red instead of losing money here.
  *
- * ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST — and it cannot: it NEVER THROWS, and every call is
- * bounded by CORRECTION_RPC_TIMEOUT_MS and run concurrently, so the response waits at most one
- * deadline. The money is already spent; on success the corrected body is already durable, and a 500
- * (or a hang) would invite the user to press again, paying twice to fix a bookkeeping error. That
- * includes hitting the per-owner daily bound. Log loudly instead. A timed-out call is not aborted, so
- * it may still land — the safe direction for a record of spend that already happened.
+ * ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST — and it cannot: it NEVER THROWS, and the call is
+ * bounded by CORRECTION_RPC_TIMEOUT_MS, so a hung ledger delays the response by at most that, never
+ * holds it. The money is already spent; on success the corrected body is already durable, and a 500
+ * would invite the user to press again, paying twice to fix a bookkeeping error. That includes
+ * hitting the per-owner daily bound. Log loudly instead — there is no durable retry of a failed
+ * recording. A timed-out call is not aborted, so it may still land — the safe direction for a
+ * record of spend that already happened.
  */
 async function recordCorrectionSpend(
-  supabase: ReturnType<typeof createServerSupabase>, meter: UsageMeter, maxCentsPerCall: number | null,
-  ownerId: string, videoId: string,
+  supabase: ReturnType<typeof createServerSupabase>, meter: UsageMeter, ownerId: string, videoId: string,
 ): Promise<void> {
   if (meter.attempts.length === 0) return;   // bare press, preflight refusal, early 4xx: nothing paid
   const { cents, estimated } = meteredCorrectionCents(meter);
@@ -424,22 +428,13 @@ async function recordCorrectionSpend(
     // not a measurement.
     console.warn(`[correction-spend] ESTIMATED owner=${ownerId} video=${videoId} attempts=${estimated} cents=${cents}`);
   }
-  const chunks: number[] = [];
-  if (maxCentsPerCall != null && maxCentsPerCall > 0) {
-    for (let left = cents; left > 0; left -= maxCentsPerCall) chunks.push(Math.min(left, maxCentsPerCall));
-  }
-  if (chunks.length === 0) chunks.push(cents);   // 0¢ still records the call; no ceiling read → one call
-  const outcomes = await Promise.all(chunks.map((p_cents) => raceRpc<unknown>(
-    () => supabase.rpc('record_correction_spend', { p_cents }), CORRECTION_RPC_TIMEOUT_MS, 'record_correction_spend',
-  )));
-  outcomes.forEach((out, i) => {
-    if (out.ok) return;
+  const out = await raceRpc<unknown>(
+    () => supabase.rpc('record_correction_spend', { p_cents: cents }), CORRECTION_RPC_TIMEOUT_MS, 'record_correction_spend',
+  );
+  if (!out.ok) {
     const why = out.reason === 'timeout'
       ? `TIMED OUT after ${CORRECTION_RPC_TIMEOUT_MS}ms`
       : (out.cause as { message?: string } | undefined)?.message ?? errorSummary(out.cause);
-    console.error(
-      `[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${chunks[i]}`
-      + ` (part ${i + 1} of ${chunks.length}, press total ${cents}): ${why}`,
-    );
-  });
+    console.error(`[correction-spend] FAILED to record owner=${ownerId} video=${videoId} cents=${cents}: ${why}`);
+  }
 }

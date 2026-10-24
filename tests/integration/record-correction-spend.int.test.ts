@@ -6,6 +6,8 @@
 // ✅ RE-EXECUTED 2026-10-24 with the four 0028 correction_allowance cases added: 13/13.
 import { createClient } from '@supabase/supabase-js';
 import { adminClient, newUser, signInAs } from './helpers/clients';
+import { FIX_SUMMARY_RETRIES } from '@/lib/gemini';
+import { CORRECTION_WORST_ATTEMPT_CENTS } from '@/lib/corrections/apply-core';
 import {
   correctionActualCents, MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS,
 } from '@/lib/gemini-cost';
@@ -135,10 +137,13 @@ it('the anon ROLE cannot execute it', async () => {
 // changes MAX_SUMMARY_OUTPUT_TOKENS to remember this row exists.
 it('the ceiling covers the worst case §5.1 can produce, and N x ceiling stays a minority of the cap', async () => {
   const { correction_max_cents: ceiling, correction_max_calls_per_owner_day: N } = await cfg();
-  const worst = correctionActualCents({
+  // Derived from the same symbols the route prices with (round 2): a press is ONE call, so the LIVE
+  // ceiling must cover every attempt of it at the per-attempt bound.
+  const worst = CORRECTION_WORST_ATTEMPT_CENTS * (FIX_SUMMARY_RETRIES + 1);
+  expect(CORRECTION_WORST_ATTEMPT_CENTS).toBe(correctionActualCents({
     promptTokens: MAX_SUMMARY_OUTPUT_TOKENS + PROMPT_SCHEMA_OVERHEAD_TOKENS,
     outputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
-  }) * 3;                                     // fixSummary retries twice (gemini.ts:473)
+  }));
   expect(ceiling).toBeGreaterThanOrEqual(worst);
   const { data } = await svc.from('guardrail_config').select('daily_cap_cents').eq('id', true).single();
   expect(N * ceiling).toBeLessThan(data!.daily_cap_cents / 2);

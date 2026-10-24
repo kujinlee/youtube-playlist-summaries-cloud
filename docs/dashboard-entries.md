@@ -17297,15 +17297,27 @@ correction was thrown away (for example because the model deleted a section), Ge
 been paid and nothing was written down, so a person could keep spending while every counter read
 zero. Retried corrections were also under-counted, because only the last try was recorded.
 
-What is true now: every paid try is recorded. That includes failed tries, and tries where Gemini
-did not say how much it used, which are counted at the most they could have cost. When the daily
-limit of corrections is reached, the next one gets a plain "limit reached, try tomorrow" message
-and Gemini is never called. A slow or broken spending record no longer delays or changes what the
-user sees.
+What is counted now:
+- Every try Gemini answered, including ones that were then thrown away.
+- Tries where Gemini did not say how much it used. These are counted at the most they could have cost.
+- Tries cut off part-way because the person disconnected or the request timed out. These are also
+  counted at the most they could have cost, so walking away from a correction no longer gets around
+  the daily limit.
 
-What is still open: two corrections sent at exactly the same moment can both slip under the limit,
-because it is checked rather than reserved. That is filed as the existing reservation item, backlog
-#61. The overall daily spending cap is not checked before a correction yet either.
+The spending record is written on every outcome, success or failure. If writing it is slow, the
+person waits at most three extra seconds, and the answer they get does not change. Once the daily
+limit is reached, the next correction gets a plain "limit reached, try tomorrow" message and Gemini
+is never called.
+
+What is still open:
+- Corrections sent at the same moment can all slip under the limit, and there is no cap on how many.
+  The ones that slip are not counted anywhere, including in the overall daily spending total. This is
+  the existing reservation item, backlog #61, and the overall cap is still not checked before a
+  correction.
+- The short summary refreshed after each correction (the quick view) is still not counted.
+- A request Gemini rejects with an error, rather than one that is cut off, is not counted, because it
+  is not known whether Gemini charges for it.
+- If writing the spending record fails, it is logged but never retried later.
 
 The same branch replaces the confusing error a user saw when a correction was thrown away (*"corrected
 document does not start with a YAML frontmatter delimiter"*) with a plain sentence saying what
@@ -17314,15 +17326,17 @@ happened and that nothing was saved.
 This is not live yet. When it ships, the new database function has to go out before the code, or
 every correction will be refused.
 <!--tech-->
-Backlog #62 and #63, branch `fix/correction-spend-on-failure`, after review round 1. `fixSummary`
-pushes each billed attempt, fields independently nullable, into a caller-owned `UsageMeter` before
-the retry triggers can discard it. `serveCloud` records from the meter in a `finally` via
-`recordCorrectionSpend`, which never throws. Each RPC is bounded at `CORRECTION_RPC_TIMEOUT_MS`
-through `raceRpc`, and a press over 0026's per-call ceiling is split. A null field is charged
-at the `CORRECTION_CAPS` bound (`CORRECTION_WORST_ATTEMPT_CENTS` = 3¢). New migration
-`0028_correction_allowance.sql` is a SECURITY DEFINER read of the owner's count. The route reads it
-before any paid call and returns 429 `correction-limit-reached` at the limit, or 503
-`correction-limit-unavailable` when the read fails (fails closed). `STRUCTURAL_REFUSALS` maps each
-`StructuralFailureReason` to a 422 with `code: structure-<reason>`. Verified on the live local stack
-(23/23 across `corrections-cloud` and `record-correction-spend`) and with `check-schema-gates.sh`
-green. Reservation (backlog #61) deliberately not built; the race window is recorded there.
+Backlog #62 and #63, branch `fix/correction-spend-on-failure`, after review rounds 1 and 2.
+`fixSummary` pushes each returned attempt (fields independently nullable) into a caller-owned
+`UsageMeter` before the retry triggers can discard it, and pushes `{null, null}` for an attempt
+rejected in flight by `GoogleGenerativeAIAbortError` or an aborted signal. On SDK 0.24.1 that
+error's `name` is 'Error', so the class and the signal decide; the AbortError rethrow is keyed on the
+signal for the same reason. `serveCloud` records from the meter in a `finally` via
+`recordCorrectionSpend`: ONE call, `raceRpc`-bounded at `CORRECTION_RPC_TIMEOUT_MS`, never throws.
+A null field is charged at the `CORRECTION_CAPS` bound (`CORRECTION_WORST_ATTEMPT_CENTS` = 3¢).
+Round 1's over-ceiling split is removed. `correction-ceiling.test.ts` proves
+(`FIX_SUMMARY_RETRIES` + 1) × 3¢ fits 0026's declared per-call default. Migration
+`0028_correction_allowance.sql` is a SECURITY DEFINER read of the owner's count, checked before any
+paid call: 429 `correction-limit-reached`, or 503 `correction-limit-unavailable` (fails closed).
+`STRUCTURAL_REFUSALS` maps each `StructuralFailureReason` to a 422 with `code: structure-<reason>`.
+Reservation (backlog #61) deliberately not built; the unbounded race is recorded there.

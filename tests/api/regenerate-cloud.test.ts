@@ -323,23 +323,30 @@ describe('spend is recorded whatever the outcome (backlog #62)', () => {
     expect(recordCalls()).toHaveLength(0);
   });
 
-  // Round 1, Claude L1: 0026's ceiling is PER RPC CALL (`p_cents > v_cap` rejects, `calls + 1` per
-  // call). A press summing above it was rejected WHOLE and recorded 0¢. Split it across calls —
-  // each within the ceiling, the sum exact — at the cost of more of the owner's daily calls, which
-  // is the over-count direction.
-  it('splits a press above the per-call ceiling into calls that each fit, summing exactly', async () => {
-    allowanceRpc = allowance(0, 8, 3);
-    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, ONE_ATTEMPT, ONE_ATTEMPT, UNMEASURED)); // 2+2+3 = 7
-    await post({ corrections: 'fix X' });
-    const cents = recordCalls().map(([, args]) => (args as { p_cents: number }).p_cents);
-    expect(cents).toEqual([3, 3, 1]);
-  });
-
-  it('records a press within the ceiling as ONE call', async () => {
-    allowanceRpc = allowance(0, 8, 12);
+  // Round 2, Codex High: the round-1 SPLIT spent one 0026 call slot per chunk, so at calls = N-1 a
+  // [3,3,1] press recorded 3¢ and lost 4. Removed: a press is ONE call, always, and the per-call
+  // ceiling is instead proved to cover the worst press (correction-ceiling.test.ts).
+  it('records a press as ONE call, whatever its attempt count — never split', async () => {
     jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, ONE_ATTEMPT, ONE_ATTEMPT, UNMEASURED));
     await post({ corrections: 'fix X' });
     expect(recordCalls().map(([, a]) => a)).toEqual([{ p_cents: 7 }]);
+  });
+
+  it('records ONE call at calls = N-1 — the last slot carries the whole press', async () => {
+    allowanceRpc = allowance(7, 8);
+    jest.mocked(gemini.fixSummary).mockImplementation(billed(MD, ONE_ATTEMPT, ONE_ATTEMPT, UNMEASURED));
+    await post({ corrections: 'fix X' });
+    expect(recordCalls()).toHaveLength(1);
+  });
+
+  // Round 2, Claude High: an attempt cancelled or timed out WHILE generateContent was in flight
+  // pushed nothing, so a client that disconnected mid-press repeated it without moving the counter.
+  it('records a press whose in-flight attempt was ABORTED, at the per-attempt bound', async () => {
+    jest.mocked(gemini.fixSummary).mockImplementation(
+      billedThenThrow(new DOMException('aborted', 'AbortError'), UNMEASURED),
+    );
+    await post({ corrections: 'fix X' });
+    expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: CORRECTION_WORST_ATTEMPT_CENTS });
   });
 
   // A recording failure must not change the response, on EITHER path. Each case compares against
