@@ -490,6 +490,12 @@ nobody is looking at the repair.
    sentence after *"Fix."* never does.
 4. **Rounds 2+ alternate**, scoped to the delta, sent to the half that did NOT author the fix.
    Match the reviewer to the risk: reproduction and execution → Codex; experiment design → Claude.
+   ⛔ **A round is still a PAIR; alternation orders the pair, it does not halve it** (backlog #339).
+   The two halves of round N run one AFTER the other, the second seeing the first's fold, and both
+   are filed as round N — never one half as N and the other as N+1. Filing it that way fails
+   `check-review-rounds.py` twice, and its message's escape, a `REVIEW GAP:`, is the one
+   [`plugins.md`](plugins.md) forbids for a pre-authorised half. Practice already matches:
+   `main-drivable` and `shard-mutation-sweep` carry both halves for each of r7, r8 and r9.
 5. **Stop when a round has seen the tree that will merge** and no code change follows it. Holding
    the last round's fixes uncommitted so the reviewer sees the final state satisfies this and is the
    documented way to do it.

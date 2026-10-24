@@ -2,7 +2,7 @@
 """A review round has TWO halves, or a written reason why it does not — a RATCHET on silent gaps.
 
     python3 scripts/check-review-rounds.py             # audit docs/reviews/
-    python3 scripts/check-review-rounds.py --self-test # 87 cases
+    python3 scripts/check-review-rounds.py --self-test # 89 cases
 
 WHY THIS EXISTS
 ---------------
@@ -146,6 +146,15 @@ def by_subject_rounds(rows):
 # A coordinator file ADJUDICATES the two halves; it is not itself a half. Counting it would let a
 # round pass with one reviewer and its own summary — the shape this check exists to catch.
 HALVES = ("codex", "claude")
+
+# ⛔ backlog #339: the failure line is the only thing a person reads at the moment of the mistake,
+# and "the other half neither ran nor recorded a gap" points them at a `REVIEW GAP:` that
+# `plugins.md` forbids when the half is pre-authorised. The usual cause is mis-numbering: an
+# alternating round's second half filed under the NEXT number. The rule is stated once, in
+# `review-method.md`; this names it at the point of use rather than restating its argument.
+PAIRING_RULE = ("a round is a PAIR — rounds 2+ alternate the ORDER of its two halves, they do not "
+                "halve it; if the other half ran under another round number, file it under this "
+                "one (docs/review-method.md → *The protocol*, step 4)")
 
 # Emphasis may wrap the marker on EITHER side — `**REVIEW GAP:** codex — …` is the natural way to
 # write it in a review doc, and the first version only tolerated it on the left. Caught by the
@@ -594,7 +603,7 @@ def audit(reviews: pathlib.Path, known: set[tuple[str, int]] = KNOWN) -> tuple[l
         missing = [w for w in HALVES if w not in files] or ["both"]
         problems.append(
             f"{key[0]} round {key[1]}: only {'+'.join(present) or 'nothing'} — "
-            f"{'/'.join(missing)} neither ran nor recorded a `REVIEW GAP:` line"
+            f"{'/'.join(missing)} neither ran nor recorded a `REVIEW GAP:` line — {PAIRING_RULE}"
         )
 
     for stale in sorted(known - exempt_used):
@@ -726,6 +735,20 @@ def self_test() -> int:
 
         d = tree({"p-r1-codex.md": "x"})
         check("solo half FAILS", len(audit(d, set())[0]) == 1, True)
+
+        # ⛔ backlog #339 — the row's own FALSIFIER: an alternating round filed one half per round
+        # number. r1 is a pair; r2's Codex half and the Claude half dispatched AFTER it as "r3"
+        # are one round's two halves, mis-numbered. The gate must name the PAIRING rule, because
+        # "claude neither ran nor recorded a REVIEW GAP" sends the reader to declare a gap
+        # `plugins.md` forbids — which is how a required check went red on r8.
+        d = tree({"p-r1-codex.md": "x", "p-r1-claude.md": "y",
+                  "p-r2-codex.md": "x", "p-r3-claude.md": "y"})
+        _alt = audit(d, set())[0]
+        check("an alternating round filed under TWO numbers fails BOTH, not neither",
+              len(_alt) == 2, True)
+        check("⭐ …and each failure names the PAIRING rule, not only the missing half (backlog #339)",
+              all(PAIRING_RULE in p for p in _alt) and "a round is a PAIR" in PAIRING_RULE
+              and "review-method.md" in PAIRING_RULE, True)
 
         d = tree({"p-r1-codex.md": "REVIEW GAP: claude — not invoked; ran as r3"})
         check("solo half + gap line passes (the Codex-down path)", audit(d, set())[0] == [], True)

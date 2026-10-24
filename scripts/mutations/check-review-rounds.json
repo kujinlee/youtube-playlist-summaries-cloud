@@ -441,5 +441,18 @@
     "expect": [
       "corpus: by_subject_rounds projects what _corpus_now re-derived"
     ]
+  },
+  {
+    "name": "the solo-half failure stops naming the pairing rule, so a mis-numbered alternating round sends its reader to declare the REVIEW GAP plugins.md forbids — backlog #339",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "neither ran nor recorded a `REVIEW GAP:` line — {PAIRING_RULE}\"",
+        "neither ran nor recorded a `REVIEW GAP:` line\""
+      ]
+    ],
+    "expect": [
+      "⭐ …and each failure names the PAIRING rule, not only the missing half (backlog #339)"
+    ]
   }
 ]
