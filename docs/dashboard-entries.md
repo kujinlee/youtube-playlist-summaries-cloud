@@ -17399,7 +17399,8 @@ download server made that one step take 27 minutes, so the whole check was cut o
 limit and showed red without having tested anything. Now only the download is retried, up to three
 times, each with its own short limit. The install itself then runs once from the downloaded files,
 with its own limit. If any part fails, the step stops with a message saying which part failed and
-that the checks did not run. It no longer blames a slow server for a problem that was local.
+that the checks did not run, followed by the tool's own last lines of output. It does not guess at
+the cause.
 
 The second: the mutation tests run split across 8 machines, and the slowest one took 27 of its 30
 minutes. They now run across 12, which should bring the slowest down to about 20 minutes. That figure
@@ -17407,18 +17408,23 @@ is a prediction; the first CI run of this branch is where it gets measured.
 <!--tech-->
 Backlog #343 and #231, branch `fix/ci-time-limits`, `.github/workflows/ci.yml` (plus a one-line
 docstring in `scripts/check-plan-code.py`). Evidence for #343 is run 40023350011 (step 27m31s, `verify`
-cancelled at 30m14s). After the round 1 fold the step bounds and retries only the network: `apt-get
-update` <= 120s and `install --download-only` <= 150s, 3 attempts. It then runs `install --no-download`
-once, <= 180s. Every operation passes `DPkg::Lock::Timeout=60`, runs under `timeout --kill-after=10`
-(round 2: a SIGTERM-resistant process otherwise outlived its bound), and there is no repair step. The
-budget including the grace is 1,060s inside a step `timeout-minutes: 20`. Tested on the delivered step text in `ubuntu:26.04`
-(resolute, the runner's release) with real `sudo-rs`, real uutils `timeout` and real apt, faults
-injected by an `apt-get` wrapper on sudo's `secure_path`. Twelve cases: update, download and dpkg hangs, SIGTERM ignored in either phase,
-a fast download failure, hang-then-succeed, a lock held long, briefly and from inside the install
-phase, a real dpkg killed mid-install, and a healthy install. Each failure names its own phase. The
-round 1 version's record said "`ubuntu:24.04`, `apt-get` stubbed", and that was with a sudo shim, so
-it overstated what ran. Testing also found that `| tee` hangs the step when a lock-holder outlives
-the kill; output now goes to a file. #231: matrix `shard: [1..8]` to `[1..12]`; evidence is run
-40031532664 (slowest shard 1621s, three shards over the 1,500s trigger). N is derived everywhere
-else from `strategy.job-total`, so the matrix list is the only copy. Concurrent-job queueing with
-14 jobs per push is noted on backlog #231 as unmeasured.
+cancelled at 30m14s). After three review rounds the step does this:
+- it bounds and retries only the network: `apt-get update` <= 120s and `install --download-only` <= 150s,
+  3 attempts, 15s apart; then `install --no-download` runs once, <= 180s;
+- every operation runs under `timeout --kill-after=10`;
+- the two install calls pass `DPkg::Lock::Timeout=60`. `apt-get update`'s lists lock is not covered by
+  that option, so for update only the retry pause helps;
+- there is no repair step, and the budget is 1,090s inside a step `timeout-minutes: 20`;
+- the CANNOT RUN message gives the phase and what the exit code means (124 bound, 137 SIGKILL, other =
+  apt/dpkg error), then the last 40 lines of that phase's output. No cause is guessed: two rounds of
+  guessing were each wrong in a measured case.
+
+Tested in 15 cases on the delivered step text in `ubuntu:26.04` (resolute, the runner's release), with
+real `sudo-rs`, real uutils `timeout` and real apt, faults injected by an `apt-get` wrapper on sudo's
+`secure_path`, `fcntl` locks and a blackholed proxy. The round 1 record said "`ubuntu:24.04`, `apt-get`
+stubbed", which was with a sudo shim, so it overstated what ran.
+
+#231: matrix `shard: [1..8]` to `[1..12]`; evidence is run 40031532664 (slowest shard 1621s, three
+shards over the 1,500s trigger). N is derived everywhere else from `strategy.job-total`, so the
+matrix list is the only copy. Concurrent-job queueing with 14 jobs per push is noted on backlog #231
+as unmeasured.

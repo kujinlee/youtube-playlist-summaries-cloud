@@ -115,26 +115,33 @@ jobs:
       # that had run at 21.6 MB/s. And the repair itself had no bound. So now:
       #   1. `apt-get update`                   <= APT_UPDATE_LIMIT_S   per attempt   (network)
       #   2. `apt-get install --download-only`  <= APT_DOWNLOAD_LIMIT_S per attempt   (network)
-      #      — up to FFMPEG_ATTEMPTS attempts; a finished update is not repeated, so the .debs
-      #        a partial attempt fetched are kept. A killed download runs no dpkg, so no repair.
+      #      — up to FFMPEG_ATTEMPTS attempts, RETRY_PAUSE_S apart; a finished update is not
+      #        repeated, so the .debs a partial attempt fetched are kept. A killed download runs
+      #        no dpkg, so there is nothing to repair.
       #   3. `apt-get install --no-download`    <= APT_INSTALL_LIMIT_S, ONCE          (local dpkg)
       #      — `--no-download` makes it fail rather than reach the network.
-      #   Every operation passes `DPkg::Lock::Timeout`, so it WAITS for a lock instead of
-      #   colliding, and that wait sits inside its bound. Measured: `--download-only` takes the
-      #   dpkg frontend lock too, so without this a held lock failed the DOWNLOAD instantly and
-      #   was reported as a slow mirror. A lock failure is now named as one.
+      # LOCKS, stated per operation because they differ (round 3, measured): 2 and 3 take the
+      # dpkg frontend lock and pass `DPkg::Lock::Timeout`, so they WAIT for it, inside their
+      # bound. `apt-get update` takes /var/lib/apt/lists/lock, which that option does NOT cover:
+      # it fails at once on a held lock, and the RETRY_PAUSE_S pause before the next attempt is
+      # what gives a briefly-held lock time to clear.
       # There is NO repair step: nothing retried runs dpkg, so there is nothing to repair, and a
       # repair is the one operation round 1 measured hanging with no bound.
       # Every bound is HARD: `timeout --kill-after=KILL_GRACE_S` sends SIGKILL if the operation
       # ignores SIGTERM (round 2 — without it a TERM-resistant process outlived its bound and the
-      # step cap cut it off before any diagnostic printed; a SIGKILL is rc 137, a TERM kill 124).
-      # BUDGET, summed WITH the kill grace on each of the 7 operations:
-      #   3 x (120+10 + 150+10) + (180+10) = 870 + 190 = 1,060s = 17.7 min
+      # step cap cut it off before any diagnostic printed).
+      # ⛔ THE FAILURE MESSAGE STATES ONLY WHAT IS KNOWN (round 3): the phase, the exit code and
+      # what the code means — 124 timed out at its bound, 137 ignored SIGTERM and was killed,
+      # anything else is apt/dpkg's own error — and then the last lines of that phase's output,
+      # so the reader sees apt's words. It does not guess a cause. Two rounds guessed (a lock
+      # reported as a slow mirror, then a slow mirror reported as a lock, from apt's
+      # "Waiting for cache lock" progress lines) and each guess was wrong in a measured case.
+      # BUDGET, summed WITH the kill grace on each of the 7 operations and the 2 pauses:
+      #   3 x (120+10 + 150+10) + 2 x 15 + (180+10) = 870 + 30 + 190 = 1,090s = 18.2 min
       # inside this step's `timeout-minutes: 20` (1,200s) — the backstop over all of it, leaving
-      # 140s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
-      # inside the job's 30. Exhausting any phase is a
-      # FAILURE that names THAT phase with CANNOT RUN — never a skip, because the slide-crop
-      # tests need the binaries.
+      # 110s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
+      # inside the job's 30. Exhausting any phase is a FAILURE that names THAT phase with
+      # CANNOT RUN — never a skip, because the slide-crop tests need the binaries.
       - name: Install ffmpeg (required by the slide-crop tests)
         timeout-minutes: 20
         env:
@@ -144,35 +151,36 @@ jobs:
           APT_INSTALL_LIMIT_S: 180
           DPKG_LOCK_WAIT_S: 60
           KILL_GRACE_S: 10
+          RETRY_PAUSE_S: 15
+          LOG_TAIL_LINES: 40
         run: |
-          cannot_run() {
-            echo "::error::CANNOT RUN — $1"
-            echo "Every check after this step did NOT RUN: treat this as NOT CHECKED, not as a verdict on the commit."
-            exit 1
-          }
-          # Runs one apt operation under its own bound, keeps its output, and sets `why` to what
-          # went wrong: a held lock is named as one, never as a slow mirror (round 1 fold:
-          # `--download-only` takes the dpkg frontend lock too — measured).
           # ⚠ A FILE, NOT `| tee`. Measured: a process that outlives the kill (the orphaned dpkg
           # round 1 found) keeps a pipe's write end open, so `tee` never sees EOF and the step
           # hangs to its cap with no CANNOT RUN — the defect this step exists to remove. The
           # price is that an attempt's output appears when it ends, not while it runs.
           log=$(mktemp)
+          cannot_run() {
+            echo "::error::CANNOT RUN — $1"
+            echo "Every check after this step did NOT RUN: treat this as NOT CHECKED, not as a verdict on the commit."
+            if [ -s "$log" ]; then
+              echo "--- last $LOG_TAIL_LINES lines of that phase's output ---"
+              tail -n "$LOG_TAIL_LINES" "$log"
+            fi
+            exit 1
+          }
+          # Runs one operation under its bound, prints its output, and on failure sets `why` to
+          # the phase plus what the exit code MEANS — nothing inferred from the output.
           bounded() {
             local limit=$1 what=$2 rc=0
             shift 2
             sudo timeout --kill-after="$KILL_GRACE_S" "$limit" "$@" > "$log" 2>&1 || rc=$?
             cat "$log"
-            [ "$rc" = 0 ] && return 0
-            if grep -qE 'Could not get lock|Unable to acquire the dpkg frontend lock|Unable to lock' "$log"; then
-              why="$what: the apt/dpkg lock was held by another process for over ${DPKG_LOCK_WAIT_S}s — NOT a mirror problem"
-            elif [ "$rc" = 124 ]; then
-              why="$what exceeded its ${limit}s bound and was killed"
-            elif [ "$rc" = 137 ]; then
-              why="$what exceeded its ${limit}s bound, ignored SIGTERM, and was SIGKILLed ${KILL_GRACE_S}s later"
-            else
-              why="$what failed (exit $rc)"
-            fi
+            case "$rc" in
+              0)   return 0 ;;
+              124) why="$what: timed out at its ${limit}s bound (exit 124)" ;;
+              137) why="$what: ignored SIGTERM at its ${limit}s bound and was SIGKILLed ${KILL_GRACE_S}s later (exit 137)" ;;
+              *)   why="$what: apt/dpkg exited with an error (exit $rc) — its own message is in the output" ;;
+            esac
             return 1
           }
           lock=(-o DPkg::Lock::Timeout="$DPKG_LOCK_WAIT_S")
@@ -180,8 +188,11 @@ jobs:
           downloaded=no
           why=""
           for attempt in $(seq 1 "$FFMPEG_ATTEMPTS"); do
+            if [ "$attempt" -gt 1 ]; then
+              sleep "$RETRY_PAUSE_S"
+            fi
             if [ "$updated" != yes ]; then
-              if bounded "$APT_UPDATE_LIMIT_S" "apt-get update (network)" apt-get update "${lock[@]}" \
+              if bounded "$APT_UPDATE_LIMIT_S" "apt-get update (network)" apt-get update \
                    -o Dir::Etc::sourceparts="-" \
                    -o APT::Get::List-Cleanup="0"
               then
@@ -200,13 +211,14 @@ jobs:
             echo "::warning::attempt $attempt of $FFMPEG_ATTEMPTS: $why"
           done
           if [ "$downloaded" != yes ]; then
-            cannot_run "on all $FFMPEG_ATTEMPTS attempts, the last: $why. Re-run the job."
+            cannot_run "all $FFMPEG_ATTEMPTS attempts failed; the last: $why. Re-run the job."
           fi
-          if ! bounded "$APT_INSTALL_LIMIT_S" "installing ffmpeg from the local package cache (dpkg, no network — the download had completed)" \
+          if ! bounded "$APT_INSTALL_LIMIT_S" "installing ffmpeg from the local package cache (dpkg, --no-download, after the download completed)" \
                apt-get install -y --no-install-recommends --no-download "${lock[@]}" ffmpeg
           then
-            cannot_run "$why. Read the dpkg output above."
+            cannot_run "$why."
           fi
+          : > "$log"
           ffmpeg -version > /dev/null || cannot_run "ffmpeg was installed but does not execute"
           ffprobe -version > /dev/null || cannot_run "ffprobe was installed but does not execute"
 
