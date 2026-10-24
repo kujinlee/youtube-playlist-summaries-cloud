@@ -184,8 +184,10 @@ permissions:
 # ⛔ PINNED BY DIGEST — the digest of the ECR original's image index, which
 # `docker buildx imagetools create` preserves — so the mirror cannot change what these gates test: a
 # different image behind the same tag fails the pull instead of passing over different bytes. The
-# package is public, so the pull needs no login. Local runs keep the ECR default at
-# `scripts/ci/start-schema-db.sh:42`.
+# pull carries NO login, so the package MUST be public: measured 2026-10-23 while it was still private,
+# an anonymous manifest request got 401 and `start-schema-db.sh` fails CLOSED on that (rc=2, CANNOT
+# RUN). This check going green on the PR that introduced this line is what verifies the mirror is
+# reachable. Local runs keep the ECR default at `scripts/ci/start-schema-db.sh:42`.
 env:
   SCHEMA_DB_IMAGE: ghcr.io/kujinlee/supabase-postgres@sha256:ac581882596ed0e46937ea6dd53a627d09f53e005d7264c2082a7ff7b62eaaca
 
@@ -304,8 +306,13 @@ jobs:
       # initialise a database nobody reads, which is 14 seconds spent to be ignored.
       - name: A psql client to reach production through
         run: |
-          docker run -d --name m4_prod_client \
-            --entrypoint sleep "$SCHEMA_DB_IMAGE" infinity
+          # ⟳ ci-ghcr-schema-image r1 LOW 2 (codex): an image that cannot be obtained is CANNOT RUN
+          # (rc=2), the same contract `start-schema-db.sh` keeps — not a bare `docker run` failure.
+          if ! docker run -d --name m4_prod_client \
+            --entrypoint sleep "$SCHEMA_DB_IMAGE" infinity; then
+            echo "CANNOT RUN — could not start a psql client from $SCHEMA_DB_IMAGE. Treat this as NOT RUN, never as a pass." >&2
+            exit 2
+          fi
           docker exec -i m4_prod_client psql --version
 
       - name: Has production drifted from the manifest?

@@ -17262,7 +17262,7 @@ was often used up by strangers. On 2026-10-23 the check failed three times in th
 
 CI now downloads the same image from a copy in this account's GitHub package registry. It is
 pinned to the exact fingerprint (digest) of Amazon's original. The copy was made in a way that
-keeps that fingerprint, so the check still tests the identical database. If the copy ever stopped
+keeps that fingerprint, so the check still tests the identical database. The copy has to be public, because CI downloads it without logging in. If the copy ever stopped
 matching, the download would fail rather than quietly test something different. Local runs
 still use Amazon's original.
 
@@ -17270,5 +17270,5 @@ still use Amazon's original.
 `.github/workflows/schema-gates.yml`: workflow-level `SCHEMA_DB_IMAGE:
 ghcr.io/kujinlee/supabase-postgres@sha256:ac581882…aaca` (the ECR index digest, preserved by
 `docker buildx imagetools create`), read by `scripts/ci/start-schema-db.sh:42` and by the
-`prod-drift` psql-client step. Package is public, so the pull needs no login. Fixes backlog #340
+`prod-drift` psql-client step (now exiting 2 = CANNOT RUN if the image cannot be started). The pull carries no login, so the package must be public; this PR's own `schema-gates` run going green is the verification. Fixes backlog #340
 (remedy a); backlog #310 closed as its duplicate.
