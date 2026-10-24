@@ -17390,3 +17390,41 @@ backlog #306 PARTLY: headers on `chrome-bar-reachable-r{3,5,6}-coordinator.md` w
 `decide` -> CANNOT_RUN, *rounds are not gapless: found [3, 5, 6]*. Round-1 fold corrected r3 L1 and
 r5 L1 to `fix_induced: true` from git (`d2e5db17`, `4f4e2748`).
 backlog #347 filed: within-round fixes and `fix_induced`. `EXPECTED_MUTATIONS` sum 1999 -> 2003.
+
+## 2026-10-24
+Two CI time limits that were close to cancelling required checks now have room again.
+
+The first: the main check installs a video tool before running the tests, and last night a slow
+download server made that one step take 27 minutes, so the whole check was cut off at its 30-minute
+limit and showed red without having tested anything. Now only the download is retried, up to three
+times, each with its own short limit. The install itself then runs once from the downloaded files,
+with its own limit. If any part fails, the step stops with a message saying which part failed and
+that the checks did not run, followed by the tool's own last lines of output. It does not guess at
+the cause.
+
+The second: the mutation tests run split across 8 machines, and the slowest one took 27 of its 30
+minutes. They now run across 12, which should bring the slowest down to about 20 minutes. That figure
+is a prediction; the first CI run of this branch is where it gets measured.
+<!--tech-->
+Backlog #343 and #231, branch `fix/ci-time-limits`, `.github/workflows/ci.yml` (plus a one-line
+docstring in `scripts/check-plan-code.py`). Evidence for #343 is run 40023350011 (step 27m31s, `verify`
+cancelled at 30m14s). After three review rounds the step does this:
+- it bounds and retries only the network: `apt-get update` <= 120s and `install --download-only` <= 150s,
+  3 attempts, 15s apart; then `install --no-download` runs once, <= 180s;
+- every operation runs under `timeout --kill-after=10`;
+- the two install calls pass `DPkg::Lock::Timeout=60`. `apt-get update`'s lists lock is not covered by
+  that option, so for update only the retry pause helps;
+- there is no repair step, and the budget is 1,090s inside a step `timeout-minutes: 20`;
+- the CANNOT RUN message gives the phase and what the exit code means (124 bound, 137 SIGKILL, other =
+  apt/dpkg error), then the last 40 lines of that phase's output. No cause is guessed: two rounds of
+  guessing were each wrong in a measured case.
+
+Tested in 15 cases on the delivered step text in `ubuntu:26.04` (resolute, the runner's release), with
+real `sudo-rs`, real uutils `timeout` and real apt, faults injected by an `apt-get` wrapper on sudo's
+`secure_path`, `fcntl` locks and a blackholed proxy. The round 1 record said "`ubuntu:24.04`, `apt-get`
+stubbed", which was with a sudo shim, so it overstated what ran.
+
+#231: matrix `shard: [1..8]` to `[1..12]`; evidence is run 40031532664 (slowest shard 1621s, three
+shards over the 1,500s trigger). N is derived everywhere else from `strategy.job-total`, so the
+matrix list is the only copy. Concurrent-job queueing with 14 jobs per push is noted on backlog #231
+as unmeasured.
