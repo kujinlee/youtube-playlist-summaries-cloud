@@ -1,5 +1,21 @@
 # chrome-bar-reachable — round 3 coordinator note
 
+```yaml
+round: 3
+fixes_nontrivial: true
+subject: chrome-bar-reachable
+halves:
+  codex: ran
+  claude: "GAP: not invoked — the r3 Codex half records `REVIEW GAP: claude`, reading alternation as one half per round (the reading backlog #339 corrects)"
+findings:
+  - {id: B1, severity: Blocking, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
+  - {id: M1, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
+  - {id: M2, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
+  - {id: M3, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
+  - {id: M4, severity: Medium, aim: instrument, fix_induced: true, component: page_chrome, disposition: fixed}
+  - {id: L1, severity: Low, aim: instrument, fix_induced: false, component: page_chrome, disposition: declined}
+```
+
 ## THRASHING OR PROSE FLOOR? — **THRASHING.** The condition in `dev-process.md` is met.
 
 > fires when **two consecutive rounds carry findings caused by the previous round's own fix,
@@ -78,3 +94,21 @@ markup; malformed-nesting and foreign-content parser variants.
 
 **NOT CONVERGED.** Round 4 is warranted, and the thrashing arming condition for a Phase 6
 architecture review is MET and recorded here for the owner's call.
+
+## Header provenance — backfilled 2026-10-24 (backlog #306), DERIVED, not remembered
+
+This header was absent for five days and is written from three sources, none of them recall: the
+round's Codex half (`codex/chrome-bar-reachable-r3-codex.md`, the findings and severities), this
+note's own *Introduced by* table (`fix_induced`), and the fold commit `03b78e94` (dispositions).
+
+* **Ids, in the half's order:** B1 equivalent CSS defeats the consumer guard · M1 the template's
+  own id hidden · M2 `dict(attrs)` last-wins · M3 `<noscript>` contents counted live · M4
+  `@media not all{…}` accepted · L1 a fifth masking mutation pair.
+* **`fix_induced`:** the table above marks B1 and M1–M4 *r2 fold*; L1 is not in it.
+* **`aim: instrument` for all six:** every finding is in `assert_wired` / `missing_text_consumer`
+  or the cases and mutations that defend them — a guard over the page, not the page.
+* **`disposition`:** `03b78e94` folds B1 (the caller supplies `scoped_css_emitted`) and M1–M3 on
+  Chromium's semantics, and narrows M4's claim to the emitter, where the r3 attack now reddens.
+  L1 is **declined**: *"pair-coverage NOT claimed"* — real, and not being fixed.
+* **`fixes_nontrivial: true`:** the fold changed the guard's contract (a new caller-supplied fact).
+* **`halves.claude`:** no Claude half exists for r3, and the Codex half says why in its own words.

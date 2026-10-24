@@ -17251,3 +17251,28 @@ corrected after a reviewer showed it had been scored to keep a check quiet.
 BET (WARN, pinned in `baseline.json` by subject, unit and route), 11 LADDER EXHAUSTED, CLOSED
 (WARN), 12 LADDER RESTARTED (WARN); trigger 2 fails only an open exhausted unit. 271 cases,
 125 mutations.
+
+## 2026-10-24
+Three small fixes to the review loop's bookkeeping, one finished and two half-finished on purpose.
+
+Finished: the rule "later review rounds alternate" was being read as "one reviewer per round",
+which made the round check go red and pointed people at an excuse the process forbids. It is now
+written down that a round is always a pair — alternating only decides which reviewer goes first —
+and the check's failure message says so at the moment someone gets it wrong.
+
+Half-finished: the tool that answers "is this review loop going in circles?" could not read one
+long branch's notes because they had never been given the header it reads. Those headers are now
+filled in from what the notes and commits actually say, and the tool reads them — but it still
+cannot answer, because that branch kept notes for only three of its eight rounds. Closing that gap
+means writing five notes after the fact or changing what the tool demands, and that is a choice.
+Separately, the tool now accepts "refuted" (this was not a real problem) as an outcome; the one
+subject that needed it turned out to use three more words the tool does not know yet.
+<!--tech-->
+backlog #339 CLOSED: `docs/review-method.md` *The protocol* step 4, a pointer in `docs/plugins.md`,
+`check-review-rounds.PAIRING_RULE` in every solo-half problem line; 87 -> 89 cases, manifest 34 -> 35.
+backlog #318 PARTLY: `check-review-decision.ANSWERED = (fixed, declined, refuted)`, read by
+`_validate` and `round_blocker`; template row states each meaning; 115 -> 118 cases, manifest 28 -> 30
+(two #329 anchors re-pointed). `ship-src-root-alone` is still refused at `redesigned`; `retreat` and
+`moot` follow. backlog #306 PARTLY: headers on `chrome-bar-reachable-r{3,5,6}-coordinator.md`, each
+with a provenance section; `decide` -> CANNOT_RUN, *rounds are not gapless: found [3, 5, 6]*.
+`EXPECTED_MUTATIONS` sum 1999 -> 2002. Scoped mutation runs: 35/35 and 30/30 killed and attributed.
