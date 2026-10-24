@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, GoogleGenerativeAIAbortError, SchemaType } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import type { GenerativeModel, ResponseSchema, GenerationConfig, Content, ArraySchema, ObjectSchema } from '@google/generative-ai';
 import { RatingsSchema, VideoTypeSchema, AudienceSchema } from '../types';
 import type { GeminiSummaryResponse } from '../types';
@@ -500,25 +500,26 @@ ${summaryMarkdown}
 export interface GeminiUsage { promptTokens: number; outputTokens: number }
 
 /**
- * Every BILLED attempt of one fixSummary call, in order, owned by the CALLER (backlog #62).
+ * Every DISPATCHED attempt of one fixSummary call, in order, owned by the CALLER (backlog #62).
  *
- * An attempt is pushed the moment `generateContent` returns — before `assertNotTruncated` or the
- * empty-content check can throw it away — because by then it has been paid for. Returning usage
- * instead reported only the winning attempt and nothing at all on a throw, so a press that retried
- * under-reported and a press that failed recorded no spend. The caller reads this AFTER the call
- * settles, on either path.
+ * METERED AT DISPATCH, NOT ON RESPONSE (round 3). An entry `{ promptTokens: null, outputTokens: null }`
+ * is pushed the moment an attempt is sent, BEFORE `generateContent` is awaited, and is REPLACED by
+ * the reported usage when a response arrives — each field independently, so a response reporting
+ * only its prompt tokens keeps them (round 1, Codex H2). Pricing charges a `null` at the bound
+ * CORRECTION_CAPS enforces (`meteredCorrectionCents`, apply-core.ts), so an unanswered attempt costs
+ * CORRECTION_WORST_ATTEMPT_CENTS.
  *
- * EVERY returned attempt is pushed, measured or not (round 1, Codex H2): an attempt with no usage
- * metadata used to vanish from every counter. A field the SDK did not report is `null` — "billed,
- * amount unknown", never "free" — and each field is kept independently, so a response reporting
- * only its prompt tokens keeps them. Pricing fills a `null` with the bound the caps enforce
- * (`meteredCorrectionCents`, apply-core.ts).
+ * WHY AT DISPATCH. Rounds 1 and 2 metered on the way OUT — on a response, then also on rejections
+ * that looked like a cancel — and each round found an exit the classification missed: no usage
+ * metadata, an in-flight abort (the SDK names it 'Error'), and finally an SDK timeout during the
+ * response-BODY read, which rejects with a plain DOMException `AbortError` and an un-aborted signal
+ * (measured by both round-3 reviewers on SDK 0.24.1). Metering at dispatch makes every exit — any
+ * error shape, timeout, abort, the last attempt — metered by construction, with nothing to classify.
  *
- * An attempt CANCELLED OR TIMED OUT while `generateContent` was in flight is pushed too, with both
- * fields null (round 2, Claude High). Whether Gemini bills a request cut off mid-generation is not
- * observable here, and this is the one outcome the CLIENT controls — leaving it unmetered let a
- * caller repeat presses by disconnecting without ever moving the daily counter. Any other
- * `generateContent` rejection (an HTTP 4xx/5xx, a network fault) pushes nothing: no generation ran.
+ * ⚠ THE ACCEPTED OVER-COUNT. An attempt that never reached Gemini, or was refused before generating
+ * (a network fault, an HTTP 4xx/5xx), is charged at the bound too. That is the conservative direction
+ * on purpose: Gemini's billing of a cut-off or failed request is not observable here, and an
+ * under-count is a bound evasion while an over-count only spends the owner's allowance sooner.
  */
 export interface MeteredAttempt { promptTokens: number | null; outputTokens: number | null }
 export interface UsageMeter { attempts: MeteredAttempt[] }
@@ -594,31 +595,25 @@ ${mdContent}
     // (1 of 3) Loop-top abort guard — generateJson has this; without it an abort during the
     // backoff below is not noticed until the NEXT paid call has already been issued.
     if (opts.signal.aborted) throw new DOMException('aborted', 'AbortError');
+    // METER AT DISPATCH — before anything can fail. See UsageMeter.
+    const slot = opts.meter ? opts.meter.attempts.push({ promptTokens: null, outputTokens: null }) - 1 : -1;
     try {
       // (2 of 3) Forward the signal to the call itself.
-      let result: Awaited<ReturnType<typeof model.generateContent>>;
-      try {
-        result = await model.generateContent(prompt, {
-          timeout: REQUEST_TIMEOUT_MS,
-          signal: opts.signal,
-        });
-      } catch (err) {
-        // CUT OFF IN FLIGHT → metered at unknown usage (see UsageMeter). MEASURED on SDK 0.24.1 (round
-        // 2): a caller abort AND the SDK's own timeout both reject with GoogleGenerativeAIAbortError,
-        // whose `name` is 'Error' — so the class and the signal decide, never `err.name`.
-        if (err instanceof GoogleGenerativeAIAbortError || opts.signal.aborted) {
-          opts.meter?.attempts.push({ promptTokens: null, outputTokens: null });
-        }
-        throw err;
-      }
-      // METER FIRST — this attempt is billed whether or not the two checks below keep it.
+      const result = await model.generateContent(prompt, {
+        timeout: REQUEST_TIMEOUT_MS,
+        signal: opts.signal,
+      });
+      // A response arrived: REPLACE the provisional entry with what the SDK reported — before the two
+      // checks below, which discard an attempt that has nonetheless been paid for.
       const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
       // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
       // facts, and collapsing them would understate spend exactly where it matters.
-      opts.meter?.attempts.push({
-        promptTokens: um?.promptTokenCount ?? null,
-        outputTokens: um?.candidatesTokenCount ?? null,
-      });
+      if (opts.meter) {
+        opts.meter.attempts[slot] = {
+          promptTokens: um?.promptTokenCount ?? null,
+          outputTokens: um?.candidatesTokenCount ?? null,
+        };
+      }
       assertNotTruncated(result);
       // Unwrap BEFORE the empty check: '```\n\n```' is a non-empty string but an empty response,
       // and letting it through would report a structural failure for what is really nothing back.
@@ -626,11 +621,11 @@ ${mdContent}
       if (!corrected) throw new Error('Gemini returned empty content');
       return { text: corrected };
     } catch (err) {
-      // Preserve AbortError identity so the caller can distinguish cancellation from a real failure.
-      // ⚠ Keyed on the SIGNAL, not only on `err.name` (round 2, Claude Low): the SDK re-wraps an
-      // in-flight abort as GoogleGenerativeAIAbortError with name 'Error', so a name check alone never
-      // fired and a cancelled press was retried, then reported as "summary fix failed".
-      if ((err as { name?: string })?.name === 'AbortError') throw err;
+      // A CANCEL IS THE CALLER'S SIGNAL, AND NOTHING ELSE (round 3). The rejection's own shape cannot
+      // say: on SDK 0.24.1 a caller abort arrives as GoogleGenerativeAIAbortError named 'Error', and
+      // OUR request timer firing during the body read arrives as a DOMException named 'AbortError'
+      // with the signal untouched. So the signal decides — a timeout is a retryable failure, and a
+      // caller abort is rethrown with AbortError identity whatever the SDK wrapped it in.
       if (opts.signal.aborted) throw new DOMException('aborted', 'AbortError');
       lastErr = err;
       if (attempt < retries) {

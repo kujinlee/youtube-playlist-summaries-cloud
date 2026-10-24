@@ -151,12 +151,12 @@ it('the ceiling covers the worst case §5.1 can produce, and N x ceiling stays a
 
 // ── 0028 correction_allowance — the read the route makes BEFORE the paid call (backlog #62 r1) ──
 describe('correction_allowance', () => {
-  it('reports 0 calls for an owner with no press today, and the two 0026 bounds', async () => {
-    const { correction_max_cents, correction_max_calls_per_owner_day } = await cfg();
+  it('reports 0 calls for an owner with no press today, and 0026\'s call limit', async () => {
+    const { correction_max_calls_per_owner_day } = await cfg();
     const { client } = await freshUserClient();
     const { data, error } = await client.rpc('correction_allowance');
     expect(error).toBeNull();
-    expect(data).toEqual({ calls: 0, max_calls: correction_max_calls_per_owner_day, max_cents: correction_max_cents });
+    expect(data).toEqual({ calls: 0, max_calls: correction_max_calls_per_owner_day });
   });
 
   it('counts what record_correction_spend recorded for THIS owner today', async () => {

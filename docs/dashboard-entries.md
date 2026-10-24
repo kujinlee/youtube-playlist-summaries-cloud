@@ -17366,12 +17366,13 @@ correction was thrown away (for example because the model deleted a section), Ge
 been paid and nothing was written down, so a person could keep spending while every counter read
 zero. Retried corrections were also under-counted, because only the last try was recorded.
 
-What is counted now:
-- Every try Gemini answered, including ones that were then thrown away.
-- Tries where Gemini did not say how much it used. These are counted at the most they could have cost.
-- Tries cut off part-way because the person disconnected or the request timed out. These are also
-  counted at the most they could have cost, so walking away from a correction no longer gets around
-  the daily limit.
+What is counted now: every try that is sent to Gemini. Each try is counted at the most it could
+cost the moment it is sent. If Gemini then answers and says how much it used, the real figure
+replaces that estimate. So a try that is thrown away, cut off by a disconnect or a timeout, or
+answered without usage figures is still counted. Walking away from a correction no longer gets around
+the daily limit. The cost of this is that a try which failed before Gemini did any work is counted
+too. That is deliberate: it can only use up a person's allowance sooner, never let spending slip
+past it.
 
 The spending record is written on every outcome, success or failure. If writing it is slow, the
 person waits at most three extra seconds, and the answer they get does not change. Once the daily
@@ -17384,8 +17385,6 @@ What is still open:
   the existing reservation item, backlog #61, and the overall cap is still not checked before a
   correction.
 - The short summary refreshed after each correction (the quick view) is still not counted.
-- A request Gemini rejects with an error, rather than one that is cut off, is not counted, because it
-  is not known whether Gemini charges for it.
 - If writing the spending record fails, it is logged but never retried later.
 
 The same branch replaces the confusing error a user saw when a correction was thrown away (*"corrected
@@ -17395,16 +17394,19 @@ happened and that nothing was saved.
 This is not live yet. When it ships, the new database function has to go out before the code, or
 every correction will be refused.
 <!--tech-->
-Backlog #62 and #63, branch `fix/correction-spend-on-failure`, after review rounds 1 and 2.
-`fixSummary` pushes each returned attempt (fields independently nullable) into a caller-owned
-`UsageMeter` before the retry triggers can discard it, and pushes `{null, null}` for an attempt
-rejected in flight by `GoogleGenerativeAIAbortError` or an aborted signal. On SDK 0.24.1 that
-error's `name` is 'Error', so the class and the signal decide; the AbortError rethrow is keyed on the
-signal for the same reason. `serveCloud` records from the meter in a `finally` via
+Backlog #62 and #63, branch `fix/correction-spend-on-failure`, after three review rounds.
+`fixSummary` pushes a provisional `{null, null}` entry into a caller-owned `UsageMeter` when each
+attempt is dispatched, and replaces it with the reported usage when a response arrives. Each field
+is replaced independently. No error shape is classified. Round 3 found that a body-read timeout on
+SDK 0.24.1 is a plain DOMException `AbortError` with the signal untouched, which the round-2
+classification missed. A cancel is now the caller's signal alone, so an SDK timeout is retried. The
+real-SDK cases are in `tests/lib/gemini-fix-summary-real-sdk.test.ts`. The other dead name-checks
+are filed as backlog #345. `serveCloud` records from the meter in a `finally` via
 `recordCorrectionSpend`: ONE call, `raceRpc`-bounded at `CORRECTION_RPC_TIMEOUT_MS`, never throws.
 A null field is charged at the `CORRECTION_CAPS` bound (`CORRECTION_WORST_ATTEMPT_CENTS` = 3¢).
 Round 1's over-ceiling split is removed. `correction-ceiling.test.ts` proves
-(`FIX_SUMMARY_RETRIES` + 1) × 3¢ fits 0026's declared per-call default. Migration
+(`FIX_SUMMARY_RETRIES` + 1) × 3¢ fits 0026's declared per-call default, and fails if any other
+migration names the column. Migration
 `0028_correction_allowance.sql` is a SECURITY DEFINER read of the owner's count, checked before any
 paid call: 429 `correction-limit-reached`, or 503 `correction-limit-unavailable` (fails closed).
 `STRUCTURAL_REFUSALS` maps each `StructuralFailureReason` to a 422 with `code: structure-<reason>`.

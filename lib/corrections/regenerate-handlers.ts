@@ -367,8 +367,7 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
 type Allowance = { ok: true; calls: number; maxCalls: number } | { ok: false };
 
 /** Today's recorded correction count for the signed-in owner and 0026's per-owner call limit
- *  (migration 0028; it also returns `max_cents`, which the route no longer needs since round 2
- *  removed the split). Anything other than two integers — an error, a timeout, a malformed row — is `ok: false`,
+ *  (migration 0028). Anything other than two integers — an error, a timeout, a malformed row — is `ok: false`,
  *  which the caller treats as a refusal: a missing limit must never read as "no limit". */
 async function readCorrectionAllowance(supabase: ReturnType<typeof createServerSupabase>): Promise<Allowance> {
   // No `.abortSignal(signal)`: on a timeout the read is simply abandoned, which costs nothing.
@@ -396,10 +395,11 @@ async function readCorrectionAllowance(supabase: ReturnType<typeof createServerS
  * cap watches — so a correction made to fail deterministically spent in a loop while every guardrail
  * read zero. Measured in production 2026-08-24: a failed press left 0 rows and the ledger unmoved.
  *
- * Every METERED attempt is charged — a returned one at its reported usage (a missing field at its
- * bound), and one cut off in flight by an abort or timeout at the per-attempt bound
- * (`meteredCorrectionCents`, UsageMeter). So a press with attempts always records, never 0¢ and
- * never nothing (round 1 Codex H2, round 2 Claude High).
+ * Every DISPATCHED attempt is charged (round 3): it is metered at the per-attempt bound when sent,
+ * and the bound is replaced by the reported usage if a response arrives (a missing field stays at its
+ * bound) — `meteredCorrectionCents`, UsageMeter. So any exit, whatever the error, leaves its charge,
+ * and a press with attempts always records, never 0¢ and never nothing. An attempt that failed
+ * before Gemini generated anything is over-counted; that is the accepted direction.
  *
  * ONE CALL PER PRESS, ALWAYS (round 2, Codex High). 0026 checks `correction_max_cents` per RPC call
  * and REJECTS the whole amount above it. Round 1 split an over-ceiling press across calls, but each

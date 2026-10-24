@@ -18,7 +18,6 @@ create function correction_allowance()
   returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare
   v_owner uuid := auth.uid();
-  v_cap int;
   v_max_calls int;
   v_calls int;
 begin
@@ -26,12 +25,14 @@ begin
     raise exception 'correction_allowance: authentication required';
   end if;
 
-  select correction_max_cents, correction_max_calls_per_owner_day
-    into v_cap, v_max_calls
+  -- The CALL limit only. The cents ceiling is 0026's alone: no other migration may name it, so
+  -- tests/lib/corrections/correction-ceiling.test.ts can read its value from one place.
+  select correction_max_calls_per_owner_day
+    into v_max_calls
     from guardrail_config where id = true;
   -- FAIL CLOSED on a missing config row, for the same reason as 0026:62-70: a NULL limit would
   -- otherwise read as "no limit" to the caller.
-  if v_cap is null or v_max_calls is null then
+  if v_max_calls is null then
     raise exception 'correction_allowance: guardrail_config missing';
   end if;
 
@@ -41,8 +42,7 @@ begin
 
   return jsonb_build_object(
     'calls', coalesce(v_calls, 0),          -- no row today means no press recorded today
-    'max_calls', v_max_calls,
-    'max_cents', v_cap
+    'max_calls', v_max_calls
   );
 end $$;
 

@@ -42,8 +42,8 @@ const mockRpc = jest.fn();
 type RpcResult = Promise<{ data?: unknown; error: { message: string } | null }>;
 let allowanceRpc: () => RpcResult;
 let recordRpc: () => RpcResult;
-const allowance = (calls: number, max_calls = 8, max_cents = 12) =>
-  () => Promise.resolve({ data: { calls, max_calls, max_cents }, error: null });
+const allowance = (calls: number, max_calls = 8) =>
+  () => Promise.resolve({ data: { calls, max_calls }, error: null });
 const recordCalls = () => mockRpc.mock.calls.filter(([name]) => name === 'record_correction_spend');
 const never = () => new Promise<never>(() => {});
 

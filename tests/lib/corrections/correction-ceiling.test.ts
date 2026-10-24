@@ -14,8 +14,8 @@
 // ⚠ The ceiling is a CONFIG ROW, so an operator UPDATE on a live database is outside what a unit
 // test can see. The live value is asserted against the same product in
 // tests/integration/record-correction-spend.int.test.ts ("the ceiling covers the worst case").
-// Here, any migration that sets the value other than 0026's default makes this file red until it is
-// taught to read it — refusing to guess is the point.
+// Here, any migration other than 0026 that so much as names the column makes this file red until it
+// is taught to read it — refusing to guess is the point.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FIX_SUMMARY_RETRIES } from '@/lib/gemini';
@@ -38,11 +38,22 @@ describe('0026\'s per-call ceiling covers the most one press can cost', () => {
     expect(files.length).toBeGreaterThan(20);
   });
 
-  it('no migration other than 0026 SETS the ceiling — else this test must be taught to read it', () => {
-    const setters = files.filter((f) =>
-      /(update\s+guardrail_config[^;]*correction_max_cents|alter\s+column\s+correction_max_cents|insert\s+into\s+guardrail_config[^;]*correction_max_cents)/i
-        .test(sqlOf(f)));
-    expect(setters).toEqual([]);
+  // STRICT BY CONSTRUCTION (round 3, Claude F2). A regex for the forms that SET the value missed
+  // two valid ones — `update public.guardrail_config …` and `alter <col>` without COLUMN — so the
+  // rule is now any MENTION of the column outside 0026, against an allow-list that is empty today
+  // (0028 reads only the call limit). A migration that needs the column must be added here, by name.
+  const MAY_MENTION_THE_CEILING: string[] = [];
+  it('no migration other than 0026 so much as MENTIONS the ceiling column', () => {
+    const mentions = files.filter((f) => f !== '0026_record_correction_spend.sql'
+      && /correction_max_cents/i.test(sqlOf(f)) && !MAY_MENTION_THE_CEILING.includes(f));
+    expect(mentions).toEqual([]);
+  });
+
+  it('the mention rule catches both forms the old setter regex missed', () => {
+    const hit = (sql: string) => /correction_max_cents/i.test(sql);
+    expect(hit('update public.guardrail_config set correction_max_cents = 5 where id')).toBe(true);
+    expect(hit('alter table guardrail_config alter correction_max_cents set default 5')).toBe(true);
+    expect(hit('select correction_max_calls_per_owner_day from guardrail_config')).toBe(false);
   });
 
   it('worst press = attempts × worst attempt, and the ceiling is at least that', () => {
