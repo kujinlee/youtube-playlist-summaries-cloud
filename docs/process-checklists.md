@@ -118,7 +118,7 @@ something, and the table is the reason this is a condition and not a preference:
    the exception was measured to cause. ⚠ **There is NO cheap command for it today:** measured
    2026-10-22, `check-plan-code.py --mutate .` does NOT refuse an unresolved anchor up front — with
    one anchor deliberately broken it was still running at 60s — and `--self-test` never applies
-   anchors. Until backlog #342 lands, the CI `mutation-sweep` job is the only thing that sees it.
+   anchors. Until backlog #252 lands (backlog #342 was its duplicate), the CI `mutation-sweep` job is the only thing that sees it.
 5. **The next round goes to Codex**, the half that did not author the fold — the coordinator IS
    the Claude side, so a Claude half reviewing a coordinator fold is not the independent reader
    the alternation rule exists to supply.
