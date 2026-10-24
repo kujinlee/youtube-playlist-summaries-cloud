@@ -441,5 +441,31 @@
     "expect": [
       "corpus: by_subject_rounds projects what _corpus_now re-derived"
     ]
+  },
+  {
+    "name": "the solo-half failure stops naming the two readings of `alternate`, so a round 2+ solo half reads as a plain missing review and its reader is sent to one escape without being told the other exists — backlog #339 (r1 fold: the hint is NEUTRAL between the readings)",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "            + (f\" — {PAIRING_RULE}\" if key[1] > 1 else \"\")",
+        "            + \"\""
+      ]
+    ],
+    "expect": [
+      "⭐ …and each failure names BOTH readings of `alternate` and who decides (backlog #339)"
+    ]
+  },
+  {
+    "name": "the alternation hint fires on ROUND 1 again, which is concurrent under every reading — a half that has not landed is diagnosed as an alternation question (backlog #339, r1 fold LOW 4)",
+    "file": "scripts/check-review-rounds.py",
+    "edits": [
+      [
+        "if key[1] > 1 else \"\")",
+        "if key[1] > 0 else \"\")"
+      ]
+    ],
+    "expect": [
+      "a solo ROUND 1 does not carry the alternation hint — round 1 never alternates"
+    ]
   }
 ]

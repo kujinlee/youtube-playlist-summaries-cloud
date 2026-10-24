@@ -2,7 +2,7 @@
 """What does the review loop do next? — answered from recorded evidence, not recall.
 
     python3 scripts/check-review-decision.py              # decide for the current branch
-    python3 scripts/check-review-decision.py --self-test  # 115 cases
+    python3 scripts/check-review-decision.py --self-test  # 118 cases
 
 WHY THIS EXISTS
 ---------------
@@ -272,7 +272,7 @@ def round_blocker(r: dict) -> str | None:
         # clean, and 0 of 12 subjects converging. A predicate that cannot be satisfied reports the
         # same thing about good work and bad. What it asks now is whether the finding is still
         # OPEN, reading `disposition` — evidence that EXISTS — instead of evidence nobody writes.
-        if f.get("disposition") in ("fixed", "declined"):
+        if f.get("disposition") in ANSWERED:
             continue
         if f.get("severity") in ("Blocking", "High"):
             return (f"r{r.get('round')}'s {f.get('severity')} is still open "
@@ -313,8 +313,8 @@ UNREACHABLE_REMEDY = "disposition"  # not a finding-free round — what reaches 
 _UNREACHABLE_PROSE = {
     "about": {"record": "UNREACHABLE from this record rather than merely unmet",
               "work": "UNREACHABLE because the work is defective"},
-    "remedy": {"disposition": ("What reaches convergence is recording a disposition — `fixed` or "
-                               "`declined` — on each of them, which is evidence this workflow "
+    "remedy": {"disposition": ("What reaches convergence is recording a disposition — `fixed`, "
+                               "`declined` or `refuted` — on each of them, which is evidence this workflow "
                                "already produces. `filed` does not count: a backlog deferral is "
                                "not an answer about THIS branch"),
                "clean-round": "What reaches convergence is a round that finds nothing"},
@@ -523,11 +523,21 @@ def parse_header(text: str) -> dict:
 # remove. It is a per-round JUDGEMENT like `aim`, so it belongs in the header.
 ROUND_REQUIRED = {"fixes_nontrivial": {True, False}}
 
+# What a `disposition` may say, and which of those ANSWER a finding. ONE owner: `round_blocker`
+# reads ANSWERED and `_validate` reads ANSWERED + `filed`, so the two cannot drift apart.
+#   fixed     the defect was real and is fixed on this branch
+#   declined  the defect is real, and we are not fixing it — the reason goes in prose
+#   refuted   this was NOT a defect — the finding was checked and is wrong (backlog #318)
+#   filed     deferred to the backlog — OPEN, because convergence is a claim about THIS branch
+# ⭐ backlog #318: `refuted` was refused here and `ship-src-root-alone`'s header was unreadable for
+# that one value. Folding it into `declined` would lose the distinction the author recorded.
+ANSWERED = ("fixed", "declined", "refuted")
+
 REQUIRED = {
     "severity": {"Blocking", "High", "Medium", "Low"},
     "aim": {"deliverable", "instrument"},
     "fix_induced": {True, False},
-    "disposition": {"fixed", "filed", "declined"},
+    "disposition": {*ANSWERED, "filed"},
 }
 
 
@@ -950,7 +960,8 @@ def _self_test() -> int:
          "no round recorded for this subject is clean, so convergence is UNREACHABLE from this "
          "record rather than merely unmet: every recorded round still carries an OPEN Blocking/High "
          "finding, an open deliverable-aimed finding, or fixes it declared non-trivial. ⚠ What "
-         "reaches convergence is recording a disposition — `fixed` or `declined` — on each of them, "
+         "reaches convergence is recording a disposition — `fixed`, `declined` or `refuted` — on "
+         "each of them, "
          "which is evidence this workflow already produces. `filed` does not count: a backlog "
          "deferral is not an answer about THIS branch. See backlog #329 for why the record, not the "
          "work, is what this is about")
@@ -965,7 +976,8 @@ def _self_test() -> int:
          "UNREACHABLE because the work is defective")
     case("the `disposition` rendering is pinned",
          _UNREACHABLE_PROSE["remedy"]["disposition"],
-         "What reaches convergence is recording a disposition — `fixed` or `declined` — on each of "
+         "What reaches convergence is recording a disposition — `fixed`, `declined` or `refuted` — "
+         "on each of "
          "them, which is evidence this workflow already produces. `filed` does not count: a backlog "
          "deferral is not an answer about THIS branch")
     case("the `clean-round` rendering is pinned — the demand backlog #329 abolished",
@@ -1127,6 +1139,17 @@ def _self_test() -> int:
     _declined = _block.replace("disposition: filed", "disposition: declined")
     case("a DECLINED finding converges too — declining is an answer, filing is not",
          decide([parse_header(_declined)], "one-round", True)[0], "STOP")
+    # ⭐ backlog #318: `refuted` is NOT `declined`. Declined is *real, and we are not fixing it*;
+    # refuted is *this was not a defect*. `ship-src-root-alone` wrote it and was refused for that
+    # one value, which made a third of the ranker's labelled evidence unreadable.
+    _refuted = _block.replace("disposition: filed", "disposition: refuted")
+    case("a REFUTED finding parses — the vocabulary admits 'this was not a defect' (backlog #318)",
+         _try(lambda: parse_header(_refuted)["findings"][0]["disposition"]), "refuted")
+    case("…and a refuted High is ANSWERED, so it converges like fixed and declined",
+         _try(lambda: decide([parse_header(_refuted)], "one-round", True)[0]), "STOP")
+    case("…while a disposition outside the vocabulary still REFUSES",
+         _raises(lambda: parse_header(_block.replace("disposition: filed", "disposition: wontfix"))),
+         True)
     case("a list item that parses to nothing REFUSES rather than shrinking the round",
          _raises(lambda: parse_header("```yaml\nround: 1\nfixes_nontrivial: false\nfindings:\n  - \n```")), True)
     # r2 Blocking (Codex): parity proved a dict appeared, not that it SAYS anything. A

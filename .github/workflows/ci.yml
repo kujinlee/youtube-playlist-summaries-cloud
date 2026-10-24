@@ -101,14 +101,126 @@ jobs:
       # This does NOT weaken the gate: if ffmpeg is genuinely unavailable the install still
       # fails loudly, and the two binaries are then executed — apt reporting "installed" is a
       # claim about the package, not proof that the thing the tests shell out to will run.
+      #
+      # ⛔ AND A SLOW MIRROR MUST FAIL THIS STEP, NOT CONSUME THE JOB — backlog #343. Measured
+      # on master run 40023350011 (40b765e4): this step ran 27m31s (20:59:06 -> 21:26:37) and
+      # `verify` was CANCELLED at 30m14s by the job's `timeout-minutes: 30`, so every check
+      # behind it reported nothing and the run read as a red `verify`. A healthy install is
+      # ~23s (run 40031532664: 22:07:33 -> 22:07:56).
+      #
+      # ⛔ ONLY THE NETWORK IS RETRIED; THE LOCAL dpkg PHASE RUNS ONCE (round 1, both halves).
+      # The first version wrapped the whole `apt-get install` in a per-attempt `timeout`, which
+      # also covers unpack/configure: a kill there left an orphaned dpkg holding the lock, the
+      # `|| true` repair failed on that lock, the retry collided, and the message blamed a mirror
+      # that had run at 21.6 MB/s. And the repair itself had no bound. So now:
+      #   1. `apt-get update`                   <= APT_UPDATE_LIMIT_S   per attempt   (network)
+      #   2. `apt-get install --download-only`  <= APT_DOWNLOAD_LIMIT_S per attempt   (network)
+      #      — up to FFMPEG_ATTEMPTS attempts, RETRY_PAUSE_S apart; a finished update is not
+      #        repeated, so the .debs a partial attempt fetched are kept. A killed download runs
+      #        no dpkg, so there is nothing to repair.
+      #   3. `apt-get install --no-download`    <= APT_INSTALL_LIMIT_S, ONCE          (local dpkg)
+      #      — `--no-download` makes it fail rather than reach the network.
+      # LOCKS, stated per operation because they differ (round 3, measured): 2 and 3 take the
+      # dpkg frontend lock and pass `DPkg::Lock::Timeout`, so they WAIT for it, inside their
+      # bound. `apt-get update` takes /var/lib/apt/lists/lock, which that option does NOT cover:
+      # it fails at once on a held lock, and the RETRY_PAUSE_S pause before the next attempt is
+      # what gives a briefly-held lock time to clear.
+      # There is NO repair step: nothing retried runs dpkg, so there is nothing to repair, and a
+      # repair is the one operation round 1 measured hanging with no bound.
+      # Every bound is HARD: `timeout --kill-after=KILL_GRACE_S` sends SIGKILL if the operation
+      # ignores SIGTERM (round 2 — without it a TERM-resistant process outlived its bound and the
+      # step cap cut it off before any diagnostic printed).
+      # ⛔ THE FAILURE MESSAGE STATES ONLY WHAT IS KNOWN (round 3): the phase, the exit code and
+      # what the code means — 124 timed out at its bound, 137 terminated by SIGKILL (the status alone does not say whether timeout's kill grace expired),
+      # anything else is apt/dpkg's own error — and then the last lines of that phase's output,
+      # so the reader sees apt's words. It does not guess a cause. Two rounds guessed (a lock
+      # reported as a slow mirror, then a slow mirror reported as a lock, from apt's
+      # "Waiting for cache lock" progress lines) and each guess was wrong in a measured case.
+      # BUDGET, summed WITH the kill grace on each of the 7 operations and the 2 pauses:
+      #   3 x (120+10 + 150+10) + 2 x 15 + (180+10) = 870 + 30 + 190 = 1,090s = 18.2 min
+      # inside this step's `timeout-minutes: 20` (1,200s) — the backstop over all of it, leaving
+      # 110s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
+      # inside the job's 30. Exhausting any phase is a FAILURE that names THAT phase with
+      # CANNOT RUN — never a skip, because the slide-crop tests need the binaries.
       - name: Install ffmpeg (required by the slide-crop tests)
+        timeout-minutes: 20
+        env:
+          FFMPEG_ATTEMPTS: 3
+          APT_UPDATE_LIMIT_S: 120
+          APT_DOWNLOAD_LIMIT_S: 150
+          APT_INSTALL_LIMIT_S: 180
+          DPKG_LOCK_WAIT_S: 60
+          KILL_GRACE_S: 10
+          RETRY_PAUSE_S: 15
+          LOG_TAIL_LINES: 40
         run: |
-          sudo apt-get update \
-            -o Dir::Etc::sourceparts="-" \
-            -o APT::Get::List-Cleanup="0"
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          ffmpeg -version > /dev/null
-          ffprobe -version > /dev/null
+          # ⚠ A FILE, NOT `| tee`. Measured: a process that outlives the kill (the orphaned dpkg
+          # round 1 found) keeps a pipe's write end open, so `tee` never sees EOF and the step
+          # hangs to its cap with no CANNOT RUN — the defect this step exists to remove. The
+          # price is that an attempt's output appears when it ends, not while it runs.
+          log=$(mktemp)
+          cannot_run() {
+            echo "::error::CANNOT RUN — $1"
+            echo "Every check after this step did NOT RUN: treat this as NOT CHECKED, not as a verdict on the commit."
+            if [ -s "$log" ]; then
+              echo "--- last $LOG_TAIL_LINES lines of that phase's output ---"
+              tail -n "$LOG_TAIL_LINES" "$log"
+            fi
+            exit 1
+          }
+          # Runs one operation under its bound, prints its output, and on failure sets `why` to
+          # the phase plus what the exit code MEANS — nothing inferred from the output.
+          bounded() {
+            local limit=$1 what=$2 rc=0
+            shift 2
+            sudo timeout --kill-after="$KILL_GRACE_S" "$limit" "$@" > "$log" 2>&1 || rc=$?
+            cat "$log"
+            case "$rc" in
+              0)   return 0 ;;
+              124) why="$what: timed out at its ${limit}s bound (exit 124)" ;;
+              137) why="$what: terminated by SIGKILL (exit 137) — the status alone does not establish whether its ${limit}s bound and ${KILL_GRACE_S}s kill grace expired" ;;
+              *)   why="$what: apt/dpkg exited with an error (exit $rc) — its own message is in the output" ;;
+            esac
+            return 1
+          }
+          lock=(-o DPkg::Lock::Timeout="$DPKG_LOCK_WAIT_S")
+          updated=no
+          downloaded=no
+          why=""
+          for attempt in $(seq 1 "$FFMPEG_ATTEMPTS"); do
+            if [ "$attempt" -gt 1 ]; then
+              sleep "$RETRY_PAUSE_S"
+            fi
+            if [ "$updated" != yes ]; then
+              if bounded "$APT_UPDATE_LIMIT_S" "apt-get update (network)" apt-get update \
+                   -o Dir::Etc::sourceparts="-" \
+                   -o APT::Get::List-Cleanup="0"
+              then
+                updated=yes
+              else
+                echo "::warning::attempt $attempt of $FFMPEG_ATTEMPTS: $why"
+                continue
+              fi
+            fi
+            if bounded "$APT_DOWNLOAD_LIMIT_S" "downloading ffmpeg's packages (network)" \
+                 apt-get install -y --no-install-recommends --download-only "${lock[@]}" ffmpeg
+            then
+              downloaded=yes
+              break
+            fi
+            echo "::warning::attempt $attempt of $FFMPEG_ATTEMPTS: $why"
+          done
+          if [ "$downloaded" != yes ]; then
+            cannot_run "all $FFMPEG_ATTEMPTS attempts failed; the last: $why. Re-run the job."
+          fi
+          if ! bounded "$APT_INSTALL_LIMIT_S" "installing ffmpeg from the local package cache (dpkg, --no-download, after the download completed)" \
+               apt-get install -y --no-install-recommends --no-download "${lock[@]}" ffmpeg
+          then
+            cannot_run "$why."
+          fi
+          : > "$log"
+          ffmpeg -version > /dev/null || cannot_run "ffmpeg was installed but does not execute"
+          ffprobe -version > /dev/null || cannot_run "ffprobe was installed but does not execute"
 
       # ⛔ FIRST, because every guard below runs on this interpreter. If the pin did not take
       # effect, their results are not evidence about anything — and a `setup-python` step that is
@@ -766,7 +878,7 @@ jobs:
         # 214 + 4890/N seconds:
         #
         #   N=4   ~1,436s = 23.9 min   -> 1.25x under the 30-minute ceiling. Not headroom.
-        #   N=8     ~825s = 13.8 min   -> 2.2x. Chosen.
+        #   N=8     ~825s = 13.8 min   -> 2.2x. Chosen 2026-10-05; 12 since 2026-10-24, below.
         #   N=16    ~519s =  8.7 min   -> 3.5x, but 16 checkouts and 16 `npm ci` runs buy it,
         #                                 and the 214s control floor caps the whole speedup at
         #                                 ~24x however large N gets.
@@ -776,7 +888,16 @@ jobs:
         # a 1.15x spread; CONTIGUOUS 27-491s, a 17.9x spread, with the long shard carrying the
         # expensive block alone. At N=16 contiguous reaches 63x. A per-shard mutation COUNT is
         # even either way, which is exactly why counting them proves nothing.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        #
+        # ⟳ 2026-10-24: 8 -> 12, backlog #231, WHOSE TRIGGER FIRED. Its FAILS IF is "any shard
+        # exceeds 1,500s on master". Measured on master run 40031532664 (92c78bff), per shard
+        # in seconds: 1621 1536 956 1607 1150 1450 1295 1486 — three over the trigger, the
+        # slowest 27.0 min, i.e. 1.11x inside `timeout-minutes: 30`. The lever is N, not the
+        # timeout (the row says why). PREDICTED, not measured, from the same run: mean 1388s
+        # less a ~221s control floor is ~9,336s of mutation work, so N=12 gives a ~999s mean
+        # and, at that run's 1.17x max/mean spread, a slowest shard of ~1,170s = 19.5 min
+        # (~1.5x). The repository is public, so the four extra runners cost no money.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       # ⚠ fetch-depth: 0 for parity with `verify`, not because the sweep reads history — it
       # copies the tree into a temp dir with no `.git` at all. Keeping the two checkouts

@@ -1197,7 +1197,9 @@ EXPECTED_MUTATIONS = {
     #   unkillable entry to make the count look fuller is the shape this table exists to refuse.
     #   SIX anchors in these two files were RE-TARGETED in the same commit because the fix moved
     #   their text; the sweep is what found them, and it is still in no local suite.
-    "scripts/check-review-rounds.py": 34,
+    # ⟳ 2026-10-24, backlog #339: 34 -> 35 — the solo-half failure names the PAIRING rule; r1 fold
+    #   35 -> 36 — the hint is neutral between the two readings and skips round 1.
+    "scripts/check-review-rounds.py": 36,
     # ⟳ 2026-09-08, R4 manifest debt 3 -> 2. ⚠ ONE MUTATION SURVIVED FIRST: I removed the words
     # "Produce one with" from the absent-results refusal, but the case asserts that `--outputFile=`
     # appears in the message and that token is on the NEXT fragment. The mutation READ like the one
@@ -1403,7 +1405,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-21 ARCH F1: 25 -> 27. The two SHIPPED renderings, pinned.
     # ⟳ 2026-10-21 r6: 27 -> 28. The OUTPUT pin — r6 edited three unpinned body
     # literals and the suite stayed 111/111 while the reader was told the opposite.
-    "scripts/check-review-decision.py": 28,
+    # ⟳ 2026-10-24, backlog #318: 28 -> 30 — `refuted` is in the vocabulary AND answers a finding;
+    #   two #329 anchors re-pointed onto the new `ANSWERED` constant, nothing retired.
+    "scripts/check-review-decision.py": 30,
     # ⟳ 2026-10-23: check-decision-scheme 86 -> 106. Trigger 3 changed its question (route
     # collapse -> a lost bet whose next route was never logged) and the `missed-escalation`
     # acknowledgment row joined. TWO entries RETIRED WITH THEIR SUBJECT — the collapse floor and
@@ -2103,7 +2107,7 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON IS STALE, BUT THE SAVING IS STILL A LATENCY ONE.
     backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
     sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
-    `needs: null` and `matrix: {shard: [1..8]}`.
+    `needs: null` and `matrix: {shard: [1..N]}` (N=12 since 2026-10-24, backlog #231).
 
     ⛔⛔ AND HERE IS A CLAIM I WROTE AND r5 CODEX REFUTED BY MEASUREMENT — recorded because the
     error is more instructive than the number. I wrote that the sweep therefore costs *"~48 runner-
@@ -5745,7 +5749,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 1999)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2003)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
