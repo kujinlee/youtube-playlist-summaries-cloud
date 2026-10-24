@@ -17289,3 +17289,25 @@ now notes that `t3_routes_collapsed` was removed by PR #387 (`40b765e4`).
 ⚠ Found while editing: `gen-backlog-page.py` treats ANY ✅ in a Status cell as closed (`closed=("✅"
 in status)`), so a status note that merely mentions another row being closed with a ✅ silently
 closes this row. Two of these edits did that and were reworded before commit.
+
+## 2026-10-24
+Two CI time limits that were close to cancelling required checks now have room again.
+
+The first: the main check installs a video tool before running the tests, and last night a slow
+download server made that one step take 27 minutes, so the whole check was cut off at its 30-minute
+limit and showed red without having tested anything. Each install attempt now has its own short time
+limit and is tried up to three times. If all three fail, the step stops with a message saying the
+checks did not run, rather than eating the whole budget.
+
+The second: the mutation tests run split across 8 machines, and the slowest one took 27 of its 30
+minutes. They now run across 12, which should bring the slowest down to about 20 minutes. That figure
+is a prediction; the first CI run of this branch is where it gets measured.
+<!--tech-->
+Backlog #343 and #231, branch `fix/ci-time-limits`, `.github/workflows/ci.yml` only (plus a one-line
+docstring in `scripts/check-plan-code.py`). #343: `Install ffmpeg` gets `timeout-minutes: 15`, and
+each of 3 attempts runs `timeout 120 apt-get update` and `timeout 150 apt-get install`; evidence is run
+40023350011 (step 27m31s, `verify` cancelled at 30m14s). Falsifier run on the delivered step text in
+`ubuntu:24.04` with a hanging `apt-get` stub: rc=1 with CANNOT RUN after 3 bounded attempts; the old
+text was still running when an outer limit killed it. #231: matrix `shard: [1..8]` to `[1..12]`;
+evidence is run 40031532664 (slowest shard 1621s, three shards over the 1,500s trigger). N is derived
+everywhere else from `strategy.job-total`, so the matrix list is the only copy.

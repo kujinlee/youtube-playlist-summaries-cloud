@@ -101,12 +101,42 @@ jobs:
       # This does NOT weaken the gate: if ffmpeg is genuinely unavailable the install still
       # fails loudly, and the two binaries are then executed — apt reporting "installed" is a
       # claim about the package, not proof that the thing the tests shell out to will run.
+      #
+      # ⛔ AND A SLOW MIRROR MUST FAIL THIS STEP, NOT CONSUME THE JOB — backlog #343. Measured
+      # on master run 40023350011 (40b765e4): this step ran 27m31s (20:59:06 -> 21:26:37) and
+      # `verify` was CANCELLED at 30m14s by the job's `timeout-minutes: 30`, so every check
+      # behind it reported nothing and the run read as a red `verify`. A healthy install is
+      # ~23s (run 40031532664: 22:07:33 -> 22:07:56). So each attempt is bounded by `timeout`,
+      # attempts are bounded by FFMPEG_ATTEMPTS, and the step's own `timeout-minutes` is the
+      # backstop over all of it: worst case 3 x (120 + 150)s = 13.5 min, leaving the ~5 min
+      # the rest of this job needs. Exhausting the attempts is a FAILURE by name with a
+      # CANNOT RUN message — never a skip, because the slide-crop tests need the binaries.
+      # `dpkg --configure -a` repairs an install the timeout interrupted mid-unpack.
       - name: Install ffmpeg (required by the slide-crop tests)
+        timeout-minutes: 15
+        env:
+          FFMPEG_ATTEMPTS: 3
+          APT_UPDATE_LIMIT_S: 120
+          APT_INSTALL_LIMIT_S: 150
         run: |
-          sudo apt-get update \
-            -o Dir::Etc::sourceparts="-" \
-            -o APT::Get::List-Cleanup="0"
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          installed=no
+          for attempt in $(seq 1 "$FFMPEG_ATTEMPTS"); do
+            if sudo timeout "$APT_UPDATE_LIMIT_S" apt-get update \
+                 -o Dir::Etc::sourceparts="-" \
+                 -o APT::Get::List-Cleanup="0" \
+               && sudo timeout "$APT_INSTALL_LIMIT_S" apt-get install -y --no-install-recommends ffmpeg
+            then
+              installed=yes
+              break
+            fi
+            echo "::warning::ffmpeg install attempt $attempt of $FFMPEG_ATTEMPTS failed or exceeded its ${APT_UPDATE_LIMIT_S}s/${APT_INSTALL_LIMIT_S}s limit"
+            sudo dpkg --configure -a || true
+          done
+          if [ "$installed" != yes ]; then
+            echo "::error::CANNOT RUN — ffmpeg could not be installed in $FFMPEG_ATTEMPTS bounded attempts (an apt mirror is slow or down)."
+            echo "Every check after this step did NOT RUN: treat this as NOT CHECKED, not as a verdict on the commit. Re-run the job."
+            exit 1
+          fi
           ffmpeg -version > /dev/null
           ffprobe -version > /dev/null
 
@@ -766,7 +796,7 @@ jobs:
         # 214 + 4890/N seconds:
         #
         #   N=4   ~1,436s = 23.9 min   -> 1.25x under the 30-minute ceiling. Not headroom.
-        #   N=8     ~825s = 13.8 min   -> 2.2x. Chosen.
+        #   N=8     ~825s = 13.8 min   -> 2.2x. Chosen 2026-10-05; 12 since 2026-10-24, below.
         #   N=16    ~519s =  8.7 min   -> 3.5x, but 16 checkouts and 16 `npm ci` runs buy it,
         #                                 and the 214s control floor caps the whole speedup at
         #                                 ~24x however large N gets.
@@ -776,7 +806,16 @@ jobs:
         # a 1.15x spread; CONTIGUOUS 27-491s, a 17.9x spread, with the long shard carrying the
         # expensive block alone. At N=16 contiguous reaches 63x. A per-shard mutation COUNT is
         # even either way, which is exactly why counting them proves nothing.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        #
+        # ⟳ 2026-10-24: 8 -> 12, backlog #231, WHOSE TRIGGER FIRED. Its FAILS IF is "any shard
+        # exceeds 1,500s on master". Measured on master run 40031532664 (92c78bff), per shard
+        # in seconds: 1621 1536 956 1607 1150 1450 1295 1486 — three over the trigger, the
+        # slowest 27.0 min, i.e. 1.11x inside `timeout-minutes: 30`. The lever is N, not the
+        # timeout (the row says why). PREDICTED, not measured, from the same run: mean 1388s
+        # less a ~221s control floor is ~9,336s of mutation work, so N=12 gives a ~999s mean
+        # and, at that run's 1.17x max/mean spread, a slowest shard of ~1,170s = 19.5 min
+        # (~1.5x). The repository is public, so the four extra runners cost no money.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       # ⚠ fetch-depth: 0 for parity with `verify`, not because the sweep reads history — it
       # copies the tree into a temp dir with no `.git` at all. Keeping the two checkouts

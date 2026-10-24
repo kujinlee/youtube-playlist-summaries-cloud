@@ -2103,7 +2103,7 @@ def sweep_needed(changed: "list[str] | None") -> bool:
     ⚠ THE COST FIGURE THIS FUNCTION WAS BUILT ON IS STALE, BUT THE SAVING IS STILL A LATENCY ONE.
     backlog #173 measured *"8m12s of a 10m22s job — 79% of the gate"* (run 35889056587) with the
     sweep as a STEP INSIDE `verify`. It has since moved to its own `mutation-sweep` job with
-    `needs: null` and `matrix: {shard: [1..8]}`.
+    `needs: null` and `matrix: {shard: [1..N]}` (N=12 since 2026-10-24, backlog #231).
 
     ⛔⛔ AND HERE IS A CLAIM I WROTE AND r5 CODEX REFUTED BY MEASUREMENT — recorded because the
     error is more instructive than the number. I wrote that the sweep therefore costs *"~48 runner-
