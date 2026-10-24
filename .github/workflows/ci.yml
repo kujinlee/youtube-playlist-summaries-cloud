@@ -131,7 +131,7 @@ jobs:
       # ignores SIGTERM (round 2 — without it a TERM-resistant process outlived its bound and the
       # step cap cut it off before any diagnostic printed).
       # ⛔ THE FAILURE MESSAGE STATES ONLY WHAT IS KNOWN (round 3): the phase, the exit code and
-      # what the code means — 124 timed out at its bound, 137 ignored SIGTERM and was killed,
+      # what the code means — 124 timed out at its bound, 137 terminated by SIGKILL (the status alone does not say whether timeout's kill grace expired),
       # anything else is apt/dpkg's own error — and then the last lines of that phase's output,
       # so the reader sees apt's words. It does not guess a cause. Two rounds guessed (a lock
       # reported as a slow mirror, then a slow mirror reported as a lock, from apt's
@@ -178,7 +178,7 @@ jobs:
             case "$rc" in
               0)   return 0 ;;
               124) why="$what: timed out at its ${limit}s bound (exit 124)" ;;
-              137) why="$what: ignored SIGTERM at its ${limit}s bound and was SIGKILLed ${KILL_GRACE_S}s later (exit 137)" ;;
+              137) why="$what: terminated by SIGKILL (exit 137) — the status alone does not establish whether its ${limit}s bound and ${KILL_GRACE_S}s kill grace expired" ;;
               *)   why="$what: apt/dpkg exited with an error (exit $rc) — its own message is in the output" ;;
             esac
             return 1
