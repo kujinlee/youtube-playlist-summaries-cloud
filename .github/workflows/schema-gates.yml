@@ -177,6 +177,18 @@ concurrency:
 permissions:
   contents: read
 
+# ⟳ 2026-10-23 (backlog #340, fix (a), at the owner's go-ahead): BOTH jobs take the database image from
+# a GHCR MIRROR, not anonymously from public.ecr.aws. ECR Public's anonymous allowance is per source
+# address, and a runner shares its egress address with every other tenant — measured 2026-10-23, this
+# REQUIRED check went CANNOT RUN three times in three hours on `Data limit exceeded`, re-run included.
+# ⛔ PINNED BY DIGEST — the digest of the ECR original's image index, which
+# `docker buildx imagetools create` preserves — so the mirror cannot change what these gates test: a
+# different image behind the same tag fails the pull instead of passing over different bytes. The
+# package is public, so the pull needs no login. Local runs keep the ECR default at
+# `scripts/ci/start-schema-db.sh:42`.
+env:
+  SCHEMA_DB_IMAGE: ghcr.io/kujinlee/supabase-postgres@sha256:ac581882596ed0e46937ea6dd53a627d09f53e005d7264c2082a7ff7b62eaaca
+
 jobs:
   schema-gates:
     # Not on the schedule: this job's subject is the repo, and the repo has not changed overnight.
@@ -293,7 +305,7 @@ jobs:
       - name: A psql client to reach production through
         run: |
           docker run -d --name m4_prod_client \
-            --entrypoint sleep public.ecr.aws/supabase/postgres:17.6.1.147 infinity
+            --entrypoint sleep "$SCHEMA_DB_IMAGE" infinity
           docker exec -i m4_prod_client psql --version
 
       - name: Has production drifted from the manifest?

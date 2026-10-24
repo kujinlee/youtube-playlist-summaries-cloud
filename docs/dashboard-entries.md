@@ -17251,3 +17251,24 @@ corrected after a reviewer showed it had been scored to keep a check quiet.
 BET (WARN, pinned in `baseline.json` by subject, unit and route), 11 LADDER EXHAUSTED, CLOSED
 (WARN), 12 LADDER RESTARTED (WARN); trigger 2 fails only an open exhausted unit. 271 cases,
 125 mutations.
+
+## 2026-10-23
+The database check that every pull request must pass kept failing for a reason that had nothing
+to do with this project. To build its test database, CI downloaded a Postgres image from
+Amazon's public registry without logging in, and that kind of download has a shared allowance.
+GitHub's CI machines share their internet addresses with many other projects, so the allowance
+was often used up by strangers. On 2026-10-23 the check failed three times in three hours on
+"Data limit exceeded", which blocked merging even though nothing was wrong with the schema.
+
+CI now downloads the same image from a copy in this account's GitHub package registry. It is
+pinned to the exact fingerprint (digest) of Amazon's original. The copy was made in a way that
+keeps that fingerprint, so the check still tests the identical database. If the copy ever stopped
+matching, the download would fail rather than quietly test something different. Local runs
+still use Amazon's original.
+
+<!--tech-->
+`.github/workflows/schema-gates.yml`: workflow-level `SCHEMA_DB_IMAGE:
+ghcr.io/kujinlee/supabase-postgres@sha256:ac581882…aaca` (the ECR index digest, preserved by
+`docker buildx imagetools create`), read by `scripts/ci/start-schema-db.sh:42` and by the
+`prod-drift` psql-client step. Package is public, so the pull needs no login. Fixes backlog #340
+(remedy a); backlog #310 closed as its duplicate.
