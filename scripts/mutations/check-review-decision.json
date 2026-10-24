@@ -263,11 +263,11 @@
     ]
   },
   {
-    "name": "backlog #329: convergence ignores `disposition` again, so a Blocking that was FIXED with trivial fixes still blocks and the predicate returns to demanding a round that found nothing — ANCHOR RE-POINTED 2026-10-21: r4 extracted this rule into `round_blocker` so it is one owner, which moved its indentation and orphaned this entry. The rule is unchanged.",
+    "name": "backlog #329: convergence ignores `disposition` again, so a Blocking that was FIXED with trivial fixes still blocks and the predicate returns to demanding a round that found nothing — ANCHOR RE-POINTED 2026-10-21: r4 extracted this rule into `round_blocker` so it is one owner, which moved its indentation and orphaned this entry. The rule is unchanged. ⟳ RE-POINTED AGAIN 2026-10-24 (backlog #318): the answered set became the named constant `ANSWERED`.",
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "        if f.get(\"disposition\") in (\"fixed\", \"declined\"):\n            continue",
+        "        if f.get(\"disposition\") in ANSWERED:\n            continue",
         "        if False:\n            continue"
       ]
     ],
@@ -276,12 +276,12 @@
     ]
   },
   {
-    "name": "backlog #329: a FILED finding counts as answered, so deferring everything to the backlog would converge a branch that resolved nothing — ANCHOR RE-POINTED 2026-10-21: r4 extracted this rule into `round_blocker` so it is one owner, which moved its indentation and orphaned this entry. The rule is unchanged.",
+    "name": "backlog #329: a FILED finding counts as answered, so deferring everything to the backlog would converge a branch that resolved nothing — ANCHOR RE-POINTED 2026-10-21: r4 extracted this rule into `round_blocker` so it is one owner, which moved its indentation and orphaned this entry. The rule is unchanged. ⟳ RE-POINTED AGAIN 2026-10-24 (backlog #318): the answered set became the named constant `ANSWERED`.",
     "file": "scripts/check-review-decision.py",
     "edits": [
       [
-        "        if f.get(\"disposition\") in (\"fixed\", \"declined\"):",
-        "        if f.get(\"disposition\") in (\"fixed\", \"declined\", \"filed\"):"
+        "        if f.get(\"disposition\") in ANSWERED:",
+        "        if f.get(\"disposition\") in (*ANSWERED, \"filed\"):"
       ]
     ],
     "expect": [
@@ -357,7 +357,7 @@
     "name": "ARCH 2026-10-21 F1: the `disposition` rendering is replaced by the demand backlog #329 abolished, so the diagnostic tells a reader to produce an artifact the workflow cannot make — the fourth evasion shape, now pinned",
     "edits": [
       [
-        "\"disposition\": (\"What reaches convergence is recording a disposition — `fixed` or \"\n                               \"`declined` — on each of them, which is evidence this workflow \"\n                               \"already produces. `filed` does not count: a backlog deferral is \"\n                               \"not an answer about THIS branch\"),",
+        "\"disposition\": (\"What reaches convergence is recording a disposition — `fixed`, \"\n                               \"`declined` or `refuted` — on each of them, which is evidence this workflow \"\n                               \"already produces. `filed` does not count: a backlog deferral is \"\n                               \"not an answer about THIS branch\"),",
         "\"disposition\": \"produce a review with ZERO FINDINGS\","
       ]
     ],
@@ -378,5 +378,31 @@
       "⭐ THE SHIPPED DIAGNOSTIC IS PINNED IN FULL — body literals included, not just the table"
     ],
     "file": "scripts/check-review-decision.py"
+  },
+  {
+    "name": "backlog #318: `refuted` leaves the vocabulary again, so a well-formed header that says 'this was not a defect' is refused and its whole subject reads CANNOT RUN — `ship-src-root-alone`, a third of the ranker's labelled evidence",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "ANSWERED = (\"fixed\", \"declined\", \"refuted\")",
+        "ANSWERED = (\"fixed\", \"declined\")"
+      ]
+    ],
+    "expect": [
+      "a REFUTED finding parses — the vocabulary admits 'this was not a defect' (backlog #318)"
+    ]
+  },
+  {
+    "name": "backlog #318: `refuted` parses but is treated as OPEN, so a finding checked and shown not to be a defect blocks convergence forever — the validator and the convergence rule disagree about one word",
+    "file": "scripts/check-review-decision.py",
+    "edits": [
+      [
+        "        if f.get(\"disposition\") in ANSWERED:\n            continue\n        if f.get(\"severity\")",
+        "        if f.get(\"disposition\") in (\"fixed\", \"declined\"):\n            continue\n        if f.get(\"severity\")"
+      ]
+    ],
+    "expect": [
+      "…and a refuted High is ANSWERED, so it converges like fixed and declined"
+    ]
   }
 ]
