@@ -1,7 +1,8 @@
 -- The two Storage-service tables that migration 0007 needs, and NOTHING else.
 --
--- ⭐ WHY THIS EXISTS. CI builds the database from `public.ecr.aws/supabase/postgres`, the same image
--- the local stack runs. That image ships the roles (`anon`, `authenticated`, `service_role`,
+-- ⭐ WHY THIS EXISTS. CI builds the database from the Supabase Postgres image — byte-identical to the
+-- one the local stack runs: CI pulls a GHCR mirror pinned by the ECR original's digest
+-- (`SCHEMA_DB_IMAGE` in `.github/workflows/schema-gates.yml`), local runs pull `public.ecr.aws/supabase/postgres`. That image ships the roles (`anon`, `authenticated`, `service_role`,
 -- `authenticator`, `supabase_admin`), the `auth`/`extensions`/`storage` SCHEMAS, and `auth.users` —
 -- all measured 2026-09-13 against a bare container. What it does NOT ship is the CONTENTS of the
 -- `storage` schema: those tables are created by the storage-api service at startup, and CI does not
