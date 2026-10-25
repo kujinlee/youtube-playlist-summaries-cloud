@@ -977,5 +977,49 @@
       ]
     ],
     "expect": "...and <body> no longer reserves anything, or a top-pinned bar would leave a blank band at the document end"
+  },
+  {
+    "name": "the ctls lookup drops the text-style switcher",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var ctls=bar.querySelectorAll('#chrome-theme,#schemer');\"",
+        "\"var ctls=bar.querySelectorAll('#chrome-theme');\""
+      ]
+    ],
+    "expect": "the observer's margin is cut at the TOPMOST control, whichever one that is \u2014 the `ctls` lookup counts both (backlog #304 task 0)"
+  },
+  {
+    "name": "the ctls lookup drops the theme control",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var ctls=bar.querySelectorAll('#chrome-theme,#schemer');\"\n",
+        "        \"var ctls=bar.querySelectorAll('#schemer');\"\n"
+      ]
+    ],
+    "expect": "the observer's margin is cut at the TOPMOST control, whichever one that is \u2014 the `ctls` lookup counts both (backlog #304 task 0)"
+  },
+  {
+    "name": "a runtime fault inside the pin block, which parses",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var tailPx=0;\"\n",
+        "        \"var tailPx=0;nope();\"\n"
+      ]
+    ],
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the slot, pins when the slot leaves view and unpins when it returns (backlog #305)"
+  },
+  {
+    "name": "backlog #304's 17-byte addition disarms the observer",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};\"",
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};arm=function(){};\""
+      ]
+    ],
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the slot, pins when the slot leaves view and unpins when it returns (backlog #305)"
   }
 ]

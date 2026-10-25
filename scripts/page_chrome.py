@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 223 cases
+    python3 scripts/page_chrome.py --self-test          # 227 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -2104,6 +2104,114 @@ def self_test() -> int:
              _parses(_js), "ok")
         case("...and so does the inline theme-applying half, which a page runs early",
              _parses(f"(function(){{{theme_control()!r};}})();"), "ok")
+
+        # ── backlog #305: a script that PARSES can still be dead ──────────────────────────
+        # ⛔ `node --check` answers "is it a program", never "does it run". A prepended `throw`
+        # parses, and kills every control on every page; measured 2026-10-19, `assert_wired`
+        # ACCEPTED it and `node --check` PASSED it. The remedy the row first filed — run it
+        # under jsdom — was REFUTED there: jsdom has no `IntersectionObserver`, so the script
+        # takes its fallback and both the healthy page and the dead one come back pinned.
+        #
+        # So this is a STUB page, under plain `node` (already this file's dependency — no
+        # package is staged, so it runs inside the mutation harness as the parse case does).
+        # ⭐ It is STRICT on purpose: a selector or method it does not model THROWS, so an
+        # unmodelled call is a loud red, never a permissive Proxy's quiet pass. And it SUPPLIES
+        # an observer, recording the `rootMargin` it is built with — which is what lets it see
+        # the 17-byte `arm=function(){};` that backlog #304 measured passing every other gate.
+        #
+        # ⚠ WHAT IT CANNOT SEE, stated rather than implied: every box is a fixed number, so
+        # this is WIRING under execution, not reachability. A bar pinned inside an
+        # `overflow:hidden` ancestor still passes. That layout half is backlog #304's.
+        _STUB = r"""var G=globalThis,REP={error:null,margins:[],observed:0};
+function el(id,bottom){var a={},cls={},kids=[];return {id:id,parent:null,style:{},kids:kids,
+getAttribute:function(k){return k in a?a[k]:null;},setAttribute:function(k,v){a[k]=String(v);},
+removeAttribute:function(k){delete a[k];},addEventListener:function(){},
+classList:{contains:function(c){return !!cls[c];},toggle:function(c,on){cls[c]=on===undefined?!cls[c]:!!on;}},
+getBoundingClientRect:function(){return {top:0,bottom:bottom,height:40};},
+appendChild:function(k){k.parent=this;kids.push(k);},
+contains:function(k){for(var q=k;q;q=q.parent)if(q===this)return true;return false;},
+closest:function(s){if(s!=='.CHROME_SLOT')throw new Error('stub: closest('+s+')');return this.parent;},
+querySelectorAll:function(s){if(s==='button[data-s]')return [];var ids=s.split(',').map(function(x){
+if(!/^#[\w-]+$/.test(x))throw new Error('stub: selector '+s);return x.slice(1);});
+var out=[],walk=function(n){n.kids.forEach(function(k){if(ids.indexOf(k.id)>=0)out.push(k);walk(k);});};
+walk(this);return out;},
+querySelector:function(s){return this.querySelectorAll(s)[0]||null;}};}
+var root=el('html',0),slot=el('slot',200),bar=el('bar',0);
+root.clientHeight=800;root.style.setProperty=function(k,v){root.style[k]=v;};
+slot.appendChild(bar);
+var theme=el('chrome-theme',+process.argv[2]),sch=el('schemer',+process.argv[3]);
+bar.appendChild(theme);bar.appendChild(sch);
+var byId={'chrome-theme':theme,'schemer':sch};
+G.document={documentElement:root,getElementById:function(i){return byId[i]||null;},
+querySelectorAll:function(s){if(s!=='.CHROME_SLOT .chrome')throw new Error('stub: '+s);return [bar];}};
+G.window=G;G.matchMedia=function(){return {matches:false};};G.innerHeight=800;
+Object.defineProperty(G,'localStorage',{configurable:true,value:{getItem:function(){return null;},
+setItem:function(){},removeItem:function(){}}});
+Object.defineProperty(G,'location',{configurable:true,value:{protocol:'http:'}});
+G.ResizeObserver=function(){this.observe=function(){};};
+var lastCb=null;
+G.IntersectionObserver=function(cb,o){REP.margins.push(o.rootMargin);lastCb=cb;
+this.observe=function(){REP.observed++;};this.disconnect=function(){};};
+try{
+/*SCRIPT*/
+if(lastCb){lastCb([{isIntersecting:false}]);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
+lastCb([{isIntersecting:true}]);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
+}catch(e){REP.error=String(e);}
+console.log(JSON.stringify(REP));
+""".replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
+
+        def _runs(js: str, theme_bottom: int, schemer_bottom: int):
+            """Run `js` on the stub page; the report dict, or a CANNOT RUN string. NEVER RAISES."""
+            import json, subprocess, tempfile, os
+            fd, path = tempfile.mkstemp(suffix=".js")
+            try:
+                os.write(fd, _STUB.replace("/*SCRIPT*/", js).encode()); os.close(fd)
+                r = subprocess.run(["node", path, str(theme_bottom), str(schemer_bottom)],
+                                   capture_output=True, text=True, timeout=30)
+                out = r.stdout.strip().splitlines()
+                if r.returncode != 0 or not out:
+                    return f"CANNOT RUN: node rc={r.returncode} {r.stderr.strip()[:120]}"
+                return json.loads(out[-1])
+            except FileNotFoundError:
+                return "CANNOT RUN: node is not on PATH — treat this as NOT CHECKED"
+            except Exception as e:
+                return f"CANNOT RUN: {e}"
+            finally:
+                try: os.unlink(path)
+                except OSError: pass
+
+        def _effect(rep):
+            # ⛔ POSITIVE EFFECTS ONLY. "no error" alone is the absence-of-change assertion
+            # row #305 warns against: a script that silently does nothing raises nothing.
+            if not isinstance(rep, dict):
+                return rep
+            return (rep.get("error"), rep.get("observed", 0) > 0,
+                    rep.get("pinnedOut"), rep.get("pinnedIn"))
+
+        case("the emitted script RUNS: on a stub page it raises nothing, observes the slot, "
+             "pins when the slot leaves view and unpins when it returns (backlog #305)",
+             _effect(_runs(chrome_script(), 100, 50)), (None, True, True, False))
+        # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
+        # and the one with no case: the tail the observer's margin is cut from is measured
+        # over exactly these elements. Asked as a VALUE, not a substring — a substring case
+        # here is what survived its own mutation at the second site (see above). Two layouts,
+        # because `min` hides whichever control sits lower: theme on top in one, the switcher
+        # on top in the other, so dropping EITHER selector moves one of the two margins.
+        case("the observer's margin is cut at the TOPMOST control, whichever one that is — "
+             "the `ctls` lookup counts both (backlog #304 task 0)",
+             tuple(r["margins"][:1] if isinstance(r, dict) else r
+                   for r in (_runs(chrome_script(), 100, 50), _runs(chrome_script(), 50, 100))),
+             (["-150px 0px 0px 0px"], ["-150px 0px 0px 0px"]))
+        # ⭐ The falsifiers, run here so a reader never has to take them on trust. Each is the
+        # shape a real defect took, not an invented one.
+        case("...and a startup `throw` — which PARSES — makes it go red (#305's falsifier)",
+             _effect(_runs("throw new Error('dead');" + chrome_script(), 100, 50))[0],
+             "Error: dead")
+        case("...and so does #304's 17-byte `arm=function(){};`, which every text gate, "
+             "`node --check` and jsdom all passed",
+             _effect(_runs(chrome_script().replace(
+                 "var sync=", "arm=function(){};var sync=", 1), 100, 50))[1:3],
+             (False, None))
 
         # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
         case("the script moves a hand-authored #schemer INTO the bar, so one element carries "
