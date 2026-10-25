@@ -124,7 +124,14 @@ SHIM = """
   /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
      fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
      palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
-     what nobody supplied. */
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
   @media (prefers-color-scheme: dark) {
     html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
            --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
