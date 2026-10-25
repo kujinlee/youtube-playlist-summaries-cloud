@@ -17465,14 +17465,16 @@ so the route was reverted and filed as backlog #349 (architecture review
 ## 2026-10-24
 Two more small gaps in the explainer toolbar's tests are closed: the tests now notice if the space
 kept for the pinned toolbar is lost, and if switching back to the default text style fails to
-forget the old choice. Separately, body text on two explainer pages showed in plain black instead
-of the page's own colour when the computer was in light mode; it now shows in the page's colour,
-and nothing else on those pages changed.
+forget the old choice. Separately, on two explainer pages almost all text showed in plain black, instead of the page's
+own shades, when the computer was in light mode. It now shows in the page's colours. Apart from
+the page's "generated at" time, nothing else on those pages changed.
 <!--tech-->
 Branch `stub-gaps-and-fg-cycle`. Backlog #350 closed: the stub reports the slot reserve and
-`--chrome-h` right after load and presses the default text style; +3 mutations (page_chrome 103 ->
-106, total 2017 -> 2020; scoped run 106/106). The `--fg` cycle (filed on PR #396's branch): the two
+`--chrome-h` right after load and presses the default text style. The `--fg` cycle (filed on PR #396's branch): the two
 fragments' `--ink:var(--fg)` aliases are replaced by each block's own literal values, which breaks the
 cycle with `brief-compose.py`'s `--fg:var(--ink, ...)`. `scripts/brief-compose.py` is unchanged:
 lowering its alias block instead was measured to restyle 3 other pages in every theme state.
-Element-wise differential, six states: only OS-light-nothing-pressed changes, on the two pages.
+Element-wise differential, six states: only OS-light-nothing-pressed changes colour (604 of 723
+and 507 of 643 elements: all six `--fg`/`--ink` tokens were empty there), plus the regenerated
+`.chrome-when` stamp in every state. Backlog #350 r1: fractional stub bar, reserve re-read after
+resize, default press asserted on store and buttons; page_chrome 103 -> 111, total 2017 -> 2025.

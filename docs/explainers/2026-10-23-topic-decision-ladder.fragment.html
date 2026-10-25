@@ -10,6 +10,8 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
   --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
@@ -24,6 +26,8 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
   --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
@@ -45,6 +49,8 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
   --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
@@ -58,6 +64,8 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
+  /* EXCEPT these three, which are LITERALS that must equal --fg/--fg2/--fg3 above: as var(--fg…) they
+     met the shim's --fg:var(--ink, …) and formed a CYCLE, emptying every one of them (backlog #351). */
   --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);

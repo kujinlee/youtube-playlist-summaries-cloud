@@ -1141,7 +1141,7 @@
         "\"if(s===TD){R.removeAttribute(TA);}\""
       ]
     ],
-    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, and choosing the default text style forgets the stored opt-out (backlog #350)"
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
   },
   {
     "name": "the slot's reserve is zeroed after load",
@@ -1152,7 +1152,7 @@
         "        \"else{window.addEventListener('resize',sync);}slot.style.minHeight='0px';\"\n"
       ]
     ],
-    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, and choosing the default text style forgets the stored opt-out (backlog #350)"
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
   },
   {
     "name": "--chrome-h is zeroed after load",
@@ -1163,6 +1163,61 @@
         "        \"document.documentElement.style.setProperty('--chrome-h','0px');if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}\"\n"
       ]
     ],
-    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, and choosing the default text style forgets the stored opt-out (backlog #350)"
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
+  },
+  {
+    "name": "the default press stores the opt-out again (r5's first mutant, exactly)",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "R.removeAttribute(TA);try{localStorage.removeItem(TK);}",
+        "R.removeAttribute(TA);try{localStorage.removeItem(TK);localStorage.setItem(TK,'1');}"
+      ]
+    ],
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
+  },
+  {
+    "name": "the default press also forgets the saved theme",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(s===TD){R.removeAttribute(TA);",
+        "\"if(s===TD){R.removeAttribute(TA);try{localStorage.removeItem(K);}catch(e){}"
+      ]
+    ],
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
+  },
+  {
+    "name": "the default press leaves the old option marked",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var bs=box.querySelectorAll('button[data-s]');\"",
+        "\"var bs=box.querySelectorAll('button[data-s]');if(s===TD&&bs[0].className==='on')return;\""
+      ]
+    ],
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
+  },
+  {
+    "name": "the reserve is rounded",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var h=bar.getBoundingClientRect().height;\"\n        # \u26d4 ON THE CHOSEN SLOT",
+        "        \"var h=Math.round(bar.getBoundingClientRect().height);\"\n        # \u26d4 ON THE CHOSEN SLOT"
+      ]
+    ],
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
+  },
+  {
+    "name": "a resize zeroes the reserve",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "new ResizeObserver(sync).observe(bar);}\"\n        \"else",
+        "new ResizeObserver(function(){sync();slot.style.minHeight='0px';}).observe(bar);}\"\n        \"else"
+      ]
+    ],
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
   }
 ]
