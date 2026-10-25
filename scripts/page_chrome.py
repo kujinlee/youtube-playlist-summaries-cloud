@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 233 cases
+    python3 scripts/page_chrome.py --self-test          # 237 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -270,29 +270,62 @@ def missing_palettes(page: str) -> list[str]:
             and not (t == "light" and _light_by_exclusion(css))]
 
 
-def _top_level_rules(css: str) -> list[tuple[str, str]]:
-    """`(selector, body)` for every rule OUTSIDE any at-rule, whitespace-stripped selector. PURE.
+_BLOCK_AT_RULES = frozenset({"media", "supports", "layer", "container", "document", "scope"})
 
-    By brace depth, not regex: "which `:root` is inside which media block" is the part a
-    regex gets wrong (`brief-compose.light_palette_tokens` says the same about its scan).
+
+def _skip_string(css: str, i: int) -> int:
+    """Index just past the quoted string starting at `css[i]`. PURE."""
+    q, i = css[i], i + 1
+    while i < len(css) and css[i] != q:
+        i += 2 if css[i] == "\\" else 1
+    return i + 1
+
+
+def _css_tree(css: str, i: int = 0, top: bool = True):
+    """`(nodes, end)`: a stylesheet as `("rule", prelude, body)` / `("at", prelude, children)`. PURE.
+
+    ⟳ 2026-10-24, r2 CODEX MEDIUM — a TOKENIZER, because a brace counter was wrong on valid
+    CSS twice: a quoted `{` in a selector (`[data-x="{"]`) raised the depth, and a
+    semicolon-terminated at-rule (`@layer base;`) was glued to the next selector. Either one
+    turned a working palette into `['light']`, which removes a working control — the
+    defect this route was written to stop. Strings are skipped whole; a `;` at block level
+    ends a statement; only the block at-rules nest. Comments are already gone
+    (`_applied_css`). A stray `}` at the top level is skipped, as a browser would.
     """
-    out, depth, start, sel = [], 0, 0, ""
-    for i, ch in enumerate(css):
-        if ch == "{":
-            if depth == 0:
-                sel = "".join(css[start:i].split())
-                start = i + 1
-            depth += 1
-        elif ch == "}":
-            depth = max(0, depth - 1)
-            if depth == 0:
-                if not sel.startswith("@"):
-                    out.append((sel, css[start:i]))
-                start = i + 1
-    return out
+    nodes, start = [], i
+    while i < len(css):
+        c = css[i]
+        if c in "\"'":
+            i = _skip_string(css, i)
+        elif c == "{":
+            prelude = " ".join(css[start:i].split())
+            name = prelude[1:].split(" ", 1)[0].split("(", 1)[0].lower() if prelude.startswith("@") else ""
+            if name in _BLOCK_AT_RULES:
+                kids, i = _css_tree(css, i + 1, top=False)
+                nodes.append(("at", prelude, kids))
+            else:
+                j, depth = i + 1, 1
+                while j < len(css) and depth:
+                    if css[j] in "\"'":
+                        j = _skip_string(css, j); continue
+                    depth += {"{": 1, "}": -1}.get(css[j], 0)
+                    j += 1
+                nodes.append(("rule", prelude, css[i + 1:j - 1]))
+                i = j
+            start = i
+        elif c == "}":
+            if not top:
+                return nodes, i + 1
+            i += 1; start = i
+        elif c == ";":
+            i += 1; start = i
+        else:
+            i += 1
+    return nodes, i
 
 
 _LIGHT_EXCLUDED = f':root:not([{THEME_ATTR}="light"])'
+_DECLARES = re.compile(r"--[\w-]+\s*:")
 
 
 def _light_by_exclusion(css: str) -> bool:
@@ -302,20 +335,35 @@ def _light_by_exclusion(css: str) -> bool:
     light palette need not be a `:root[data-theme="light"]` block. The artifact pattern
     declares it as bare `:root` and EXCLUDES it from the OS-dark block with
     `:root:not([data-theme="light"])`, so pressing light simply stops the dark block
-    applying. Seven committed pages are written that way; with the OS dark and the page set
-    to light every sampled element rendered as OS-light. The literal test above reported
-    `['light']` for all seven, so the composer DROPPED a working control from each.
+    applying. Seven committed pages are written that way; the literal test reported
+    `['light']` for all of them, so the composer DROPPED a working control from each.
 
-    ⚠ BOTH halves are required, and that is what keeps this from re-opening the
-    fail-silent this module exists for: the exclusion alone, with no default palette, is a
-    button that changes an attribute nothing styles. The default must be a TOP-LEVEL bare
-    `:root` that declares a custom property — one nested in a media query does not apply
-    when the OS is dark and the page is set to light, which is the case that matters.
+    ⛔ THE CONDITION IS EXACT, NOT "BOTH PIECES PRESENT" — r2 CODEX HIGH. The r1 version
+    asked only that an exclusion exist SOMEWHERE, and a page with `:root{dark}` AND an
+    unrelated `:root:not(...){--unused:2}` in the same dark block was ACCEPTED, then
+    rendered dark with light pressed: the fail-silent this module exists for. So:
+      1. a TOP-LEVEL bare `:root` declares at least one custom property (the default);
+      2. at least one rule inside an OS-dark media block declares one; and
+      3. EVERY rule inside an OS-dark media block that declares one is selected by
+         exactly `:root:not([data-theme="light"])` — nothing else, no selector list.
+    Anything outside that shape stays refused, as it was before this route existed:
+    conservative, because a refusal costs a control and an acceptance can cost a page.
     """
-    if _LIGHT_EXCLUDED not in "".join(css.split()):
-        return False
-    return any(sel == ":root" and re.search(r"--[\w-]+\s*:", body)
-               for sel, body in _top_level_rules(css))
+    tree, _ = _css_tree(css)
+    flat = lambda s: "".join(s.split())
+    default = any(k == "rule" and flat(p) == ":root" and _DECLARES.search(b)
+                  for k, p, b in tree)
+    dark: list[str] = []
+
+    def walk(nodes, in_dark):
+        for n in nodes:
+            if n[0] == "at":
+                walk(n[2], in_dark or (n[1].lower().startswith("@media")
+                                       and "prefers-color-scheme:dark" in flat(n[1]).lower()))
+            elif in_dark and _DECLARES.search(n[2]):
+                dark.append(flat(n[1]))
+    walk(tree, False)
+    return bool(default and dark and all(s == _LIGHT_EXCLUDED for s in dark))
 
 
 def has_control(page: str) -> bool:
@@ -1589,6 +1637,24 @@ def self_test() -> int:
              "with the OS dark and the page set to light",
              missing_palettes("<style>@media (min-width:1px){" + _DEF + "}" + _EXCL + DARK
                               + f"</style>{theme_control()}"), ["light"])
+        # ⟳ r2 CODEX HIGH — the exclusion must be THE dark palette, not merely present. This
+        # exact page was ACCEPTED by r1's version and rendered dark with light pressed.
+        case("...and an exclusion BESIDE an unconditional dark `:root` is refused — the dark "
+             "block still wins with light pressed",
+             missing_palettes("<style>" + _DEF + '@media (prefers-color-scheme:dark){'
+                              ':root{--bg:#111}:root:not([data-theme="light"]){--unused:2}}'
+                              + DARK + f"</style>{theme_control()}"), ["light"])
+        case("...and so is a dark selector LIST that only begins with the exclusion",
+             missing_palettes("<style>" + _DEF + '@media (prefers-color-scheme:dark){'
+                              ':root:not([data-theme="light"]),body{--bg:#111}}'
+                              + DARK + f"</style>{theme_control()}"), ["light"])
+        # ⟳ r2 CODEX MEDIUM — valid CSS the brace counter misread, each of which turned a
+        # working palette into ['light'] and so removed a working control.
+        case("...and valid CSS the old brace counter misread keeps the palette: a "
+             "semicolon at-rule, and a brace inside a quoted selector",
+             (missing_palettes(f"<style>@layer base;{_DEF}{_EXCL}{DARK}</style>{theme_control()}"),
+              missing_palettes('<style>[data-x="{"]{--u:0}' + _DEF + _EXCL + DARK
+                               + f"</style>{theme_control()}")), ([], []))
 
         # --- assert_wired: the caller-facing gate
         def raises(page, where="p", scoped=False):
@@ -2199,7 +2265,7 @@ getAttribute:function(k){return k in a?a[k]:null;},setAttribute:function(k,v){a[
 removeAttribute:function(k){delete a[k];},
 addEventListener:function(t,f){if(typeof f!=='function')throw new Error('stub: listener');(on[t]=on[t]||[]).push(f);},
 classList:{contains:function(c){return !!cls[c];},toggle:function(c,v){cls[c]=v===undefined?!cls[c]:!!v;}},
-getBoundingClientRect:function(){return {top:0,bottom:bottom,height:40};},
+b:bottom,getBoundingClientRect:function(){return {top:0,bottom:this.b,height:40};},
 appendChild:function(k){k.parent=this;kids.push(k);},
 contains:function(k){for(var q=k;q;q=q.parent)if(q===this)return true;return false;},
 closest:function(s){if(s==='.CHROME_SLOT')return this.parent;
@@ -2225,7 +2291,7 @@ Object.defineProperty(G,'localStorage',{configurable:true,value:{getItem:functio
 setItem:function(){},removeItem:function(){}}});
 Object.defineProperty(G,'location',{configurable:true,value:{protocol:'http:'}});
 var name=function(t){return t===slot?'slot':t===bar?'bar':(t&&t.id)||String(t);};
-G.ResizeObserver=function(){this.observe=function(t){REP.resized.push(name(t));};};
+var rcb=null;G.ResizeObserver=function(cb){rcb=cb;this.observe=function(t){REP.resized.push(name(t));};};
 var live=null;
 G.IntersectionObserver=function(cb,o){REP.margins.push(o.rootMargin);var me=this;
 this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x){cb([{isIntersecting:x}]);};};
@@ -2235,6 +2301,8 @@ try{
 REP.pressed0=theme.getAttribute('aria-pressed');
 if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
 live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
+REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
+if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];}
 fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];
@@ -2273,12 +2341,18 @@ console.log(JSON.stringify(REP));
         case("the emitted script RUNS: on a stub page it raises nothing, observes the SLOT "
              "(not the bar, which leaves the flow when pinned), watches the bar's size, pins "
              "when the slot leaves view and unpins when it returns (backlog #305)",
-             _field(_ok, "error", "observed", "resized", "pinnedOut", "pinnedIn"),
+             _field(_ok, "error", "obs", "resized", "pinnedOut", "pinnedIn"),
              (None, ["slot", "slot"], ["bar"], True, False))
         case("...and its controls WORK when pressed: the theme button flips the theme and its "
              "pressed state both ways, starting unpressed",
              _field(_ok, "pressed0", "theme1", "theme2"),
              ("false", ["dark", "true"], ["light", "false"]))
+        # ⟳ r2 CODEX MEDIUM: the resize callback was recorded and DISCARDED, so a throwing
+        # one passed every case while Chromium logged `resize-dead`. It is now invoked after
+        # a control moves, and the observer must be re-armed at the NEW tail (200-20).
+        case("...and a resize re-measures: when a control moves, the observer is re-armed "
+             "at the new tail",
+             _field(_ok, "error", "afterResize"), (None, "-180px 0px 0px 0px"))
         case("...and the text-style switcher sets the scheme and marks only the pressed button",
              _field(_ok, "scheme"), (["1", "on", ""],))
         # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
@@ -2290,7 +2364,7 @@ console.log(JSON.stringify(REP));
         # the two margins DIFFER (150 and 120), so a hard-coded tail cannot satisfy both.
         case("the observer's margin is cut at the TOPMOST control, whichever one that is — "
              "the `ctls` lookup counts both (backlog #304 task 0)",
-             tuple(_field(r, "margins") for r in
+             tuple(_field(r, "armed") for r in
                    (_runs(chrome_script(), 100, 50), _runs(chrome_script(), 80, 120))),
              ((["-150px 0px 0px 0px", "-150px 0px 0px 0px"],),
               (["-120px 0px 0px 0px", "-120px 0px 0px 0px"],)))

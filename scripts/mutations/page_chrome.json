@@ -1093,8 +1093,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    if _LIGHT_EXCLUDED not in \"\".join(css.split()):\n        return False\n",
-        "    if False:\n        return False\n"
+        "bool(default and dark and all(s == _LIGHT_EXCLUDED for s in dark))",
+        "bool(default and all(s == _LIGHT_EXCLUDED for s in dark))"
       ]
     ],
     "expect": "...and a default WITHOUT the exclusion does not take this route \u2014 it stays refused as before"
@@ -1104,10 +1104,65 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "               for sel, body in _top_level_rules(css))",
-        "               for sel, body in [(\":root\", css)])"
+        "                  for k, p, b in tree)",
+        "                  for k, p, b in tree + [m for n in tree if n[0] == \"at\" for m in n[2]])"
       ]
     ],
     "expect": "...and a 'default' nested in a media query does not count \u2014 it does not apply with the OS dark and the page set to light"
+  },
+  {
+    "name": "one dark rule using the exclusion is enough",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "all(s == _LIGHT_EXCLUDED for s in dark)",
+        "any(s == _LIGHT_EXCLUDED for s in dark)"
+      ]
+    ],
+    "expect": "...and an exclusion BESIDE an unconditional dark `:root` is refused \u2014 the dark block still wins with light pressed"
+  },
+  {
+    "name": "a dark selector list that begins with the exclusion counts",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "s == _LIGHT_EXCLUDED for s",
+        "s.startswith(_LIGHT_EXCLUDED) for s"
+      ]
+    ],
+    "expect": "...and so is a dark selector LIST that only begins with the exclusion"
+  },
+  {
+    "name": "the tokenizer does not skip quoted strings",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        if c in \"\\\"'\":\n            i = _skip_string(css, i)\n",
+        "        if False:\n            i = _skip_string(css, i)\n"
+      ]
+    ],
+    "expect": "...and valid CSS the old brace counter misread keeps the palette: a semicolon at-rule, and a brace inside a quoted selector"
+  },
+  {
+    "name": "the tokenizer does not end a statement at a semicolon",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        elif c == \";\":\n            i += 1; start = i\n",
+        "        elif False:\n            i += 1; start = i\n"
+      ]
+    ],
+    "expect": "...and valid CSS the old brace counter misread keeps the palette: a semicolon at-rule, and a brace inside a quoted selector"
+  },
+  {
+    "name": "the resize callback throws",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}\"",
+        "\"if(window.ResizeObserver){new ResizeObserver(function(){throw new Error('resize-dead');}).observe(bar);}\""
+      ]
+    ],
+    "expect": "...and a resize re-measures: when a control moves, the observer is re-armed at the new tail"
   }
 ]

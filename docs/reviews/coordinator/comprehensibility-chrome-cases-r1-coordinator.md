@@ -7,7 +7,12 @@ subject: comprehensibility-chrome-cases
 halves:
   codex: ran
   claude: ran
-findings: [light-by-exclusion-misread, observe-target-unchecked, listeners-unrecorded, ctls-margins-equal, cannot-run-sliced]
+findings:
+  - {id: H1, severity: High, aim: deliverable, fix_induced: false, component: palette-detection, disposition: fixed}
+  - {id: M1, severity: Medium, aim: instrument, fix_induced: false, component: stub-page, disposition: fixed}
+  - {id: M2, severity: Medium, aim: instrument, fix_induced: false, component: stub-page, disposition: fixed}
+  - {id: L1, severity: Low, aim: instrument, fix_induced: false, component: stub-page, disposition: fixed}
+  - {id: L2, severity: Low, aim: instrument, fix_induced: false, component: stub-page, disposition: fixed}
 ```
 
 Both halves independently refuted the branch's diagnosis of backlog #300's seven unpinned pages, in
