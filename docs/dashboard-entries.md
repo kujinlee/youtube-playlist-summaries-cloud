@@ -17501,4 +17501,5 @@ Element-wise differential, six states: only OS-light-nothing-pressed changes col
 and 507 of 643 elements: all six `--fg`/`--ink` tokens were empty there), plus the regenerated
 `.chrome-when` stamp in every state. Backlog #350 r1: fractional stub bar, reserve re-read after
 resize that grows the bar, default press asserted on store and buttons; page_chrome 103 -> 112,
-total 2017 -> 2026.
+total 2017 -> 2026. Four further gaps the review found inside the stub's bound are filed as
+backlog #352.
