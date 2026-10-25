@@ -17432,31 +17432,31 @@ as unmeasured.
 ## 2026-10-24
 The script behind every explainer page's theme and text-style buttons is now actually run by its
 tests, not just checked for typos. Until now the tests only asked whether the script was valid
-code, so a script that crashed on load, leaving every button dead, passed. They now run it on
-a small stand-in page, press both buttons and check that they work, and check that the script
-keeps the toolbar pinned when it scrolls away. A crash when the page loads, when either button is pressed, or when the toolbar
-is resized fails the tests, and so does a 17-character change that had previously disabled the pinning with every check still green. The
+code, so a script that crashed on load, leaving every button dead, passed. They now run it on a
+small stand-in page, once as if the reader's computer is in light mode and once in dark mode.
+Each run presses both buttons and checks the result, checks that the choice is remembered, and
+checks that the toolbar stays pinned when it scrolls away. A crash fails the tests, and so does a
+17-character change that had previously disabled the pinning with every check still green. The
 stand-in page has no real screen, so whether a reader can actually see the buttons is still
 checked by hand.
 
-Seven older pages had their theme button sitting at the very bottom of the page. They were
-rebuilt, and the button now stays on screen as the reader scrolls. Six of them had been missed
-by the page builder, which misread their working theme button as broken and would have removed
-it. That misreading is fixed. Nothing on those pages changed except the toolbar, which was
-checked by comparing the visible text before and after. One last page cannot be rebuilt because
-its source file no longer exists.
+One older page was rebuilt so its theme button stays on screen while scrolling. Six more were
+meant to be, but they turned out to have a working theme button that the page builder misreads as
+broken, so rebuilding them would remove it. Three attempts to teach the builder to read them
+correctly each went wrong in a new way when reviewed, so that work stopped and is filed as its own
+item. Those six pages are unchanged.
 <!--tech-->
 Branch `comprehensibility-chrome-cases`. Backlog #305 closed: `page_chrome.py --self-test` runs
-`chrome_script()` under plain `node` on a strict stub DOM that records listeners, the observer's
-target and margin and the resize target; the cases press both controls. Backlog #304 task 0 done:
-the `ctls` lookup is asked as the observer `rootMargin` in two layouts expecting 150 and 120.
-`missing_palettes` now accepts a light palette supplied as the bare `:root` default when EVERY
-token-declaring rule in an OS-dark media block is exactly `:root:not([data-theme="light"])`
-(`_light_by_exclusion`, over a small CSS tokenizer). Cases 223 -> 237; mutations page_chrome 89 -> 106, total 2003 -> 2020;
-scoped run 106 killed, 106 attributed, 0 survivors.
+`chrome_script()` under plain `node` on a strict stub DOM (answers only the media query the script
+asks, OS light and OS dark; records listeners, storage, the observer's target and margin and the
+resize callback) and presses both controls. Backlog #304 task 0 done: the `ctls` lookup is asked as
+the observer `rootMargin` in two layouts expecting 150 and 120. Cases 223 -> 232; mutations
+page_chrome 89 -> 102, total 2003 -> 2016; scoped run 102 killed, 102 attributed, 0 survivors.
 
-Backlog #300's remainder, re-measured over pages carrying `#chrome-theme`: 11, 3 pinned, 8 not
-(the earlier "3 of 63" counted `position:fixed` anywhere). 7 recomposed from unchanged fragments;
-Chromium OS-dark 320x568: visible text identical old vs new, theme button in view at every tested
-scroll, one press gives light, 0 page errors. `2026-09-03-brief-guard-inventory-slice-state` has no
-fragment. Backlog #105 closed: the `brief-compose.py` shim comment.
+Backlog #300's remainder, re-measured over pages carrying `#chrome-theme`: 11, 3 pinned, 8 not (the
+earlier "3 of 63" counted `position:fixed` anywhere). `2026-10-06-brief-dev-process-speed`
+recomposed. The other 6 with fragments use `:root:not([data-theme="light"])`, which
+`missing_palettes` does not recognise; three text rules for it leaked in review rounds 1-3 (thrashing),
+so the route was reverted and filed as backlog #349 (architecture review
+`docs/reviews/architecture-review-2026-10-24-palette-detection.md`). Backlog #105 closed: the
+`brief-compose.py` shim comment.

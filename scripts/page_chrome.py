@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 237 cases
+    python3 scripts/page_chrome.py --self-test          # 232 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -266,104 +266,8 @@ def missing_palettes(page: str) -> list[str]:
     # a second predicate (`declares_light`) to work around exactly that; the workaround is
     # no longer the only thing standing between the prose and this answer.
     css = _applied_css(page)
-    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css
-            and not (t == "light" and _light_by_exclusion(css))]
+    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]
 
-
-_BLOCK_AT_RULES = frozenset({"media", "supports", "layer", "container", "document", "scope"})
-
-
-def _skip_string(css: str, i: int) -> int:
-    """Index just past the quoted string starting at `css[i]`. PURE."""
-    q, i = css[i], i + 1
-    while i < len(css) and css[i] != q:
-        i += 2 if css[i] == "\\" else 1
-    return i + 1
-
-
-def _css_tree(css: str, i: int = 0, top: bool = True):
-    """`(nodes, end)`: a stylesheet as `("rule", prelude, body)` / `("at", prelude, children)`. PURE.
-
-    ⟳ 2026-10-24, r2 CODEX MEDIUM — a TOKENIZER, because a brace counter was wrong on valid
-    CSS twice: a quoted `{` in a selector (`[data-x="{"]`) raised the depth, and a
-    semicolon-terminated at-rule (`@layer base;`) was glued to the next selector. Either one
-    turned a working palette into `['light']`, which removes a working control — the
-    defect this route was written to stop. Strings are skipped whole; a `;` at block level
-    ends a statement; only the block at-rules nest. Comments are already gone
-    (`_applied_css`). A stray `}` at the top level is skipped, as a browser would.
-    """
-    nodes, start = [], i
-    while i < len(css):
-        c = css[i]
-        if c in "\"'":
-            i = _skip_string(css, i)
-        elif c == "{":
-            prelude = " ".join(css[start:i].split())
-            name = prelude[1:].split(" ", 1)[0].split("(", 1)[0].lower() if prelude.startswith("@") else ""
-            if name in _BLOCK_AT_RULES:
-                kids, i = _css_tree(css, i + 1, top=False)
-                nodes.append(("at", prelude, kids))
-            else:
-                j, depth = i + 1, 1
-                while j < len(css) and depth:
-                    if css[j] in "\"'":
-                        j = _skip_string(css, j); continue
-                    depth += {"{": 1, "}": -1}.get(css[j], 0)
-                    j += 1
-                nodes.append(("rule", prelude, css[i + 1:j - 1]))
-                i = j
-            start = i
-        elif c == "}":
-            if not top:
-                return nodes, i + 1
-            i += 1; start = i
-        elif c == ";":
-            i += 1; start = i
-        else:
-            i += 1
-    return nodes, i
-
-
-_LIGHT_EXCLUDED = f':root:not([{THEME_ATTR}="light"])'
-_DECLARES = re.compile(r"--[\w-]+\s*:")
-
-
-def _light_by_exclusion(css: str) -> bool:
-    """Is the light palette supplied the OTHER valid way — as the plain default? PURE.
-
-    ⟳ 2026-10-24, backlog #300 r1 (BOTH halves, independently, measured in Chromium): the
-    light palette need not be a `:root[data-theme="light"]` block. The artifact pattern
-    declares it as bare `:root` and EXCLUDES it from the OS-dark block with
-    `:root:not([data-theme="light"])`, so pressing light simply stops the dark block
-    applying. Seven committed pages are written that way; the literal test reported
-    `['light']` for all of them, so the composer DROPPED a working control from each.
-
-    ⛔ THE CONDITION IS EXACT, NOT "BOTH PIECES PRESENT" — r2 CODEX HIGH. The r1 version
-    asked only that an exclusion exist SOMEWHERE, and a page with `:root{dark}` AND an
-    unrelated `:root:not(...){--unused:2}` in the same dark block was ACCEPTED, then
-    rendered dark with light pressed: the fail-silent this module exists for. So:
-      1. a TOP-LEVEL bare `:root` declares at least one custom property (the default);
-      2. at least one rule inside an OS-dark media block declares one; and
-      3. EVERY rule inside an OS-dark media block that declares one is selected by
-         exactly `:root:not([data-theme="light"])` — nothing else, no selector list.
-    Anything outside that shape stays refused, as it was before this route existed:
-    conservative, because a refusal costs a control and an acceptance can cost a page.
-    """
-    tree, _ = _css_tree(css)
-    flat = lambda s: "".join(s.split())
-    default = any(k == "rule" and flat(p) == ":root" and _DECLARES.search(b)
-                  for k, p, b in tree)
-    dark: list[str] = []
-
-    def walk(nodes, in_dark):
-        for n in nodes:
-            if n[0] == "at":
-                walk(n[2], in_dark or (n[1].lower().startswith("@media")
-                                       and "prefers-color-scheme:dark" in flat(n[1]).lower()))
-            elif in_dark and _DECLARES.search(n[2]):
-                dark.append(flat(n[1]))
-    walk(tree, False)
-    return bool(default and dark and all(s == _LIGHT_EXCLUDED for s in dark))
 
 
 def has_control(page: str) -> bool:
@@ -1618,43 +1522,6 @@ def self_test() -> int:
              missing_palettes(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), [])
         # A page that takes the stamp alone is not required to carry palettes.
         case("a page with no control needs no palettes", missing_palettes(stamp("x")), [])
-        # ── the light palette as the plain DEFAULT (backlog #300 r1) ─────────────────────
-        _DEF = ':root{--bg:#fff;--ink:#111}'
-        _EXCL = '@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111}}'
-        case("a light DEFAULT plus the OS-dark block excluding light counts as a light palette "
-             "— seven committed pages are written this way and their toggle works",
-             missing_palettes(f"<style>{_DEF}{_EXCL}{DARK}</style>{theme_control()}"), [])
-        case("...but the exclusion with NO default palette is still caught — that button "
-             "styles nothing",
-             missing_palettes(f"<style>{_EXCL}{DARK}</style>{theme_control()}"), ["light"])
-        # ⚠ Not "this page is broken" — with no OS-dark block at all it may well work. It is
-        # that THIS route needs the exclusion: whether some other block outranks a bare
-        # default is not decided here, so the shape stays refused exactly as it was before.
-        case("...and a default WITHOUT the exclusion does not take this route — it stays "
-             "refused as before",
-             missing_palettes(f"<style>{_DEF}{DARK}</style>{theme_control()}"), ["light"])
-        case("...and a 'default' nested in a media query does not count — it does not apply "
-             "with the OS dark and the page set to light",
-             missing_palettes("<style>@media (min-width:1px){" + _DEF + "}" + _EXCL + DARK
-                              + f"</style>{theme_control()}"), ["light"])
-        # ⟳ r2 CODEX HIGH — the exclusion must be THE dark palette, not merely present. This
-        # exact page was ACCEPTED by r1's version and rendered dark with light pressed.
-        case("...and an exclusion BESIDE an unconditional dark `:root` is refused — the dark "
-             "block still wins with light pressed",
-             missing_palettes("<style>" + _DEF + '@media (prefers-color-scheme:dark){'
-                              ':root{--bg:#111}:root:not([data-theme="light"]){--unused:2}}'
-                              + DARK + f"</style>{theme_control()}"), ["light"])
-        case("...and so is a dark selector LIST that only begins with the exclusion",
-             missing_palettes("<style>" + _DEF + '@media (prefers-color-scheme:dark){'
-                              ':root:not([data-theme="light"]),body{--bg:#111}}'
-                              + DARK + f"</style>{theme_control()}"), ["light"])
-        # ⟳ r2 CODEX MEDIUM — valid CSS the brace counter misread, each of which turned a
-        # working palette into ['light'] and so removed a working control.
-        case("...and valid CSS the old brace counter misread keeps the palette: a "
-             "semicolon at-rule, and a brace inside a quoted selector",
-             (missing_palettes(f"<style>@layer base;{_DEF}{_EXCL}{DARK}</style>{theme_control()}"),
-              missing_palettes('<style>[data-x="{"]{--u:0}' + _DEF + _EXCL + DARK
-                               + f"</style>{theme_control()}")), ([], []))
 
         # --- assert_wired: the caller-facing gate
         def raises(page, where="p", scoped=False):
@@ -2286,9 +2153,13 @@ var sbs=['1','2','3'].map(function(v){var b=el('',0);b.setAttribute('data-s',v);
 var byId={'chrome-theme':theme,'schemer':sch};
 G.document={documentElement:root,getElementById:function(i){return byId[i]||null;},
 querySelectorAll:function(s){if(s!=='.CHROME_SLOT .chrome')throw new Error('stub: '+s);return [bar];}};
-G.window=G;G.matchMedia=function(){return {matches:false};};G.innerHeight=800;
-Object.defineProperty(G,'localStorage',{configurable:true,value:{getItem:function(){return null;},
-setItem:function(){},removeItem:function(){}}});
+var OSDARK=process.argv[4]==='1',ST=JSON.parse(process.argv[5]||'{}');
+G.window=G;G.innerHeight=800;
+G.matchMedia=function(q){if(q!=='(prefers-color-scheme:dark)')throw new Error('stub: media '+q);
+return {matches:OSDARK};};
+Object.defineProperty(G,'localStorage',{configurable:true,value:{
+getItem:function(k){return k in ST?ST[k]:null;},setItem:function(k,v){ST[k]=String(v);},
+removeItem:function(k){delete ST[k];}}});
 Object.defineProperty(G,'location',{configurable:true,value:{protocol:'http:'}});
 var name=function(t){return t===slot?'slot':t===bar?'bar':(t&&t.id)||String(t);};
 var rcb=null;G.ResizeObserver=function(cb){rcb=cb;this.observe=function(t){REP.resized.push(name(t));};};
@@ -2298,25 +2169,27 @@ this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x)
 this.disconnect=function(){};};
 try{
 /*SCRIPT*/
-REP.pressed0=theme.getAttribute('aria-pressed');
+REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');
 if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
 live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
 REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
 if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];}
 fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
-fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];
+fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.stored=ST;
 }catch(e){REP.error=String(e);}
 console.log(JSON.stringify(REP));
 """.replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
 
-        def _runs(js: str, theme_bottom: int, schemer_bottom: int):
+        def _runs(js: str, theme_bottom: int, schemer_bottom: int, os_dark: bool = False,
+                  saved: dict | None = None):
             """Run `js` on the stub page; the report dict, or a CANNOT RUN string. NEVER RAISES."""
             import json, subprocess, tempfile, os
             fd, path = tempfile.mkstemp(suffix=".js")
             try:
                 os.write(fd, _STUB.replace("/*SCRIPT*/", js).encode()); os.close(fd)
-                r = subprocess.run(["node", path, str(theme_bottom), str(schemer_bottom)],
+                r = subprocess.run(["node", path, str(theme_bottom), str(schemer_bottom),
+                                    "1" if os_dark else "0", json.dumps(saved or {})],
                                    capture_output=True, text=True, timeout=30)
                 out = r.stdout.strip().splitlines()
                 if r.returncode != 0 or not out:
@@ -2355,6 +2228,19 @@ console.log(JSON.stringify(REP));
              _field(_ok, "error", "afterResize"), (None, "-180px 0px 0px 0px"))
         case("...and the text-style switcher sets the scheme and marks only the pressed button",
              _field(_ok, "scheme"), (["1", "on", ""],))
+        # ⟳ r3 CLAUDE F4: the stub answered "OS light" to every query, so flipping the script's
+        # own media query to `light` — a dead FIRST press for every OS-dark reader — passed every
+        # case. The stub now answers only the query the script makes (any other THROWS) and runs
+        # a second time with the OS dark.
+        _dark = _runs(chrome_script(), 100, 50, os_dark=True)
+        case("...and with the OS DARK the button starts pressed and its first press gives light "
+             "— the press an OS-dark reader makes first",
+             _field(_dark, "error", "pressed0", "theme1"), (None, "true", ["light", "false"]))
+        case("...and both choices are persisted under their keys, and a saved text style is "
+             "applied on load",
+             (_field(_ok, "stored"),
+              _field(_runs(chrome_script(), 100, 50, saved={"explainer-scheme": "2"}), "scheme0")),
+             (({"yps-theme": "light", "explainer-scheme": "1"},), ("2",)))
         # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
         # and the one with no case: the tail the observer's margin is cut from is measured
         # over exactly these elements. Asked as a VALUE, not a substring — a substring case
