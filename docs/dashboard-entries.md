@@ -17438,15 +17438,16 @@ that the "measured", "warning" and "defect" colours must never be used for empha
 carry meaning.
 
 Checking that rule turned up a real readability bug, now fixed. On a computer set to dark mode,
-bold words on three recent explainer pages were dark blue on a dark background, at about a
-less than half the minimum readable contrast. They now read clearly in every combination of computer
-setting and page button.
+bold words on three recent explainer pages were dark blue on a dark background, at well under
+half the minimum readable contrast. Each of those pages now sets its own dark-mode colour for bold
+words, and they read clearly in every combination of computer setting and page button. Two
+attempts to fix it once for every page each broke some other page, so the rule now says each page
+sets the colour itself.
 <!--tech-->
-Backlog #226 part (b) written on branch `typography-contract`: `.agents/skills/shared/explainer-delivery.md`
-§2 states the `.ex-body` opt-in as a MUST, the three roles, the reserved semantic tokens, and where
-each value comes from. Part (c)'s live defect: the `brief-compose.py` shim gave `--em` no value
-for OS-dark with no `data-theme`, so bold text measured 1.90/2.05/1.90:1 on three pages; one
-rule at the lowest working specificity (`html:where(...)`, and the pressed pair lowered to
-`html[data-theme=...]`, which also stops it overriding a page's own dark colour) fixes it; the
-recomposed pages measure 7.79-7.98:1 in all six states. brief-compose cases 153 -> 154, mutations
-27 -> 30 (total 2003 -> 2006; scoped run 30/30). Part (c)'s guard is still missing, so the row stays open.
+Branch `typography-contract`. Backlog #226 part (b): `.agents/skills/shared/explainer-delivery.md` §2
+states the `.ex-body` opt-in as a MUST, the three roles, the reserved semantic tokens, and that a page
+declares `--em` in every palette block. Part (c)'s defect: three pages inherited the shim's light
+`--em` with the OS dark and nothing pressed (1.78/1.79/1.78:1). Two shim defaults broke other pages in
+review (thrashing; `docs/reviews/architecture-review-2026-10-24-em-default.md`), so the shim is
+unchanged from `master` and the three fragments declare the pair themselves: 7.79-7.98:1 in all six
+states. Part (c)'s compose-time guard is filed on the row; backlog #351 filed (a `--fg` cycle).

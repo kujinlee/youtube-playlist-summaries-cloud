@@ -118,13 +118,19 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
   supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
   something it does not. They are named by token, not by hue, because a page sets its own hue.
-  ⚠ **Where the values come from:** the role mapping is `page_chrome.text_style_css()`; the family's
-  convention for `--accent` is *The common look* in `CONTEXT.md`; `brief-compose.py`'s shim supplies
-  DEFAULTS for `--accent` and `--em`, in all three states (OS-dark with nothing pressed, light
-  pressed, dark pressed), each at the LOWEST specificity that still works: the OS-dark default is
-  `html:where(…)` (0,0,1) and the pressed pair is `html[data-theme=…]` (0,1,1). So any fragment rule
-  that names the theme or the OS-dark exclusion (0,2,0) wins; a bare `:root` (0,1,0) wins with
-  nothing pressed and loses on a press, which is what stops a light-only palette going half-live. The switcher (`#schemer`)
+  ⛔ **A page that opts in DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light default, each
+  explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light / `#9db8e8` dark unless
+  it has a reason to differ. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
+  is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
+  it measured **1.78:1** there (backlog #226). It cannot be fixed in the shim, because only the page
+  knows whether its palette goes dark (`page_chrome`'s rule: *mechanism shared, palette local*);
+  two attempts here to supply it centrally, and a third the reviewer tried (`color-mix()`), each
+  broke a different page
+  (`docs/reviews/architecture-review-2026-10-24-em-default.md`). The role mapping itself is
+  `page_chrome.text_style_css()`; the family's `--accent` is *The common look* in `CONTEXT.md`.
+  ⚠ `--prose` reads `--fg2`, but on two committed pages the fragment and the shim define `--fg`/`--fg2`
+  in terms of each other, so with the OS light and nothing pressed it resolves to nothing and body
+  text falls back to black (readable, but not the role) — backlog #351. The switcher (`#schemer`)
   is an **escape hatch, not scaffolding**: colour is the no-attribute default, so a page with
   JavaScript off still renders in colour, and `page_chrome`'s switcher stores only the opt-outs
   (a hand-authored copy in an older fragment may also store the default; that is harmless).
