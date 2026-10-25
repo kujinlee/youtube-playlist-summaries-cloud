@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    "  gpt-6.1-sol: ok \u2014 1547 chars"
+  ],
+  "dirty": {},
+  "exit_code": 0,
+  "gate_ran": true,
+  "head": "768c81ce35fc4fea3611e0562a7a5d667aab0abf",
+  "intrusions": [],
+  "model": "gpt-6.1-sol",
+  "prompt": "/Users/kujinlee/.claude-tmp/claude-501/-Users-kujinlee-code-agentic-ai-docs-youtube-playlist-summaries-cloud/a6abe358-4c0b-44cb-a058-5446372998ef/scratchpad/review-typo-r4.md",
+  "reason": "1547 chars",
+  "refused": false,
+  "review": "typography-contract-r4-codex.md",
+  "schema": 3,
+  "tool": "codex-review"
+}

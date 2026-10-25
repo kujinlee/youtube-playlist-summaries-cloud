@@ -1,6 +1,6 @@
 <title>Why it is not converging</title>
 <style>
-:root{
+:root{--em:#2d4a7c;
   --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
   --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
   --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
@@ -15,7 +15,7 @@
   --good:var(--green); --defect:var(--red);
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
+  :root:not([data-theme="light"]){--em:#9db8e8;
     --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
     --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
     --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;
@@ -35,7 +35,7 @@
    Without these, `page_chrome.missing_palettes(fragment + theme_control())` returns
    `['light','dark']` and `brief-compose.py:766` withholds BOTH controls — deliberately, because a
    toggle over undeclared tokens is a button that changes an attribute nothing styles. */
-:root[data-theme="light"]{
+:root[data-theme="light"]{--em:#2d4a7c;
   --bg:#fbfaf7; --panel:#ffffff; --fg:#1b1a18; --fg2:#3d3a35; --fg3:#6b6560;
   --rule:#e2ddd4; --accent:#8a5a2b; --accent2:#cb9a68;
   --link:#1f5d8c; --red:#9a2f2f; --redbg:#fbf0ee; --green:#2d6a3f; --greenbg:#eef6f0;
@@ -49,7 +49,7 @@
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
-:root[data-theme="dark"]{
+:root[data-theme="dark"]{--em:#9db8e8;
     --bg:#16151a; --panel:#1e1d23; --fg:#ece9e3; --fg2:#c6c1b8; --fg3:#918a80;
     --rule:#33313a; --accent:#cb9a68; --accent2:#8a5a2b;
     --link:#8cbde0; --red:#e08f8f; --redbg:#2a1d1d; --green:#8fcaa2; --greenbg:#1a2620;

@@ -17461,3 +17461,26 @@ recomposed. The other 6 with fragments use `:root:not([data-theme="light"])`, wh
 so the route was reverted and filed as backlog #349 (architecture review
 `docs/reviews/architecture-review-2026-10-24-palette-detection.md`). Backlog #105 closed: the
 `brief-compose.py` shim comment.
+
+## 2026-10-24
+The rule for how an explainer page uses colour to show structure is now written down where
+anyone building a page will read it. On 2026-10-05 you picked a scheme where headings, body text
+and bold words each get their own colour, so a page can be skimmed. It was built into the page
+code but described nowhere, so anyone else making a page had to guess. The written rule also says
+that the "measured", "warning" and "defect" colours must never be used for emphasis, because they
+carry meaning.
+
+Checking that rule turned up a real readability bug, now fixed. On a computer set to dark mode,
+bold words on three recent explainer pages were dark blue on a dark background, at well under
+half the minimum readable contrast. Each of those pages now sets its own dark-mode colour for bold
+words, and they read clearly in every combination of computer setting and page button. Two
+attempts to fix it once for every page each broke some other page, so the rule now says each page
+sets the colour itself.
+<!--tech-->
+Branch `typography-contract`. Backlog #226 part (b): `.agents/skills/shared/explainer-delivery.md` §2
+states the `.ex-body` opt-in as a MUST, the three roles, the reserved semantic tokens, and that a page
+declares `--em` in every palette block. Part (c)'s defect: three pages inherited the shim's light
+`--em` with the OS dark and nothing pressed (1.78/1.79/1.78:1). Two shim defaults broke other pages in
+review (thrashing; `docs/reviews/architecture-review-2026-10-24-em-default.md`), so the shim is
+unchanged from `master` and the three fragments declare the pair themselves: 7.79-7.98:1 in all six
+states. Part (c)'s compose-time guard is filed on the row; backlog #351 filed (a `--fg` cycle).
