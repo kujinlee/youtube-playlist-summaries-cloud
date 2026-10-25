@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 138 cases
+    python3 scripts/check-merge-ready.py --self-test # 146 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -497,6 +497,23 @@ MIGRATION = re.compile(r"^supabase/migrations/")
 APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
 
 
+def _unquote(p: str) -> str:
+    """PURE. Undo git's C-quoting — r3: `"a/gat\\303\\251.yml"` parsed to None and its deletion was READY."""
+    if len(p) >= 2 and p[0] == p[-1] == '"':
+        return p[1:-1].encode("ascii", "backslashreplace").decode("unicode_escape").encode("latin-1").decode("utf-8", "replace")
+    return p
+
+
+def _side(field: str, prefix: str) -> str | None:
+    """PURE. One `---`/`+++`/header path: unquoted, its tab delimiter cut (r3: git appends a TAB after
+    a path containing a space, and the kept tab made `GATE_CODE` miss it), and its `a/`/`b/` dropped.
+    `/dev/null` is None."""
+    if not field.startswith('"'):
+        field = field.split("\t")[0]
+    field = _unquote(field)
+    return field[len(prefix):] if field.startswith(prefix) else None
+
+
 def diff_files(diff: str) -> list[dict]:
     """PURE. THE ONE DIFF PARSER — every loosening detector reads this and parses nothing itself.
 
@@ -511,19 +528,25 @@ def diff_files(diff: str) -> list[dict]:
     cur, hunk = None, None
     for line in diff.split("\n"):
         if line.startswith("diff --git "):
-            m = re.match(r"diff --git a/(.+) b/(.+)$", line)
-            cur, hunk = {"old": m and m[1], "new": m and m[2], "hunks": []}, None
+            m = re.match(r'diff --git ("(?:[^"\\]|\\.)*"|a/.+?) ("(?:[^"\\]|\\.)*"|b/.+)$', line)
+            o, n = (_side(m[1], "a/"), _side(m[2], "b/")) if m else (None, None)
+            cur, hunk = {"old": o, "new": n, "hunks": [], "copy": False}, None
             out.append(cur)
         elif cur is None:
             continue
-        elif hunk is None and line.startswith("rename from "):
-            cur["old"] = line[len("rename from "):]
-        elif hunk is None and line.startswith("rename to "):
-            cur["new"] = line[len("rename to "):]
+        elif hunk is None and line.startswith(("rename from ", "copy from ")):
+            cur["old"] = _unquote(line.split(" ", 2)[2])
+            cur["copy"] = line.startswith("copy ")
+        elif hunk is None and line.startswith(("rename to ", "copy to ")):
+            cur["new"] = _unquote(line.split(" ", 2)[2])
+        elif hunk is None and line.startswith("deleted file mode"):
+            cur["new"] = None              # r3: a BINARY deletion has no `+++ /dev/null` to say so
+        elif hunk is None and line.startswith("new file mode"):
+            cur["old"] = None
         elif hunk is None and line.startswith("--- "):
-            cur["old"] = line[6:] if line.startswith("--- a/") else None
+            cur["old"] = _side(line[4:], "a/")
         elif hunk is None and line.startswith("+++ "):
-            cur["new"] = line[6:] if line.startswith("+++ b/") else None
+            cur["new"] = _side(line[4:], "b/")
         elif line.startswith("@@"):
             hunk = []
             cur["hunks"].append(hunk)
@@ -623,10 +646,13 @@ def scope_exits(diff: str) -> list[str]:
     """PURE. Gate files whose OLD path is in scope and whose new path is gone or out of scope —
     deleted, or renamed where nothing runs it (r2 CODEX M1: a workflow moved out of
     `.github/workflows/` stops running, and a pure rename carries no hunk for the others to see)."""
-    def gate(p):
-        return bool(p) and bool(GATE_CODE.match(p) or GATE_CALLER.match(p))
+    def role(p):
+        return (bool(p and GATE_CODE.match(p)), bool(p and GATE_CALLER.match(p)))
+    # ⛔ r3: the ROLE must survive, not just "some gate": a workflow renamed to `scripts/check-x.py`
+    # is still "a gate path" and no longer runs. A COPY leaves the source in place, so it never exits.
     return [f"{f['old']} is {'deleted' if f['new'] is None else 'renamed to ' + f['new']}"
-            for f in diff_files(diff) if gate(f["old"]) and not gate(f["new"])]
+            for f in diff_files(diff)
+            if any(role(f["old"])) and not f["copy"] and role(f["new"]) != role(f["old"])]
 
 
 def hold_reasons(files: list[str], diff: str, head: str | None,
@@ -1269,6 +1295,36 @@ def _self_test() -> int:
               "gate invocation"), True)
     check("a deleted workflow is a scope exit",
           has(H([CI], DEL(".github/workflows/old.yml", "on: push")), "old.yml is deleted"), True)
+    # r3 CODEX — PATH IDENTITY. Each header below is copied from a REAL `git diff -M -C` run in a
+    # scratch repository, not composed from memory of the format.
+    _q = ('diff --git "a/.github/workflows/gat\\303\\251.yml" "b/.github/workflows/gat\\303\\251.yml"\n'
+          'deleted file mode 100644\nindex 4050f61..0000000\n--- "a/.github/workflows/gat\\303\\251.yml"\n'
+          '+++ /dev/null\n@@ -1,2 +0,0 @@\n-on: push\n-      - run: python3 scripts/check-x.py --self-test\n')
+    check("⭐ a deleted workflow whose path git C-QUOTES (non-ASCII) is a scope exit",
+          has(H([CI], _q), "gaté.yml is deleted"), True)
+    _sp = ("diff --git a/scripts/check-space name.py b/scripts/check-space name.py\n"
+           "--- a/scripts/check-space name.py\t\n+++ b/scripts/check-space name.py\t\n"
+           "@@ -1,2 +1,2 @@\n     if bad:\n-        return 1\n+        return 0\n")
+    check("⭐ a gate whose path has a SPACE (git appends a tab) still has its failure path read",
+          has(H([G], _sp), "check-space name.py removes"), True)
+    _bin = ("diff --git a/.github/workflows/bin.yml b/.github/workflows/bin.yml\ndeleted file mode 100644\n"
+            "index b3f526e..0000000\nBinary files a/.github/workflows/bin.yml and /dev/null differ\n")
+    check("⭐ a BINARY-diffed workflow deleted (no `+++ /dev/null`) is a scope exit",
+          has(H([CI], _bin), "bin.yml is deleted"), True)
+    _new = ("diff --git a/.github/workflows/n.yml b/.github/workflows/n.yml\nnew file mode 100644\n"
+            "index 0000000..b3f526e\nBinary files /dev/null and b/.github/workflows/n.yml differ\n")
+    check("...but a binary workflow ADDED is not",
+          H([CI], _new), [])
+    check("⭐ a workflow renamed INTO scripts/check-*.py keeps no workflow role, so it is an exit",
+          has(H([CI], REN(".github/workflows/mv.yml", "scripts/check-disabled.py")), "renamed to scripts/check-disabled.py"), True)
+    check("...but a check renamed to another check keeps its role",
+          H([G], REN("scripts/check-a.py", "scripts/check-b.py")), [])
+    _cp = ("diff --git a/.github/workflows/cp.yml b/docs-gate.yml\nsimilarity index 100%\n"
+           "copy from .github/workflows/cp.yml\ncopy to docs-gate.yml\n")
+    check("⭐ a workflow COPIED out leaves the source running, so it is not an exit",
+          H([CI], _cp), [])
+    check("...while the same pair as a RENAME is",
+          has(H([CI], _cp.replace("copy from", "rename from").replace("copy to", "rename to")), "renamed to docs-gate.yml"), True)
     # r1 CLAUDE M2: a pin deleted, or renamed away, is a drop to nothing.
     check("a mutation pin DELETED is a loosening",
           has(H([PC], DF(PC, '-    "scripts/a.py": 30,')), "scripts/a.py (30) is removed"), True)

@@ -368,7 +368,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "            cur[\"old\"] = line[6:] if line.startswith(\"--- a/\") else None",
+    "            cur[\"old\"] = _side(line[4:], \"a/\")",
     "            cur[\"old\"] = None"
    ]
   ],
@@ -559,12 +559,78 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "if gate(f[\"old\"]) and not gate(f[\"new\"])]",
-    "if gate(f[\"old\"])]"
+    " and role(f[\"new\"]) != role(f[\"old\"])]",
+    "]"
    ]
   ],
   "expect": [
-   "...but a workflow renamed WITHIN .github/workflows/ is not"
+   "...but a workflow renamed WITHIN .github/workflows/ is not",
+   "...but a check renamed to another check keeps its role"
+  ]
+ },
+ {
+  "name": "r3: git's C-quoted paths are not decoded",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if len(p) >= 2 and p[0] == p[-1] == '\"':",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ a deleted workflow whose path git C-QUOTES (non-ASCII) is a scope exit"
+  ]
+ },
+ {
+  "name": "r3: the tab git appends after a spaced path is kept",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "field = field.split(\"\\t\")[0]",
+    "field = field"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate whose path has a SPACE (git appends a tab) still has its failure path read"
+  ]
+ },
+ {
+  "name": "r3: `deleted file mode` is ignored, so a binary deletion keeps its path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"new\"] = None              # r3",
+    "            pass              # r3"
+   ]
+  ],
+  "expect": [
+   "⭐ a BINARY-diffed workflow deleted (no `+++ /dev/null`) is a scope exit"
+  ]
+ },
+ {
+  "name": "r3: a copy is read as a rename",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"copy\"] = line.startswith(\"copy \")",
+    "            cur[\"copy\"] = False"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow COPIED out leaves the source running, so it is not an exit"
+  ]
+ },
+ {
+  "name": "r3: a gate's ROLE collapses to 'some gate'",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "return (bool(p and GATE_CODE.match(p)), bool(p and GATE_CALLER.match(p)))",
+    "return (bool(p and (GATE_CODE.match(p) or GATE_CALLER.match(p))), False)"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow renamed INTO scripts/check-*.py keeps no workflow role, so it is an exit"
   ]
  }
 ]

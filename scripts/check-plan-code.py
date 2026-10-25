@@ -1873,7 +1873,9 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-25 r2 REDESIGN (one parser, `diff_files`): 41 -> 45 — six anchors rebound onto the
     #   new parser with the same mutation each; four added (rename paths, scope exits, comments as
     #   invocations, an in-scope rename as an exit). None retired.
-    "scripts/check-merge-ready.py": 45,
+    # ⟳ 2026-10-25 r3 SPLIT (path identity): 45 -> 50 — two anchors rebound, five added (C-quoting,
+    #   the tab delimiter, binary deletion, copies, a gate's role across a rename). None retired.
+    "scripts/check-merge-ready.py": 50,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -5758,7 +5760,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2059)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2064)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

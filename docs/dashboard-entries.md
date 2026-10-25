@@ -17543,6 +17543,9 @@ code and migrations 0; after it, loosening holds **8 of 40** (adds #386, #367, #
 path or a CI gate invocation). App code clears with `--app-tests-passed <head>` — a SELF-ATTESTED SHA, not a
 verified run. r2 (Codex) found a RENAME lost both paths and the caller detector read COMMENTS; after a lost
 bet the parsers were REDESIGNED into one, `diff_files()`, with one `is_comment()` rule, and a gate deleted or
-renamed out of scope (`scope_exits`) holds — 8 of 40 unchanged. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 138 cases (incl. `main()` over a fake `_run`), 29 new mutations, 45/45. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+renamed out of scope (`scope_exits`) holds — 8 of 40 unchanged. r3 (Codex) found only PATH IDENTITY left —
+git's C-quoted paths, the tab after a spaced path, binary deletions, copies, a workflow renamed into
+`scripts/check-*` — and the unit was SPLIT: the detectors held, `_unquote`/`_side` and the role-preserving
+exit were fixed, each case built from a real `git diff` in a scratch repository. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 146 cases (incl. `main()` over a fake `_run`), 34 new mutations, 50/50. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.
