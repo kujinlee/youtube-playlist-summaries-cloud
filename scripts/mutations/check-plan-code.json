@@ -1432,5 +1432,151 @@
       "⭐ ...and a diff that FAILED is plain RUN — the two causes of None report differently"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "local budget: the control loop never consults it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "[m for m in shard_muts if m[\"file\"] in control_seconds], budget)",
+        "[m for m in shard_muts if m[\"file\"] in control_seconds], None)"
+      ]
+    ],
+    "expect": [
+      "⭐ a local run over its budget is REFUSED after the control, measuring nothing",
+      "⭐ main() off CI REFUSES a run past the local budget, rc=2"
+    ]
+  },
+  {
+    "name": "local budget: main() applies it on CI too",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "budget = None if (os.environ.get(\"CI\") or a.allow_long_local) else LOCAL_SWEEP_BUDGET",
+        "budget = None if a.allow_long_local else LOCAL_SWEEP_BUDGET"
+      ]
+    ],
+    "expect": [
+      "...and on CI the budget never applies, rc=0"
+    ]
+  },
+  {
+    "name": "local budget: --allow-long-local is ignored",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "os.environ.get(\"CI\") or a.allow_long_local)",
+        "os.environ.get(\"CI\"))"
+      ]
+    ],
+    "expect": [
+      "...--allow-long-local lets THAT run through, rc=0"
+    ]
+  },
+  {
+    "name": "local budget: a refusal exits 1, reading as a survivor",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            print(report[0], file=sys.stderr)\n            return 2",
+        "            print(report[0], file=sys.stderr)\n            return 1"
+      ]
+    ],
+    "expect": [
+      "⭐ main() off CI REFUSES a run past the local budget, rc=2"
+    ]
+  },
+  {
+    "name": "sweep_estimate forgets the re-control",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return sum(control_seconds.get(f, 0.0) * (n + 1) for f, n in per.items())",
+        "return sum(control_seconds.get(f, 0.0) * n for f, n in per.items())"
+      ]
+    ],
+    "expect": [
+      "sweep_estimate: each target's control x (its mutations + the re-control)",
+      "...over another world"
+    ]
+  },
+  {
+    "name": "a run exactly AT the budget is refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if est <= budget:",
+        "    if est < budget:"
+      ]
+    ],
+    "expect": [
+      "...a run exactly AT the budget is not refused"
+    ]
+  },
+  {
+    "name": "--only does not narrow execution",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shard_muts = [m for m in shard_muts if m[\"file\"] in only]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "--only narrows execution to its target (of two, one ran)"
+    ]
+  },
+  {
+    "name": "--only accepts a target no manifest names",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if missing:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "...and refuses a target no manifest names"
+    ]
+  },
+  {
+    "name": "the --only slice is labelled as the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if only:\n        return f\"ONLY",
+        "    if False:\n        return f\"ONLY"
+      ]
+    ],
+    "expect": [
+      "the --only slice says it is a DIAGNOSTIC, not the gate"
+    ]
+  },
+  {
+    "name": "--only / --allow-long-local without --mutate are not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if (a.only or a.allow_long_local) and not a.mutate:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "--only scripts/a.py is refused, rc=2, saying why",
+      "--allow-long-local is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "--only beside a shard is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.only and shard is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "--mutate . ... --shard is refused, rc=2, saying why"
+    ]
   }
 ]

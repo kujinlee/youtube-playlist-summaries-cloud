@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 215 cases
+    python3 scripts/check-plan-code.py --self-test          # 233 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -92,6 +92,7 @@ import subprocess
 import sys
 import tokenize
 import tempfile
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # ⛔ THE DEPENDENCY RUNS ONE WAY ONLY (spec §5 Q1). `coverage_verdict` knows nothing about
@@ -105,6 +106,16 @@ from coverage_verdict import (  # noqa: E402
 # `run_suite`, the timeout path could only be reached by waiting two minutes, so no
 # case reached it and "a hung suite is recorded as caught" survived. Round 5, M2.
 SUITE_TIMEOUT = 120
+
+# ⛔ THE LOCAL SWEEP BUDGET — the owner's rule, made mechanical 2026-10-25: a FULL sweep belongs to
+# the pull request's CI shards; a local run is a PARTIAL diagnostic. The rule was written (velocity
+# design spec, "draft PR at slice start", deliberately NOT automated) and was missed three times in
+# four weeks, the last costing ~3.5h in one day — two local runs co-scoping a 183-entry manifest
+# whose file had not changed. So `--mutate` times each target's CONTROL run (it runs anyway, before
+# any mutation) and, off CI, REFUSES a run whose estimate exceeds this. ⛔ The exception is a FLAG,
+# `--allow-long-local`, never an environment variable: a flag cannot outlive the one run that asked.
+LOCAL_SWEEP_BUDGET = 600
+LOCAL_REFUSAL = "REFUSED LOCALLY"
 
 
 
@@ -545,7 +556,7 @@ def control_is_green(rc: int, out: str) -> bool:
     return rc == 0 and "passed" in out
 
 
-def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None) -> str:
+def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None, only=None) -> str:
     """The ONE sentence that says a run produced no coverage verdict.
 
     ⟳ backlog #217: it now also names WHICH SLICE of the manifest produced no verdict, through
@@ -584,7 +595,7 @@ def not_measured_line(nm: NotMeasured, shard: "tuple[int, int] | None" = None) -
     AttributeError on `.reason`, which is the point: the sentence is only ever true of one
     variant, and the type says so instead of a comment saying so.
     """
-    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}"
+    return f"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only)}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1334,7 +1345,9 @@ EXPECTED_MUTATIONS = {
     # ci.yml's run: block, where it was unmeasurable (ZERO mutation entries target .github/).
     # Three entries: losing the RUN-UNPARSED state, conflating the two causes of a None
     # change-set, and inverting the parsed verdict outright.
-    "scripts/check-plan-code.py": 117,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    # ⟳ 2026-10-25: 117 -> 128, the LOCAL SWEEP BUDGET, --allow-long-local and --only (backlog #208):
+    #   eleven entries added, none retired.
+    "scripts/check-plan-code.py": 128,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2305,21 +2318,55 @@ def shard_mode_refusal(shard_arg: "str | None", mutate_arg: "str | None",
     return None
 
 
-def shard_label(shard: "tuple[int, int] | None") -> str:
+def shard_label(shard: "tuple[int, int] | None", only: "frozenset | None" = None) -> str:
     """Which SLICE of the manifest a verdict line is about. PURE.
 
     The docstring's "the final line of STDOUT names the mode" is too weak once the execution
     can be split: a sharded run's verdict is about a FRACTION of the manifest, and a CI log
-    that does not say so reads exactly like a whole-repo pass.
+    that does not say so reads exactly like a whole-repo pass. ⛔ `--only` is a slice too
+    (backlog #208), and says it is a DIAGNOSTIC: the gate is the whole manifest, in CI.
     """
+    if only:
+        return f"ONLY {', '.join(sorted(only))} — a DIAGNOSTIC slice, not the gate"
     if shard is None:
         return "the WHOLE manifest"
     return f"shard {shard[0]} of {shard[1]} (round-robin)"
 
 
+def sweep_estimate(control_seconds: dict, muts: list) -> float:
+    """PURE. Seconds a run will take: each target's measured CONTROL time x (its mutations + the
+    re-control). Every mutation re-runs that target's WHOLE suite (backlog #217), so this is
+    the cost model the harness actually has, not an approximation of it."""
+    per: dict = {}
+    for m in muts:
+        per[m["file"]] = per.get(m["file"], 0) + 1
+    return sum(control_seconds.get(f, 0.0) * (n + 1) for f, n in per.items())
+
+
+def local_budget_refusal(control_seconds: dict, muts: list, budget: "float | None") -> "str | None":
+    """PURE. Why a LOCAL run must not proceed, or None. `budget` None = CI or `--allow-long-local`."""
+    if budget is None:
+        return None
+    est = sweep_estimate(control_seconds, muts)
+    if est <= budget:
+        return None
+    per: dict = {}
+    for m in muts:
+        per[m["file"]] = per.get(m["file"], 0) + 1
+    worst = max(per, key=lambda f: control_seconds.get(f, 0.0) * per[f])
+    return (f"{LOCAL_REFUSAL} — this run would take over {est / 60:.1f} min here (local budget "
+            f"{budget / 60:.0f} min); the most is {worst}: {per[worst]} mutation(s) x "
+            f"{control_seconds.get(worst, 0.0):.0f}s per suite. The FULL sweep runs on the pull "
+            f"request's CI shards — push to the (draft) PR. Locally, sweep only what changed: "
+            f"--only <script>. To run THIS ONE anyway, add --allow-long-local (this run only). "
+            f"NOTHING WAS MEASURED.")
+
+
 def mutate_delivered(root: pathlib.Path,
                      progress=None,
                      shard: "tuple[int, int] | None" = None,
+                     budget: "float | None" = None,
+                     only: "frozenset | None" = None,
                      ) -> tuple[bool, list[str], "Measured | NotMeasured"]:
     """Mutate the DELIVERED scripts, not a copy assembled from a document.
 
@@ -2410,6 +2457,14 @@ def mutate_delivered(root: pathlib.Path,
         if why:
             return False, [why], NotMeasured.from_counts([], None, ev_files)
     shard_muts = shard_slice(muts, shard[0], shard[1]) if shard is not None else muts
+    # `--only` (backlog #208): like a shard, it narrows EXECUTION only — every global check above
+    # has already run over the whole manifest, so a narrowed run cannot hide a coverage drop.
+    if only is not None:
+        missing = sorted(only - {m["file"] for m in muts})
+        if missing:
+            return False, [f"CANNOT RUN — --only names {', '.join(missing)}, which no manifest "
+                           f"targets. NOTHING WAS MEASURED."], NotMeasured.from_counts([], None, ev_files)
+        shard_muts = [m for m in shard_muts if m["file"] in only]
     # THE SHARD'S OWN TARGETS, not the manifest's. The control run is what makes every "caught"
     # verdict below mean anything, so a shard must prove the suite of each file it MUTATES is
     # green first — and must not pay for the suites of files it never touches, which is the cost
@@ -2424,6 +2479,7 @@ def mutate_delivered(root: pathlib.Path,
         # Inside the TemporaryDirectory, so it is removed with everything else.
         (d / CHILD_HOME).mkdir()
         report = []
+        control_seconds: dict = {}
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
         # SILENT UNLESS A CALLER ASKS — see `run_mutations`. The reporter belongs to the
@@ -2437,10 +2493,18 @@ def mutate_delivered(root: pathlib.Path,
         for position, name in enumerate(targets, 1):
             if progress is not None:
                 progress(position, len(targets), f"control {name}")
+            _t0 = time.monotonic()
             rc, so, se = run_suite_parts(d, name)
+            control_seconds[name] = time.monotonic() - _t0
             out = merged_output(so, se)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
                               "blocks": None}
+            # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN: the estimate only grows, so the
+            # targets timed so far already bound it — refusing here costs one suite, not all.
+            why = local_budget_refusal(control_seconds,
+                                       [m for m in shard_muts if m["file"] in control_seconds], budget)
+            if why:
+                return False, [why], NotMeasured.from_counts([], None, ev_files)
             if not control_is_green(rc, out):
                 report.append(f"CANNOT RUN — control run of {name} did not prove the suite "
                               f"works (exit {rc}) BEFORE any mutation was applied. Every "
@@ -2709,7 +2773,7 @@ def _entries_of(v) -> list:
     return v.mutations if isinstance(v, Measured) else v.entries
 
 
-def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None) -> str:
+def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None, only=None) -> str:
     """The one-line summary of a `--mutate` run. PURE.
 
     ⟳ backlog #217: AND WHICH SLICE OF THE MANIFEST IT IS ABOUT. A sharded run's numbers are a
@@ -2734,7 +2798,7 @@ def tally_line(ok: bool, verdict, shard: "tuple[int, int] | None" = None) -> str
               f"{len(verdict.mutations)} mutation(s), {killed} killed, "
               f"{attributed} attributed to the case each names, "
               f"{len(verdict.survivors)} survivor(s)"
-            + f" — measured over {shard_label(shard)}")
+            + f" — measured over {shard_label(shard, only)}")
 
 
 # One terminal row, so an update cannot wrap. ⟳ r1 M2: labels are manifest names written for a
@@ -3449,6 +3513,37 @@ def _self_test() -> int:
                  any("control" in r.lower() for r in _rep), False)
             case("...and a complete run is TRUSTWORTHY, so the caller may print the tally",
                  isinstance(_ev, Measured), True)
+            # ⛔ THE LOCAL BUDGET (2026-10-25). Refused AFTER the control — it is what times the
+            # suites — and before any mutation, so nothing was measured and no tally can print.
+            _okb, _repb, _evb = mutate_delivered(_r, budget=0.0)
+            case("⭐ a local run over its budget is REFUSED after the control, measuring nothing",
+                 (_okb, bool(_repb) and _repb[0].startswith(LOCAL_REFUSAL), isinstance(_evb, NotMeasured)),
+                 (False, True, True))
+            case("...and under a generous budget it runs exactly as before",
+                 isinstance(mutate_delivered(_r, budget=3600.0)[2], Measured), True)
+            _oko, _repo, _evo = mutate_delivered(_r, only=frozenset({"scripts/thing.py"}))
+            case("--only runs the named target's mutations to a full verdict",
+                 (_oko, isinstance(_evo, Measured)), (True, True))
+            _okn, _repn, _ = mutate_delivered(_r, only=frozenset({"scripts/nope.py"}))
+            case("...and refuses a target no manifest names",
+                 (_okn, bool(_repn) and "--only names scripts/nope.py" in _repn[0]), (False, True))
+            # main()'s WIRING: off CI the budget applies, on CI or with the one-run flag it does not.
+            _saved_budget, _saved_ci = LOCAL_SWEEP_BUDGET, os.environ.pop("CI", None)
+            globals()["LOCAL_SWEEP_BUDGET"] = 0
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    _rc_local = main(["--mutate", str(_r)])
+                    _rc_flag = main(["--mutate", str(_r), "--allow-long-local"])
+                    os.environ["CI"] = "true"
+                    _rc_ci = main(["--mutate", str(_r)])
+            finally:
+                globals()["LOCAL_SWEEP_BUDGET"] = _saved_budget
+                os.environ.pop("CI", None)
+                if _saved_ci is not None:
+                    os.environ["CI"] = _saved_ci
+            case("⭐ main() off CI REFUSES a run past the local budget, rc=2", _rc_local, 2)
+            case("...--allow-long-local lets THAT run through, rc=0", _rc_flag, 0)
+            case("...and on CI the budget never applies, rc=0", _rc_ci, 0)
         # ── THE REPORTER IS INJECTED, AND THE DEFAULT IS SILENCE ──────────────────────────
         # ⟳ r1 H1/H2/M1. `mutate_delivered` USED to call `stderr_progress` directly at both
         # control loops, and `_self_test` drives it fourteen times — so the suite's own stderr
@@ -3471,6 +3566,10 @@ def _self_test() -> int:
             EXPECTED_MUTATIONS["scripts/other.py"] = 1
             _told: list = []
             mutate_delivered(_r, progress=lambda *a: _told.append(a))
+            # `--only` NARROWS EXECUTION: of two targets, only the named one's mutation runs.
+            _evs = mutate_delivered(_r, only=frozenset({"scripts/other.py"}))[2]
+            case("--only narrows execution to its target (of two, one ran)",
+                 sorted(m["name"] for m in getattr(_evs, "mutations", [])), ["two is three"])
             # Control, then the mutation, then re-control — the three phases a reader waits
             # through. Asserting the SEQUENCE, not a count: a count survives losing the
             # re-control loop and gaining a duplicate control.
@@ -4577,6 +4676,31 @@ def _self_test() -> int:
              "trees cannot share one home", _e1["HOME"] == _e2["HOME"], False)
 
     case("the slice is named when there is no shard", shard_label(None), "the WHOLE manifest")
+    case("the --only slice says it is a DIAGNOSTIC, not the gate",
+         "DIAGNOSTIC" in shard_label(None, frozenset({"scripts/a.py"})), True)
+    case("sweep_estimate: each target's control x (its mutations + the re-control)",
+         sweep_estimate({"a": 2.0, "b": 10.0}, [{"file": "a"}, {"file": "a"}, {"file": "b"}]), 26.0)
+    case("...over another world", sweep_estimate({"x": 1.5}, [{"file": "x"}]), 3.0)
+    # ⭐ 2026-10-25's real run: 183 x ~40s beside 30 x ~0.3s — about two hours.
+    _big = [{"file": "scripts/check-main-drivable.py"}] * 183 + [{"file": "scripts/check-merge-ready.py"}] * 30
+    _secs = {"scripts/check-main-drivable.py": 40.0, "scripts/check-merge-ready.py": 0.3}
+    _why = local_budget_refusal(_secs, _big, 600) or ""
+    case("⭐ the 2026-10-25 run is refused, naming the costly file and the one-run flag",
+         (_why.startswith(LOCAL_REFUSAL), "check-main-drivable.py: 183 mutation(s)" in _why,
+          "--allow-long-local" in _why), (True, True, True))
+    case("...while its partial run alone is not", local_budget_refusal(_secs, _big[183:], 600), None)
+    case("...a run exactly AT the budget is not refused", local_budget_refusal({"y": 5.0}, [{"file": "y"}], 10.0), None)
+    case("...and no budget (CI, or --allow-long-local) never refuses", local_budget_refusal(_secs, _big, None), None)
+    # ⚠ The SENTENCE is asserted, not only rc 2: a bare `main([])` is rc 2 too, so a case on the
+    # exit code alone would pass with the refusal deleted.
+    for _argv, _says in ((["--only", "scripts/a.py"], "only mean something with --mutate"),
+                         (["--allow-long-local"], "only mean something with --mutate"),
+                         (["--mutate", ".", "--only", "scripts/a.py", "--shard", "1/2"], "two different slices")):
+        _se = io.StringIO()
+        with contextlib.redirect_stderr(_se), contextlib.redirect_stdout(io.StringIO()):
+            _rc_arg = main(_argv)
+        case(f"{' '.join(_argv[:2])}{' ... --shard' if '--shard' in _argv else ''} is refused, rc=2, saying why",
+             (_rc_arg, _says in _se.getvalue()), (2, True))
     case("...and it is named I of N, in that order, when there is one",
          shard_label((2, 5)), "shard 2 of 5 (round-robin)")
     # ⚠ THE WIRING, NOT ONLY THE FUNCTION — this file's own recorded lesson (round 6, M5):
@@ -5751,7 +5875,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2030)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2041)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -5881,6 +6005,11 @@ def main(argv: list[str]) -> int:
                          "the mode that makes the evidence about the code that ships.")
     # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
     # declaration; this loop and the mode check in `main` are its only two readers.
+    ap.add_argument("--only", metavar="SCRIPT", action="append",
+                    help="With --mutate: run only the mutations targeting SCRIPT (repeatable). "
+                         "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
+    ap.add_argument("--allow-long-local", action="store_true",
+                    help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -5988,6 +6117,14 @@ def main(argv: list[str]) -> int:
         if why:
             print(why, file=sys.stderr)
             return 2
+    if (a.only or a.allow_long_local) and not a.mutate:
+        print("CANNOT RUN — --only and --allow-long-local only mean something with --mutate ROOT. "
+              "NOTHING WAS MEASURED.", file=sys.stderr)
+        return 2
+    if a.only and shard is not None:
+        print("CANNOT RUN — --only and a shard are two different slices; pass one. NOTHING WAS "
+              "MEASURED.", file=sys.stderr)
+        return 2
     if a.mutate:
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
@@ -6011,8 +6148,15 @@ def main(argv: list[str]) -> int:
                 return 2
         # THE ONE PLACE THE REPORTER IS SUPPLIED. Everything below `mutate_delivered` defaults
         # to silence, so a nested run cannot write into the stream its parent reads.
+        # ⛔ OFF CI the budget applies unless THIS invocation asks otherwise; `CI` is set by
+        # every GitHub Actions runner, so the sharded gate is never refused.
+        budget = None if (os.environ.get("CI") or a.allow_long_local) else LOCAL_SWEEP_BUDGET
+        only = frozenset(a.only) if a.only else None
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
-                                               shard=shard)
+                                               shard=shard, budget=budget, only=only)
+        if report and report[0].startswith(LOCAL_REFUSAL):
+            print(report[0], file=sys.stderr)
+            return 2
         for r in report:
             print(f"  \u2717 {r}")
         # BACKLOG #93, AND ITS ANSWER CHANGED - READ THIS BEFORE RE-ADDING A DIFFERENCE.
@@ -6046,7 +6190,7 @@ def main(argv: list[str]) -> int:
         # rather than the gate: the gate is defended by the type; the refusal is the part a
         # one-line edit can still get wrong quietly.
         if isinstance(verdict, Measured):
-            print(tally_line(ok, verdict, shard))
+            print(tally_line(ok, verdict, shard, only))
         else:
             # NO tally — and that includes the FILE count. On a control-failure run
             # `ev["files"]` holds the CONTROL runs, so "7 file(s)" asserts work that measured
@@ -6057,7 +6201,7 @@ def main(argv: list[str]) -> int:
             # line above — printing "(162 of 162 … produced a verdict)" next to "produced no
             # coverage verdict" contradicts itself. Measured 2026-09-03: the first run of
             # F2-S4 emitted exactly that sentence.
-            print(not_measured_line(verdict, shard))
+            print(not_measured_line(verdict, shard, only))
         return 0 if ok else 1
     # THE ONLY WAY TO REACH HERE IS A BARE INVOCATION — no `--self-test`, no `--mutate`, and
     # no retired flag (those return 2 above). It is not dead code: `_self_test` asserts
