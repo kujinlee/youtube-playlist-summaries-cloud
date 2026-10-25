@@ -2172,7 +2172,7 @@ REP.reserve=[slot.style.minHeight||null,root.style['--chrome-h']||null];REP.pres
 if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
 live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
 REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
-if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];
+if(rcb){sch.b=20;bar.h=130.5625;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];
 REP.reserve2=[slot.style.minHeight||null,root.style['--chrome-h']||null];}
 fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
@@ -2251,13 +2251,15 @@ console.log(JSON.stringify(REP));
         # its report. Asked as VALUES: the slot reserves the bar's measured height and publishes it
         # (43.109375px is the stub bar's box: FRACTIONAL, because `offsetHeight` rounding once moved a
         # real page by a pixel — r1 Claude: a constant 40 let `Math.round(h)` pass) — read right after LOAD, because the unpin below calls `sync()`
-        # and would restore a zeroed reserve before anything looked — and choosing the DEFAULT style removes BOTH the attribute and
+        # and would restore a zeroed reserve before anything looked — and re-read after a resize that
+        # GROWS the bar to 130.5625px (the 320x568 wrap, measured: r2 Codex — with the box unchanged, a
+        # script that kept its first height forever passed) — and choosing the DEFAULT style removes BOTH the attribute and
         # the stored opt-out, so it does not come back on reload.
         case("...and the slot reserves the bar's measured height and publishes it as --chrome-h, on "
              "load and after a resize, and choosing the default text style forgets the stored opt-out, "
              "keeps the stored theme, and marks the default as the pressed option (backlog #350)",
              _field(_ok, "reserve", "reserve2", "back"),
-             (["43.109375px", "43.109375px"], ["43.109375px", "43.109375px"],
+             (["43.109375px", "43.109375px"], ["130.5625px", "130.5625px"],
               [None, {"yps-theme": "light"}, ["/false", "/false", "on/true"]]))
         # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
         # and the one with no case: the tail the observer's margin is cut from is measured

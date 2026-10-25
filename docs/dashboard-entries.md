@@ -17500,4 +17500,5 @@ lowering its alias block instead was measured to restyle 3 other pages in every 
 Element-wise differential, six states: only OS-light-nothing-pressed changes colour (604 of 723
 and 507 of 643 elements: all six `--fg`/`--ink` tokens were empty there), plus the regenerated
 `.chrome-when` stamp in every state. Backlog #350 r1: fractional stub bar, reserve re-read after
-resize, default press asserted on store and buttons; page_chrome 103 -> 111, total 2017 -> 2025.
+resize that grows the bar, default press asserted on store and buttons; page_chrome 103 -> 112,
+total 2017 -> 2026.

@@ -1219,5 +1219,16 @@
       ]
     ],
     "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
+  },
+  {
+    "name": "the reserve keeps its FIRST height forever",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        # \u26d4 ON THE CHOSEN SLOT, NOT AS A DOCUMENT-WIDE CLASS RULE",
+        "        \"h=parseFloat(slot.style.minHeight)||h;\"\n        # \u26d4 ON THE CHOSEN SLOT, NOT AS A DOCUMENT-WIDE CLASS RULE"
+      ]
+    ],
+    "expect": "...and the slot reserves the bar's measured height and publishes it as --chrome-h, on load and after a resize, and choosing the default text style forgets the stored opt-out, keeps the stored theme, and marks the default as the pressed option (backlog #350)"
   }
 ]
