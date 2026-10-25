@@ -1690,5 +1690,19 @@
       "⭐ trigger 4 at median 4 reaches the CLI as a WARN naming backlog #327, exit 0",
       "⭐ trigger 4 at median 9 reaches the CLI as a WARN naming backlog #327, exit 0"
     ]
+  },
+  {
+    "name": "trigger 4's suffix loses 'NOT a pass', so a suspended trigger reads as an ordinary warning",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "\"simplify or retire the scheme); NOT a pass\")",
+        "\"simplify or retire the scheme)\")"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 4 at median 4 reaches the CLI as a WARN naming backlog #327, exit 0",
+      "⭐ trigger 4 at median 9 reaches the CLI as a WARN naming backlog #327, exit 0"
+    ]
   }
 ]
