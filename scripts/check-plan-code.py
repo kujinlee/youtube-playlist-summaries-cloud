@@ -1868,7 +1868,9 @@ EXPECTED_MUTATIONS = {
     # on gates that did NOT refuse — the shape that would turn an explanation into an accusation.
     # ⟳ 2026-10-25: 16 -> 30 — the house rule's HOLD stage (`hold_reasons`, `final_verdict`, and
     #   main()'s wiring over a fake `_run`): fourteen entries added, none retired.
-    "scripts/check-merge-ready.py": 30,
+    # ⟳ 2026-10-25 r1 fold: 30 -> 41 — a deleted gate, old-side distance, the hooks' `deny`/`exit 2`,
+    #   gate CALLERS, a removed pin, and main() on NO-ENTRY. Eleven added; one anchor rebound, none retired.
+    "scripts/check-merge-ready.py": 41,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -5753,7 +5755,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2044)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2055)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

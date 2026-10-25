@@ -261,8 +261,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "code = [(i, l) for i, l in enumerate(hk) if not l[1:].strip().startswith(\"#\")]",
-    "code = list(enumerate(hk))"
+    "code = [(i, l) for i, l in enumerate(old_side) if not l[1:].strip().startswith(\"#\")]",
+    "code = list(enumerate(old_side))"
    ]
   ],
   "expect": [
@@ -361,6 +361,154 @@
   ],
   "expect": [
    "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
+ },
+ {
+  "name": "r1: a DELETED gate's removals are dropped again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            path = src[2:] if src.startswith(\"a/\") else None",
+    "            path = None"
+   ]
+  ],
+  "expect": [
+   "⭐ DELETING a gate script outright is a loosening",
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "r1: distance counted over the combined diff, added lines included",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "old_side = [l for l in hk if not l.startswith(\"+\")]",
+    "old_side = hk"
+   ]
+  ],
+  "expect": [
+   "⭐ six ADDED comment lines do not push an adjacent removal out of the window",
+   "...nor do eight added CODE lines"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets a hook's deny",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|SystemExit\\(|\\bdeny\\b\")",
+    "|SystemExit\\(\")"
+   ]
+  ],
+  "expect": [
+   "a hook's removed `deny` is a loosening",
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets exit 2",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\bexit [12]\\b\"",
+    "\\bexit 1\\b\""
+   ]
+  ],
+  "expect": [
+   "...and so is a hook's `exit 2` turned into `exit 0`"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets a failures tally",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\bfails\\b|\\bfailures?\\b|",
+    "\\bfails\\b|"
+   ]
+  ],
+  "expect": [
+   "...nor do eight added CODE lines"
+  ]
+ },
+ {
+  "name": "GATE_CODE sees only top-level hooks",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|\\.claude/hooks/.+)$\")",
+    "|\\.claude/hooks/[^/]+)$\")"
+   ]
+  ],
+  "expect": [
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "gate callers are never read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not GATE_CALLER.match(path):\n",
+    "        if True:\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a CI step that runs a check, removed, is a loosening",
+   "...and so is a hook dropped from settings.json"
+  ]
+ },
+ {
+  "name": "a MOVED gate invocation counts as dropped",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    " and r.strip() not in back]",
+    "]"
+   ]
+  ],
+  "expect": [
+   "...but the same CI line MOVED is not"
+  ]
+ },
+ {
+  "name": "every removed caller line counts, gate or not",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "for r in rm if GATE_REF.search(r) and r.strip()",
+    "for r in rm if r.strip()"
+   ]
+  ],
+  "expect": [
+   "...nor a removed CI line that names no gate"
+  ]
+ },
+ {
+  "name": "a deleted or renamed pin is not a drop",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        elif path not in new:",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "a mutation pin DELETED is a loosening",
+   "...and so is one renamed to another key"
+  ]
+ },
+ {
+  "name": "main() holds on NO-ENTRY instead of NO-REVIEW",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    ".get(\"NO-REVIEW:\") is not None",
+    ".get(\"NO-ENTRY:\") is not None"
+   ]
+  ],
+  "expect": [
+   "⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)"
   ]
  }
 ]

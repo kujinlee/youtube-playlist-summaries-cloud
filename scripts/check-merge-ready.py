@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 114 cases
+    python3 scripts/check-merge-ready.py --self-test # 128 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -474,33 +474,45 @@ def _dashboard_gate():
 # gate-file edit" would have held 18/30 and was rejected; LOOSENING holds 5/30 including PR #398;
 # NO-REVIEW 8/30 (0 of the last 14); app code and migrations 0/30.
 # ⚠ LOOSENING IS DETECTED BY PROXIES, and they are bounds, not a proof. A weakening that lowers no
-# pin or count, edits no baseline, and removes no line on a failure path merges as READY.
+# pin or count, edits no baseline, removes no line on a failure path and drops no gate invocation
+# merges as READY. ⚠ They target an HONEST change, not an evasion: a failure line re-added inside
+# dead code reads as a MOVE, a removal more than FAIL_WINDOW source lines from any failure word
+# is outside the window, and a gate whose failure path uses none of FAIL_PATH's idioms is unseen.
 HOLD_RC = 3
 BASELINE_FILE = re.compile(r"^docs/reviews/.*baseline\.json$")
 PIN_LINE = re.compile(r'^\s*"(?P<path>scripts/[^"]+)":\s*(?P<n>\d+),')
 PIN_TOTAL = re.compile(r"sum\(EXPECTED_MUTATIONS\.values\(\)\),\s*(?P<n>\d+)\)")
 CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
-# A line on a failure path: the FAIL word, a fails list, or a non-zero exit.
-FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\breturn 1\b|\bexit 1\b|sys\.exit\(1\)")
-GATE_CODE = re.compile(r"^(scripts/check-[^/]+\.py|\.claude/hooks/[^/]+)$")
+# A line on a failure path: the FAIL word, a fails/failures tally, a non-zero exit, or a hook's
+# `deny` — r1 CLAUDE H3: the hooks block with `deny "…"` and `exit 2`, and the first pattern saw neither.
+FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn [12]\b|\bexit [12]\b"
+                       r"|sys\.exit\([12]\)|SystemExit\(|\bdeny\b")
+GATE_CODE = re.compile(r"^(scripts/check-[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
+# Where a gate is INVOKED rather than written (r1 CLAUDE M1): dropping the line that runs a check
+# disables it without touching the check. A removed line here naming a gate, not re-added, holds.
+GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json"
+                         r"|scripts/check-schema-gates\.sh|scripts/ci/.+)$")
+GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate")
 MIGRATION = re.compile(r"^supabase/migrations/")
 APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
 
 
 def diff_lines(diff: str) -> dict[str, tuple[list[str], list[str]]]:
-    """PURE. {path: (removed, added)} from a `git diff -U0` text, keyed by the NEW path."""
+    """PURE. {path: (removed, added)} from a `git diff` text, keyed by the NEW path — or by the
+    OLD one when the file is DELETED (`+++ /dev/null`), which r1 BOTH halves found dropped every
+    removed line of a deleted gate."""
     out: dict[str, tuple[list[str], list[str]]] = {}
     cur = None
     for line in diff.split("\n"):
         if line.startswith("+++ "):
             tgt = line[4:]
-            cur = tgt[2:] if tgt.startswith("b/") else None
-            if cur is not None:
+            if tgt.startswith("b/"):
+                cur = tgt[2:]
                 out.setdefault(cur, ([], []))
         elif line.startswith("--- "):
             src = line[4:]
-            if src.startswith("a/"):
-                cur = src[2:]
+            cur = src[2:] if src.startswith("a/") else None
+            if cur is not None:
                 out.setdefault(cur, ([], []))
         elif cur is not None and line.startswith("-"):
             out[cur][0].append(line[1:])
@@ -520,7 +532,9 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str
     """PURE. {gate path: removed code lines within `k` lines of a failure-path line in the hunk}.
 
     Reads a `git diff -U<k>` text. A comment-only line neither counts nor anchors, and a line
-    added back identically anywhere in the same file is a MOVE, not a removal.
+    added back identically anywhere in the same file is a MOVE, not a removal. ⛔ Distance is in
+    OLD-FILE lines: r1 found six added comment lines pushed an adjacent removal out of the window,
+    so an added line has no position and cannot anchor — only the source as it WAS is measured.
     """
     out: dict[str, list[str]] = {}
     per = diff_lines(diff)
@@ -528,10 +542,12 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str
     for line in diff.split("\n"):
         if line.startswith("+++ "):
             tgt = line[4:]
-            path = tgt[2:] if tgt.startswith("b/") else None
+            if tgt.startswith("b/"):
+                path = tgt[2:]
             cur = None
         elif line.startswith("--- "):
-            continue
+            src = line[4:]
+            path = src[2:] if src.startswith("a/") else None
         elif line.startswith("@@"):
             if path is not None and GATE_CODE.match(path):
                 cur = []
@@ -543,7 +559,8 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str
     for path, hs in hunks.items():
         readded = [a.strip() for a in per.get(path, ([], []))[1]]
         for hk in hs:
-            code = [(i, l) for i, l in enumerate(hk) if not l[1:].strip().startswith("#")]
+            old_side = [l for l in hk if not l.startswith("+")]
+            code = [(i, l) for i, l in enumerate(old_side) if not l[1:].strip().startswith("#")]
             for i, l in code:
                 t = l[1:].strip()
                 if not l.startswith("-") or not t:
@@ -575,6 +592,8 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
     for path in sorted(old):
         if path in new and new[path] < old[path]:
             out.append(f"loosens a gate: the mutation pin for {path} drops {old[path]} -> {new[path]}")
+        elif path not in new:                       # r1 CLAUDE M2: deleted or renamed away
+            out.append(f"loosens a gate: the mutation pin for {path} ({old[path]}) is removed")
     ot = [int(m["n"]) for m in map(PIN_TOTAL.search, removed) if m]
     nt = [int(m["n"]) for m in map(PIN_TOTAL.search, added) if m]
     if ot and nt and nt[0] < ot[0]:
@@ -587,6 +606,14 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
     for path, gone in sorted(failure_path_removals(diff).items()):
         out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
                    f"failure path, e.g. {gone[0][:70]!r}")
+    for path, (rm, ad) in sorted(per.items()):
+        if not GATE_CALLER.match(path):
+            continue
+        back = [a.strip() for a in ad]
+        gone = [r.strip() for r in rm if GATE_REF.search(r) and r.strip() not in back]
+        if gone:
+            out.append(f"loosens a gate: {path} drops or rewrites {len(gone)} gate invocation(s), "
+                       f"e.g. {gone[0][:70]!r}")
     # 2. NEEDS A DEPLOY FIRST.
     migs = [f for f in files if MIGRATION.match(f)]
     if migs:
@@ -598,9 +625,11 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
     # 4. APP CODE WITHOUT THE LOCAL TESTS — cleared only by a run pinned to THIS head.
     app = [f for f in files if APP_CODE.match(f)]
     if app and (head is None or app_tests_at != head):
-        out.append(f"app code changed ({len(app)} file(s), e.g. {app[0]}) and no local "
-                   f"test:integration + test:e2e run is recorded at this head — run both, then "
-                   f"re-run with --app-tests-passed {head or '<head sha>'}")
+        # ⚠ SELF-ATTESTED (r1, both halves): the flag is a SHA compared to the head; nothing here
+        # runs the tests or reads their result. It pins WHICH tree the merger claims to have tested.
+        out.append(f"app code changed ({len(app)} file(s), e.g. {app[0]}) and nobody has attested "
+                   f"a local test:integration + test:e2e pass at this head — run both, then re-run "
+                   f"with --app-tests-passed {head or '<head sha>'} (an attestation; not verified)")
     return out
 
 
@@ -1070,9 +1099,9 @@ def _self_test() -> int:
 
     # ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) — each fired by TWO DISTINCT inputs, and each
     # with an ADJACENT input that must stay quiet, so no branch passes on one fixture's constant.
-    def D(path, *hunk):
+    def DF(path, *hunk):
         return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n"
-    def H(files=(), diff="", body="", head="abc", at=None, nr=False):
+    def H(files=(), diff="", head="abc", at=None, nr=False):
         return hold_reasons(list(files), diff, head, at, nr)
     def has(rs, word):
         return any(word in r for r in rs)
@@ -1085,21 +1114,21 @@ def _self_test() -> int:
     PC = "scripts/check-plan-code.py"
     for o, n in ((128, 125), (30, 2)):
         check(f"a mutation pin that DROPS {o} -> {n} is a loosening",
-              has(H([PC], D(PC, f'-    "scripts/a.py": {o},', f'+    "scripts/a.py": {n},')), f"{o} -> {n}"), True)
-    check("...but a pin that RISES is not", H([PC], D(PC, '-    "scripts/a.py": 125,', '+    "scripts/a.py": 129,')), [])
+              has(H([PC], DF(PC, f'-    "scripts/a.py": {o},', f'+    "scripts/a.py": {n},')), f"{o} -> {n}"), True)
+    check("...but a pin that RISES is not", H([PC], DF(PC, '-    "scripts/a.py": 125,', '+    "scripts/a.py": 129,')), [])
     for o, n in ((2021, 2017), (900, 10)):
         check(f"a declared mutation total that drops {o} -> {n} is a loosening",
-              has(H([PC], D(PC, f"-    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {o})",
+              has(H([PC], DF(PC, f"-    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {o})",
                                f"+    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {n})")), "total drops"), True)
     for o, n in ((274, 271), (9, 1)):
         check(f"a declared self-test count that drops {o} -> {n} is a loosening",
-              has(H(["scripts/z.py"], D("scripts/z.py", f"-    python3 scripts/z.py --self-test  # {o} cases",
+              has(H(["scripts/z.py"], DF("scripts/z.py", f"-    python3 scripts/z.py --self-test  # {o} cases",
                                          f"+    python3 scripts/z.py --self-test  # {n} cases")), "fewer self-test"), True)
     check("...but a count that rises is not",
-          H(["scripts/z.py"], D("scripts/z.py", "-    z --self-test  # 271 cases", "+    z --self-test  # 274 cases")), [])
+          H(["scripts/z.py"], DF("scripts/z.py", "-    z --self-test  # 271 cases", "+    z --self-test  # 274 cases")), [])
     G = "scripts/check-x.py"
     # ⭐ PR #398's own shape: the removed line names no failure word; `fails.append` is 4 lines on.
-    _398 = D(G, '     ("3 LOST", t3(rows)),', '-    ("4 NO IMPROVEMENT", t4(rows)),', '     ("5 RANKER", t5(rows)),',
+    _398 = DF(G, '     ("3 LOST", t3(rows)),', '-    ("4 NO IMPROVEMENT", t4(rows)),', '     ("5 RANKER", t5(rows)),',
              '     ):', '         if result:', '             fails.append((name, result))')
     check("⭐ a check entry REMOVED from beside a fails list is a loosening (PR #398's shape)",
           has(H([G], _398), "failure path"), True)
@@ -1110,24 +1139,64 @@ def _self_test() -> int:
     check("app code cleared at head 'f00d' stays cleared with nothing else wrong",
           hold_reasons(["worker/run.ts"], "", "f00d", "f00d", False), [])
     check("a removed `return 1` in a gate is a loosening",
-          has(H([".claude/hooks/h.sh"], D(".claude/hooks/h.sh", "-    return 1", "+    return 0")), "failure path"), True)
+          has(H([".claude/hooks/h.sh"], DF(".claude/hooks/h.sh", "-    return 1", "+    return 0")), "failure path"), True)
     check("...but the SAME line MOVED (removed and re-added) is not",
-          H([G], D(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', '+    ("4 NO IMPROVEMENT", t4(rows)),',
+          H([G], DF(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', '+    ("4 NO IMPROVEMENT", t4(rows)),',
                    '     fails.append(x)')), [])
     check("...and a removed COMMENT beside a fails list is not",
-          H([G], D(G, "-    # FAIL here once", "     fails.append(x)")), [])
+          H([G], DF(G, "-    # FAIL here once", "     fails.append(x)")), [])
     check("...and the same removal in a NON-gate script is not",
-          H(["scripts/page.py"], D("scripts/page.py", "-    return 1", "+    return 0")), [])
-    _far = D(G, "-    x = 1", *[f"     y{i} = {i}" for i in range(6)], "     fails.append(x)")
+          H(["scripts/page.py"], DF("scripts/page.py", "-    return 1", "+    return 0")), [])
+    _far = DF(G, "-    x = 1", *[f"     y{i} = {i}" for i in range(6)], "     fails.append(x)")
     check("...and a removal SIX lines from the failure path is outside the window", H([G], _far), [])
+    # r1 (both halves): a DELETED gate dropped every removed line, so deleting a check was READY.
+    def DEL(path, *gone):
+        return (f"diff --git a/{path} b/{path}\ndeleted file mode 100644\n--- a/{path}\n+++ /dev/null\n"
+                f"@@ -1,{len(gone)} +0,0 @@\n" + "\n".join("-" + g for g in gone) + "\n")
+    check("⭐ DELETING a gate script outright is a loosening",
+          has(H([G], DEL(G, "if bad:", "    return 1", "x = 2")), "failure path"), True)
+    check("...and so is deleting a hook in a subdirectory",
+          has(H([".claude/hooks/sub/b.sh"], DEL(".claude/hooks/sub/b.sh", "case $x in", '  *) deny "no";;')),
+              "failure path"), True)
+    check("...but deleting a NON-gate script is not",
+          H(["scripts/page.py"], DEL("scripts/page.py", "if bad:", "    return 1")), [])
+    # r1: distance was counted over the COMBINED diff, so added lines pushed a removal out.
+    check("⭐ six ADDED comment lines do not push an adjacent removal out of the window",
+          has(H([G], DF(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', *[f"+    # why {i}" for i in range(6)],
+                        '     fails.append(x)')), "failure path"), True)
+    check("...nor do eight added CODE lines",
+          has(H([G], DF(G, "-    check_entry(rows)", *[f"+    y{i} = {i}" for i in range(8)],
+                        "     failures += 1")), "failure path"), True)
+    # r1 CLAUDE H3: the hooks' blocking idioms.
+    check("a hook's removed `deny` is a loosening",
+          has(H([".claude/hooks/a.sh"], DF(".claude/hooks/a.sh", '-  deny "no --no-verify"', "+  :")), "failure path"), True)
+    check("...and so is a hook's `exit 2` turned into `exit 0`",
+          has(H([".claude/hooks/b.sh"], DF(".claude/hooks/b.sh", "-    exit 2", "+    exit 0")), "failure path"), True)
+    check("...but a removed `echo` in a hook, on no failure path, is not",
+          H([".claude/hooks/a.sh"], DF(".claude/hooks/a.sh", "-  echo hi", "+  echo hello")), [])
+    # r1 CLAUDE M1: a gate disabled where it is INVOKED.
+    CI = ".github/workflows/ci.yml"
+    check("⭐ a CI step that runs a check, removed, is a loosening",
+          has(H([CI], DF(CI, "-        run: python3 scripts/check-x.py --self-test")), "gate invocation"), True)
+    check("...and so is a hook dropped from settings.json",
+          has(H([".claude/settings.json"], DF(".claude/settings.json", '-  "command": "bash .claude/hooks/h.sh"')),
+              "gate invocation"), True)
+    check("...but the same CI line MOVED is not",
+          H([CI], DF(CI, "-        run: python3 scripts/check-x.py --self-test",
+                     "+        run: python3 scripts/check-x.py --self-test")), [])
+    check("...nor a removed CI line that names no gate",
+          H([CI], DF(CI, "-        node-version: 20", "+        node-version: 22")), [])
+    # r1 CLAUDE M2: a pin deleted, or renamed away, is a drop to nothing.
+    check("a mutation pin DELETED is a loosening",
+          has(H([PC], DF(PC, '-    "scripts/a.py": 30,')), "scripts/a.py (30) is removed"), True)
+    check("...and so is one renamed to another key",
+          has(H([PC], DF(PC, '-    "scripts/b.py": 12,', '+    "scripts/c.py": 12,')), "scripts/b.py (12) is removed"), True)
     for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
         r = H([mig], at="abc")
         check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)
     check("...and a migration is app code too, so it also needs the local tests",
           has(H(["supabase/migrations/0028_x.sql"]), "app code changed"), True)
     check("a NO-REVIEW waiver is held", has(H(nr=True), "NO-REVIEW"), True)
-    check("...and NO-ENTRY alone is not (the owner chose NO-REVIEW only)",
-          H(body="NO-ENTRY: docs only", nr=False), [])
     for f in ("lib/gemini.ts", "app/page.tsx"):
         check(f"app code with no local test run is held ({f})", has(H([f], at=None), "app code changed"), True)
         check(f"...and is cleared by a run pinned to THIS head ({f})", H([f], at="abc"), [])
@@ -1186,6 +1255,10 @@ def _self_test() -> int:
           (_rc, "NO-REVIEW" in _o), (3, True))
     _rc, _o = _main(["docs/x.md"], "12")
     check("main() leaves a clean READY PR as READY, rc=0", (_rc, "HOLD" in _o), (0, False))
+    # r1 CLAUDE M3: the pure NO-ENTRY case never passed its body anywhere — this one does.
+    _rc, _o = _main(["docs/y.md"], "9", body="intro\nNO-ENTRY: docs only\n")
+    check("⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)",
+          (_rc, "HOLD" in _o), (0, False))
     _rc, _o = _main(["lib/x.ts"], "3", "abc")
     check("main() clears app code with a local test run pinned to the head, rc=0",
           (_rc, "HOLD" in _o), (0, False))
