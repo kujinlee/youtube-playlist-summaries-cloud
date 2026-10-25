@@ -17452,7 +17452,7 @@ Branch `comprehensibility-chrome-cases`. Backlog #305 closed: `page_chrome.py --
 asks, OS light and OS dark; records listeners, storage, the observer's target and margin and the
 resize callback) and presses both controls. Backlog #304 task 0 done: the `ctls` lookup is asked as
 the observer `rootMargin` in two layouts expecting 150 and 120. Cases 223 -> 232; mutations
-page_chrome 89 -> 102, total 2003 -> 2016; scoped run 102 killed, 102 attributed, 0 survivors.
+page_chrome 89 -> 103, total 2003 -> 2017; scoped run 103 killed, 103 attributed, 0 survivors.
 
 Backlog #300's remainder, re-measured over pages carrying `#chrome-theme`: 11, 3 pinned, 8 not (the
 earlier "3 of 63" counted `position:fixed` anywhere). `2026-10-06-brief-dev-process-speed`

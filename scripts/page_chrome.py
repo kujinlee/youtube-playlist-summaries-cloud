@@ -269,7 +269,6 @@ def missing_palettes(page: str) -> list[str]:
     return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]
 
 
-
 def has_control(page: str) -> bool:
     """Whether this page actually renders the theme control. PURE.
 
