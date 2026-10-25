@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 232 cases
+    python3 scripts/page_chrome.py --self-test          # 233 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -2168,14 +2168,15 @@ this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x)
 this.disconnect=function(){};};
 try{
 /*SCRIPT*/
-REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');REP.aria0=sbs.map(function(b){return b.getAttribute('aria-pressed');});
+REP.reserve=[slot.style.minHeight||null,root.style['--chrome-h']||null];REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');REP.aria0=sbs.map(function(b){return b.getAttribute('aria-pressed');});
 if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
 live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
 REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
 if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];}
 fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
-fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.aria=sbs.map(function(b){return b.getAttribute('aria-pressed');});REP.stored=ST;
+fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.aria=sbs.map(function(b){return b.getAttribute('aria-pressed');});REP.stored=JSON.parse(JSON.stringify(ST));
+fire(sch,'click',{target:sbs[2]});REP.back=[root.getAttribute('data-scheme'),'explainer-scheme' in ST];
 }catch(e){REP.error=String(e);}
 console.log(JSON.stringify(REP));
 """.replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
@@ -2244,6 +2245,15 @@ console.log(JSON.stringify(REP));
              (_field(_ok, "stored"),
               _field(_runs(chrome_script(), 100, 50, saved={"explainer-scheme": "2"}), "scheme0")),
              (({"yps-theme": "light", "explainer-scheme": "1"},), ("2",)))
+        # ⟳ backlog #350 (r5 Claude on `comprehensibility-chrome-cases`): two real defects inside the
+        # stated bound passed every case — the values sat on the stub's elements and never reached
+        # its report. Asked as VALUES: the slot reserves the bar's measured height and publishes it
+        # (40px is the stub bar's box) — read right after LOAD, because the unpin below calls `sync()`
+        # and would restore a zeroed reserve before anything looked — and choosing the DEFAULT style removes BOTH the attribute and
+        # the stored opt-out, so it does not come back on reload.
+        case("...and the slot reserves the bar's measured height and publishes it as --chrome-h, "
+             "and choosing the default text style forgets the stored opt-out (backlog #350)",
+             _field(_ok, "reserve", "back"), (["40px", "40px"], [None, False]))
         # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
         # and the one with no case: the tail the observer's margin is cut from is measured
         # over exactly these elements. Asked as a VALUE, not a substring — a substring case

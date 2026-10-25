@@ -16,7 +16,7 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
@@ -30,7 +30,7 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
@@ -51,7 +51,7 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --ink:#1b1a18; --ink-soft:#3d3a35; --ink-faint:#6b6560;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
@@ -64,7 +64,7 @@
      resolves to THIS palette's own role — a shared hex would collapse the roles and a second
      literal would drift. Without these the toggle is HALF-LIVE: a media query has no
      specificity, so in light mode the shim's DARK value survives (measured 1.03:1). */
-  --ink:var(--fg); --ink-soft:var(--fg2); --ink-faint:var(--fg3);
+  --ink:#ece9e3; --ink-soft:#c6c1b8; --ink-faint:#918a80;
   --card:var(--panel); --structure:var(--rule);
   --good:var(--green); --defect:var(--red);
 }
@@ -166,7 +166,14 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
   /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
      fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
      palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
-     what nobody supplied. */
+     what nobody supplied.
+     ⚠ THAT IS TRUE PER TOKEN AND A TRAP PER PALETTE (backlog #105). A media query adds ZERO
+     specificity, so each fragment token beats this rule unconditionally and each undeclared one
+     falls through to it. Declare SOME tokens under [data-theme="light"] and the toggle goes
+     half-live: declared tokens follow it, the rest stay pinned to the OS — measured 2026-09-08 at
+     1.03:1 body contrast, dark on dark. A palette is declared WHOLE or NOT AT ALL; none leaves the
+     page dark and readable. Enforcement is backlog #102's; compose already refuses the half-live
+     toggle (PR #283). */
   @media (prefers-color-scheme: dark) {
     html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
            --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
@@ -226,7 +233,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
 <div class="wrap ex-body">
 
 <h1>Why it is not converging</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-20 17:57 · 88ccbb6a · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-24 20:45 · 02d62f5e · uncommitted changes</time></span></div></div>
 <p class="horizon">as of <code>ea119c82</code> · 2026-10-20 ~17:40 PDT · branch <code>decision-route-escalation</code></p>
 
 <div class="reading">

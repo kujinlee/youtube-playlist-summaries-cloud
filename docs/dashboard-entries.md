@@ -17461,3 +17461,18 @@ recomposed. The other 6 with fragments use `:root:not([data-theme="light"])`, wh
 so the route was reverted and filed as backlog #349 (architecture review
 `docs/reviews/architecture-review-2026-10-24-palette-detection.md`). Backlog #105 closed: the
 `brief-compose.py` shim comment.
+
+## 2026-10-24
+Two more small gaps in the explainer toolbar's tests are closed: the tests now notice if the space
+kept for the pinned toolbar is lost, and if switching back to the default text style fails to
+forget the old choice. Separately, body text on two explainer pages showed in plain black instead
+of the page's own colour when the computer was in light mode; it now shows in the page's colour,
+and nothing else on those pages changed.
+<!--tech-->
+Branch `stub-gaps-and-fg-cycle`. Backlog #350 closed: the stub reports the slot reserve and
+`--chrome-h` right after load and presses the default text style; +3 mutations (page_chrome 103 ->
+106, total 2017 -> 2020; scoped run 106/106). The `--fg` cycle (filed on PR #396's branch): the two
+fragments' `--ink:var(--fg)` aliases are replaced by each block's own literal values, which breaks the
+cycle with `brief-compose.py`'s `--fg:var(--ink, ...)`. `scripts/brief-compose.py` is unchanged:
+lowering its alias block instead was measured to restyle 3 other pages in every theme state.
+Element-wise differential, six states: only OS-light-nothing-pressed changes, on the two pages.

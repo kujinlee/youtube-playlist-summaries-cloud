@@ -1701,7 +1701,7 @@ EXPECTED_MUTATIONS = {
     # bar being measured — 225 -> 1965px in two seconds) and `assert_wired`'s label, which
     # the reviewer severed while the suite stayed green: dropping it from KNOWN_UNVARIED was
     # lexically correct and the parameter was still indistinguishable from a constant.
-    "scripts/page_chrome.py": 103,
+    "scripts/page_chrome.py": 106,
     # ⟳ 2026-09-16 — `peer-sites.py` arrives WITH its manifest rather than as debt, which is
     # backlog #122's lesson applied at birth: that file spent months unratcheted and seeding it
     # immediately found two live defects. Probing these seven before shipping found three more in
@@ -5749,7 +5749,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2017)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2020)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
