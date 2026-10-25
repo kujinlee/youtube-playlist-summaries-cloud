@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 232 cases
+    python3 scripts/page_chrome.py --self-test          # 233 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -2131,7 +2131,7 @@ getAttribute:function(k){return k in a?a[k]:null;},setAttribute:function(k,v){a[
 removeAttribute:function(k){delete a[k];},
 addEventListener:function(t,f){if(typeof f!=='function')throw new Error('stub: listener');(on[t]=on[t]||[]).push(f);},
 classList:{contains:function(c){return !!cls[c];},toggle:function(c,v){cls[c]=v===undefined?!cls[c]:!!v;}},
-b:bottom,getBoundingClientRect:function(){return {top:0,bottom:this.b,height:40};},
+b:bottom,h:40,getBoundingClientRect:function(){return {top:0,bottom:this.b,height:this.h};},
 appendChild:function(k){k.parent=this;kids.push(k);},
 contains:function(k){for(var q=k;q;q=q.parent)if(q===this)return true;return false;},
 closest:function(s){if(s==='.CHROME_SLOT')return this.parent;
@@ -2143,7 +2143,7 @@ var out=[],walk=function(n){n.kids.forEach(function(k){if(ids.indexOf(k.id)>=0)o
 walk(this);return out;},
 querySelector:function(s){return this.querySelectorAll(s)[0]||null;}};}
 function fire(n,t,ev){(n.on[t]||[]).forEach(function(f){f(ev||{target:n});});}
-var root=el('html',0),slot=el('slot',200),bar=el('bar',0);
+var root=el('html',0),slot=el('slot',200),bar=el('bar',0);bar.h=43.109375;
 root.clientHeight=800;root.style.setProperty=function(k,v){root.style[k]=v;};
 slot.appendChild(bar);
 var theme=el('chrome-theme',+process.argv[2]),sch=el('schemer',+process.argv[3]);
@@ -2168,14 +2168,16 @@ this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x)
 this.disconnect=function(){};};
 try{
 /*SCRIPT*/
-REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');REP.aria0=sbs.map(function(b){return b.getAttribute('aria-pressed');});
+REP.reserve=[slot.style.minHeight||null,root.style['--chrome-h']||null];REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');REP.aria0=sbs.map(function(b){return b.getAttribute('aria-pressed');});
 if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
 live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
 REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
-if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];}
+if(rcb){sch.b=20;bar.h=130.5625;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];
+REP.reserve2=[slot.style.minHeight||null,root.style['--chrome-h']||null];}
 fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
-fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.aria=sbs.map(function(b){return b.getAttribute('aria-pressed');});REP.stored=ST;
+fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.aria=sbs.map(function(b){return b.getAttribute('aria-pressed');});REP.stored=JSON.parse(JSON.stringify(ST));
+fire(sch,'click',{target:sbs[2]});REP.back=[root.getAttribute('data-scheme'),JSON.parse(JSON.stringify(ST)),sbs.map(function(b){return b.className+'/'+b.getAttribute('aria-pressed');})];
 }catch(e){REP.error=String(e);}
 console.log(JSON.stringify(REP));
 """.replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
@@ -2244,6 +2246,21 @@ console.log(JSON.stringify(REP));
              (_field(_ok, "stored"),
               _field(_runs(chrome_script(), 100, 50, saved={"explainer-scheme": "2"}), "scheme0")),
              (({"yps-theme": "light", "explainer-scheme": "1"},), ("2",)))
+        # ⟳ backlog #350 (r5 Claude on `comprehensibility-chrome-cases`): two real defects inside the
+        # stated bound passed every case — the values sat on the stub's elements and never reached
+        # its report. Asked as VALUES: the slot reserves the bar's measured height and publishes it
+        # (43.109375px is the stub bar's box: FRACTIONAL, because `offsetHeight` rounding once moved a
+        # real page by a pixel — r1 Claude: a constant 40 let `Math.round(h)` pass) — read right after LOAD, because the unpin below calls `sync()`
+        # and would restore a zeroed reserve before anything looked — and re-read after a resize that
+        # GROWS the bar to 130.5625px (the 320x568 wrap, measured: r2 Codex — with the box unchanged, a
+        # script that kept its first height forever passed) — and choosing the DEFAULT style removes BOTH the attribute and
+        # the stored opt-out, so it does not come back on reload.
+        case("...and the slot reserves the bar's measured height and publishes it as --chrome-h, on "
+             "load and after a resize, and choosing the default text style forgets the stored opt-out, "
+             "keeps the stored theme, and marks the default as the pressed option (backlog #350)",
+             _field(_ok, "reserve", "reserve2", "back"),
+             (["43.109375px", "43.109375px"], ["130.5625px", "130.5625px"],
+              [None, {"yps-theme": "light"}, ["/false", "/false", "on/true"]]))
         # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
         # and the one with no case: the tail the observer's margin is cut from is measured
         # over exactly these elements. Asked as a VALUE, not a substring — a substring case
