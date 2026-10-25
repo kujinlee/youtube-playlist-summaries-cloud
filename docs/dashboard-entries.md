@@ -17428,3 +17428,36 @@ stubbed", which was with a sudo shim, so it overstated what ran.
 shards over the 1,500s trigger). N is derived everywhere else from `strategy.job-total`, so the
 matrix list is the only copy. Concurrent-job queueing with 14 jobs per push is noted on backlog #231
 as unmeasured.
+
+## 2026-10-24
+The script behind every explainer page's theme and text-style buttons is now actually run by its
+tests, not just checked for typos. Until now the tests only asked whether the script was valid
+code, so a script that crashed on load, leaving every button dead, passed. They now run it on a
+small stand-in page, once as if the reader's computer is in light mode and once in dark mode.
+Each run presses both buttons and checks the result, checks that the choice is remembered, and
+checks that the toolbar stays pinned when it scrolls away. A crash fails the tests, and so does a
+17-character change that had previously disabled the pinning with every check still green. The
+stand-in page has no real screen, so whether a reader can actually see the buttons is still
+checked by hand.
+
+One older page was rebuilt so its theme button stays on screen while scrolling. It also gained
+the text-style switcher, which turns its bold words slightly bluer, as on every newer page. Six more were
+meant to be, but they turned out to have a working theme button that the page builder misreads as
+broken, so rebuilding them would remove it. Three attempts to teach the builder to read them
+correctly each went wrong in a new way when reviewed, so that work stopped and is filed as its own
+item. Those six pages are unchanged.
+<!--tech-->
+Branch `comprehensibility-chrome-cases`. Backlog #305 closed: `page_chrome.py --self-test` runs
+`chrome_script()` under plain `node` on a strict stub DOM (answers only the media query the script
+asks, OS light and OS dark; records listeners, storage, the observer's target and margin and the
+resize callback) and presses both controls. Backlog #304 task 0 done: the `ctls` lookup is asked as
+the observer `rootMargin` in two layouts expecting 150 and 120. Cases 223 -> 232; mutations
+page_chrome 89 -> 103, total 2003 -> 2017; scoped run 103 killed, 103 attributed, 0 survivors.
+
+Backlog #300's remainder, re-measured over pages carrying `#chrome-theme`: 11, 3 pinned, 8 not (the
+earlier "3 of 63" counted `position:fixed` anywhere). `2026-10-06-brief-dev-process-speed`
+recomposed. The other 6 with fragments use `:root:not([data-theme="light"])`, which
+`missing_palettes` does not recognise; three text rules for it leaked in review rounds 1-3 (thrashing),
+so the route was reverted and filed as backlog #349 (architecture review
+`docs/reviews/architecture-review-2026-10-24-palette-detection.md`). Backlog #105 closed: the
+`brief-compose.py` shim comment.

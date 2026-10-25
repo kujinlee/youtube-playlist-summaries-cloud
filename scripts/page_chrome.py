@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 223 cases
+    python3 scripts/page_chrome.py --self-test          # 232 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -2104,6 +2104,170 @@ def self_test() -> int:
              _parses(_js), "ok")
         case("...and so does the inline theme-applying half, which a page runs early",
              _parses(f"(function(){{{theme_control()!r};}})();"), "ok")
+
+        # ── backlog #305: a script that PARSES can still be dead ──────────────────────────
+        # ⛔ `node --check` answers "is it a program", never "does it run". A prepended `throw`
+        # parses, and kills every control on every page; measured 2026-10-19, `assert_wired`
+        # ACCEPTED it and `node --check` PASSED it. The remedy the row first filed — run it
+        # under jsdom — was REFUTED there: jsdom has no `IntersectionObserver`, so the script
+        # takes its fallback and both the healthy page and the dead one come back pinned.
+        #
+        # So this is a STUB page, under plain `node` (already this file's dependency — no
+        # package is staged, so it runs inside the mutation harness as the parse case does).
+        # ⭐ What it is strict about, exactly: any SELECTOR or `closest()` argument it does not
+        # model throws, and so does calling a method no element has. It RECORDS what it is
+        # handed — every listener, the observer's target and margin, the resize target — and
+        # the cases then PRESS the controls through those recorded listeners. ⟳ r1: both halves
+        # showed the first version was not strict where it said it was — `addEventListener`
+        # and `observe()` accepted anything, so a throwing click handler and `io.observe(bar)`
+        # both passed every case.
+        #
+        # ⚠ WHAT IT CANNOT SEE, stated rather than implied: every box is a fixed number, so
+        # this is WIRING under execution, not reachability. A bar pinned inside an
+        # `overflow:hidden` ancestor still passes. That layout half is backlog #304's.
+        _STUB = r"""var G=globalThis,REP={error:null,margins:[],observed:[],resized:[]};
+function el(id,bottom){var a={},cls={},kids=[],on={};return {id:id,parent:null,style:{},kids:kids,on:on,className:'',
+getAttribute:function(k){return k in a?a[k]:null;},setAttribute:function(k,v){a[k]=String(v);},
+removeAttribute:function(k){delete a[k];},
+addEventListener:function(t,f){if(typeof f!=='function')throw new Error('stub: listener');(on[t]=on[t]||[]).push(f);},
+classList:{contains:function(c){return !!cls[c];},toggle:function(c,v){cls[c]=v===undefined?!cls[c]:!!v;}},
+b:bottom,getBoundingClientRect:function(){return {top:0,bottom:this.b,height:40};},
+appendChild:function(k){k.parent=this;kids.push(k);},
+contains:function(k){for(var q=k;q;q=q.parent)if(q===this)return true;return false;},
+closest:function(s){if(s==='.CHROME_SLOT')return this.parent;
+if(s==='button[data-s]')return this.getAttribute('data-s')!==null?this:null;
+throw new Error('stub: closest('+s+')');},
+querySelectorAll:function(s){if(s==='button[data-s]')return kids.filter(function(k){return k.getAttribute('data-s')!==null;});
+var ids=s.split(',').map(function(x){if(!/^#[\w-]+$/.test(x))throw new Error('stub: selector '+s);return x.slice(1);});
+var out=[],walk=function(n){n.kids.forEach(function(k){if(ids.indexOf(k.id)>=0)out.push(k);walk(k);});};
+walk(this);return out;},
+querySelector:function(s){return this.querySelectorAll(s)[0]||null;}};}
+function fire(n,t,ev){(n.on[t]||[]).forEach(function(f){f(ev||{target:n});});}
+var root=el('html',0),slot=el('slot',200),bar=el('bar',0);
+root.clientHeight=800;root.style.setProperty=function(k,v){root.style[k]=v;};
+slot.appendChild(bar);
+var theme=el('chrome-theme',+process.argv[2]),sch=el('schemer',+process.argv[3]);
+bar.appendChild(theme);bar.appendChild(sch);
+var sbs=['1','2','3'].map(function(v){var b=el('',0);b.setAttribute('data-s',v);sch.appendChild(b);return b;});
+var byId={'chrome-theme':theme,'schemer':sch};
+G.document={documentElement:root,getElementById:function(i){return byId[i]||null;},
+querySelectorAll:function(s){if(s!=='.CHROME_SLOT .chrome')throw new Error('stub: '+s);return [bar];}};
+var OSDARK=process.argv[4]==='1',ST=JSON.parse(process.argv[5]||'{}');
+G.window=G;G.innerHeight=800;
+G.matchMedia=function(q){if(q!=='(prefers-color-scheme:dark)')throw new Error('stub: media '+q);
+return {matches:OSDARK};};
+Object.defineProperty(G,'localStorage',{configurable:true,value:{
+getItem:function(k){return k in ST?ST[k]:null;},setItem:function(k,v){ST[k]=String(v);},
+removeItem:function(k){delete ST[k];}}});
+Object.defineProperty(G,'location',{configurable:true,value:{protocol:'http:'}});
+var name=function(t){return t===slot?'slot':t===bar?'bar':(t&&t.id)||String(t);};
+var rcb=null;G.ResizeObserver=function(cb){rcb=cb;this.observe=function(t){REP.resized.push(name(t));};};
+var live=null;
+G.IntersectionObserver=function(cb,o){REP.margins.push(o.rootMargin);var me=this;
+this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x){cb([{isIntersecting:x}]);};};
+this.disconnect=function(){};};
+try{
+/*SCRIPT*/
+REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');REP.aria0=sbs.map(function(b){return b.getAttribute('aria-pressed');});
+if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
+live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
+REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
+if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];}
+fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
+fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
+fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.aria=sbs.map(function(b){return b.getAttribute('aria-pressed');});REP.stored=ST;
+}catch(e){REP.error=String(e);}
+console.log(JSON.stringify(REP));
+""".replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
+
+        def _runs(js: str, theme_bottom: int, schemer_bottom: int, os_dark: bool = False,
+                  saved: dict | None = None):
+            """Run `js` on the stub page; the report dict, or a CANNOT RUN string. NEVER RAISES."""
+            import json, subprocess, tempfile, os
+            fd, path = tempfile.mkstemp(suffix=".js")
+            try:
+                os.write(fd, _STUB.replace("/*SCRIPT*/", js).encode()); os.close(fd)
+                r = subprocess.run(["node", path, str(theme_bottom), str(schemer_bottom),
+                                    "1" if os_dark else "0", json.dumps(saved or {})],
+                                   capture_output=True, text=True, timeout=30)
+                out = r.stdout.strip().splitlines()
+                if r.returncode != 0 or not out:
+                    return f"CANNOT RUN: node rc={r.returncode} {r.stderr.strip()[:120]}"
+                return json.loads(out[-1])
+            except FileNotFoundError:
+                return "CANNOT RUN: node is not on PATH — treat this as NOT CHECKED"
+            except Exception as e:
+                return f"CANNOT RUN: {e}"
+            finally:
+                try: os.unlink(path)
+                except OSError: pass
+
+        def _field(rep, *keys):
+            # ⛔ A CANNOT RUN string is returned WHOLE, never sliced — r1 Low: indexing it gave
+            # `'C'` and `'AN'` as the "got" value and lost the reason the case failed.
+            return rep if not isinstance(rep, dict) else tuple(rep.get(k) for k in keys)
+
+        _ok = _runs(chrome_script(), 100, 50)
+        # ⛔ POSITIVE EFFECTS, and each one is something the script must DO: an absent
+        # error alone is the absence-of-change assertion row #305 warns against.
+        case("the emitted script RUNS: on a stub page it raises nothing, observes the SLOT "
+             "(not the bar, which leaves the flow when pinned), watches the bar's size, pins "
+             "when the slot leaves view and unpins when it returns (backlog #305)",
+             _field(_ok, "error", "obs", "resized", "pinnedOut", "pinnedIn"),
+             (None, ["slot", "slot"], ["bar"], True, False))
+        case("...and its controls WORK when pressed: the theme button flips the theme and its "
+             "pressed state both ways, starting unpressed",
+             _field(_ok, "pressed0", "theme1", "theme2"),
+             ("false", ["dark", "true"], ["light", "false"]))
+        # ⟳ r2 CODEX MEDIUM: the resize callback was recorded and DISCARDED, so a throwing
+        # one passed every case while Chromium logged `resize-dead`. It is now invoked after
+        # a control moves, and the observer must be re-armed at the NEW tail (200-20).
+        case("...and a resize re-measures: when a control moves, the observer is re-armed "
+             "at the new tail",
+             _field(_ok, "error", "afterResize"), (None, "-180px 0px 0px 0px"))
+        # ⟳ r4 CODEX MEDIUM: `aria-pressed` on the three options is what a screen reader
+        # announces, and inverting it survived every case — the class was asserted, not it.
+        case("...and the text-style switcher sets the scheme and marks only the pressed button, "
+             "in its class AND in what a screen reader announces — on load and after the press",
+             _field(_ok, "scheme", "aria0", "aria"),
+             (["1", "on", ""], ["false", "false", "true"], ["true", "false", "false"]))
+        # ⟳ r3 CLAUDE F4: the stub answered "OS light" to every query, so flipping the script's
+        # own media query to `light` — a dead FIRST press for every OS-dark reader — passed every
+        # case. The stub now answers only the query the script makes (any other THROWS) and runs
+        # a second time with the OS dark.
+        _dark = _runs(chrome_script(), 100, 50, os_dark=True)
+        case("...and with the OS DARK the button starts pressed and its first press gives light "
+             "— the press an OS-dark reader makes first",
+             _field(_dark, "error", "pressed0", "theme1"), (None, "true", ["light", "false"]))
+        case("...and both choices are persisted under their keys, and a saved text style is "
+             "applied on load",
+             (_field(_ok, "stored"),
+              _field(_runs(chrome_script(), 100, 50, saved={"explainer-scheme": "2"}), "scheme0")),
+             (({"yps-theme": "light", "explainer-scheme": "1"},), ("2",)))
+        # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
+        # and the one with no case: the tail the observer's margin is cut from is measured
+        # over exactly these elements. Asked as a VALUE, not a substring — a substring case
+        # here is what survived its own mutation at the second site (see above). Two layouts,
+        # because `min` hides whichever control sits lower: the switcher on top in one, the
+        # theme button in the other, so dropping EITHER selector moves one margin. ⟳ r1 Low:
+        # the two margins DIFFER (150 and 120), so a hard-coded tail cannot satisfy both.
+        case("the observer's margin is cut at the TOPMOST control, whichever one that is — "
+             "the `ctls` lookup counts both (backlog #304 task 0)",
+             tuple(_field(r, "armed") for r in
+                   (_runs(chrome_script(), 100, 50), _runs(chrome_script(), 80, 120))),
+             ((["-150px 0px 0px 0px", "-150px 0px 0px 0px"],),
+              (["-120px 0px 0px 0px", "-120px 0px 0px 0px"],)))
+        # ⭐ The falsifiers, run here so a reader never has to take them on trust. Each is the
+        # shape a real defect took, not an invented one.
+        case("...and a startup `throw` — which PARSES — makes it go red (#305's falsifier)",
+             _field(_runs("throw new Error('dead');" + chrome_script(), 100, 50), "error"),
+             ("Error: dead",))
+        case("...and so does #304's 17-byte `arm=function(){};`, which every text gate, "
+             "`node --check` and jsdom all passed",
+             _field(_runs(chrome_script().replace(
+                 "var sync=", "arm=function(){};var sync=", 1), 100, 50),
+                 "observed", "pinnedOut"),
+             ([], None))
 
         # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
         case("the script moves a hand-authored #schemer INTO the bar, so one element carries "
