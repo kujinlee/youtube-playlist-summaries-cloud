@@ -530,7 +530,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    for exit_ in scope_exits(diff):",
+    "    for exit_ in scope_exits(diff, status):",
     "    for exit_ in []:"
    ]
   ],
@@ -559,8 +559,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    " and role(f[\"new\"]) != role(f[\"old\"])]",
-    "]"
+    "if not f[\"copy\"] and any(o and not n for o, n in zip(role(f[\"old\"]), role(f[\"new\"])))]",
+    "if not f[\"copy\"] and any(role(f[\"old\"]))]"
    ]
   ],
   "expect": [
@@ -631,6 +631,98 @@
   ],
   "expect": [
    "⭐ a workflow renamed INTO scripts/check-*.py keeps no workflow role, so it is an exit"
+  ]
+ },
+ {
+  "name": "#353: paths are read from patch headers again, not the machine list",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    headers = status is None ",
+    "    headers = True "
+   ]
+  ],
+  "expect": [
+   "real git: a hook under `a b/` with a MODE-ONLY change is not held (r4 false HOLD)",
+   "the join REFUSES a patch and a list that disagree on the file count"
+  ]
+ },
+ {
+  "name": "#353: the positional join accepts a count mismatch",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if len(entries) != len(out):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "the join REFUSES a patch and a list that disagree on the file count"
+  ]
+ },
+ {
+  "name": "#353 / r4: a GAINED role reads as an exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "any(o and not n for o, n in zip(",
+    "any(o != n for o, n in zip("
+   ]
+  ],
+  "expect": [
+   "real git: a check renamed so it GAINS a role is not an exit (r4 false HOLD)"
+  ]
+ },
+ {
+  "name": "#353: main() does not hand the machine list to the detectors",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                                     status=files_r.stdout)",
+    "                                     status=None)"
+   ]
+  ],
+  "expect": [
+   "⭐ main() takes paths from --name-status, not the patch header (a rename only the list shows)"
+  ]
+ },
+ {
+  "name": "#353: an ADDED file keeps an old path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(None, p) if k == \"A\"",
+    "(p, p) if k == \"A\""
+   ]
+  ],
+  "expect": [
+   "name_status reads a rename, an add and a delete"
+  ]
+ },
+ {
+  "name": "#353: an incomplete --name-status entry is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not k or i + n > len(toks):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...and an incomplete --name-status entry"
+  ]
+ },
+ {
+  "name": "#353: changed_paths drops a renamed file's old path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "for p in (e[\"old\"], e[\"new\"]) if p})",
+    "for p in (e[\"new\"],) if p})"
+   ]
+  ],
+  "expect": [
+   "changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)"
   ]
  }
 ]

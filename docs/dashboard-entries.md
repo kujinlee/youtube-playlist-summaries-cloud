@@ -17548,6 +17548,8 @@ git's C-quoted paths, the tab after a spaced path, binary deletions, copies, a w
 `scripts/check-*` — and the unit was SPLIT: the detectors held, `_unquote`/`_side` and the role-preserving
 exit were fixed, each case built from a real `git diff` in a scratch repository. r4 found three more path
 shapes, two caused by r3's own fixes — THRASHING — and every one fails CLOSED (two false HOLDs, one NOT READY;
-never a false READY). The owner chose to DEFER: the review loop stops at r4 and the remainder is backlog #353. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 146 cases (incl. `main()` over a fake `_run`), 34 new mutations, 50/50. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+never a false READY). The owner first chose to DEFER, then REVERSED it before merge: backlog #353's class fix
+landed on this branch — paths and statuses from `git diff --name-status -z -M`, joined by position to the patch
+(a mismatch is CANNOT RUN), checked by a self-test that builds a REAL git repository with every shape found. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 164 cases (incl. `main()` over a fake `_run` and a real-git world), 41 new mutations, 57/57. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.

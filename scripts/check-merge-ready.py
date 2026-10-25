@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 146 cases
+    python3 scripts/check-merge-ready.py --self-test # 164 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -48,7 +48,9 @@ import argparse
 import functools
 import importlib.util
 import json
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 import sys
@@ -514,7 +516,38 @@ def _side(field: str, prefix: str) -> str | None:
     return field[len(prefix):] if field.startswith(prefix) else None
 
 
-def diff_files(diff: str) -> list[dict]:
+class PathsDisagree(ValueError):
+    """The machine path list and the patch text do not describe the same files."""
+
+
+def name_status(z: str) -> list[dict]:
+    """PURE. `git diff --name-status -z -M` -> [{status, old, new, copy}], one per changed file.
+
+    ⛔ BACKLOG #353, THE CLASS FIX. Four review rounds found a new path shape each time — C-quoting,
+    a tab after a spaced path, a binary deletion with no `+++`, a ` b/` inside a path, literal
+    Unicode under `core.quotePath=false` — because paths were recovered from the HUMAN format.
+    This format is for programs: NUL-separated, never quoted, never tab-delimited, and the status
+    letter says outright what happened (A, D, M, T, R<score> old new, C<score> old new)."""
+    toks = z.split("\0")
+    if toks and toks[-1] == "":
+        toks.pop()
+    out, i = [], 0
+    while i < len(toks):
+        st = toks[i]
+        k, n = st[:1], (3 if st[:1] in ("R", "C") else 2)
+        if not k or i + n > len(toks):
+            raise PathsDisagree(f"--name-status entry {st!r} at token {i} is incomplete")
+        if k in ("R", "C"):
+            old, new = toks[i + 1], toks[i + 2]
+        else:
+            p = toks[i + 1]
+            old, new = (None, p) if k == "A" else (p, None) if k == "D" else (p, p)
+        out.append({"status": k, "old": old, "new": new, "copy": k == "C"})
+        i += n
+    return out
+
+
+def diff_files(diff: str, status: str | None = None) -> list[dict]:
     """PURE. THE ONE DIFF PARSER — every loosening detector reads this and parses nothing itself.
 
     Per file in a `git diff` text: `old` and `new` path (None for `/dev/null`), and `hunks`, each a
@@ -526,13 +559,20 @@ def diff_files(diff: str) -> list[dict]:
     """
     out: list[dict] = []
     cur, hunk = None, None
+    headers = status is None              # ⛔ with the machine list, NO path is read from a header
     for line in diff.split("\n"):
         if line.startswith("diff --git "):
+            if not headers:
+                cur, hunk = {"old": None, "new": None, "hunks": [], "copy": False}, None
+                out.append(cur)
+                continue
             m = re.match(r'diff --git ("(?:[^"\\]|\\.)*"|a/.+?) ("(?:[^"\\]|\\.)*"|b/.+)$', line)
             o, n = (_side(m[1], "a/"), _side(m[2], "b/")) if m else (None, None)
             cur, hunk = {"old": o, "new": n, "hunks": [], "copy": False}, None
             out.append(cur)
         elif cur is None:
+            continue
+        elif not headers and hunk is None and not line.startswith("@@"):
             continue
         elif hunk is None and line.startswith(("rename from ", "copy from ")):
             cur["old"] = _unquote(line.split(" ", 2)[2])
@@ -552,6 +592,16 @@ def diff_files(diff: str) -> list[dict]:
             cur["hunks"].append(hunk)
         elif hunk is not None and line[:1] in ("+", "-", " "):
             hunk.append(line)
+    if not headers:
+        # JOINED BY POSITION: both lists come from one diff machinery over one range with one `-M`,
+        # so file N of the patch is entry N of the list. A count that differs means they are not
+        # the same diff, and that is refused (CANNOT RUN), never guessed.
+        entries = name_status(status)
+        if len(entries) != len(out):
+            raise PathsDisagree(f"the patch has {len(out)} file section(s) and --name-status lists "
+                                f"{len(entries)}")
+        for f, e in zip(out, entries):
+            f.update(old=e["old"], new=e["new"], copy=e["copy"])
     return out
 
 
@@ -574,12 +624,12 @@ def _code(f: dict, sign: str) -> list[str]:
             if l.startswith(sign) and l[1:].strip() and not is_comment(l[1:])]
 
 
-def diff_lines(diff: str) -> dict[str, tuple[list[str], list[str]]]:
+def diff_lines(diff: str, status: str | None = None) -> dict[str, tuple[list[str], list[str]]]:
     """PURE. {path: (removed, added)} — a VIEW of `diff_files`, keyed by the new path, or the old
     one for a deletion. Raw lines, comments included: the pin and count readers match their own
     patterns."""
     out: dict[str, tuple[list[str], list[str]]] = {}
-    for f in diff_files(diff):
+    for f in diff_files(diff, status):
         key = f["new"] or f["old"]
         if key is None:
             continue
@@ -597,7 +647,7 @@ def diff_lines(diff: str) -> dict[str, tuple[list[str], list[str]]]:
 FAIL_WINDOW = 5
 
 
-def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str]]:
+def failure_path_removals(diff: str, k: int = FAIL_WINDOW, status: str | None = None) -> dict[str, list[str]]:
     """PURE. {gate: removed code lines within `k` lines of a failure-path line in the hunk}.
 
     Reads a `git diff -U<k>` text. A file is a gate if EITHER path is (r2: a rename out of scope
@@ -607,7 +657,7 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str
     added line has no position and cannot anchor — only the source as it WAS is measured.
     """
     out: dict[str, list[str]] = {}
-    for f in diff_files(diff):
+    for f in diff_files(diff, status):
         if not any(GATE_CODE.match(p) for p in _paths(f)):
             continue
         readded = _code(f, "+")
@@ -626,13 +676,13 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str
     return out
 
 
-def gate_invocation_removals(diff: str) -> dict[str, list[str]]:
+def gate_invocation_removals(diff: str, status: str | None = None) -> dict[str, list[str]]:
     """PURE. {caller: removed non-comment lines naming a gate, not added back} — r1 CLAUDE M1.
 
     ⛔ r2 CODEX M2: comments are excluded through `is_comment`, the same rule the failure path
     uses, so a reworded comment naming a check is not a dropped invocation."""
     out: dict[str, list[str]] = {}
-    for f in diff_files(diff):
+    for f in diff_files(diff, status):
         if not any(GATE_CALLER.match(p) for p in _paths(f)):
             continue
         back = _code(f, "+")
@@ -642,7 +692,7 @@ def gate_invocation_removals(diff: str) -> dict[str, list[str]]:
     return out
 
 
-def scope_exits(diff: str) -> list[str]:
+def scope_exits(diff: str, status: str | None = None) -> list[str]:
     """PURE. Gate files whose OLD path is in scope and whose new path is gone or out of scope —
     deleted, or renamed where nothing runs it (r2 CODEX M1: a workflow moved out of
     `.github/workflows/` stops running, and a pure rename carries no hunk for the others to see)."""
@@ -650,20 +700,36 @@ def scope_exits(diff: str) -> list[str]:
         return (bool(p and GATE_CODE.match(p)), bool(p and GATE_CALLER.match(p)))
     # ⛔ r3: the ROLE must survive, not just "some gate": a workflow renamed to `scripts/check-x.py`
     # is still "a gate path" and no longer runs. A COPY leaves the source in place, so it never exits.
+    # ⟳ r4 XM3: an exit is a role LOST — `check-old.sh` -> `check-schema-gates.sh` GAINS the caller
+    # role and keeps the code role, which `!=` read as an exit.
     return [f"{f['old']} is {'deleted' if f['new'] is None else 'renamed to ' + f['new']}"
-            for f in diff_files(diff)
-            if any(role(f["old"])) and not f["copy"] and role(f["new"]) != role(f["old"])]
+            for f in diff_files(diff, status)
+            if not f["copy"] and any(o and not n for o, n in zip(role(f["old"]), role(f["new"])))]
+
+
+def changed_paths(status: str) -> list[str]:
+    """PURE. Every path the machine list names, old and new — a baseline renamed AWAY still counts."""
+    return sorted({p for e in name_status(status) for p in (e["old"], e["new"]) if p})
+
+
+def diff_commands(base: str) -> tuple[list[str], list[str]]:
+    """The two git commands the house rule reads, in ONE place so `main()` and the real-git
+    self-test cannot drift. `-M` explicitly (`diff.renames=false` would split a rename into a
+    delete and an add), and the SAME range and `-M` in both, which is what the join relies on."""
+    rng = f"{base}...HEAD"
+    return (["git", "diff", "--name-status", "-z", "-M", rng],
+            ["git", "diff", f"-U{FAIL_WINDOW}", "-M", "--no-color", rng])
 
 
 def hold_reasons(files: list[str], diff: str, head: str | None,
-                 app_tests_at: str | None, no_review: bool) -> list[str]:
+                 app_tests_at: str | None, no_review: bool, status: str | None = None) -> list[str]:
     """PURE. Why a READY pull request must still be HELD for the owner. Empty = no exception.
 
     `no_review` is the review gate's OWN matcher's answer for `NO-REVIEW:` (passed in, so the
     rule stays pure and cannot disagree with the gate about where a waiver counts).
     """
     out: list[str] = []
-    per = diff_lines(diff)
+    per = diff_lines(diff, status)
     # 1. LOOSENS A GATE — six proxies, all reading `diff_files` through its views.
     for f in files:
         if BASELINE_FILE.match(f):
@@ -685,13 +751,13 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
         nc = [int(m["n"]) for m in map(CASE_COUNT.search, ad) if m]
         if oc and nc and nc[0] < oc[0]:
             out.append(f"loosens a gate: {path} declares fewer self-test cases, {oc[0]} -> {nc[0]}")
-    for path, gone in sorted(failure_path_removals(diff).items()):
+    for path, gone in sorted(failure_path_removals(diff, status=status).items()):
         out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
                    f"failure path, e.g. {gone[0][:70]!r}")
-    for path, gone in sorted(gate_invocation_removals(diff).items()):
+    for path, gone in sorted(gate_invocation_removals(diff, status).items()):
         out.append(f"loosens a gate: {path} drops or rewrites {len(gone)} gate invocation(s), "
                    f"e.g. {gone[0][:70]!r}")
-    for exit_ in scope_exits(diff):
+    for exit_ in scope_exits(diff, status):
         out.append(f"loosens a gate: {exit_}, so nothing runs it as a gate any more")
     # 2. NEEDS A DEPLOY FIRST.
     migs = [f for f in files if MIGRATION.match(f)]
@@ -896,10 +962,9 @@ def main(argv: list[str]) -> int:
 
     code, line = verdict(results)
     # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
-    files_r = _run(["git", "diff", "--name-only", f"{BASE_REF}...HEAD"])
-    # `-M` explicitly: `scope_exits` reads renames, and `diff.renames=false` would turn them into a
-    # delete plus an add — which still holds, but names the wrong reason.
-    diff_r = _run(["git", "diff", f"-U{FAIL_WINDOW}", "-M", "--no-color", f"{BASE_REF}...HEAD"])
+    status_cmd, patch_cmd = diff_commands(BASE_REF)
+    files_r = _run(status_cmd)
+    diff_r = _run(patch_cmd)
     if files_r.returncode != 0 or diff_r.returncode != 0:
         code, line = 2, ("CANNOT RUN — could not diff the branch against its base, so the house "
                          "rule's exceptions were NOT checked. Treat this as NOT RUN.")
@@ -911,8 +976,17 @@ def main(argv: list[str]) -> int:
             nr = None
             code, line = 2, (f"CANNOT RUN — the NO-REVIEW matcher failed ({exc.__class__.__name__}), "
                              f"so the waiver exception was NOT checked. Treat this as NOT RUN.")
-        holds = hold_reasons(files_r.stdout.split(), diff_r.stdout, head,
-                             args.app_tests_passed, bool(nr)) if nr is not None else []
+        holds = []
+        if nr is not None:
+            try:
+                # Paths from the machine list — never `.split()` of `--name-only`, which cut a
+                # path containing a space into two "files".
+                files = changed_paths(files_r.stdout)
+                holds = hold_reasons(files, diff_r.stdout, head, args.app_tests_passed, bool(nr),
+                                     status=files_r.stdout)
+            except PathsDisagree as exc:
+                code, line = 2, (f"CANNOT RUN — {exc}, so the house rule's exceptions were NOT "
+                                 f"checked. Treat this as NOT RUN.")
     for h in holds:
         print(f"  HOLD {h}")
     code, line = final_verdict(code, line, holds)
@@ -1184,6 +1258,14 @@ def _self_test() -> int:
         return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n"
     def H(files=(), diff="", head="abc", at=None, nr=False):
         return hold_reasons(list(files), diff, head, at, nr)
+    def _raises(fn, exc):
+        try:
+            fn()
+        except exc:
+            return True
+        except Exception:                 # the WRONG exception is a red case, not a crashed suite
+            return False
+        return False
     def has(rs, word):
         return any(word in r for r in rs)
     check("no exception: an ordinary docs-and-script PR is not held", H(["docs/x.md", "scripts/foo.py"]), [])
@@ -1325,6 +1407,80 @@ def _self_test() -> int:
           H([CI], _cp), [])
     check("...while the same pair as a RENAME is",
           has(H([CI], _cp.replace("copy from", "rename from").replace("copy to", "rename to")), "renamed to docs-gate.yml"), True)
+    # ⛔ BACKLOG #353 — A REAL GIT REPOSITORY, every path shape four rounds found, read through the
+    # SAME two commands `main()` runs (`diff_commands`). Fixture text proves what the parser does to
+    # the fixture; only git's own output proves what it does to git's output.
+    _gw = Path(tempfile.mkdtemp())
+    _genv = dict(os.environ, HOME=str(_gw), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    def _g(*a):
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=_gw,
+                              capture_output=True, text=True, env=_genv, check=True).stdout
+    def _w(rel, text):
+        (_gw / rel).parent.mkdir(parents=True, exist_ok=True)
+        (_gw / rel).write_text(text)
+    try:
+        _g("init", "-q")
+        _g("config", "core.quotePath", "false")      # r4 XM2: literal Unicode inside quoted paths
+        for _n in ("gaté", "bin", "😀", "mv"):
+            _w(f".github/workflows/{_n}.yml", f"name: {_n}\njobs:\n  {_n}:\n    steps:\n      - run: python3 scripts/check-{_n}.py\n")
+        _w(".gitattributes", ".github/workflows/bin.yml -diff\n")
+        _w("scripts/check-space name.py", "def main():\n    if bad:\n        return 1\n    return 0\n")
+        _w(".claude/hooks/a b/z", "#!/bin/sh\ndeny() { exit 2; }\n")
+        _w("scripts/check-old.sh", "#!/bin/sh\n# the old schema gate runner\nexit 0\n")
+        _w("docs/reviews/x y/baseline.json", '{"median": 4}\n')
+        _w("docs/a.md", "one\n")
+        _g("add", "-A"); _g("commit", "-qm", "base")
+        _base = _g("rev-parse", "HEAD").strip()
+        for _n in ("gaté", "bin", "😀"):
+            _g("rm", "-q", f".github/workflows/{_n}.yml")
+        _w("scripts/check-space name.py", "def main():\n    if bad:\n        return 0\n    return 0\n")
+        (_gw / ".claude/hooks/a b/z").chmod(0o755)
+        _g("mv", "scripts/check-old.sh", "scripts/check-schema-gates.sh")
+        _g("mv", ".github/workflows/mv.yml", "scripts/check-disabled.py")
+        _w("docs/reviews/x y/baseline.json", '{"median": 5}\n')
+        _w("docs/a.md", "two\n")
+        _g("add", "-A"); _g("commit", "-qm", "head")
+        _sc, _pc = diff_commands(_base)
+        _st, _pt = _g(*_sc[1:]), _g(*_pc[1:])
+        _real = hold_reasons(changed_paths(_st), _pt, "h", "h", False, status=_st)
+        _err = None
+    except Exception as exc:                          # git missing or the parse raised: say so
+        _real, _err = [], f"{exc.__class__.__name__}: {exc}"
+    finally:
+        shutil.rmtree(_gw, ignore_errors=True)
+    check("⭐ the real-git world parses with no error (C-quoting, tabs, binary, ` b/`, emoji)", _err, None)
+    check("real git: a deleted workflow with a NON-ASCII name is a scope exit", has(_real, "gaté.yml is deleted"), True)
+    check("real git: a deleted workflow with an EMOJI name under core.quotePath=false is a scope exit",
+          has(_real, "😀.yml is deleted"), True)
+    check("real git: a BINARY-diffed workflow deleted is a scope exit", has(_real, "bin.yml is deleted"), True)
+    check("real git: a gate with a SPACE in its path has its failure path read",
+          has(_real, "scripts/check-space name.py removes"), True)
+    check("real git: a workflow renamed into scripts/check-*.py is a scope exit",
+          has(_real, "mv.yml is renamed to scripts/check-disabled.py"), True)
+    check("real git: a baseline under a path WITH A SPACE is held (no `.split()` of the file list)",
+          has(_real, "docs/reviews/x y/baseline.json is a pinned baseline"), True)
+    check("real git: a hook under `a b/` with a MODE-ONLY change is not held (r4 false HOLD)",
+          has(_real, "a b/z"), False)
+    check("real git: a check renamed so it GAINS a role is not an exit (r4 false HOLD)",
+          has(_real, "check-old.sh"), False)
+    check("real git: an ordinary docs edit is not held", has(_real, "docs/a.md"), False)
+    check("the join REFUSES a patch and a list that disagree on the file count",
+          _raises(lambda: diff_files("diff --git a/x b/x\n", "M\0x\0M\0y\0"), PathsDisagree), True)
+    check("the join takes each section's paths from the list, not its header",
+          [(f["old"], f["new"], len(f["hunks"])) for f in diff_files(
+              "diff --git a/w b/w\n@@ -1 +1 @@\n-a\n+b\n", "R100\0q r/s\0x\0")], [("q r/s", "x", 1)])
+    check("changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)",
+          changed_paths("R100\0docs/reviews/d/baseline.json\0docs/old.json\0A\0n.md\0"),
+          ["docs/old.json", "docs/reviews/d/baseline.json", "n.md"])
+    _dc = diff_commands("origin/master")
+    check("both commands read ONE range with ONE -M — what the positional join relies on",
+          (_dc[0][-1], _dc[1][-1], "-M" in _dc[0] and "-M" in _dc[1], "-z" in _dc[0]),
+          ("origin/master...HEAD", "origin/master...HEAD", True, True))
+    check("...and an incomplete --name-status entry",
+          _raises(lambda: name_status("R100\0only-one\0"), PathsDisagree), True)
+    check("name_status reads a rename, an add and a delete",
+          [(e["status"], e["old"], e["new"]) for e in name_status("R091\0a b\0c\0A\0n\0D\0o\0")],
+          [("R", "a b", "c"), ("A", None, "n"), ("D", "o", None)])
     # r1 CLAUDE M2: a pin deleted, or renamed away, is a drop to nothing.
     check("a mutation pin DELETED is a loosening",
           has(H([PC], DF(PC, '-    "scripts/a.py": 30,')), "scripts/a.py (30) is removed"), True)
@@ -1353,7 +1509,12 @@ def _self_test() -> int:
     import contextlib, io
     _real_run = globals()["_run"]
     _tmp = Path(tempfile.mkdtemp()) / "body.md"
-    def _fake(files, diff, body=""):
+    def _fake(files, diff, body="", status=None):
+        # The machine list defaults to one `M` per file, with a header-only section each, so the
+        # positional join has the same count on both sides unless a case says otherwise.
+        if status is None:
+            status = "".join(f"M\0{f}\0" for f in files)
+            diff = diff or "".join(f"diff --git a/{f} b/{f}\n" for f in files)
         def run(cmd, **kw):
             def cp(out="", rc=0):
                 return subprocess.CompletedProcess(cmd, rc, out, "")
@@ -1368,14 +1529,14 @@ def _self_test() -> int:
                 return cp(json.dumps([{"name": "verify", "bucket": "pass"}]))
             if cmd[:2] == ["git", "rev-parse"]:
                 return cp("abc\n")
-            if cmd[:3] == ["git", "diff", "--name-only"]:
-                return cp("\n".join(files) + "\n")
+            if cmd[:3] == ["git", "diff", "--name-status"]:
+                return cp(status)
             if cmd[:2] == ["git", "diff"]:
                 return cp(diff)
             return cp("ok\n")                       # the three gate scripts
         return run
-    def _main(files, pr, tests_at=None, diff="", body=""):
-        globals()["_run"] = _fake(files, diff, body)
+    def _main(files, pr, tests_at=None, diff="", body="", status=None):
+        globals()["_run"] = _fake(files, diff, body, status)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
@@ -1394,6 +1555,15 @@ def _self_test() -> int:
           (_rc, "NO-REVIEW" in _o), (3, True))
     _rc, _o = _main(["docs/x.md"], "12")
     check("main() leaves a clean READY PR as READY, rc=0", (_rc, "HOLD" in _o), (0, False))
+    # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
+    # workflow was renamed there — so only a main() that reads the list holds it.
+    _rc, _o = _main(["docs/g.yml"], "21", diff="diff --git a/docs/g.yml b/docs/g.yml\n",
+                    status="R100\0.github/workflows/g.yml\0docs/g.yml\0")
+    check("⭐ main() takes paths from --name-status, not the patch header (a rename only the list shows)",
+          (_rc, "g.yml is renamed to docs/g.yml" in _o), (3, True))
+    _rc, _o = _main(["docs/h.md"], "22", diff="", status="M\0docs/h.md\0M\0docs/i.md\0")
+    check("...and REFUSES (CANNOT RUN) when the list and the patch disagree on the count",
+          (_rc, "CANNOT RUN" in _o), (2, True))
     # r1 CLAUDE M3: the pure NO-ENTRY case never passed its body anywhere — this one does.
     _rc, _o = _main(["docs/y.md"], "9", body="intro\nNO-ENTRY: docs only\n")
     check("⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)",
