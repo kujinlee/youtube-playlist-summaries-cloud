@@ -174,5 +174,193 @@
    ]
   ],
   "expect": "a refusing gate whose own escape is granted says nothing"
+ },
+ {
+  "name": "the baseline exception matches nothing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "BASELINE_FILE = re.compile(r\"^docs/reviews/.*baseline\\.json$\")",
+    "BASELINE_FILE = re.compile(r\"^$\")"
+   ]
+  ],
+  "expect": [
+   "a pinned baseline edit is a loosening (decision-scheme)",
+   "a pinned baseline edit is a loosening (other)"
+  ]
+ },
+ {
+  "name": "a pin that drops is read as a rise",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if path in new and new[path] < old[path]:",
+    "if path in new and new[path] > old[path]:"
+   ]
+  ],
+  "expect": [
+   "a mutation pin that DROPS 128 -> 125 is a loosening",
+   "a mutation pin that DROPS 30 -> 2 is a loosening"
+  ]
+ },
+ {
+  "name": "a falling mutation total is ignored",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if ot and nt and nt[0] < ot[0]:",
+    "if ot and nt and nt[0] > ot[0]:"
+   ]
+  ],
+  "expect": [
+   "a declared mutation total that drops 2021 -> 2017 is a loosening"
+  ]
+ },
+ {
+  "name": "a falling self-test count is ignored",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if oc and nc and nc[0] < oc[0]:",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "a declared self-test count that drops 274 -> 271 is a loosening",
+   "a declared self-test count that drops 9 -> 1 is a loosening"
+  ]
+ },
+ {
+  "name": "the failure-path window shrinks to the removed line itself",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):",
+    "if any(j == i and FAIL_PATH.search(w[1:]) for j, w in code):"
+   ]
+  ],
+  "expect": [
+   "⭐ a check entry REMOVED from beside a fails list is a loosening (PR #398's shape)"
+  ]
+ },
+ {
+  "name": "a moved line is counted as a removal",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if t in readded:\n                    readded.remove(t)\n                    continue\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "...but the SAME line MOVED (removed and re-added) is not"
+  ]
+ },
+ {
+  "name": "comment lines count on the failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "code = [(i, l) for i, l in enumerate(hk) if not l[1:].strip().startswith(\"#\")]",
+    "code = list(enumerate(hk))"
+   ]
+  ],
+  "expect": [
+   "...and a removed COMMENT beside a fails list is not"
+  ]
+ },
+ {
+  "name": "the failure-path rule reaches non-gate scripts",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            if path is not None and GATE_CODE.match(path):\n                cur = []",
+    "            if path is not None:\n                cur = []"
+   ]
+  ],
+  "expect": [
+   "...and the same removal in a NON-gate script is not"
+  ]
+ },
+ {
+  "name": "a migration is not held for a deploy",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "migs = [f for f in files if MIGRATION.match(f)]",
+    "migs = []"
+   ]
+  ],
+  "expect": [
+   "a migration needs a deploy first (0028_x.sql)",
+   "a migration needs a deploy first (0099_y.sql)"
+  ]
+ },
+ {
+  "name": "a NO-REVIEW waiver is not held",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if no_review:\n        out.append(",
+    "    if False:\n        out.append("
+   ]
+  ],
+  "expect": [
+   "a NO-REVIEW waiver is held"
+  ]
+ },
+ {
+  "name": "a local test run at ANY head clears app code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if app and (head is None or app_tests_at != head):",
+    "if app and (head is None or app_tests_at is None):"
+   ]
+  ],
+  "expect": [
+   "...but NOT by a run at a DIFFERENT head"
+  ]
+ },
+ {
+  "name": "NOT READY no longer beats a hold",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if code != 0 or not holds:\n        return code, line",
+    "    if not holds:\n        return code, line"
+   ]
+  ],
+  "expect": [
+   "...NOT READY wins over a hold",
+   "...CANNOT RUN wins over a hold"
+  ]
+ },
+ {
+  "name": "main() computes the holds and never applies them",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    code, line = final_verdict(code, line, holds)\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR that edits a pinned baseline, rc=3, naming why",
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
+ },
+ {
+  "name": "main() never reads the NO-REVIEW waiver",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "nr = granted_escapes(body_file.read_text()).get(\"NO-REVIEW:\") is not None",
+    "nr = False"
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
  }
 ]

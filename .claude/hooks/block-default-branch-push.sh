@@ -220,6 +220,6 @@ Instead:
   git push -u origin <branch>
   gh pr create --repo kujinlee/youtube-playlist-summaries-cloud ...
 
-Merging stays a human gate — open the PR, do not merge.
+Merge only on scripts/check-merge-ready.py READY; a HOLD goes to the owner.
 
 Deliberate exception: re-run prefixed with ALLOW_DEFAULT_BRANCH_PUSH=1"

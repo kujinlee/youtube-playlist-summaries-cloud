@@ -3,7 +3,12 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 74 cases
+    python3 scripts/check-merge-ready.py --self-test # 114 cases
+    python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
+                                                 # test:integration + test:e2e run at that head
+
+    0 = READY   1 = NOT READY   2 = CANNOT RUN   3 = HOLD (ready, but a house-rule exception
+    applies: do NOT merge, tell the owner — see `hold_reasons`)
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -461,6 +466,152 @@ def _dashboard_gate():
     return mod
 
 
+# ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) ──────────────────────────────────────────────────
+# ⛔ THE OWNER'S RULE, set 2026-10-25: *merge when READY, unless the PR loosens a gate, needs a
+# deploy first, relied on a NO-REVIEW waiver, or changed app code without the local integration
+# and end-to-end tests* — and on an exception, HOLD and tell the owner. The three readings were
+# chosen on a selection card AGAINST MEASURED BASE RATES over the 30 merged PRs before it: "any
+# gate-file edit" would have held 18/30 and was rejected; LOOSENING holds 5/30 including PR #398;
+# NO-REVIEW 8/30 (0 of the last 14); app code and migrations 0/30.
+# ⚠ LOOSENING IS DETECTED BY PROXIES, and they are bounds, not a proof. A weakening that lowers no
+# pin or count, edits no baseline, and removes no line on a failure path merges as READY.
+HOLD_RC = 3
+BASELINE_FILE = re.compile(r"^docs/reviews/.*baseline\.json$")
+PIN_LINE = re.compile(r'^\s*"(?P<path>scripts/[^"]+)":\s*(?P<n>\d+),')
+PIN_TOTAL = re.compile(r"sum\(EXPECTED_MUTATIONS\.values\(\)\),\s*(?P<n>\d+)\)")
+CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
+# A line on a failure path: the FAIL word, a fails list, or a non-zero exit.
+FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\breturn 1\b|\bexit 1\b|sys\.exit\(1\)")
+GATE_CODE = re.compile(r"^(scripts/check-[^/]+\.py|\.claude/hooks/[^/]+)$")
+MIGRATION = re.compile(r"^supabase/migrations/")
+APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
+
+
+def diff_lines(diff: str) -> dict[str, tuple[list[str], list[str]]]:
+    """PURE. {path: (removed, added)} from a `git diff -U0` text, keyed by the NEW path."""
+    out: dict[str, tuple[list[str], list[str]]] = {}
+    cur = None
+    for line in diff.split("\n"):
+        if line.startswith("+++ "):
+            tgt = line[4:]
+            cur = tgt[2:] if tgt.startswith("b/") else None
+            if cur is not None:
+                out.setdefault(cur, ([], []))
+        elif line.startswith("--- "):
+            src = line[4:]
+            if src.startswith("a/"):
+                cur = src[2:]
+                out.setdefault(cur, ([], []))
+        elif cur is not None and line.startswith("-"):
+            out[cur][0].append(line[1:])
+        elif cur is not None and line.startswith("+"):
+            out[cur][1].append(line[1:])
+    return out
+
+
+# How far from a failure-path line a removed line still counts as ON that path. ⚠ MEASURED, not
+# chosen: PR #398's real weakening — `("4 NO IMPROVEMENT", …)` leaving the FAIL loop — carries no
+# failure word itself and sits 4 lines above `fails.append`. Window 0 caught only its reworded
+# docstring; 5 catches the dispatch line too, and holds 5 of the 32 PRs before this rule.
+FAIL_WINDOW = 5
+
+
+def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str]]:
+    """PURE. {gate path: removed code lines within `k` lines of a failure-path line in the hunk}.
+
+    Reads a `git diff -U<k>` text. A comment-only line neither counts nor anchors, and a line
+    added back identically anywhere in the same file is a MOVE, not a removal.
+    """
+    out: dict[str, list[str]] = {}
+    per = diff_lines(diff)
+    path, hunks, cur = None, {}, None
+    for line in diff.split("\n"):
+        if line.startswith("+++ "):
+            tgt = line[4:]
+            path = tgt[2:] if tgt.startswith("b/") else None
+            cur = None
+        elif line.startswith("--- "):
+            continue
+        elif line.startswith("@@"):
+            if path is not None and GATE_CODE.match(path):
+                cur = []
+                hunks.setdefault(path, []).append(cur)
+            else:
+                cur = None
+        elif cur is not None and line[:1] in ("+", "-", " "):
+            cur.append(line)
+    for path, hs in hunks.items():
+        readded = [a.strip() for a in per.get(path, ([], []))[1]]
+        for hk in hs:
+            code = [(i, l) for i, l in enumerate(hk) if not l[1:].strip().startswith("#")]
+            for i, l in code:
+                t = l[1:].strip()
+                if not l.startswith("-") or not t:
+                    continue
+                if t in readded:
+                    readded.remove(t)
+                    continue
+                if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):
+                    out.setdefault(path, []).append(t)
+    return out
+
+
+def hold_reasons(files: list[str], diff: str, head: str | None,
+                 app_tests_at: str | None, no_review: bool) -> list[str]:
+    """PURE. Why a READY pull request must still be HELD for the owner. Empty = no exception.
+
+    `no_review` is the review gate's OWN matcher's answer for `NO-REVIEW:` (passed in, so the
+    rule stays pure and cannot disagree with the gate about where a waiver counts).
+    """
+    out: list[str] = []
+    per = diff_lines(diff)
+    # 1. LOOSENS A GATE — four proxies.
+    for f in files:
+        if BASELINE_FILE.match(f):
+            out.append(f"loosens a gate: {f} is a pinned baseline and this PR edits it")
+    removed, added = per.get("scripts/check-plan-code.py", ([], []))
+    old = {m["path"]: int(m["n"]) for m in map(PIN_LINE.match, removed) if m}
+    new = {m["path"]: int(m["n"]) for m in map(PIN_LINE.match, added) if m}
+    for path in sorted(old):
+        if path in new and new[path] < old[path]:
+            out.append(f"loosens a gate: the mutation pin for {path} drops {old[path]} -> {new[path]}")
+    ot = [int(m["n"]) for m in map(PIN_TOTAL.search, removed) if m]
+    nt = [int(m["n"]) for m in map(PIN_TOTAL.search, added) if m]
+    if ot and nt and nt[0] < ot[0]:
+        out.append(f"loosens a gate: the declared mutation total drops {ot[0]} -> {nt[0]}")
+    for path, (rm, ad) in sorted(per.items()):
+        oc = [int(m["n"]) for m in map(CASE_COUNT.search, rm) if m]
+        nc = [int(m["n"]) for m in map(CASE_COUNT.search, ad) if m]
+        if oc and nc and nc[0] < oc[0]:
+            out.append(f"loosens a gate: {path} declares fewer self-test cases, {oc[0]} -> {nc[0]}")
+    for path, gone in sorted(failure_path_removals(diff).items()):
+        out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
+                   f"failure path, e.g. {gone[0][:70]!r}")
+    # 2. NEEDS A DEPLOY FIRST.
+    migs = [f for f in files if MIGRATION.match(f)]
+    if migs:
+        out.append(f"needs a deploy first: {len(migs)} migration file(s), e.g. {migs[0]} — apply to "
+                   f"production before merging")
+    # 3. RELIED ON A WAIVER.
+    if no_review:
+        out.append("relied on a waiver: the body declares NO-REVIEW:, so no review covered the final tree")
+    # 4. APP CODE WITHOUT THE LOCAL TESTS — cleared only by a run pinned to THIS head.
+    app = [f for f in files if APP_CODE.match(f)]
+    if app and (head is None or app_tests_at != head):
+        out.append(f"app code changed ({len(app)} file(s), e.g. {app[0]}) and no local "
+                   f"test:integration + test:e2e run is recorded at this head — run both, then "
+                   f"re-run with --app-tests-passed {head or '<head sha>'}")
+    return out
+
+
+def final_verdict(code: int, line: str, holds: list[str]) -> tuple[int, str]:
+    """PURE. A HOLD applies only to an otherwise-READY PR; NOT READY and CANNOT RUN win."""
+    if code != 0 or not holds:
+        return code, line
+    return HOLD_RC, ("HOLD — ready by every gate, but the house rule's exceptions apply. Do NOT "
+                     "merge; tell the owner: " + "; ".join(holds))
+
+
 def granted_escapes(pr_body: str) -> dict[str, str | None]:
     """{marker: reason or None}, decided by the gate's own matcher. NOT pure — it imports."""
     er = _dashboard_gate().exemption_reason
@@ -517,6 +668,8 @@ def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pr", type=int, default=None)
+    ap.add_argument("--app-tests-passed", metavar="SHA", default=None,
+                    help="the PR head at which test:integration and test:e2e passed locally")
     args = ap.parse_args(argv)
 
     if not WORKFLOW.is_file():
@@ -634,8 +787,29 @@ def main(argv: list[str]) -> int:
     print(f"  {MARK[code]} {'CI':18s} rc={code}  {note}")
 
     code, line = verdict(results)
+    # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
+    files_r = _run(["git", "diff", "--name-only", f"{BASE_REF}...HEAD"])
+    diff_r = _run(["git", "diff", f"-U{FAIL_WINDOW}", "--no-color", f"{BASE_REF}...HEAD"])
+    if files_r.returncode != 0 or diff_r.returncode != 0:
+        code, line = 2, ("CANNOT RUN — could not diff the branch against its base, so the house "
+                         "rule's exceptions were NOT checked. Treat this as NOT RUN.")
+        holds = []
+    else:
+        try:
+            nr = granted_escapes(body_file.read_text()).get("NO-REVIEW:") is not None
+        except Exception as exc:
+            nr = None
+            code, line = 2, (f"CANNOT RUN — the NO-REVIEW matcher failed ({exc.__class__.__name__}), "
+                             f"so the waiver exception was NOT checked. Treat this as NOT RUN.")
+        holds = hold_reasons(files_r.stdout.split(), diff_r.stdout, head,
+                             args.app_tests_passed, bool(nr)) if nr is not None else []
+    for h in holds:
+        print(f"  HOLD {h}")
+    code, line = final_verdict(code, line, holds)
     print()
     print(line)
+    if code == HOLD_RC:
+        return code
     if code:
         print("  ⚠ A local gate sweep cannot answer the pull-request-only checks above. That is "
               "why this script exists and why 'all my gates are green' is a different claim.")
@@ -893,6 +1067,128 @@ def _self_test() -> int:
           granted_escapes("    NO-ENTRY: x")[NE], None)
     check("the imported matcher refuses a fenced token",
           granted_escapes("```\nNO-ENTRY: x\n```")[NE], None)
+
+    # ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) — each fired by TWO DISTINCT inputs, and each
+    # with an ADJACENT input that must stay quiet, so no branch passes on one fixture's constant.
+    def D(path, *hunk):
+        return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n"
+    def H(files=(), diff="", body="", head="abc", at=None, nr=False):
+        return hold_reasons(list(files), diff, head, at, nr)
+    def has(rs, word):
+        return any(word in r for r in rs)
+    check("no exception: an ordinary docs-and-script PR is not held", H(["docs/x.md", "scripts/foo.py"]), [])
+    for bl in ("docs/reviews/decision-scheme/baseline.json", "docs/reviews/other/baseline.json"):
+        check(f"a pinned baseline edit is a loosening ({bl.split('/')[2]})",
+              has(H([bl]), "pinned baseline"), True)
+    check("...but a file merely NAMED like one outside docs/reviews/ is not",
+          H(["scripts/baseline.json"]), [])
+    PC = "scripts/check-plan-code.py"
+    for o, n in ((128, 125), (30, 2)):
+        check(f"a mutation pin that DROPS {o} -> {n} is a loosening",
+              has(H([PC], D(PC, f'-    "scripts/a.py": {o},', f'+    "scripts/a.py": {n},')), f"{o} -> {n}"), True)
+    check("...but a pin that RISES is not", H([PC], D(PC, '-    "scripts/a.py": 125,', '+    "scripts/a.py": 129,')), [])
+    for o, n in ((2021, 2017), (900, 10)):
+        check(f"a declared mutation total that drops {o} -> {n} is a loosening",
+              has(H([PC], D(PC, f"-    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {o})",
+                               f"+    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {n})")), "total drops"), True)
+    for o, n in ((274, 271), (9, 1)):
+        check(f"a declared self-test count that drops {o} -> {n} is a loosening",
+              has(H(["scripts/z.py"], D("scripts/z.py", f"-    python3 scripts/z.py --self-test  # {o} cases",
+                                         f"+    python3 scripts/z.py --self-test  # {n} cases")), "fewer self-test"), True)
+    check("...but a count that rises is not",
+          H(["scripts/z.py"], D("scripts/z.py", "-    z --self-test  # 271 cases", "+    z --self-test  # 274 cases")), [])
+    G = "scripts/check-x.py"
+    # ⭐ PR #398's own shape: the removed line names no failure word; `fails.append` is 4 lines on.
+    _398 = D(G, '     ("3 LOST", t3(rows)),', '-    ("4 NO IMPROVEMENT", t4(rows)),', '     ("5 RANKER", t5(rows)),',
+             '     ):', '         if result:', '             fails.append((name, result))')
+    check("⭐ a check entry REMOVED from beside a fails list is a loosening (PR #398's shape)",
+          has(H([G], _398), "failure path"), True)
+    # Direct calls with DISTINCT literals in every position, beside `H`'s one call site.
+    check("a PR #398-shaped removal AND a waiver give both reasons, with no head at all",
+          [r.split(":")[0] for r in hold_reasons([G], _398, None, None, True)],
+          ["loosens a gate", "relied on a waiver"])
+    check("app code cleared at head 'f00d' stays cleared with nothing else wrong",
+          hold_reasons(["worker/run.ts"], "", "f00d", "f00d", False), [])
+    check("a removed `return 1` in a gate is a loosening",
+          has(H([".claude/hooks/h.sh"], D(".claude/hooks/h.sh", "-    return 1", "+    return 0")), "failure path"), True)
+    check("...but the SAME line MOVED (removed and re-added) is not",
+          H([G], D(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', '+    ("4 NO IMPROVEMENT", t4(rows)),',
+                   '     fails.append(x)')), [])
+    check("...and a removed COMMENT beside a fails list is not",
+          H([G], D(G, "-    # FAIL here once", "     fails.append(x)")), [])
+    check("...and the same removal in a NON-gate script is not",
+          H(["scripts/page.py"], D("scripts/page.py", "-    return 1", "+    return 0")), [])
+    _far = D(G, "-    x = 1", *[f"     y{i} = {i}" for i in range(6)], "     fails.append(x)")
+    check("...and a removal SIX lines from the failure path is outside the window", H([G], _far), [])
+    for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
+        r = H([mig], at="abc")
+        check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)
+    check("...and a migration is app code too, so it also needs the local tests",
+          has(H(["supabase/migrations/0028_x.sql"]), "app code changed"), True)
+    check("a NO-REVIEW waiver is held", has(H(nr=True), "NO-REVIEW"), True)
+    check("...and NO-ENTRY alone is not (the owner chose NO-REVIEW only)",
+          H(body="NO-ENTRY: docs only", nr=False), [])
+    for f in ("lib/gemini.ts", "app/page.tsx"):
+        check(f"app code with no local test run is held ({f})", has(H([f], at=None), "app code changed"), True)
+        check(f"...and is cleared by a run pinned to THIS head ({f})", H([f], at="abc"), [])
+    check("...but NOT by a run at a DIFFERENT head", has(H(["lib/x.ts"], at="old"), "app code changed"), True)
+    check("...nor when the head is unknown", has(H(["lib/x.ts"], head=None, at=None), "app code changed"), True)
+    check("HOLD applies only to a READY PR", final_verdict(0, "READY", ["x"])[0], HOLD_RC)
+    check("...the held verdict names the reason", "x" in final_verdict(0, "READY", ["x"])[1], True)
+    check("...NOT READY wins over a hold", final_verdict(1, "NOT READY", ["x"])[0], 1)
+    check("...CANNOT RUN wins over a hold", final_verdict(2, "CANNOT RUN", ["x"])[0], 2)
+    check("...and no hold leaves READY as READY", final_verdict(0, "READY", []), (0, "READY"))
+
+    # ⛔ THE CALL SITE, not only the rules — unit coverage does not compose. `main()` is driven
+    # end to end over a FAKE `_run`, so deleting the wiring reddens these even with every pure
+    # case above still green. Two distinct holds, one clean PR, and one cleared app-code PR.
+    import contextlib, io
+    _real_run = globals()["_run"]
+    _tmp = Path(tempfile.mkdtemp()) / "body.md"
+    def _fake(files, diff, body=""):
+        def run(cmd, **kw):
+            def cp(out="", rc=0):
+                return subprocess.CompletedProcess(cmd, rc, out, "")
+            if cmd[0] == "mktemp":
+                return cp(str(_tmp))
+            if cmd[:3] == ["gh", "pr", "view"] and "body" in cmd:
+                return cp(body)
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return cp(json.dumps({"state": "OPEN", "isDraft": False, "baseRefName": "master",
+                                      "headRefOid": "abc", "mergeStateStatus": "CLEAN"}))
+            if cmd[:3] == ["gh", "pr", "checks"]:
+                return cp(json.dumps([{"name": "verify", "bucket": "pass"}]))
+            if cmd[:2] == ["git", "rev-parse"]:
+                return cp("abc\n")
+            if cmd[:3] == ["git", "diff", "--name-only"]:
+                return cp("\n".join(files) + "\n")
+            if cmd[:2] == ["git", "diff"]:
+                return cp(diff)
+            return cp("ok\n")                       # the three gate scripts
+        return run
+    def _main(files, pr, tests_at=None, diff="", body=""):
+        globals()["_run"] = _fake(files, diff, body)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                if tests_at is None:
+                    rc = main(["--pr", pr])
+                else:
+                    rc = main(["--pr", pr, "--app-tests-passed", tests_at])
+        finally:
+            globals()["_run"] = _real_run
+        return rc, buf.getvalue()
+    _rc, _o = _main(["docs/reviews/decision-scheme/baseline.json"], "1")
+    check("⭐ main() HOLDS a READY PR that edits a pinned baseline, rc=3, naming why",
+          (_rc, "HOLD — ready by every gate" in _o, "pinned baseline" in _o), (3, True, True))
+    _rc, _o = _main(["docs/x.md"], "7", body="intro\nNO-REVIEW: docs only\n")
+    check("⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3",
+          (_rc, "NO-REVIEW" in _o), (3, True))
+    _rc, _o = _main(["docs/x.md"], "12")
+    check("main() leaves a clean READY PR as READY, rc=0", (_rc, "HOLD" in _o), (0, False))
+    _rc, _o = _main(["lib/x.ts"], "3", "abc")
+    check("main() clears app code with a local test run pinned to the head, rc=0",
+          (_rc, "HOLD" in _o), (0, False))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
