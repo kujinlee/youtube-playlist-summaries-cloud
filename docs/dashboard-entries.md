@@ -17518,3 +17518,23 @@ and 507 of 643 elements: all six `--fg`/`--ink` tokens were empty there), plus t
 resize that grows the bar, default press asserted on store and buttons; page_chrome 103 -> 112,
 total 2017 -> 2026. Four further gaps the review found inside the stub's bound are filed as
 backlog #352.
+
+
+## 2026-10-25
+A full mutation sweep on this laptop now refuses to start a long run, because that sweep belongs to
+the pull request's checks on GitHub, where it is split twelve ways. The rule was already written
+down, but in a document no session reads, while the rule every session does read said not to open a
+pull request until the work is finished — so the sweep ran here instead, twice in one day, for about
+three and a half hours. Now the sweep times its own first step and stops within seconds if the whole
+run would take more than ten minutes, saying why. One flag runs it anyway, for that one run only.
+<!--tech-->
+Branch `local-sweep-guard`. `check-plan-code.py --mutate`: `sweep_estimate()` (each target's measured
+control time x (its mutations + the re-control)) and `local_budget_refusal()`; off CI (`CI` unset),
+the control loop refuses as soon as the running estimate passes `LOCAL_SWEEP_BUDGET` = 600s — exit 2,
+NOTHING MEASURED — naming the costliest target. `--allow-long-local` is a FLAG, so the exception
+cannot outlive its run. `--only <script>` (backlog #208's inner loop) narrows execution only; every
+whole-manifest check still runs, and the verdict reads "a DIAGNOSTIC slice, not the gate". Measured:
+the unscoped local sweep refused after 12s; `--only scripts/check-merge-ready.py` 4.8s. 233 cases; 11
+mutations (117 -> 128), each killed by its named case over a green control (in memory — the full
+128-entry run is itself past the budget, so it is CI's). `dev-process.md`'s `check-plan-code` row now
+states the rule and the draft-PR-at-slice-start practice; the push memory no longer forbids a draft.
