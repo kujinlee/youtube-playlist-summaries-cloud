@@ -17526,7 +17526,8 @@ you instead, and you are told why: one that loosens a check, one with a database
 reach production first, one that skipped its review, and one that changes the app itself before its
 local integration and end-to-end tests have passed. The readiness check now detects each of these
 and says HOLD. Measured over the pull requests before it, about a third would have been held, mostly for
-skipping review in an older period; the last 14 would have merged. The first review found ways a
+skipping review in an older period. After the first review widened the checks, about one in five
+recent pull requests would be held for loosening a check. The first review found ways a
 weakened check could still slip through as ready — deleting a check outright, or padding the lines
 around a removal — and those are now caught too. The detection is a set of clues, not a proof.
 <!--tech-->
@@ -17540,6 +17541,8 @@ excluded; or a removed line naming a gate in a CALLER (`.github/workflows/*.yml`
 fold: loosening 5 (#398, #387, #382, #381, #360), `NO-REVIEW:` **9** (r1 CODEX corrected an 8), union 11, app
 code and migrations 0; after it, loosening holds **8 of 40** (adds #386, #367, #366 — each rewrites a failure
 path or a CI gate invocation). App code clears with `--app-tests-passed <head>` — a SELF-ATTESTED SHA, not a
-verified run. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 128 cases (incl. `main()` over a fake `_run`), 25 new mutations, 41/41. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+verified run. r2 (Codex) found a RENAME lost both paths and the caller detector read COMMENTS; after a lost
+bet the parsers were REDESIGNED into one, `diff_files()`, with one `is_comment()` rule, and a gate deleted or
+renamed out of scope (`scope_exits`) holds — 8 of 40 unchanged. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 138 cases (incl. `main()` over a fake `_run`), 29 new mutations, 45/45. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.

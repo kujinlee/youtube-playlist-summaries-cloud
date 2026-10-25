@@ -261,7 +261,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "code = [(i, l) for i, l in enumerate(old_side) if not l[1:].strip().startswith(\"#\")]",
+    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]",
     "code = list(enumerate(old_side))"
    ]
   ],
@@ -274,8 +274,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "            if path is not None and GATE_CODE.match(path):\n                cur = []",
-    "            if path is not None:\n                cur = []"
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        readded",
+    "        if False:\n            continue\n        readded"
    ]
   ],
   "expect": [
@@ -368,8 +368,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "            path = src[2:] if src.startswith(\"a/\") else None",
-    "            path = None"
+    "            cur[\"old\"] = line[6:] if line.startswith(\"--- a/\") else None",
+    "            cur[\"old\"] = None"
    ]
   ],
   "expect": [
@@ -449,7 +449,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if not GATE_CALLER.match(path):\n",
+    "        if not any(GATE_CALLER.match(p) for p in _paths(f)):\n",
     "        if True:\n"
    ]
   ],
@@ -463,7 +463,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    " and r.strip() not in back]",
+    " and r not in back]",
     "]"
    ]
   ],
@@ -476,8 +476,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "for r in rm if GATE_REF.search(r) and r.strip()",
-    "for r in rm if r.strip()"
+    "if GATE_REF.search(r) and r not in back",
+    "if r not in back"
    ]
   ],
   "expect": [
@@ -509,6 +509,62 @@
   ],
   "expect": [
    "⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)"
+  ]
+ },
+ {
+  "name": "r2: a rename keeps only the destination path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return [p for p in (f[\"old\"], f[\"new\"]) if p]",
+    "    return [p for p in (f[\"new\"],) if p]"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate RENAMED out of scope with `return 1` -> `return 0` is a loosening (failure path)",
+   "...and so is a hook moved into docs/ with its `deny` dropped"
+  ]
+ },
+ {
+  "name": "r2: scope exits are never consulted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for exit_ in scope_exits(diff):",
+    "    for exit_ in []:"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow MOVED out of .github/workflows/ with no hunk at all is a loosening",
+   "a deleted workflow is a scope exit",
+   "...and the rename itself is a scope exit"
+  ]
+ },
+ {
+  "name": "r2: a comment counts as a gate invocation",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if l.startswith(sign) and l[1:].strip() and not is_comment(l[1:])]",
+    "if l.startswith(sign) and l[1:].strip()]"
+   ]
+  ],
+  "expect": [
+   "⭐ a reworded workflow COMMENT naming a check is not a dropped invocation (r2 false HOLD)",
+   "...nor a reworded shell comment in check-schema-gates.sh"
+  ]
+ },
+ {
+  "name": "r2: a rename WITHIN gate scope is treated as an exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if gate(f[\"old\"]) and not gate(f[\"new\"])]",
+    "if gate(f[\"old\"])]"
+   ]
+  ],
+  "expect": [
+   "...but a workflow renamed WITHIN .github/workflows/ is not"
   ]
  }
 ]

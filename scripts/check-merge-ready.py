@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 128 cases
+    python3 scripts/check-merge-ready.py --self-test # 138 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -497,27 +497,73 @@ MIGRATION = re.compile(r"^supabase/migrations/")
 APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
 
 
-def diff_lines(diff: str) -> dict[str, tuple[list[str], list[str]]]:
-    """PURE. {path: (removed, added)} from a `git diff` text, keyed by the NEW path — or by the
-    OLD one when the file is DELETED (`+++ /dev/null`), which r1 BOTH halves found dropped every
-    removed line of a deleted gate."""
-    out: dict[str, tuple[list[str], list[str]]] = {}
-    cur = None
+def diff_files(diff: str) -> list[dict]:
+    """PURE. THE ONE DIFF PARSER — every loosening detector reads this and parses nothing itself.
+
+    Per file in a `git diff` text: `old` and `new` path (None for `/dev/null`), and `hunks`, each a
+    list of raw `+`/`-`/` ` lines. A pure rename or a mode change has paths and no hunks.
+    ⛔ REDESIGN after r2's lost bet: there were TWO parsers, each deciding paths and comments for
+    itself. r1's deletion fix landed in both by hand; r2 then found a RENAME lost by both (each
+    kept only the destination) and comments filtered in one and not the other — one rule,
+    implemented twice, drifting. Paths are decided here and comments by `is_comment`, once.
+    """
+    out: list[dict] = []
+    cur, hunk = None, None
     for line in diff.split("\n"):
-        if line.startswith("+++ "):
-            tgt = line[4:]
-            if tgt.startswith("b/"):
-                cur = tgt[2:]
-                out.setdefault(cur, ([], []))
-        elif line.startswith("--- "):
-            src = line[4:]
-            cur = src[2:] if src.startswith("a/") else None
-            if cur is not None:
-                out.setdefault(cur, ([], []))
-        elif cur is not None and line.startswith("-"):
-            out[cur][0].append(line[1:])
-        elif cur is not None and line.startswith("+"):
-            out[cur][1].append(line[1:])
+        if line.startswith("diff --git "):
+            m = re.match(r"diff --git a/(.+) b/(.+)$", line)
+            cur, hunk = {"old": m and m[1], "new": m and m[2], "hunks": []}, None
+            out.append(cur)
+        elif cur is None:
+            continue
+        elif hunk is None and line.startswith("rename from "):
+            cur["old"] = line[len("rename from "):]
+        elif hunk is None and line.startswith("rename to "):
+            cur["new"] = line[len("rename to "):]
+        elif hunk is None and line.startswith("--- "):
+            cur["old"] = line[6:] if line.startswith("--- a/") else None
+        elif hunk is None and line.startswith("+++ "):
+            cur["new"] = line[6:] if line.startswith("+++ b/") else None
+        elif line.startswith("@@"):
+            hunk = []
+            cur["hunks"].append(hunk)
+        elif hunk is not None and line[:1] in ("+", "-", " "):
+            hunk.append(line)
+    return out
+
+
+def is_comment(text: str) -> bool:
+    """PURE. The ONE comment rule (Python, shell and YAML all use `#`)."""
+    return text.strip().startswith("#")
+
+
+def _paths(f: dict) -> list[str]:
+    return [p for p in (f["old"], f["new"]) if p]
+
+
+def _name(f: dict) -> str:
+    return f"{f['old']} -> {f['new']}" if f["old"] and f["new"] and f["old"] != f["new"] else (f["new"] or f["old"])
+
+
+def _code(f: dict, sign: str) -> list[str]:
+    """The stripped non-comment lines of one side (`-` removed, `+` added) of a file's hunks."""
+    return [l[1:].strip() for hk in f["hunks"] for l in hk
+            if l.startswith(sign) and l[1:].strip() and not is_comment(l[1:])]
+
+
+def diff_lines(diff: str) -> dict[str, tuple[list[str], list[str]]]:
+    """PURE. {path: (removed, added)} — a VIEW of `diff_files`, keyed by the new path, or the old
+    one for a deletion. Raw lines, comments included: the pin and count readers match their own
+    patterns."""
+    out: dict[str, tuple[list[str], list[str]]] = {}
+    for f in diff_files(diff):
+        key = f["new"] or f["old"]
+        if key is None:
+            continue
+        rm, ad = out.setdefault(key, ([], []))
+        for hk in f["hunks"]:
+            rm += [l[1:] for l in hk if l.startswith("-")]
+            ad += [l[1:] for l in hk if l.startswith("+")]
     return out
 
 
@@ -529,38 +575,22 @@ FAIL_WINDOW = 5
 
 
 def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str]]:
-    """PURE. {gate path: removed code lines within `k` lines of a failure-path line in the hunk}.
+    """PURE. {gate: removed code lines within `k` lines of a failure-path line in the hunk}.
 
-    Reads a `git diff -U<k>` text. A comment-only line neither counts nor anchors, and a line
-    added back identically anywhere in the same file is a MOVE, not a removal. ⛔ Distance is in
-    OLD-FILE lines: r1 found six added comment lines pushed an adjacent removal out of the window,
-    so an added line has no position and cannot anchor — only the source as it WAS is measured.
+    Reads a `git diff -U<k>` text. A file is a gate if EITHER path is (r2: a rename out of scope
+    kept only the destination). A comment line neither counts nor anchors, and a line added back
+    identically anywhere in the same file is a MOVE, not a removal. ⛔ Distance is in OLD-FILE
+    lines: r1 found six added comment lines pushed an adjacent removal out of the window, so an
+    added line has no position and cannot anchor — only the source as it WAS is measured.
     """
     out: dict[str, list[str]] = {}
-    per = diff_lines(diff)
-    path, hunks, cur = None, {}, None
-    for line in diff.split("\n"):
-        if line.startswith("+++ "):
-            tgt = line[4:]
-            if tgt.startswith("b/"):
-                path = tgt[2:]
-            cur = None
-        elif line.startswith("--- "):
-            src = line[4:]
-            path = src[2:] if src.startswith("a/") else None
-        elif line.startswith("@@"):
-            if path is not None and GATE_CODE.match(path):
-                cur = []
-                hunks.setdefault(path, []).append(cur)
-            else:
-                cur = None
-        elif cur is not None and line[:1] in ("+", "-", " "):
-            cur.append(line)
-    for path, hs in hunks.items():
-        readded = [a.strip() for a in per.get(path, ([], []))[1]]
-        for hk in hs:
+    for f in diff_files(diff):
+        if not any(GATE_CODE.match(p) for p in _paths(f)):
+            continue
+        readded = _code(f, "+")
+        for hk in f["hunks"]:
             old_side = [l for l in hk if not l.startswith("+")]
-            code = [(i, l) for i, l in enumerate(old_side) if not l[1:].strip().startswith("#")]
+            code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
             for i, l in code:
                 t = l[1:].strip()
                 if not l.startswith("-") or not t:
@@ -569,8 +599,34 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW) -> dict[str, list[str
                     readded.remove(t)
                     continue
                 if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):
-                    out.setdefault(path, []).append(t)
+                    out.setdefault(_name(f), []).append(t)
     return out
+
+
+def gate_invocation_removals(diff: str) -> dict[str, list[str]]:
+    """PURE. {caller: removed non-comment lines naming a gate, not added back} — r1 CLAUDE M1.
+
+    ⛔ r2 CODEX M2: comments are excluded through `is_comment`, the same rule the failure path
+    uses, so a reworded comment naming a check is not a dropped invocation."""
+    out: dict[str, list[str]] = {}
+    for f in diff_files(diff):
+        if not any(GATE_CALLER.match(p) for p in _paths(f)):
+            continue
+        back = _code(f, "+")
+        gone = [r for r in _code(f, "-") if GATE_REF.search(r) and r not in back]
+        if gone:
+            out[_name(f)] = gone
+    return out
+
+
+def scope_exits(diff: str) -> list[str]:
+    """PURE. Gate files whose OLD path is in scope and whose new path is gone or out of scope —
+    deleted, or renamed where nothing runs it (r2 CODEX M1: a workflow moved out of
+    `.github/workflows/` stops running, and a pure rename carries no hunk for the others to see)."""
+    def gate(p):
+        return bool(p) and bool(GATE_CODE.match(p) or GATE_CALLER.match(p))
+    return [f"{f['old']} is {'deleted' if f['new'] is None else 'renamed to ' + f['new']}"
+            for f in diff_files(diff) if gate(f["old"]) and not gate(f["new"])]
 
 
 def hold_reasons(files: list[str], diff: str, head: str | None,
@@ -582,7 +638,7 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
     """
     out: list[str] = []
     per = diff_lines(diff)
-    # 1. LOOSENS A GATE — four proxies.
+    # 1. LOOSENS A GATE — six proxies, all reading `diff_files` through its views.
     for f in files:
         if BASELINE_FILE.match(f):
             out.append(f"loosens a gate: {f} is a pinned baseline and this PR edits it")
@@ -606,14 +662,11 @@ def hold_reasons(files: list[str], diff: str, head: str | None,
     for path, gone in sorted(failure_path_removals(diff).items()):
         out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
                    f"failure path, e.g. {gone[0][:70]!r}")
-    for path, (rm, ad) in sorted(per.items()):
-        if not GATE_CALLER.match(path):
-            continue
-        back = [a.strip() for a in ad]
-        gone = [r.strip() for r in rm if GATE_REF.search(r) and r.strip() not in back]
-        if gone:
-            out.append(f"loosens a gate: {path} drops or rewrites {len(gone)} gate invocation(s), "
-                       f"e.g. {gone[0][:70]!r}")
+    for path, gone in sorted(gate_invocation_removals(diff).items()):
+        out.append(f"loosens a gate: {path} drops or rewrites {len(gone)} gate invocation(s), "
+                   f"e.g. {gone[0][:70]!r}")
+    for exit_ in scope_exits(diff):
+        out.append(f"loosens a gate: {exit_}, so nothing runs it as a gate any more")
     # 2. NEEDS A DEPLOY FIRST.
     migs = [f for f in files if MIGRATION.match(f)]
     if migs:
@@ -818,7 +871,9 @@ def main(argv: list[str]) -> int:
     code, line = verdict(results)
     # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
     files_r = _run(["git", "diff", "--name-only", f"{BASE_REF}...HEAD"])
-    diff_r = _run(["git", "diff", f"-U{FAIL_WINDOW}", "--no-color", f"{BASE_REF}...HEAD"])
+    # `-M` explicitly: `scope_exits` reads renames, and `diff.renames=false` would turn them into a
+    # delete plus an add — which still holds, but names the wrong reason.
+    diff_r = _run(["git", "diff", f"-U{FAIL_WINDOW}", "-M", "--no-color", f"{BASE_REF}...HEAD"])
     if files_r.returncode != 0 or diff_r.returncode != 0:
         code, line = 2, ("CANNOT RUN — could not diff the branch against its base, so the house "
                          "rule's exceptions were NOT checked. Treat this as NOT RUN.")
@@ -1186,6 +1241,34 @@ def _self_test() -> int:
                      "+        run: python3 scripts/check-x.py --self-test")), [])
     check("...nor a removed CI line that names no gate",
           H([CI], DF(CI, "-        node-version: 20", "+        node-version: 22")), [])
+    # r2 CODEX M1/M2 — after the REDESIGN to one parser. Renames carry both paths; comments are
+    # one rule for every detector.
+    def REN(old, new, *hunk):
+        head = f"diff --git a/{old} b/{new}\nsimilarity index 90%\nrename from {old}\nrename to {new}\n"
+        return head + (f"--- a/{old}\n+++ b/{new}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n" if hunk else "")
+    check("⭐ a gate RENAMED out of scope with `return 1` -> `return 0` is a loosening (failure path)",
+          has(H([G], REN(G, "scripts/validate-x.py", "-    return 1", "+    return 0")), "failure path"), True)
+    check("...and the rename itself is a scope exit",
+          has(H([G], REN(G, "scripts/validate-x.py", "-    return 1", "+    return 0")), "renamed to scripts/validate-x.py"), True)
+    check("⭐ a workflow MOVED out of .github/workflows/ with no hunk at all is a loosening",
+          has(H([CI], REN(".github/workflows/gate.yml", ".github/archived/gate.yml")), "renamed to .github/archived"), True)
+    check("...and so is a hook moved into docs/ with its `deny` dropped",
+          has(H([".claude/hooks/a.sh"], REN(".claude/hooks/a.sh", "docs/a.sh", '-  deny "x"', "+  :")), "failure path"), True)
+    check("...but a workflow renamed WITHIN .github/workflows/ is not",
+          H([CI], REN(".github/workflows/a.yml", ".github/workflows/b.yml")), [])
+    check("...nor a docs file renamed anywhere",
+          H(["docs/b.md"], REN("docs/a.md", "docs/b.md", "-old", "+new")), [])
+    check("⭐ a reworded workflow COMMENT naming a check is not a dropped invocation (r2 false HOLD)",
+          H([CI], DF(CI, "-  # scripts/check-x.py guards the table", "+  # The table guard runs below",
+                     "   - run: python3 scripts/check-x.py")), [])
+    check("...nor a reworded shell comment in check-schema-gates.sh",
+          H(["scripts/check-schema-gates.sh"], DF("scripts/check-schema-gates.sh",
+                                                  "-# --self-test of each gate", "+# each gate's self-test")), [])
+    check("...but the invocation BESIDE such a comment, removed, still is",
+          has(H([CI], DF(CI, "-  # scripts/check-x.py guards the table", "-  - run: python3 scripts/check-x.py")),
+              "gate invocation"), True)
+    check("a deleted workflow is a scope exit",
+          has(H([CI], DEL(".github/workflows/old.yml", "on: push")), "old.yml is deleted"), True)
     # r1 CLAUDE M2: a pin deleted, or renamed away, is a drop to nothing.
     check("a mutation pin DELETED is a loosening",
           has(H([PC], DF(PC, '-    "scripts/a.py": 30,')), "scripts/a.py (30) is removed"), True)
