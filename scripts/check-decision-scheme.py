@@ -581,7 +581,8 @@ def termination_window(rows: list[dict], size: int = 5) -> list[tuple]:
 
 
 def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
-    """FAIL. The last 5 terminated SUBJECTS are no shorter than the pre-scheme median.
+    """FAIL by design — but SUSPENDED TO A WARN in `main()` since 2026-10-25, pending backlog #327.
+    The last 5 terminated SUBJECTS are no shorter than the pre-scheme median.
 
     ⛔ THE COMPARATOR IS PINNED, NOT RECOMPUTED. A baseline recomputed at read time cannot
     detect that it has moved, and after the scheme ships every round count is contaminated by
