@@ -328,6 +328,7 @@ label is the string, and the function behind it is named <code>t&lt;N&gt;_…</c
     ("4 NO IMPROVEMENT", t4_no_improvement(rows, pinned_rounds["median"])),
     ("5 RANKER MISS", t5_ranker_miss(rows)),
 ):                                     # ← these FAIL the run
+# ⟳ 2026-10-25: trigger 4 has since MOVED to the WARN list, suspended pending backlog #327
     ...
 for name, result in (
     ("6 DENOMINATOR MOVED", t6_denominator_moved(...)),
@@ -372,7 +373,7 @@ calls this “the FAIL/WARN split … in this file’s existing style (t4/t9)”
 <tr><td>1</td><td>NOT FED</td><td>FAIL</td><td>Did a subject reach ≥2 review rounds with no log row at all?</td><td><code>t1_not_fed</code></td></tr>
 <tr><td>2</td><td>NON-TERMINATION</td><td>FAIL</td><td>Has a unit used every rung, is it still drawing findings, and is it <b>not</b> closed?</td><td><code>t2_non_termination</code></td></tr>
 <tr><td>3</td><td>LOST BET NOT ESCALATED</td><td>FAIL</td><td>After a lost bet, was the next bet on that unit ever logged?</td><td><code>t3_lost_bet_not_escalated</code></td></tr>
-<tr><td>4</td><td>NO IMPROVEMENT</td><td>FAIL</td><td>Are the last 5 finished subjects no shorter than the pre-scheme median (4 rounds)?</td><td><code>t4_no_improvement</code></td></tr>
+<tr><td>4</td><td>NO IMPROVEMENT</td><td>FAIL — ⟳ <b>suspended to WARN 2026-10-25</b>, pending backlog #327</td><td>Are the last 5 finished subjects no shorter than the pre-scheme median (4 rounds)?</td><td><code>t4_no_improvement</code></td></tr>
 <tr><td>5</td><td>RANKER MISS</td><td>FAIL</td><td>Did the ranker name the wrong component twice in a row?</td><td><code>t5_ranker_miss</code></td></tr>
 <tr><td>6</td><td>DENOMINATOR MOVED</td><td>WARN</td><td>Has the review corpus grown under the pinned baseline?</td><td><code>t6_denominator_moved</code></td></tr>
 <tr><td>7</td><td>SAMPLE REACHED</td><td>WARN</td><td>Are there 10 ranker predictions yet, enough to re-score it?</td><td><code>t7_sample_reached</code></td></tr>

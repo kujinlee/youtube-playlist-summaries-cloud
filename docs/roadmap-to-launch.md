@@ -2442,7 +2442,7 @@ by hand), and the `10 of 57 = 18%` readability figure (the population is `baseli
       r1's 19** then **4 of r2's 8**. ⟳ The r1 figure was **19**, not the 18 three artifacts of mine
       claimed — I counted prose in a slice whose subject is a machine built to stop that. r2's reviewer
       applied the design's own §5 condition unprompted and reached the same place.
-- [x] ⏸️ **DECIDED 2026-10-20 — DEFER** (backlog **#327**). The owner ruled *defer it, fix the signals first*.
+- [x] ⏸️ **DECIDED 2026-10-20 — DEFER** (backlog **#327**). ⟳ **REOPENED 2026-10-25 by the owner** as *keep, simplify or retire the scheme*, after trigger 4's first verdict (no improvement: median 4 vs 4); trigger 4 is suspended to a WARN until it rules. The owner ruled *defer it, fix the signals first*.
       The ladder says **SPLIT**: `log-schema` took REDESIGN at r1, its failure observation is satisfied,
       and DEFER is the rung *after* SPLIT — §5 forbids only a third **REDESIGN**, which SPLIT is not.
       SPLIT is also the only route in this slice with positive evidence (`relocation` 5 → 0 → 0, n=1).

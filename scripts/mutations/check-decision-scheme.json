@@ -1648,5 +1648,61 @@
     "expect": [
       "⭐ a restarted ladder reaches the CLI as trigger 12's WARN and exits 0"
     ]
+  },
+  {
+    "name": "trigger 4 is put BACK on the FAIL list while its suspension is still in force",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"5 RANKER MISS\", t5_ranker_miss(rows)),",
+        "(\"5 RANKER MISS\", t5_ranker_miss(rows)),\n        (\"4 NO IMPROVEMENT\", t4_no_improvement(rows, pinned_rounds[\"median\"])),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 4 at median 4 reaches the CLI as a WARN naming backlog #327, exit 0",
+      "⭐ trigger 4 at median 9 reaches the CLI as a WARN naming backlog #327, exit 0"
+    ]
+  },
+  {
+    "name": "trigger 4's WARN drops the suspension suffix, so it reads like any other warning",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "(\"4 NO IMPROVEMENT\", t4 and (t4 + T4_SUSPENDED)),",
+        "(\"4 NO IMPROVEMENT\", t4),"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 4 at median 4 reaches the CLI as a WARN naming backlog #327, exit 0",
+      "⭐ trigger 4 at median 9 reaches the CLI as a WARN naming backlog #327, exit 0"
+    ]
+  },
+  {
+    "name": "trigger 4 is computed and then DISCARDED, so the suspension silences it entirely",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "t4 = t4_no_improvement(rows, pinned_rounds[\"median\"])",
+        "t4 = None"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 4 at median 4 reaches the CLI as a WARN naming backlog #327, exit 0",
+      "⭐ trigger 4 at median 9 reaches the CLI as a WARN naming backlog #327, exit 0"
+    ]
+  },
+  {
+    "name": "trigger 4's suffix loses 'NOT a pass', so a suspended trigger reads as an ordinary warning",
+    "file": "scripts/check-decision-scheme.py",
+    "edits": [
+      [
+        "\"simplify or retire the scheme); NOT a pass\")",
+        "\"simplify or retire the scheme)\")"
+      ]
+    ],
+    "expect": [
+      "⭐ trigger 4 at median 4 reaches the CLI as a WARN naming backlog #327, exit 0",
+      "⭐ trigger 4 at median 9 reaches the CLI as a WARN naming backlog #327, exit 0"
+    ]
   }
 ]

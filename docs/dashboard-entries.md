@@ -17485,6 +17485,21 @@ review (thrashing; `docs/reviews/architecture-review-2026-10-24-em-default.md`),
 unchanged from `master` and the three fragments declare the pair themselves: 7.79-7.98:1 in all six
 states. Part (c)'s compose-time guard is filed on the row; backlog #351 filed (a `--fg` cycle).
 
+## 2026-10-25 [needs-you]
+The review-tracking process added on 2026-10-20 got its first verdict on itself: it has not made
+reviews any shorter. Before it existed, the typical (median) piece of work took 4 review rounds. The
+last 5 pieces it tracked took 4, 7, 4, 5 and 4 rounds, so the typical one still took 4. Its own check is built to stop all merging when that happens, and the
+first time it had enough samples to judge was PR #397. You chose to turn that stop into a warning
+for now, so ordinary work can merge, and to decide separately whether to keep, simplify or retire
+the process. That decision is backlog #327, and it waits for you.
+<!--tech-->
+Branch `t4-warn-pending-327`. `check-decision-scheme.py`: trigger 4 moves from the FAIL list to the
+WARN list with a `T4_SUSPENDED` suffix naming backlog #327 and "NOT a pass". Its window on PR #397's
+branch is `[4, 7, 4, 5, 4]` against the pinned median 4; on master the window is empty (4 of 5).
+Three CLI cases (median 4 and 9 WARN with exit 0, asserted on trigger 4's own line; median 3
+silent) and four mutations; the whole 129-entry manifest killed 129/129 in a scoped sweep. Backlog #327 amended: reopened as keep/simplify/retire. When it rules, trigger 4
+is restored, rewritten or retired — a manual step that nothing enforces.
+
 ## 2026-10-24
 Two more small gaps in the explainer toolbar's tests are closed: the tests now notice if the space
 kept for the pinned toolbar is lost, and if switching back to the default text style fails to
