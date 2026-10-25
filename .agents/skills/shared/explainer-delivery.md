@@ -99,6 +99,43 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   browser collapses the whole block onto one line.
 - Light and dark both legible. Wide content scrolls inside its own container; the page body never
   scrolls horizontally.
+- **Structure is carried by COLOUR ROLES, not by brightness alone** (backlog #226, the owner's choice
+  from a live three-way switcher, 2026-10-05). Measured before it: heading, body prose and `<b>` all
+  computed to one colour, so luminance was the only cue and the page had to be read, not skimmed.
+  ⛔ **A page MUST opt in, by putting its content inside an element with class `.ex-body`.** The
+  roles style nothing outside it, so the composer adds no text-style switcher to a fragment without
+  one, and nothing warns. That page renders the flat, one-colour structure this rule exists to stop.
+  Inside `.ex-body` three roles are spent:
+
+  | Role | Colours | Token it reads |
+  |---|---|---|
+  | `--head` | `h1`–`h4` | `--accent`, the family's heading colour |
+  | `--prose` | body text | `--fg2` |
+  | `--emph` | `strong`, `b` | `--em` |
+
+  ⛔ **The semantic colours are RESERVED, and never spent on a role.** `--verified` and `--cool` mean
+  *measured*; `--warn` means *warning*; `--hot` and `--defect` mean *defect*. `--verified`, `--cool` and `--hot` are named in
+  *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
+  supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
+  something it does not. They are named by token, not by hue, because a page sets its own hue.
+  ⛔ **A page that opts in DECLARES `--em` IN EVERY PALETTE BLOCK IT HAS** — the light default, each
+  explicit theme, and its OS-dark block — with the family pair `#2d4a7c` light / `#9db8e8` dark unless
+  it has a reason to differ. **Do not lean on `brief-compose.py`'s shim for it:** the shim's `--em`
+  is the LIGHT value with the OS dark and nothing pressed, and three committed pages that leaned on
+  it measured **1.78:1** there (backlog #226). It cannot be fixed in the shim, because only the page
+  knows whether its palette goes dark (`page_chrome`'s rule: *mechanism shared, palette local*);
+  two attempts here to supply it centrally, and a third the reviewer tried (`color-mix()`), each
+  broke a different page
+  (`docs/reviews/architecture-review-2026-10-24-em-default.md`). The role mapping itself is
+  `page_chrome.text_style_css()`; the family's `--accent` is *The common look* in `CONTEXT.md`.
+  ⚠ `--prose` reads `--fg2`, but on two committed pages the fragment and the shim define `--fg`/`--fg2`
+  in terms of each other, so with the OS light and nothing pressed it resolves to nothing and body
+  text falls back to black (readable, but not the role) — backlog #351. The switcher (`#schemer`)
+  is an **escape hatch, not scaffolding**: colour is the no-attribute default, so a page with
+  JavaScript off still renders in colour, and `page_chrome`'s switcher stores only the opt-outs
+  (a hand-authored copy in an older fragment may also store the default; that is harmless).
+  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog, features, work lines) do not
+  opt in, and nothing has measured them under it.
 
 **Check it by measuring, not by looking.** Once served, in the page:
 

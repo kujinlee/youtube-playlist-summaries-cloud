@@ -17463,6 +17463,29 @@ so the route was reverted and filed as backlog #349 (architecture review
 `brief-compose.py` shim comment.
 
 ## 2026-10-24
+The rule for how an explainer page uses colour to show structure is now written down where
+anyone building a page will read it. On 2026-10-05 you picked a scheme where headings, body text
+and bold words each get their own colour, so a page can be skimmed. It was built into the page
+code but described nowhere, so anyone else making a page had to guess. The written rule also says
+that the "measured", "warning" and "defect" colours must never be used for emphasis, because they
+carry meaning.
+
+Checking that rule turned up a real readability bug, now fixed. On a computer set to dark mode,
+bold words on three recent explainer pages were dark blue on a dark background, at well under
+half the minimum readable contrast. Each of those pages now sets its own dark-mode colour for bold
+words, and they read clearly in every combination of computer setting and page button. Two
+attempts to fix it once for every page each broke some other page, so the rule now says each page
+sets the colour itself.
+<!--tech-->
+Branch `typography-contract`. Backlog #226 part (b): `.agents/skills/shared/explainer-delivery.md` §2
+states the `.ex-body` opt-in as a MUST, the three roles, the reserved semantic tokens, and that a page
+declares `--em` in every palette block. Part (c)'s defect: three pages inherited the shim's light
+`--em` with the OS dark and nothing pressed (1.78/1.79/1.78:1). Two shim defaults broke other pages in
+review (thrashing; `docs/reviews/architecture-review-2026-10-24-em-default.md`), so the shim is
+unchanged from `master` and the three fragments declare the pair themselves: 7.79-7.98:1 in all six
+states. Part (c)'s compose-time guard is filed on the row; backlog #351 filed (a `--fg` cycle).
+
+## 2026-10-24
 Two more small gaps in the explainer toolbar's tests are closed: the tests now notice if the space
 kept for the pinned toolbar is lost, and if switching back to the default text style fails to
 forget the old choice. Separately, on two explainer pages almost all text showed in plain black, instead of the page's
@@ -17470,7 +17493,7 @@ own shades, when the computer was in light mode. It now shows in the page's colo
 the page's "generated at" time, nothing else on those pages changed.
 <!--tech-->
 Branch `stub-gaps-and-fg-cycle`. Backlog #350 closed: the stub reports the slot reserve and
-`--chrome-h` right after load and presses the default text style. The `--fg` cycle (filed on PR #396's branch): the two
+`--chrome-h` right after load and presses the default text style. Backlog #351 closed, the `--fg` cycle: the two
 fragments' `--ink:var(--fg)` aliases are replaced by each block's own literal values, which breaks the
 cycle with `brief-compose.py`'s `--fg:var(--ink, ...)`. `scripts/brief-compose.py` is unchanged:
 lowering its alias block instead was measured to restyle 3 other pages in every theme state.
