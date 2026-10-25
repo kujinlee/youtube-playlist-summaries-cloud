@@ -17440,7 +17440,8 @@ checks that the toolbar stays pinned when it scrolls away. A crash fails the tes
 stand-in page has no real screen, so whether a reader can actually see the buttons is still
 checked by hand.
 
-One older page was rebuilt so its theme button stays on screen while scrolling. Six more were
+One older page was rebuilt so its theme button stays on screen while scrolling. It also gained
+the text-style switcher, which turns its bold words slightly bluer, as on every newer page. Six more were
 meant to be, but they turned out to have a working theme button that the page builder misreads as
 broken, so rebuilding them would remove it. Three attempts to teach the builder to read them
 correctly each went wrong in a new way when reviewed, so that work stopped and is filed as its own

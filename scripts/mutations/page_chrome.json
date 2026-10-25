@@ -1064,7 +1064,7 @@
         "\"if(b)sset('3');});\""
       ]
     ],
-    "expect": "...and the text-style switcher sets the scheme and marks only the pressed button"
+    "expect": "...and the text-style switcher sets the scheme and marks only the pressed button, in its class AND in what a screen reader announces \u2014 on load and after the press"
   },
   {
     "name": "the tail is a hard-coded constant",
@@ -1120,5 +1120,16 @@
       ]
     ],
     "expect": "...and both choices are persisted under their keys, and a saved text style is applied on load"
+  },
+  {
+    "name": "the switcher's pressed state is announced inverted",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}\"",
+        "\"bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(!on));}}\""
+      ]
+    ],
+    "expect": "...and the text-style switcher sets the scheme and marks only the pressed button, in its class AND in what a screen reader announces \u2014 on load and after the press"
   }
 ]

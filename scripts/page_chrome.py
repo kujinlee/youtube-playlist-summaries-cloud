@@ -2169,14 +2169,14 @@ this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x)
 this.disconnect=function(){};};
 try{
 /*SCRIPT*/
-REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');
+REP.pressed0=theme.getAttribute('aria-pressed');REP.scheme0=root.getAttribute('data-scheme');REP.aria0=sbs.map(function(b){return b.getAttribute('aria-pressed');});
 if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
 live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
 REP.armed=REP.margins.slice();REP.obs=REP.observed.slice();
 if(rcb){sch.b=20;rcb([]);REP.afterResize=REP.margins[REP.margins.length-1];}
 fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
 fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
-fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.stored=ST;
+fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];REP.aria=sbs.map(function(b){return b.getAttribute('aria-pressed');});REP.stored=ST;
 }catch(e){REP.error=String(e);}
 console.log(JSON.stringify(REP));
 """.replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
@@ -2226,8 +2226,12 @@ console.log(JSON.stringify(REP));
         case("...and a resize re-measures: when a control moves, the observer is re-armed "
              "at the new tail",
              _field(_ok, "error", "afterResize"), (None, "-180px 0px 0px 0px"))
-        case("...and the text-style switcher sets the scheme and marks only the pressed button",
-             _field(_ok, "scheme"), (["1", "on", ""],))
+        # ⟳ r4 CODEX MEDIUM: `aria-pressed` on the three options is what a screen reader
+        # announces, and inverting it survived every case — the class was asserted, not it.
+        case("...and the text-style switcher sets the scheme and marks only the pressed button, "
+             "in its class AND in what a screen reader announces — on load and after the press",
+             _field(_ok, "scheme", "aria0", "aria"),
+             (["1", "on", ""], ["false", "false", "true"], ["true", "false", "false"]))
         # ⟳ r3 CLAUDE F4: the stub answered "OS light" to every query, so flipping the script's
         # own media query to `light` — a dead FIRST press for every OS-dark reader — passed every
         # case. The stub now answers only the query the script makes (any other THROWS) and runs
