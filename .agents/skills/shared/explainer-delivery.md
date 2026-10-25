@@ -99,6 +99,27 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   browser collapses the whole block onto one line.
 - Light and dark both legible. Wide content scrolls inside its own container; the page body never
   scrolls horizontally.
+- **Structure is carried by COLOUR ROLES, not by brightness alone** (backlog #226, the owner's choice
+  from a live three-way switcher, 2026-10-05). Measured before it: heading, body prose and `<b>` all
+  computed to one colour, so luminance was the only cue and the page had to be read, not skimmed.
+  Content opts in with the `.ex-body` class, and three roles are spent there:
+
+  | Role | Colours | Token it reads |
+  |---|---|---|
+  | `--head` | `h1`–`h4` | `--accent`, the family's heading colour |
+  | `--prose` | body text | `--fg2` |
+  | `--emph` | `strong`, `b` | `--em` |
+
+  ⛔ **The status colours `--verified` and `--warn` are RESERVED** — named by token, because their hue
+  varies by page (green and amber in the committed fragments). They mean *measured* and *warning*; a
+  page that spends them on emphasis makes every bolded phrase assert something it does not.
+  ⚠ The values live in ONE place each, and this list does not copy them: the role CSS is
+  `page_chrome.text_style_css()`; the `--accent` pair is *The common look* in `CONTEXT.md`; the `--em`
+  pair and the fallbacks for a page that declares neither are `brief-compose.py`'s shim. The
+  switcher (`#schemer`) is an **escape hatch, not scaffolding**: colour is the no-attribute default,
+  so a page with JavaScript off still renders in colour, and storage holds only the opt-outs.
+  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog) do not opt in, and nothing
+  measured them under it.
 
 **Check it by measuring, not by looking.** Once served, in the page:
 

@@ -17428,3 +17428,16 @@ stubbed", which was with a sudo shim, so it overstated what ran.
 shards over the 1,500s trigger). N is derived everywhere else from `strategy.job-total`, so the
 matrix list is the only copy. Concurrent-job queueing with 14 jobs per push is noted on backlog #231
 as unmeasured.
+
+## 2026-10-24
+The rule for how an explainer page uses colour to show structure is now written down where
+anyone building a page will read it. On 2026-10-05 you picked a scheme where headings, body text
+and bold words each get their own colour, so a page can be skimmed. It was built into the page
+code but described nowhere, so anyone else making a page had to guess. The written rule also says
+that the "measured" and "warning" colours must never be used for emphasis, because they carry
+meaning.
+<!--tech-->
+Backlog #226 closed (part b) on branch `typography-contract`: `.agents/skills/shared/explainer-delivery.md`
+§2 gains the three-role contract (`--head`/`--prose`/`--emph` inside `.ex-body`), `--verified`/`--warn`
+reserved, the switcher as an escape hatch, and the prose-only limit. Values are pointed at in
+`page_chrome.text_style_css()`, `CONTEXT.md` and the `brief-compose.py` shim rather than restated.
