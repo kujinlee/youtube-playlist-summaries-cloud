@@ -121,8 +121,10 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   ⚠ **Where the values come from:** the role mapping is `page_chrome.text_style_css()`; the family's
   convention for `--accent` is *The common look* in `CONTEXT.md`; `brief-compose.py`'s shim supplies
   DEFAULTS for `--accent` and `--em`, in all three states (OS-dark with nothing pressed, light
-  pressed, dark pressed). A fragment that declares its own value overrides those through the normal
-  cascade, so a page's actual colours are the fragment's, then the shim's. The switcher (`#schemer`)
+  pressed, dark pressed), each at the LOWEST specificity that still works: the OS-dark default is
+  `html:where(…)` (0,0,1) and the pressed pair is `html[data-theme=…]` (0,1,1). So any fragment rule
+  that names the theme or the OS-dark exclusion (0,2,0) wins; a bare `:root` (0,1,0) wins with
+  nothing pressed and loses on a press, which is what stops a light-only palette going half-live. The switcher (`#schemer`)
   is an **escape hatch, not scaffolding**: colour is the no-attribute default, so a page with
   JavaScript off still renders in colour, and `page_chrome`'s switcher stores only the opt-outs
   (a hand-authored copy in an older fragment may also store the default; that is harmless).

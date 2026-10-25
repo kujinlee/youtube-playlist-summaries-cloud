@@ -17446,6 +17446,7 @@ Backlog #226 part (b) written on branch `typography-contract`: `.agents/skills/s
 §2 states the `.ex-body` opt-in as a MUST, the three roles, the reserved semantic tokens, and where
 each value comes from. Part (c)'s live defect: the `brief-compose.py` shim gave `--em` no value
 for OS-dark with no `data-theme`, so bold text measured 1.90/2.05/1.90:1 on three pages; one
-`:root:not([data-theme="light"])` rule inside the OS-dark media query fixes it, and the recomposed
-pages measure 8.33-9.00:1 in all four states. brief-compose cases 153 -> 154, mutations 27 -> 28
-(total 2003 -> 2004; scoped run 28/28). Part (c)'s guard is still missing, so the row stays open.
+rule at the lowest working specificity (`html:where(...)`, and the pressed pair lowered to
+`html[data-theme=...]`, which also stops it overriding a page's own dark colour) fixes it; the
+recomposed pages measure 7.79-7.98:1 in all six states. brief-compose cases 153 -> 154, mutations
+27 -> 30 (total 2003 -> 2006; scoped run 30/30). Part (c)'s guard is still missing, so the row stays open.

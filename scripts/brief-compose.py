@@ -112,18 +112,27 @@ SHIM = """
      the 21 recomposable pages declare `--em` at all, so that was the common case, not the
      corner. Keyed on `[data-theme]` the two halves beat the media block in both
      directions and no page is required to declare anything. */
-  :root[data-theme="light"] { --em: #2d4a7c; }
-  :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* ⟳ 2026-10-24, r2 CODEX MEDIUM: `html[…]` (0,1,1), NOT `:root[…]` (0,2,0). The latter TIED a
+     fragment's own `:root[data-theme="dark"]` and won by coming later, so a page's deliberate dark
+     `--em` was overridden on a press — measured 5.74:1 -> 2.86:1. (0,1,1) still beats a fragment's
+     bare `:root` (0,1,0), which is the half-live case this pair exists for, and loses to any
+     fragment rule that names the theme. */
+  html[data-theme="light"] { --em: #2d4a7c; }
+  html[data-theme="dark"]  { --em: #9db8e8; }
   /* ⟳ 2026-10-24, backlog #226 part (c) — THE THIRD STATE: OS dark, NOTHING PRESSED. The two keyed
      rules above cover a press in either direction and neither applies with no attribute, so the
      `html` default `#2d4a7c` survived into the dark page: bold text MEASURED at 1.90:1, 2.05:1 and
      1.90:1 on the three role-using pages that declare no `--em` of their own (Chromium, OS-dark,
-     no saved theme). `:root:not([data-theme="light"])` (0,2,0) inside the media query is the
-     page family's own exclusion form, so it applies with the OS dark until light is pressed, and
-     never after. ⚠ NOT in the `html{}` block below: `shim_dark_tokens` reads that block, and a
+     no saved theme). It applies with the OS dark until light is pressed, and never after.
+     ⛔ SPECIFICITY (0,0,1), ON PURPOSE — r2 CODEX MEDIUM. The first version used the family's
+     `:root:not([data-theme="light"])` (0,2,0); that TIES a fragment's own OS-dark rule and the
+     shim is concatenated LATER, so it overrode a page's deliberate dark `--em`: measured 5.74:1
+     -> 2.86:1 on a fragment with a grey dark ground. `html:where(…)` beats only the `html`
+     default above (same specificity, later), and every fragment rule beats it. A DEFAULT must
+     be the weakest rule in its state. ⚠ NOT in the `html{}` block below: `shim_dark_tokens` reads that block, and a
      token there would oblige every fragment's light palette to declare `--em` — the refusal the
      comment above describes. */
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --em: #9db8e8; } }
+  @media (prefers-color-scheme: dark) { html:where(:not([data-theme="light"])) { --em: #9db8e8; } }
   /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
      one page's invention — every recent fragment has been re-declaring them privately to get past
      assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
@@ -1215,10 +1224,11 @@ def _self_test_body(cases: list[tuple[str, bool]]) -> None:
     # pressed, neither keyed rule applies, and bold text measured 1.90:1 on three real pages.
     _flat = "".join(SHIM.split())
     case("the shim gives --em a dark value with the OS dark and NOTHING pressed, as well as on "
-         "either press — and keeps it out of the html{} block shim_dark_tokens reads",
-         ('@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--em:#9db8e8;}}' in _flat,
-          ':root[data-theme="light"]{--em:#2d4a7c;}' in _flat,
-          ':root[data-theme="dark"]{--em:#9db8e8;}' in _flat,
+         "either press — at the lowest specificity, so a fragment's own value wins — and keeps it "
+         "out of the html{} block shim_dark_tokens reads",
+         ('@media(prefers-color-scheme:dark){html:where(:not([data-theme="light"])){--em:#9db8e8;}}' in _flat,
+          'html[data-theme="light"]{--em:#2d4a7c;}' in _flat,
+          'html[data-theme="dark"]{--em:#9db8e8;}' in _flat,
           "--em" not in _shim_names) == (True, True, True, True))
     case("a token declared in :root[data-theme=light] counts as covered",
          "--card" in light_palette_tokens(':root[data-theme="light"]{--card:#fff}'))

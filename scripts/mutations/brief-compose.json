@@ -333,10 +333,32 @@
     "file": "scripts/brief-compose.py",
     "edits": [
       [
-        "  @media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { --em: #9db8e8; } }\n",
+        "  @media (prefers-color-scheme: dark) { html:where(:not([data-theme=\"light\"])) { --em: #9db8e8; } }\n",
         ""
       ]
     ],
-    "expect": "the shim gives --em a dark value with the OS dark and NOTHING pressed, as well as on either press \u2014 and keeps it out of the html{} block shim_dark_tokens reads"
+    "expect": "the shim gives --em a dark value with the OS dark and NOTHING pressed, as well as on either press \u2014 at the lowest specificity, so a fragment's own value wins \u2014 and keeps it out of the html{} block shim_dark_tokens reads"
+  },
+  {
+    "name": "the OS-dark --em default outranks a fragment's own",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "{ html:where(:not([data-theme=\"light\"])) {",
+        "{ :root:not([data-theme=\"light\"]) {"
+      ]
+    ],
+    "expect": "the shim gives --em a dark value with the OS dark and NOTHING pressed, as well as on either press \u2014 at the lowest specificity, so a fragment's own value wins \u2014 and keeps it out of the html{} block shim_dark_tokens reads"
+  },
+  {
+    "name": "the pressed-dark --em default outranks a fragment's own",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  html[data-theme=\"dark\"]  { --em: #9db8e8; }\n",
+        "  :root[data-theme=\"dark\"]  { --em: #9db8e8; }\n"
+      ]
+    ],
+    "expect": "the shim gives --em a dark value with the OS dark and NOTHING pressed, as well as on either press \u2014 at the lowest specificity, so a fragment's own value wins \u2014 and keeps it out of the html{} block shim_dark_tokens reads"
   }
 ]
