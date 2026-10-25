@@ -3,7 +3,7 @@
 
     python3 scripts/check-decision-scheme.py              # fire the triggers
     python3 scripts/check-decision-scheme.py --rederive   # recompute the pinned baseline
-    python3 scripts/check-decision-scheme.py --self-test  # 271 cases
+    python3 scripts/check-decision-scheme.py --self-test  # 274 cases
 
 WHAT THE MECHANISM IS
 ---------------------
@@ -154,6 +154,9 @@ FAILURE_OBSERVATION = {
 
 OUTCOMES = ("stopped", "continued")
 
+# Appended to trigger 4's verdict while it is a WARN (see `main`), so no run reads as a pass.
+T4_SUSPENDED = (" — SUSPENDED TO A WARN by the owner 2026-10-25, pending backlog #327 (keep, "
+                "simplify or retire the scheme); NOT a pass")
 # The `baseline.json` key holding the lost bets that PREDATE trigger 3 (see `pinned_lost_bets`).
 PRE_TRIGGER_PINS = "lost_bets_before_trigger3"
 
@@ -578,7 +581,8 @@ def termination_window(rows: list[dict], size: int = 5) -> list[tuple]:
 
 
 def t4_no_improvement(rows: list[dict], baseline_median: float) -> str | None:
-    """FAIL. The last 5 terminated SUBJECTS are no shorter than the pre-scheme median.
+    """FAIL by design — but SUSPENDED TO A WARN in `main()` since 2026-10-25, pending backlog #327.
+    The last 5 terminated SUBJECTS are no shorter than the pre-scheme median.
 
     ⛔ THE COMPARATOR IS PINNED, NOT RECOMPUTED. A baseline recomputed at read time cannot
     detect that it has moved, and after the scheme ships every round count is contaminated by
@@ -619,7 +623,9 @@ def t9_deferral_composed(rows: list[dict], baseline_median: float) -> str | None
     its median contains deferrals, say so, because that is exactly the shape in which #337's
     hazard is invisible.
 
-    ⚠ IT FIRES ONLY WHERE t4 IS SILENT, deliberately. If t4 is already failing the reader is
+    ⚠ IT FIRES ONLY WHERE t4 IS SILENT, deliberately. (Since 2026-10-25 t4 is SUSPENDED to a
+    WARN pending backlog #327, so "failing" below reads "firing"; the exclusion is unchanged, because
+    it keys on the median, not on t4's severity.) If t4 is already failing the reader is
     being told the stronger thing and t4's own message now carries the composition; two warnings
     for one window is a reader who cannot tell which to act on.
 
@@ -1456,12 +1462,21 @@ def main(argv: list[str], *, baseline_path: Path | None = None,
         ("1 NOT FED", t1_not_fed(rows, starved_subjects)),
         ("2 NON-TERMINATION", t2_non_termination(rows)),
         ("3 LOST BET NOT ESCALATED", t3_lost_bet_not_escalated(rows, pins)),
-        ("4 NO IMPROVEMENT", t4_no_improvement(rows, pinned_rounds["median"])),
         ("5 RANKER MISS", t5_ranker_miss(rows)),
     ):
         if result:
             fails.append((name, result))
+    # ⛔ TRIGGER 4 IS SUSPENDED TO A WARN — the OWNER'S ruling, 2026-10-25, option A of a card,
+    # not a patch to make a red go away. Its FIRST evaluation ever (PR #397, the fifth prospective
+    # termination: [4, 7, 4, 5, 4]) said exactly what it exists to say, and the re-evaluation it
+    # demands is now backlog #327 (keep, simplify or retire the scheme). Blocking every unrelated
+    # PR while that is decided is not what the trigger is for. ⚠ WHEN #327 RULES, THIS SUSPENSION
+    # ENDS — trigger 4 goes back on the FAIL list above, is rewritten, or is retired with the scheme.
+    # ⛔ NOTHING ENFORCES THAT (r1 Claude M1, r1 Codex): no check reads #327's status, and closing it
+    # turns nothing red. It is a MANUAL follow-up; the suffix only keeps it visible on every run.
+    t4 = t4_no_improvement(rows, pinned_rounds["median"])
     for name, result in (
+        ("4 NO IMPROVEMENT", t4 and (t4 + T4_SUSPENDED)),
         ("6 DENOMINATOR MOVED", t6_denominator_moved(
             now, pinned_rounds, now_corpus=now, pinned_corpus=pinned.get("corpus", {}))),
         ("7 SAMPLE REACHED", t7_sample_reached(rows)),
@@ -2972,6 +2987,24 @@ def _self_test() -> int:
                            [{"subject": "badpin", "unit": "u"}])
         case("⛔ a MALFORMED pin list is CANNOT RUN at the CLI, never an empty one",
              (_rc, "CANNOT RUN" in _o, "has no reason" in _o), (2, True, True))
+        # ⛔ TRIGGER 4's SUSPENSION, WIRE-TESTED at two DISTINCT medians (at the baseline, and far
+        # above it), plus one below it that must stay silent — so the case cannot be satisfied by
+        # one fixture's constant, and moving trigger 4 back to the FAIL list reddens it.
+        for _tag, _n in (("t4eq", 4), ("t4hi", 9)):
+            _rc, _o = _run_log(_tag, [_b(f"{_tag}{i}", "u", "accrete", "stopped",
+                                         rounds_at_termination=_n) for i in range(5)])
+            # ⟳ r1 Claude M2 / r1 Codex: asserted on trigger 4's OWN line, not the whole output —
+            # three suffix edits passed 274/274 when the test read `_o` as a bag of words.
+            _t4 = [ln for ln in _o.splitlines() if ln.startswith("  WARN  trigger 4 NO IMPROVEMENT")]
+            _l = _t4[0] if len(_t4) == 1 else ""
+            case(f"⭐ trigger 4 at median {_n} reaches the CLI as a WARN naming backlog #327, exit 0",
+                 (_rc, len(_t4), f"over the last 5 SUBJECTS is {_n}," in _l,
+                  "pinned pre-scheme median of 4" in _l, "backlog #327" in _l,
+                  _l.endswith("NOT a pass"), "FAIL" in _o), (0, 1, True, True, True, True, False))
+        _rc, _o = _run_log("t4lo", [_b(f"t4lo{i}", "u", "accrete", "stopped",
+                                       rounds_at_termination=3) for i in range(5)])
+        case("...and at median 3, below the baseline, trigger 4 says nothing at all",
+             (_rc, "trigger 4" in _o), (0, False))
         # ⛔ r4 Codex Low, at the CLI: a PRESENT null is CANNOT RUN, not "no pins" — measured
         # before the fix, it exited 0 "all triggers quiet" over an empty log.
         _bp_null = Path(_wd) / "nullpin2-baseline.json"
