@@ -17429,32 +17429,34 @@ shards over the 1,500s trigger). N is derived everywhere else from `strategy.job
 matrix list is the only copy. Concurrent-job queueing with 14 jobs per push is noted on backlog #231
 as unmeasured.
 
-## 2026-10-24 [needs-you]
+## 2026-10-24
 The script behind every explainer page's theme and text-style buttons is now actually run by its
 tests, not just checked for typos. Until now the tests only asked whether the script was valid
 code, so a script that crashed on load, leaving every button dead, passed. They now run it on
-a small stand-in page and check that it does its job there: it watches the toolbar and pins it
-when the toolbar scrolls away. A crash fails the tests, and so does a 17-character change that had
-previously disabled the pinning with every check still green. The stand-in page has no real
-screen, so whether a reader can actually see the buttons is still checked only by hand.
+a small stand-in page, press both buttons and check that they work, and check that the script
+keeps the toolbar pinned when it scrolls away. A crash fails the tests, and so does a
+17-character change that had previously disabled the pinning with every check still green. The
+stand-in page has no real screen, so whether a reader can actually see the buttons is still
+checked by hand.
 
-One older page was rebuilt so its theme button stays on screen while scrolling. Seven others were
-left alone, and that is the decision waiting on you: their theme button only half-works (no light
-colours were ever written for them), so rebuilding them with today's tools removes the button
-rather than fixing it. Either rebuild them without the button, or have light colours written for
-each one.
+Seven older pages had their theme button sitting at the very bottom of the page. They were
+rebuilt, and the button now stays on screen as the reader scrolls. Six of them had been missed
+by the page builder, which misread their working theme button as broken and would have removed
+it. That misreading is fixed. Nothing on those pages changed except the toolbar, which was
+checked by comparing the visible text before and after. One last page cannot be rebuilt because
+its source file no longer exists.
 <!--tech-->
 Branch `comprehensibility-chrome-cases`. Backlog #305 closed: `page_chrome.py --self-test` runs
-`chrome_script()` under plain `node` on a strict stub DOM (throws on unmodelled selectors/methods,
-supplies a recording `IntersectionObserver`), asserting positive effects — slot observed, pins out of
-view, unpins in view. Backlog #304 task 0 done: the `ctls` lookup is asked as the observer's `rootMargin` in
-two layouts, so dropping either selector moves a margin. Cases 223 -> 227; mutations page_chrome
-89 -> 93, total 2003 -> 2007; scoped run 93 killed, 93 attributed, 0 survivors. Not layout: stub
-boxes are constants, so backlog #304's browser half (route C) is untouched.
+`chrome_script()` under plain `node` on a strict stub DOM that records listeners, the observer's
+target and margin and the resize target; the cases press both controls. Backlog #304 task 0 done:
+the `ctls` lookup is asked as the observer `rootMargin` in two layouts expecting 150 and 120.
+`missing_palettes` now accepts a light palette supplied as the bare `:root` default plus
+`:root:not([data-theme="light"])` on the OS-dark block (`_light_by_exclusion`; both halves
+required, top-level only). Cases 223 -> 233; mutations page_chrome 89 -> 101, total 2003 -> 2015;
+scoped run 101 killed, 101 attributed, 0 survivors.
 
-Backlog #300's remainder was re-measured over the right population: 11 tracked pages carry `#chrome-theme`,
-3 carry `.chrome-pinned{position:fixed`, 8 do not (the earlier "3 of 63" counted `position:fixed`
-anywhere, which the ask-tray floater also supplies). `2026-10-06-brief-dev-process-speed` recomposed
-from its unchanged fragment, Chromium 320x568: theme button in view at scrollY 0/900/2000/end. The
-other 7 have `missing_palettes == ['light']`; one has no fragment. Backlog #105 closed: the
-`brief-compose.py` shim comment states the whole-or-none palette rule and why.
+Backlog #300's remainder, re-measured over pages carrying `#chrome-theme`: 11, 3 pinned, 8 not
+(the earlier "3 of 63" counted `position:fixed` anywhere). 7 recomposed from unchanged fragments;
+Chromium OS-dark 320x568: visible text identical old vs new, theme button in view at every tested
+scroll, one press gives light, 0 page errors. `2026-09-03-brief-guard-inventory-slice-state` has no
+fragment. Backlog #105 closed: the `brief-compose.py` shim comment.

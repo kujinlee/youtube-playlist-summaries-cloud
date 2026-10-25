@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared chrome for the generated pages: theme control, generated-at stamp, refresh.
 
-    python3 scripts/page_chrome.py --self-test          # 227 cases
+    python3 scripts/page_chrome.py --self-test          # 233 cases
 
 Backlog #76 and #77. Before this module, five generated pages each styled
 `prefers-color-scheme` and **none had a control**, so every page followed the OS and
@@ -266,7 +266,56 @@ def missing_palettes(page: str) -> list[str]:
     # a second predicate (`declares_light`) to work around exactly that; the workaround is
     # no longer the only thing standing between the prose and this answer.
     css = _applied_css(page)
-    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]
+    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css
+            and not (t == "light" and _light_by_exclusion(css))]
+
+
+def _top_level_rules(css: str) -> list[tuple[str, str]]:
+    """`(selector, body)` for every rule OUTSIDE any at-rule, whitespace-stripped selector. PURE.
+
+    By brace depth, not regex: "which `:root` is inside which media block" is the part a
+    regex gets wrong (`brief-compose.light_palette_tokens` says the same about its scan).
+    """
+    out, depth, start, sel = [], 0, 0, ""
+    for i, ch in enumerate(css):
+        if ch == "{":
+            if depth == 0:
+                sel = "".join(css[start:i].split())
+                start = i + 1
+            depth += 1
+        elif ch == "}":
+            depth = max(0, depth - 1)
+            if depth == 0:
+                if not sel.startswith("@"):
+                    out.append((sel, css[start:i]))
+                start = i + 1
+    return out
+
+
+_LIGHT_EXCLUDED = f':root:not([{THEME_ATTR}="light"])'
+
+
+def _light_by_exclusion(css: str) -> bool:
+    """Is the light palette supplied the OTHER valid way — as the plain default? PURE.
+
+    ⟳ 2026-10-24, backlog #300 r1 (BOTH halves, independently, measured in Chromium): the
+    light palette need not be a `:root[data-theme="light"]` block. The artifact pattern
+    declares it as bare `:root` and EXCLUDES it from the OS-dark block with
+    `:root:not([data-theme="light"])`, so pressing light simply stops the dark block
+    applying. Seven committed pages are written that way; with the OS dark and the page set
+    to light every sampled element rendered as OS-light. The literal test above reported
+    `['light']` for all seven, so the composer DROPPED a working control from each.
+
+    ⚠ BOTH halves are required, and that is what keeps this from re-opening the
+    fail-silent this module exists for: the exclusion alone, with no default palette, is a
+    button that changes an attribute nothing styles. The default must be a TOP-LEVEL bare
+    `:root` that declares a custom property — one nested in a media query does not apply
+    when the OS is dark and the page is set to light, which is the case that matters.
+    """
+    if _LIGHT_EXCLUDED not in "".join(css.split()):
+        return False
+    return any(sel == ":root" and re.search(r"--[\w-]+\s*:", body)
+               for sel, body in _top_level_rules(css))
 
 
 def has_control(page: str) -> bool:
@@ -1521,6 +1570,25 @@ def self_test() -> int:
              missing_palettes(f"<style>{LIGHT}{DARK}</style>{theme_control()}"), [])
         # A page that takes the stamp alone is not required to carry palettes.
         case("a page with no control needs no palettes", missing_palettes(stamp("x")), [])
+        # ── the light palette as the plain DEFAULT (backlog #300 r1) ─────────────────────
+        _DEF = ':root{--bg:#fff;--ink:#111}'
+        _EXCL = '@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111}}'
+        case("a light DEFAULT plus the OS-dark block excluding light counts as a light palette "
+             "— seven committed pages are written this way and their toggle works",
+             missing_palettes(f"<style>{_DEF}{_EXCL}{DARK}</style>{theme_control()}"), [])
+        case("...but the exclusion with NO default palette is still caught — that button "
+             "styles nothing",
+             missing_palettes(f"<style>{_EXCL}{DARK}</style>{theme_control()}"), ["light"])
+        # ⚠ Not "this page is broken" — with no OS-dark block at all it may well work. It is
+        # that THIS route needs the exclusion: whether some other block outranks a bare
+        # default is not decided here, so the shape stays refused exactly as it was before.
+        case("...and a default WITHOUT the exclusion does not take this route — it stays "
+             "refused as before",
+             missing_palettes(f"<style>{_DEF}{DARK}</style>{theme_control()}"), ["light"])
+        case("...and a 'default' nested in a media query does not count — it does not apply "
+             "with the OS dark and the page set to light",
+             missing_palettes("<style>@media (min-width:1px){" + _DEF + "}" + _EXCL + DARK
+                              + f"</style>{theme_control()}"), ["light"])
 
         # --- assert_wired: the caller-facing gate
         def raises(page, where="p", scoped=False):
@@ -2114,33 +2182,41 @@ def self_test() -> int:
         #
         # So this is a STUB page, under plain `node` (already this file's dependency — no
         # package is staged, so it runs inside the mutation harness as the parse case does).
-        # ⭐ It is STRICT on purpose: a selector or method it does not model THROWS, so an
-        # unmodelled call is a loud red, never a permissive Proxy's quiet pass. And it SUPPLIES
-        # an observer, recording the `rootMargin` it is built with — which is what lets it see
-        # the 17-byte `arm=function(){};` that backlog #304 measured passing every other gate.
+        # ⭐ What it is strict about, exactly: any SELECTOR or `closest()` argument it does not
+        # model throws, and so does calling a method no element has. It RECORDS what it is
+        # handed — every listener, the observer's target and margin, the resize target — and
+        # the cases then PRESS the controls through those recorded listeners. ⟳ r1: both halves
+        # showed the first version was not strict where it said it was — `addEventListener`
+        # and `observe()` accepted anything, so a throwing click handler and `io.observe(bar)`
+        # both passed every case.
         #
         # ⚠ WHAT IT CANNOT SEE, stated rather than implied: every box is a fixed number, so
         # this is WIRING under execution, not reachability. A bar pinned inside an
         # `overflow:hidden` ancestor still passes. That layout half is backlog #304's.
-        _STUB = r"""var G=globalThis,REP={error:null,margins:[],observed:0};
-function el(id,bottom){var a={},cls={},kids=[];return {id:id,parent:null,style:{},kids:kids,
+        _STUB = r"""var G=globalThis,REP={error:null,margins:[],observed:[],resized:[]};
+function el(id,bottom){var a={},cls={},kids=[],on={};return {id:id,parent:null,style:{},kids:kids,on:on,className:'',
 getAttribute:function(k){return k in a?a[k]:null;},setAttribute:function(k,v){a[k]=String(v);},
-removeAttribute:function(k){delete a[k];},addEventListener:function(){},
-classList:{contains:function(c){return !!cls[c];},toggle:function(c,on){cls[c]=on===undefined?!cls[c]:!!on;}},
+removeAttribute:function(k){delete a[k];},
+addEventListener:function(t,f){if(typeof f!=='function')throw new Error('stub: listener');(on[t]=on[t]||[]).push(f);},
+classList:{contains:function(c){return !!cls[c];},toggle:function(c,v){cls[c]=v===undefined?!cls[c]:!!v;}},
 getBoundingClientRect:function(){return {top:0,bottom:bottom,height:40};},
 appendChild:function(k){k.parent=this;kids.push(k);},
 contains:function(k){for(var q=k;q;q=q.parent)if(q===this)return true;return false;},
-closest:function(s){if(s!=='.CHROME_SLOT')throw new Error('stub: closest('+s+')');return this.parent;},
-querySelectorAll:function(s){if(s==='button[data-s]')return [];var ids=s.split(',').map(function(x){
-if(!/^#[\w-]+$/.test(x))throw new Error('stub: selector '+s);return x.slice(1);});
+closest:function(s){if(s==='.CHROME_SLOT')return this.parent;
+if(s==='button[data-s]')return this.getAttribute('data-s')!==null?this:null;
+throw new Error('stub: closest('+s+')');},
+querySelectorAll:function(s){if(s==='button[data-s]')return kids.filter(function(k){return k.getAttribute('data-s')!==null;});
+var ids=s.split(',').map(function(x){if(!/^#[\w-]+$/.test(x))throw new Error('stub: selector '+s);return x.slice(1);});
 var out=[],walk=function(n){n.kids.forEach(function(k){if(ids.indexOf(k.id)>=0)out.push(k);walk(k);});};
 walk(this);return out;},
 querySelector:function(s){return this.querySelectorAll(s)[0]||null;}};}
+function fire(n,t,ev){(n.on[t]||[]).forEach(function(f){f(ev||{target:n});});}
 var root=el('html',0),slot=el('slot',200),bar=el('bar',0);
 root.clientHeight=800;root.style.setProperty=function(k,v){root.style[k]=v;};
 slot.appendChild(bar);
 var theme=el('chrome-theme',+process.argv[2]),sch=el('schemer',+process.argv[3]);
 bar.appendChild(theme);bar.appendChild(sch);
+var sbs=['1','2','3'].map(function(v){var b=el('',0);b.setAttribute('data-s',v);sch.appendChild(b);return b;});
 var byId={'chrome-theme':theme,'schemer':sch};
 G.document={documentElement:root,getElementById:function(i){return byId[i]||null;},
 querySelectorAll:function(s){if(s!=='.CHROME_SLOT .chrome')throw new Error('stub: '+s);return [bar];}};
@@ -2148,14 +2224,20 @@ G.window=G;G.matchMedia=function(){return {matches:false};};G.innerHeight=800;
 Object.defineProperty(G,'localStorage',{configurable:true,value:{getItem:function(){return null;},
 setItem:function(){},removeItem:function(){}}});
 Object.defineProperty(G,'location',{configurable:true,value:{protocol:'http:'}});
-G.ResizeObserver=function(){this.observe=function(){};};
-var lastCb=null;
-G.IntersectionObserver=function(cb,o){REP.margins.push(o.rootMargin);lastCb=cb;
-this.observe=function(){REP.observed++;};this.disconnect=function(){};};
+var name=function(t){return t===slot?'slot':t===bar?'bar':(t&&t.id)||String(t);};
+G.ResizeObserver=function(){this.observe=function(t){REP.resized.push(name(t));};};
+var live=null;
+G.IntersectionObserver=function(cb,o){REP.margins.push(o.rootMargin);var me=this;
+this.observe=function(t){REP.observed.push(name(t));if(t===slot)live=function(x){cb([{isIntersecting:x}]);};};
+this.disconnect=function(){};};
 try{
 /*SCRIPT*/
-if(lastCb){lastCb([{isIntersecting:false}]);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
-lastCb([{isIntersecting:true}]);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
+REP.pressed0=theme.getAttribute('aria-pressed');
+if(live){live(false);REP.pinnedOut=bar.classList.contains('CHROME_PIN');
+live(true);REP.pinnedIn=bar.classList.contains('CHROME_PIN');}
+fire(theme,'click');REP.theme1=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
+fire(theme,'click');REP.theme2=[root.getAttribute('data-theme'),theme.getAttribute('aria-pressed')];
+fire(sch,'click',{target:sbs[0]});REP.scheme=[root.getAttribute('data-scheme'),sbs[0].className,sbs[2].className];
 }catch(e){REP.error=String(e);}
 console.log(JSON.stringify(REP));
 """.replace("CHROME_SLOT", CHROME_SLOT_CLASS).replace("CHROME_PIN", CHROME_PIN_CLASS)
@@ -2180,38 +2262,49 @@ console.log(JSON.stringify(REP));
                 try: os.unlink(path)
                 except OSError: pass
 
-        def _effect(rep):
-            # ⛔ POSITIVE EFFECTS ONLY. "no error" alone is the absence-of-change assertion
-            # row #305 warns against: a script that silently does nothing raises nothing.
-            if not isinstance(rep, dict):
-                return rep
-            return (rep.get("error"), rep.get("observed", 0) > 0,
-                    rep.get("pinnedOut"), rep.get("pinnedIn"))
+        def _field(rep, *keys):
+            # ⛔ A CANNOT RUN string is returned WHOLE, never sliced — r1 Low: indexing it gave
+            # `'C'` and `'AN'` as the "got" value and lost the reason the case failed.
+            return rep if not isinstance(rep, dict) else tuple(rep.get(k) for k in keys)
 
-        case("the emitted script RUNS: on a stub page it raises nothing, observes the slot, "
-             "pins when the slot leaves view and unpins when it returns (backlog #305)",
-             _effect(_runs(chrome_script(), 100, 50)), (None, True, True, False))
+        _ok = _runs(chrome_script(), 100, 50)
+        # ⛔ POSITIVE EFFECTS, and each one is something the script must DO: an absent
+        # error alone is the absence-of-change assertion row #305 warns against.
+        case("the emitted script RUNS: on a stub page it raises nothing, observes the SLOT "
+             "(not the bar, which leaves the flow when pinned), watches the bar's size, pins "
+             "when the slot leaves view and unpins when it returns (backlog #305)",
+             _field(_ok, "error", "observed", "resized", "pinnedOut", "pinnedIn"),
+             (None, ["slot", "slot"], ["bar"], True, False))
+        case("...and its controls WORK when pressed: the theme button flips the theme and its "
+             "pressed state both ways, starting unpressed",
+             _field(_ok, "pressed0", "theme1", "theme2"),
+             ("false", ["dark", "true"], ["light", "false"]))
+        case("...and the text-style switcher sets the scheme and marks only the pressed button",
+             _field(_ok, "scheme"), (["1", "on", ""],))
         # ⛔ backlog #304 TASK 0 — the `ctls` lookup, the THIRD site of `#chrome-theme,#schemer`
         # and the one with no case: the tail the observer's margin is cut from is measured
         # over exactly these elements. Asked as a VALUE, not a substring — a substring case
         # here is what survived its own mutation at the second site (see above). Two layouts,
-        # because `min` hides whichever control sits lower: theme on top in one, the switcher
-        # on top in the other, so dropping EITHER selector moves one of the two margins.
+        # because `min` hides whichever control sits lower: the switcher on top in one, the
+        # theme button in the other, so dropping EITHER selector moves one margin. ⟳ r1 Low:
+        # the two margins DIFFER (150 and 120), so a hard-coded tail cannot satisfy both.
         case("the observer's margin is cut at the TOPMOST control, whichever one that is — "
              "the `ctls` lookup counts both (backlog #304 task 0)",
-             tuple(r["margins"][:1] if isinstance(r, dict) else r
-                   for r in (_runs(chrome_script(), 100, 50), _runs(chrome_script(), 50, 100))),
-             (["-150px 0px 0px 0px"], ["-150px 0px 0px 0px"]))
+             tuple(_field(r, "margins") for r in
+                   (_runs(chrome_script(), 100, 50), _runs(chrome_script(), 80, 120))),
+             ((["-150px 0px 0px 0px", "-150px 0px 0px 0px"],),
+              (["-120px 0px 0px 0px", "-120px 0px 0px 0px"],)))
         # ⭐ The falsifiers, run here so a reader never has to take them on trust. Each is the
         # shape a real defect took, not an invented one.
         case("...and a startup `throw` — which PARSES — makes it go red (#305's falsifier)",
-             _effect(_runs("throw new Error('dead');" + chrome_script(), 100, 50))[0],
-             "Error: dead")
+             _field(_runs("throw new Error('dead');" + chrome_script(), 100, 50), "error"),
+             ("Error: dead",))
         case("...and so does #304's 17-byte `arm=function(){};`, which every text gate, "
              "`node --check` and jsdom all passed",
-             _effect(_runs(chrome_script().replace(
-                 "var sync=", "arm=function(){};var sync=", 1), 100, 50))[1:3],
-             (False, None))
+             _field(_runs(chrome_script().replace(
+                 "var sync=", "arm=function(){};var sync=", 1), 100, 50),
+                 "observed", "pinnedOut"),
+             ([], None))
 
         # ── r6 CODEX HIGH, the owner's fix: the fragment's own switcher joins the bar ──────
         case("the script moves a hand-authored #schemer INTO the bar, so one element carries "

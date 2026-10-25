@@ -15,8 +15,8 @@
     "file": "scripts/page_chrome.py",
     "edits": [
       [
-        "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]",
-        "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css]"
+        "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css\n",
+        "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in css\n"
       ]
     ],
     "expect": "a control with NEITHER palette is caught"
@@ -1009,7 +1009,7 @@
         "        \"var tailPx=0;nope();\"\n"
       ]
     ],
-    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the slot, pins when the slot leaves view and unpins when it returns (backlog #305)"
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the SLOT (not the bar, which leaves the flow when pinned), watches the bar's size, pins when the slot leaves view and unpins when it returns (backlog #305)"
   },
   {
     "name": "backlog #304's 17-byte addition disarms the observer",
@@ -1020,6 +1020,94 @@
         "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};arm=function(){};\""
       ]
     ],
-    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the slot, pins when the slot leaves view and unpins when it returns (backlog #305)"
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the SLOT (not the bar, which leaves the flow when pinned), watches the bar's size, pins when the slot leaves view and unpins when it returns (backlog #305)"
+  },
+  {
+    "name": "the observer watches the BAR, which leaves the flow when pinned",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};\"\n",
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(bar);};\"\n"
+      ]
+    ],
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the SLOT (not the bar, which leaves the flow when pinned), watches the bar's size, pins when the slot leaves view and unpins when it returns (backlog #305)"
+  },
+  {
+    "name": "the theme button starts in the INVERTED pressed state",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));\"",
+        "\"if(b){b.setAttribute('aria-pressed',String(cur()!=='dark'));\""
+      ]
+    ],
+    "expect": "...and its controls WORK when pressed: the theme button flips the theme and its pressed state both ways, starting unpressed"
+  },
+  {
+    "name": "the theme click handler throws",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);\"",
+        "\"var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);nope();\""
+      ]
+    ],
+    "expect": "...and its controls WORK when pressed: the theme button flips the theme and its pressed state both ways, starting unpressed"
+  },
+  {
+    "name": "the text-style click ignores the button pressed",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(b)sset(b.getAttribute('data-s'));});\"",
+        "\"if(b)sset('3');});\""
+      ]
+    ],
+    "expect": "...and the text-style switcher sets the scheme and marks only the pressed button"
+  },
+  {
+    "name": "the tail is a hard-coded constant",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\n        \"if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));\"",
+        "\n        \"if(b<m)m=b;}tailPx=150;\""
+      ]
+    ],
+    "expect": "the observer's margin is cut at the TOPMOST control, whichever one that is \u2014 the `ctls` lookup counts both (backlog #304 task 0)"
+  },
+  {
+    "name": "the light-by-exclusion route is deleted",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "            and not (t == \"light\" and _light_by_exclusion(css))]",
+        "            ]"
+      ]
+    ],
+    "expect": "a light DEFAULT plus the OS-dark block excluding light counts as a light palette \u2014 seven committed pages are written this way and their toggle works"
+  },
+  {
+    "name": "the light-by-exclusion route no longer requires the exclusion",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "    if _LIGHT_EXCLUDED not in \"\".join(css.split()):\n        return False\n",
+        "    if False:\n        return False\n"
+      ]
+    ],
+    "expect": "...and a default WITHOUT the exclusion does not take this route \u2014 it stays refused as before"
+  },
+  {
+    "name": "the light default may sit inside a media query",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "               for sel, body in _top_level_rules(css))",
+        "               for sel, body in [(\":root\", css)])"
+      ]
+    ],
+    "expect": "...and a 'default' nested in a media query does not count \u2014 it does not apply with the OS dark and the page set to light"
   }
 ]
