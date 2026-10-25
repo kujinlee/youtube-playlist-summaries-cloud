@@ -2485,6 +2485,8 @@ the work now:
 - [ ] **backlog #333** — the sweep's shards are imbalanced ~2x in wall-clock against a predicted
       1.15x, and the sweep IS the critical path: verify→`mutation-sweep-complete` is **19–23 min**
       and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
+- [ ] **backlog #353** — `check-merge-ready` reads paths from patch text; three known path shapes fail CLOSED
+  (false HOLD / NOT READY). Class fix: paths from `git diff --name-status -z -M`. Reverse if one is a false READY.
 - [ ] **backlog #334** — a declined escalation must pre-commit the observation that would reverse it.
 
 ⟳ **backlog #321's FOURTH occurrence — the decision that ends the slice — IS NOW RECORDED (2026-10-21).**

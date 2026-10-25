@@ -17546,6 +17546,8 @@ bet the parsers were REDESIGNED into one, `diff_files()`, with one `is_comment()
 renamed out of scope (`scope_exits`) holds — 8 of 40 unchanged. r3 (Codex) found only PATH IDENTITY left —
 git's C-quoted paths, the tab after a spaced path, binary deletions, copies, a workflow renamed into
 `scripts/check-*` — and the unit was SPLIT: the detectors held, `_unquote`/`_side` and the role-preserving
-exit were fixed, each case built from a real `git diff` in a scratch repository. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+exit were fixed, each case built from a real `git diff` in a scratch repository. r4 found three more path
+shapes, two caused by r3's own fixes — THRASHING — and every one fails CLOSED (two false HOLDs, one NOT READY;
+never a false READY). The owner chose to DEFER: the review loop stops at r4 and the remainder is backlog #353. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
 window is unseen. 146 cases (incl. `main()` over a fake `_run`), 34 new mutations, 50/50. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.
