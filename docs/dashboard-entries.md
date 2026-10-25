@@ -17496,6 +17496,6 @@ the process. That decision is backlog #327, and it waits for you.
 Branch `t4-warn-pending-327`. `check-decision-scheme.py`: trigger 4 moves from the FAIL list to the
 WARN list with a `T4_SUSPENDED` suffix naming backlog #327 and "NOT a pass". Its window on PR #397's
 branch is `[4, 7, 4, 5, 4]` against the pinned median 4; on master the window is empty (4 of 5).
-Three CLI cases (median 4 and 9 WARN with exit 0; median 3 silent) and three mutations, 128/128
-killed in a scoped sweep. Backlog #327 amended: reopened as keep/simplify/retire. When it rules, trigger 4
+Three CLI cases (median 4 and 9 WARN with exit 0, asserted on trigger 4's own line; median 3
+silent) and four mutations; the whole 129-entry manifest killed 129/129 in a scoped sweep. Backlog #327 amended: reopened as keep/simplify/retire. When it rules, trigger 4
 is restored, rewritten or retired — a manual step that nothing enforces.
