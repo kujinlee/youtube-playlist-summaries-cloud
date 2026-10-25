@@ -102,7 +102,10 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
 - **Structure is carried by COLOUR ROLES, not by brightness alone** (backlog #226, the owner's choice
   from a live three-way switcher, 2026-10-05). Measured before it: heading, body prose and `<b>` all
   computed to one colour, so luminance was the only cue and the page had to be read, not skimmed.
-  Content opts in with the `.ex-body` class, and three roles are spent there:
+  ⛔ **A page MUST opt in, by putting its content inside an element with class `.ex-body`.** The
+  roles style nothing outside it, so the composer adds no text-style switcher to a fragment without
+  one, and nothing warns. That page renders the flat, one-colour structure this rule exists to stop.
+  Inside `.ex-body` three roles are spent:
 
   | Role | Colours | Token it reads |
   |---|---|---|
@@ -110,16 +113,21 @@ use a session-scoped temp directory: an explainer nobody can find later is the s
   | `--prose` | body text | `--fg2` |
   | `--emph` | `strong`, `b` | `--em` |
 
-  ⛔ **The status colours `--verified` and `--warn` are RESERVED** — named by token, because their hue
-  varies by page (green and amber in the committed fragments). They mean *measured* and *warning*; a
-  page that spends them on emphasis makes every bolded phrase assert something it does not.
-  ⚠ The values live in ONE place each, and this list does not copy them: the role CSS is
-  `page_chrome.text_style_css()`; the `--accent` pair is *The common look* in `CONTEXT.md`; the `--em`
-  pair and the fallbacks for a page that declares neither are `brief-compose.py`'s shim. The
-  switcher (`#schemer`) is an **escape hatch, not scaffolding**: colour is the no-attribute default,
-  so a page with JavaScript off still renders in colour, and storage holds only the opt-outs.
-  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog) do not opt in, and nothing
-  measured them under it.
+  ⛔ **The semantic colours are RESERVED, and never spent on a role.** `--verified` and `--cool` mean
+  *measured*; `--warn` means *warning*; `--hot` and `--defect` mean *defect*. `--verified`, `--cool` and `--hot` are named in
+  *The common look*, `CONTEXT.md`; `--warn` and `--defect` are declared by the fragments, and the shim
+  supplies `--defect`. A page that bolds in one of them makes every bolded phrase assert
+  something it does not. They are named by token, not by hue, because a page sets its own hue.
+  ⚠ **Where the values come from:** the role mapping is `page_chrome.text_style_css()`; the family's
+  convention for `--accent` is *The common look* in `CONTEXT.md`; `brief-compose.py`'s shim supplies
+  DEFAULTS for `--accent` and `--em`, in all three states (OS-dark with nothing pressed, light
+  pressed, dark pressed). A fragment that declares its own value overrides those through the normal
+  cascade, so a page's actual colours are the fragment's, then the shim's. The switcher (`#schemer`)
+  is an **escape hatch, not scaffolding**: colour is the no-attribute default, so a page with
+  JavaScript off still renders in colour, and `page_chrome`'s switcher stores only the opt-outs
+  (a hand-authored copy in an older fragment may also store the default; that is harmless).
+  ⚠ Tuned on prose. The tabular producers (dashboard, goals, backlog, features, work lines) do not
+  opt in, and nothing has measured them under it.
 
 **Check it by measuring, not by looking.** Once served, in the page:
 

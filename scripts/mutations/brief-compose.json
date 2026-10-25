@@ -327,5 +327,16 @@
       ]
     ],
     "expect": "the generated-at moment reaches the composed page's stamp"
+  },
+  {
+    "name": "the OS-dark, nothing-pressed state gets no dark --em",
+    "file": "scripts/brief-compose.py",
+    "edits": [
+      [
+        "  @media (prefers-color-scheme: dark) { :root:not([data-theme=\"light\"]) { --em: #9db8e8; } }\n",
+        ""
+      ]
+    ],
+    "expect": "the shim gives --em a dark value with the OS dark and NOTHING pressed, as well as on either press \u2014 and keeps it out of the html{} block shim_dark_tokens reads"
   }
 ]

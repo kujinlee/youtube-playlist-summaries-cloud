@@ -17434,10 +17434,18 @@ The rule for how an explainer page uses colour to show structure is now written 
 anyone building a page will read it. On 2026-10-05 you picked a scheme where headings, body text
 and bold words each get their own colour, so a page can be skimmed. It was built into the page
 code but described nowhere, so anyone else making a page had to guess. The written rule also says
-that the "measured" and "warning" colours must never be used for emphasis, because they carry
-meaning.
+that the "measured", "warning" and "defect" colours must never be used for emphasis, because they
+carry meaning.
+
+Checking that rule turned up a real readability bug, now fixed. On a computer set to dark mode,
+bold words on three recent explainer pages were dark blue on a dark background, at about a
+less than half the minimum readable contrast. They now read clearly in every combination of computer
+setting and page button.
 <!--tech-->
-Backlog #226 closed (part b) on branch `typography-contract`: `.agents/skills/shared/explainer-delivery.md`
-§2 gains the three-role contract (`--head`/`--prose`/`--emph` inside `.ex-body`), `--verified`/`--warn`
-reserved, the switcher as an escape hatch, and the prose-only limit. Values are pointed at in
-`page_chrome.text_style_css()`, `CONTEXT.md` and the `brief-compose.py` shim rather than restated.
+Backlog #226 part (b) written on branch `typography-contract`: `.agents/skills/shared/explainer-delivery.md`
+§2 states the `.ex-body` opt-in as a MUST, the three roles, the reserved semantic tokens, and where
+each value comes from. Part (c)'s live defect: the `brief-compose.py` shim gave `--em` no value
+for OS-dark with no `data-theme`, so bold text measured 1.90/2.05/1.90:1 on three pages; one
+`:root:not([data-theme="light"])` rule inside the OS-dark media query fixes it, and the recomposed
+pages measure 8.33-9.00:1 in all four states. brief-compose cases 153 -> 154, mutations 27 -> 28
+(total 2003 -> 2004; scoped run 28/28). Part (c)'s guard is still missing, so the row stays open.

@@ -157,6 +157,16 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
      directions and no page is required to declare anything. */
   :root[data-theme="light"] { --em: #2d4a7c; }
   :root[data-theme="dark"]  { --em: #9db8e8; }
+  /* ⟳ 2026-10-24, backlog #226 part (c) — THE THIRD STATE: OS dark, NOTHING PRESSED. The two keyed
+     rules above cover a press in either direction and neither applies with no attribute, so the
+     `html` default `#2d4a7c` survived into the dark page: bold text MEASURED at 1.90:1, 2.05:1 and
+     1.90:1 on the three role-using pages that declare no `--em` of their own (Chromium, OS-dark,
+     no saved theme). `:root:not([data-theme="light"])` (0,2,0) inside the media query is the
+     page family's own exclusion form, so it applies with the OS dark until light is pressed, and
+     never after. ⚠ NOT in the `html{}` block below: `shim_dark_tokens` reads that block, and a
+     token there would oblige every fragment's light palette to declare `--em` — the refusal the
+     comment above describes. */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --em: #9db8e8; } }
   /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
      one page's invention — every recent fragment has been re-declaring them privately to get past
      assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
@@ -227,7 +237,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
 <div class="wrap ex-body">
 
 <h1>The decision ladder: bets, lost bets and the twelve triggers</h1>
-<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-23 16:47 · 92c78bff · uncommitted changes</time></span></div></div>
+<div class="chrome-slot"><div class="chrome"><button id="chrome-theme" type="button" class="chrome-btn" aria-pressed="false" title="Switch between light and dark"><span class="chrome-ico" aria-hidden="true">◐</span><span class="chrome-lbl">Theme</span></button><div class="schemer" id="schemer" role="group" aria-label="Text style"><span class="lbl">Text style:</span><button type="button" data-s="3" class="on" aria-pressed="true">colour</button><button type="button" data-s="2" aria-pressed="false">headings only</button><button type="button" data-s="1" aria-pressed="false">plain</button></div><span class="chrome-when">generated <time>2026-10-24 20:00 · 68e0f8ee · uncommitted changes</time></span></div></div>
 <p class="horizon">as of <code>40b765e4</code> (master, PR #387 merged) · 2026-10-23 14:21 PDT · source read: <code>scripts/check-decision-scheme.py</code>, <code>docs/reviews/decision-scheme/{decision-log.jsonl,baseline.json}</code></p>
 
 <div class="reading">
