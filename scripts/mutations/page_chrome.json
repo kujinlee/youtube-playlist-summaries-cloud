@@ -977,5 +977,159 @@
       ]
     ],
     "expect": "...and <body> no longer reserves anything, or a top-pinned bar would leave a blank band at the document end"
+  },
+  {
+    "name": "the ctls lookup drops the text-style switcher",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var ctls=bar.querySelectorAll('#chrome-theme,#schemer');\"",
+        "\"var ctls=bar.querySelectorAll('#chrome-theme');\""
+      ]
+    ],
+    "expect": "the observer's margin is cut at the TOPMOST control, whichever one that is \u2014 the `ctls` lookup counts both (backlog #304 task 0)"
+  },
+  {
+    "name": "the ctls lookup drops the theme control",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var ctls=bar.querySelectorAll('#chrome-theme,#schemer');\"\n",
+        "        \"var ctls=bar.querySelectorAll('#schemer');\"\n"
+      ]
+    ],
+    "expect": "the observer's margin is cut at the TOPMOST control, whichever one that is \u2014 the `ctls` lookup counts both (backlog #304 task 0)"
+  },
+  {
+    "name": "a runtime fault inside the pin block, which parses",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "        \"var tailPx=0;\"\n",
+        "        \"var tailPx=0;nope();\"\n"
+      ]
+    ],
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the SLOT (not the bar, which leaves the flow when pinned), watches the bar's size, pins when the slot leaves view and unpins when it returns (backlog #305)"
+  },
+  {
+    "name": "backlog #304's 17-byte addition disarms the observer",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};\"",
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};arm=function(){};\""
+      ]
+    ],
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the SLOT (not the bar, which leaves the flow when pinned), watches the bar's size, pins when the slot leaves view and unpins when it returns (backlog #305)"
+  },
+  {
+    "name": "the observer watches the BAR, which leaves the flow when pinned",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(slot);};\"\n",
+        "\"{rootMargin:(-tailPx)+'px 0px 0px 0px'});io.observe(bar);};\"\n"
+      ]
+    ],
+    "expect": "the emitted script RUNS: on a stub page it raises nothing, observes the SLOT (not the bar, which leaves the flow when pinned), watches the bar's size, pins when the slot leaves view and unpins when it returns (backlog #305)"
+  },
+  {
+    "name": "the theme button starts in the INVERTED pressed state",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(b){b.setAttribute('aria-pressed',String(cur()==='dark'));\"",
+        "\"if(b){b.setAttribute('aria-pressed',String(cur()!=='dark'));\""
+      ]
+    ],
+    "expect": "...and its controls WORK when pressed: the theme button flips the theme and its pressed state both ways, starting unpressed"
+  },
+  {
+    "name": "the theme click handler throws",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);\"",
+        "\"var n=cur()==='dark'?'light':'dark';R.setAttribute(A,n);nope();\""
+      ]
+    ],
+    "expect": "...and its controls WORK when pressed: the theme button flips the theme and its pressed state both ways, starting unpressed"
+  },
+  {
+    "name": "the text-style click ignores the button pressed",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(b)sset(b.getAttribute('data-s'));});\"",
+        "\"if(b)sset('3');});\""
+      ]
+    ],
+    "expect": "...and the text-style switcher sets the scheme and marks only the pressed button, in its class AND in what a screen reader announces \u2014 on load and after the press"
+  },
+  {
+    "name": "the tail is a hard-coded constant",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\n        \"if(b<m)m=b;}tailPx=(m===Infinity?0:Math.max(0,sb-m));\"",
+        "\n        \"if(b<m)m=b;}tailPx=150;\""
+      ]
+    ],
+    "expect": "the observer's margin is cut at the TOPMOST control, whichever one that is \u2014 the `ctls` lookup counts both (backlog #304 task 0)"
+  },
+  {
+    "name": "the resize callback throws",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"if(window.ResizeObserver){new ResizeObserver(sync).observe(bar);}\"",
+        "\"if(window.ResizeObserver){new ResizeObserver(function(){throw new Error('resize-dead');}).observe(bar);}\""
+      ]
+    ],
+    "expect": "...and a resize re-measures: when a control moves, the observer is re-armed at the new tail"
+  },
+  {
+    "name": "the OS fallback asks the LIGHT query",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches\"",
+        "\"(window.matchMedia&&window.matchMedia('(prefers-color-scheme:light)').matches\""
+      ]
+    ],
+    "expect": "...and with the OS DARK the button starts pressed and its first press gives light \u2014 the press an OS-dark reader makes first"
+  },
+  {
+    "name": "the text style is persisted under the wrong key",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"else{R.setAttribute(TA,s);try{localStorage.setItem(TK,s);}catch(e){}}\"",
+        "\"else{R.setAttribute(TA,s);try{localStorage.setItem('x'+TK,s);}catch(e){}}\""
+      ]
+    ],
+    "expect": "...and both choices are persisted under their keys, and a saved text style is applied on load"
+  },
+  {
+    "name": "a saved text style is never read",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"var sv=null;try{sv=localStorage.getItem(TK);}catch(e){}\"",
+        "\"var sv=null;\""
+      ]
+    ],
+    "expect": "...and both choices are persisted under their keys, and a saved text style is applied on load"
+  },
+  {
+    "name": "the switcher's pressed state is announced inverted",
+    "file": "scripts/page_chrome.py",
+    "edits": [
+      [
+        "\"bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(on));}}\"",
+        "\"bs[i].className=on?'on':'';bs[i].setAttribute('aria-pressed',String(!on));}}\""
+      ]
+    ],
+    "expect": "...and the text-style switcher sets the scheme and marks only the pressed button, in its class AND in what a screen reader announces \u2014 on load and after the press"
   }
 ]
