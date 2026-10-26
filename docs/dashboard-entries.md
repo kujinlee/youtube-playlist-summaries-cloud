@@ -17597,3 +17597,22 @@ PR #400 (`local-sweep-guard`) merged `ba4d2c28` on the owner's call after `check
 `failure_path_removals` counted `shard=shard)` -> `shard=shard, budget=budget, only=only)` as a rewrite on
 a failure path. Filed as backlog #355 (XS, tooling) with the falsifier: the extended-call shape READY while
 `return 1` -> `return 0` and an `or`-widened condition stay HOLD. Roadmap line added.
+
+
+## 2026-10-26
+The merge rule now reads the project's TypeScript and JavaScript checks as checks. Before this, one
+of them could be switched to always pass and the rule would still have called the pull request
+ready. An edit to such a check's exit line is now held for the owner. Two harder parts — the line
+that runs such a check, and its comments — were tried, found broken by the second review, taken back
+out and filed as their own item. Over the last four hundred merges it holds no more pull requests
+than before.
+<!--tech-->
+Branch `backlog-354-ts-gates` (backlog #354). `check-merge-ready.py`: `GATE_CODE` gains
+`ts|mts|cts|js|mjs|cjs` under `scripts/`; `NODE_FAIL_PATH` = `FAIL_PATH` + `process.exit(<non-zero>)`,
+`process.exitCode = <non-zero>` and `throw`, chosen per file by `NODE_SRC` — applied to every gate it
+newly held PR #397 (a `throw` inside a JS stub string in `page_chrome.py`). r1 (both halves) folded:
+`process.exit (1)` with a space, `exitCode === 0` read as assignment, `||=`. r2 (Codex) found r1's Node
+comment rule (a leading `*` hid `* 2` -> `* 0`) and npm call-site guard (`package.json` never got hunks) broken:
+REVERTED, split off as backlog #356 with `process .exit`. STATED BOUNDS, asserted: `/* */` wrapping; the npm call site. Replay: 11/40 and
+109/400 before and after (the last 40 contain no TS/JS edit; of the 400, one PR gains a TS reason and was
+already held for a migration). 211 cases; 10 mutations (75 -> 85, total 2105 -> 2115), scoped 85/85.

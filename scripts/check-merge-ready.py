@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 199 cases
+    python3 scripts/check-merge-ready.py --self-test # 211 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -506,11 +506,22 @@ CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
 # ⟳ r10: `sys.exit(<anything but 0 / None / nothing>)` — `sys.exit("invalid input")` exits 1.
 FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn\s+-?[1-9]\d*\b|\bexit\s+-?[1-9]\d*\b"
                        r"|sys\.exit\((?!\s*(?:0|None)?\s*\))|SystemExit\(|\bdeny\b|\braise\b|\bassert\b")
+# ⟳ backlog #354: Node's — `process.exit(<anything but 0 / nothing>)`, a non-zero `process.exitCode`, `throw` —
+# ONLY in a Node source file. A Python gate embeds JS stubs in strings (`page_chrome.py`), and reading their
+# `throw` there newly held PR #397 in the 40-PR replay; `throw` is not Python, so in a `.py` it is a string.
+NODE_SRC = re.compile(r"\.(ts|mts|cts|js|mjs|cjs)$")
+# ⟳ r1 (executed): `process.exit (1)` is ordinary syntax; `exitCode === 0` is a comparison; `||=` assigns.
+NODE_FAIL_PATH = re.compile(FAIL_PATH.pattern + r"|process\.exit\s*\((?!\s*0?\s*\))"
+                            r"|process\.exitCode\s*(?:\|\||&&|\?\?)?=(?!=)(?!\s*0\b)"
+                            r"|\bthrow\b")
 # ⟳ r8 (HONEST): EVERY script, not only `check-*` — a gate's logic moved into a helper it imports
 # (`scripts/gate_logic.py`) changes the gate without touching it. Measured cost: 8 -> 9 of 40 PRs.
-GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
+# ⟳ backlog #354 (r11 HONEST): TypeScript/JavaScript too — `check-service-confinement.ts` runs in CI.
+GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh|ts|mts|cts|js|mjs|cjs)|scripts/ci/.+|\.claude/hooks/.+)$")
 # Where a gate is INVOKED rather than written (r1 CLAUDE M1): dropping the line that runs a check
 # disables it without touching the check. A removed line here naming a gate, not re-added, holds.
+# ⚠ backlog #356: a TypeScript gate is run through `package.json`'s `check:` scripts, and that call site is NOT
+# guarded — r1's attempt classified package.json as a caller while collection never read its hunks (r2).
 GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json"
                          r"|scripts/check-schema-gates\.sh|scripts/ci/.+)$")
 GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate")
@@ -608,7 +619,9 @@ def diff_files(diff: str) -> list[dict]:
 
 
 def is_comment(text: str) -> bool:
-    """PURE. The ONE comment rule (Python, shell and YAML all use `#`)."""
+    """PURE. The ONE comment rule (Python, shell and YAML all use `#`). ⚠ A Node file's `//` and `/* */` are
+    read as CODE — false holds only. backlog #354 r2: a rule treating a leading `*` as a comment hid a
+    continuation line `* 2` -> `* 0` (exit 2 -> 0, READY), so Node comments are backlog #356, not guessed at."""
     return text.strip().startswith("#")
 
 
@@ -662,6 +675,8 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
     for f in (fs if fs is not None else diff_files(diff)):
         if not any(GATE_CODE.match(p) for p in _paths(f)):
             continue
+        node = any(NODE_SRC.search(p) for p in _paths(f))
+        fail = NODE_FAIL_PATH if node else FAIL_PATH
         # ⟳ r9 (HONEST): a MOVE keeps its INDENTATION. Stripped comparison read `return 1` pushed under
         # a new `if verbose:` as moved, cancelling a real removal — in Python indentation is meaning.
         readded = [l[1:].rstrip() for hk in f["hunks"] for l in hk
@@ -676,7 +691,7 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
                 if l[1:].rstrip() in readded:
                     readded.remove(l[1:].rstrip())
                     continue
-                if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):
+                if any(abs(j - i) <= k and fail.search(w[1:]) for j, w in code):
                     out.setdefault(_name(f), []).append(t)
     return out
 
@@ -1543,6 +1558,7 @@ def _self_test() -> int:
         _w("scripts/check-ext.py", "def main():\n    if worse:\n        return 1\n    return 0\n")
         _w("scripts/check-[ab].py", "def main():\n    if odd:\n        return 1\n    return 0\n")
         _w("scripts/check-a.py", "def main():\n    return 0\n")
+        _w("scripts/check-node.ts", "if (bad) {\n  process.exit(1);\n}\n")   # backlog #354
         # r6: a gate renamed while a DIRECTORY named like its old path appears; a `-diff` (binary)
         # attribute on a gate; a gate holding a NUL byte; a gate deleted outright.
         _w("scripts/check-rn.py", "def main():\n    if gone:\n        return 1\n    return 0\n")
@@ -1582,6 +1598,7 @@ def _self_test() -> int:
         _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 0\n    return 0\n")
         _g("rm", "-q", "scripts/check-del.py")
         _w("scripts/check-c\n.py", "import sys\nif bad:\n    sys.exit(0)\n")
+        _w("scripts/check-node.ts", "if (bad) {\n  process.exit(0);\n}\n")
         _w("tools/gate.py", "import sys\nif worst:\n    sys.exit(0)\n")
         _g("add", "-A")
         _g("update-index", "--add", "--cacheinfo", "160000," + "2" * 40 + ",zmodule")
@@ -1634,6 +1651,8 @@ def _self_test() -> int:
           has(_real, "scripts/check-linked.py removes"), True)
     check("...and the target itself, outside the gate roots, is not read under its own name",
           has(_real, "tools/gate.py removes"), False)
+    check("⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held",
+          has(_real, "scripts/check-node.ts removes"), True)
     check("real git: the world REALLY holds a type change (T) and a submodule entry",
           (("docs/t", "T") in {(f["new"], f["status"]) for f in _fs},
            ("zmodule", "M") in {(f["new"], f["status"]) for f in _fs}) if _err is None else _err, (True, True))
@@ -1721,6 +1740,37 @@ def _self_test() -> int:
     check("...and a `raise` turned into a `print`",
           has(H([G], DF(G, "     if bad:", '-        raise ValueError("invalid input")', '+        print("invalid input")')),
               "failure path"), True)
+    # backlog #354 (r11 HONEST): a TypeScript/JavaScript gate is gate code, and Node's exits are failure paths.
+    TS = "scripts/check-service-confinement.ts"
+    check("⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+          has(H([TS], DF(TS, "   if (leaks.length) {", "-    process.exit(1);", "+    process.exit(0);")), "failure path"), True)
+    check("...and so is an `.mjs` gate's `throw` turned into a `console.error`",
+          has(H(["scripts/ts-comment-spans.mjs"], DF("scripts/ts-comment-spans.mjs", "   if (bad) {",
+                "-    throw new Error('unterminated');", "+    console.error('unterminated');")), "failure path"), True)
+    check("...and `process.exitCode = 1` dropped",
+          has(H([TS], DF(TS, "   if (bad) {", "-    process.exitCode = 1;", "+    console.log('bad');")), "failure path"), True)
+    check("...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements",
+          [H([TS], DF(TS, f"-  {x}", "+  void 0;")) for x in ("process.exit(0);", "process.exit();", "process.exitCode = 0;")],
+          [[], [], []])
+    check("...but a Python gate's JS stub string holding `throw` is not a failure path (PR #397's shape)",
+          H([G], DF(G, "  stub = \"if(!ok)throw new Error('stub');\"", "-  b = 40", "+  b = 43")), [])
+    # backlog #354 r1 (both halves, executed): the Node patterns' own syntax, Node comments, and the npm call site.
+    check("⭐ r1 CODEX H: `process.exit (1)` -> `process.exit (0)` — a space before the bracket — is a loosening",
+          has(H([TS], DF(TS, "   if (bad) {", "-    process.exit (1);", "+    process.exit (0);")), "failure path"), True)
+    check("r1 CODEX M: an edit beside `process.exitCode === 0` (a comparison, not an assignment) is not held",
+          H([TS], DF(TS, "   if (process.exitCode === 0) {", '-    console.log("complete");', '+    console.log("done");', "   }")), [])
+    check("...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)",
+          has(H([TS], DF(TS, "   if (bad) {", "-    process.exitCode ||= 1;", "+    console.log('bad');")), "failure path"), True)
+    # ⛔ A STATED BOUND (backlog #356, split off at r2): the npm call site of a TypeScript gate is not guarded.
+    check("BOUND (stated, backlog #356): `run: npm run check:confinement` dropped from a workflow is NOT held",
+          H([".github/workflows/ci.yml"], DF(".github/workflows/ci.yml", "       - run: npm ci",
+            "-      - run: npm run check:confinement")), [])
+    # ⛔ A STATED BOUND (r1 CLAUDE M1): a failure block wrapped in `/* */` ADDS lines and removes none, so the
+    # removal rule cannot see it — the same class as Python's `if False:` around a `return 1`. Review catches it.
+    check("BOUND (stated, backlog #354 r1): a Node failure block wrapped in `/* */` is NOT held",
+          H([TS], DF(TS, "+  /*", "   if (bad) {", "     process.exit(1);", "   }", "+  */")), [])
+    check("...and a `.ts` file OUTSIDE scripts/ is not gate code", H(["tests/lib/x.ts"], DF("tests/lib/x.ts",
+          "   if (bad) {", "-    process.exit(1);", "+    process.exit(0);")), [])
     # ⛔ A STATED BOUND, asserted so it cannot be forgotten (owner, r8 card A): a SEMANTIC loosening — a
     # condition removed far above the loop that fails on it — leaves no failure-path text within the
     # window. If this case ever goes RED, the bound has closed: update the comment above GATE_CODE.
