@@ -17624,8 +17624,10 @@ side copy of the project, where the guard never looks, and say it had worked. It
 prints the exact command to run instead. Separately, the CI install of a video tool hangs on about a
 third of today's runs; that is recorded with its measurements, for a fix of its own.
 <!--tech-->
-Branch `begin-plan-worktree` (backlog #301). `begin-plan.linked_worktree_main(root, run)` — `--git-dir` vs
-`--git-common-dir` — gates every state command in `main()`, before any read or write; `--self-test` is exempt.
-Refusal, not resolution: ROOT also feeds `current_branch(ROOT)`. 4 cases over a real repo and a real linked
-worktree (131 total), 3 mutations (2105 -> 2108); the suite's state-path `global` moved to the top of
-`_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).
+Branch `begin-plan-worktree` (backlog #301). `begin-plan.linked_worktree_main(root)` reads `ROOT/.git` — a
+directory is the main checkout; a FILE `gitdir: <common>/worktrees/<n>` is linked, even if its target moved — and
+gates every state command in `main()` before any read or write; `--self-test` is exempt. ⟳ r1 (both halves): the
+first version asked `git`, which an old git, `GIT_DIR` and a moved main checkout all defeated; the printed command
+is now `shlex.join`ed; every state command (`--plan` included) is witnessed. 9 cases over a real repo and a real
+linked worktree (136 total), 6 mutations (2115 -> 2121 after merging master); the suite's state-path `global` moved
+to the top of `_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).

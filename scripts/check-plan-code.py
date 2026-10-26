@@ -1833,7 +1833,7 @@ EXPECTED_MUTATIONS = {
     # bare-stem lookup back and is killed by the two-checkout case.
     # ⟳ r6 fold, 57 -> 58: `work_line` re-keyed by the display label is killed by F5c.
     # ⟳ 2026-10-23, merging master (PR #386) into the backfill: 58 + 2 = 60, both kept.
-    "scripts/begin-plan.py": 63,
+    "scripts/begin-plan.py": 66,
     # ⟳ 2026-09-06, backlog #78 half (2) follow-on: the FIRST payment against the R4
     # manifest debt (21 -> 20). Its FAIL-line format had to be fixed in the same change —
     # it printed `  ✗ {label}: got …`, which this file's attribution parser cannot see,
@@ -5962,7 +5962,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2118)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2121)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

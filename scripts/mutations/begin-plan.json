@@ -792,8 +792,8 @@
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if _main_root is not None:\n        print(f\"refusing: {ROOT} is a LINKED WORKTREE.",
-        "    if False:\n        print(f\"refusing: {ROOT} is a LINKED WORKTREE."
+        "    if _main_root is not None:\n        _there",
+        "    if False:\n        _there"
       ]
     ],
     "expect": [
@@ -801,29 +801,68 @@
     ]
   },
   {
-    "name": "backlog #301: the main checkout itself reads as a linked worktree, refusing every arm",
+    "name": "backlog #301 r1: any .git FILE reads as a linked worktree, so a submodule refuses every arm",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    return None if git_dir == common else common.parent",
-        "    return common.parent"
+        "    if gitdir.parent.name != \"worktrees\":\n        return None",
+        "    if False:\n        return None"
       ]
     ],
     "expect": [
-      "...and the main checkout itself is not a linked worktree"
+      "...while a submodule's .git file is not a linked worktree, and nor is a tree with no .git"
     ]
   },
   {
-    "name": "backlog #301: a git that failed is trusted for its output",
+    "name": "backlog #301 r1: a worktree whose main checkout MOVED reads as not linked, so the guard fails open",
     "file": "scripts/begin-plan.py",
     "edits": [
       [
-        "    if g.returncode != 0 or len(lines) < 2",
-        "    if len(lines) < 2"
+        "    return gitdir.parent.parent.parent              # <main>/.git/worktrees/<name> -> <main>",
+        "    return gitdir.parent.parent.parent if gitdir.exists() else None"
       ]
     ],
     "expect": [
-      "...and a git that cannot answer reads as 'not linked', never a crash"
+      "⭐ a worktree whose main checkout MOVED still reads as linked — it refuses, never fails open (r1 Codex M3)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: the suggested command is joined with spaces, so an argument holding a space or a pipe breaks",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "{shlex.join(['python3', str(_there), *argv])}",
+        "{' '.join(['python3', str(_there), *argv])}"
+      ]
+    ],
+    "expect": [
+      "⭐ the suggested command round-trips through the shell with its arguments intact (r1 Codex M4)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: --plan, the second way to arm, is exempt from the linked-worktree refusal",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if _main_root is not None:\n        _there = _main_root",
+        "    if _main_root is not None and not a.plan:\n        _there = _main_root"
+      ]
+    ],
+    "expect": [
+      "⭐ EVERY state command from a linked worktree is refused and writes nothing — --plan included (r1 CLAUDE M2)"
+    ]
+  },
+  {
+    "name": "backlog #301 r1: the refusal always names the main checkout's script, even where there is none",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "*argv])}\" if _there.is_file() else",
+        "*argv])}\" if True else"
+      ]
+    ],
+    "expect": [
+      "...and its refusal says no main checkout was found, instead of naming a script that is not there (r1 CLAUDE L3)"
     ]
   }
 ]
