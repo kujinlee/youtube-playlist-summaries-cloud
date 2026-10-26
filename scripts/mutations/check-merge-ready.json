@@ -261,7 +261,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]",
+    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:], node)]",
     "code = list(enumerate(old_side))"
    ]
   ],
@@ -274,8 +274,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        fail =",
-    "        if False:\n            continue\n        fail ="
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        node =",
+    "        if False:\n            continue\n        node ="
    ]
   ],
   "expect": [
@@ -988,8 +988,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "|process\\.exit\\((?!\\s*0?\\s*\\))|process\\.exitCode",
-    "|process\\.exitCode"
+    "+ r\"|process\\.exit\\s*\\((?!\\s*0?\\s*\\))\"",
+    "+ r\"\""
    ]
   ],
   "expect": [
@@ -1002,8 +1002,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "|process\\.exit\\((?!\\s*0?\\s*\\))|",
-    "|process\\.exit\\(|"
+    "exit\\s*\\((?!\\s*0?\\s*\\))\"",
+    "exit\\s*\\(\""
    ]
   ],
   "expect": [
@@ -1015,8 +1015,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "process\\.exitCode\\s*=(?!\\s*0\\b)",
-    "process\\.exitCode\\s*=\\s*(?!0\\b)"
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=(?!=)(?!\\s*0\\b)",
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=\\s*(?!=)(?!0\\b)"
    ]
   ],
   "expect": [
@@ -1028,8 +1028,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "|process\\.exitCode\\s*=(?!\\s*0\\b)\"",
-    "\""
+    "r\"|process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=(?!=)(?!\\s*0\\b)\"",
+    "r\"\""
    ]
   ],
   "expect": [
@@ -1054,12 +1054,91 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "fail = NODE_FAIL_PATH if any(NODE_SRC.search(p) for p in _paths(f)) else FAIL_PATH",
+    "fail = NODE_FAIL_PATH if node else FAIL_PATH",
     "fail = NODE_FAIL_PATH"
    ]
   ],
   "expect": [
    "...but a Python gate's JS stub string holding `throw` is not a failure path (PR #397's shape)"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a space before `process.exit`'s bracket is not allowed",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exit\\s*\\((?!",
+    "process\\.exit\\((?!"
+   ]
+  ],
+  "expect": [
+   "⭐ r1 CODEX H: `process.exit (1)` -> `process.exit (0)` — a space before the bracket — is a loosening"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: `exitCode === 0` reads as an assignment",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "=(?!=)(?!\\s*0\\b)\"",
+    "=(?!\\s*0\\b)\""
+   ]
+  ],
+  "expect": [
+   "r1 CODEX M: an edit beside `process.exitCode === 0` (a comparison, not an assignment) is not held"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a logical assignment (`||=`) to exitCode is unseen",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=",
+    "process\\.exitCode\\s*="
+   ]
+  ],
+  "expect": [
+   "...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a Node file's `//` and `/* */` comments are read as code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "return s.startswith((\"//\", \"/*\", \"*\")) if node else s.startswith(\"#\")",
+    "return s.startswith(\"#\")"
+   ]
+  ],
+  "expect": [
+   "r1 CLAUDE L1: a `//` comment reworded beside a `throw` in a Node gate is not held",
+   "...and nor is a `/* */` block's continuation line"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: `npm run check:` is not a gate reference",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|--mutate|npm run check:\")",
+    "|--mutate\")"
+   ]
+  ],
+  "expect": [
+   "⭐ r1 CLAUDE M2: `run: npm run check:confinement` dropped from a workflow is a dropped invocation"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: package.json is not a gate caller",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    ".json|package\\.json\"",
+    ".json\""
+   ]
+  ],
+  "expect": [
+   "...and so is package.json's `check:` script rewritten to `true`"
   ]
  }
 ]

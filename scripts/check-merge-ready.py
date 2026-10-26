@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 206 cases
+    python3 scripts/check-merge-ready.py --self-test # 215 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -510,7 +510,9 @@ FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn\s+-?[1-9]\d*\
 # ONLY in a Node source file. A Python gate embeds JS stubs in strings (`page_chrome.py`), and reading their
 # `throw` there newly held PR #397 in the 40-PR replay; `throw` is not Python, so in a `.py` it is a string.
 NODE_SRC = re.compile(r"\.(ts|mts|cts|js|mjs|cjs)$")
-NODE_FAIL_PATH = re.compile(FAIL_PATH.pattern + r"|process\.exit\((?!\s*0?\s*\))|process\.exitCode\s*=(?!\s*0\b)"
+# ⟳ r1 (executed): `process.exit (1)` is ordinary syntax; `exitCode === 0` is a comparison; `||=` assigns.
+NODE_FAIL_PATH = re.compile(FAIL_PATH.pattern + r"|process\.exit\s*\((?!\s*0?\s*\))"
+                            r"|process\.exitCode\s*(?:\|\||&&|\?\?)?=(?!=)(?!\s*0\b)"
                             r"|\bthrow\b")
 # ⟳ r8 (HONEST): EVERY script, not only `check-*` — a gate's logic moved into a helper it imports
 # (`scripts/gate_logic.py`) changes the gate without touching it. Measured cost: 8 -> 9 of 40 PRs.
@@ -518,9 +520,10 @@ NODE_FAIL_PATH = re.compile(FAIL_PATH.pattern + r"|process\.exit\((?!\s*0?\s*\))
 GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh|ts|mts|cts|js|mjs|cjs)|scripts/ci/.+|\.claude/hooks/.+)$")
 # Where a gate is INVOKED rather than written (r1 CLAUDE M1): dropping the line that runs a check
 # disables it without touching the check. A removed line here naming a gate, not re-added, holds.
-GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json"
+# ⟳ backlog #354 r1 CLAUDE M2: a TypeScript gate is run through `package.json`'s `check:` scripts.
+GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json|package\.json"
                          r"|scripts/check-schema-gates\.sh|scripts/ci/.+)$")
-GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate")
+GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate|npm run check:")
 MIGRATION = re.compile(r"^supabase/migrations/")
 APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
 
@@ -614,9 +617,11 @@ def diff_files(diff: str) -> list[dict]:
     return out
 
 
-def is_comment(text: str) -> bool:
-    """PURE. The ONE comment rule (Python, shell and YAML all use `#`)."""
-    return text.strip().startswith("#")
+def is_comment(text: str, node: bool = False) -> bool:
+    """PURE. The ONE comment rule (Python, shell and YAML all use `#`; a Node source file — `node` —
+    uses `//` and `/* */`, whose continuation lines start `*`: backlog #354 r1 CLAUDE L1)."""
+    s = text.strip()
+    return s.startswith(("//", "/*", "*")) if node else s.startswith("#")
 
 
 def _paths(f: dict) -> list[str]:
@@ -669,14 +674,15 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
     for f in (fs if fs is not None else diff_files(diff)):
         if not any(GATE_CODE.match(p) for p in _paths(f)):
             continue
-        fail = NODE_FAIL_PATH if any(NODE_SRC.search(p) for p in _paths(f)) else FAIL_PATH
+        node = any(NODE_SRC.search(p) for p in _paths(f))
+        fail = NODE_FAIL_PATH if node else FAIL_PATH
         # ⟳ r9 (HONEST): a MOVE keeps its INDENTATION. Stripped comparison read `return 1` pushed under
         # a new `if verbose:` as moved, cancelling a real removal — in Python indentation is meaning.
         readded = [l[1:].rstrip() for hk in f["hunks"] for l in hk
-                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
+                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:], node)]
         for hk in f["hunks"]:
             old_side = [l for l in hk if not l.startswith("+")]
-            code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
+            code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:], node)]
             for i, l in code:
                 t = l[1:].strip()
                 if not l.startswith("-") or not t:
@@ -1747,6 +1753,29 @@ def _self_test() -> int:
           [[], [], []])
     check("...but a Python gate's JS stub string holding `throw` is not a failure path (PR #397's shape)",
           H([G], DF(G, "  stub = \"if(!ok)throw new Error('stub');\"", "-  b = 40", "+  b = 43")), [])
+    # backlog #354 r1 (both halves, executed): the Node patterns' own syntax, Node comments, and the npm call site.
+    check("⭐ r1 CODEX H: `process.exit (1)` -> `process.exit (0)` — a space before the bracket — is a loosening",
+          has(H([TS], DF(TS, "   if (bad) {", "-    process.exit (1);", "+    process.exit (0);")), "failure path"), True)
+    check("r1 CODEX M: an edit beside `process.exitCode === 0` (a comparison, not an assignment) is not held",
+          H([TS], DF(TS, "   if (process.exitCode === 0) {", '-    console.log("complete");', '+    console.log("done");', "   }")), [])
+    check("...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)",
+          has(H([TS], DF(TS, "   if (bad) {", "-    process.exitCode ||= 1;", "+    console.log('bad');")), "failure path"), True)
+    check("r1 CLAUDE L1: a `//` comment reworded beside a `throw` in a Node gate is not held",
+          H([TS], DF(TS, "-  // the old wording", "+  // the new wording", "   if (bad) throw new Error('x');")), [])
+    check("...and nor is a `/* */` block's continuation line",
+          H([TS], DF(TS, "   /*", "-   * the old wording", "+   * the new wording", "   */", "   if (bad) throw new Error('x');")), [])
+    check("⭐ r1 CLAUDE M2: `run: npm run check:confinement` dropped from a workflow is a dropped invocation",
+          has(H([".github/workflows/ci.yml"], DF(".github/workflows/ci.yml", "       - run: npm ci",
+              "-      - run: npm run check:confinement")), "ci.yml"), True)
+    check("...and so is package.json's `check:` script rewritten to `true`",
+          has(H(["package.json"], DF("package.json", '-    "check:confinement": "ts-node scripts/check-service-confinement.ts",',
+              '+    "check:confinement": "true",')), "package.json"), True)
+    check("...but an ordinary package.json dependency bump is not held",
+          H(["package.json"], DF("package.json", '-    "zod": "3.22.0",', '+    "zod": "3.23.0",')), [])
+    # ⛔ A STATED BOUND (r1 CLAUDE M1): a failure block wrapped in `/* */` ADDS lines and removes none, so the
+    # removal rule cannot see it — the same class as Python's `if False:` around a `return 1`. Review catches it.
+    check("BOUND (stated, backlog #354 r1): a Node failure block wrapped in `/* */` is NOT held",
+          H([TS], DF(TS, "+  /*", "   if (bad) {", "     process.exit(1);", "   }", "+  */")), [])
     check("...and a `.ts` file OUTSIDE scripts/ is not gate code", H(["tests/lib/x.ts"], DF("tests/lib/x.ts",
           "   if (bad) {", "-    process.exit(1);", "+    process.exit(0);")), [])
     # ⛔ A STATED BOUND, asserted so it cannot be forgotten (owner, r8 card A): a SEMANTIC loosening — a

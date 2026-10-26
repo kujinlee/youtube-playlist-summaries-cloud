@@ -17590,11 +17590,16 @@ states the rule and the draft-PR-at-slice-start practice; the push memory no lon
 ## 2026-10-26
 The merge rule now reads the project's TypeScript and JavaScript checks as checks. Before this, one
 of them could be switched to always pass and the rule would still have called the pull request
-ready. It now holds that change for the owner, and it holds no more of the last forty merges than it
-did before.
+ready. An edit to such a check's exit line, or to the line that runs it, is now held for the owner.
+Switching a whole block off by wrapping it in a comment is still not seen, as with Python, and is left
+to review. Over the last four hundred merges it holds no more pull requests than before.
 <!--tech-->
 Branch `backlog-354-ts-gates` (backlog #354). `check-merge-ready.py`: `GATE_CODE` gains
 `ts|mts|cts|js|mjs|cjs` under `scripts/`; `NODE_FAIL_PATH` = `FAIL_PATH` + `process.exit(<non-zero>)`,
 `process.exitCode = <non-zero>` and `throw`, chosen per file by `NODE_SRC` — applied to every gate it
-newly held PR #397 (a `throw` inside a JS stub string in `page_chrome.py`). Replay 11/40 before and after.
-206 cases; 7 mutations (75 -> 82, total 2105 -> 2112), scoped run 82/82 killed and attributed.
+newly held PR #397 (a `throw` inside a JS stub string in `page_chrome.py`). r1 (both halves) folded:
+`process.exit (1)` with a space, `exitCode === 0` read as assignment, `||=`, Node `//`/`/* */` comments,
+and the npm call site (`GATE_REF` += `npm run check:`, `GATE_CALLER` += `package.json`). STATED BOUND, asserted:
+a block wrapped in `/* */` adds lines only and is READY; `reject()`/`bad++` are unseen. Replay: 11/40 and
+109/400 before and after (the last 40 contain no TS/JS edit; of the 400, one PR gains a TS reason and was
+already held for a migration). 215 cases; 13 mutations (75 -> 88, total 2105 -> 2118), scoped 88/88.
