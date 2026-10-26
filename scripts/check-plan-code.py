@@ -3558,8 +3558,10 @@ def _self_test() -> int:
                 _r2 = pathlib.Path(_td2); _mini(_r2)
                 for _nm, _ok in (("aaa", False), ("zzz", True)):
                     (_r2 / "scripts" / f"{_nm}.py").write_text(
-                        "import sys\n" + ("print('1/1 passed')\nsys.exit(0)\n" if _ok else
-                                          "print('  [FAIL] broken control')\nsys.exit(1)\n"))
+                        # r3: the FAILED control is deliberately SLOW, so if it were priced it would be
+                        # the costliest every time — the case cannot pass on a lucky timing.
+                        "import sys, time\n" + ("print('1/1 passed')\nsys.exit(0)\n" if _ok else
+                                                "time.sleep(0.5)\nprint('  [FAIL] broken control')\nsys.exit(1)\n"))
                     (_r2 / "scripts" / "mutations" / f"{_nm}.json").write_text(json.dumps(
                         [{"name": f"{_nm} m", "file": f"scripts/{_nm}.py", "edits": [["sys.exit", "sys.exit"]],
                           "expect": "x"}]))
