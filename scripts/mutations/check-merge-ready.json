@@ -235,8 +235,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):",
-    "if any(j == i and FAIL_PATH.search(w[1:]) for j, w in code):"
+    "if any(abs(j - i) <= k and fail.search(w[1:]) for j, w in code):",
+    "if any(j == i and fail.search(w[1:]) for j, w in code):"
    ]
   ],
   "expect": [
@@ -274,8 +274,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        # ⟳ r9",
-    "        if False:\n            continue\n        # ⟳ r9"
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        node =",
+    "        if False:\n            continue\n        node ="
    ]
   ],
   "expect": [
@@ -877,8 +877,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh)|",
-    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh)|"
+    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|",
+    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|"
    ]
   ],
   "expect": [
@@ -965,6 +965,140 @@
   ],
   "expect": [
    "⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)"
+  ]
+ },
+ {
+  "name": "backlog #354: GATE_CODE reads only .py/.sh under scripts/, so a TypeScript gate is not gate code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(scripts/[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|",
+    "(scripts/[^/]+\\.(py|sh)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+   "...and so is an `.mjs` gate's `throw` turned into a `console.error`",
+   "...and `process.exitCode = 1` dropped",
+   "⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's process.exit(<non-zero>) is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "+ r\"|process\\.exit\\s*\\((?!\\s*0?\\s*\\))\"",
+    "+ r\"\""
+   ]
+  ],
+  "expect": [
+   "⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+   "⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held"
+  ]
+ },
+ {
+  "name": "backlog #354: process.exit(...) of ANY argument is a failure path, so process.exit(0) removed holds",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "exit\\s*\\((?!\\s*0?\\s*\\))\"",
+    "exit\\s*\\(\""
+   ]
+  ],
+  "expect": [
+   "...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "backlog #354: the exitCode lookahead backtracks over the space, so `exitCode = 0` reads as a failure",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=(?!=)(?!\\s*0\\b)",
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=\\s*(?!=)(?!0\\b)"
+   ]
+  ],
+  "expect": [
+   "...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "backlog #354: a non-zero process.exitCode is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "r\"|process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=(?!=)(?!\\s*0\\b)\"",
+    "r\"\""
+   ]
+  ],
+  "expect": [
+   "...and `process.exitCode = 1` dropped"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's `throw` is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                            r\"|\\bthrow\\b\")",
+    "                            r\"\")"
+   ]
+  ],
+  "expect": [
+   "...and so is an `.mjs` gate's `throw` turned into a `console.error`"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's idioms are read in EVERY gate, so a Python gate's JS stub string holding `throw` holds",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "fail = NODE_FAIL_PATH if node else FAIL_PATH",
+    "fail = NODE_FAIL_PATH"
+   ]
+  ],
+  "expect": [
+   "...but a Python gate's JS stub string holding `throw` is not a failure path (PR #397's shape)"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a space before `process.exit`'s bracket is not allowed",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exit\\s*\\((?!",
+    "process\\.exit\\((?!"
+   ]
+  ],
+  "expect": [
+   "⭐ r1 CODEX H: `process.exit (1)` -> `process.exit (0)` — a space before the bracket — is a loosening"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: `exitCode === 0` reads as an assignment",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "=(?!=)(?!\\s*0\\b)\"",
+    "=(?!\\s*0\\b)\""
+   ]
+  ],
+  "expect": [
+   "r1 CODEX M: an edit beside `process.exitCode === 0` (a comparison, not an assignment) is not held"
+  ]
+ },
+ {
+  "name": "backlog #354 r1: a logical assignment (`||=`) to exitCode is unseen",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exitCode\\s*(?:\\|\\||&&|\\?\\?)?=",
+    "process\\.exitCode\\s*="
+   ]
+  ],
+  "expect": [
+   "...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)"
   ]
  }
 ]
