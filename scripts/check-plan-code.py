@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 233 cases
+    python3 scripts/check-plan-code.py --self-test          # 235 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -4705,6 +4705,12 @@ def _self_test() -> int:
          shard_label((2, 5)), "shard 2 of 5 (round-robin)")
     # ⚠ THE WIRING, NOT ONLY THE FUNCTION — this file's own recorded lesson (round 6, M5):
     # extracting a helper buys coverage of the helper and the CALL inherits the blind spot.
+    case("the tally line names an --only slice as a DIAGNOSTIC",
+         tally_line(True, _mk(_all_ok, []), None, frozenset({"scripts/x.py"})).endswith(
+             "measured over ONLY scripts/x.py — a DIAGNOSTIC slice, not the gate"), True)
+    case("...and so does the NOT-MEASURED line for one",
+         not_measured_line(NotMeasured.from_counts([], 2, {}), None, frozenset({"scripts/y.py", "scripts/z.py"})).endswith(
+             "measured over ONLY scripts/y.py, scripts/z.py — a DIAGNOSTIC slice, not the gate"), True)
     case("the tally line says which slice it is about",
          tally_line(True, _mk(_all_ok, []), (1, 3)).endswith(
              "0 survivor(s) — measured over shard 1 of 3 (round-robin)"), True)
