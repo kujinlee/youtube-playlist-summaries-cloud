@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 84 cases
+    python3 scripts/check-ci-watched.py --self-test  # 86 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -467,7 +467,11 @@ def arms_newest_first(sentinel: pathlib.Path) -> list[pathlib.Path]:
     BETWEEN the listing and its `stat()`, which raised FileNotFoundError out of the hook; a record that
     vanished mid-listing is simply not an arm any more, so it is skipped."""
     stamped = []
-    for q in sentinel.iterdir():
+    try:
+        listing = list(sentinel.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        return []                        # the whole directory went (or is not one): no arms (r1 Codex)
+    for q in listing:
         try:
             if q.is_file():
                 stamped.append((q.stat().st_mtime, q))
@@ -1014,15 +1018,21 @@ def _self_test() -> int:
             g["SENTINEL"] = pathlib.Path(td) / "ci-watching.d"
             g["SENTINEL"].mkdir()
             (g["SENTINEL"] / "cafef00dcafef00d").write_text("sha: cafef00dcafef00d\n")
+            (g["SENTINEL"].parent / "ci-watching").write_text("legacy\n")     # r1: still tidied
             g["_run"] = lambda *a, **k: None
             try:
                 with contextlib.redirect_stdout(io.StringIO()) as out:
                     rc = main(["--clear"], None)
-                return rc, (g["SENTINEL"] / "cafef00dcafef00d").is_file(), "CANNOT RUN" in out.getvalue()
+                return (rc, (g["SENTINEL"] / "cafef00dcafef00d").is_file(), "CANNOT RUN" in out.getvalue(),
+                        (g["SENTINEL"].parent / "ci-watching").exists())
             finally:
                 g.update(keep)
     case("⭐ `--clear` with an UNREADABLE HEAD is CANNOT RUN, keeps every record, and says so (backlog #255)",
-         safe(lambda: _main_clear_blind() == (CANNOT_RUN, True, True)))
+         safe(lambda: _main_clear_blind()[:3] == (CANNOT_RUN, True, True)))
+    case("...and the pre-directory legacy file is STILL tidied, which needs no HEAD (backlog #255 r1)",
+         safe(lambda: _main_clear_blind()[3] is False))
+    case("a sentinel directory removed after the `is_dir()` gate lists NO arms rather than raising (r1 Codex)",
+         safe(lambda: arms_newest_first(pathlib.Path(tempfile.gettempdir()) / "no-such-ci-watching.d") == []))
     # backlog #253: a record removed by another worktree's `--clear` BETWEEN listing and `stat()` raised
     # FileNotFoundError out of the hook. Reproduced the way the row measured it: the listing yields a
     # record, and it is deleted before its mtime is read.
@@ -1190,25 +1200,24 @@ def main(argv: "list[str] | None" = None, stream=None) -> int:
         # ⛔ ONLY THIS HEAD'S RECORD — round 1 Claude HIGH. Clearing the whole directory would
         # un-arm every other worktree, which is the clobbering this layout exists to prevent.
         head = _run(["git", "rev-parse", "HEAD"])
+        # ⚠ AND THE PRE-DIRECTORY FILE IS TIDIED HERE, because the location moved from a FILE
+        # `ci-watching` to a DIRECTORY `ci-watching.d`. An old file is already ignored by the
+        # read path, so it is inert rather than dangerous; removing it on `--clear` stops it
+        # sitting in `.git` forever looking like state. It needs no HEAD, so it runs first (r1).
+        legacy = SENTINEL.parent / "ci-watching"
+        gone = False
+        if legacy.is_file():
+            legacy.unlink()
+            gone = True
         if not head:
             # ⛔ backlog #255: without HEAD this cannot know WHICH record is this worktree's, so it clears
             # nothing — and must not return the code for success, or a caller believes it is un-armed.
             print("CANNOT RUN: could not read HEAD, so --clear removed NOTHING. TREAT THIS AS NOT CLEARED.")
             return CANNOT_RUN
-        gone = False
-        if head and (SENTINEL / head).is_file():
+        if (SENTINEL / head).is_file():
             (SENTINEL / head).unlink()
             gone = True
-        # ⚠ AND THE PRE-DIRECTORY FILE IS TIDIED HERE, because the location moved from a FILE
-        # `ci-watching` to a DIRECTORY `ci-watching.d`. An old file is already ignored by the
-        # read path, so it is inert rather than dangerous; removing it on `--clear` stops it
-        # sitting in `.git` forever looking like state.
-        legacy = SENTINEL.parent / "ci-watching"
-        if legacy.is_file():
-            legacy.unlink()
-            gone = True
-        print(f"cleared {SENTINEL.name}/{(head or '?')[:8]}" if gone
-              else f"nothing to clear for {(head or '?')[:8]}")
+        print(f"cleared {SENTINEL.name}/{head[:8]}" if gone else f"nothing to clear for {head[:8]}")
         return QUIET
     if a.decide:
         return run_decide(payload_from(stream))

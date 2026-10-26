@@ -17610,5 +17610,9 @@ Branch `guard-fail-open-batch` — backlog #253, #255, #152, #111 (from the tool
 `--clear` with no HEAD is CANNOT RUN. `check-banner-armed._parse_records` keeps only objects;
 `check-closing-table.run_decide` maps a raising turn rule to CANNOT RUN. `enforce-handoff-path.sh` detects
 by exit code through a temp file; `check-handoff-path.py` runs the real hook under chatty and broken
-`python3` shims (5 cases). 10 cases, 4 mutations (2105 -> 2109); scoped 185/185 over the four manifests;
-one anchor re-bound (`check-closing-table`, the `judged` line moved into the new `try`).
+`python3` shims. ⟳ r1 (both halves): `_parse_records` also drops a record whose `message` is not an object,
+and `check-banner-armed`'s and `check-transcript-references`' OWN decide paths map a raising turn rule to
+CANNOT RUN; the hook checks its payload copy, warns on an unreadable envelope, and blocks only on the
+checker's own verdict (a checker that did not run warns instead); `--clear` tidies the legacy file before
+needing HEAD. 17 cases (8 run the real hook), 9 mutations (2105 -> 2114); scoped 195/195 over five manifests;
+three anchors re-bound.

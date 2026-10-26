@@ -205,6 +205,15 @@ def self_test() -> int:
     _OTHER = b'{"tool_name": "Skill", "tool_input": {"skill": "brief"}}'
     _CHATTY = "#!/bin/sh\necho 'pyenv: shim banner'\nexec %s \"$@\"\n" % sys.executable
     _BROKEN = "#!/bin/sh\nexit 1\n"
+    # r1 Codex M3: the detector runs (`python3 - <file>`), but the CHECKER invocation fails — that is not a bad path.
+    _CHECKER_DIES = '#!/bin/sh\nif [ "$1" = "-" ]; then exec %s "$@"; fi\nexit 1\n' % sys.executable
+
+    def _hook_rc_cat_fails(payload: bytes) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            shim = Path(td); (shim / "cat").write_text("#!/bin/sh\nexit 1\n"); (shim / "cat").chmod(0o755)
+            env = dict(os.environ); env["PATH"] = str(shim) + os.pathsep + env.get("PATH", "")
+            return subprocess.run(["bash", str(REPO_ROOT / ".claude/hooks/enforce-handoff-path.sh")],
+                                  input=payload, capture_output=True, env=env).returncode
     for name, got, want in (
         ("hook: blocks /handoff when the skill names the wrong path", _hook_rc(_HANDOFF, UPSTREAM, None), 2),
         ("hook: passes /handoff when the skill is intact", _hook_rc(_HANDOFF, GOOD, None), 0),
@@ -213,13 +222,19 @@ def self_test() -> int:
          _hook_rc(_HANDOFF, UPSTREAM, _CHATTY), 2),
         ("⭐ hook: a BROKEN interpreter warns and exits 1 — never a silent 0 (backlog #111)",
          _hook_rc(_HANDOFF, UPSTREAM, _BROKEN), 1),
+        ("⭐ hook: a payload copy that FAILS warns and exits 1, not 'not mine' (backlog #111 r1)",
+         _hook_rc_cat_fails(_HANDOFF), 1),
+        ("⭐ hook: a TRUNCATED envelope warns and exits 1, not 'not mine' (backlog #111 r1)",
+         _hook_rc(b'{"tool_name": "Skill", "tool_input": {"ski', GOOD, None), 1),
+        ("⭐ hook: a checker that fails to RUN warns and exits 1 — it is not reported as a bad path (backlog #111 r1)",
+         _hook_rc(_HANDOFF, GOOD, _CHECKER_DIES), 1),
     ):
         ok = got == want
         hook_failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
     failures += hook_failures
 
-    total = len(CASES) + 3 + 5      # 3 file cases and 5 hook cases follow the text cases
+    total = len(CASES) + 3 + 8      # 3 file cases and 8 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 

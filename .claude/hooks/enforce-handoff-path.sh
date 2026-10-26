@@ -33,10 +33,11 @@
 # compliant run. Exit codes cannot be prefixed by a banner.
 TMP="$(mktemp)" || { echo "⚠ enforce-handoff-path.sh: mktemp failed; the handoff path is NOT CHECKED." >&2; exit 1; }
 trap 'rm -f "$TMP"' EXIT
-cat > "$TMP"
+cat > "$TMP" || { echo "⚠ enforce-handoff-path.sh: could not read the hook payload; the handoff path is NOT CHECKED." >&2; exit 1; }
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-#   0 = the handoff skill   3 = anything else, or an envelope that is not JSON (not mine)
+#   0 = the handoff skill   3 = a readable envelope for anything else (not mine)
+#   4 = an envelope that is not JSON (r1: truncated or empty) — CANNOT TELL whether it is /handoff
 #   * = the interpreter itself failed: warn and exit 1 (non-blocking), never a silent 0
 python3 - "$TMP" <<'PY' 2>/dev/null
 import json, sys
@@ -44,9 +45,9 @@ try:
     with open(sys.argv[1], "rb") as fh:
         d = json.loads(fh.read().decode("utf-8", "replace"))
 except Exception:
-    sys.exit(3)
+    sys.exit(4)
 if not isinstance(d, dict):
-    sys.exit(3)
+    sys.exit(4)
 ti = d.get("tool_input", {}) or {}
 skill = str(ti.get("skill", "")).lower() if isinstance(ti, dict) else ""
 # Plugin-qualified names arrive as "vendor:handoff"; match the bare segment.
@@ -57,6 +58,9 @@ DETECT_RC=$?
 case $DETECT_RC in
   0) ;;
   3) exit 0 ;;
+  4) echo "⚠ enforce-handoff-path.sh: the hook envelope is not readable JSON, so this could not tell whether" >&2
+     echo "  this is /handoff. The handoff-path check DID NOT RUN — treat it as NOT CHECKED." >&2
+     exit 1 ;;
   *) echo "⚠ enforce-handoff-path.sh: could not read the hook envelope (python3 rc=$DETECT_RC)." >&2
      echo "  The handoff-path check DID NOT RUN. Treat this /handoff as NOT CHECKED, never as compliant." >&2
      exit 1 ;;
@@ -66,6 +70,16 @@ VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-handoff-path.py" --quiet 2>&1)
 VERDICT_RC=$?
 
 [[ $VERDICT_RC -eq 0 ]] && exit 0
+
+# ⛔ r1 Codex M3: only the CHECKER's own verdict blocks. A non-zero exit whose output carries neither the
+# checker's finding nor its CANNOT RUN line is the interpreter failing, not a bad path — saying "BLOCKED —
+# the skill would write where nothing reads" over it would report a measurement that never happened.
+if ! { [[ $VERDICT_RC -eq 1 && "$VERDICT_OUT" == *"does not name"* ]] || \
+       [[ $VERDICT_RC -eq 2 && "$VERDICT_OUT" == *"CANNOT RUN"* ]]; }; then
+  echo "⚠ enforce-handoff-path.sh: check-handoff-path.py did not run (rc=$VERDICT_RC). The handoff path is" >&2
+  echo "  NOT CHECKED — treat this /handoff as unverified, never as compliant." >&2
+  exit 1
+fi
 
 cat >&2 <<EOF
 

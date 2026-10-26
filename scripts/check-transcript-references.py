@@ -2,7 +2,7 @@
 """Did the turn just completed show the reader a bare `#N`?
 
     python3 scripts/check-transcript-references.py --decide   # reads a Stop-hook payload on stdin
-    python3 scripts/check-transcript-references.py --self-test # 18 cases
+    python3 scripts/check-transcript-references.py --self-test # 19 cases
 
 WHY THIS EXISTS (owner's decision, 2026-10-20)
 ----------------------------------------------
@@ -137,7 +137,11 @@ def judge(payload: str) -> tuple[int, str, list[tuple[str, str]]]:
         return 2, f"CANNOT RUN — the transcript could not be read: {exc}", []
 
     cba = _owner("check-banner-armed")
-    window = cba.judged_window(cba.windows(cba._parse_records(lines)))
+    try:
+        window = cba.judged_window(cba.windows(cba._parse_records(lines)))
+    except Exception as exc:
+        # ⛔ backlog #152 r1: unguarded, anything the borrowed turn rule raised left as exit 1 — the warning code.
+        return 2, f"CANNOT RUN — the turn rule raised {type(exc).__name__}: {exc}", []
     if window is None:
         return 0, "no completed turn to judge yet", []
 
@@ -205,6 +209,27 @@ def self_test() -> int:
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
     # ── the rule is the OWNER'S, so these cases pin the COMPOSITION, not a copy of it ──
+    # backlog #152 r1 (Claude M1): the borrowed turn rule ran unguarded here too — exit 1, the warning code.
+    def _tr_rule_raises():
+        class _B:
+            @staticmethod
+            def _parse_records(lines): return [{"type": "user"}]
+            @staticmethod
+            def windows(recs): raise AttributeError("'str' object has no attribute 'get'")
+            @staticmethod
+            def judged_window(wins): return wins[-1]      # present, so the raise is the RULE's, not the fake's
+        with tempfile.TemporaryDirectory() as d:
+            tp = pathlib.Path(d) / "t.jsonl"; tp.write_text('{"type": "user"}\n')
+            real = globals()["_owner"]; globals()["_owner"] = lambda name: _B
+            try:
+                return judge(json.dumps({"transcript_path": str(tp)}))[0]
+            finally:
+                globals()["_owner"] = real
+    try:
+        _tr_rc = _tr_rule_raises()
+    except Exception as exc:                           # noqa: BLE001 — a crash is a NAMED red, not a dead suite
+        _tr_rc = f"RAISED {type(exc).__name__}"
+    case("⭐ a raising turn rule is CANNOT RUN (2), never the warning code (backlog #152 r1)", _tr_rc, 2)
     case("⭐ a bare #N in assistant prose is DETECTED",
          [t for t, _ in bare_references("see #291 for the redesign")], ["#291"])
     case("...and a QUALIFIED one is not",

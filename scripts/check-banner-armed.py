@@ -188,7 +188,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 237 cases
+    python3 scripts/check-banner-armed.py --self-test  # 239 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD UNKNOWN TO THE WORK-LINES PAGE, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -292,7 +292,9 @@ def _parse_records(lines: list[str]) -> list[dict]:
             obj = json.loads(raw)
         except (ValueError, TypeError):
             continue
-        if isinstance(obj, dict):       # backlog #152: `123` / `[1]` are valid JSON and are not records
+        # backlog #152: `123` / `[1]` are valid JSON and are not records — and (r1) nor is an object whose
+        # `message` is not an object: the turn rule reads `message.get(...)` and raised on `"x"` or `123`.
+        if isinstance(obj, dict) and isinstance(obj.get("message", {}), dict):
             records.append(obj)
     return records
 
@@ -1313,9 +1315,16 @@ def run_decide(payload: str) -> int:
               "warning as 'nothing was announced'.", file=sys.stderr)
         return CANNOT_RUN
 
-    wins = windows(all_records)
-    live = wins[-1]
-    judged = judged_window(wins)
+    try:
+        wins = windows(all_records)
+        live = wins[-1]
+        judged = judged_window(wins)
+    except Exception as exc:
+        # ⛔ backlog #152 r1: unguarded, anything the turn rule raised left the Stop hook as exit 1 — the code a
+        # real WARNING uses. Whatever it was, this guard did not look.
+        print(f"CANNOT RUN: the turn rule raised {type(exc).__name__}: {exc}. TREAT THIS AS NOT RUN — do not "
+              "read the absence of a warning as 'nothing was announced'.", file=sys.stderr)
+        return CANNOT_RUN
 
     # ── 2. sample the sentinel for the LIVE turn ──────────────────────────────────────────────
     # ⚠ THIS IS THE SAMPLE POINT THE FIX DEPENDS ON, AND IT WAS ALREADY CORRECT.
@@ -1620,6 +1629,29 @@ def _self_test() -> int:
     # and raised AttributeError out of the Stop hook; only objects are records.
     case("⭐ _parse_records keeps only JSON OBJECTS — `123`, `[1]` and `\"s\"` are not records (backlog #152)",
          _parse_records(["123", "[1]", '"s"', '{"type": "user"}', "not json"]) == [{"type": "user"}])
+    # r1 (both halves): an OBJECT whose `message` is not an object crashed the turn rule the same way.
+    case("...and a record whose `message` is not an object is not a record either (backlog #152 r1)",
+         _parse_records(['{"type": "user", "message": 123}', '{"type": "user", "message": "x"}',
+                         '{"type": "user", "message": {"content": "q"}}'])
+         == [{"type": "user", "message": {"content": "q"}}])
+    def _safe_rc(fn):
+        # a crash must be a NAMED red case, or the mutation harness cannot attribute the kill
+        try:
+            return fn()
+        except Exception as exc:                       # noqa: BLE001
+            return f"RAISED {type(exc).__name__}"
+    def _banner_rule_raises() -> int:
+        import contextlib as _cl, io as _io, tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"; tp.write_text('{"type": "user"}\n')
+            real = globals()["windows"]; globals()["windows"] = lambda recs: (_ for _ in ()).throw(KeyError("x"))
+            try:
+                with _cl.redirect_stderr(_io.StringIO()):
+                    return run_decide(json.dumps({"transcript_path": str(tp), "session_id": "s"}))
+            finally:
+                globals()["windows"] = real
+    case("⭐ this guard's OWN run_decide maps a raising turn rule to CANNOT RUN, not exit 1 (backlog #152 r1)",
+         _safe_rc(_banner_rule_raises) == CANNOT_RUN)
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
     # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE

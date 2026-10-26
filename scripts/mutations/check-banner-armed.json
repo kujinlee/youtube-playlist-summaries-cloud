@@ -1206,12 +1206,38 @@
     "file": "scripts/check-banner-armed.py",
     "edits": [
       [
-        "        if isinstance(obj, dict):       # backlog #152",
-        "        if True:       # backlog #152"
+        "        if isinstance(obj, dict) and isinstance(obj.get(\"message\", {}), dict):",
+        "        if (not isinstance(obj, dict)) or isinstance(obj.get(\"message\", {}), dict):"
       ]
     ],
     "expect": [
       "⭐ _parse_records keeps only JSON OBJECTS — `123`, `[1]` and `\"s\"` are not records (backlog #152)"
+    ]
+  },
+  {
+    "name": "backlog #152 r1: a record whose `message` is not an object is kept",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        " and isinstance(obj.get(\"message\", {}), dict):",
+        ":"
+      ]
+    ],
+    "expect": [
+      "...and a record whose `message` is not an object is not a record either (backlog #152 r1)"
+    ]
+  },
+  {
+    "name": "backlog #152 r1: this guard's own run_decide lets the turn rule's exception escape (exit 1)",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "    except Exception as exc:\n        # ⛔ backlog #152 r1: unguarded, anything the turn rule raised",
+        "    except ZeroDivisionError as exc:\n        # ⛔ backlog #152 r1: unguarded, anything the turn rule raised"
+      ]
+    ],
+    "expect": [
+      "⭐ this guard's OWN run_decide maps a raising turn rule to CANNOT RUN, not exit 1 (backlog #152 r1)"
     ]
   }
 ]
