@@ -24,3 +24,9 @@ real-hook cases pass with paired controls; the no-receipt mutation reddens four 
   entry point per guard (`check-handoff-path` has no `--decide`). No code change.
 
 Loop stops at r3, as the REDESIGN row written before r3 committed.
+
+⚠ **Filing note (2026-10-26):** this round's Codex run also WROTE a review file and a backlog row (`#358`, describing
+the same #357 wording fixed above) into the worktree, and the commit closing this round staged that row unread. Both
+are repaired: the filed review is now the wrapper's own CAPTURE (its final message, `gate_ran: true`), and the stray
+row is removed — the issue it described was already corrected, and the number belongs to the ffmpeg row filed on
+`begin-plan-worktree`.
