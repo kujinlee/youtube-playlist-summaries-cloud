@@ -17608,7 +17608,9 @@ Branch `anchor-precheck` (backlog #252, anchor half). `check-plan-code.anchor_pr
 pure; the run's own rules (exactly one occurrence, edits applied in order) — runs in `mutate_delivered`'s
 pre-flight beside the count and home-escape checks. 2,121 anchors in ~0.5s at `778f0169`. Two self-test
 worlds that broke their own suite now keep the anchor bound; the total-shortfall world reaches the late
-path with the pre-check stood down, and a sibling case asserts the pre-check catches it first. 245 cases;
+path with the pre-check stood down, and a sibling case asserts the pre-check catches it first. 246 cases;
 4 mutations (2105 -> 2109), each verified red via its named case on a copy; the 137-entry sweep is CI's.
 r1: Codex CONVERGED (differential probes against `run_mutations` agreed everywhere); Claude CONVERGED with
 three Lows — the `--only` claim now has its case and mutation, and backlog #252 stays 🟠, PARTLY (the `expect` half).
+r2 (Codex): that new entry REPEATED the wiring entry's anchor, which the loader refuses — re-anchored; and
+`check-fixture-variation` wanted `read` varied — a case with a reader that cannot read.

@@ -1688,8 +1688,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    drift += anchor_problems(muts, _read)\n",
-        "    drift += anchor_problems([m for m in muts if only is None or m.get(\"file\") in only], _read)\n"
+        "    drift += anchor_problems(muts, _read)\n    if drift:",
+        "    drift += anchor_problems([m for m in muts if only is None or m.get(\"file\") in only], _read)\n    if drift:"
       ]
     ],
     "expect": [

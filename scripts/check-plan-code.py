@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 245 cases
+    python3 scripts/check-plan-code.py --self-test          # 246 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -3335,6 +3335,10 @@ def _self_test() -> int:
         case("...an anchor absent from its target is named",
              [("anchor NOT FOUND" in r, "'gone'" in r) for r in
               anchor_problems([{"name": "gone", "file": "m.py", "edits": [["return 9", "return 2"]]}], _src)], [(True, True)])
+        # a DIFFERENT reader: one that cannot read a target. That target is refused by its own rule (unknown
+        # file), so this pass names nothing for it rather than inventing a NOT FOUND.
+        case("...and a target the reader cannot read is left to its own refusal, not reported as NOT FOUND",
+             anchor_problems([{"name": "u", "file": "m.py", "edits": [["return 1", "return 2"]]}], lambda f: None), [])
         case("...and so is one that matches TWICE",
              [("matches 2 times" in r) for r in
               anchor_problems([{"name": "twice", "file": "m.py", "edits": [["x = 1", "x = 2"]]}], _src)], [True])
