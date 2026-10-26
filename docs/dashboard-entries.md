@@ -17619,6 +17619,24 @@ already held for a migration). 211 cases; 10 mutations (75 -> 85, total 2105 -> 
 
 
 ## 2026-10-26
+The project's list of known gaps in its own checking tools was audited row by row against the code as
+it is today. Nine items turned out to be finished, replaced, or the same as another item, and were
+closed; eleven were marked less serious than when they were written; and twenty-two are now marked
+as waiting on a decision from the owner, with the decision named. The tools section of the features
+page goes from 115 open items to 106, and from 32 urgent ones to 26.
+<!--tech-->
+Branch `tooling-backlog-scrub`. Four read-only auditors (one per 41-row chunk) gave every row a verdict
+with EXECUTED evidence against `778f0169`: 120 KEEP, 22 NEEDS-OWNER, 11 RERATE (all downgrades), 5
+SUPERSEDED (#124, #125, #127 — PR #295 retired by PR #359; #189 — shipped as backlog #217; #213 — ADR-0014
+D1/D2), 4 DUPLICATE (#312 of #317, #174 of #330, #120 of #260, #218 of #259), 2 CLOSE that were already
+closed (#105, #305). Each closure re-checked by hand. ⚠ The page scrape that set the scope ran into the
+neighbouring sections, so 49 audited rows are `(process)`, `(process / deliverable #2)` and
+`(comprehensibility)`; their verdicts are applied too. `(tooling)` open 115 -> 106 (🔴 2 -> 1, 🟠 30 -> 25,
+🟡 60 -> 58, 🟢 23 -> 22), whole backlog 208 -> 199, by `gen-backlog-page.parse`. No status note carries `✅`
+(backlog #344's rule). `check-backlog-closure` warns on 5 rows; all 5 checked and correctly open.
+
+
+## 2026-10-26
 When a test's hook into the code goes stale because someone edited the line it points at, the mutation
 check now says so in under a second, before it starts, instead of a quarter of an hour into a CI run.
 Today alone this happened three times.
