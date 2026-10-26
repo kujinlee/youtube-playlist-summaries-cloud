@@ -17597,3 +17597,16 @@ PR #400 (`local-sweep-guard`) merged `ba4d2c28` on the owner's call after `check
 `failure_path_removals` counted `shard=shard)` -> `shard=shard, budget=budget, only=only)` as a rewrite on
 a failure path. Filed as backlog #355 (XS, tooling) with the falsifier: the extended-call shape READY while
 `return 1` -> `return 0` and an `or`-widened condition stay HOLD. Roadmap line added.
+
+
+## 2026-10-26
+When a test's hook into the code goes stale because someone edited the line it points at, the mutation
+check now says so in under a second, before it starts, instead of a quarter of an hour into a CI run.
+Today alone this happened three times.
+<!--tech-->
+Branch `anchor-precheck` (backlog #252, anchor half). `check-plan-code.anchor_problems(muts, read)` —
+pure; the run's own rules (exactly one occurrence, edits applied in order) — runs in `mutate_delivered`'s
+pre-flight beside the count and home-escape checks. 2,121 anchors in ~0.5s at `778f0169`. Two self-test
+worlds that broke their own suite now keep the anchor bound; the total-shortfall world reaches the late
+path with the pre-check stood down, and a sibling case asserts the pre-check catches it first. 244 cases;
+3 mutations (2105 -> 2108), each verified red via its named case on a copy; the 136-entry sweep is CI's.

@@ -1643,5 +1643,44 @@
     "expect": [
       "...and the refusal prices only GREEN controls (it names zzz.py, not the failed aaa.py)"
     ]
+  },
+  {
+    "name": "backlog #252: the anchor pre-check is not wired into the pre-flight, so an orphan surfaces only when it runs",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    drift += anchor_problems(muts, _read)\n",
+        "    drift += []\n"
+      ]
+    ],
+    "expect": [
+      "⭐ an orphaned anchor is REFUSED before any tree is staged — no control ran (backlog #252)"
+    ]
+  },
+  {
+    "name": "backlog #252: the pre-check accepts an anchor matching more than once",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            if n != 1:\n                out.append(f\"mutation {name!r} ({fname}): \" + (",
+        "            if n == 0:\n                out.append(f\"mutation {name!r} ({fname}): \" + ("
+      ]
+    ],
+    "expect": [
+      "...and so is one that matches TWICE"
+    ]
+  },
+  {
+    "name": "backlog #252: the pre-check checks each edit against the ORIGINAL text, not sequentially as the run applies them",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                break\n            src = src.replace(find, repl, 1)\n    return out",
+        "                break\n    return out"
+      ]
+    ],
+    "expect": [
+      "anchor_problems: a binding anchor, and a second edit that binds only AFTER the first, are clean"
+    ]
   }
 ]
