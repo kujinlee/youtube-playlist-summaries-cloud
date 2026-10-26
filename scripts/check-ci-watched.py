@@ -1212,7 +1212,9 @@ def main(argv: "list[str] | None" = None, stream=None) -> int:
         if not head:
             # ⛔ backlog #255: without HEAD this cannot know WHICH record is this worktree's, so it clears
             # nothing — and must not return the code for success, or a caller believes it is un-armed.
-            print("CANNOT RUN: could not read HEAD, so --clear removed NOTHING. TREAT THIS AS NOT CLEARED.")
+            print("CANNOT RUN: could not read HEAD, so --clear removed no arm record (this worktree's is unknown)"
+                  + (" — only the legacy pre-directory file was tidied" if gone else "")
+                  + ". TREAT THIS AS NOT CLEARED.")
             return CANNOT_RUN
         if (SENTINEL / head).is_file():
             (SENTINEL / head).unlink()

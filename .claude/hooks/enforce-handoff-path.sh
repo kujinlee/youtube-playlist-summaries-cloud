@@ -66,20 +66,23 @@ case $DETECT_RC in
      exit 1 ;;
 esac
 
-VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-handoff-path.py" --quiet 2>&1)
-VERDICT_RC=$?
+# ⛔ THE VERDICT TRAVELS BY RECEIPT (backlog #111 r2). The checker writes 0/1/2 to a file once it has
+# reached a verdict; the hook acts on that alone. No exit-code guessing (an interpreter failure is also 1),
+# and no matching of the checker's prose (a rewording silently downgraded a block to a warning). A checker
+# that never ran — broken, killed, or a wrapper that exits 0 — leaves no receipt.
+RECEIPT="$(mktemp)" || { echo "⚠ enforce-handoff-path.sh: mktemp failed; the handoff path is NOT CHECKED." >&2; exit 1; }
+trap 'rm -f "$TMP" "$RECEIPT"' EXIT
+VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-handoff-path.py" --quiet --receipt "$RECEIPT" 2>&1)
+VERDICT="$(tr -d '[:space:]' < "$RECEIPT" 2>/dev/null)"
 
-[[ $VERDICT_RC -eq 0 ]] && exit 0
-
-# ⛔ r1 Codex M3: only the CHECKER's own verdict blocks. A non-zero exit whose output carries neither the
-# checker's finding nor its CANNOT RUN line is the interpreter failing, not a bad path — saying "BLOCKED —
-# the skill would write where nothing reads" over it would report a measurement that never happened.
-if ! { [[ $VERDICT_RC -eq 1 && "$VERDICT_OUT" == *"does not name"* ]] || \
-       [[ $VERDICT_RC -eq 2 && "$VERDICT_OUT" == *"CANNOT RUN"* ]]; }; then
-  echo "⚠ enforce-handoff-path.sh: check-handoff-path.py did not run (rc=$VERDICT_RC). The handoff path is" >&2
-  echo "  NOT CHECKED — treat this /handoff as unverified, never as compliant." >&2
-  exit 1
-fi
+case "$VERDICT" in
+  0)   exit 0 ;;
+  1|2) ;;
+  *)   echo "⚠ enforce-handoff-path.sh: check-handoff-path.py reached no verdict (no receipt). The handoff path" >&2
+       echo "  is NOT CHECKED — treat this /handoff as unverified, never as compliant." >&2
+       [[ -n "$VERDICT_OUT" ]] && printf '%s\n' "$VERDICT_OUT" >&2
+       exit 1 ;;
+esac
 
 cat >&2 <<EOF
 

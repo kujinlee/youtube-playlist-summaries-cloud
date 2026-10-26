@@ -184,13 +184,15 @@ def self_test() -> int:
     import os, shutil, subprocess
     hook_failures = 0
 
-    def _hook_rc(payload: bytes, skill_text: str, python3: str | None) -> int:
+    def _hook_rc(payload: bytes, skill_text: str, python3: str | None, checker_edit=None) -> int:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / ".claude/hooks").mkdir(parents=True)
             shutil.copy(REPO_ROOT / ".claude/hooks/enforce-handoff-path.sh", root / ".claude/hooks")
             (root / "scripts").mkdir()
             shutil.copy(Path(__file__), root / "scripts/check-handoff-path.py")
+            if checker_edit is not None:
+                cp = root / "scripts/check-handoff-path.py"; cp.write_text(checker_edit(cp.read_text()))
             (root / SKILL_REL).parent.mkdir(parents=True)
             (root / SKILL_REL).write_text(skill_text, encoding="utf-8")
             env = dict(os.environ)
@@ -207,6 +209,10 @@ def self_test() -> int:
     _BROKEN = "#!/bin/sh\nexit 1\n"
     # r1 Codex M3: the detector runs (`python3 - <file>`), but the CHECKER invocation fails — that is not a bad path.
     _CHECKER_DIES = '#!/bin/sh\nif [ "$1" = "-" ]; then exec %s "$@"; fi\nexit 1\n' % sys.executable
+    # r2 Codex: a wrapper that exits 0 WITHOUT running the checker — no verdict was produced at all.
+    _CHECKER_FAKES_OK = '#!/bin/sh\nif [ "$1" = "-" ]; then exec %s "$@"; fi\nexit 0\n' % sys.executable
+    # r2 Codex M: the checker's FINDING reworded — detection, label and exit code untouched.
+    _REWORDED = lambda s: s.replace("SKILL.md does not name", "SKILL.md omits")
 
     def _hook_rc_cat_fails(payload: bytes) -> int:
         with tempfile.TemporaryDirectory() as td:
@@ -228,13 +234,17 @@ def self_test() -> int:
          _hook_rc(b'{"tool_name": "Skill", "tool_input": {"ski', GOOD, None), 1),
         ("⭐ hook: a checker that fails to RUN warns and exits 1 — it is not reported as a bad path (backlog #111 r1)",
          _hook_rc(_HANDOFF, GOOD, _CHECKER_DIES), 1),
+        ("⭐ hook: a REWORDED checker finding still blocks — the verdict travels by receipt, not prose (backlog #111 r2)",
+         _hook_rc(_HANDOFF, UPSTREAM, None, _REWORDED), 2),
+        ("⭐ hook: a wrapper exiting 0 WITHOUT running the checker warns — no receipt, no pass (backlog #111 r2)",
+         _hook_rc(_HANDOFF, UPSTREAM, _CHECKER_FAKES_OK), 1),
     ):
         ok = got == want
         hook_failures += not ok
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
     failures += hook_failures
 
-    total = len(CASES) + 3 + 8      # 3 file cases and 8 hook cases follow the text cases
+    total = len(CASES) + 3 + 10     # 3 file cases and 10 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 
@@ -243,6 +253,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true", help="run the case suite and exit")
     ap.add_argument("--quiet", action="store_true", help="print only on violation")
+    ap.add_argument("--receipt", metavar="FILE",
+                    help="write the verdict (0/1/2) to FILE once it is reached — the hook's ONLY verdict channel")
     args = ap.parse_args()
 
     if args.self_test:
@@ -250,6 +262,11 @@ def main() -> int:
 
     path = REPO_ROOT / SKILL_REL
     code, messages = check_file(path)
+    # ⛔ backlog #111 r2: THE RECEIPT IS THE VERDICT CHANNEL. An exit code cannot tell "checked: REVERTED" from
+    # "the interpreter failed", and matching this file's ENGLISH made a rewording a silent downgrade. A receipt
+    # exists only if this line ran, so a checker that never ran leaves none and the hook says so.
+    if args.receipt:
+        Path(args.receipt).write_text(f"{code}\n", encoding="utf-8")
 
     if code == 0:
         if not args.quiet:

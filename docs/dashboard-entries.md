@@ -17614,5 +17614,7 @@ by exit code through a temp file; `check-handoff-path.py` runs the real hook und
 and `check-banner-armed`'s and `check-transcript-references`' OWN decide paths map a raising turn rule to
 CANNOT RUN; the hook checks its payload copy, warns on an unreadable envelope, and blocks only on the
 checker's own verdict (a checker that did not run warns instead); `--clear` tidies the legacy file before
-needing HEAD. 17 cases (8 run the real hook), 9 mutations (2105 -> 2114); scoped 195/195 over five manifests;
+needing HEAD. ⟳ r2 (Codex, bet lost -> REDESIGN): telling a verdict from a failure by the checker's WORDING was
+fragile, so the checker writes a verdict RECEIPT and the hook acts on that alone. Five pre-existing malformed-input
+crashes filed as backlog #357. 19 cases (10 run the real hook), 10 mutations (2105 -> 2115); scoped 195/195 + 47/47;
 three anchors re-bound.
