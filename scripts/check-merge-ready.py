@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 191 cases
+    python3 scripts/check-merge-ready.py --self-test # 196 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -501,9 +501,10 @@ PIN_TOTAL = re.compile(r"sum\(EXPECTED_MUTATIONS\.values\(\)\),\s*(?P<n>\d+)\)")
 CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
 # A line on a failure path: the FAIL word, a fails/failures tally, a non-zero exit, or a hook's
 # `deny` — r1 CLAUDE H3: the hooks block with `deny "…"` and `exit 2`, and the first pattern saw neither.
-# ⟳ r8 (HONEST): any non-zero status — a gate may refuse with 3 — not only 1 and 2.
-FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn [1-9]\b|\bexit [1-9]\b"
-                       r"|sys\.exit\([1-9]\)|SystemExit\(|\bdeny\b")
+# ⟳ r8/r9 (HONEST): ANY non-zero integer status (3, 10, -1), and `raise` / `assert` — a validation
+# exception turned into a `print` lets execution continue. Measured cost: 9 -> 10 of 40 PRs.
+FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn\s+-?[1-9]\d*\b|\bexit\s+-?[1-9]\d*\b"
+                       r"|sys\.exit\(\s*-?[1-9]\d*\s*\)|SystemExit\(|\bdeny\b|\braise\b|\bassert\b")
 # ⟳ r8 (HONEST): EVERY script, not only `check-*` — a gate's logic moved into a helper it imports
 # (`scripts/gate_logic.py`) changes the gate without touching it. Measured cost: 8 -> 9 of 40 PRs.
 GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
@@ -660,7 +661,10 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
     for f in (fs if fs is not None else diff_files(diff)):
         if not any(GATE_CODE.match(p) for p in _paths(f)):
             continue
-        readded = _code(f, "+")
+        # ⟳ r9 (HONEST): a MOVE keeps its INDENTATION. Stripped comparison read `return 1` pushed under
+        # a new `if verbose:` as moved, cancelling a real removal — in Python indentation is meaning.
+        readded = [l[1:].rstrip() for hk in f["hunks"] for l in hk
+                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
         for hk in f["hunks"]:
             old_side = [l for l in hk if not l.startswith("+")]
             code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
@@ -668,8 +672,8 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
                 t = l[1:].strip()
                 if not l.startswith("-") or not t:
                     continue
-                if t in readded:
-                    readded.remove(t)
+                if l[1:].rstrip() in readded:
+                    readded.remove(l[1:].rstrip())
                     continue
                 if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):
                     out.setdefault(_name(f), []).append(t)
@@ -1698,6 +1702,19 @@ def _self_test() -> int:
           has(H([G], DF(G, "     if odd:", "-        return 7", "+        return 0")), "failure path"), True)
     check("...but `return 0` -> `return 0` with an unrelated line removed beside it is not a failure path",
           H([G], DF(G, "-    x = 1", "     return 0")), [])
+    # r9 (HONEST-SYNTACTIC): re-indentation is not a move; any non-zero int; raise.
+    check("⭐ `return 1` pushed under a new `if verbose:` is NOT a move — it is a loosening",
+          has(H([G], DF(G, "     if bad:", '-        print("invalid input")', "-        return 1", "+        if verbose:",
+                        '+            print("invalid input")', "+            return 1", "     return 0")), "failure path"), True)
+    check("...while the SAME line at the SAME indentation moved is still a move",
+          H([G], DF(G, "     if bad:", "-        return 1", "+        return 1", "     return 0")), [])
+    check("a gate's `sys.exit(10)` turned into success is a loosening",
+          has(H([G], DF(G, "     if worse:", "-        sys.exit(10)", "+        sys.exit(0)")), "failure path"), True)
+    check("...and so is `sys.exit(-1)`",
+          has(H([G], DF(G, "     if odd:", "-        sys.exit(-1)", "+        sys.exit(0)")), "failure path"), True)
+    check("...and a `raise` turned into a `print`",
+          has(H([G], DF(G, "     if bad:", '-        raise ValueError("invalid input")', '+        print("invalid input")')),
+              "failure path"), True)
     # ⛔ A STATED BOUND, asserted so it cannot be forgotten (owner, r8 card A): a SEMANTIC loosening — a
     # condition removed far above the loop that fails on it — leaves no failure-path text within the
     # window. If this case ever goes RED, the bound has closed: update the comment above GATE_CODE.

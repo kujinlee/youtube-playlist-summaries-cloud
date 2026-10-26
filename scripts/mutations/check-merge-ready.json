@@ -248,7 +248,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                if t in readded:\n                    readded.remove(t)\n                    continue\n",
+    "                if l[1:].rstrip() in readded:\n                    readded.remove(l[1:].rstrip())\n                    continue\n",
     ""
    ]
   ],
@@ -274,8 +274,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        readded",
-    "        if False:\n            continue\n        readded"
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        # ⟳ r9",
+    "        if False:\n            continue\n        # ⟳ r9"
    ]
   ],
   "expect": [
@@ -396,8 +396,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "|SystemExit\\(|\\bdeny\\b\")",
-    "|SystemExit\\(\")"
+    "|SystemExit\\(|\\bdeny\\b|\\braise\\b|\\bassert\\b\")",
+    "|SystemExit\\(|\\braise\\b|\\bassert\\b\")"
    ]
   ],
   "expect": [
@@ -410,8 +410,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "\\bexit [1-9]\\b\"",
-    "\\bexit 1\\b\""
+    "\\bexit\\s+-?[1-9]\\d*\\b\"",
+    "\\bexit\\s+1\\b\""
    ]
   ],
   "expect": [
@@ -890,8 +890,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "|sys\\.exit\\([1-9]\\)|",
-    "|sys\\.exit\\([12]\\)|"
+    "|sys\\.exit\\(\\s*-?[1-9]\\d*\\s*\\)|",
+    "|sys\\.exit\\(\\s*[12]\\s*\\)|"
    ]
   ],
   "expect": [
@@ -903,12 +903,42 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "\\breturn [1-9]\\b|",
-    "\\breturn [12]\\b|"
+    "\\breturn\\s+-?[1-9]\\d*\\b|",
+    "\\breturn\\s+[12]\\b|"
    ]
   ],
   "expect": [
    "...and so is a `return 7`"
+  ]
+ },
+ {
+  "name": "r9: a move is compared without its indentation again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        readded = [l[1:].rstrip() for hk in f[\"hunks\"] for l in hk",
+    "        readded = [l[1:].strip() for hk in f[\"hunks\"] for l in hk"
+   ],
+   [
+    "                if l[1:].rstrip() in readded:\n                    readded.remove(l[1:].rstrip())",
+    "                if l[1:].strip() in readded:\n                    readded.remove(l[1:].strip())"
+   ]
+  ],
+  "expect": [
+   "⭐ `return 1` pushed under a new `if verbose:` is NOT a move — it is a loosening"
+  ]
+ },
+ {
+  "name": "r9: `raise` is not a failure statement",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|\\bdeny\\b|\\braise\\b|\\bassert\\b\")",
+    "|\\bdeny\\b|\\bassert\\b\")"
+   ]
+  ],
+  "expect": [
+   "...and a `raise` turned into a `print`"
   ]
  }
 ]

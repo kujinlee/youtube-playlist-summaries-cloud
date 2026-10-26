@@ -17558,6 +17558,7 @@ adversarial shapes (CR-vs-LF filenames; a gate symlinked elsewhere) are closed b
 symlinked gate's target as the gate, and a stop rule was set before r8. r8 found three HONEST gaps in what counts as
 a gate (a helper it imports; exit status 3): every `scripts/*` file now counts and any non-zero status does (9 of
 40 PRs held); a condition removed far from its failure line is stated as the SEMANTIC bound — review is the
-primary protection, this stage a second net. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 191 cases (incl. `main()` over a fake `_run` and a real-git world), 55 new mutations net, 71/71. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+primary protection, this stage a second net. r9 found two more honest gaps — a re-indented `return 1` read as
+moved, and `sys.exit(10)` / `raise` unknown — now closed (10 of 40 held). Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 196 cases (incl. `main()` over a fake `_run` and a real-git world), 57 new mutations net, 73/73. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.
