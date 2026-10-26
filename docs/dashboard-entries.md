@@ -17637,6 +17637,27 @@ neighbouring sections, so 49 audited rows are `(process)`, `(process / deliverab
 
 
 ## 2026-10-26
+Four of the project's own checking tools could report success, or crash into an ordinary warning,
+without having checked anything. Each one now says plainly that it could not run: the tool that tracks
+whether a CI run is being watched, the one that checks each turn ends with its summary table, and the
+one that keeps session notes going to the file the next session reads.
+<!--tech-->
+Branch `guard-fail-open-batch` — backlog #253, #255, #152, #111 (from the tooling audit, PR #403).
+`check-ci-watched.py`: `arms_newest_first()` survives a record removed between `is_file()` and `stat()`;
+`--clear` with no HEAD is CANNOT RUN. `check-banner-armed._parse_records` keeps only objects;
+`check-closing-table.run_decide` maps a raising turn rule to CANNOT RUN. `enforce-handoff-path.sh` detects
+by exit code through a temp file; `check-handoff-path.py` runs the real hook under chatty and broken
+`python3` shims. ⟳ r1 (both halves): `_parse_records` also drops a record whose `message` is not an object,
+and `check-banner-armed`'s and `check-transcript-references`' OWN decide paths map a raising turn rule to
+CANNOT RUN; the hook checks its payload copy, warns on an unreadable envelope, and blocks only on the
+checker's own verdict (a checker that did not run warns instead); `--clear` tidies the legacy file before
+needing HEAD. ⟳ r2 (Codex, bet lost -> REDESIGN): telling a verdict from a failure by the checker's WORDING was
+fragile, so the checker writes a verdict RECEIPT and the hook acts on that alone. Five pre-existing malformed-input
+crashes filed as backlog #357. 19 cases (10 run the real hook), 10 mutations (2105 -> 2115); scoped 195/195 + 47/47;
+three anchors re-bound.
+
+
+## 2026-10-26
 When a test's hook into the code goes stale because someone edited the line it points at, the mutation
 check now says so in under a second, before it starts, instead of a quarter of an hour into a CI run.
 Today alone this happened three times.
