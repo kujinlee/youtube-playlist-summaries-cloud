@@ -17555,6 +17555,9 @@ sections, a submodule one entry and none); r6 then found two more in per-path pa
 directory's descendants; a `-diff` attribute hides a gate's hunks). Now each file's hunks are the diff of its
 EXACT old and new BLOBS (`gather`, `blob_hunks`), which no path, pathspec or attribute can touch; r7's two
 adversarial shapes (CR-vs-LF filenames; a gate symlinked elsewhere) are closed by reading git as bytes and judging a
-symlinked gate's target as the gate, and a stop rule was set before r8. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 185 cases (incl. `main()` over a fake `_run` and a real-git world), 52 new mutations net, 68/68. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+symlinked gate's target as the gate, and a stop rule was set before r8. r8 found three HONEST gaps in what counts as
+a gate (a helper it imports; exit status 3): every `scripts/*` file now counts and any non-zero status does (9 of
+40 PRs held); a condition removed far from its failure line is stated as the SEMANTIC bound — review is the
+primary protection, this stage a second net. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 191 cases (incl. `main()` over a fake `_run` and a real-git world), 55 new mutations net, 71/71. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.

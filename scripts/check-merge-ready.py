@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 185 cases
+    python3 scripts/check-merge-ready.py --self-test # 191 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -484,6 +484,11 @@ def _dashboard_gate():
 # chosen on a selection card AGAINST MEASURED BASE RATES over the 30 merged PRs before it: "any
 # gate-file edit" would have held 18/30 and was rejected; LOOSENING holds 5/30 including PR #398;
 # NO-REVIEW 8/30 (0 of the last 14); app code and migrations 0/30.
+# ⛔ THE DETECTOR IS SYNTACTIC, AND REVIEW IS THE PRIMARY PROTECTION (owner's ruling, r8 card A). A
+# PR reaches READY only after its review rounds; this stage is a second net for loosenings that
+# leave TEXT on a failure path. A SEMANTIC loosening — a condition removed far above the loop that
+# fails on it, a threshold changed, a helper's meaning changed without failure-path text — is
+# outside what a diff rule can see, and is stated here rather than chased.
 # ⚠ LOOSENING IS DETECTED BY PROXIES, and they are bounds, not a proof. A weakening that lowers no
 # pin or count, edits no baseline, removes no line on a failure path and drops no gate invocation
 # merges as READY. ⚠ They target an HONEST change, not an evasion: a failure line re-added inside
@@ -496,9 +501,12 @@ PIN_TOTAL = re.compile(r"sum\(EXPECTED_MUTATIONS\.values\(\)\),\s*(?P<n>\d+)\)")
 CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
 # A line on a failure path: the FAIL word, a fails/failures tally, a non-zero exit, or a hook's
 # `deny` — r1 CLAUDE H3: the hooks block with `deny "…"` and `exit 2`, and the first pattern saw neither.
-FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn [12]\b|\bexit [12]\b"
-                       r"|sys\.exit\([12]\)|SystemExit\(|\bdeny\b")
-GATE_CODE = re.compile(r"^(scripts/check-[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
+# ⟳ r8 (HONEST): any non-zero status — a gate may refuse with 3 — not only 1 and 2.
+FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn [1-9]\b|\bexit [1-9]\b"
+                       r"|sys\.exit\([1-9]\)|SystemExit\(|\bdeny\b")
+# ⟳ r8 (HONEST): EVERY script, not only `check-*` — a gate's logic moved into a helper it imports
+# (`scripts/gate_logic.py`) changes the gate without touching it. Measured cost: 8 -> 9 of 40 PRs.
+GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
 # Where a gate is INVOKED rather than written (r1 CLAUDE M1): dropping the line that runs a check
 # disables it without touching the check. A removed line here naming a gate, not re-added, holds.
 GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json"
@@ -1398,7 +1406,7 @@ def _self_test() -> int:
     check("...and a removed COMMENT beside a fails list is not",
           H([G], DF(G, "-    # FAIL here once", "     fails.append(x)")), [])
     check("...and the same removal in a NON-gate script is not",
-          H(["scripts/page.py"], DF("scripts/page.py", "-    return 1", "+    return 0")), [])
+          H(["tools/page.py"], DF("tools/page.py", "-    return 1", "+    return 0")), [])
     _far = DF(G, "-    x = 1", *[f"     y{i} = {i}" for i in range(6)], "     fails.append(x)")
     check("...and a removal SIX lines from the failure path is outside the window", H([G], _far), [])
     # r1 (both halves): a DELETED gate dropped every removed line, so deleting a check was READY.
@@ -1411,7 +1419,7 @@ def _self_test() -> int:
           has(H([".claude/hooks/sub/b.sh"], DEL(".claude/hooks/sub/b.sh", "case $x in", '  *) deny "no";;')),
               "failure path"), True)
     check("...but deleting a NON-gate script is not",
-          H(["scripts/page.py"], DEL("scripts/page.py", "if bad:", "    return 1")), [])
+          H(["tools/page.py"], DEL("tools/page.py", "if bad:", "    return 1")), [])
     # r1: distance was counted over the COMBINED diff, so added lines pushed a removal out.
     check("⭐ six ADDED comment lines do not push an adjacent removal out of the window",
           has(H([G], DF(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', *[f"+    # why {i}" for i in range(6)],
@@ -1444,9 +1452,9 @@ def _self_test() -> int:
         head = f"diff --git a/{old} b/{new}\nsimilarity index 90%\nrename from {old}\nrename to {new}\n"
         return head + (f"--- a/{old}\n+++ b/{new}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n" if hunk else "")
     check("⭐ a gate RENAMED out of scope with `return 1` -> `return 0` is a loosening (failure path)",
-          has(H([G], REN(G, "scripts/validate-x.py", "-    return 1", "+    return 0")), "failure path"), True)
+          has(H([G], REN(G, "tools/validate-x.py", "-    return 1", "+    return 0")), "failure path"), True)
     check("...and the rename itself is a scope exit",
-          has(H([G], REN(G, "scripts/validate-x.py", "-    return 1", "+    return 0")), "renamed to scripts/validate-x.py"), True)
+          has(H([G], REN(G, "tools/validate-x.py", "-    return 1", "+    return 0")), "renamed to tools/validate-x.py"), True)
     check("⭐ a workflow MOVED out of .github/workflows/ with no hunk at all is a loosening",
           has(H([CI], REN(".github/workflows/gate.yml", ".github/archived/gate.yml")), "renamed to .github/archived"), True)
     check("...and so is a hook moved into docs/ with its `deny` dropped",
@@ -1678,6 +1686,24 @@ def _self_test() -> int:
     check("name_status reads a rename, an add and a delete",
           [(e["status"], e["old"], e["new"]) for e in name_status("R091\0a b\0c\0A\0n\0D\0o\0")],
           [("R", "a b", "c"), ("A", None, "n"), ("D", "o", None)])
+    # r8 (HONEST): a helper the gate imports, and a status other than 1 or 2.
+    check("⭐ a weakened HELPER module (not `check-*`) is a loosening — the gate imports it",
+          has(H(["scripts/gate_logic.py"], DF("scripts/gate_logic.py", "     if bad:", "-        return 1", "+        return 0")),
+              "gate_logic.py removes"), True)
+    check("...but the same edit outside scripts/ is not", H(["tools/gate_logic.py"], DF("tools/gate_logic.py",
+          "     if bad:", "-        return 1", "+        return 0")), [])
+    check("⭐ a gate's `sys.exit(3)` turned into success is a loosening (any non-zero status)",
+          has(H([G], DF(G, "     if refused:", "-        sys.exit(3)", "+        sys.exit(0)")), "failure path"), True)
+    check("...and so is a `return 7`",
+          has(H([G], DF(G, "     if odd:", "-        return 7", "+        return 0")), "failure path"), True)
+    check("...but `return 0` -> `return 0` with an unrelated line removed beside it is not a failure path",
+          H([G], DF(G, "-    x = 1", "     return 0")), [])
+    # ⛔ A STATED BOUND, asserted so it cannot be forgotten (owner, r8 card A): a SEMANTIC loosening — a
+    # condition removed far above the loop that fails on it — leaves no failure-path text within the
+    # window. If this case ever goes RED, the bound has closed: update the comment above GATE_CODE.
+    check("BOUND (stated, r8): a condition removed 7 lines above its failure line is NOT held",
+          H([G], DF(G, "     checks = [", "-        False,", "         True,", "     ]", "     x = 1", "     y = 2",
+                    "     z = 3", "     for c in checks:", "         if not c:", "             return 1")), [])
     # r1 CLAUDE M2: a pin deleted, or renamed away, is a drop to nothing.
     check("a mutation pin DELETED is a loosening",
           has(H([PC], DF(PC, '-    "scripts/a.py": 30,')), "scripts/a.py (30) is removed"), True)

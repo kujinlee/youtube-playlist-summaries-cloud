@@ -410,7 +410,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "\\bexit [12]\\b\"",
+    "\\bexit [1-9]\\b\"",
     "\\bexit 1\\b\""
    ]
   ],
@@ -870,6 +870,45 @@
   ],
   "expect": [
    "git_reader RAISES on a failed command rather than answering empty"
+  ]
+ },
+ {
+  "name": "r8: a helper module outside `check-*` is not gate code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh)|",
+    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a weakened HELPER module (not `check-*`) is a loosening — the gate imports it"
+  ]
+ },
+ {
+  "name": "r8: only statuses 1 and 2 count for sys.exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|sys\\.exit\\([1-9]\\)|",
+    "|sys\\.exit\\([12]\\)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate's `sys.exit(3)` turned into success is a loosening (any non-zero status)"
+  ]
+ },
+ {
+  "name": "r8: only returns of 1 and 2 count",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\breturn [1-9]\\b|",
+    "\\breturn [12]\\b|"
+   ]
+  ],
+  "expect": [
+   "...and so is a `return 7`"
   ]
  }
 ]
