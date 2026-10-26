@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 237 cases
+    python3 scripts/check-plan-code.py --self-test          # 239 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1348,7 +1348,8 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-25: 117 -> 128, the LOCAL SWEEP BUDGET, --allow-long-local and --only (backlog #208):
     #   eleven entries added, none retired. ⟳ r1 fold: 128 -> 131 — four anchors this branch orphaned
     #   REBOUND (r1 CLAUDE H2, plus two of its own), three added for main()'s --only wiring and CI=true.
-    "scripts/check-plan-code.py": 131,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    #   ⟳ r2 fold: 131 -> 133 — a failed control is reported before, and priced out of, a budget refusal.
+    "scripts/check-plan-code.py": 133,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2505,6 +2506,7 @@ def mutate_delivered(root: pathlib.Path,
                               f"works (exit {rc}) BEFORE any mutation was applied. Every "
                               f"verdict below would be an artefact. Treat this as NOT "
                               f"CHECKED.\n    {diagnostic_tail(so, se)}")
+                control_seconds.pop(name, None)     # r2 L: a FAILED control prices nothing
                 continue
             # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN — after this control proved GREEN (r1 L2:
             # a slow FAILING control read as "REFUSED LOCALLY"). The estimate only grows, so the
@@ -2512,7 +2514,8 @@ def mutate_delivered(root: pathlib.Path,
             why = local_budget_refusal(control_seconds,
                                        [m for m in shard_muts if m["file"] in control_seconds], budget)
             if why:
-                return False, [why], NotMeasured.from_counts([], None, ev_files)
+                # r2 L: an EARLIER failed control is reported FIRST — a refusal must not hide it.
+                return False, report + [why], NotMeasured.from_counts([], None, ev_files)
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
@@ -3549,6 +3552,29 @@ def _self_test() -> int:
                  (False, True, True))
             case("...and under a generous budget it runs exactly as before",
                  isinstance(mutate_delivered(_r, budget=3600.0)[2], Measured), True)
+            # r2 L: a FAILING control (sorted first) is reported ahead of a later budget refusal, and
+            # does not price the estimate.
+            with tempfile.TemporaryDirectory() as _td2:
+                _r2 = pathlib.Path(_td2); _mini(_r2)
+                for _nm, _ok in (("aaa", False), ("zzz", True)):
+                    (_r2 / "scripts" / f"{_nm}.py").write_text(
+                        "import sys\n" + ("print('1/1 passed')\nsys.exit(0)\n" if _ok else
+                                          "print('  [FAIL] broken control')\nsys.exit(1)\n"))
+                    (_r2 / "scripts" / "mutations" / f"{_nm}.json").write_text(json.dumps(
+                        [{"name": f"{_nm} m", "file": f"scripts/{_nm}.py", "edits": [["sys.exit", "sys.exit"]],
+                          "expect": "x"}]))
+                _saved2 = dict(EXPECTED_MUTATIONS)
+                EXPECTED_MUTATIONS.update({"scripts/aaa.py": 1, "scripts/zzz.py": 1})
+                try:
+                    _okc, _repc, _ = mutate_delivered(_r2, budget=0.0, only=frozenset({"scripts/aaa.py", "scripts/zzz.py"}))
+                finally:
+                    EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved2)
+            case("⭐ an earlier FAILED control is reported before a budget refusal, not hidden by it",
+                 (_okc, bool(_repc) and "control run of scripts/aaa.py" in _repc[0],
+                  any(r.startswith(LOCAL_REFUSAL) for r in _repc)), (False, True, True))
+            case("...and the refusal prices only GREEN controls (it names zzz.py, not the failed aaa.py)",
+                 [("the most is scripts/zzz.py" in r, "the most is scripts/aaa.py" in r)
+                  for r in _repc if r.startswith(LOCAL_REFUSAL)], [(True, False)])
             _oko, _repo, _evo = mutate_delivered(_r, only=frozenset({"scripts/thing.py"}))
             case("--only runs the named target's mutations to a full verdict",
                  (_oko, isinstance(_evo, Measured)), (True, True))
@@ -5908,7 +5934,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2044)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2046)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -1617,5 +1617,31 @@
     "expect": [
       "...an exported CI=false is NOT CI, so the budget still applies, rc=2"
     ]
+  },
+  {
+    "name": "budget refusal hides an earlier failed control (r2 L)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                return False, report + [why], NotMeasured.from_counts([], None, ev_files)",
+        "                return False, [why], NotMeasured.from_counts([], None, ev_files)"
+      ]
+    ],
+    "expect": [
+      "⭐ an earlier FAILED control is reported before a budget refusal, not hidden by it"
+    ]
+  },
+  {
+    "name": "a failed control still prices the budget estimate (r2 L)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                control_seconds.pop(name, None)     # r2 L: a FAILED control prices nothing\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the refusal prices only GREEN controls (it names zzz.py, not the failed aaa.py)"
+    ]
   }
 ]
