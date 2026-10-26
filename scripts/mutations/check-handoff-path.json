@@ -53,5 +53,18 @@
       ]
     ],
     "expect": ["pristine upstream — the reversion this exists to catch"]
+  },
+  {
+    "name": "backlog #111 r2: the checker writes no receipt, so every verdict reads as 'did not run'",
+    "file": "scripts/check-handoff-path.py",
+    "edits": [
+      [
+        "    if args.receipt:\n        Path(args.receipt).write_text(f\"{code}\\n\", encoding=\"utf-8\")",
+        "    if False:\n        Path(args.receipt).write_text(f\"{code}\\n\", encoding=\"utf-8\")"
+      ]
+    ],
+    "expect": [
+      "hook: blocks /handoff when the skill names the wrong path"
+    ]
   }
 ]

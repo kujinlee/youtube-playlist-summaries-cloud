@@ -191,8 +191,8 @@
     "file": "scripts/check-closing-table.py",
     "edits": [
       [
-        "    judged = banner.judged_window(\n        coalesce_injected(banner.windows(records), banner.TurnWindow))",
-        "    judged = coalesce_injected(banner.windows(records), banner.TurnWindow)[-1]"
+        "        judged = banner.judged_window(\n            coalesce_injected(banner.windows(records), banner.TurnWindow))",
+        "        judged = coalesce_injected(banner.windows(records), banner.TurnWindow)[-1]"
       ]
     ],
     "expect": "run: only one turn -> QUIET (no subject yet)"
@@ -526,5 +526,18 @@
       ]
     ],
     "expect": "log: the timestamp is the SECOND field, after the version cell, verbatim"
+  },
+  {
+    "name": "backlog #152: the turn rule raising escapes as a traceback (the warning code)",
+    "file": "scripts/check-closing-table.py",
+    "edits": [
+      [
+        "    except Exception as exc:\n        # ⛔ backlog #152",
+        "    except ZeroDivisionError as exc:\n        # ⛔ backlog #152"
+      ]
+    ],
+    "expect": [
+      "⭐ the turn rule RAISING is CANNOT RUN, never the warning code (backlog #152)"
+    ]
   }
 ]
