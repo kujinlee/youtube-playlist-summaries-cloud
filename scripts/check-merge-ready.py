@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 173 cases
+    python3 scripts/check-merge-ready.py --self-test # 180 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -695,10 +695,11 @@ def changed_paths(status: str) -> list[str]:
     return sorted({p for e in name_status(status) for p in (e["old"], e["new"]) if p})
 
 
-# The flags that make git's patch output the PLAIN one, whatever the reader's config says:
-# literal pathspecs (a path like `check-[ab].py` is not a glob), no external diff driver and no
-# textconv (r5: either can suppress a gate's section), submodules as one line, paths from the root.
-GIT_PLAIN = ["--no-ext-diff", "--no-textconv", "--no-relative"]
+# What keeps git's output the PLAIN one whatever the reader's config says. `--no-ext-diff`: a
+# configured `diff.external` runs for EVERY diff, blob-to-blob included, and can print nothing.
+# `--no-relative`: paths from the root. (`--no-textconv` was here for r5's per-path patches and is
+# GONE with them: a blob diff has no path, so no attribute — textconv, `-diff` — can apply to it.)
+GIT_PLAIN = ["--no-ext-diff", "--no-relative"]
 
 
 def status_cmd(base: str) -> list[str]:
@@ -707,10 +708,21 @@ def status_cmd(base: str) -> list[str]:
             f"{base}...HEAD"]
 
 
-def patch_cmd(base: str, paths: list[str]) -> list[str]:
-    """ONE entry's patch: the same range and `-M`, restricted to that entry's own paths."""
-    return ["git", "--literal-pathspecs", "diff", f"-U{FAIL_WINDOW}", "-M", "--no-color",
-            "--submodule=short", *GIT_PLAIN, f"{base}...HEAD", "--", *paths]
+# Hunks are read only where a detector looks: gate code and callers, the pins, the declared counts.
+# Everything else (app code, docs, images) is classified by PATH alone, so its bytes are never read.
+HUNK_ROOTS = ("scripts/", ".claude/", ".github/")
+GITLINK = "160000"
+
+
+def tree_index(z: str) -> dict[str, tuple[str, str]]:
+    """PURE. `git ls-tree -r -z` -> {path: (mode, object id)}. NUL-separated, so paths are exact."""
+    out: dict[str, tuple[str, str]] = {}
+    for rec in z.split("\0"):
+        if rec:
+            meta, path = rec.split("\t", 1)
+            mode, _kind, oid = meta.split(" ")
+            out[path] = (mode, oid)
+    return out
 
 
 def patch_hunks(patch: str) -> list[list[str]]:
@@ -728,21 +740,47 @@ def patch_hunks(patch: str) -> list[list[str]]:
     return out
 
 
+def blob_hunks(read, old: "tuple[str, str] | None", new: "tuple[str, str] | None") -> list[list[str]]:
+    """The hunks between two EXACT BLOBS — no path is involved, so no pathspec and no attribute can
+    change them (r6: a pathspec matched a DIRECTORY's descendants, and a `-diff` attribute turned a
+    gate's change into "Binary files differ" with no hunks — both FALSE READYs). `--text` forces
+    hunks even for content git would call binary. A gitlink is a commit, not a blob: no hunks."""
+    def blob(x):
+        return x is not None and x[0] != GITLINK
+    if not (blob(old) or blob(new)):
+        return []
+    if blob(old) and blob(new):
+        if old[1] == new[1]:
+            return []
+        return patch_hunks(read(["git", "diff", f"-U{FAIL_WINDOW}", "--no-color", "--text", *GIT_PLAIN,
+                                 old[1], new[1]]))
+    oid, sign = (new[1], "+") if blob(new) else (old[1], "-")
+    lines = read(["git", "cat-file", "blob", oid]).split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return [[sign + line for line in lines]] if lines else []
+
+
 def gather(read, base: str) -> tuple[list[str], list[dict]]:
     """(changed paths, one record per changed file) — what `main()` and the real-git self-test BOTH
     use, so they cannot drift. `read(cmd)` returns a command's stdout or raises.
 
-    ⛔ r5 HIGH, a FALSE READY: the patch's file sections were paired with the machine list BY
-    POSITION, and a type change is ONE entry with TWO sections while a submodule under
-    `diff.submodule=log` is one entry with NONE — equal counts attached a gate's `return 1 -> 0` to a
-    submodule. Now each entry's hunks come from a patch RESTRICTED TO ITS OWN PATHS, so a hunk is
-    the file's by construction; there is no pairing left to get wrong. One git call per file."""
+    ⛔ THE THIRD FORM, and why the first two fell. r5: patch sections paired with the machine list
+    BY POSITION — a type change is one entry and two sections — gave a FALSE READY. r6: per-path
+    patches — a pathspec matches a directory's descendants, and attributes rewrite a path's patch —
+    gave two more. Now the list says WHICH files changed, both trees (read once, NUL-separated) say
+    which BLOB each side is, and the hunks are the diff of those two blobs. Ownership is by
+    construction, and nothing about a path, its attributes or a pathspec enters the hunks."""
+    mb = read(["git", "merge-base", base, "HEAD"]).strip()
     st = read(status_cmd(base))
+    old_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", mb]))
+    new_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]))
     fs = []
     for e in name_status(st):
-        paths = [p for p in dict.fromkeys((e["old"], e["new"])) if p]
+        looked = any(p.startswith(HUNK_ROOTS) for p in (e["old"], e["new"]) if p)
         fs.append({"old": e["old"], "new": e["new"], "copy": e["copy"], "status": e["status"],
-                   "hunks": patch_hunks(read(patch_cmd(base, paths)))})
+                   "hunks": blob_hunks(read, old_t.get(e["old"]) if e["old"] else None,
+                                       new_t.get(e["new"]) if e["new"] else None) if looked else []})
     return changed_paths(st), fs
 
 
@@ -988,7 +1026,7 @@ def main(argv: list[str]) -> int:
     code, line = verdict(results)
     # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
     def _read(cmd):
-        r = _run(cmd)
+        r = _run(cmd, errors="replace")
         if r.returncode != 0:
             raise PathsDisagree(f"`{' '.join(cmd[:6])} …` exited {r.returncode}")
         return r.stdout
@@ -1437,7 +1475,7 @@ def _self_test() -> int:
     _genv = dict(os.environ, HOME=str(_gw), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     def _g(*a):
         return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=_gw,
-                              capture_output=True, text=True, env=_genv, check=True).stdout
+                              capture_output=True, text=True, errors="replace", env=_genv, check=True).stdout
     def _w(rel, text):
         (_gw / rel).parent.mkdir(parents=True, exist_ok=True)
         (_gw / rel).write_text(text)
@@ -1460,10 +1498,17 @@ def _self_test() -> int:
         _w("scripts/check-ext.py", "def main():\n    if worse:\n        return 1\n    return 0\n")
         _w("scripts/check-[ab].py", "def main():\n    if odd:\n        return 1\n    return 0\n")
         _w("scripts/check-a.py", "def main():\n    return 0\n")
-        _w(".gitattributes", ".github/workflows/bin.yml -diff\nscripts/check-tc.py diff=tc\nscripts/check-ext.py diff=ext\n")
+        # r6: a gate renamed while a DIRECTORY named like its old path appears; a `-diff` (binary)
+        # attribute on a gate; a gate holding a NUL byte; a gate deleted outright.
+        _w("scripts/check-rn.py", "def main():\n    if gone:\n        return 1\n    return 0\n")
+        _w("scripts/check-bin.py", "def main():\n    if bin:\n        return 1\n    return 0\n")
+        _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 1\n    return 0\n")
+        _w("scripts/check-del.py", "def main():\n    if dead:\n        return 1\n    return 0\n")
+        _w(".gitattributes", ".github/workflows/bin.yml -diff\nscripts/check-tc.py diff=tc\nscripts/check-ext.py diff=ext\nscripts/check-bin.py -diff\n")
         _g("config", "diff.tc.textconv", "true")
         _g("config", "diff.ext.command", "true")
         _g("config", "diff.submodule", "log")
+        _g("config", "diff.external", "true")        # an external diff for EVERY diff, printing nothing
         _g("add", "-A")
         _g("update-index", "--add", "--cacheinfo", "160000," + "1" * 40 + ",zmodule")
         _g("commit", "-qm", "base")
@@ -1479,6 +1524,13 @@ def _self_test() -> int:
         (_gw / "docs/t").unlink(); (_gw / "docs/t").symlink_to("a.md")
         for _n, _c in (("tc", "bad"), ("ext", "worse"), ("[ab]", "odd")):
             _w(f"scripts/check-{_n}.py", f"def main():\n    if {_c}:\n        return 0\n    return 0\n")
+        _g("add", "-A")
+        _g("mv", "scripts/check-rn.py", "scripts/check-rn2.py")
+        _w("scripts/check-rn2.py", "def main():\n    if gone:\n        return 0\n    return 0\n")
+        _w("scripts/check-rn.py/example.txt", "        return 1\n")
+        _w("scripts/check-bin.py", "def main():\n    if bin:\n        return 0\n    return 0\n")
+        _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 0\n    return 0\n")
+        _g("rm", "-q", "scripts/check-del.py")
         _g("add", "-A")
         _g("update-index", "--add", "--cacheinfo", "160000," + "2" * 40 + ",zmodule")
         _g("commit", "-qm", "head")
@@ -1516,8 +1568,16 @@ def _self_test() -> int:
     # The flag itself is pinned by the RESTRICTED case below, which is what its mutation names.
     check("real git: a gate named like a GLOB (`check-[ab].py`) has its own patch read",
           has(_real, "scripts/check-[ab].py removes"), True)
-    check("real git: the world REALLY holds a type change (T, two sections) and a submodule entry",
-          (("docs/t", "T", 2) in {(f["new"], f["status"], len(f["hunks"])) for f in _fs},
+    check("⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening",
+          has(_real, "check-rn2.py removes"), True)
+    check("real git (r6): a `-diff` (binary) attribute on a gate cannot hide its weakening",
+          has(_real, "scripts/check-bin.py removes"), True)
+    check("real git: a gate whose content holds a NUL byte still has its hunks read (--text)",
+          has(_real, "scripts/check-nul.py removes"), True)
+    check("real git: a DELETED gate's failure path is read from its old blob",
+          has(_real, "scripts/check-del.py removes"), True)
+    check("real git: the world REALLY holds a type change (T) and a submodule entry",
+          (("docs/t", "T") in {(f["new"], f["status"]) for f in _fs},
            ("zmodule", "M") in {(f["new"], f["status"]) for f in _fs}) if _err is None else _err, (True, True))
     check("real git: the type-changed docs file and the submodule hold nothing of their own",
           (has(_real, "docs/t"), has(_real, "zmodule")), (False, False))
@@ -1528,25 +1588,41 @@ def _self_test() -> int:
     check("changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)",
           changed_paths("R100\0docs/reviews/d/baseline.json\0docs/old.json\0A\0n.md\0"),
           ["docs/old.json", "docs/reviews/d/baseline.json", "n.md"])
-    _sc, _pc = status_cmd("origin/master"), patch_cmd("origin/master", ["a b", "c"])
     check("patch_hunks keeps a removed line whose TEXT starts `-- ` (shown as `--- `) inside its hunk",
           patch_hunks("diff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1,2 +1 @@\n--- not a header\n keep\n"),
           [["--- not a header", " keep"]])
     _asked: list = []
     def _rd(cmd):
-        _asked.append(cmd[cmd.index("--") + 1:] if "--" in cmd else "list")
-        return "R100\0o p\0n\0" if "--name-status" in cmd else "@@ -1 +1 @@\n-a\n+b\n"
-    check("gather asks for each entry's patch BY ITS OWN PATHS (old and new) and keeps its hunks",
+        _asked.append(cmd[1] if cmd[1] != "--literal-pathspecs" else "status")
+        if "merge-base" in cmd:
+            return "mb0\n"
+        if "--name-status" in cmd:
+            return "R100\0scripts/o p\0scripts/n\0A\0docs/d.md\0"
+        if cmd[1] == "ls-tree":
+            return ("100644 blob aaa\tscripts/o p\0" if cmd[-1] == "mb0" else
+                    "100644 blob bbb\tscripts/n\x00100644 blob ddd\tdocs/d.md\0")
+        if cmd[1] == "diff":
+            return "@@ -1 +1 @@\n-a\n+b\n" if cmd[-2:] == ["aaa", "bbb"] else "WRONG BLOBS"
+        return "never read\n"
+    check("⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots",
           (gather(_rd, "b0"), _asked),
-          ((["n", "o p"], [{"old": "o p", "new": "n", "copy": False, "status": "R", "hunks": [["-a", "+b"]]}]),
-           ["list", ["o p", "n"]]))
+          ((["docs/d.md", "scripts/n", "scripts/o p"],
+            [{"old": "scripts/o p", "new": "scripts/n", "copy": False, "status": "R", "hunks": [["-a", "+b"]]},
+             {"old": None, "new": "docs/d.md", "copy": False, "status": "A", "hunks": []}]),
+           ["merge-base", "status", "ls-tree", "ls-tree", "diff"]))
+    check("tree_index reads modes and ids by exact path, a space and a gitlink included",
+          tree_index("100644 blob a1\tx y\x00160000 commit c2\tsub\0"), {"x y": ("100644", "a1"), "sub": ("160000", "c2")})
+    _read_gl: list = []
+    check("blob_hunks: a gitlink on both sides has no hunks, and reads nothing",
+          (blob_hunks(lambda c: _read_gl.append(c) or "@@ -1 +1 @@\n-x\n+y\n", ("160000", "c1"), ("160000", "c2")),
+           _read_gl), ([], []))
+    check("tree_index of an empty tree is empty", tree_index(""), {})
+    check("blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
+          (blob_hunks(lambda c: "x\ny\n", None, ("100644", "n1")), blob_hunks(lambda c: "z\n", ("100755", "o1"), None)),
+          ([["+x", "+y"]], [["-z"]]))
     check("...and a modify and a delete each name one path", changed_paths("M\0a\0D\0b\0"), ["a", "b"])
-    check("...and the range follows the base it is given",
-          (status_cmd("f00dbab")[-1], patch_cmd("f00dbab", ["q"])[-3:]), ("f00dbab...HEAD", ["f00dbab...HEAD", "--", "q"]))
-    check("the patch is RESTRICTED to the entry's own paths, over the list's range, both literal",
-          (_pc[-3:], "origin/master...HEAD" in _sc and "origin/master...HEAD" in _pc,
-           "--literal-pathspecs" in _sc and "--literal-pathspecs" in _pc),
-          (["--", "a b", "c"], True, True))
+    check("...and the machine list's range follows the base it is given, literally",
+          (status_cmd("f00dbab")[-1], "--literal-pathspecs" in status_cmd("origin/master")), ("f00dbab...HEAD", True))
     check("...and an incomplete --name-status entry",
           _raises(lambda: name_status("R100\0only-one\0"), PathsDisagree), True)
     check("name_status reads a rename, an add and a delete",
@@ -1601,7 +1677,11 @@ def _self_test() -> int:
                 return cp("abc\n")
             if cmd[:3] == ["git", "--literal-pathspecs", "diff"] and "--name-status" in cmd:
                 return cp(status)
-            if cmd[:3] == ["git", "--literal-pathspecs", "diff"]:
+            if cmd[:2] == ["git", "merge-base"]:
+                return cp("mb\n")
+            if cmd[:2] == ["git", "ls-tree"]:
+                return cp("")                       # no blobs: these cases are about PATHS
+            if cmd[:2] == ["git", "diff"]:
                 return cp(diff)
             return cp("ok\n")                       # the three gate scripts
         return run

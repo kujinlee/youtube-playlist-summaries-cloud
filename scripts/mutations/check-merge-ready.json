@@ -634,20 +634,6 @@
   ]
  },
  {
-  "name": "r5: each entry's patch is not restricted to its own paths",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "\"hunks\": patch_hunks(read(patch_cmd(base, paths)))})",
-    "\"hunks\": patch_hunks(read(patch_cmd(base, [])))})"
-   ]
-  ],
-  "expect": [
-   "real git: the world REALLY holds a type change (T, two sections) and a submodule entry",
-   "real git: a hook under `a b/` with a MODE-ONLY change is not held (r4 false HOLD)"
-  ]
- },
- {
   "name": "#353 / r4: a GAINED role reads as an exit",
   "file": "scripts/check-merge-ready.py",
   "edits": [
@@ -713,19 +699,6 @@
   ]
  },
  {
-  "name": "r5: the patch is read WITH textconv",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "GIT_PLAIN = [\"--no-ext-diff\", \"--no-textconv\", \"--no-relative\"]",
-    "GIT_PLAIN = [\"--no-ext-diff\", \"--no-relative\"]"
-   ]
-  ],
-  "expect": [
-   "real git: a textconv driver over a gate cannot hide its weakening"
-  ]
- },
- {
   "name": "r5: the patch is read WITH an external diff driver",
   "file": "scripts/check-merge-ready.py",
   "edits": [
@@ -735,20 +708,89 @@
    ]
   ],
   "expect": [
-   "real git: an external diff driver over a gate cannot hide its weakening"
+   "real git: an external diff driver over a gate cannot hide its weakening",
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening"
   ]
  },
  {
-  "name": "r5: a path is read as a GLOB pathspec",
+  "name": "r6: blob_hunks diffs the wrong pair of blobs",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    return [\"git\", \"--literal-pathspecs\", \"diff\", f\"-U{FAIL_WINDOW}\"",
-    "    return [\"git\", \"diff\", f\"-U{FAIL_WINDOW}\""
+    "old[1], new[1]]))",
+    "new[1], new[1]]))"
    ]
   ],
   "expect": [
-   "the patch is RESTRICTED to the entry's own paths, over the list's range, both literal"
+   "⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots",
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening"
+  ]
+ },
+ {
+  "name": "r6: the blob diff is read without --text",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\"--no-color\", \"--text\", *GIT_PLAIN,",
+    "\"--no-color\", *GIT_PLAIN,"
+   ]
+  ],
+  "expect": [
+   "real git: a gate whose content holds a NUL byte still has its hunks read (--text)"
+  ]
+ },
+ {
+  "name": "r6: a gitlink is diffed as if it were a blob",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        return x is not None and x[0] != GITLINK",
+    "        return x is not None"
+   ]
+  ],
+  "expect": [
+   "blob_hunks: a gitlink on both sides has no hunks, and reads nothing"
+  ]
+ },
+ {
+  "name": "r6: no file's hunks are read at all",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "new_t.get(e[\"new\"]) if e[\"new\"] else None) if looked else []})",
+    "new_t.get(e[\"new\"]) if e[\"new\"] else None) if False else []})"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening",
+   "real git: a DELETED gate's failure path is read from its old blob"
+  ]
+ },
+ {
+  "name": "r6: files outside the gate roots are read too",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        looked = any(p.startswith(HUNK_ROOTS) for p in (e[\"old\"], e[\"new\"]) if p)",
+    "        looked = True"
+   ]
+  ],
+  "expect": [
+   "⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots"
+  ]
+ },
+ {
+  "name": "r6: an added blob reads as removed and a deleted one as added",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    oid, sign = (new[1], \"+\") if blob(new) else (old[1], \"-\")",
+    "    oid, sign = (new[1], \"-\") if blob(new) else (old[1], \"+\")"
+   ]
+  ],
+  "expect": [
+   "blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
+   "real git: a DELETED gate's failure path is read from its old blob"
   ]
  }
 ]
