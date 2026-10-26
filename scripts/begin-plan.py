@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 136 cases
+    scripts/begin-plan.py --self-test  # 139 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -1037,6 +1037,27 @@ def _self_test() -> int:
                 os.environ.pop(_k, None) if _v is None else os.environ.__setitem__(_k, _v)
         case("⭐ GIT_DIR / GIT_WORK_TREE in the environment change nothing (r1 Codex H2)",
              _env_ans == (_main_r.resolve(), None))
+        # r2 Codex H1: VALID layouts a path-shape reading missed — `.git` a SYMLINK to the worktree's admin
+        # directory, and a `gitdir:` through a symlinked ALIAS. Git resolves both; so must this.
+        _adm = Path((_wt_r / ".git").read_text().split("gitdir:", 1)[1].strip())
+        _sl = Path(_wtd) / "symlinked"; _g("worktree", "add", "-q", "-b", "side2", str(_sl))
+        _sl_adm = Path((_sl / ".git").read_text().split("gitdir:", 1)[1].strip())
+        (_sl / ".git").unlink(); (_sl / ".git").symlink_to(_sl_adm)
+        _al = Path(_wtd) / "aliased"; _g("worktree", "add", "-q", "-b", "side3", str(_al))
+        _al_adm = Path((_al / ".git").read_text().split("gitdir:", 1)[1].strip())
+        (Path(_wtd) / "admin-alias").symlink_to(_al_adm)
+        (_al / ".git").write_text(f"gitdir: {Path(_wtd) / 'admin-alias'}\n")
+        case("⭐ a linked worktree whose .git is a SYMLINK, or whose gitdir goes through an ALIAS, is still refused (r2 Codex H1)",
+             (linked_worktree_main(_sl), linked_worktree_main(_al)) == (_main_r.resolve(), _main_r.resolve()))
+        # r2 Codex M2: a separate-git-dir MAIN checkout whose metadata sits under a directory NAMED `worktrees`.
+        _sep = Path(_wtd) / "sepmain"; _sep.mkdir()
+        _g("init", "-q", "--separate-git-dir", str(Path(_wtd) / "worktrees" / "metadata"), cwd=_sep)
+        case("...and a separate-git-dir MAIN checkout under a directory named `worktrees` is NOT refused (r2 Codex M2)",
+             linked_worktree_main(_sep) is None)
+        # the FALLBACK, driven directly: git that cannot answer -> the .git file decides (it refuses here).
+        case("...and when git cannot answer, the .git FILE decides — a real worktree still refuses (r2 fallback)",
+             linked_worktree_main(_wt_r, run=lambda *a, **k: subprocess.CompletedProcess(a, 128, "", "fatal"))
+             == _main_r.resolve())
         # r1 Codex M3: a moved main checkout — the worktree's gitdir target is gone. Still linked: refuse.
         _moved = Path(_wtd) / "moved"; _moved.mkdir()
         (_moved / ".git").write_text(f"gitdir: {Path(_wtd)}/gone/.git/worktrees/moved\n")
@@ -2085,23 +2106,39 @@ def pp_count_drift(doc: str | None, actual: int) -> str | None:
 _CHANGES_STATE = ("tick", "pause", "resume", "finish", "plan", "slug")
 
 
-def linked_worktree_main(root: Path) -> Path | None:
+def linked_worktree_main(root: Path, run=subprocess.run) -> Path | None:
     """The MAIN checkout when `root` is a LINKED worktree, else None.
 
     ⛔ backlog #301: every path here hangs off `ROOT`, which is THIS FILE's checkout. Run from a linked
     worktree, the sentinel lands in that worktree's `.claude/`, while the Stop hook — registered in the main
     checkout's settings — reads the main checkout's. Measured: `armed:` printed, the banner rendered, the
     guard read no sentinel and allowed a stop with 4 steps unticked.
-    ⟳ r1 (Codex, executed): asking `git` was wrong three ways — git < 2.31 echoes `--path-format=absolute`
-    back as a "path"; `GIT_DIR`/`GIT_WORK_TREE` override `git -C`; and a moved main checkout made discovery
-    fail into the same None as a real main checkout. So this reads the INDIRECTION ITSELF: the main
-    checkout's `.git` is a DIRECTORY; a linked worktree's is a FILE `gitdir: <common>/worktrees/<name>`.
-    That shape is linked whether or not its target still exists — a moved main refuses rather than passing.
-    A submodule's `.git` file points into `…/modules/…` and a staged copy has no `.git`: neither is linked.
+
+    TWO SOURCES, one authoritative (r2 SPLIT, after two rounds each broke one alone):
+    1. GIT, asked so that none of r1's failures can reach it: every `GIT_*` variable removed from its
+       environment (r1: `GIT_DIR` overrode `git -C`), `--absolute-git-dir` (git 2.13+; r1: git < 2.31 echoed
+       `--path-format=absolute` back as a "path"), cwd = ROOT, and exactly two absolute path lines required.
+       Git resolves every layout it supports — a symlinked `.git`, an aliased `gitdir:`, a separate-git-dir
+       main checkout — which r2 measured a path-shape reading getting wrong in both directions.
+    2. ONLY when git cannot answer — r1: a moved main checkout makes discovery fail — the `.git` FILE is read:
+       `gitdir: <common>/worktrees/<name>` refuses (fail closed); anything else passes. A staged copy (no
+       `.git`) passes, which is what the mutation harness's copies are.
     """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        g = run(["git", "rev-parse", "--absolute-git-dir", "--git-common-dir"], cwd=str(root), env=env,
+                capture_output=True, text=True, timeout=10)
+        lines = [l for l in (g.stdout or "").splitlines() if l.strip()]
+        if g.returncode == 0 and len(lines) == 2 and not any(l.startswith("-") for l in lines):
+            git_dir = Path(lines[0]).resolve()
+            common = Path(lines[1]) if Path(lines[1]).is_absolute() else root / lines[1]
+            common = common.resolve()
+            return None if git_dir == common else common.parent
+    except (OSError, subprocess.SubprocessError):
+        pass
     dot = root / ".git"
     if not dot.is_file():
-        return None                                  # a directory (main checkout) or absent (staged copy)
+        return None                                  # a directory git could not read, or no `.git` at all
     try:
         first = dot.read_text(encoding="utf-8", errors="replace").splitlines()[0].strip()
     except (OSError, IndexError):

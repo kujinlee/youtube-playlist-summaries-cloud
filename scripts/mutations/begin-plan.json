@@ -864,5 +864,44 @@
     "expect": [
       "...and its refusal says no main checkout was found, instead of naming a script that is not there (r1 CLAUDE L3)"
     ]
+  },
+  {
+    "name": "backlog #301 r2: git inherits the caller's GIT_* variables, so GIT_DIR moves the answer",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    env = {k: v for k, v in os.environ.items() if not k.startswith(\"GIT_\")}",
+        "    env = dict(os.environ)"
+      ]
+    ],
+    "expect": [
+      "⭐ GIT_DIR / GIT_WORK_TREE in the environment change nothing (r1 Codex H2)"
+    ]
+  },
+  {
+    "name": "backlog #301 r2: git is never asked, so a symlinked or aliased worktree falls to the path-shape reading",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "        if g.returncode == 0 and len(lines) == 2 and not any(l.startswith(\"-\") for l in lines):",
+        "        if False:"
+      ]
+    ],
+    "expect": [
+      "⭐ a linked worktree whose .git is a SYMLINK, or whose gitdir goes through an ALIAS, is still refused (r2 Codex H1)"
+    ]
+  },
+  {
+    "name": "backlog #301 r2: when git cannot answer, nothing refuses — a moved main checkout fails open",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    dot = root / \".git\"\n    if not dot.is_file():\n        return None                                  # a directory git could not read",
+        "    dot = root / \".git\"\n    if True:\n        return None                                  # a directory git could not read"
+      ]
+    ],
+    "expect": [
+      "...and when git cannot answer, the .git FILE decides — a real worktree still refuses (r2 fallback)"
+    ]
   }
 ]
