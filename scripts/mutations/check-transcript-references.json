@@ -30,8 +30,8 @@
     "file": "scripts/check-transcript-references.py",
     "edits": [
       [
-        "    window = cba.judged_window(cba.windows(cba._parse_records(lines)))",
-        "    _wins = cba.windows(cba._parse_records(lines))\n    window = _wins[-1] if _wins else None"
+        "        window = cba.judged_window(cba.windows(cba._parse_records(lines)))",
+        "        _wins = cba.windows(cba._parse_records(lines))\n        window = _wins[-1] if _wins else None"
       ]
     ],
     "expect": [
@@ -62,6 +62,19 @@
     ],
     "expect": [
       "...and the firing is APPENDED to the log, which is the durable channel"
+    ]
+  },
+  {
+    "name": "backlog #152 r1: transcript-references lets the turn rule's exception escape (exit 1)",
+    "file": "scripts/check-transcript-references.py",
+    "edits": [
+      [
+        "    except Exception as exc:\n        # ⛔ backlog #152 r1",
+        "    except ZeroDivisionError as exc:\n        # ⛔ backlog #152 r1"
+      ]
+    ],
+    "expect": [
+      "⭐ a raising turn rule is CANNOT RUN (2), never the warning code (backlog #152 r1)"
     ]
   }
 ]

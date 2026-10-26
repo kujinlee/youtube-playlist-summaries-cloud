@@ -39,7 +39,7 @@ Usage (the hook calls form 1):
     python3 scripts/check-ci-watched.py --decide
     python3 scripts/check-ci-watched.py --watching   # record that a watcher is armed for HEAD
     python3 scripts/check-ci-watched.py --clear
-    python3 scripts/check-ci-watched.py --self-test  # 82 cases
+    python3 scripts/check-ci-watched.py --self-test  # 86 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN   2 = CANNOT RUN
 """
 from __future__ import annotations
@@ -462,6 +462,24 @@ def payload_from(stream, wait: "float | None" = None) -> str:
     return b"".join(chunks).decode("utf-8", "replace")
 
 
+def arms_newest_first(sentinel: pathlib.Path) -> list[pathlib.Path]:
+    """The arm records, newest first. ⛔ backlog #253: another worktree's `--clear` can remove a record
+    BETWEEN the listing and its `stat()`, which raised FileNotFoundError out of the hook; a record that
+    vanished mid-listing is simply not an arm any more, so it is skipped."""
+    stamped = []
+    try:
+        listing = list(sentinel.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        return []                        # the whole directory went (or is not one): no arms (r1 Codex)
+    for q in listing:
+        try:
+            if q.is_file():
+                stamped.append((q.stat().st_mtime, q))
+        except FileNotFoundError:
+            continue
+    return [q for _, q in sorted(stamped, key=lambda s: s[0], reverse=True)]
+
+
 def run_decide(payload: str = "") -> int:
     """`payload` is the Stop hook's JSON, piped in by `block-idle-stop.sh:149`.
 
@@ -509,9 +527,7 @@ def run_decide(payload: str = "") -> int:
     watching = None
     if SENTINEL.is_dir():
         # newest first, so `relevant_arm` can name the most recent OTHER arm when HEAD is not one
-        recs = sorted((q for q in SENTINEL.iterdir() if q.is_file()),
-                      key=lambda q: q.stat().st_mtime, reverse=True)
-        watching = relevant_arm([q.name for q in recs], head)
+        watching = relevant_arm([q.name for q in arms_newest_first(SENTINEL)], head)
 
     code, message = decide(head, watching, rows)
     if code == WARN:
@@ -995,6 +1011,49 @@ def _self_test() -> int:
     case("`main --clear` removes the sentinel and is QUIET — a second dispatch branch, driven at "
          "a distinct argv and a distinct stream",
          safe(_main_clear))
+    # backlog #255: `--clear` with an unreadable HEAD cleared NOTHING and returned QUIET — the code for success.
+    def _main_clear_blind() -> tuple:
+        g = globals(); keep = {k: g[k] for k in ("SENTINEL", "_run")}
+        with tempfile.TemporaryDirectory() as td:
+            g["SENTINEL"] = pathlib.Path(td) / "ci-watching.d"
+            g["SENTINEL"].mkdir()
+            (g["SENTINEL"] / "cafef00dcafef00d").write_text("sha: cafef00dcafef00d\n")
+            (g["SENTINEL"].parent / "ci-watching").write_text("legacy\n")     # r1: still tidied
+            g["_run"] = lambda *a, **k: None
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    rc = main(["--clear"], None)
+                return (rc, (g["SENTINEL"] / "cafef00dcafef00d").is_file(), "CANNOT RUN" in out.getvalue(),
+                        (g["SENTINEL"].parent / "ci-watching").exists())
+            finally:
+                g.update(keep)
+    case("⭐ `--clear` with an UNREADABLE HEAD is CANNOT RUN, keeps every record, and says so (backlog #255)",
+         safe(lambda: _main_clear_blind()[:3] == (CANNOT_RUN, True, True)))
+    case("...and the pre-directory legacy file is STILL tidied, which needs no HEAD (backlog #255 r1)",
+         safe(lambda: _main_clear_blind()[3] is False))
+    case("a sentinel directory removed after the `is_dir()` gate lists NO arms rather than raising (r1 Codex)",
+         safe(lambda: arms_newest_first(pathlib.Path(tempfile.gettempdir()) / "no-such-ci-watching.d") == []))
+    # backlog #253: a record removed by another worktree's `--clear` BETWEEN listing and `stat()` raised
+    # FileNotFoundError out of the hook. Reproduced the way the row measured it: the listing yields a
+    # record, and it is deleted before its mtime is read.
+    def _arms_race() -> list:
+        with tempfile.TemporaryDirectory() as td:
+            d = pathlib.Path(td)
+            for name, age in (("aaaaaaaa", 30), ("bbbbbbbb", 20), ("cccccccc", 10)):
+                (d / name).write_text("x"); os.utime(d / name, (1000 - age, 1000 - age))
+            real = pathlib.Path.is_file
+            def racing(self):                          # True — then another worktree's --clear removes it,
+                r = real(self)                         # so the window is between the check and `stat()`
+                if r and self.name == "bbbbbbbb":
+                    self.unlink()
+                return r
+            pathlib.Path.is_file = racing
+            try:
+                return [q.name for q in arms_newest_first(d)]
+            finally:
+                pathlib.Path.is_file = real
+    case("⭐ a record removed between listing and `stat()` is SKIPPED, not a traceback (backlog #253)",
+         safe(lambda: _arms_race() == ["cccccccc", "aaaaaaaa"]))
     case("...and for a stream that RAISES on read, at two distinct exception types",
          safe(lambda: payload_from(_S(False, boom=OSError("gone"))) == ""
               and payload_from(_S(False, boom=ValueError("closed"))) == ""))
@@ -1141,20 +1200,26 @@ def main(argv: "list[str] | None" = None, stream=None) -> int:
         # ⛔ ONLY THIS HEAD'S RECORD — round 1 Claude HIGH. Clearing the whole directory would
         # un-arm every other worktree, which is the clobbering this layout exists to prevent.
         head = _run(["git", "rev-parse", "HEAD"])
-        gone = False
-        if head and (SENTINEL / head).is_file():
-            (SENTINEL / head).unlink()
-            gone = True
         # ⚠ AND THE PRE-DIRECTORY FILE IS TIDIED HERE, because the location moved from a FILE
         # `ci-watching` to a DIRECTORY `ci-watching.d`. An old file is already ignored by the
         # read path, so it is inert rather than dangerous; removing it on `--clear` stops it
-        # sitting in `.git` forever looking like state.
+        # sitting in `.git` forever looking like state. It needs no HEAD, so it runs first (r1).
         legacy = SENTINEL.parent / "ci-watching"
+        gone = False
         if legacy.is_file():
             legacy.unlink()
             gone = True
-        print(f"cleared {SENTINEL.name}/{(head or '?')[:8]}" if gone
-              else f"nothing to clear for {(head or '?')[:8]}")
+        if not head:
+            # ⛔ backlog #255: without HEAD this cannot know WHICH record is this worktree's, so it clears
+            # nothing — and must not return the code for success, or a caller believes it is un-armed.
+            print("CANNOT RUN: could not read HEAD, so --clear removed no arm record (this worktree's is unknown)"
+                  + (" — only the legacy pre-directory file was tidied" if gone else "")
+                  + ". TREAT THIS AS NOT CLEARED.")
+            return CANNOT_RUN
+        if (SENTINEL / head).is_file():
+            (SENTINEL / head).unlink()
+            gone = True
+        print(f"cleared {SENTINEL.name}/{head[:8]}" if gone else f"nothing to clear for {head[:8]}")
         return QUIET
     if a.decide:
         return run_decide(payload_from(stream))

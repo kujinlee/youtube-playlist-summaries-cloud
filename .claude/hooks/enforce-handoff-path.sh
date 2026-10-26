@@ -26,27 +26,63 @@
 # elsewhere anyway, only the next resume finds out — that is what the docs/plugins.md falsifier
 # still covers. Two layers, different failure modes.
 
-INPUT=$(cat)
+# ⛔ backlog #111: the payload goes through a FILE and the verdict comes back by EXIT CODE — the fix
+# enforce-selection-card.sh shipped first. The detector used to print "yes"/"no" and compare STDOUT, so a
+# `python3` that prints a banner (pyenv shim, conda activation, a chatty sitecustomize) or exits non-zero
+# produced neither, and this hook exited 0 in silence: disarmed for the session, indistinguishable from a
+# compliant run. Exit codes cannot be prefixed by a banner.
+TMP="$(mktemp)" || { echo "⚠ enforce-handoff-path.sh: mktemp failed; the handoff path is NOT CHECKED." >&2; exit 1; }
+trap 'rm -f "$TMP"' EXIT
+cat > "$TMP" || { echo "⚠ enforce-handoff-path.sh: could not read the hook payload; the handoff path is NOT CHECKED." >&2; exit 1; }
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-IS_HANDOFF=$(echo "$INPUT" | python3 -c '
+#   0 = the handoff skill   3 = a readable envelope for anything else (not mine)
+#   4 = an envelope that is not JSON (r1: truncated or empty) — CANNOT TELL whether it is /handoff
+#   * = the interpreter itself failed: warn and exit 1 (non-blocking), never a silent 0
+python3 - "$TMP" <<'PY' 2>/dev/null
 import json, sys
 try:
-    d = json.load(sys.stdin)
+    with open(sys.argv[1], "rb") as fh:
+        d = json.loads(fh.read().decode("utf-8", "replace"))
 except Exception:
-    print("no"); sys.exit()
+    sys.exit(4)
+if not isinstance(d, dict):
+    sys.exit(4)
 ti = d.get("tool_input", {}) or {}
-skill = str(ti.get("skill", "")).lower()
+skill = str(ti.get("skill", "")).lower() if isinstance(ti, dict) else ""
 # Plugin-qualified names arrive as "vendor:handoff"; match the bare segment.
-print("yes" if d.get("tool_name") == "Skill" and skill.split(":")[-1] == "handoff" else "no")
-' 2>/dev/null) || IS_HANDOFF="no"
+sys.exit(0 if d.get("tool_name") == "Skill" and skill.split(":")[-1] == "handoff" else 3)
+PY
+DETECT_RC=$?
 
-[[ "$IS_HANDOFF" == "yes" ]] || exit 0
+case $DETECT_RC in
+  0) ;;
+  3) exit 0 ;;
+  4) echo "⚠ enforce-handoff-path.sh: the hook envelope is not readable JSON, so this could not tell whether" >&2
+     echo "  this is /handoff. The handoff-path check DID NOT RUN — treat it as NOT CHECKED." >&2
+     exit 1 ;;
+  *) echo "⚠ enforce-handoff-path.sh: could not read the hook envelope (python3 rc=$DETECT_RC)." >&2
+     echo "  The handoff-path check DID NOT RUN. Treat this /handoff as NOT CHECKED, never as compliant." >&2
+     exit 1 ;;
+esac
 
-VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-handoff-path.py" --quiet 2>&1)
-VERDICT_RC=$?
+# ⛔ THE VERDICT TRAVELS BY RECEIPT (backlog #111 r2). The checker writes 0/1/2 to a file once it has
+# reached a verdict; the hook acts on that alone. No exit-code guessing (an interpreter failure is also 1),
+# and no matching of the checker's prose (a rewording silently downgraded a block to a warning). A checker
+# that never ran — broken, killed, or a wrapper that exits 0 — leaves no receipt.
+RECEIPT="$(mktemp)" || { echo "⚠ enforce-handoff-path.sh: mktemp failed; the handoff path is NOT CHECKED." >&2; exit 1; }
+trap 'rm -f "$TMP" "$RECEIPT"' EXIT
+VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-handoff-path.py" --quiet --receipt "$RECEIPT" 2>&1)
+VERDICT="$(tr -d '[:space:]' < "$RECEIPT" 2>/dev/null)"
 
-[[ $VERDICT_RC -eq 0 ]] && exit 0
+case "$VERDICT" in
+  0)   exit 0 ;;
+  1|2) ;;
+  *)   echo "⚠ enforce-handoff-path.sh: check-handoff-path.py reached no verdict (no receipt). The handoff path" >&2
+       echo "  is NOT CHECKED — treat this /handoff as unverified, never as compliant." >&2
+       [[ -n "$VERDICT_OUT" ]] && printf '%s\n' "$VERDICT_OUT" >&2
+       exit 1 ;;
+esac
 
 cat >&2 <<EOF
 
