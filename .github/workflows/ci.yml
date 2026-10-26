@@ -140,8 +140,48 @@ jobs:
       #   3 x (120+10 + 150+10) + 2 x 15 + (180+10) = 870 + 30 + 190 = 1,090s = 18.2 min
       # inside this step's `timeout-minutes: 20` (1,200s) — the backstop over all of it, leaving
       # 110s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
-      # inside the job's 30. Exhausting any phase is a FAILURE that names THAT phase with
+      # inside the job's 30. ⟳ backlog #358 adds the cache-key step's `timeout-minutes: 4` (one bounded
+      # `apt-get update`, 130s with its kill grace) — 29 min at the worst case, still inside 30; a cache HIT
+      # makes this step's download phase fetch nothing, so the common case is shorter than before. Exhausting any phase is a FAILURE that names THAT phase with
       # CANNOT RUN — never a skip, because the slide-crop tests need the binaries.
+      # ⛔ THE PACKAGES COME FROM A CACHE WHEN THEY CAN — backlog #358. Measured 2026-10-26: this step either
+      # finished in 16-19s or exceeded its 150s download bound on EVERY attempt (7+ runs that day). apt's own
+      # output showed a CRAWL, not a hang: each attempt fetched a few small packages from
+      # azure.archive.ubuntu.com's `amd64v3` pool and stalled on a large one (libcodec2, 9 MB), resuming there
+      # next attempt. The cause is outside this repo, so the fix removes the dependence rather than tuning the
+      # bound. `apt-get install --download-only` SKIPS a .deb already in /var/cache/apt/archives whose hash
+      # matches the signed index, so restoring last run's .debs there makes a hit a download of nothing — the
+      # bounded step below is otherwise unchanged, and apt still verifies every package at install.
+      # The KEY is a hash of `--print-uris`: every package's file name, size and SHA256 for THIS run's index,
+      # so a changed package set misses (and is saved anew) rather than being served stale. ANY failure here
+      # leaves the key empty, the cache steps skip, and the install runs exactly as it did before.
+      - name: Key the ffmpeg package cache (backlog #358)
+        id: ffkey
+        timeout-minutes: 4
+        run: |
+          set +e
+          sudo timeout --kill-after=10 120 apt-get update -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0" > /tmp/ffkey-update.log 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::ffmpeg cache NOT used: apt-get update exited $rc; the install below runs uncached"
+            tail -n 20 /tmp/ffkey-update.log
+            exit 0
+          fi
+          uris=$(apt-get install -y --no-install-recommends --print-uris ffmpeg 2>/dev/null | grep "^'" | sort)
+          if [ -z "$uris" ]; then
+            echo "::warning::ffmpeg cache NOT used: --print-uris listed no packages; the install below runs uncached"
+            exit 0
+          fi
+          echo "ffmpeg's package set: $(printf '%s\n' "$uris" | wc -l) file(s)"
+          echo "key=ffmpeg-debs-$(printf '%s\n' "$uris" | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+      - name: Restore the ffmpeg packages (backlog #358)
+        id: ffcache
+        if: steps.ffkey.outputs.key != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/ffmpeg-debs
+          key: ${{ steps.ffkey.outputs.key }}
       - name: Install ffmpeg (required by the slide-crop tests)
         timeout-minutes: 20
         env:
@@ -183,6 +223,11 @@ jobs:
             esac
             return 1
           }
+          # backlog #358: restored .debs go where apt looks first; a hit makes the download below fetch nothing.
+          if compgen -G "$HOME/ffmpeg-debs/*.deb" > /dev/null; then
+            sudo cp "$HOME"/ffmpeg-debs/*.deb /var/cache/apt/archives/
+            echo "ffmpeg cache: restored $(ls "$HOME"/ffmpeg-debs/*.deb | wc -l) package(s)"
+          fi
           lock=(-o DPkg::Lock::Timeout="$DPKG_LOCK_WAIT_S")
           updated=no
           downloaded=no
@@ -213,6 +258,9 @@ jobs:
           if [ "$downloaded" != yes ]; then
             cannot_run "all $FFMPEG_ATTEMPTS attempts failed; the last: $why. Re-run the job."
           fi
+          # backlog #358: keep exactly what this run downloaded, for the save step below.
+          mkdir -p "$HOME/ffmpeg-debs"
+          cp /var/cache/apt/archives/*.deb "$HOME/ffmpeg-debs/" 2>/dev/null || true
           if ! bounded "$APT_INSTALL_LIMIT_S" "installing ffmpeg from the local package cache (dpkg, --no-download, after the download completed)" \
                apt-get install -y --no-install-recommends --no-download "${lock[@]}" ffmpeg
           then
@@ -221,6 +269,13 @@ jobs:
           : > "$log"
           ffmpeg -version > /dev/null || cannot_run "ffmpeg was installed but does not execute"
           ffprobe -version > /dev/null || cannot_run "ffprobe was installed but does not execute"
+
+      - name: Save the ffmpeg packages (backlog #358)
+        if: steps.ffkey.outputs.key != '' && steps.ffcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/ffmpeg-debs
+          key: ${{ steps.ffkey.outputs.key }}
 
       # ⛔ FIRST, because every guard below runs on this interpreter. If the pin did not take
       # effect, their results are not evidence about anything — and a `setup-python` step that is

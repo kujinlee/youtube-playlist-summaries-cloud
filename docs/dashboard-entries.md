@@ -17616,3 +17616,17 @@ comment rule (a leading `*` hid `* 2` -> `* 0`) and npm call-site guard (`packag
 REVERTED, split off as backlog #356 with `process .exit`. STATED BOUNDS, asserted: `/* */` wrapping; the npm call site. Replay: 11/40 and
 109/400 before and after (the last 40 contain no TS/JS edit; of the 400, one PR gains a TS reason and was
 already held for a migration). 211 cases; 10 mutations (75 -> 85, total 2105 -> 2115), scoped 85/85.
+
+
+## 2026-10-26
+The CI install of a video tool that some tests need now keeps a copy of what it downloaded and reuses it,
+so a slow package mirror stops failing pull requests. On the day this was written the download stalled on
+about a third of runs, and each stall needed a manual re-run before anything could merge.
+<!--tech-->
+Branch `ffmpeg-deb-cache` (backlog #358, the owner's option A). `ci.yml` `verify`: a new step keys a cache on a
+hash of `apt-get install --print-uris ffmpeg` (one bounded `apt-get update`; any failure leaves the key empty and
+the install runs exactly as before); `actions/cache/restore` into `~/ffmpeg-debs`; the existing bounded install
+copies those into `/var/cache/apt/archives`, where `--download-only` skips any file whose hash matches the
+signed index, and copies what it downloaded back out; `actions/cache/save` on a miss. apt still verifies every
+package at install. Job worst case 25 -> 29 of 30 min. ⚠ Verified only in CI: a first run must miss and save, a
+re-run must log `ffmpeg cache: restored N package(s)`.
