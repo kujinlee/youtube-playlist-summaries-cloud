@@ -240,8 +240,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(not_measured_line(verdict, shard))\n        return 0 if ok else 1",
-        "            print(not_measured_line(verdict, shard)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
+        "            print(not_measured_line(verdict, shard, only))\n        return 0 if ok else 1",
+        "            print(not_measured_line(verdict, shard, only)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -514,8 +514,8 @@
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard)",
-        "mutate_delivered(mroot, shard=shard)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only)",
+        "mutate_delivered(mroot, shard=shard, budget=budget, only=only)"
       ]
     ],
     "expect": [
@@ -1083,7 +1083,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard)}\")",
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only)}\")",
         "              f\"{len(verdict.survivors)} survivor(s)\")"
       ]
     ],
@@ -1097,7 +1097,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}\"",
+        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only)}\"",
         "    return f\"NOT MEASURED — {nm.reason}\""
       ]
     ],
@@ -1432,5 +1432,216 @@
       "⭐ ...and a diff that FAILED is plain RUN — the two causes of None report differently"
     ],
     "file": "scripts/check-plan-code.py"
+  },
+  {
+    "name": "local budget: the control loop never consults it",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "[m for m in shard_muts if m[\"file\"] in control_seconds], budget)",
+        "[m for m in shard_muts if m[\"file\"] in control_seconds], None)"
+      ]
+    ],
+    "expect": [
+      "⭐ a local run over its budget is REFUSED after the control, measuring nothing",
+      "⭐ main() off CI REFUSES a run past the local budget, rc=2"
+    ]
+  },
+  {
+    "name": "local budget: main() applies it on CI too",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "budget = None if (_ci or a.allow_long_local) else (",
+        "budget = None if a.allow_long_local else ("
+      ]
+    ],
+    "expect": [
+      "...and on CI the budget never applies, rc=0"
+    ]
+  },
+  {
+    "name": "local budget: --allow-long-local is ignored",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "_ci or a.allow_long_local)",
+        "_ci)"
+      ]
+    ],
+    "expect": [
+      "...--allow-long-local lets THAT run through, rc=0"
+    ]
+  },
+  {
+    "name": "local budget: a refusal exits 1, reading as a survivor",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            print(report[0], file=sys.stderr)\n            return 2",
+        "            print(report[0], file=sys.stderr)\n            return 1"
+      ]
+    ],
+    "expect": [
+      "⭐ main() off CI REFUSES a run past the local budget, rc=2"
+    ]
+  },
+  {
+    "name": "sweep_estimate forgets the re-control",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "return sum(control_seconds.get(f, 0.0) * (n + 1) for f, n in per.items())",
+        "return sum(control_seconds.get(f, 0.0) * n for f, n in per.items())"
+      ]
+    ],
+    "expect": [
+      "sweep_estimate: each target's control x (its mutations + the re-control)",
+      "...over another world"
+    ]
+  },
+  {
+    "name": "a run exactly AT the budget is refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if est <= budget:",
+        "    if est < budget:"
+      ]
+    ],
+    "expect": [
+      "...a run exactly AT the budget is not refused"
+    ]
+  },
+  {
+    "name": "--only does not narrow execution",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        shard_muts = [m for m in shard_muts if m[\"file\"] in only]",
+        "        pass"
+      ]
+    ],
+    "expect": [
+      "--only narrows execution to its target (of two, one ran)"
+    ]
+  },
+  {
+    "name": "--only accepts a target no manifest names",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        if missing:\n",
+        "        if False:\n"
+      ]
+    ],
+    "expect": [
+      "...and refuses a target no manifest names"
+    ]
+  },
+  {
+    "name": "the --only slice is labelled as the whole manifest",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if only:\n        return f\"ONLY",
+        "    if False:\n        return f\"ONLY"
+      ]
+    ],
+    "expect": [
+      "the --only slice says it is a DIAGNOSTIC, not the gate"
+    ]
+  },
+  {
+    "name": "--only / --allow-long-local without --mutate are not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if (a.only or a.allow_long_local) and not a.mutate:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "--only scripts/a.py is refused, rc=2, saying why",
+      "--allow-long-local is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "--only beside a shard is not refused",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    if a.only and shard is not None:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "--mutate . ... --shard is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "--only: main() never passes the slice to the run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        only = frozenset(a.only) if a.only else None",
+        "        only = None"
+      ]
+    ],
+    "expect": [
+      "⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0"
+    ]
+  },
+  {
+    "name": "--only: main()'s tally line forgets the slice",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            print(tally_line(ok, verdict, shard, only))",
+        "            print(tally_line(ok, verdict, shard))"
+      ]
+    ],
+    "expect": [
+      "⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0"
+    ]
+  },
+  {
+    "name": "local budget: any non-empty CI counts, CI=false included",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        _ci = os.environ.get(\"CI\", \"\").lower() == \"true\"",
+        "        _ci = bool(os.environ.get(\"CI\"))"
+      ]
+    ],
+    "expect": [
+      "...an exported CI=false is NOT CI, so the budget still applies, rc=2"
+    ]
+  },
+  {
+    "name": "budget refusal hides an earlier failed control (r2 L)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                return False, report + [why], NotMeasured.from_counts([], None, ev_files)",
+        "                return False, [why], NotMeasured.from_counts([], None, ev_files)"
+      ]
+    ],
+    "expect": [
+      "⭐ an earlier FAILED control is reported before a budget refusal, not hidden by it"
+    ]
+  },
+  {
+    "name": "a failed control still prices the budget estimate (r2 L)",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "                control_seconds.pop(name, None)     # r2 L: a FAILED control prices nothing\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...and the refusal prices only GREEN controls (it names zzz.py, not the failed aaa.py)"
+    ]
   }
 ]

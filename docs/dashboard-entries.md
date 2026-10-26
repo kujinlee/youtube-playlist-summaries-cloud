@@ -17565,3 +17565,23 @@ TypeScript gates such as `check-service-confinement.ts` are not read as gate cod
 than folded, as the stop rule written before that round required. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
 window is unseen. 199 cases (incl. `main()` over a fake `_run` and a real-git world), 59 new mutations net, 75/75. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.
+
+
+## 2026-10-25
+A full mutation sweep on this laptop now refuses to start a long run, because that sweep belongs to
+the pull request's checks on GitHub, where it is split twelve ways. The rule was already written
+down, but in a document no session reads, while the rule every session does read said not to open a
+pull request until the work is finished — so the sweep ran here instead, twice in one day, for about
+three and a half hours. Now the sweep times its own first step and stops within seconds if the whole
+run would take more than ten minutes, saying why. One flag runs it anyway, for that one run only.
+<!--tech-->
+Branch `local-sweep-guard`. `check-plan-code.py --mutate`: `sweep_estimate()` (each target's measured
+control time x (its mutations + the re-control)) and `local_budget_refusal()`; off CI (`CI` unset),
+the control loop refuses as soon as the running estimate passes `LOCAL_SWEEP_BUDGET` = 600s — exit 2,
+NOTHING MEASURED — naming the costliest target. `--allow-long-local` is a FLAG, so the exception
+cannot outlive its run. `--only <script>` (backlog #208's inner loop) narrows execution only; every
+whole-manifest check still runs, and the verdict reads "a DIAGNOSTIC slice, not the gate". Measured:
+the unscoped local sweep refused after 12s; `--only scripts/check-merge-ready.py` 4.8s. 237 cases; 14
+mutations (117 -> 131; review r1 also re-bound four anchors this branch had orphaned), each killed by its named case over a green control (in memory — the full
+131-entry run is itself past the budget, so it is CI's). `dev-process.md`'s `check-plan-code` row now
+states the rule and the draft-PR-at-slice-start practice; the push memory no longer forbids a draft.
