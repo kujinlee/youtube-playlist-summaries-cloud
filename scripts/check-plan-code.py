@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 244 cases
+    python3 scripts/check-plan-code.py --self-test          # 245 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1349,7 +1349,7 @@ EXPECTED_MUTATIONS = {
     #   eleven entries added, none retired. ⟳ r1 fold: 128 -> 131 — four anchors this branch orphaned
     #   REBOUND (r1 CLAUDE H2, plus two of its own), three added for main()'s --only wiring and CI=true.
     #   ⟳ r2 fold: 131 -> 133 — a failed control is reported before, and priced out of, a budget refusal.
-    "scripts/check-plan-code.py": 136,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    "scripts/check-plan-code.py": 137,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -3668,6 +3668,16 @@ def _self_test() -> int:
             case("⭐ an orphaned anchor is REFUSED before any tree is staged — no control ran (backlog #252)",
                  (_oka, any("anchor NOT FOUND" in r and "before any tree is staged" in r for r in _repa),
                   isinstance(_eva, NotMeasured), _told_a), (False, True, True, []))
+            # r1 CLAUDE L1: the WHOLE-MANIFEST claim, driven — `--only` naming ANOTHER target still sees the orphan.
+            _man_t.write_text(json.dumps([{"name": "value is two", "file": "scripts/thing.py",
+                                           "edits": [["VALUE != 9", "VALUE != 2"]], "expect": "value is one"}]))
+            _saved_o = dict(EXPECTED_MUTATIONS); EXPECTED_MUTATIONS["scripts/other.py"] = 1
+            try:
+                _oko2, _repo2, _ = mutate_delivered(_r, only=frozenset({"scripts/other.py"}))
+            finally:
+                _man_t.write_text(_keep_t); EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_o)
+            case("...and `--only` naming ANOTHER target still refuses it — the pre-check is whole-manifest (r1 L1)",
+                 (_oko2, any("'value is two'" in r and "before any tree is staged" in r for r in _repo2)), (False, True))
             _okn, _repn, _ = mutate_delivered(_r, only=frozenset({"scripts/nope.py"}))
             case("...and refuses a target no manifest names",
                  (_okn, bool(_repn) and "--only names scripts/nope.py" in _repn[0]), (False, True))
@@ -6038,7 +6048,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2108)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2109)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

@@ -1682,5 +1682,18 @@
     "expect": [
       "anchor_problems: a binding anchor, and a second edit that binds only AFTER the first, are clean"
     ]
+  },
+  {
+    "name": "backlog #252 r1: the pre-check is narrowed to the --only targets, so an orphan elsewhere passes a partial run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "    drift += anchor_problems(muts, _read)\n",
+        "    drift += anchor_problems([m for m in muts if only is None or m.get(\"file\") in only], _read)\n"
+      ]
+    ],
+    "expect": [
+      "...and `--only` naming ANOTHER target still refuses it — the pre-check is whole-manifest (r1 L1)"
+    ]
   }
 ]
