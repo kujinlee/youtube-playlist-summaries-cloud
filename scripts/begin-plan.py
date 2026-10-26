@@ -49,7 +49,7 @@ Usage:
     scripts/begin-plan.py --pause "<why>"   # stand the Stop guard down WITHOUT abandoning the plan
     scripts/begin-plan.py --resume      # clear the pause AND its count stamp; re-arm the guard
     scripts/begin-plan.py --finish      # abandon the plan; remove the sentinel
-    scripts/begin-plan.py --self-test  # 127 cases
+    scripts/begin-plan.py --self-test  # 131 cases
 
 Each step argument is `title|doing|why`; the last two are optional. Exit 0 on success, 1 on a
 refusal (bad slug, no sentinel, nothing left to tick).
@@ -985,6 +985,8 @@ def _self_test() -> int:
     # Rebound by the r1 Codex 3 cases to inject a raising recorder / branch lookup; declared
     # first because Python refuses a `global` after the name's first use.
     global _load_plan_progress
+    # (moved up for backlog #301's cases, which run first: a `global` must precede every use)
+    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
     cases: list[tuple[str, bool]] = []
 
     def case(name: str, ok: bool) -> None:
@@ -1011,6 +1013,37 @@ def _self_test() -> int:
     # be a provenance for a link that does not exist.
     _src = [render_plan("kid", THREE, "2026-10-22", parent=par, parent_source=ps)
             for par, ps in (("root", "transcript aaaa1111 t1"), (None, "transcript bbbb2222 t2"))]
+    # ⛔ backlog #301: armed from a LINKED WORKTREE, the sentinel landed in that worktree's `.claude/`, where the
+    # Stop hook (registered in the MAIN checkout) never looks — and `armed:` printed anyway. Real git, real worktree.
+    with tempfile.TemporaryDirectory() as _wtd:
+        _main_r = Path(_wtd) / "main"; _main_r.mkdir()
+        _g = lambda *a, cwd=_main_r: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
+        _g("init", "-q"); _g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base")
+        _wt_r = Path(_wtd) / "linked"
+        _g("worktree", "add", "-q", "-b", "side", str(_wt_r))
+        case("⭐ a LINKED worktree resolves to its main checkout (backlog #301)",
+             linked_worktree_main(_wt_r) == _main_r.resolve())
+        case("...and the main checkout itself is not a linked worktree",
+             linked_worktree_main(_main_r) is None)
+        case("...and a git that cannot answer reads as 'not linked', never a crash",
+             linked_worktree_main(_wt_r, run=lambda *a, **k: subprocess.CompletedProcess(a, 128, "/x/.git/worktrees/w\n/x/.git\n", "fatal")) is None)
+        # EVERY state path is redirected into the worktree, so an unrefused arm (the mutant) writes nothing real
+        _keep_rs = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT)
+        ROOT, PLAN_DIR, SENTINEL = _wt_r, _wt_r / ".claude/plans", _wt_r / ".claude/executing-plan"
+        STATE, LAST_PLAN = _wt_r / ".claude/executing-plan.state", _wt_r / ".claude/last-plan"
+        WORK_LINES_OUT = _wt_r / "explainers" / "work-lines.html"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as _o, contextlib.redirect_stderr(io.StringIO()) as _e:
+                try:
+                    _rc_wt = main(["linked-plan", "one|doing|why"])
+                except Exception as _x:                       # noqa: BLE001 — a crash is a NAMED red
+                    _rc_wt = f"RAISED {type(_x).__name__}"
+        finally:
+            ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT = _keep_rs
+        case("⭐ arming FROM a linked worktree is REFUSED, writes no sentinel, and names the main checkout (backlog #301)",
+             (_rc_wt, (_wt_r / ".claude/executing-plan").exists(), str(_main_r.resolve()) in (_o.getvalue() + _e.getvalue()))
+             == (REFUSED, False, True))
+
     case("render_plan writes `parent-source:` directly under its parent, and never without one",
          ("<!-- parent: root -->\n<!-- parent-source: transcript aaaa1111 t1 -->" in _src[0],
           "parent-source" in _src[1]) == (True, False))
@@ -1144,7 +1177,6 @@ def _self_test() -> int:
         except Exception as exc:                   # noqa: BLE001 - the case reports it
             return f"RAISED {type(exc).__name__}"
 
-    global ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE
     real = (ROOT, PLAN_DIR, SENTINEL, STATE, LAST_PLAN, WORK_LINES_OUT, PR_LINE_STATE)
     with tempfile.TemporaryDirectory() as td:
         ROOT = Path(td)
@@ -1993,6 +2025,27 @@ def pp_count_drift(doc: str | None, actual: int) -> str | None:
 _CHANGES_STATE = ("tick", "pause", "resume", "finish", "plan", "slug")
 
 
+def linked_worktree_main(root: Path, run=subprocess.run) -> Path | None:
+    """The MAIN checkout when `root` is a LINKED worktree, else None (also None when git cannot answer).
+
+    ⛔ backlog #301: every path here hangs off `ROOT`, which is THIS FILE's checkout. Run from a linked
+    worktree, the sentinel lands in that worktree's `.claude/`, while the Stop hook — registered in the main
+    checkout's settings — reads the main checkout's. Measured: `armed:` printed, the banner rendered, the
+    guard read no sentinel and allowed a stop with 4 steps unticked. A worktree's `--git-dir` is
+    `<main>/.git/worktrees/<name>`; only the main checkout has `--git-dir` == `--git-common-dir`.
+    """
+    try:
+        g = run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = (g.stdout or "").split("\n")
+    if g.returncode != 0 or len(lines) < 2 or not lines[0] or not lines[1]:
+        return None
+    git_dir, common = Path(lines[0]).resolve(), Path(lines[1]).resolve()
+    return None if git_dir == common else common.parent
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         description="Declare a multi-step job: write the plan, arm the Stop guard, print the "
@@ -2016,6 +2069,14 @@ def main(argv: list[str]) -> int:
 
     if a.self_test:
         return _self_test()
+    # ⛔ backlog #301: refuse BEFORE touching any state — every command below reads or writes the sentinel.
+    _main_root = linked_worktree_main(ROOT)
+    if _main_root is not None:
+        print(f"refusing: {ROOT} is a LINKED WORKTREE. The Stop guard reads the MAIN checkout's "
+              f".claude/executing-plan, so a plan armed here would be invisible to it — and would still print "
+              f"'armed:'. Run it from the main checkout instead:\n"
+              f"    python3 {_main_root}/scripts/begin-plan.py {' '.join(argv)}", file=sys.stderr)
+        return REFUSED
     if a.banner:
         return cmd_banner()
     if a.status:

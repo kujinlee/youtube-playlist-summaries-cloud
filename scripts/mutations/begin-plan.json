@@ -786,5 +786,44 @@
     "expect": [
       "F5c a file NAMED like a generated label gets ITS OWN banner — its objective, not the completed copy's (r6 Codex)"
     ]
+  },
+  {
+    "name": "backlog #301: begin-plan arms from a linked worktree, where the Stop guard never looks",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if _main_root is not None:\n        print(f\"refusing: {ROOT} is a LINKED WORKTREE.",
+        "    if False:\n        print(f\"refusing: {ROOT} is a LINKED WORKTREE."
+      ]
+    ],
+    "expect": [
+      "⭐ arming FROM a linked worktree is REFUSED, writes no sentinel, and names the main checkout (backlog #301)"
+    ]
+  },
+  {
+    "name": "backlog #301: the main checkout itself reads as a linked worktree, refusing every arm",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    return None if git_dir == common else common.parent",
+        "    return common.parent"
+      ]
+    ],
+    "expect": [
+      "...and the main checkout itself is not a linked worktree"
+    ]
+  },
+  {
+    "name": "backlog #301: a git that failed is trusted for its output",
+    "file": "scripts/begin-plan.py",
+    "edits": [
+      [
+        "    if g.returncode != 0 or len(lines) < 2",
+        "    if len(lines) < 2"
+      ]
+    ],
+    "expect": [
+      "...and a git that cannot answer reads as 'not linked', never a crash"
+    ]
   }
 ]

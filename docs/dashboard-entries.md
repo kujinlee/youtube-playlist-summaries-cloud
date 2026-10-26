@@ -17597,3 +17597,16 @@ PR #400 (`local-sweep-guard`) merged `ba4d2c28` on the owner's call after `check
 `failure_path_removals` counted `shard=shard)` -> `shard=shard, budget=budget, only=only)` as a rewrite on
 a failure path. Filed as backlog #355 (XS, tooling) with the falsifier: the extended-call shape READY while
 `return 1` -> `return 0` and an `or`-widened condition stay HOLD. Roadmap line added.
+
+
+## 2026-10-26
+The tool that tells the stop-guard a multi-step job is in progress used to accept being started from a
+side copy of the project, where the guard never looks, and say it had worked. It now refuses there and
+prints the exact command to run instead. Separately, the CI install of a video tool hangs on about a
+third of today's runs; that is recorded with its measurements, for a fix of its own.
+<!--tech-->
+Branch `begin-plan-worktree` (backlog #301). `begin-plan.linked_worktree_main(root, run)` — `--git-dir` vs
+`--git-common-dir` — gates every state command in `main()`, before any read or write; `--self-test` is exempt.
+Refusal, not resolution: ROOT also feeds `current_branch(ROOT)`. 4 cases over a real repo and a real linked
+worktree (131 total), 3 mutations (2105 -> 2108); the suite's state-path `global` moved to the top of
+`_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).
