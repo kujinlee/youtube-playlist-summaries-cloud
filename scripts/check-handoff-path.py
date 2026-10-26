@@ -177,7 +177,49 @@ def self_test() -> int:
     #
     # ⚠ A failing run still contains "passed" (`8/10 … passed`), which is fine: `control_is_green`
     # also requires rc == 0, and a failing suite returns 1 below.
-    total = len(CASES) + 3          # 3 file cases follow the text cases
+    # backlog #111: THE HOOK ITSELF, run as a real file over a copied tree, under shimmed interpreters.
+    # The detector compared a STDOUT string, so a `python3` that prints a banner first (pyenv, conda,
+    # a chatty sitecustomize) or exits non-zero yielded neither "yes" nor "no", and the hook exited 0 in
+    # silence — disarmed for the session. Same hole, same fix as enforce-selection-card.sh.
+    import os, shutil, subprocess
+    hook_failures = 0
+
+    def _hook_rc(payload: bytes, skill_text: str, python3: str | None) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".claude/hooks").mkdir(parents=True)
+            shutil.copy(REPO_ROOT / ".claude/hooks/enforce-handoff-path.sh", root / ".claude/hooks")
+            (root / "scripts").mkdir()
+            shutil.copy(Path(__file__), root / "scripts/check-handoff-path.py")
+            (root / SKILL_REL).parent.mkdir(parents=True)
+            (root / SKILL_REL).write_text(skill_text, encoding="utf-8")
+            env = dict(os.environ)
+            if python3 is not None:
+                shim = root / "shim"; shim.mkdir()
+                (shim / "python3").write_text(python3); (shim / "python3").chmod(0o755)
+                env["PATH"] = str(shim) + os.pathsep + env.get("PATH", "")
+            return subprocess.run(["bash", str(root / ".claude/hooks/enforce-handoff-path.sh")],
+                                  input=payload, capture_output=True, env=env).returncode
+
+    _HANDOFF = b'{"tool_name": "Skill", "tool_input": {"skill": "handoff"}}'
+    _OTHER = b'{"tool_name": "Skill", "tool_input": {"skill": "brief"}}'
+    _CHATTY = "#!/bin/sh\necho 'pyenv: shim banner'\nexec %s \"$@\"\n" % sys.executable
+    _BROKEN = "#!/bin/sh\nexit 1\n"
+    for name, got, want in (
+        ("hook: blocks /handoff when the skill names the wrong path", _hook_rc(_HANDOFF, UPSTREAM, None), 2),
+        ("hook: passes /handoff when the skill is intact", _hook_rc(_HANDOFF, GOOD, None), 0),
+        ("hook: leaves another skill alone", _hook_rc(_OTHER, UPSTREAM, None), 0),
+        ("⭐ hook: a CHATTY interpreter still blocks a broken /handoff (backlog #111)",
+         _hook_rc(_HANDOFF, UPSTREAM, _CHATTY), 2),
+        ("⭐ hook: a BROKEN interpreter warns and exits 1 — never a silent 0 (backlog #111)",
+         _hook_rc(_HANDOFF, UPSTREAM, _BROKEN), 1),
+    ):
+        ok = got == want
+        hook_failures += not ok
+        print(f"  [{'ok' if ok else 'FAIL'}] {name}: got {got} want {want}")
+    failures += hook_failures
+
+    total = len(CASES) + 3 + 5      # 3 file cases and 5 hook cases follow the text cases
     print(f"\n{total - failures}/{total} self-test cases passed")
     return 1 if failures else 0
 

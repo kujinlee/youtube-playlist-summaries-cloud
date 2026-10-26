@@ -17597,3 +17597,18 @@ PR #400 (`local-sweep-guard`) merged `ba4d2c28` on the owner's call after `check
 `failure_path_removals` counted `shard=shard)` -> `shard=shard, budget=budget, only=only)` as a rewrite on
 a failure path. Filed as backlog #355 (XS, tooling) with the falsifier: the extended-call shape READY while
 `return 1` -> `return 0` and an `or`-widened condition stay HOLD. Roadmap line added.
+
+
+## 2026-10-26
+Four of the project's own checking tools could report success, or crash into an ordinary warning,
+without having checked anything. Each one now says plainly that it could not run: the tool that tracks
+whether a CI run is being watched, the one that checks each turn ends with its summary table, and the
+one that keeps session notes going to the file the next session reads.
+<!--tech-->
+Branch `guard-fail-open-batch` — backlog #253, #255, #152, #111 (from the tooling audit, PR #403).
+`check-ci-watched.py`: `arms_newest_first()` survives a record removed between `is_file()` and `stat()`;
+`--clear` with no HEAD is CANNOT RUN. `check-banner-armed._parse_records` keeps only objects;
+`check-closing-table.run_decide` maps a raising turn rule to CANNOT RUN. `enforce-handoff-path.sh` detects
+by exit code through a temp file; `check-handoff-path.py` runs the real hook under chatty and broken
+`python3` shims (5 cases). 10 cases, 4 mutations (2105 -> 2109); scoped 185/185 over the four manifests;
+one anchor re-bound (`check-closing-table`, the `judged` line moved into the new `try`).

@@ -188,7 +188,7 @@ and "no banner found" is indistinguishable from "could not read the file" unless
 
 Usage (the hook calls form 1):
     python3 scripts/check-banner-armed.py --decide < <stop-hook-json>
-    python3 scripts/check-banner-armed.py --self-test  # 236 cases
+    python3 scripts/check-banner-armed.py --self-test  # 237 cases
 Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CANNOT RUN
                           4 = THREAD UNKNOWN TO THE WORK-LINES PAGE, BLOCKING — only while THREAD_BLOCK is True
 """
@@ -289,9 +289,11 @@ def _parse_records(lines: list[str]) -> list[dict]:
         if not raw:
             continue
         try:
-            records.append(json.loads(raw))
+            obj = json.loads(raw)
         except (ValueError, TypeError):
             continue
+        if isinstance(obj, dict):       # backlog #152: `123` / `[1]` are valid JSON and are not records
+            records.append(obj)
     return records
 
 
@@ -1614,6 +1616,10 @@ def _self_test() -> int:
     B = "## ▶ STEP {} of {} — doing a thing"
 
     # ── the rule ───────────────────────────────────────────────────────────────────────────
+    # backlog #152: a line that is valid JSON but NOT an object (`123`, `[1]`, `"s"`) reached the turn rule
+    # and raised AttributeError out of the Stop hook; only objects are records.
+    case("⭐ _parse_records keeps only JSON OBJECTS — `123`, `[1]` and `\"s\"` are not records (backlog #152)",
+         _parse_records(["123", "[1]", '"s"', '{"type": "user"}', "not json"]) == [{"type": "user"}])
     case("a partway banner with nothing armed WARNS",
          decide([B.format(2, 5)], armed=False)[0] == WARN)
     # ⚠ THE MESSAGE USED TO SAY "3 step(s) unannounced" AND THAT WAS A CLAIM IT COULD NOT MAKE

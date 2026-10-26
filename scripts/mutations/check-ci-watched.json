@@ -472,5 +472,31 @@
       ]
     ],
     "expect": "⭐ `main --watching` writes a record NAMED AFTER HEAD, not one shared file"
+  },
+  {
+    "name": "backlog #253: a record removed between listing and stat() raises out of the hook",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        try:\n            if q.is_file():\n                stamped.append((q.stat().st_mtime, q))\n        except FileNotFoundError:\n            continue",
+        "        if q.is_file():\n            stamped.append((q.stat().st_mtime, q))"
+      ]
+    ],
+    "expect": [
+      "⭐ a record removed between listing and `stat()` is SKIPPED, not a traceback (backlog #253)"
+    ]
+  },
+  {
+    "name": "backlog #255: --clear with an unreadable HEAD returns QUIET, the code for success",
+    "file": "scripts/check-ci-watched.py",
+    "edits": [
+      [
+        "        if not head:\n            # ⛔ backlog #255",
+        "        if False:\n            # ⛔ backlog #255"
+      ]
+    ],
+    "expect": [
+      "⭐ `--clear` with an UNREADABLE HEAD is CANNOT RUN, keeps every record, and says so (backlog #255)"
+    ]
   }
 ]

@@ -1200,5 +1200,18 @@
     "expect": [
       "TE11 run_decide's warning carries the partial-read caveat from known_everywhere"
     ]
+  },
+  {
+    "name": "backlog #152: a valid-JSON non-object line is kept as a record",
+    "file": "scripts/check-banner-armed.py",
+    "edits": [
+      [
+        "        if isinstance(obj, dict):       # backlog #152",
+        "        if True:       # backlog #152"
+      ]
+    ],
+    "expect": [
+      "⭐ _parse_records keeps only JSON OBJECTS — `123`, `[1]` and `\"s\"` are not records (backlog #152)"
+    ]
   }
 ]

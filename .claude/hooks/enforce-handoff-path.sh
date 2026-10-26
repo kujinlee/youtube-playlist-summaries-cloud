@@ -26,22 +26,41 @@
 # elsewhere anyway, only the next resume finds out — that is what the docs/plugins.md falsifier
 # still covers. Two layers, different failure modes.
 
-INPUT=$(cat)
+# ⛔ backlog #111: the payload goes through a FILE and the verdict comes back by EXIT CODE — the fix
+# enforce-selection-card.sh shipped first. The detector used to print "yes"/"no" and compare STDOUT, so a
+# `python3` that prints a banner (pyenv shim, conda activation, a chatty sitecustomize) or exits non-zero
+# produced neither, and this hook exited 0 in silence: disarmed for the session, indistinguishable from a
+# compliant run. Exit codes cannot be prefixed by a banner.
+TMP="$(mktemp)" || { echo "⚠ enforce-handoff-path.sh: mktemp failed; the handoff path is NOT CHECKED." >&2; exit 1; }
+trap 'rm -f "$TMP"' EXIT
+cat > "$TMP"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-IS_HANDOFF=$(echo "$INPUT" | python3 -c '
+#   0 = the handoff skill   3 = anything else, or an envelope that is not JSON (not mine)
+#   * = the interpreter itself failed: warn and exit 1 (non-blocking), never a silent 0
+python3 - "$TMP" <<'PY' 2>/dev/null
 import json, sys
 try:
-    d = json.load(sys.stdin)
+    with open(sys.argv[1], "rb") as fh:
+        d = json.loads(fh.read().decode("utf-8", "replace"))
 except Exception:
-    print("no"); sys.exit()
+    sys.exit(3)
+if not isinstance(d, dict):
+    sys.exit(3)
 ti = d.get("tool_input", {}) or {}
-skill = str(ti.get("skill", "")).lower()
+skill = str(ti.get("skill", "")).lower() if isinstance(ti, dict) else ""
 # Plugin-qualified names arrive as "vendor:handoff"; match the bare segment.
-print("yes" if d.get("tool_name") == "Skill" and skill.split(":")[-1] == "handoff" else "no")
-' 2>/dev/null) || IS_HANDOFF="no"
+sys.exit(0 if d.get("tool_name") == "Skill" and skill.split(":")[-1] == "handoff" else 3)
+PY
+DETECT_RC=$?
 
-[[ "$IS_HANDOFF" == "yes" ]] || exit 0
+case $DETECT_RC in
+  0) ;;
+  3) exit 0 ;;
+  *) echo "⚠ enforce-handoff-path.sh: could not read the hook envelope (python3 rc=$DETECT_RC)." >&2
+     echo "  The handoff-path check DID NOT RUN. Treat this /handoff as NOT CHECKED, never as compliant." >&2
+     exit 1 ;;
+esac
 
 VERDICT_OUT=$(python3 "$REPO_ROOT/scripts/check-handoff-path.py" --quiet 2>&1)
 VERDICT_RC=$?

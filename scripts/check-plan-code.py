@@ -877,7 +877,7 @@ EXPECTED_MUTATIONS = {
     # leading-slug arrow). Four are new: an arrow in prose is not a destination (r3 F7, two
     # entries), a turn with no saved record is still judged (F1), and the partial-read notes reach
     # the warning (F6). Net +4.
-    "scripts/check-banner-armed.py": 91,
+    "scripts/check-banner-armed.py": 92,
     # ⟳ 2026-09-23, backlog #166 + #170. The ONE owner of the observer-log record. Pinned in
     # the commit that creates it, with its manifest — `check-ratchet-contract` REFUSED the
     # module until both existed (R4W_no_mutation_manifest), which is the contract working on
@@ -929,7 +929,7 @@ EXPECTED_MUTATIONS = {
     # the same reason — the search Codex's `flush_line` Blocking implied was never run over the
     # other two adapters. Measured first: freezing session reds *log: the session is the THIRD
     # field, verbatim*, freezing `when` reds *log: the timestamp is the SECOND field*.
-    "scripts/check-closing-table.py": 48,
+    "scripts/check-closing-table.py": 49,
     "scripts/gen-dashboard.py": 68,
     # ⟳ 2026-09-12. gen-goals-page.py was the last PAGE-PRODUCING generator with no
     # manifest — gen-dashboard, gen-backlog-page, brief-compose, page_chrome and page_markup
@@ -1138,7 +1138,7 @@ EXPECTED_MUTATIONS = {
     # `_drive_log`'s result with no `len(...) == 1` guard while their three siblings had one, so
     # `and` short-circuited for the siblings and raised for these. The second instance was found by
     # grepping for the class, not by the first fix. Now 10 named reds, no crash.
-    "scripts/check-ci-watched.py": 37,
+    "scripts/check-ci-watched.py": 39,
     "scripts/codex-frontier-model.py": 7,
     # ⟳ 2026-09-08, R4 manifest debt 5 -> 4. Two findings, both about a rule with no single owner:
     #   * `range(a, b + 1)`'s INCLUSIVE bound was unfalsifiable — every range case writes both
@@ -5962,7 +5962,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2105)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2109)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries

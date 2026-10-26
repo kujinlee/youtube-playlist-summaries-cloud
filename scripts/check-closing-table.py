@@ -117,7 +117,7 @@ Exit codes for --decide:  0 = nothing to say   1 = WARN (non-blocking)   2 = CAN
 
 Usage:
     python3 scripts/check-closing-table.py --decide      # reads the Stop-hook payload on stdin
-    python3 scripts/check-closing-table.py --self-test   # 154 cases
+    python3 scripts/check-closing-table.py --self-test   # 155 cases
 """
 from __future__ import annotations
 
@@ -915,8 +915,15 @@ def run_decide(payload: str) -> int:
               "warning as 'no table was owed'.", file=sys.stderr)
         return CANNOT_RUN
 
-    judged = banner.judged_window(
-        coalesce_injected(banner.windows(records), banner.TurnWindow))
+    try:
+        judged = banner.judged_window(
+            coalesce_injected(banner.windows(records), banner.TurnWindow))
+    except Exception as exc:
+        # ⛔ backlog #152: outside a try, anything the borrowed turn rule raised left as a traceback and exit 1
+        # — the code a real WARNING uses. Whatever it was, this check did not look: CANNOT RUN.
+        print(f"CANNOT RUN: the turn rule raised {type(exc).__name__}: {exc}. TREAT THIS AS NOT RUN — do "
+              "not read the absence of a warning as 'no table was owed'.", file=sys.stderr)
+        return CANNOT_RUN
     if judged is None:
         return QUIET            # no subject yet — QUIET, never CANNOT RUN
 
@@ -1498,6 +1505,26 @@ def _self_test() -> int:
           _safe(_drifted_loader_case), "REFUSED")
 
     # ---- run_decide: the boundaries ----------------------------------------------------------
+    # backlog #152: the borrowed turn rule ran OUTSIDE the try, so anything it raised left the Stop hook as a
+    # traceback and exit 1 — the code a real WARNING uses. Blindness is CANNOT RUN (2).
+    def _turn_rule_raises():
+        import contextlib, io, tempfile
+        class _B:
+            TurnWindow = tuple
+            @staticmethod
+            def _parse_records(lines): return [{"type": "user"}]
+            @staticmethod
+            def windows(records): raise AttributeError("'int' object has no attribute 'get'")
+        with tempfile.TemporaryDirectory() as d:
+            tp = Path(d) / "t.jsonl"; tp.write_text('{"type": "user"}\n')
+            real = globals()["_load_banner_guard"]; globals()["_load_banner_guard"] = lambda: _B
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    return run_decide(json.dumps({"transcript_path": str(tp)}))
+            finally:
+                globals()["_load_banner_guard"] = real
+    check("⭐ the turn rule RAISING is CANNOT RUN, never the warning code (backlog #152)",
+          _safe(_turn_rule_raises), CANNOT_RUN)
     check("run: empty payload -> CANNOT RUN", run_decide(""), CANNOT_RUN)
     check("run: malformed json -> CANNOT RUN", run_decide("{not json"), CANNOT_RUN)
     check("run: payload is a list -> CANNOT RUN", run_decide("[]"), CANNOT_RUN)
