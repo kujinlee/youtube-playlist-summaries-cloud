@@ -17519,6 +17519,53 @@ resize that grows the bar, default press asserted on store and buttons; page_chr
 total 2017 -> 2026. Four further gaps the review found inside the stub's bound are filed as
 backlog #352.
 
+## 2026-10-25
+Merging is now a house rule, so you no longer have to grant it each night: a pull request is merged
+as soon as the repository's own readiness check says READY. Four kinds of pull request are held for
+you instead, and you are told why: one that loosens a check, one with a database change that has to
+reach production first, one that skipped its review, and one that changes the app itself before its
+local integration and end-to-end tests have passed. The readiness check now detects each of these
+and says HOLD. Measured over the pull requests before it, about a third would have been held, mostly for
+skipping review in an older period. After the first review widened the checks, about one in five
+recent pull requests would be held for loosening a check. The first review found ways a
+weakened check could still slip through as ready — deleting a check outright, or padding the lines
+around a removal — and those are now caught too. The detection is a set of clues, not a proof.
+<!--tech-->
+Branch `merge-when-ready-rule`. `check-merge-ready.py`: `hold_reasons()` (pure) and `final_verdict()`; exit
+**3 = HOLD**, applied only to an otherwise-READY PR. Loosening = a `docs/reviews/**/baseline.json` edit, a
+mutation pin / declared total / declared self-test count that drops, or a removed code line within 5 lines of
+a failure path (`FAIL`, `fails`/`failures`, `return|exit 1|2`, `SystemExit(`, a hook's `deny`) in a gate file
+(`scripts/check-*.py|sh`, `scripts/ci/`, `.claude/hooks/**`), measured in OLD-file lines — moves and comments
+excluded; or a removed line naming a gate in a CALLER (`.github/workflows/*.yml`, `.claude/settings*.json`,
+`check-schema-gates.sh`); or a mutation pin deleted or renamed away. Replayed over 32 merged PRs before the r1
+fold: loosening 5 (#398, #387, #382, #381, #360), `NO-REVIEW:` **9** (r1 CODEX corrected an 8), union 11, app
+code and migrations 0; after it, loosening holds **8 of 40** (adds #386, #367, #366 — each rewrites a failure
+path or a CI gate invocation). App code clears with `--app-tests-passed <head>` — a SELF-ATTESTED SHA, not a
+verified run. r2 (Codex) found a RENAME lost both paths and the caller detector read COMMENTS; after a lost
+bet the parsers were REDESIGNED into one, `diff_files()`, with one `is_comment()` rule, and a gate deleted or
+renamed out of scope (`scope_exits`) holds — 8 of 40 unchanged. r3 (Codex) found only PATH IDENTITY left —
+git's C-quoted paths, the tab after a spaced path, binary deletions, copies, a workflow renamed into
+`scripts/check-*` — and the unit was SPLIT: the detectors held, `_unquote`/`_side` and the role-preserving
+exit were fixed, each case built from a real `git diff` in a scratch repository. r4 found three more path
+shapes, two caused by r3's own fixes — THRASHING — and every one fails CLOSED (two false HOLDs, one NOT READY;
+never a false READY). The owner first chose to DEFER, then REVERSED it before merge: backlog #353's class fix
+landed on this branch — paths and statuses from `git diff --name-status -z -M`. Its first form paired patch
+sections with that list BY POSITION, and r5 (Codex) found a FALSE READY in it (a type change is one entry and two
+sections, a submodule one entry and none); r6 then found two more in per-path patches (a pathspec matches a
+directory's descendants; a `-diff` attribute hides a gate's hunks). Now each file's hunks are the diff of its
+EXACT old and new BLOBS (`gather`, `blob_hunks`), which no path, pathspec or attribute can touch; r7's two
+adversarial shapes (CR-vs-LF filenames; a gate symlinked elsewhere) are closed by reading git as bytes and judging a
+symlinked gate's target as the gate, and a stop rule was set before r8. r8 found three HONEST gaps in what counts as
+a gate (a helper it imports; exit status 3): every `scripts/*` file now counts and any non-zero status does (9 of
+40 PRs held); a condition removed far from its failure line is stated as the SEMANTIC bound — review is the
+primary protection, this stage a second net. r9 found two more honest gaps — a re-indented `return 1` read as
+moved, and `sys.exit(10)` / `raise` unknown — now closed (10 of 40 held); r10's `sys.exit("message")` too, and any
+collection error is now CANNOT RUN. Round 11 confirmed the round-10 fold and found one more honest gap —
+TypeScript gates such as `check-service-confinement.ts` are not read as gate code — FILED as backlog #354 rather
+than folded, as the stop rule written before that round required. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 199 cases (incl. `main()` over a fake `_run` and a real-git world), 59 new mutations net, 75/75. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+(still 220/220), the push hook's message, and the merge memory updated.
+
 
 ## 2026-10-25
 A full mutation sweep on this laptop now refuses to start a long run, because that sweep belongs to

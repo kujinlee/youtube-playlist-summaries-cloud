@@ -33,12 +33,12 @@ Pull the human back in only for an **unexpected situation**:
   correct; going silent is not;
 - a **blocker**: missing access/credentials, an external dependency down, a gate that will not go green;
 - anything that would **move the goal** (change the spec) rather than approach it;
-- an **outward-facing or hard-to-reverse action** — merge, deploy, delete, spend.
-  ⟳ **2026-09-30: `push` REMOVED at the user's instruction.** Merge is still the gate; a PR
-  remains a separate judgement and is not opened for work that is NOT CONVERGED. Why the
-  original grouping was wrong, and what guards the irreversible half instead:
-  [`process-rationale.md`](process-rationale.md) → *The rule that asked for permission a
-  hook already enforced*.
+- an **outward-facing or hard-to-reverse action** — deploy, delete, spend, and a merge the house
+  rule HOLDS. ⟳ **2026-10-25, the owner: MERGE WHEN READY** — `check-merge-ready.py --pr N` (run
+  from the PR's worktree) READY ⇒ squash, `--match-head-commit` pinned; **exit 3 HOLD** (loosens a
+  gate, needs a deploy, `NO-REVIEW:`, or app code without local tests) ⇒ do NOT merge, notify.
+  ⟳ 2026-09-30: `push` REMOVED; a PR is still not opened for NOT CONVERGED work —
+  [`process-rationale.md`](process-rationale.md) → *The rule that asked for permission a hook already enforced*.
 
 **Notification is mandatory whenever you actually need the human** (`PushNotification` — one line,
 lead with the decision needed). Silently "waiting" without notifying wastes their time. Do **not**
@@ -89,7 +89,7 @@ must stay in sync — updated proactively, without being asked.
 | 2 | **Writing Plans** | `docs/implementation-plan.md` | dual adversarial review **to convergence**; then notify and proceed. Post-Plan Gate: checklists doc |
 | 3 | **Implementation** | code + tests | per-task two-stage review to convergence, autonomous. Per-Task Checklist: checklists doc |
 | 4 | **Verification** | evidence | enumerate every UX case as a task list *before* clicking anything; screenshots to `.screenshots/` (gitignored) |
-| 5 | **Final Review + Finish** | PR | full review → commit → push → PR. **Merging is a human gate** |
+| 5 | **Final Review + Finish** | PR | full review → commit → push → PR → **merge when READY; a HOLD goes to the human** |
 | 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or on THRASHING: two consecutive rounds whose findings came from the previous round's fix** |
 
 **Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
@@ -108,7 +108,7 @@ A one-line change can be the most dangerous thing in the repo.
   status ticks ride in the **same PR** as the work they describe. Standalone doc edits accumulate.
 - **Write the merge tick BEFORE opening the PR**, and do not chase the squash SHA — the PR number
   exists as soon as the PR does.
-- Merging stays a **human gate**: open the PR, notify, do not merge.
+- **Merge when READY** (house rule, 2026-10-25, above); a **HOLD** is the human's — do not merge, notify.
 
 **⟳ THE ARMING CONDITION IS THRASHING, NOT A COUNT (corrected 2026-09-14).** It fires when **two
 consecutive rounds carry findings caused by the previous round's own fix, in one component**. A
