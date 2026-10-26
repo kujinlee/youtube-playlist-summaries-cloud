@@ -2486,7 +2486,7 @@ the work now:
       1.15x, and the sweep IS the critical path: verify→`mutation-sweep-complete` is **19–23 min**
       and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
 - [ ] **backlog #356** — TS gate weakenings still READY: npm call site (`package.json` never gets hunks),
-  `process .exit`, and Node comments. Split off #354 at r2; fix through a real-git world case.
+  `process .exit`, and Node comments. Split off backlog #354 at r2; fix through a real-git world case.
 - [x] **backlog #354** — `check-merge-ready` misses TypeScript gates (`process.exit(1)` -> `0` in
   `check-service-confinement.ts` prints READY). XS fix: `.ts/.js` in `GATE_CODE`, `process.exit`/`throw` in `FAIL_PATH`.
 - [ ] **backlog #355** — `check-merge-ready` HOLDs a line that only GAINED arguments near a failure path (PR #400's
