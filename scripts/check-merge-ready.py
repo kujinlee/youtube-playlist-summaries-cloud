@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 196 cases
+    python3 scripts/check-merge-ready.py --self-test # 199 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -503,8 +503,9 @@ CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
 # `deny` — r1 CLAUDE H3: the hooks block with `deny "…"` and `exit 2`, and the first pattern saw neither.
 # ⟳ r8/r9 (HONEST): ANY non-zero integer status (3, 10, -1), and `raise` / `assert` — a validation
 # exception turned into a `print` lets execution continue. Measured cost: 9 -> 10 of 40 PRs.
+# ⟳ r10: `sys.exit(<anything but 0 / None / nothing>)` — `sys.exit("invalid input")` exits 1.
 FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn\s+-?[1-9]\d*\b|\bexit\s+-?[1-9]\d*\b"
-                       r"|sys\.exit\(\s*-?[1-9]\d*\s*\)|SystemExit\(|\bdeny\b|\braise\b|\bassert\b")
+                       r"|sys\.exit\((?!\s*(?:0|None)?\s*\))|SystemExit\(|\bdeny\b|\braise\b|\bassert\b")
 # ⟳ r8 (HONEST): EVERY script, not only `check-*` — a gate's logic moved into a helper it imports
 # (`scripts/gate_logic.py`) changes the gate without touching it. Measured cost: 8 -> 9 of 40 PRs.
 GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
@@ -1073,8 +1074,8 @@ def main(argv: list[str]) -> int:
     try:
         files, fs = gather(git_reader(_run), BASE_REF)
         gathered = True
-    except PathsDisagree as exc:
-        code, line = 2, (f"CANNOT RUN — could not read the branch's diff ({exc}), so the house "
+    except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash
+        code, line = 2, (f"CANNOT RUN — could not read the branch's diff ({exc.__class__.__name__}: {exc}), so the house "
                          "rule's exceptions were NOT checked. Treat this as NOT RUN.")
         holds, gathered = [], False
     if gathered:
@@ -1712,6 +1713,11 @@ def _self_test() -> int:
           has(H([G], DF(G, "     if worse:", "-        sys.exit(10)", "+        sys.exit(0)")), "failure path"), True)
     check("...and so is `sys.exit(-1)`",
           has(H([G], DF(G, "     if odd:", "-        sys.exit(-1)", "+        sys.exit(0)")), "failure path"), True)
+    check("⭐ `sys.exit(\"invalid input\")` turned into a `print` is a loosening (r10: it exits 1)",
+          has(H([G], DF(G, "     if bad:", '-        sys.exit("invalid input")', '+        print("invalid input")')),
+              "failure path"), True)
+    check("...but `sys.exit(0)`, `sys.exit()` and `sys.exit(None)` removed are not failure statements",
+          [H([G], DF(G, f"-    {x}", "+    pass")) for x in ("sys.exit(0)", "sys.exit()", "sys.exit(None)")], [[], [], []])
     check("...and a `raise` turned into a `print`",
           has(H([G], DF(G, "     if bad:", '-        raise ValueError("invalid input")', '+        print("invalid input")')),
               "failure path"), True)
@@ -1749,7 +1755,7 @@ def _self_test() -> int:
     import contextlib, io
     _real_run = globals()["_run"]
     _tmp = Path(tempfile.mkdtemp()) / "body.md"
-    def _fake(files, diff, body="", status=None):
+    def _fake(files, diff, body="", status=None, tree=""):
         # The machine list defaults to one `M` per file; `diff` is every file's patch (no hunks
         # unless a case gives some), since each file's patch is asked for separately.
         if status is None:
@@ -1773,13 +1779,13 @@ def _self_test() -> int:
             if cmd[:2] == ["git", "merge-base"]:
                 return cp("mb\n")
             if cmd[:2] == ["git", "ls-tree"]:
-                return cp("")                       # no blobs: these cases are about PATHS
+                return cp(tree)                     # no blobs unless a case gives some
             if cmd[:2] == ["git", "diff"]:
                 return cp(diff)
             return cp("ok\n")                       # the three gate scripts
         return run
-    def _main(files, pr, tests_at=None, diff="", body="", status=None):
-        globals()["_run"] = _fake(files, diff, body, status)
+    def _main(files, pr, tests_at=None, diff="", body="", status=None, tree=""):
+        globals()["_run"] = _fake(files, diff, body, status, tree)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
@@ -1806,6 +1812,15 @@ def _self_test() -> int:
     _rc, _o = _main(["docs/h.md"], "22", status="R100\0docs/h.md\0")
     check("...and REFUSES (CANNOT RUN) on a machine list it cannot read",
           (_rc, "CANNOT RUN" in _o), (2, True))
+    # r10: ANY collection error is CANNOT RUN — a malformed `ls-tree` reply raises ValueError, not
+    # PathsDisagree. The case catches a crash itself so a narrowed handler shows as a RED case.
+    try:
+        _rc, _o = _main(["scripts/x.py"], "23", status="M\0scripts/x.py\0", tree="garbage-without-a-tab\0")
+        _crash = None
+    except Exception as exc:
+        _rc, _o, _crash = None, "", exc.__class__.__name__
+    check("⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)",
+          (_rc, "CANNOT RUN" in _o, _crash), (2, True, None))
     # r1 CLAUDE M3: the pure NO-ENTRY case never passed its body anywhere — this one does.
     _rc, _o = _main(["docs/y.md"], "9", body="intro\nNO-ENTRY: docs only\n")
     check("⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)",

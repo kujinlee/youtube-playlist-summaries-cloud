@@ -890,7 +890,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "|sys\\.exit\\(\\s*-?[1-9]\\d*\\s*\\)|",
+    "|sys\\.exit\\((?!\\s*(?:0|None)?\\s*\\))|",
     "|sys\\.exit\\(\\s*[12]\\s*\\)|"
    ]
   ],
@@ -939,6 +939,32 @@
   ],
   "expect": [
    "...and a `raise` turned into a `print`"
+  ]
+ },
+ {
+  "name": "r10: sys.exit's argument is not inspected (0 / None / nothing count as failures)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(?!\\s*(?:0|None)?\\s*\\))",
+    ""
+   ]
+  ],
+  "expect": [
+   "...but `sys.exit(0)`, `sys.exit()` and `sys.exit(None)` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "r10: main() catches only PathsDisagree, so an unexpected error crashes",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash",
+    "    except PathsDisagree as exc:"
+   ]
+  ],
+  "expect": [
+   "⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)"
   ]
  }
 ]

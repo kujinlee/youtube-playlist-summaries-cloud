@@ -1891,7 +1891,8 @@ EXPECTED_MUTATIONS = {
     #   non-zero status is a failure path; one anchor rebound, three added. The semantic bound is a CASE.
     # ⟳ 2026-10-25 r9 (two HONEST-SYNTACTIC false READYs): 71 -> 73 — moves keep indentation, and any
     #   non-zero int, `raise` and `assert` are failure statements; six anchors rebound, two added.
-    "scripts/check-merge-ready.py": 73,
+    # ⟳ 2026-10-25 r10: 73 -> 75 — sys.exit with any non-zero argument; main() fails closed on ANY error.
+    "scripts/check-merge-ready.py": 75,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -5776,7 +5777,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2087)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2089)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
