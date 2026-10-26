@@ -17549,7 +17549,10 @@ git's C-quoted paths, the tab after a spaced path, binary deletions, copies, a w
 exit were fixed, each case built from a real `git diff` in a scratch repository. r4 found three more path
 shapes, two caused by r3's own fixes — THRASHING — and every one fails CLOSED (two false HOLDs, one NOT READY;
 never a false READY). The owner first chose to DEFER, then REVERSED it before merge: backlog #353's class fix
-landed on this branch — paths and statuses from `git diff --name-status -z -M`, joined by position to the patch
-(a mismatch is CANNOT RUN), checked by a self-test that builds a REAL git repository with every shape found. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 164 cases (incl. `main()` over a fake `_run` and a real-git world), 41 new mutations, 57/57. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+landed on this branch — paths and statuses from `git diff --name-status -z -M`. Its first form paired patch
+sections with that list BY POSITION, and r5 (Codex) found a FALSE READY in it (a type change is one entry and two
+sections, a submodule one entry and none); now each file's hunks come from a patch restricted to its own paths
+(`gather`), with external diff and textconv drivers off, checked by a self-test that builds a REAL git
+repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 173 cases (incl. `main()` over a fake `_run` and a real-git world), 43 new mutations net, 59/59. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.

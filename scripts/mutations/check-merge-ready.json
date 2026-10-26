@@ -530,7 +530,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    for exit_ in scope_exits(diff, status):",
+    "    for exit_ in scope_exits(diff, fs):",
     "    for exit_ in []:"
    ]
   ],
@@ -634,30 +634,17 @@
   ]
  },
  {
-  "name": "#353: paths are read from patch headers again, not the machine list",
+  "name": "r5: each entry's patch is not restricted to its own paths",
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "    headers = status is None ",
-    "    headers = True "
+    "\"hunks\": patch_hunks(read(patch_cmd(base, paths)))})",
+    "\"hunks\": patch_hunks(read(patch_cmd(base, [])))})"
    ]
   ],
   "expect": [
-   "real git: a hook under `a b/` with a MODE-ONLY change is not held (r4 false HOLD)",
-   "the join REFUSES a patch and a list that disagree on the file count"
-  ]
- },
- {
-  "name": "#353: the positional join accepts a count mismatch",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "        if len(entries) != len(out):",
-    "        if False:"
-   ]
-  ],
-  "expect": [
-   "the join REFUSES a patch and a list that disagree on the file count"
+   "real git: the world REALLY holds a type change (T, two sections) and a submodule entry",
+   "real git: a hook under `a b/` with a MODE-ONLY change is not held (r4 false HOLD)"
   ]
  },
  {
@@ -678,8 +665,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "                                     status=files_r.stdout)",
-    "                                     status=None)"
+    "head, args.app_tests_passed, bool(nr), fs=fs)",
+    "head, args.app_tests_passed, bool(nr), fs=None)"
    ]
   ],
   "expect": [
@@ -723,6 +710,45 @@
   ],
   "expect": [
    "changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)"
+  ]
+ },
+ {
+  "name": "r5: the patch is read WITH textconv",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GIT_PLAIN = [\"--no-ext-diff\", \"--no-textconv\", \"--no-relative\"]",
+    "GIT_PLAIN = [\"--no-ext-diff\", \"--no-relative\"]"
+   ]
+  ],
+  "expect": [
+   "real git: a textconv driver over a gate cannot hide its weakening"
+  ]
+ },
+ {
+  "name": "r5: the patch is read WITH an external diff driver",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GIT_PLAIN = [\"--no-ext-diff\", ",
+    "GIT_PLAIN = ["
+   ]
+  ],
+  "expect": [
+   "real git: an external diff driver over a gate cannot hide its weakening"
+  ]
+ },
+ {
+  "name": "r5: a path is read as a GLOB pathspec",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return [\"git\", \"--literal-pathspecs\", \"diff\", f\"-U{FAIL_WINDOW}\"",
+    "    return [\"git\", \"diff\", f\"-U{FAIL_WINDOW}\""
+   ]
+  ],
+  "expect": [
+   "the patch is RESTRICTED to the entry's own paths, over the list's range, both literal"
   ]
  }
 ]

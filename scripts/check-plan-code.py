@@ -1878,7 +1878,10 @@ EXPECTED_MUTATIONS = {
     # ⟳ 2026-10-25 backlog #353 (paths from `git diff --name-status -z -M`): 50 -> 56 — two anchors
     #   rebound, six added (headers as path source, the count join, a gained role, main()'s wiring,
     #   an add's old path, an incomplete entry), then +1 for changed_paths' old path. None retired.
-    "scripts/check-merge-ready.py": 57,
+    # ⟳ 2026-10-25 r5 (a positional FALSE READY): 57 -> 59 — the positional join is DELETED, so its
+    #   count-mismatch entry is RETIRED WITH ITS SUBJECT (the one permitted kind of fall); three
+    #   anchors rebound onto per-file patches; three added (--no-textconv, --no-ext-diff, literal pathspecs).
+    "scripts/check-merge-ready.py": 59,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -5763,7 +5766,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2071)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2073)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
