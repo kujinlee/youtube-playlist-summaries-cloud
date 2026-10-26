@@ -17638,13 +17638,16 @@ neighbouring sections, so 49 audited rows are `(process)`, `(process / deliverab
 
 ## 2026-10-26
 The CI install of a video tool that some tests need now keeps a copy of what it downloaded and reuses it,
-so a slow package mirror stops failing pull requests. On the day this was written the download stalled on
+after checking each file against the official package list, so a slow package mirror no longer stalls most runs. On the day this was written the download stalled on
 about a third of runs, and each stall needed a manual re-run before anything could merge.
 <!--tech-->
-Branch `ffmpeg-deb-cache` (backlog #358, the owner's option A). `ci.yml` `verify`: a new step keys a cache on a
-hash of `apt-get install --print-uris ffmpeg` (one bounded `apt-get update`; any failure leaves the key empty and
-the install runs exactly as before); `actions/cache/restore` into `~/ffmpeg-debs`; the existing bounded install
-copies those into `/var/cache/apt/archives`, where `--download-only` skips any file whose hash matches the
-signed index, and copies what it downloaded back out; `actions/cache/save` on a miss. apt still verifies every
-package at install. Job worst case 25 -> 29 of 30 min. ⚠ Verified only in CI: a first run must miss and save, a
-re-run must log `ffmpeg cache: restored N package(s)`.
+Branch `ffmpeg-deb-cache` (backlog #358, the owner's option A). `ci.yml` `verify`: a key step runs one bounded
+`apt-get update`, then `--print-uris -o Acquire::ForceHash=SHA256` (bounded, status checked) into a manifest of every
+file's name and SHA256 from this run's signed index; the key is a hash of that manifest. `actions/cache/restore` into
+`~/ffmpeg-debs`; the existing install copies into `/var/cache/apt/archives` ONLY restored files whose `sha256sum` matches
+the manifest, reuses the key step's index (no second update, so nothing drifts), and saves only manifest files on a miss.
+⟳ r1 (both halves) corrected two false claims of the first version: apt accepts a cached .deb by SIZE, not hash (a forged
+package installed, in a container), and a failing cache step could skip the install — now all three are
+`continue-on-error` and bounded. Measured in CI: a miss saved 81 files; the next run restored 81, `Need to get 0 B`.
+Measured in an ubuntu:26.04 container: 194 files listed with SHA256, a forged same-size file rejected and re-downloaded.
+Worst case per path 28.3 / 26.0 of 30 min.

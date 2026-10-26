@@ -140,24 +140,32 @@ jobs:
       #   3 x (120+10 + 150+10) + 2 x 15 + (180+10) = 870 + 30 + 190 = 1,090s = 18.2 min
       # inside this step's `timeout-minutes: 20` (1,200s) — the backstop over all of it, leaving
       # 110s for the diagnostics to print; 20 + the ~5 min the rest of the job needs is ~25 min,
-      # inside the job's 30. ⟳ backlog #358 adds the cache-key step's `timeout-minutes: 4` (one bounded
-      # `apt-get update`, 130s with its kill grace) — 29 min at the worst case, still inside 30; a cache HIT
-      # makes this step's download phase fetch nothing, so the common case is shorter than before. Exhausting any phase is a FAILURE that names THAT phase with
+      # inside the job's 30. ⟳ backlog #358 adds three cache steps, each bounded (key 3, restore 3, save 3 min),
+      # so the worst case is PER PATH (r1: the first sum omitted restore and save):
+      #   key FAILED  -> restore/save skip, this step does its own update: 3 + 20 + ~5.3 = 28.3 min
+      #   key OK      -> this step skips its update (it reuses the key step's index), so its inner bounds total
+      #                  3 x (150+10) + 2 x 15 + (180+10) = 700s = 11.7 min: 3 + 3 + 11.7 + 3 + ~5.3 = 26.0 min
+      # (~5.3 min is the rest of the job, measured). Both inside 30; a HIT downloads nothing. Exhausting any phase is a FAILURE that names THAT phase with
       # CANNOT RUN — never a skip, because the slide-crop tests need the binaries.
       # ⛔ THE PACKAGES COME FROM A CACHE WHEN THEY CAN — backlog #358. Measured 2026-10-26: this step either
       # finished in 16-19s or exceeded its 150s download bound on EVERY attempt (7+ runs that day). apt's own
       # output showed a CRAWL, not a hang: each attempt fetched a few small packages from
       # azure.archive.ubuntu.com's `amd64v3` pool and stalled on a large one (libcodec2, 9 MB), resuming there
       # next attempt. The cause is outside this repo, so the fix removes the dependence rather than tuning the
-      # bound. `apt-get install --download-only` SKIPS a .deb already in /var/cache/apt/archives whose hash
-      # matches the signed index, so restoring last run's .debs there makes a hit a download of nothing — the
-      # bounded step below is otherwise unchanged, and apt still verifies every package at install.
-      # The KEY is a hash of `--print-uris`: every package's file name, size and SHA256 for THIS run's index,
-      # so a changed package set misses (and is saved anew) rather than being served stale. ANY failure here
-      # leaves the key empty, the cache steps skip, and the install runs exactly as it did before.
+      # bound: `apt-get install --download-only` SKIPS a .deb already in /var/cache/apt/archives, so restoring
+      # last run's .debs there makes a hit a download of nothing (measured: 81 packages, `Need to get 0 B`).
+      # ⛔ apt ACCEPTS A CACHED .deb BY SIZE, NOT BY HASH (r1, both halves, executed in a container: a forged
+      # package of the right size was installed). So the restored files are checked HERE, before apt sees them:
+      # the key step writes a manifest of every file's name and SHA256 from THIS run's signed index
+      # (`-o Acquire::ForceHash=SHA256`), and only a restored file whose `sha256sum` matches its entry is copied
+      # in; anything else is left for apt to download. The KEY is a hash of that manifest, so a changed package
+      # set misses and is saved anew rather than being served stale.
+      # ⛔ AND NO CACHE STEP CAN SKIP THE INSTALL (r1): all three are `continue-on-error` with their own bounds,
+      # and the install's implicit `success()` therefore still holds when any of them fails.
       - name: Key the ffmpeg package cache (backlog #358)
         id: ffkey
-        timeout-minutes: 4
+        timeout-minutes: 3
+        continue-on-error: true
         run: |
           set +e
           sudo timeout --kill-after=10 120 apt-get update -o Dir::Etc::sourceparts="-" \
@@ -168,16 +176,28 @@ jobs:
             tail -n 20 /tmp/ffkey-update.log
             exit 0
           fi
-          uris=$(apt-get install -y --no-install-recommends --print-uris ffmpeg 2>/dev/null | grep "^'" | sort)
-          if [ -z "$uris" ]; then
-            echo "::warning::ffmpeg cache NOT used: --print-uris listed no packages; the install below runs uncached"
+          echo "updated=yes" >> "$GITHUB_OUTPUT"      # the install reuses THIS index, so the manifest cannot drift from it
+          timeout 30 apt-get install -y --no-install-recommends --print-uris \
+            -o Acquire::ForceHash=SHA256 ffmpeg > /tmp/ffkey-uris.txt 2>/tmp/ffkey-uris.err
+          rc=$?
+          # `'URI' FILENAME SIZE SHA256:<hex>` -> `FILENAME <hex>`
+          grep "^'" /tmp/ffkey-uris.txt | awk '{h=$4; sub(/^SHA256:/,"",h); if ($4 ~ /^SHA256:/) print $2, h}' \
+            | sort > "$HOME/ffmpeg-manifest.txt"
+          listed=$(grep -c "^'" /tmp/ffkey-uris.txt)
+          kept=$(wc -l < "$HOME/ffmpeg-manifest.txt")
+          if [ "$rc" -ne 0 ] || [ "$listed" -eq 0 ] || [ "$kept" -ne "$listed" ]; then
+            echo "::warning::ffmpeg cache NOT used: --print-uris exited $rc, listed $listed file(s), $kept with a SHA256; the install below runs uncached"
+            cat /tmp/ffkey-uris.err
+            rm -f "$HOME/ffmpeg-manifest.txt"
             exit 0
           fi
-          echo "ffmpeg's package set: $(printf '%s\n' "$uris" | wc -l) file(s)"
-          echo "key=ffmpeg-debs-$(printf '%s\n' "$uris" | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+          echo "ffmpeg's package set: $kept file(s), each with its SHA256 from this run's signed index"
+          echo "key=ffmpeg-debs-$(sha256sum < "$HOME/ffmpeg-manifest.txt" | cut -c1-32)" >> "$GITHUB_OUTPUT"
       - name: Restore the ffmpeg packages (backlog #358)
         id: ffcache
         if: steps.ffkey.outputs.key != ''
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: ~/ffmpeg-debs
@@ -185,6 +205,7 @@ jobs:
       - name: Install ffmpeg (required by the slide-crop tests)
         timeout-minutes: 20
         env:
+          FFKEY_UPDATED: ${{ steps.ffkey.outputs.updated }}
           FFMPEG_ATTEMPTS: 3
           APT_UPDATE_LIMIT_S: 120
           APT_DOWNLOAD_LIMIT_S: 150
@@ -223,13 +244,24 @@ jobs:
             esac
             return 1
           }
-          # backlog #358: restored .debs go where apt looks first; a hit makes the download below fetch nothing.
-          if compgen -G "$HOME/ffmpeg-debs/*.deb" > /dev/null; then
-            sudo cp "$HOME"/ffmpeg-debs/*.deb /var/cache/apt/archives/
-            echo "ffmpeg cache: restored $(ls "$HOME"/ffmpeg-debs/*.deb | wc -l) package(s)"
+          # backlog #358: a restored .deb reaches apt's cache ONLY if its SHA256 matches this run's signed index
+          # (the key step's manifest) — apt itself would accept any file of the right SIZE.
+          if [ -s "$HOME/ffmpeg-manifest.txt" ] && compgen -G "$HOME/ffmpeg-debs/*.deb" > /dev/null; then
+            ok=0; bad=0
+            while read -r name want; do
+              f="$HOME/ffmpeg-debs/$name"
+              [ -f "$f" ] || continue
+              if [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$want" ]; then
+                sudo cp "$f" /var/cache/apt/archives/ && ok=$((ok+1))
+              else
+                bad=$((bad+1))
+              fi
+            done < "$HOME/ffmpeg-manifest.txt"
+            echo "ffmpeg cache: restored $ok package(s) verified against the signed index; $bad rejected"
+            [ "$bad" -eq 0 ] || echo "::warning::ffmpeg cache: $bad restored file(s) did not match the signed index and were NOT used"
           fi
           lock=(-o DPkg::Lock::Timeout="$DPKG_LOCK_WAIT_S")
-          updated=no
+          updated="${FFKEY_UPDATED:-no}"           # backlog #358: the key step's index, so nothing drifts from its manifest
           downloaded=no
           why=""
           for attempt in $(seq 1 "$FFMPEG_ATTEMPTS"); do
@@ -258,9 +290,13 @@ jobs:
           if [ "$downloaded" != yes ]; then
             cannot_run "all $FFMPEG_ATTEMPTS attempts failed; the last: $why. Re-run the job."
           fi
-          # backlog #358: keep exactly what this run downloaded, for the save step below.
-          mkdir -p "$HOME/ffmpeg-debs"
-          cp /var/cache/apt/archives/*.deb "$HOME/ffmpeg-debs/" 2>/dev/null || true
+          # backlog #358: keep exactly the manifest's files, for the save step below.
+          if [ -s "$HOME/ffmpeg-manifest.txt" ]; then
+            mkdir -p "$HOME/ffmpeg-debs"
+            while read -r name _; do
+              [ -f "/var/cache/apt/archives/$name" ] && cp "/var/cache/apt/archives/$name" "$HOME/ffmpeg-debs/"
+            done < "$HOME/ffmpeg-manifest.txt"
+          fi
           if ! bounded "$APT_INSTALL_LIMIT_S" "installing ffmpeg from the local package cache (dpkg, --no-download, after the download completed)" \
                apt-get install -y --no-install-recommends --no-download "${lock[@]}" ffmpeg
           then
@@ -272,6 +308,8 @@ jobs:
 
       - name: Save the ffmpeg packages (backlog #358)
         if: steps.ffkey.outputs.key != '' && steps.ffcache.outputs.cache-hit != 'true'
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: ~/ffmpeg-debs
