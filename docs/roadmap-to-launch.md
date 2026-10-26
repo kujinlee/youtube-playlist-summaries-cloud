@@ -2487,6 +2487,8 @@ the work now:
       and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
 - [x] **backlog #354** — `check-merge-ready` misses TypeScript gates (`process.exit(1)` -> `0` in
   `check-service-confinement.ts` prints READY). XS fix: `.ts/.js` in `GATE_CODE`, `process.exit`/`throw` in `FAIL_PATH`.
+- [ ] **backlog #355** — `check-merge-ready` HOLDs a line that only GAINED arguments near a failure path (PR #400's
+  `shard=shard)`). A false hold, fails closed; fix only if the replay shows it recurs.
 - [x] **backlog #353** — `check-merge-ready` reads paths from git's machine format (`--name-status -z -M`), not
   patch headers — fixed on PR #399 before merge, at the owner's call. Real-git self-test covers every shape found.
 - [ ] **backlog #334** — a declined escalation must pre-commit the observation that would reverse it.
