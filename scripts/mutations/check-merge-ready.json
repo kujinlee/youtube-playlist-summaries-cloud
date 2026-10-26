@@ -235,8 +235,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):",
-    "if any(j == i and FAIL_PATH.search(w[1:]) for j, w in code):"
+    "if any(abs(j - i) <= k and fail.search(w[1:]) for j, w in code):",
+    "if any(j == i and fail.search(w[1:]) for j, w in code):"
    ]
   ],
   "expect": [
@@ -274,8 +274,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        # ⟳ r9",
-    "        if False:\n            continue\n        # ⟳ r9"
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        fail =",
+    "        if False:\n            continue\n        fail ="
    ]
   ],
   "expect": [
@@ -877,8 +877,8 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh)|",
-    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh)|"
+    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|",
+    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|"
    ]
   ],
   "expect": [
@@ -965,6 +965,101 @@
   ],
   "expect": [
    "⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)"
+  ]
+ },
+ {
+  "name": "backlog #354: GATE_CODE reads only .py/.sh under scripts/, so a TypeScript gate is not gate code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(scripts/[^/]+\\.(py|sh|ts|mts|cts|js|mjs|cjs)|",
+    "(scripts/[^/]+\\.(py|sh)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+   "...and so is an `.mjs` gate's `throw` turned into a `console.error`",
+   "...and `process.exitCode = 1` dropped",
+   "⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's process.exit(<non-zero>) is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|process\\.exit\\((?!\\s*0?\\s*\\))|process\\.exitCode",
+    "|process\\.exitCode"
+   ]
+  ],
+  "expect": [
+   "⭐ a `.ts` gate's `process.exit(1)` turned into `process.exit(0)` is a loosening (backlog #354)",
+   "⭐ real git (backlog #354): a TypeScript gate's `process.exit(1)` -> `0` is held"
+  ]
+ },
+ {
+  "name": "backlog #354: process.exit(...) of ANY argument is a failure path, so process.exit(0) removed holds",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|process\\.exit\\((?!\\s*0?\\s*\\))|",
+    "|process\\.exit\\(|"
+   ]
+  ],
+  "expect": [
+   "...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "backlog #354: the exitCode lookahead backtracks over the space, so `exitCode = 0` reads as a failure",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "process\\.exitCode\\s*=(?!\\s*0\\b)",
+    "process\\.exitCode\\s*=\\s*(?!0\\b)"
+   ]
+  ],
+  "expect": [
+   "...but `process.exit(0)`, `process.exit()` and `process.exitCode = 0` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "backlog #354: a non-zero process.exitCode is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|process\\.exitCode\\s*=(?!\\s*0\\b)\"",
+    "\""
+   ]
+  ],
+  "expect": [
+   "...and `process.exitCode = 1` dropped"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's `throw` is not a failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                            r\"|\\bthrow\\b\")",
+    "                            r\"\")"
+   ]
+  ],
+  "expect": [
+   "...and so is an `.mjs` gate's `throw` turned into a `console.error`"
+  ]
+ },
+ {
+  "name": "backlog #354: Node's idioms are read in EVERY gate, so a Python gate's JS stub string holding `throw` holds",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "fail = NODE_FAIL_PATH if any(NODE_SRC.search(p) for p in _paths(f)) else FAIL_PATH",
+    "fail = NODE_FAIL_PATH"
+   ]
+  ],
+  "expect": [
+   "...but a Python gate's JS stub string holding `throw` is not a failure path (PR #397's shape)"
   ]
  }
 ]

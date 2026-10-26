@@ -17585,3 +17585,16 @@ the unscoped local sweep refused after 12s; `--only scripts/check-merge-ready.py
 mutations (117 -> 131; review r1 also re-bound four anchors this branch had orphaned), each killed by its named case over a green control (in memory — the full
 131-entry run is itself past the budget, so it is CI's). `dev-process.md`'s `check-plan-code` row now
 states the rule and the draft-PR-at-slice-start practice; the push memory no longer forbids a draft.
+
+
+## 2026-10-26
+The merge rule now reads the project's TypeScript and JavaScript checks as checks. Before this, one
+of them could be switched to always pass and the rule would still have called the pull request
+ready. It now holds that change for the owner, and it holds no more of the last forty merges than it
+did before.
+<!--tech-->
+Branch `backlog-354-ts-gates` (backlog #354). `check-merge-ready.py`: `GATE_CODE` gains
+`ts|mts|cts|js|mjs|cjs` under `scripts/`; `NODE_FAIL_PATH` = `FAIL_PATH` + `process.exit(<non-zero>)`,
+`process.exitCode = <non-zero>` and `throw`, chosen per file by `NODE_SRC` — applied to every gate it
+newly held PR #397 (a `throw` inside a JS stub string in `page_chrome.py`). Replay 11/40 before and after.
+206 cases; 7 mutations (75 -> 82, total 2105 -> 2112), scoped run 82/82 killed and attributed.

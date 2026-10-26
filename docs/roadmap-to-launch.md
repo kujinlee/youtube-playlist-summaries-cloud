@@ -2485,7 +2485,7 @@ the work now:
 - [ ] **backlog #333** — the sweep's shards are imbalanced ~2x in wall-clock against a predicted
       1.15x, and the sweep IS the critical path: verify→`mutation-sweep-complete` is **19–23 min**
       and that context is a REQUIRED check. Balance is worth ~10 min; a larger N is not.
-- [ ] **backlog #354** — `check-merge-ready` misses TypeScript gates (`process.exit(1)` -> `0` in
+- [x] **backlog #354** — `check-merge-ready` misses TypeScript gates (`process.exit(1)` -> `0` in
   `check-service-confinement.ts` prints READY). XS fix: `.ts/.js` in `GATE_CODE`, `process.exit`/`throw` in `FAIL_PATH`.
 - [x] **backlog #353** — `check-merge-ready` reads paths from git's machine format (`--name-status -z -M`), not
   patch headers — fixed on PR #399 before merge, at the owner's call. Real-git self-test covers every shape found.
