@@ -174,5 +174,797 @@
    ]
   ],
   "expect": "a refusing gate whose own escape is granted says nothing"
+ },
+ {
+  "name": "the baseline exception matches nothing",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "BASELINE_FILE = re.compile(r\"^docs/reviews/.*baseline\\.json$\")",
+    "BASELINE_FILE = re.compile(r\"^$\")"
+   ]
+  ],
+  "expect": [
+   "a pinned baseline edit is a loosening (decision-scheme)",
+   "a pinned baseline edit is a loosening (other)"
+  ]
+ },
+ {
+  "name": "a pin that drops is read as a rise",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if path in new and new[path] < old[path]:",
+    "if path in new and new[path] > old[path]:"
+   ]
+  ],
+  "expect": [
+   "a mutation pin that DROPS 128 -> 125 is a loosening",
+   "a mutation pin that DROPS 30 -> 2 is a loosening"
+  ]
+ },
+ {
+  "name": "a falling mutation total is ignored",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if ot and nt and nt[0] < ot[0]:",
+    "if ot and nt and nt[0] > ot[0]:"
+   ]
+  ],
+  "expect": [
+   "a declared mutation total that drops 2021 -> 2017 is a loosening"
+  ]
+ },
+ {
+  "name": "a falling self-test count is ignored",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if oc and nc and nc[0] < oc[0]:",
+    "if False:"
+   ]
+  ],
+  "expect": [
+   "a declared self-test count that drops 274 -> 271 is a loosening",
+   "a declared self-test count that drops 9 -> 1 is a loosening"
+  ]
+ },
+ {
+  "name": "the failure-path window shrinks to the removed line itself",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):",
+    "if any(j == i and FAIL_PATH.search(w[1:]) for j, w in code):"
+   ]
+  ],
+  "expect": [
+   "⭐ a check entry REMOVED from beside a fails list is a loosening (PR #398's shape)"
+  ]
+ },
+ {
+  "name": "a moved line is counted as a removal",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "                if l[1:].rstrip() in readded:\n                    readded.remove(l[1:].rstrip())\n                    continue\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "...but the SAME line MOVED (removed and re-added) is not"
+  ]
+ },
+ {
+  "name": "comment lines count on the failure path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]",
+    "code = list(enumerate(old_side))"
+   ]
+  ],
+  "expect": [
+   "...and a removed COMMENT beside a fails list is not"
+  ]
+ },
+ {
+  "name": "the failure-path rule reaches non-gate scripts",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not any(GATE_CODE.match(p) for p in _paths(f)):\n            continue\n        # ⟳ r9",
+    "        if False:\n            continue\n        # ⟳ r9"
+   ]
+  ],
+  "expect": [
+   "...and the same removal in a NON-gate script is not"
+  ]
+ },
+ {
+  "name": "a migration is not held for a deploy",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "migs = [f for f in files if MIGRATION.match(f)]",
+    "migs = []"
+   ]
+  ],
+  "expect": [
+   "a migration needs a deploy first (0028_x.sql)",
+   "a migration needs a deploy first (0099_y.sql)"
+  ]
+ },
+ {
+  "name": "a NO-REVIEW waiver is not held",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if no_review:\n        out.append(",
+    "    if False:\n        out.append("
+   ]
+  ],
+  "expect": [
+   "a NO-REVIEW waiver is held"
+  ]
+ },
+ {
+  "name": "a local test run at ANY head clears app code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if app and (head is None or app_tests_at != head):",
+    "if app and (head is None or app_tests_at is None):"
+   ]
+  ],
+  "expect": [
+   "...but NOT by a run at a DIFFERENT head"
+  ]
+ },
+ {
+  "name": "NOT READY no longer beats a hold",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if code != 0 or not holds:\n        return code, line",
+    "    if not holds:\n        return code, line"
+   ]
+  ],
+  "expect": [
+   "...NOT READY wins over a hold",
+   "...CANNOT RUN wins over a hold"
+  ]
+ },
+ {
+  "name": "main() computes the holds and never applies them",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    code, line = final_verdict(code, line, holds)\n",
+    ""
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR that edits a pinned baseline, rc=3, naming why",
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
+ },
+ {
+  "name": "main() never reads the NO-REVIEW waiver",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "nr = granted_escapes(body_file.read_text()).get(\"NO-REVIEW:\") is not None",
+    "nr = False"
+   ]
+  ],
+  "expect": [
+   "⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3"
+  ]
+ },
+ {
+  "name": "r1: a DELETED gate's removals are dropped again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"old\"] = _side(line[4:], \"a/\")",
+    "            cur[\"old\"] = None"
+   ]
+  ],
+  "expect": [
+   "⭐ DELETING a gate script outright is a loosening",
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "r1: distance counted over the combined diff, added lines included",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "old_side = [l for l in hk if not l.startswith(\"+\")]",
+    "old_side = hk"
+   ]
+  ],
+  "expect": [
+   "⭐ six ADDED comment lines do not push an adjacent removal out of the window",
+   "...nor do eight added CODE lines"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets a hook's deny",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|SystemExit\\(|\\bdeny\\b|\\braise\\b|\\bassert\\b\")",
+    "|SystemExit\\(|\\braise\\b|\\bassert\\b\")"
+   ]
+  ],
+  "expect": [
+   "a hook's removed `deny` is a loosening",
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets exit 2",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\bexit\\s+-?[1-9]\\d*\\b\"",
+    "\\bexit\\s+1\\b\""
+   ]
+  ],
+  "expect": [
+   "...and so is a hook's `exit 2` turned into `exit 0`"
+  ]
+ },
+ {
+  "name": "FAIL_PATH forgets a failures tally",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\bfails\\b|\\bfailures?\\b|",
+    "\\bfails\\b|"
+   ]
+  ],
+  "expect": [
+   "...nor do eight added CODE lines"
+  ]
+ },
+ {
+  "name": "GATE_CODE sees only top-level hooks",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|\\.claude/hooks/.+)$\")",
+    "|\\.claude/hooks/[^/]+)$\")"
+   ]
+  ],
+  "expect": [
+   "...and so is deleting a hook in a subdirectory"
+  ]
+ },
+ {
+  "name": "gate callers are never read",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not any(GATE_CALLER.match(p) for p in _paths(f)):\n",
+    "        if True:\n"
+   ]
+  ],
+  "expect": [
+   "⭐ a CI step that runs a check, removed, is a loosening",
+   "...and so is a hook dropped from settings.json"
+  ]
+ },
+ {
+  "name": "a MOVED gate invocation counts as dropped",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    " and r not in back]",
+    "]"
+   ]
+  ],
+  "expect": [
+   "...but the same CI line MOVED is not"
+  ]
+ },
+ {
+  "name": "every removed caller line counts, gate or not",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if GATE_REF.search(r) and r not in back",
+    "if r not in back"
+   ]
+  ],
+  "expect": [
+   "...nor a removed CI line that names no gate"
+  ]
+ },
+ {
+  "name": "a deleted or renamed pin is not a drop",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        elif path not in new:",
+    "        elif False:"
+   ]
+  ],
+  "expect": [
+   "a mutation pin DELETED is a loosening",
+   "...and so is one renamed to another key"
+  ]
+ },
+ {
+  "name": "main() holds on NO-ENTRY instead of NO-REVIEW",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    ".get(\"NO-REVIEW:\") is not None",
+    ".get(\"NO-ENTRY:\") is not None"
+   ]
+  ],
+  "expect": [
+   "⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)"
+  ]
+ },
+ {
+  "name": "r2: a rename keeps only the destination path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return [p for p in (f[\"old\"], f[\"new\"]) if p]",
+    "    return [p for p in (f[\"new\"],) if p]"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate RENAMED out of scope with `return 1` -> `return 0` is a loosening (failure path)",
+   "...and so is a hook moved into docs/ with its `deny` dropped"
+  ]
+ },
+ {
+  "name": "r2: scope exits are never consulted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    for exit_ in scope_exits(diff, fs):",
+    "    for exit_ in []:"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow MOVED out of .github/workflows/ with no hunk at all is a loosening",
+   "a deleted workflow is a scope exit",
+   "...and the rename itself is a scope exit"
+  ]
+ },
+ {
+  "name": "r2: a comment counts as a gate invocation",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if l.startswith(sign) and l[1:].strip() and not is_comment(l[1:])]",
+    "if l.startswith(sign) and l[1:].strip()]"
+   ]
+  ],
+  "expect": [
+   "⭐ a reworded workflow COMMENT naming a check is not a dropped invocation (r2 false HOLD)",
+   "...nor a reworded shell comment in check-schema-gates.sh"
+  ]
+ },
+ {
+  "name": "r2: a rename WITHIN gate scope is treated as an exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "if not f[\"copy\"] and any(o and not n for o, n in zip(role(f[\"old\"]), role(f[\"new\"])))]",
+    "if not f[\"copy\"] and any(role(f[\"old\"]))]"
+   ]
+  ],
+  "expect": [
+   "...but a workflow renamed WITHIN .github/workflows/ is not",
+   "...but a check renamed to another check keeps its role"
+  ]
+ },
+ {
+  "name": "r3: git's C-quoted paths are not decoded",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    if len(p) >= 2 and p[0] == p[-1] == '\"':",
+    "    if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ a deleted workflow whose path git C-QUOTES (non-ASCII) is a scope exit"
+  ]
+ },
+ {
+  "name": "r3: the tab git appends after a spaced path is kept",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "field = field.split(\"\\t\")[0]",
+    "field = field"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate whose path has a SPACE (git appends a tab) still has its failure path read"
+  ]
+ },
+ {
+  "name": "r3: `deleted file mode` is ignored, so a binary deletion keeps its path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"new\"] = None              # r3",
+    "            pass              # r3"
+   ]
+  ],
+  "expect": [
+   "⭐ a BINARY-diffed workflow deleted (no `+++ /dev/null`) is a scope exit"
+  ]
+ },
+ {
+  "name": "r3: a copy is read as a rename",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            cur[\"copy\"] = line.startswith(\"copy \")",
+    "            cur[\"copy\"] = False"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow COPIED out leaves the source running, so it is not an exit"
+  ]
+ },
+ {
+  "name": "r3: a gate's ROLE collapses to 'some gate'",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "return (bool(p and GATE_CODE.match(p)), bool(p and GATE_CALLER.match(p)))",
+    "return (bool(p and (GATE_CODE.match(p) or GATE_CALLER.match(p))), False)"
+   ]
+  ],
+  "expect": [
+   "⭐ a workflow renamed INTO scripts/check-*.py keeps no workflow role, so it is an exit"
+  ]
+ },
+ {
+  "name": "#353 / r4: a GAINED role reads as an exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "any(o and not n for o, n in zip(",
+    "any(o != n for o, n in zip("
+   ]
+  ],
+  "expect": [
+   "real git: a check renamed so it GAINS a role is not an exit (r4 false HOLD)"
+  ]
+ },
+ {
+  "name": "#353: main() does not hand the machine list to the detectors",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "head, args.app_tests_passed, bool(nr), fs=fs)",
+    "head, args.app_tests_passed, bool(nr), fs=None)"
+   ]
+  ],
+  "expect": [
+   "⭐ main() takes paths from --name-status, not the patch header (a rename only the list shows)"
+  ]
+ },
+ {
+  "name": "#353: an ADDED file keeps an old path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(None, p) if k == \"A\"",
+    "(p, p) if k == \"A\""
+   ]
+  ],
+  "expect": [
+   "name_status reads a rename, an add and a delete"
+  ]
+ },
+ {
+  "name": "#353: an incomplete --name-status entry is not refused",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if not k or i + n > len(toks):",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "...and an incomplete --name-status entry"
+  ]
+ },
+ {
+  "name": "#353: changed_paths drops a renamed file's old path",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "for p in (e[\"old\"], e[\"new\"]) if p})",
+    "for p in (e[\"new\"],) if p})"
+   ]
+  ],
+  "expect": [
+   "changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)"
+  ]
+ },
+ {
+  "name": "r5: the patch is read WITH an external diff driver",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GIT_PLAIN = [\"--no-ext-diff\", ",
+    "GIT_PLAIN = ["
+   ]
+  ],
+  "expect": [
+   "real git: an external diff driver over a gate cannot hide its weakening",
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening"
+  ]
+ },
+ {
+  "name": "r6: blob_hunks diffs the wrong pair of blobs",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "old[1], new[1]]))",
+    "new[1], new[1]]))"
+   ]
+  ],
+  "expect": [
+   "⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots",
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening"
+  ]
+ },
+ {
+  "name": "r6: the blob diff is read without --text",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\"--no-color\", \"--text\", *GIT_PLAIN,",
+    "\"--no-color\", *GIT_PLAIN,"
+   ]
+  ],
+  "expect": [
+   "real git: a gate whose content holds a NUL byte still has its hunks read (--text)"
+  ]
+ },
+ {
+  "name": "r6: a gitlink is diffed as if it were a blob",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        return x is not None and x[0] != GITLINK",
+    "        return x is not None"
+   ]
+  ],
+  "expect": [
+   "blob_hunks: a gitlink on both sides has no hunks, and reads nothing"
+  ]
+ },
+ {
+  "name": "r6: no file's hunks are read at all",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "new_t.get(e[\"new\"]) if e[\"new\"] else None) if looked else []})",
+    "new_t.get(e[\"new\"]) if e[\"new\"] else None) if False else []})"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening",
+   "real git: a DELETED gate's failure path is read from its old blob"
+  ]
+ },
+ {
+  "name": "r6: files outside the gate roots are read too",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        looked = any(p.startswith(HUNK_ROOTS) for p in (e[\"old\"], e[\"new\"]) if p)",
+    "        looked = True"
+   ]
+  ],
+  "expect": [
+   "⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots"
+  ]
+ },
+ {
+  "name": "r6: an added blob reads as removed and a deleted one as added",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    oid, sign = (new[1], \"+\") if blob(new) else (old[1], \"-\")",
+    "    oid, sign = (new[1], \"-\") if blob(new) else (old[1], \"+\")"
+   ]
+  ],
+  "expect": [
+   "blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
+   "real git: a DELETED gate's failure path is read from its old blob"
+  ]
+ },
+ {
+  "name": "r7: git is read in TEXT mode (CR becomes LF)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        r = run(cmd, text=False)",
+    "        r = run(cmd)"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening"
+  ]
+ },
+ {
+  "name": "r7: as_text translates CR to LF",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return out.decode(\"utf-8\", \"surrogateescape\") if isinstance(out, bytes) else out",
+    "    return out.decode(\"utf-8\", \"surrogateescape\").replace(\"\\r\", \"\\n\") if isinstance(out, bytes) else out"
+   ]
+  ],
+  "expect": [
+   "as_text keeps a CR a CR (no newline translation) and passes text through",
+   "⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening"
+  ]
+ },
+ {
+  "name": "r7: a gate symlink's changed target is never consulted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if tgt in changed and tgt != path:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a symlink target is not normalised (`../` kept)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        tgt = posixpath.normpath(posixpath.join(",
+    "        tgt = (posixpath.join("
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a target's hunks are filed under the TARGET's name, not the gate's",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via\": tgt,",
+    "            fs.append({\"old\": tgt, \"new\": tgt, \"copy\": False, \"status\": \"M\", \"via\": tgt,"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a failed git command answers empty instead of raising",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PathsDisagree(f\"`{' '.join(cmd[:6])} …` exited {r.returncode}\")",
+    "            return \"\""
+   ]
+  ],
+  "expect": [
+   "git_reader RAISES on a failed command rather than answering empty"
+  ]
+ },
+ {
+  "name": "r8: a helper module outside `check-*` is not gate code",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "GATE_CODE = re.compile(r\"^(scripts/[^/]+\\.(py|sh)|",
+    "GATE_CODE = re.compile(r\"^(scripts/check-[^/]+\\.(py|sh)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a weakened HELPER module (not `check-*`) is a loosening — the gate imports it"
+  ]
+ },
+ {
+  "name": "r8: only statuses 1 and 2 count for sys.exit",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|sys\\.exit\\((?!\\s*(?:0|None)?\\s*\\))|",
+    "|sys\\.exit\\(\\s*[12]\\s*\\)|"
+   ]
+  ],
+  "expect": [
+   "⭐ a gate's `sys.exit(3)` turned into success is a loosening (any non-zero status)"
+  ]
+ },
+ {
+  "name": "r8: only returns of 1 and 2 count",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "\\breturn\\s+-?[1-9]\\d*\\b|",
+    "\\breturn\\s+[12]\\b|"
+   ]
+  ],
+  "expect": [
+   "...and so is a `return 7`"
+  ]
+ },
+ {
+  "name": "r9: a move is compared without its indentation again",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        readded = [l[1:].rstrip() for hk in f[\"hunks\"] for l in hk",
+    "        readded = [l[1:].strip() for hk in f[\"hunks\"] for l in hk"
+   ],
+   [
+    "                if l[1:].rstrip() in readded:\n                    readded.remove(l[1:].rstrip())",
+    "                if l[1:].strip() in readded:\n                    readded.remove(l[1:].strip())"
+   ]
+  ],
+  "expect": [
+   "⭐ `return 1` pushed under a new `if verbose:` is NOT a move — it is a loosening"
+  ]
+ },
+ {
+  "name": "r9: `raise` is not a failure statement",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "|\\bdeny\\b|\\braise\\b|\\bassert\\b\")",
+    "|\\bdeny\\b|\\bassert\\b\")"
+   ]
+  ],
+  "expect": [
+   "...and a `raise` turned into a `print`"
+  ]
+ },
+ {
+  "name": "r10: sys.exit's argument is not inspected (0 / None / nothing count as failures)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "(?!\\s*(?:0|None)?\\s*\\))",
+    ""
+   ]
+  ],
+  "expect": [
+   "...but `sys.exit(0)`, `sys.exit()` and `sys.exit(None)` removed are not failure statements"
+  ]
+ },
+ {
+  "name": "r10: main() catches only PathsDisagree, so an unexpected error crashes",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash",
+    "    except PathsDisagree as exc:"
+   ]
+  ],
+  "expect": [
+   "⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)"
+  ]
  }
 ]

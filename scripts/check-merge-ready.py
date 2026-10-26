@@ -3,7 +3,12 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 74 cases
+    python3 scripts/check-merge-ready.py --self-test # 199 cases
+    python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
+                                                 # test:integration + test:e2e run at that head
+
+    0 = READY   1 = NOT READY   2 = CANNOT RUN   3 = HOLD (ready, but a house-rule exception
+    applies: do NOT merge, tell the owner — see `hold_reasons`)
 
 ⛔ WHY THIS EXISTS, MEASURED 2026-09-20. Twice in one day a branch was declared "ready to merge"
 on the strength of a local gate sweep, and twice CI refused it. Both times the refusal was
@@ -43,7 +48,10 @@ import argparse
 import functools
 import importlib.util
 import json
+import os
+import posixpath
 import re
+import shutil
 import subprocess
 import tempfile
 import sys
@@ -414,7 +422,15 @@ def ci_conclusion(checks: list[dict]) -> tuple[int, str]:
 
 # ── THE FETCH, impure ─────────────────────────────────────────────────────────────────────────
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, **kw)
+    kw.setdefault("text", True)
+    return subprocess.run(cmd, capture_output=True, cwd=ROOT, **kw)
+
+
+def as_text(out) -> str:
+    """git's output as text WITHOUT newline translation — r7: text mode turned a `\\r` in a path into
+    `\\n`, so `check-a\\r.py` and `check-a\\n.py` became one key and one file's blob stood in for the
+    other's. Bytes in, `surrogateescape` out: reversible, and a CR stays a CR."""
+    return out.decode("utf-8", "surrogateescape") if isinstance(out, bytes) else out
 
 
 def _pr_number(explicit: int | None) -> tuple[int | None, str]:
@@ -459,6 +475,424 @@ def _dashboard_gate():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+# ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) ──────────────────────────────────────────────────
+# ⛔ THE OWNER'S RULE, set 2026-10-25: *merge when READY, unless the PR loosens a gate, needs a
+# deploy first, relied on a NO-REVIEW waiver, or changed app code without the local integration
+# and end-to-end tests* — and on an exception, HOLD and tell the owner. The three readings were
+# chosen on a selection card AGAINST MEASURED BASE RATES over the 30 merged PRs before it: "any
+# gate-file edit" would have held 18/30 and was rejected; LOOSENING holds 5/30 including PR #398;
+# NO-REVIEW 8/30 (0 of the last 14); app code and migrations 0/30.
+# ⛔ THE DETECTOR IS SYNTACTIC, AND REVIEW IS THE PRIMARY PROTECTION (owner's ruling, r8 card A). A
+# PR reaches READY only after its review rounds; this stage is a second net for loosenings that
+# leave TEXT on a failure path. A SEMANTIC loosening — a condition removed far above the loop that
+# fails on it, a threshold changed, a helper's meaning changed without failure-path text — is
+# outside what a diff rule can see, and is stated here rather than chased.
+# ⚠ LOOSENING IS DETECTED BY PROXIES, and they are bounds, not a proof. A weakening that lowers no
+# pin or count, edits no baseline, removes no line on a failure path and drops no gate invocation
+# merges as READY. ⚠ They target an HONEST change, not an evasion: a failure line re-added inside
+# dead code reads as a MOVE, a removal more than FAIL_WINDOW source lines from any failure word
+# is outside the window, and a gate whose failure path uses none of FAIL_PATH's idioms is unseen.
+HOLD_RC = 3
+BASELINE_FILE = re.compile(r"^docs/reviews/.*baseline\.json$")
+PIN_LINE = re.compile(r'^\s*"(?P<path>scripts/[^"]+)":\s*(?P<n>\d+),')
+PIN_TOTAL = re.compile(r"sum\(EXPECTED_MUTATIONS\.values\(\)\),\s*(?P<n>\d+)\)")
+CASE_COUNT = re.compile(r"--self-test\s*#\s*(?P<n>\d+) cases")
+# A line on a failure path: the FAIL word, a fails/failures tally, a non-zero exit, or a hook's
+# `deny` — r1 CLAUDE H3: the hooks block with `deny "…"` and `exit 2`, and the first pattern saw neither.
+# ⟳ r8/r9 (HONEST): ANY non-zero integer status (3, 10, -1), and `raise` / `assert` — a validation
+# exception turned into a `print` lets execution continue. Measured cost: 9 -> 10 of 40 PRs.
+# ⟳ r10: `sys.exit(<anything but 0 / None / nothing>)` — `sys.exit("invalid input")` exits 1.
+FAIL_PATH = re.compile(r"\bFAIL\b|\bfails\b|\bfailures?\b|\breturn\s+-?[1-9]\d*\b|\bexit\s+-?[1-9]\d*\b"
+                       r"|sys\.exit\((?!\s*(?:0|None)?\s*\))|SystemExit\(|\bdeny\b|\braise\b|\bassert\b")
+# ⟳ r8 (HONEST): EVERY script, not only `check-*` — a gate's logic moved into a helper it imports
+# (`scripts/gate_logic.py`) changes the gate without touching it. Measured cost: 8 -> 9 of 40 PRs.
+GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh)|scripts/ci/.+|\.claude/hooks/.+)$")
+# Where a gate is INVOKED rather than written (r1 CLAUDE M1): dropping the line that runs a check
+# disables it without touching the check. A removed line here naming a gate, not re-added, holds.
+GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json"
+                         r"|scripts/check-schema-gates\.sh|scripts/ci/.+)$")
+GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate")
+MIGRATION = re.compile(r"^supabase/migrations/")
+APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
+
+
+def _unquote(p: str) -> str:
+    """PURE. Undo git's C-quoting — r3: `"a/gat\\303\\251.yml"` parsed to None and its deletion was READY."""
+    if len(p) >= 2 and p[0] == p[-1] == '"':
+        return p[1:-1].encode("ascii", "backslashreplace").decode("unicode_escape").encode("latin-1").decode("utf-8", "replace")
+    return p
+
+
+def _side(field: str, prefix: str) -> str | None:
+    """PURE. One `---`/`+++`/header path: unquoted, its tab delimiter cut (r3: git appends a TAB after
+    a path containing a space, and the kept tab made `GATE_CODE` miss it), and its `a/`/`b/` dropped.
+    `/dev/null` is None."""
+    if not field.startswith('"'):
+        field = field.split("\t")[0]
+    field = _unquote(field)
+    return field[len(prefix):] if field.startswith(prefix) else None
+
+
+class PathsDisagree(ValueError):
+    """The machine path list and the patch text do not describe the same files."""
+
+
+def name_status(z: str) -> list[dict]:
+    """PURE. `git diff --name-status -z -M` -> [{status, old, new, copy}], one per changed file.
+
+    ⛔ BACKLOG #353, THE CLASS FIX. Four review rounds found a new path shape each time — C-quoting,
+    a tab after a spaced path, a binary deletion with no `+++`, a ` b/` inside a path, literal
+    Unicode under `core.quotePath=false` — because paths were recovered from the HUMAN format.
+    This format is for programs: NUL-separated, never quoted, never tab-delimited, and the status
+    letter says outright what happened (A, D, M, T, R<score> old new, C<score> old new)."""
+    toks = z.split("\0")
+    if toks and toks[-1] == "":
+        toks.pop()
+    out, i = [], 0
+    while i < len(toks):
+        st = toks[i]
+        k, n = st[:1], (3 if st[:1] in ("R", "C") else 2)
+        if not k or i + n > len(toks):
+            raise PathsDisagree(f"--name-status entry {st!r} at token {i} is incomplete")
+        if k in ("R", "C"):
+            old, new = toks[i + 1], toks[i + 2]
+        else:
+            p = toks[i + 1]
+            old, new = (None, p) if k == "A" else (p, None) if k == "D" else (p, p)
+        out.append({"status": k, "old": old, "new": new, "copy": k == "C"})
+        i += n
+    return out
+
+
+def diff_files(diff: str) -> list[dict]:
+    """PURE. THE ONE DIFF PARSER — every loosening detector reads this and parses nothing itself.
+
+    Per file in a `git diff` text: `old` and `new` path (None for `/dev/null`), and `hunks`, each a
+    list of raw `+`/`-`/` ` lines. A pure rename or a mode change has paths and no hunks.
+    ⛔ REDESIGN after r2's lost bet: there were TWO parsers, each deciding paths and comments for
+    itself. r1's deletion fix landed in both by hand; r2 then found a RENAME lost by both (each
+    kept only the destination) and comments filtered in one and not the other — one rule,
+    implemented twice, drifting. Paths are decided here and comments by `is_comment`, once.
+    """
+    out: list[dict] = []
+    cur, hunk = None, None
+    for line in diff.split("\n"):
+        if line.startswith("diff --git "):
+            m = re.match(r'diff --git ("(?:[^"\\]|\\.)*"|a/.+?) ("(?:[^"\\]|\\.)*"|b/.+)$', line)
+            o, n = (_side(m[1], "a/"), _side(m[2], "b/")) if m else (None, None)
+            cur, hunk = {"old": o, "new": n, "hunks": [], "copy": False}, None
+            out.append(cur)
+        elif cur is None:
+            continue
+        elif hunk is None and line.startswith(("rename from ", "copy from ")):
+            cur["old"] = _unquote(line.split(" ", 2)[2])
+            cur["copy"] = line.startswith("copy ")
+        elif hunk is None and line.startswith(("rename to ", "copy to ")):
+            cur["new"] = _unquote(line.split(" ", 2)[2])
+        elif hunk is None and line.startswith("deleted file mode"):
+            cur["new"] = None              # r3: a BINARY deletion has no `+++ /dev/null` to say so
+        elif hunk is None and line.startswith("new file mode"):
+            cur["old"] = None
+        elif hunk is None and line.startswith("--- "):
+            cur["old"] = _side(line[4:], "a/")
+        elif hunk is None and line.startswith("+++ "):
+            cur["new"] = _side(line[4:], "b/")
+        elif line.startswith("@@"):
+            hunk = []
+            cur["hunks"].append(hunk)
+        elif hunk is not None and line[:1] in ("+", "-", " "):
+            hunk.append(line)
+    return out
+
+
+def is_comment(text: str) -> bool:
+    """PURE. The ONE comment rule (Python, shell and YAML all use `#`)."""
+    return text.strip().startswith("#")
+
+
+def _paths(f: dict) -> list[str]:
+    return [p for p in (f["old"], f["new"]) if p]
+
+
+def _name(f: dict) -> str:
+    return f"{f['old']} -> {f['new']}" if f["old"] and f["new"] and f["old"] != f["new"] else (f["new"] or f["old"])
+
+
+def _code(f: dict, sign: str) -> list[str]:
+    """The stripped non-comment lines of one side (`-` removed, `+` added) of a file's hunks."""
+    return [l[1:].strip() for hk in f["hunks"] for l in hk
+            if l.startswith(sign) and l[1:].strip() and not is_comment(l[1:])]
+
+
+def diff_lines(diff: str, fs: list[dict] | None = None) -> dict[str, tuple[list[str], list[str]]]:
+    """PURE. {path: (removed, added)} — a VIEW of `diff_files`, keyed by the new path, or the old
+    one for a deletion. Raw lines, comments included: the pin and count readers match their own
+    patterns."""
+    out: dict[str, tuple[list[str], list[str]]] = {}
+    for f in (fs if fs is not None else diff_files(diff)):
+        key = f["new"] or f["old"]
+        if key is None:
+            continue
+        rm, ad = out.setdefault(key, ([], []))
+        for hk in f["hunks"]:
+            rm += [l[1:] for l in hk if l.startswith("-")]
+            ad += [l[1:] for l in hk if l.startswith("+")]
+    return out
+
+
+# How far from a failure-path line a removed line still counts as ON that path. ⚠ MEASURED, not
+# chosen: PR #398's real weakening — `("4 NO IMPROVEMENT", …)` leaving the FAIL loop — carries no
+# failure word itself and sits 4 lines above `fails.append`. Window 0 caught only its reworded
+# docstring; 5 catches the dispatch line too, and holds 5 of the 32 PRs before this rule.
+FAIL_WINDOW = 5
+
+
+def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None = None) -> dict[str, list[str]]:
+    """PURE. {gate: removed code lines within `k` lines of a failure-path line in the hunk}.
+
+    Reads a `git diff -U<k>` text. A file is a gate if EITHER path is (r2: a rename out of scope
+    kept only the destination). A comment line neither counts nor anchors, and a line added back
+    identically anywhere in the same file is a MOVE, not a removal. ⛔ Distance is in OLD-FILE
+    lines: r1 found six added comment lines pushed an adjacent removal out of the window, so an
+    added line has no position and cannot anchor — only the source as it WAS is measured.
+    """
+    out: dict[str, list[str]] = {}
+    for f in (fs if fs is not None else diff_files(diff)):
+        if not any(GATE_CODE.match(p) for p in _paths(f)):
+            continue
+        # ⟳ r9 (HONEST): a MOVE keeps its INDENTATION. Stripped comparison read `return 1` pushed under
+        # a new `if verbose:` as moved, cancelling a real removal — in Python indentation is meaning.
+        readded = [l[1:].rstrip() for hk in f["hunks"] for l in hk
+                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
+        for hk in f["hunks"]:
+            old_side = [l for l in hk if not l.startswith("+")]
+            code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
+            for i, l in code:
+                t = l[1:].strip()
+                if not l.startswith("-") or not t:
+                    continue
+                if l[1:].rstrip() in readded:
+                    readded.remove(l[1:].rstrip())
+                    continue
+                if any(abs(j - i) <= k and FAIL_PATH.search(w[1:]) for j, w in code):
+                    out.setdefault(_name(f), []).append(t)
+    return out
+
+
+def gate_invocation_removals(diff: str, fs: list[dict] | None = None) -> dict[str, list[str]]:
+    """PURE. {caller: removed non-comment lines naming a gate, not added back} — r1 CLAUDE M1.
+
+    ⛔ r2 CODEX M2: comments are excluded through `is_comment`, the same rule the failure path
+    uses, so a reworded comment naming a check is not a dropped invocation."""
+    out: dict[str, list[str]] = {}
+    for f in (fs if fs is not None else diff_files(diff)):
+        if not any(GATE_CALLER.match(p) for p in _paths(f)):
+            continue
+        back = _code(f, "+")
+        gone = [r for r in _code(f, "-") if GATE_REF.search(r) and r not in back]
+        if gone:
+            out[_name(f)] = gone
+    return out
+
+
+def scope_exits(diff: str, fs: list[dict] | None = None) -> list[str]:
+    """PURE. Gate files whose OLD path is in scope and whose new path is gone or out of scope —
+    deleted, or renamed where nothing runs it (r2 CODEX M1: a workflow moved out of
+    `.github/workflows/` stops running, and a pure rename carries no hunk for the others to see)."""
+    def role(p):
+        return (bool(p and GATE_CODE.match(p)), bool(p and GATE_CALLER.match(p)))
+    # ⛔ r3: the ROLE must survive, not just "some gate": a workflow renamed to `scripts/check-x.py`
+    # is still "a gate path" and no longer runs. A COPY leaves the source in place, so it never exits.
+    # ⟳ r4 XM3: an exit is a role LOST — `check-old.sh` -> `check-schema-gates.sh` GAINS the caller
+    # role and keeps the code role, which `!=` read as an exit.
+    return [f"{f['old']} is {'deleted' if f['new'] is None else 'renamed to ' + f['new']}"
+            for f in (fs if fs is not None else diff_files(diff))
+            if not f["copy"] and any(o and not n for o, n in zip(role(f["old"]), role(f["new"])))]
+
+
+def changed_paths(status: str) -> list[str]:
+    """PURE. Every path the machine list names, old and new — a baseline renamed AWAY still counts."""
+    return sorted({p for e in name_status(status) for p in (e["old"], e["new"]) if p})
+
+
+# What keeps git's output the PLAIN one whatever the reader's config says. `--no-ext-diff`: a
+# configured `diff.external` runs for EVERY diff, blob-to-blob included, and can print nothing.
+# `--no-relative`: paths from the root. (`--no-textconv` was here for r5's per-path patches and is
+# GONE with them: a blob diff has no path, so no attribute — textconv, `-diff` — can apply to it.)
+GIT_PLAIN = ["--no-ext-diff", "--no-relative"]
+
+
+def status_cmd(base: str) -> list[str]:
+    """The machine list of what changed — every file's status and exact paths (backlog #353)."""
+    return ["git", "--literal-pathspecs", "diff", "--name-status", "-z", "-M", *GIT_PLAIN,
+            f"{base}...HEAD"]
+
+
+# Hunks are read only where a detector looks: gate code and callers, the pins, the declared counts.
+# Everything else (app code, docs, images) is classified by PATH alone, so its bytes are never read.
+HUNK_ROOTS = ("scripts/", ".claude/", ".github/")
+GITLINK = "160000"
+SYMLINK = "120000"
+
+
+def tree_index(z: str) -> dict[str, tuple[str, str]]:
+    """PURE. `git ls-tree -r -z` -> {path: (mode, object id)}. NUL-separated, so paths are exact."""
+    out: dict[str, tuple[str, str]] = {}
+    for rec in z.split("\0"):
+        if rec:
+            meta, path = rec.split("\t", 1)
+            mode, _kind, oid = meta.split(" ")
+            out[path] = (mode, oid)
+    return out
+
+
+def patch_hunks(patch: str) -> list[list[str]]:
+    """PURE. Every hunk in a patch, its header lines ignored — the caller already knows the file."""
+    out: list[list[str]] = []
+    hunk = None
+    for line in patch.split("\n"):
+        if line.startswith("diff --git "):
+            hunk = None
+        elif line.startswith("@@"):
+            hunk = []
+            out.append(hunk)
+        elif hunk is not None and line[:1] in ("+", "-", " "):
+            hunk.append(line)
+    return out
+
+
+def blob_hunks(read, old: "tuple[str, str] | None", new: "tuple[str, str] | None") -> list[list[str]]:
+    """The hunks between two EXACT BLOBS — no path is involved, so no pathspec and no attribute can
+    change them (r6: a pathspec matched a DIRECTORY's descendants, and a `-diff` attribute turned a
+    gate's change into "Binary files differ" with no hunks — both FALSE READYs). `--text` forces
+    hunks even for content git would call binary. A gitlink is a commit, not a blob: no hunks."""
+    def blob(x):
+        return x is not None and x[0] != GITLINK
+    if not (blob(old) or blob(new)):
+        return []
+    if blob(old) and blob(new):
+        if old[1] == new[1]:
+            return []
+        return patch_hunks(read(["git", "diff", f"-U{FAIL_WINDOW}", "--no-color", "--text", *GIT_PLAIN,
+                                 old[1], new[1]]))
+    oid, sign = (new[1], "+") if blob(new) else (old[1], "-")
+    lines = read(["git", "cat-file", "blob", oid]).split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return [[sign + line for line in lines]] if lines else []
+
+
+def git_reader(run):
+    """The ONE way the house rule reads git, shared by `main()` and the real-git self-test: BYTES
+    (`text=False`) decoded by `as_text`, and a non-zero exit RAISES, which `main()` turns into
+    CANNOT RUN — never an empty answer."""
+    def read(cmd):
+        r = run(cmd, text=False)
+        if r.returncode != 0:
+            raise PathsDisagree(f"`{' '.join(cmd[:6])} …` exited {r.returncode}")
+        return as_text(r.stdout)
+    return read
+
+
+def gather(read, base: str) -> tuple[list[str], list[dict]]:
+    """(changed paths, one record per changed file) — what `main()` and the real-git self-test BOTH
+    use, so they cannot drift. `read(cmd)` returns a command's stdout or raises.
+
+    ⛔ THE THIRD FORM, and why the first two fell. r5: patch sections paired with the machine list
+    BY POSITION — a type change is one entry and two sections — gave a FALSE READY. r6: per-path
+    patches — a pathspec matches a directory's descendants, and attributes rewrite a path's patch —
+    gave two more. Now the list says WHICH files changed, both trees (read once, NUL-separated) say
+    which BLOB each side is, and the hunks are the diff of those two blobs. Ownership is by
+    construction, and nothing about a path, its attributes or a pathspec enters the hunks."""
+    mb = read(["git", "merge-base", base, "HEAD"]).strip()
+    st = read(status_cmd(base))
+    old_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", mb]))
+    new_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]))
+    fs = []
+    changed = set(changed_paths(st))
+    for e in name_status(st):
+        looked = any(p.startswith(HUNK_ROOTS) for p in (e["old"], e["new"]) if p)
+        fs.append({"old": e["old"], "new": e["new"], "copy": e["copy"], "status": e["status"],
+                   "hunks": blob_hunks(read, old_t.get(e["old"]) if e["old"] else None,
+                                       new_t.get(e["new"]) if e["new"] else None) if looked else []})
+    # ⛔ r7: a gate that is a SYMLINK runs its TARGET, which may live anywhere and change alone. Each
+    # gate symlink whose target changed gets that target's blob diff UNDER THE GATE'S NAME, so the
+    # detectors judge it as the gate. ⚠ One level: a target that is itself a link is not followed.
+    for path, (mode, oid) in sorted(new_t.items()):
+        if mode != SYMLINK or not (GATE_CODE.match(path) or GATE_CALLER.match(path)):
+            continue
+        tgt = posixpath.normpath(posixpath.join(posixpath.dirname(path), read(["git", "cat-file", "blob", oid])))
+        if tgt in changed and tgt != path:
+            fs.append({"old": path, "new": path, "copy": False, "status": "M", "via": tgt,
+                       "hunks": blob_hunks(read, old_t.get(tgt), new_t.get(tgt))})
+    return changed_paths(st), fs
+
+
+def hold_reasons(files: list[str], diff: str, head: str | None,
+                 app_tests_at: str | None, no_review: bool, fs: list[dict] | None = None) -> list[str]:
+    """PURE. Why a READY pull request must still be HELD for the owner. Empty = no exception.
+
+    `no_review` is the review gate's OWN matcher's answer for `NO-REVIEW:` (passed in, so the
+    rule stays pure and cannot disagree with the gate about where a waiver counts).
+    """
+    out: list[str] = []
+    per = diff_lines(diff, fs)
+    # 1. LOOSENS A GATE — six proxies, all reading `diff_files` through its views.
+    for f in files:
+        if BASELINE_FILE.match(f):
+            out.append(f"loosens a gate: {f} is a pinned baseline and this PR edits it")
+    removed, added = per.get("scripts/check-plan-code.py", ([], []))
+    old = {m["path"]: int(m["n"]) for m in map(PIN_LINE.match, removed) if m}
+    new = {m["path"]: int(m["n"]) for m in map(PIN_LINE.match, added) if m}
+    for path in sorted(old):
+        if path in new and new[path] < old[path]:
+            out.append(f"loosens a gate: the mutation pin for {path} drops {old[path]} -> {new[path]}")
+        elif path not in new:                       # r1 CLAUDE M2: deleted or renamed away
+            out.append(f"loosens a gate: the mutation pin for {path} ({old[path]}) is removed")
+    ot = [int(m["n"]) for m in map(PIN_TOTAL.search, removed) if m]
+    nt = [int(m["n"]) for m in map(PIN_TOTAL.search, added) if m]
+    if ot and nt and nt[0] < ot[0]:
+        out.append(f"loosens a gate: the declared mutation total drops {ot[0]} -> {nt[0]}")
+    for path, (rm, ad) in sorted(per.items()):
+        oc = [int(m["n"]) for m in map(CASE_COUNT.search, rm) if m]
+        nc = [int(m["n"]) for m in map(CASE_COUNT.search, ad) if m]
+        if oc and nc and nc[0] < oc[0]:
+            out.append(f"loosens a gate: {path} declares fewer self-test cases, {oc[0]} -> {nc[0]}")
+    for path, gone in sorted(failure_path_removals(diff, fs=fs).items()):
+        out.append(f"loosens a gate: {path} removes or rewrites {len(gone)} line(s) on a "
+                   f"failure path, e.g. {gone[0][:70]!r}")
+    for path, gone in sorted(gate_invocation_removals(diff, fs).items()):
+        out.append(f"loosens a gate: {path} drops or rewrites {len(gone)} gate invocation(s), "
+                   f"e.g. {gone[0][:70]!r}")
+    for exit_ in scope_exits(diff, fs):
+        out.append(f"loosens a gate: {exit_}, so nothing runs it as a gate any more")
+    # 2. NEEDS A DEPLOY FIRST.
+    migs = [f for f in files if MIGRATION.match(f)]
+    if migs:
+        out.append(f"needs a deploy first: {len(migs)} migration file(s), e.g. {migs[0]} — apply to "
+                   f"production before merging")
+    # 3. RELIED ON A WAIVER.
+    if no_review:
+        out.append("relied on a waiver: the body declares NO-REVIEW:, so no review covered the final tree")
+    # 4. APP CODE WITHOUT THE LOCAL TESTS — cleared only by a run pinned to THIS head.
+    app = [f for f in files if APP_CODE.match(f)]
+    if app and (head is None or app_tests_at != head):
+        # ⚠ SELF-ATTESTED (r1, both halves): the flag is a SHA compared to the head; nothing here
+        # runs the tests or reads their result. It pins WHICH tree the merger claims to have tested.
+        out.append(f"app code changed ({len(app)} file(s), e.g. {app[0]}) and nobody has attested "
+                   f"a local test:integration + test:e2e pass at this head — run both, then re-run "
+                   f"with --app-tests-passed {head or '<head sha>'} (an attestation; not verified)")
+    return out
+
+
+def final_verdict(code: int, line: str, holds: list[str]) -> tuple[int, str]:
+    """PURE. A HOLD applies only to an otherwise-READY PR; NOT READY and CANNOT RUN win."""
+    if code != 0 or not holds:
+        return code, line
+    return HOLD_RC, ("HOLD — ready by every gate, but the house rule's exceptions apply. Do NOT "
+                     "merge; tell the owner: " + "; ".join(holds))
 
 
 def granted_escapes(pr_body: str) -> dict[str, str | None]:
@@ -517,6 +951,8 @@ def escape_diagnosis(refused: list[str], granted: dict[str, str | None],
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pr", type=int, default=None)
+    ap.add_argument("--app-tests-passed", metavar="SHA", default=None,
+                    help="the PR head at which test:integration and test:e2e passed locally")
     args = ap.parse_args(argv)
 
     if not WORKFLOW.is_file():
@@ -634,8 +1070,32 @@ def main(argv: list[str]) -> int:
     print(f"  {MARK[code]} {'CI':18s} rc={code}  {note}")
 
     code, line = verdict(results)
+    # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
+    try:
+        files, fs = gather(git_reader(_run), BASE_REF)
+        gathered = True
+    except Exception as exc:              # r10: ANY collection error fails CLOSED, never a crash
+        code, line = 2, (f"CANNOT RUN — could not read the branch's diff ({exc.__class__.__name__}: {exc}), so the house "
+                         "rule's exceptions were NOT checked. Treat this as NOT RUN.")
+        holds, gathered = [], False
+    if gathered:
+        try:
+            nr = granted_escapes(body_file.read_text()).get("NO-REVIEW:") is not None
+        except Exception as exc:
+            nr = None
+            code, line = 2, (f"CANNOT RUN — the NO-REVIEW matcher failed ({exc.__class__.__name__}), "
+                             f"so the waiver exception was NOT checked. Treat this as NOT RUN.")
+        # Paths from the machine list — never `.split()` of `--name-only`, which cut a path
+        # containing a space into two "files"; hunks from each file's own patch.
+        holds = (hold_reasons(files, "", head, args.app_tests_passed, bool(nr), fs=fs)
+                 if nr is not None else [])
+    for h in holds:
+        print(f"  HOLD {h}")
+    code, line = final_verdict(code, line, holds)
     print()
     print(line)
+    if code == HOLD_RC:
+        return code
     if code:
         print("  ⚠ A local gate sweep cannot answer the pull-request-only checks above. That is "
               "why this script exists and why 'all my gates are green' is a different claim.")
@@ -893,6 +1353,481 @@ def _self_test() -> int:
           granted_escapes("    NO-ENTRY: x")[NE], None)
     check("the imported matcher refuses a fenced token",
           granted_escapes("```\nNO-ENTRY: x\n```")[NE], None)
+
+    # ── THE HOUSE RULE'S EXCEPTIONS (2026-10-25) — each fired by TWO DISTINCT inputs, and each
+    # with an ADJACENT input that must stay quiet, so no branch passes on one fixture's constant.
+    def DF(path, *hunk):
+        return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n"
+    def H(files=(), diff="", head="abc", at=None, nr=False):
+        return hold_reasons(list(files), diff, head, at, nr)
+    def _raises(fn, exc):
+        try:
+            fn()
+        except exc:
+            return True
+        except Exception:                 # the WRONG exception is a red case, not a crashed suite
+            return False
+        return False
+    def has(rs, word):
+        return any(word in r for r in rs)
+    check("no exception: an ordinary docs-and-script PR is not held", H(["docs/x.md", "scripts/foo.py"]), [])
+    for bl in ("docs/reviews/decision-scheme/baseline.json", "docs/reviews/other/baseline.json"):
+        check(f"a pinned baseline edit is a loosening ({bl.split('/')[2]})",
+              has(H([bl]), "pinned baseline"), True)
+    check("...but a file merely NAMED like one outside docs/reviews/ is not",
+          H(["scripts/baseline.json"]), [])
+    PC = "scripts/check-plan-code.py"
+    for o, n in ((128, 125), (30, 2)):
+        check(f"a mutation pin that DROPS {o} -> {n} is a loosening",
+              has(H([PC], DF(PC, f'-    "scripts/a.py": {o},', f'+    "scripts/a.py": {n},')), f"{o} -> {n}"), True)
+    check("...but a pin that RISES is not", H([PC], DF(PC, '-    "scripts/a.py": 125,', '+    "scripts/a.py": 129,')), [])
+    for o, n in ((2021, 2017), (900, 10)):
+        check(f"a declared mutation total that drops {o} -> {n} is a loosening",
+              has(H([PC], DF(PC, f"-    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {o})",
+                               f"+    case(\"t\", sum(EXPECTED_MUTATIONS.values()), {n})")), "total drops"), True)
+    for o, n in ((274, 271), (9, 1)):
+        check(f"a declared self-test count that drops {o} -> {n} is a loosening",
+              has(H(["scripts/z.py"], DF("scripts/z.py", f"-    python3 scripts/z.py --self-test  # {o} cases",
+                                         f"+    python3 scripts/z.py --self-test  # {n} cases")), "fewer self-test"), True)
+    check("...but a count that rises is not",
+          H(["scripts/z.py"], DF("scripts/z.py", "-    z --self-test  # 271 cases", "+    z --self-test  # 274 cases")), [])
+    G = "scripts/check-x.py"
+    # ⭐ PR #398's own shape: the removed line names no failure word; `fails.append` is 4 lines on.
+    _398 = DF(G, '     ("3 LOST", t3(rows)),', '-    ("4 NO IMPROVEMENT", t4(rows)),', '     ("5 RANKER", t5(rows)),',
+             '     ):', '         if result:', '             fails.append((name, result))')
+    check("⭐ a check entry REMOVED from beside a fails list is a loosening (PR #398's shape)",
+          has(H([G], _398), "failure path"), True)
+    # Direct calls with DISTINCT literals in every position, beside `H`'s one call site.
+    check("a PR #398-shaped removal AND a waiver give both reasons, with no head at all",
+          [r.split(":")[0] for r in hold_reasons([G], _398, None, None, True)],
+          ["loosens a gate", "relied on a waiver"])
+    check("app code cleared at head 'f00d' stays cleared with nothing else wrong",
+          hold_reasons(["worker/run.ts"], "", "f00d", "f00d", False), [])
+    check("a removed `return 1` in a gate is a loosening",
+          has(H([".claude/hooks/h.sh"], DF(".claude/hooks/h.sh", "-    return 1", "+    return 0")), "failure path"), True)
+    check("...but the SAME line MOVED (removed and re-added) is not",
+          H([G], DF(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', '+    ("4 NO IMPROVEMENT", t4(rows)),',
+                   '     fails.append(x)')), [])
+    check("...and a removed COMMENT beside a fails list is not",
+          H([G], DF(G, "-    # FAIL here once", "     fails.append(x)")), [])
+    check("...and the same removal in a NON-gate script is not",
+          H(["tools/page.py"], DF("tools/page.py", "-    return 1", "+    return 0")), [])
+    _far = DF(G, "-    x = 1", *[f"     y{i} = {i}" for i in range(6)], "     fails.append(x)")
+    check("...and a removal SIX lines from the failure path is outside the window", H([G], _far), [])
+    # r1 (both halves): a DELETED gate dropped every removed line, so deleting a check was READY.
+    def DEL(path, *gone):
+        return (f"diff --git a/{path} b/{path}\ndeleted file mode 100644\n--- a/{path}\n+++ /dev/null\n"
+                f"@@ -1,{len(gone)} +0,0 @@\n" + "\n".join("-" + g for g in gone) + "\n")
+    check("⭐ DELETING a gate script outright is a loosening",
+          has(H([G], DEL(G, "if bad:", "    return 1", "x = 2")), "failure path"), True)
+    check("...and so is deleting a hook in a subdirectory",
+          has(H([".claude/hooks/sub/b.sh"], DEL(".claude/hooks/sub/b.sh", "case $x in", '  *) deny "no";;')),
+              "failure path"), True)
+    check("...but deleting a NON-gate script is not",
+          H(["tools/page.py"], DEL("tools/page.py", "if bad:", "    return 1")), [])
+    # r1: distance was counted over the COMBINED diff, so added lines pushed a removal out.
+    check("⭐ six ADDED comment lines do not push an adjacent removal out of the window",
+          has(H([G], DF(G, '-    ("4 NO IMPROVEMENT", t4(rows)),', *[f"+    # why {i}" for i in range(6)],
+                        '     fails.append(x)')), "failure path"), True)
+    check("...nor do eight added CODE lines",
+          has(H([G], DF(G, "-    check_entry(rows)", *[f"+    y{i} = {i}" for i in range(8)],
+                        "     failures += 1")), "failure path"), True)
+    # r1 CLAUDE H3: the hooks' blocking idioms.
+    check("a hook's removed `deny` is a loosening",
+          has(H([".claude/hooks/a.sh"], DF(".claude/hooks/a.sh", '-  deny "no --no-verify"', "+  :")), "failure path"), True)
+    check("...and so is a hook's `exit 2` turned into `exit 0`",
+          has(H([".claude/hooks/b.sh"], DF(".claude/hooks/b.sh", "-    exit 2", "+    exit 0")), "failure path"), True)
+    check("...but a removed `echo` in a hook, on no failure path, is not",
+          H([".claude/hooks/a.sh"], DF(".claude/hooks/a.sh", "-  echo hi", "+  echo hello")), [])
+    # r1 CLAUDE M1: a gate disabled where it is INVOKED.
+    CI = ".github/workflows/ci.yml"
+    check("⭐ a CI step that runs a check, removed, is a loosening",
+          has(H([CI], DF(CI, "-        run: python3 scripts/check-x.py --self-test")), "gate invocation"), True)
+    check("...and so is a hook dropped from settings.json",
+          has(H([".claude/settings.json"], DF(".claude/settings.json", '-  "command": "bash .claude/hooks/h.sh"')),
+              "gate invocation"), True)
+    check("...but the same CI line MOVED is not",
+          H([CI], DF(CI, "-        run: python3 scripts/check-x.py --self-test",
+                     "+        run: python3 scripts/check-x.py --self-test")), [])
+    check("...nor a removed CI line that names no gate",
+          H([CI], DF(CI, "-        node-version: 20", "+        node-version: 22")), [])
+    # r2 CODEX M1/M2 — after the REDESIGN to one parser. Renames carry both paths; comments are
+    # one rule for every detector.
+    def REN(old, new, *hunk):
+        head = f"diff --git a/{old} b/{new}\nsimilarity index 90%\nrename from {old}\nrename to {new}\n"
+        return head + (f"--- a/{old}\n+++ b/{new}\n@@ -1 +1 @@\n" + "\n".join(hunk) + "\n" if hunk else "")
+    check("⭐ a gate RENAMED out of scope with `return 1` -> `return 0` is a loosening (failure path)",
+          has(H([G], REN(G, "tools/validate-x.py", "-    return 1", "+    return 0")), "failure path"), True)
+    check("...and the rename itself is a scope exit",
+          has(H([G], REN(G, "tools/validate-x.py", "-    return 1", "+    return 0")), "renamed to tools/validate-x.py"), True)
+    check("⭐ a workflow MOVED out of .github/workflows/ with no hunk at all is a loosening",
+          has(H([CI], REN(".github/workflows/gate.yml", ".github/archived/gate.yml")), "renamed to .github/archived"), True)
+    check("...and so is a hook moved into docs/ with its `deny` dropped",
+          has(H([".claude/hooks/a.sh"], REN(".claude/hooks/a.sh", "docs/a.sh", '-  deny "x"', "+  :")), "failure path"), True)
+    check("...but a workflow renamed WITHIN .github/workflows/ is not",
+          H([CI], REN(".github/workflows/a.yml", ".github/workflows/b.yml")), [])
+    check("...nor a docs file renamed anywhere",
+          H(["docs/b.md"], REN("docs/a.md", "docs/b.md", "-old", "+new")), [])
+    check("⭐ a reworded workflow COMMENT naming a check is not a dropped invocation (r2 false HOLD)",
+          H([CI], DF(CI, "-  # scripts/check-x.py guards the table", "+  # The table guard runs below",
+                     "   - run: python3 scripts/check-x.py")), [])
+    check("...nor a reworded shell comment in check-schema-gates.sh",
+          H(["scripts/check-schema-gates.sh"], DF("scripts/check-schema-gates.sh",
+                                                  "-# --self-test of each gate", "+# each gate's self-test")), [])
+    check("...but the invocation BESIDE such a comment, removed, still is",
+          has(H([CI], DF(CI, "-  # scripts/check-x.py guards the table", "-  - run: python3 scripts/check-x.py")),
+              "gate invocation"), True)
+    check("a deleted workflow is a scope exit",
+          has(H([CI], DEL(".github/workflows/old.yml", "on: push")), "old.yml is deleted"), True)
+    # r3 CODEX — PATH IDENTITY. Each header below is copied from a REAL `git diff -M -C` run in a
+    # scratch repository, not composed from memory of the format.
+    _q = ('diff --git "a/.github/workflows/gat\\303\\251.yml" "b/.github/workflows/gat\\303\\251.yml"\n'
+          'deleted file mode 100644\nindex 4050f61..0000000\n--- "a/.github/workflows/gat\\303\\251.yml"\n'
+          '+++ /dev/null\n@@ -1,2 +0,0 @@\n-on: push\n-      - run: python3 scripts/check-x.py --self-test\n')
+    check("⭐ a deleted workflow whose path git C-QUOTES (non-ASCII) is a scope exit",
+          has(H([CI], _q), "gaté.yml is deleted"), True)
+    _sp = ("diff --git a/scripts/check-space name.py b/scripts/check-space name.py\n"
+           "--- a/scripts/check-space name.py\t\n+++ b/scripts/check-space name.py\t\n"
+           "@@ -1,2 +1,2 @@\n     if bad:\n-        return 1\n+        return 0\n")
+    check("⭐ a gate whose path has a SPACE (git appends a tab) still has its failure path read",
+          has(H([G], _sp), "check-space name.py removes"), True)
+    _bin = ("diff --git a/.github/workflows/bin.yml b/.github/workflows/bin.yml\ndeleted file mode 100644\n"
+            "index b3f526e..0000000\nBinary files a/.github/workflows/bin.yml and /dev/null differ\n")
+    check("⭐ a BINARY-diffed workflow deleted (no `+++ /dev/null`) is a scope exit",
+          has(H([CI], _bin), "bin.yml is deleted"), True)
+    _new = ("diff --git a/.github/workflows/n.yml b/.github/workflows/n.yml\nnew file mode 100644\n"
+            "index 0000000..b3f526e\nBinary files /dev/null and b/.github/workflows/n.yml differ\n")
+    check("...but a binary workflow ADDED is not",
+          H([CI], _new), [])
+    check("⭐ a workflow renamed INTO scripts/check-*.py keeps no workflow role, so it is an exit",
+          has(H([CI], REN(".github/workflows/mv.yml", "scripts/check-disabled.py")), "renamed to scripts/check-disabled.py"), True)
+    check("...but a check renamed to another check keeps its role",
+          H([G], REN("scripts/check-a.py", "scripts/check-b.py")), [])
+    _cp = ("diff --git a/.github/workflows/cp.yml b/docs-gate.yml\nsimilarity index 100%\n"
+           "copy from .github/workflows/cp.yml\ncopy to docs-gate.yml\n")
+    check("⭐ a workflow COPIED out leaves the source running, so it is not an exit",
+          H([CI], _cp), [])
+    check("...while the same pair as a RENAME is",
+          has(H([CI], _cp.replace("copy from", "rename from").replace("copy to", "rename to")), "renamed to docs-gate.yml"), True)
+    # ⛔ BACKLOG #353 — A REAL GIT REPOSITORY, every path shape four rounds found, read through the
+    # SAME collection `main()` runs (`gather`). Fixture text proves what the parser does to
+    # the fixture; only git's own output proves what it does to git's output.
+    _gw = Path(tempfile.mkdtemp())
+    _genv = dict(os.environ, HOME=str(_gw), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    def _grun(cmd, **kw):
+        kw.setdefault("text", True)
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_gw,
+                              capture_output=True, env=_genv, **kw)
+    _gread = git_reader(_grun)
+    def _g(*a):
+        return _gread(["git", *a])
+    def _w(rel, text):
+        (_gw / rel).parent.mkdir(parents=True, exist_ok=True)
+        (_gw / rel).write_text(text)
+    try:
+        _g("init", "-q")
+        _g("config", "core.quotePath", "false")      # r4 XM2: literal Unicode inside quoted paths
+        for _n in ("gaté", "bin", "😀", "mv"):
+            _w(f".github/workflows/{_n}.yml", f"name: {_n}\njobs:\n  {_n}:\n    steps:\n      - run: python3 scripts/check-{_n}.py\n")
+        _w(".gitattributes", ".github/workflows/bin.yml -diff\n")
+        _w("scripts/check-space name.py", "def main():\n    if bad:\n        return 1\n    return 0\n")
+        _w(".claude/hooks/a b/z", "#!/bin/sh\ndeny() { exit 2; }\n")
+        _w("scripts/check-old.sh", "#!/bin/sh\n# the old schema gate runner\nexit 0\n")
+        _w("docs/reviews/x y/baseline.json", '{"median": 4}\n')
+        _w("docs/a.md", "one\n")
+        # r5 HIGH: a TYPE CHANGE (two patch sections for one entry), a submodule under
+        # diff.submodule=log (no section), a textconv and an external driver over gates, and a
+        # glob-looking gate name — each beside a gate weakening that must still be ITS gate's.
+        _w("docs/t", "plain file\n")
+        _w("scripts/check-tc.py", "def main():\n    if bad:\n        return 1\n    return 0\n")
+        _w("scripts/check-ext.py", "def main():\n    if worse:\n        return 1\n    return 0\n")
+        _w("scripts/check-[ab].py", "def main():\n    if odd:\n        return 1\n    return 0\n")
+        _w("scripts/check-a.py", "def main():\n    return 0\n")
+        # r6: a gate renamed while a DIRECTORY named like its old path appears; a `-diff` (binary)
+        # attribute on a gate; a gate holding a NUL byte; a gate deleted outright.
+        _w("scripts/check-rn.py", "def main():\n    if gone:\n        return 1\n    return 0\n")
+        _w("scripts/check-bin.py", "def main():\n    if bin:\n        return 1\n    return 0\n")
+        _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 1\n    return 0\n")
+        _w("scripts/check-del.py", "def main():\n    if dead:\n        return 1\n    return 0\n")
+        # r7: two paths that differ only by CR vs LF, and a gate that is a SYMLINK to an outside target.
+        _w("scripts/check-c\n.py", "import sys\nif bad:\n    sys.exit(1)\n")
+        _w("scripts/check-c\r.py", "import sys\nsys.exit(0)\n")
+        _w("tools/gate.py", "import sys\nif worst:\n    sys.exit(1)\n")
+        (_gw / "scripts/check-linked.py").symlink_to("../tools/gate.py")
+        _w(".gitattributes", ".github/workflows/bin.yml -diff\nscripts/check-tc.py diff=tc\nscripts/check-ext.py diff=ext\nscripts/check-bin.py -diff\n")
+        _g("config", "diff.tc.textconv", "true")
+        _g("config", "diff.ext.command", "true")
+        _g("config", "diff.submodule", "log")
+        _g("config", "diff.external", "true")        # an external diff for EVERY diff, printing nothing
+        _g("add", "-A")
+        _g("update-index", "--add", "--cacheinfo", "160000," + "1" * 40 + ",zmodule")
+        _g("commit", "-qm", "base")
+        _base = _g("rev-parse", "HEAD").strip()
+        for _n in ("gaté", "bin", "😀"):
+            _g("rm", "-q", f".github/workflows/{_n}.yml")
+        _w("scripts/check-space name.py", "def main():\n    if bad:\n        return 0\n    return 0\n")
+        (_gw / ".claude/hooks/a b/z").chmod(0o755)
+        _g("mv", "scripts/check-old.sh", "scripts/check-schema-gates.sh")
+        _g("mv", ".github/workflows/mv.yml", "scripts/check-disabled.py")
+        _w("docs/reviews/x y/baseline.json", '{"median": 5}\n')
+        _w("docs/a.md", "two\n")
+        (_gw / "docs/t").unlink(); (_gw / "docs/t").symlink_to("a.md")
+        for _n, _c in (("tc", "bad"), ("ext", "worse"), ("[ab]", "odd")):
+            _w(f"scripts/check-{_n}.py", f"def main():\n    if {_c}:\n        return 0\n    return 0\n")
+        _g("add", "-A")
+        _g("mv", "scripts/check-rn.py", "scripts/check-rn2.py")
+        _w("scripts/check-rn2.py", "def main():\n    if gone:\n        return 0\n    return 0\n")
+        _w("scripts/check-rn.py/example.txt", "        return 1\n")
+        _w("scripts/check-bin.py", "def main():\n    if bin:\n        return 0\n    return 0\n")
+        _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 0\n    return 0\n")
+        _g("rm", "-q", "scripts/check-del.py")
+        _w("scripts/check-c\n.py", "import sys\nif bad:\n    sys.exit(0)\n")
+        _w("tools/gate.py", "import sys\nif worst:\n    sys.exit(0)\n")
+        _g("add", "-A")
+        _g("update-index", "--add", "--cacheinfo", "160000," + "2" * 40 + ",zmodule")
+        _g("commit", "-qm", "head")
+        _files, _fs = gather(_gread, _base)
+        _real = hold_reasons(_files, "", "h", "h", False, fs=_fs)
+        _err = None
+    except Exception as exc:                          # git missing or the parse raised: say so
+        _real, _err = [], f"{exc.__class__.__name__}: {exc}"
+    finally:
+        shutil.rmtree(_gw, ignore_errors=True)
+    check("⭐ the real-git world parses with no error (C-quoting, tabs, binary, ` b/`, emoji)", _err, None)
+    check("real git: a deleted workflow with a NON-ASCII name is a scope exit", has(_real, "gaté.yml is deleted"), True)
+    check("real git: a deleted workflow with an EMOJI name under core.quotePath=false is a scope exit",
+          has(_real, "😀.yml is deleted"), True)
+    check("real git: a BINARY-diffed workflow deleted is a scope exit", has(_real, "bin.yml is deleted"), True)
+    check("real git: a gate with a SPACE in its path has its failure path read",
+          has(_real, "scripts/check-space name.py removes"), True)
+    check("real git: a workflow renamed into scripts/check-*.py is a scope exit",
+          has(_real, "mv.yml is renamed to scripts/check-disabled.py"), True)
+    check("real git: a baseline under a path WITH A SPACE is held (no `.split()` of the file list)",
+          has(_real, "docs/reviews/x y/baseline.json is a pinned baseline"), True)
+    check("real git: a hook under `a b/` with a MODE-ONLY change is not held (r4 false HOLD)",
+          has(_real, "a b/z"), False)
+    check("real git: a check renamed so it GAINS a role is not an exit (r4 false HOLD)",
+          has(_real, "check-old.sh"), False)
+    check("real git: an ordinary docs edit is not held", has(_real, "docs/a.md"), False)
+    check("⭐ real git (r5 HIGH): a gate weakened beside a TYPE CHANGE and a submodule is still ITS gate's",
+          has(_real, "scripts/check-space name.py removes"), True)
+    check("real git: a textconv driver over a gate cannot hide its weakening",
+          has(_real, "scripts/check-tc.py removes"), True)
+    check("real git: an external diff driver over a gate cannot hide its weakening",
+          has(_real, "scripts/check-ext.py removes"), True)
+    # ⚠ git matches a pathspec LITERALLY FIRST, so this passes with or without --literal-pathspecs;
+    # without it a glob name can only pull in a sibling's hunks (a false HOLD), never lose its own.
+    # The flag itself is pinned by the RESTRICTED case below, which is what its mutation names.
+    check("real git: a gate named like a GLOB (`check-[ab].py`) has its own patch read",
+          has(_real, "scripts/check-[ab].py removes"), True)
+    check("⭐ real git (r6): a gate renamed beside a DIRECTORY named like its old path keeps its weakening",
+          has(_real, "check-rn2.py removes"), True)
+    check("real git (r6): a `-diff` (binary) attribute on a gate cannot hide its weakening",
+          has(_real, "scripts/check-bin.py removes"), True)
+    check("real git: a gate whose content holds a NUL byte still has its hunks read (--text)",
+          has(_real, "scripts/check-nul.py removes"), True)
+    check("real git: a DELETED gate's failure path is read from its old blob",
+          has(_real, "scripts/check-del.py removes"), True)
+    check("⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening",
+          (has(_real, "scripts/check-c\n.py removes"), has(_real, "scripts/check-c\r.py")), (True, False))
+    check("⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens",
+          has(_real, "scripts/check-linked.py removes"), True)
+    check("...and the target itself, outside the gate roots, is not read under its own name",
+          has(_real, "tools/gate.py removes"), False)
+    check("real git: the world REALLY holds a type change (T) and a submodule entry",
+          (("docs/t", "T") in {(f["new"], f["status"]) for f in _fs},
+           ("zmodule", "M") in {(f["new"], f["status"]) for f in _fs}) if _err is None else _err, (True, True))
+    check("real git: the type-changed docs file and the submodule hold nothing of their own",
+          (has(_real, "docs/t"), has(_real, "zmodule")), (False, False))
+    check("patch_hunks reads every hunk of a TWO-section patch (a type change) and no header",
+          patch_hunks("diff --git a/t b/t\ndeleted file mode 100644\n--- a/t\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+                      "diff --git a/t b/t\nnew file mode 120000\n--- /dev/null\n+++ b/t\n@@ -0,0 +1 @@\n+y\n"),
+          [["-x"], ["+y"]])
+    check("changed_paths keeps a renamed file's OLD path too (a baseline renamed away is still edited)",
+          changed_paths("R100\0docs/reviews/d/baseline.json\0docs/old.json\0A\0n.md\0"),
+          ["docs/old.json", "docs/reviews/d/baseline.json", "n.md"])
+    check("patch_hunks keeps a removed line whose TEXT starts `-- ` (shown as `--- `) inside its hunk",
+          patch_hunks("diff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1,2 +1 @@\n--- not a header\n keep\n"),
+          [["--- not a header", " keep"]])
+    _asked: list = []
+    def _rd(cmd):
+        _asked.append(cmd[1] if cmd[1] != "--literal-pathspecs" else "status")
+        if "merge-base" in cmd:
+            return "mb0\n"
+        if "--name-status" in cmd:
+            return "R100\0scripts/o p\0scripts/n\0A\0docs/d.md\0"
+        if cmd[1] == "ls-tree":
+            return ("100644 blob aaa\tscripts/o p\0" if cmd[-1] == "mb0" else
+                    "100644 blob bbb\tscripts/n\x00100644 blob ddd\tdocs/d.md\0")
+        if cmd[1] == "diff":
+            return "@@ -1 +1 @@\n-a\n+b\n" if cmd[-2:] == ["aaa", "bbb"] else "WRONG BLOBS"
+        return "never read\n"
+    check("⭐ gather diffs each entry's EXACT BLOBS (old tree's, new tree's) and reads no file outside the gate roots",
+          (gather(_rd, "b0"), _asked),
+          ((["docs/d.md", "scripts/n", "scripts/o p"],
+            [{"old": "scripts/o p", "new": "scripts/n", "copy": False, "status": "R", "hunks": [["-a", "+b"]]},
+             {"old": None, "new": "docs/d.md", "copy": False, "status": "A", "hunks": []}]),
+           ["merge-base", "status", "ls-tree", "ls-tree", "diff"]))
+    check("tree_index reads modes and ids by exact path, a space and a gitlink included",
+          tree_index("100644 blob a1\tx y\x00160000 commit c2\tsub\0"), {"x y": ("100644", "a1"), "sub": ("160000", "c2")})
+    _read_gl: list = []
+    check("blob_hunks: a gitlink on both sides has no hunks, and reads nothing",
+          (blob_hunks(lambda c: _read_gl.append(c) or "@@ -1 +1 @@\n-x\n+y\n", ("160000", "c1"), ("160000", "c2")),
+           _read_gl), ([], []))
+    check("tree_index of an empty tree is empty", tree_index(""), {})
+    check("as_text keeps a CR a CR (no newline translation) and passes text through",
+          (as_text(b"a\rb\n"), as_text("x\ry")), ("a\rb\n", "x\ry"))
+    check("git_reader RAISES on a failed command rather than answering empty",
+          _raises(lambda: git_reader(lambda c, **k: subprocess.CompletedProcess(c, 128, b"", b""))(["git", "x"]),
+                  PathsDisagree), True)
+    check("blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
+          (blob_hunks(lambda c: "x\ny\n", None, ("100644", "n1")), blob_hunks(lambda c: "z\n", ("100755", "o1"), None)),
+          ([["+x", "+y"]], [["-z"]]))
+    check("...and a modify and a delete each name one path", changed_paths("M\0a\0D\0b\0"), ["a", "b"])
+    check("...and the machine list's range follows the base it is given, literally",
+          (status_cmd("f00dbab")[-1], "--literal-pathspecs" in status_cmd("origin/master")), ("f00dbab...HEAD", True))
+    check("...and an incomplete --name-status entry",
+          _raises(lambda: name_status("R100\0only-one\0"), PathsDisagree), True)
+    check("name_status reads a rename, an add and a delete",
+          [(e["status"], e["old"], e["new"]) for e in name_status("R091\0a b\0c\0A\0n\0D\0o\0")],
+          [("R", "a b", "c"), ("A", None, "n"), ("D", "o", None)])
+    # r8 (HONEST): a helper the gate imports, and a status other than 1 or 2.
+    check("⭐ a weakened HELPER module (not `check-*`) is a loosening — the gate imports it",
+          has(H(["scripts/gate_logic.py"], DF("scripts/gate_logic.py", "     if bad:", "-        return 1", "+        return 0")),
+              "gate_logic.py removes"), True)
+    check("...but the same edit outside scripts/ is not", H(["tools/gate_logic.py"], DF("tools/gate_logic.py",
+          "     if bad:", "-        return 1", "+        return 0")), [])
+    check("⭐ a gate's `sys.exit(3)` turned into success is a loosening (any non-zero status)",
+          has(H([G], DF(G, "     if refused:", "-        sys.exit(3)", "+        sys.exit(0)")), "failure path"), True)
+    check("...and so is a `return 7`",
+          has(H([G], DF(G, "     if odd:", "-        return 7", "+        return 0")), "failure path"), True)
+    check("...but `return 0` -> `return 0` with an unrelated line removed beside it is not a failure path",
+          H([G], DF(G, "-    x = 1", "     return 0")), [])
+    # r9 (HONEST-SYNTACTIC): re-indentation is not a move; any non-zero int; raise.
+    check("⭐ `return 1` pushed under a new `if verbose:` is NOT a move — it is a loosening",
+          has(H([G], DF(G, "     if bad:", '-        print("invalid input")', "-        return 1", "+        if verbose:",
+                        '+            print("invalid input")', "+            return 1", "     return 0")), "failure path"), True)
+    check("...while the SAME line at the SAME indentation moved is still a move",
+          H([G], DF(G, "     if bad:", "-        return 1", "+        return 1", "     return 0")), [])
+    check("a gate's `sys.exit(10)` turned into success is a loosening",
+          has(H([G], DF(G, "     if worse:", "-        sys.exit(10)", "+        sys.exit(0)")), "failure path"), True)
+    check("...and so is `sys.exit(-1)`",
+          has(H([G], DF(G, "     if odd:", "-        sys.exit(-1)", "+        sys.exit(0)")), "failure path"), True)
+    check("⭐ `sys.exit(\"invalid input\")` turned into a `print` is a loosening (r10: it exits 1)",
+          has(H([G], DF(G, "     if bad:", '-        sys.exit("invalid input")', '+        print("invalid input")')),
+              "failure path"), True)
+    check("...but `sys.exit(0)`, `sys.exit()` and `sys.exit(None)` removed are not failure statements",
+          [H([G], DF(G, f"-    {x}", "+    pass")) for x in ("sys.exit(0)", "sys.exit()", "sys.exit(None)")], [[], [], []])
+    check("...and a `raise` turned into a `print`",
+          has(H([G], DF(G, "     if bad:", '-        raise ValueError("invalid input")', '+        print("invalid input")')),
+              "failure path"), True)
+    # ⛔ A STATED BOUND, asserted so it cannot be forgotten (owner, r8 card A): a SEMANTIC loosening — a
+    # condition removed far above the loop that fails on it — leaves no failure-path text within the
+    # window. If this case ever goes RED, the bound has closed: update the comment above GATE_CODE.
+    check("BOUND (stated, r8): a condition removed 7 lines above its failure line is NOT held",
+          H([G], DF(G, "     checks = [", "-        False,", "         True,", "     ]", "     x = 1", "     y = 2",
+                    "     z = 3", "     for c in checks:", "         if not c:", "             return 1")), [])
+    # r1 CLAUDE M2: a pin deleted, or renamed away, is a drop to nothing.
+    check("a mutation pin DELETED is a loosening",
+          has(H([PC], DF(PC, '-    "scripts/a.py": 30,')), "scripts/a.py (30) is removed"), True)
+    check("...and so is one renamed to another key",
+          has(H([PC], DF(PC, '-    "scripts/b.py": 12,', '+    "scripts/c.py": 12,')), "scripts/b.py (12) is removed"), True)
+    for mig in ("supabase/migrations/0028_x.sql", "supabase/migrations/0099_y.sql"):
+        r = H([mig], at="abc")
+        check(f"a migration needs a deploy first ({mig[-10:]})", has(r, "deploy first"), True)
+    check("...and a migration is app code too, so it also needs the local tests",
+          has(H(["supabase/migrations/0028_x.sql"]), "app code changed"), True)
+    check("a NO-REVIEW waiver is held", has(H(nr=True), "NO-REVIEW"), True)
+    for f in ("lib/gemini.ts", "app/page.tsx"):
+        check(f"app code with no local test run is held ({f})", has(H([f], at=None), "app code changed"), True)
+        check(f"...and is cleared by a run pinned to THIS head ({f})", H([f], at="abc"), [])
+    check("...but NOT by a run at a DIFFERENT head", has(H(["lib/x.ts"], at="old"), "app code changed"), True)
+    check("...nor when the head is unknown", has(H(["lib/x.ts"], head=None, at=None), "app code changed"), True)
+    check("HOLD applies only to a READY PR", final_verdict(0, "READY", ["x"])[0], HOLD_RC)
+    check("...the held verdict names the reason", "x" in final_verdict(0, "READY", ["x"])[1], True)
+    check("...NOT READY wins over a hold", final_verdict(1, "NOT READY", ["x"])[0], 1)
+    check("...CANNOT RUN wins over a hold", final_verdict(2, "CANNOT RUN", ["x"])[0], 2)
+    check("...and no hold leaves READY as READY", final_verdict(0, "READY", []), (0, "READY"))
+
+    # ⛔ THE CALL SITE, not only the rules — unit coverage does not compose. `main()` is driven
+    # end to end over a FAKE `_run`, so deleting the wiring reddens these even with every pure
+    # case above still green. Two distinct holds, one clean PR, and one cleared app-code PR.
+    import contextlib, io
+    _real_run = globals()["_run"]
+    _tmp = Path(tempfile.mkdtemp()) / "body.md"
+    def _fake(files, diff, body="", status=None, tree=""):
+        # The machine list defaults to one `M` per file; `diff` is every file's patch (no hunks
+        # unless a case gives some), since each file's patch is asked for separately.
+        if status is None:
+            status = "".join(f"M\0{f}\0" for f in files)
+        def run(cmd, **kw):
+            def cp(out="", rc=0):
+                return subprocess.CompletedProcess(cmd, rc, out, "")
+            if cmd[0] == "mktemp":
+                return cp(str(_tmp))
+            if cmd[:3] == ["gh", "pr", "view"] and "body" in cmd:
+                return cp(body)
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return cp(json.dumps({"state": "OPEN", "isDraft": False, "baseRefName": "master",
+                                      "headRefOid": "abc", "mergeStateStatus": "CLEAN"}))
+            if cmd[:3] == ["gh", "pr", "checks"]:
+                return cp(json.dumps([{"name": "verify", "bucket": "pass"}]))
+            if cmd[:2] == ["git", "rev-parse"]:
+                return cp("abc\n")
+            if cmd[:3] == ["git", "--literal-pathspecs", "diff"] and "--name-status" in cmd:
+                return cp(status)
+            if cmd[:2] == ["git", "merge-base"]:
+                return cp("mb\n")
+            if cmd[:2] == ["git", "ls-tree"]:
+                return cp(tree)                     # no blobs unless a case gives some
+            if cmd[:2] == ["git", "diff"]:
+                return cp(diff)
+            return cp("ok\n")                       # the three gate scripts
+        return run
+    def _main(files, pr, tests_at=None, diff="", body="", status=None, tree=""):
+        globals()["_run"] = _fake(files, diff, body, status, tree)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                if tests_at is None:
+                    rc = main(["--pr", pr])
+                else:
+                    rc = main(["--pr", pr, "--app-tests-passed", tests_at])
+        finally:
+            globals()["_run"] = _real_run
+        return rc, buf.getvalue()
+    _rc, _o = _main(["docs/reviews/decision-scheme/baseline.json"], "1")
+    check("⭐ main() HOLDS a READY PR that edits a pinned baseline, rc=3, naming why",
+          (_rc, "HOLD — ready by every gate" in _o, "pinned baseline" in _o), (3, True, True))
+    _rc, _o = _main(["docs/x.md"], "7", body="intro\nNO-REVIEW: docs only\n")
+    check("⭐ main() HOLDS a READY PR whose body declares NO-REVIEW:, rc=3",
+          (_rc, "NO-REVIEW" in _o), (3, True))
+    _rc, _o = _main(["docs/x.md"], "12")
+    check("main() leaves a clean READY PR as READY, rc=0", (_rc, "HOLD" in _o), (0, False))
+    # #353: the MACHINE list decides paths. The header says `docs/g.yml` both sides; the list says a
+    # workflow was renamed there — so only a main() that reads the list holds it.
+    _rc, _o = _main(["docs/g.yml"], "21", status="R100\0.github/workflows/g.yml\0docs/g.yml\0")
+    check("⭐ main() takes paths from --name-status, not the patch header (a rename only the list shows)",
+          (_rc, "g.yml is renamed to docs/g.yml" in _o), (3, True))
+    _rc, _o = _main(["docs/h.md"], "22", status="R100\0docs/h.md\0")
+    check("...and REFUSES (CANNOT RUN) on a machine list it cannot read",
+          (_rc, "CANNOT RUN" in _o), (2, True))
+    # r10: ANY collection error is CANNOT RUN — a malformed `ls-tree` reply raises ValueError, not
+    # PathsDisagree. The case catches a crash itself so a narrowed handler shows as a RED case.
+    try:
+        _rc, _o = _main(["scripts/x.py"], "23", status="M\0scripts/x.py\0", tree="garbage-without-a-tab\0")
+        _crash = None
+    except Exception as exc:
+        _rc, _o, _crash = None, "", exc.__class__.__name__
+    check("⭐ main() turns an UNEXPECTED collection error into CANNOT RUN, rc=2 (never a crash)",
+          (_rc, "CANNOT RUN" in _o, _crash), (2, True, None))
+    # r1 CLAUDE M3: the pure NO-ENTRY case never passed its body anywhere — this one does.
+    _rc, _o = _main(["docs/y.md"], "9", body="intro\nNO-ENTRY: docs only\n")
+    check("⭐ main() does NOT hold a PR whose body declares only NO-ENTRY: (owner: NO-REVIEW only)",
+          (_rc, "HOLD" in _o), (0, False))
+    _rc, _o = _main(["lib/x.ts"], "3", "abc")
+    check("main() clears app code with a local test run pinned to the head, rc=0",
+          (_rc, "HOLD" in _o), (0, False))
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

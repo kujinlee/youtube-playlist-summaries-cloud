@@ -1057,6 +1057,8 @@ Phase 5 rule already said *"open the PR, notify, do not merge"*, making push the
 Specific beat general the whole time and the general list was read over it.
 
 ⚠ **What did NOT change:** merging is still the human gate, and **a PR is a separate judgement** —
+⟳ *superseded 2026-10-25 for the first half: merge when `check-merge-ready.py` says READY, and HOLD
+(rc 3) for the owner on its four exceptions — `dev-process.md`, Human-in-the-Loop.* The second half stands:
 opening one asserts the work is ready for that gate, so it is not opened for work that has not
 converged.
 

@@ -1866,7 +1866,33 @@ EXPECTED_MUTATIONS = {
     # refusing gate did not see the `NO-ENTRY:`/`NO-REVIEW:` the author believes they wrote. One
     # per distinguishable state (misdirected, invisible, inert-other) plus one that makes it run
     # on gates that did NOT refuse — the shape that would turn an explanation into an accusation.
-    "scripts/check-merge-ready.py": 16,
+    # ⟳ 2026-10-25: 16 -> 30 — the house rule's HOLD stage (`hold_reasons`, `final_verdict`, and
+    #   main()'s wiring over a fake `_run`): fourteen entries added, none retired.
+    # ⟳ 2026-10-25 r1 fold: 30 -> 41 — a deleted gate, old-side distance, the hooks' `deny`/`exit 2`,
+    #   gate CALLERS, a removed pin, and main() on NO-ENTRY. Eleven added; one anchor rebound, none retired.
+    # ⟳ 2026-10-25 r2 REDESIGN (one parser, `diff_files`): 41 -> 45 — six anchors rebound onto the
+    #   new parser with the same mutation each; four added (rename paths, scope exits, comments as
+    #   invocations, an in-scope rename as an exit). None retired.
+    # ⟳ 2026-10-25 r3 SPLIT (path identity): 45 -> 50 — two anchors rebound, five added (C-quoting,
+    #   the tab delimiter, binary deletion, copies, a gate's role across a rename). None retired.
+    # ⟳ 2026-10-25 backlog #353 (paths from `git diff --name-status -z -M`): 50 -> 56 — two anchors
+    #   rebound, six added (headers as path source, the count join, a gained role, main()'s wiring,
+    #   an add's old path, an incomplete entry), then +1 for changed_paths' old path. None retired.
+    # ⟳ 2026-10-25 r5 (a positional FALSE READY): 57 -> 59 — the positional join is DELETED, so its
+    #   count-mismatch entry is RETIRED WITH ITS SUBJECT (the one permitted kind of fall); three
+    #   anchors rebound onto per-file patches; three added (--no-textconv, --no-ext-diff, literal pathspecs).
+    # ⟳ 2026-10-25 r6 (two more FALSE READYs, per-path patches): 59 -> 63 — hunks now diff EXACT BLOBS;
+    #   the two `patch_cmd` entries RETIRED WITH THEIR SUBJECT; six added (the blob pair, --text, a
+    #   gitlink, the gate-root restriction both ways, add/delete signs); then the `--no-textconv` entry
+    #   RETIRED WITH ITS FLAG, which a pathless blob diff makes dead (it survived, measured).
+    # ⟳ 2026-10-25 r7 (two adversarial FALSE READYs): 62 -> 68 — git read as BYTES (`git_reader`,
+    #   `as_text`) and a gate symlink's changed target judged as the gate; six added, none retired.
+    # ⟳ 2026-10-25 r8 (three HONEST false READYs): 68 -> 71 — every script is gate code (helpers) and any
+    #   non-zero status is a failure path; one anchor rebound, three added. The semantic bound is a CASE.
+    # ⟳ 2026-10-25 r9 (two HONEST-SYNTACTIC false READYs): 71 -> 73 — moves keep indentation, and any
+    #   non-zero int, `raise` and `assert` are failure statements; six anchors rebound, two added.
+    # ⟳ 2026-10-25 r10: 73 -> 75 — sys.exit with any non-zero argument; main() fails closed on ANY error.
+    "scripts/check-merge-ready.py": 75,
     "scripts/check-paid-caller-arrival.py": 6,
     "scripts/check-vocabulary-collisions.py": 5,
     # ⟳ 2026-09-29, backlog #191: the LLM recall matcher joins the manifest in the commit that
@@ -5751,7 +5777,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2030)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2089)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
