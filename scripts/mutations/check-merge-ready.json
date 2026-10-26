@@ -792,5 +792,84 @@
    "blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
    "real git: a DELETED gate's failure path is read from its old blob"
   ]
+ },
+ {
+  "name": "r7: git is read in TEXT mode (CR becomes LF)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        r = run(cmd, text=False)",
+    "        r = run(cmd)"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening"
+  ]
+ },
+ {
+  "name": "r7: as_text translates CR to LF",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "    return out.decode(\"utf-8\", \"surrogateescape\") if isinstance(out, bytes) else out",
+    "    return out.decode(\"utf-8\", \"surrogateescape\").replace(\"\\r\", \"\\n\") if isinstance(out, bytes) else out"
+   ]
+  ],
+  "expect": [
+   "as_text keeps a CR a CR (no newline translation) and passes text through",
+   "⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening"
+  ]
+ },
+ {
+  "name": "r7: a gate symlink's changed target is never consulted",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        if tgt in changed and tgt != path:",
+    "        if False:"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a symlink target is not normalised (`../` kept)",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "        tgt = posixpath.normpath(posixpath.join(",
+    "        tgt = (posixpath.join("
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a target's hunks are filed under the TARGET's name, not the gate's",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            fs.append({\"old\": path, \"new\": path, \"copy\": False, \"status\": \"M\", \"via\": tgt,",
+    "            fs.append({\"old\": tgt, \"new\": tgt, \"copy\": False, \"status\": \"M\", \"via\": tgt,"
+   ]
+  ],
+  "expect": [
+   "⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens"
+  ]
+ },
+ {
+  "name": "r7: a failed git command answers empty instead of raising",
+  "file": "scripts/check-merge-ready.py",
+  "edits": [
+   [
+    "            raise PathsDisagree(f\"`{' '.join(cmd[:6])} …` exited {r.returncode}\")",
+    "            return \"\""
+   ]
+  ],
+  "expect": [
+   "git_reader RAISES on a failed command rather than answering empty"
+  ]
  }
 ]

@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 180 cases
+    python3 scripts/check-merge-ready.py --self-test # 185 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -49,6 +49,7 @@ import functools
 import importlib.util
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -421,7 +422,15 @@ def ci_conclusion(checks: list[dict]) -> tuple[int, str]:
 
 # ── THE FETCH, impure ─────────────────────────────────────────────────────────────────────────
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, **kw)
+    kw.setdefault("text", True)
+    return subprocess.run(cmd, capture_output=True, cwd=ROOT, **kw)
+
+
+def as_text(out) -> str:
+    """git's output as text WITHOUT newline translation — r7: text mode turned a `\\r` in a path into
+    `\\n`, so `check-a\\r.py` and `check-a\\n.py` became one key and one file's blob stood in for the
+    other's. Bytes in, `surrogateescape` out: reversible, and a CR stays a CR."""
+    return out.decode("utf-8", "surrogateescape") if isinstance(out, bytes) else out
 
 
 def _pr_number(explicit: int | None) -> tuple[int | None, str]:
@@ -712,6 +721,7 @@ def status_cmd(base: str) -> list[str]:
 # Everything else (app code, docs, images) is classified by PATH alone, so its bytes are never read.
 HUNK_ROOTS = ("scripts/", ".claude/", ".github/")
 GITLINK = "160000"
+SYMLINK = "120000"
 
 
 def tree_index(z: str) -> dict[str, tuple[str, str]]:
@@ -761,6 +771,18 @@ def blob_hunks(read, old: "tuple[str, str] | None", new: "tuple[str, str] | None
     return [[sign + line for line in lines]] if lines else []
 
 
+def git_reader(run):
+    """The ONE way the house rule reads git, shared by `main()` and the real-git self-test: BYTES
+    (`text=False`) decoded by `as_text`, and a non-zero exit RAISES, which `main()` turns into
+    CANNOT RUN — never an empty answer."""
+    def read(cmd):
+        r = run(cmd, text=False)
+        if r.returncode != 0:
+            raise PathsDisagree(f"`{' '.join(cmd[:6])} …` exited {r.returncode}")
+        return as_text(r.stdout)
+    return read
+
+
 def gather(read, base: str) -> tuple[list[str], list[dict]]:
     """(changed paths, one record per changed file) — what `main()` and the real-git self-test BOTH
     use, so they cannot drift. `read(cmd)` returns a command's stdout or raises.
@@ -776,11 +798,22 @@ def gather(read, base: str) -> tuple[list[str], list[dict]]:
     old_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", mb]))
     new_t = tree_index(read(["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]))
     fs = []
+    changed = set(changed_paths(st))
     for e in name_status(st):
         looked = any(p.startswith(HUNK_ROOTS) for p in (e["old"], e["new"]) if p)
         fs.append({"old": e["old"], "new": e["new"], "copy": e["copy"], "status": e["status"],
                    "hunks": blob_hunks(read, old_t.get(e["old"]) if e["old"] else None,
                                        new_t.get(e["new"]) if e["new"] else None) if looked else []})
+    # ⛔ r7: a gate that is a SYMLINK runs its TARGET, which may live anywhere and change alone. Each
+    # gate symlink whose target changed gets that target's blob diff UNDER THE GATE'S NAME, so the
+    # detectors judge it as the gate. ⚠ One level: a target that is itself a link is not followed.
+    for path, (mode, oid) in sorted(new_t.items()):
+        if mode != SYMLINK or not (GATE_CODE.match(path) or GATE_CALLER.match(path)):
+            continue
+        tgt = posixpath.normpath(posixpath.join(posixpath.dirname(path), read(["git", "cat-file", "blob", oid])))
+        if tgt in changed and tgt != path:
+            fs.append({"old": path, "new": path, "copy": False, "status": "M", "via": tgt,
+                       "hunks": blob_hunks(read, old_t.get(tgt), new_t.get(tgt))})
     return changed_paths(st), fs
 
 
@@ -1025,13 +1058,8 @@ def main(argv: list[str]) -> int:
 
     code, line = verdict(results)
     # ⛔ THE HOUSE RULE (see hold_reasons). Computed over the PR's own diff against the base.
-    def _read(cmd):
-        r = _run(cmd, errors="replace")
-        if r.returncode != 0:
-            raise PathsDisagree(f"`{' '.join(cmd[:6])} …` exited {r.returncode}")
-        return r.stdout
     try:
-        files, fs = gather(_read, BASE_REF)
+        files, fs = gather(git_reader(_run), BASE_REF)
         gathered = True
     except PathsDisagree as exc:
         code, line = 2, (f"CANNOT RUN — could not read the branch's diff ({exc}), so the house "
@@ -1473,9 +1501,13 @@ def _self_test() -> int:
     # the fixture; only git's own output proves what it does to git's output.
     _gw = Path(tempfile.mkdtemp())
     _genv = dict(os.environ, HOME=str(_gw), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    def _grun(cmd, **kw):
+        kw.setdefault("text", True)
+        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *cmd[1:]], cwd=_gw,
+                              capture_output=True, env=_genv, **kw)
+    _gread = git_reader(_grun)
     def _g(*a):
-        return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=_gw,
-                              capture_output=True, text=True, errors="replace", env=_genv, check=True).stdout
+        return _gread(["git", *a])
     def _w(rel, text):
         (_gw / rel).parent.mkdir(parents=True, exist_ok=True)
         (_gw / rel).write_text(text)
@@ -1504,6 +1536,11 @@ def _self_test() -> int:
         _w("scripts/check-bin.py", "def main():\n    if bin:\n        return 1\n    return 0\n")
         _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 1\n    return 0\n")
         _w("scripts/check-del.py", "def main():\n    if dead:\n        return 1\n    return 0\n")
+        # r7: two paths that differ only by CR vs LF, and a gate that is a SYMLINK to an outside target.
+        _w("scripts/check-c\n.py", "import sys\nif bad:\n    sys.exit(1)\n")
+        _w("scripts/check-c\r.py", "import sys\nsys.exit(0)\n")
+        _w("tools/gate.py", "import sys\nif worst:\n    sys.exit(1)\n")
+        (_gw / "scripts/check-linked.py").symlink_to("../tools/gate.py")
         _w(".gitattributes", ".github/workflows/bin.yml -diff\nscripts/check-tc.py diff=tc\nscripts/check-ext.py diff=ext\nscripts/check-bin.py -diff\n")
         _g("config", "diff.tc.textconv", "true")
         _g("config", "diff.ext.command", "true")
@@ -1531,10 +1568,12 @@ def _self_test() -> int:
         _w("scripts/check-bin.py", "def main():\n    if bin:\n        return 0\n    return 0\n")
         _w("scripts/check-nul.py", "# a\0b\ndef main():\n    if nul:\n        return 0\n    return 0\n")
         _g("rm", "-q", "scripts/check-del.py")
+        _w("scripts/check-c\n.py", "import sys\nif bad:\n    sys.exit(0)\n")
+        _w("tools/gate.py", "import sys\nif worst:\n    sys.exit(0)\n")
         _g("add", "-A")
         _g("update-index", "--add", "--cacheinfo", "160000," + "2" * 40 + ",zmodule")
         _g("commit", "-qm", "head")
-        _files, _fs = gather(lambda cmd: _g(*cmd[1:]), _base)
+        _files, _fs = gather(_gread, _base)
         _real = hold_reasons(_files, "", "h", "h", False, fs=_fs)
         _err = None
     except Exception as exc:                          # git missing or the parse raised: say so
@@ -1576,6 +1615,12 @@ def _self_test() -> int:
           has(_real, "scripts/check-nul.py removes"), True)
     check("real git: a DELETED gate's failure path is read from its old blob",
           has(_real, "scripts/check-del.py removes"), True)
+    check("⭐ real git (r7): of two paths differing only by CR vs LF, the CHANGED one keeps its weakening",
+          (has(_real, "scripts/check-c\n.py removes"), has(_real, "scripts/check-c\r.py")), (True, False))
+    check("⭐ real git (r7): a gate SYMLINKED to an outside target holds when the target weakens",
+          has(_real, "scripts/check-linked.py removes"), True)
+    check("...and the target itself, outside the gate roots, is not read under its own name",
+          has(_real, "tools/gate.py removes"), False)
     check("real git: the world REALLY holds a type change (T) and a submodule entry",
           (("docs/t", "T") in {(f["new"], f["status"]) for f in _fs},
            ("zmodule", "M") in {(f["new"], f["status"]) for f in _fs}) if _err is None else _err, (True, True))
@@ -1617,6 +1662,11 @@ def _self_test() -> int:
           (blob_hunks(lambda c: _read_gl.append(c) or "@@ -1 +1 @@\n-x\n+y\n", ("160000", "c1"), ("160000", "c2")),
            _read_gl), ([], []))
     check("tree_index of an empty tree is empty", tree_index(""), {})
+    check("as_text keeps a CR a CR (no newline translation) and passes text through",
+          (as_text(b"a\rb\n"), as_text("x\ry")), ("a\rb\n", "x\ry"))
+    check("git_reader RAISES on a failed command rather than answering empty",
+          _raises(lambda: git_reader(lambda c, **k: subprocess.CompletedProcess(c, 128, b"", b""))(["git", "x"]),
+                  PathsDisagree), True)
     check("blob_hunks: an ADDED blob is every line added, a DELETED one every line removed",
           (blob_hunks(lambda c: "x\ny\n", None, ("100644", "n1")), blob_hunks(lambda c: "z\n", ("100755", "o1"), None)),
           ([["+x", "+y"]], [["-z"]]))

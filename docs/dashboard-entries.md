@@ -17553,7 +17553,8 @@ landed on this branch — paths and statuses from `git diff --name-status -z -M`
 sections with that list BY POSITION, and r5 (Codex) found a FALSE READY in it (a type change is one entry and two
 sections, a submodule one entry and none); r6 then found two more in per-path patches (a pathspec matches a
 directory's descendants; a `-diff` attribute hides a gate's hunks). Now each file's hunks are the diff of its
-EXACT old and new BLOBS (`gather`, `blob_hunks`), which no path, pathspec or attribute can touch, checked by a
-self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
-window is unseen. 180 cases (incl. `main()` over a fake `_run` and a real-git world), 46 new mutations net, 62/62. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
+EXACT old and new BLOBS (`gather`, `blob_hunks`), which no path, pathspec or attribute can touch; r7's two
+adversarial shapes (CR-vs-LF filenames; a gate symlinked elsewhere) are closed by reading git as bytes and judging a
+symlinked gate's target as the gate, and a stop rule was set before r8. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+window is unseen. 185 cases (incl. `main()` over a fake `_run` and a real-git world), 52 new mutations net, 68/68. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.
