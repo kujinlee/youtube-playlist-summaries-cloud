@@ -261,7 +261,7 @@
   "file": "scripts/check-merge-ready.py",
   "edits": [
    [
-    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:], node)]",
+    "code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]",
     "code = list(enumerate(old_side))"
    ]
   ],
@@ -1099,46 +1099,6 @@
   ],
   "expect": [
    "...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)"
-  ]
- },
- {
-  "name": "backlog #354 r1: a Node file's `//` and `/* */` comments are read as code",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "return s.startswith((\"//\", \"/*\", \"*\")) if node else s.startswith(\"#\")",
-    "return s.startswith(\"#\")"
-   ]
-  ],
-  "expect": [
-   "r1 CLAUDE L1: a `//` comment reworded beside a `throw` in a Node gate is not held",
-   "...and nor is a `/* */` block's continuation line"
-  ]
- },
- {
-  "name": "backlog #354 r1: `npm run check:` is not a gate reference",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    "|--mutate|npm run check:\")",
-    "|--mutate\")"
-   ]
-  ],
-  "expect": [
-   "⭐ r1 CLAUDE M2: `run: npm run check:confinement` dropped from a workflow is a dropped invocation"
-  ]
- },
- {
-  "name": "backlog #354 r1: package.json is not a gate caller",
-  "file": "scripts/check-merge-ready.py",
-  "edits": [
-   [
-    ".json|package\\.json\"",
-    ".json\""
-   ]
-  ],
-  "expect": [
-   "...and so is package.json's `check:` script rewritten to `true`"
   ]
  }
 ]

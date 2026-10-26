@@ -3,7 +3,7 @@
 
     python3 scripts/check-merge-ready.py           # this branch's PR
     python3 scripts/check-merge-ready.py --pr 324
-    python3 scripts/check-merge-ready.py --self-test # 215 cases
+    python3 scripts/check-merge-ready.py --self-test # 211 cases
     python3 scripts/check-merge-ready.py --pr 324 --app-tests-passed <head sha>   # after a local
                                                  # test:integration + test:e2e run at that head
 
@@ -520,10 +520,11 @@ NODE_FAIL_PATH = re.compile(FAIL_PATH.pattern + r"|process\.exit\s*\((?!\s*0?\s*
 GATE_CODE = re.compile(r"^(scripts/[^/]+\.(py|sh|ts|mts|cts|js|mjs|cjs)|scripts/ci/.+|\.claude/hooks/.+)$")
 # Where a gate is INVOKED rather than written (r1 CLAUDE M1): dropping the line that runs a check
 # disables it without touching the check. A removed line here naming a gate, not re-added, holds.
-# ⟳ backlog #354 r1 CLAUDE M2: a TypeScript gate is run through `package.json`'s `check:` scripts.
-GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json|package\.json"
+# ⚠ backlog #356: a TypeScript gate is run through `package.json`'s `check:` scripts, and that call site is NOT
+# guarded — r1's attempt classified package.json as a caller while collection never read its hunks (r2).
+GATE_CALLER = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.claude/settings(\.local)?\.json"
                          r"|scripts/check-schema-gates\.sh|scripts/ci/.+)$")
-GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate|npm run check:")
+GATE_REF = re.compile(r"scripts/check-|\.claude/hooks/|--self-test|--mutate")
 MIGRATION = re.compile(r"^supabase/migrations/")
 APP_CODE = re.compile(r"^(app|lib|components|worker|supabase)/")
 
@@ -617,11 +618,11 @@ def diff_files(diff: str) -> list[dict]:
     return out
 
 
-def is_comment(text: str, node: bool = False) -> bool:
-    """PURE. The ONE comment rule (Python, shell and YAML all use `#`; a Node source file — `node` —
-    uses `//` and `/* */`, whose continuation lines start `*`: backlog #354 r1 CLAUDE L1)."""
-    s = text.strip()
-    return s.startswith(("//", "/*", "*")) if node else s.startswith("#")
+def is_comment(text: str) -> bool:
+    """PURE. The ONE comment rule (Python, shell and YAML all use `#`). ⚠ A Node file's `//` and `/* */` are
+    read as CODE — false holds only. backlog #354 r2: a rule treating a leading `*` as a comment hid a
+    continuation line `* 2` -> `* 0` (exit 2 -> 0, READY), so Node comments are backlog #356, not guessed at."""
+    return text.strip().startswith("#")
 
 
 def _paths(f: dict) -> list[str]:
@@ -679,10 +680,10 @@ def failure_path_removals(diff: str, k: int = FAIL_WINDOW, fs: list[dict] | None
         # ⟳ r9 (HONEST): a MOVE keeps its INDENTATION. Stripped comparison read `return 1` pushed under
         # a new `if verbose:` as moved, cancelling a real removal — in Python indentation is meaning.
         readded = [l[1:].rstrip() for hk in f["hunks"] for l in hk
-                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:], node)]
+                   if l.startswith("+") and l[1:].strip() and not is_comment(l[1:])]
         for hk in f["hunks"]:
             old_side = [l for l in hk if not l.startswith("+")]
-            code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:], node)]
+            code = [(i, l) for i, l in enumerate(old_side) if not is_comment(l[1:])]
             for i, l in code:
                 t = l[1:].strip()
                 if not l.startswith("-") or not t:
@@ -1760,18 +1761,10 @@ def _self_test() -> int:
           H([TS], DF(TS, "   if (process.exitCode === 0) {", '-    console.log("complete");', '+    console.log("done");', "   }")), [])
     check("...while `process.exitCode ||= 1` dropped is a loosening (r1 CLAUDE L2)",
           has(H([TS], DF(TS, "   if (bad) {", "-    process.exitCode ||= 1;", "+    console.log('bad');")), "failure path"), True)
-    check("r1 CLAUDE L1: a `//` comment reworded beside a `throw` in a Node gate is not held",
-          H([TS], DF(TS, "-  // the old wording", "+  // the new wording", "   if (bad) throw new Error('x');")), [])
-    check("...and nor is a `/* */` block's continuation line",
-          H([TS], DF(TS, "   /*", "-   * the old wording", "+   * the new wording", "   */", "   if (bad) throw new Error('x');")), [])
-    check("⭐ r1 CLAUDE M2: `run: npm run check:confinement` dropped from a workflow is a dropped invocation",
-          has(H([".github/workflows/ci.yml"], DF(".github/workflows/ci.yml", "       - run: npm ci",
-              "-      - run: npm run check:confinement")), "ci.yml"), True)
-    check("...and so is package.json's `check:` script rewritten to `true`",
-          has(H(["package.json"], DF("package.json", '-    "check:confinement": "ts-node scripts/check-service-confinement.ts",',
-              '+    "check:confinement": "true",')), "package.json"), True)
-    check("...but an ordinary package.json dependency bump is not held",
-          H(["package.json"], DF("package.json", '-    "zod": "3.22.0",', '+    "zod": "3.23.0",')), [])
+    # ⛔ A STATED BOUND (backlog #356, split off at r2): the npm call site of a TypeScript gate is not guarded.
+    check("BOUND (stated, backlog #356): `run: npm run check:confinement` dropped from a workflow is NOT held",
+          H([".github/workflows/ci.yml"], DF(".github/workflows/ci.yml", "       - run: npm ci",
+            "-      - run: npm run check:confinement")), [])
     # ⛔ A STATED BOUND (r1 CLAUDE M1): a failure block wrapped in `/* */` ADDS lines and removes none, so the
     # removal rule cannot see it — the same class as Python's `if False:` around a `return 1`. Review catches it.
     check("BOUND (stated, backlog #354 r1): a Node failure block wrapped in `/* */` is NOT held",
