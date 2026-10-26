@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 239 cases
+    python3 scripts/check-plan-code.py --self-test          # 246 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1349,7 +1349,7 @@ EXPECTED_MUTATIONS = {
     #   eleven entries added, none retired. ⟳ r1 fold: 128 -> 131 — four anchors this branch orphaned
     #   REBOUND (r1 CLAUDE H2, plus two of its own), three added for main()'s --only wiring and CI=true.
     #   ⟳ r2 fold: 131 -> 133 — a failed control is reported before, and priced out of, a budget refusal.
-    "scripts/check-plan-code.py": 133,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    "scripts/check-plan-code.py": 137,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2390,6 +2390,34 @@ def local_budget_refusal(control_seconds: dict, muts: list, budget: "float | Non
             f"NOTHING WAS MEASURED.")
 
 
+def anchor_problems(muts: list[dict], read) -> list[str]:
+    """PURE over `read(target) -> text | None`. Every entry's edits, applied SEQUENTIALLY to the
+    delivered text exactly as `run_mutations` applies them: each find-string must occur once.
+
+    ⛔ backlog #252: an anchor stops binding when an edit ELSEWHERE changes the text it names, and
+    `run_mutations` only discovers that when the mutation runs — measured 14m58s into a CI shard,
+    while 175 sibling entries bought no verdict. This is the same rule, run up front, in well under
+    a second, before any tree is staged. `run_mutations` keeps its own check: a target can change
+    between this pass and the run only by a bug, and the late check is what would say so.
+    """
+    out = []
+    for m in muts:
+        name, fname = m.get("name", "?"), m.get("file", "")
+        src = read(fname)
+        if src is None:
+            continue                     # an unknown target is refused by its own rule, not here
+        for find, repl in m.get("edits", []):
+            n = src.count(find)
+            if n != 1:
+                out.append(f"mutation {name!r} ({fname}): " + (
+                    "anchor NOT FOUND" if n == 0 else f"anchor matches {n} times")
+                    + " in the delivered file — refused before any tree is staged (backlog #252). "
+                      "Re-bind it to the text the edit now names")
+                break
+            src = src.replace(find, repl, 1)
+    return out
+
+
 def mutate_delivered(root: pathlib.Path,
                      progress=None,
                      shard: "tuple[int, int] | None" = None,
@@ -2470,6 +2498,16 @@ def mutate_delivered(root: pathlib.Path,
                 drift.append(f"mutation {m.get('name', '?')!r}: {why}. Its REPLACEMENT "
                              f"text is scanned as well as its target, because the "
                              f"mutation is what puts the route there")
+    _texts: dict = {}
+
+    def _read(target: str):
+        if target not in _texts:
+            try:
+                _texts[target] = (root / target).read_text(encoding="utf-8")
+            except OSError:
+                _texts[target] = None
+        return _texts[target]
+    drift += anchor_problems(muts, _read)
     if drift:
         return False, drift, NotMeasured.from_counts([], None, ev_files)
     # ⛔ EVERYTHING ABOVE THIS LINE IS OVER THE WHOLE MANIFEST, AND MUST STAY THAT WAY. The
@@ -3290,6 +3328,20 @@ def _self_test() -> int:
         _ok, _rep, _evm, _evs = run_mutations(_d, _mut, {"m.py"})
         case("run_mutations catches a real mutation", (_ok, _evs), (True, []))
         case("run_mutations records the caught mutation", len(_evm), 1)
+        # backlog #252: the same rules, applied up front over the delivered text — sequentially, as the run does.
+        _src = {"m.py": "def f():\n    return 1\nx = 1\nx = 1\n"}.get
+        case("anchor_problems: a binding anchor, and a second edit that binds only AFTER the first, are clean",
+             anchor_problems([{"name": "a", "file": "m.py", "edits": [["return 1", "return 2"], ["return 2", "return 3"]]}], _src), [])
+        case("...an anchor absent from its target is named",
+             [("anchor NOT FOUND" in r, "'gone'" in r) for r in
+              anchor_problems([{"name": "gone", "file": "m.py", "edits": [["return 9", "return 2"]]}], _src)], [(True, True)])
+        # a DIFFERENT reader: one that cannot read a target. That target is refused by its own rule (unknown
+        # file), so this pass names nothing for it rather than inventing a NOT FOUND.
+        case("...and a target the reader cannot read is left to its own refusal, not reported as NOT FOUND",
+             anchor_problems([{"name": "u", "file": "m.py", "edits": [["return 1", "return 2"]]}], lambda f: None), [])
+        case("...and so is one that matches TWICE",
+             [("matches 2 times" in r) for r in
+              anchor_problems([{"name": "twice", "file": "m.py", "edits": [["x = 1", "x = 2"]]}], _src)], [True])
         _bad = [{"name": "anchor not there", "file": "m.py",
                  "edits": [["return 99", "return 2"]], "expect": "f returns one"}]
         _ok2, _rep2, _, _ = run_mutations(_d, _bad, {"m.py"})
@@ -3606,6 +3658,30 @@ def _self_test() -> int:
             _oko, _repo, _evo = mutate_delivered(_r, only=frozenset({"scripts/thing.py"}))
             case("--only runs the named target's mutations to a full verdict",
                  (_oko, isinstance(_evo, Measured)), (True, True))
+            # backlog #252: an anchor that no longer binds is refused BEFORE any tree is staged — it used to
+            # surface only when its mutation ran, 15 minutes into a CI shard. And it is a whole-manifest
+            # check, so --only naming ANOTHER target still sees it.
+            _man_t = _r / "scripts" / "mutations" / "thing.json"; _keep_t = _man_t.read_text()
+            _man_t.write_text(json.dumps([{"name": "value is two", "file": "scripts/thing.py",
+                                           "edits": [["VALUE != 9", "VALUE != 2"]], "expect": "value is one"}]))
+            _told_a: list = []
+            try:
+                _oka, _repa, _eva = mutate_delivered(_r, progress=lambda *a: _told_a.append(a))
+            finally:
+                _man_t.write_text(_keep_t)
+            case("⭐ an orphaned anchor is REFUSED before any tree is staged — no control ran (backlog #252)",
+                 (_oka, any("anchor NOT FOUND" in r and "before any tree is staged" in r for r in _repa),
+                  isinstance(_eva, NotMeasured), _told_a), (False, True, True, []))
+            # r1 CLAUDE L1: the WHOLE-MANIFEST claim, driven — `--only` naming ANOTHER target still sees the orphan.
+            _man_t.write_text(json.dumps([{"name": "value is two", "file": "scripts/thing.py",
+                                           "edits": [["VALUE != 9", "VALUE != 2"]], "expect": "value is one"}]))
+            _saved_o = dict(EXPECTED_MUTATIONS); EXPECTED_MUTATIONS["scripts/other.py"] = 1
+            try:
+                _oko2, _repo2, _ = mutate_delivered(_r, only=frozenset({"scripts/other.py"}))
+            finally:
+                _man_t.write_text(_keep_t); EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved_o)
+            case("...and `--only` naming ANOTHER target still refuses it — the pre-check is whole-manifest (r1 L1)",
+                 (_oko2, any("'value is two'" in r and "before any tree is staged" in r for r in _repo2)), (False, True))
             _okn, _repn, _ = mutate_delivered(_r, only=frozenset({"scripts/nope.py"}))
             case("...and refuses a target no manifest names",
                  (_okn, bool(_repn) and "--only names scripts/nope.py" in _repn[0]), (False, True))
@@ -3717,6 +3793,7 @@ def _self_test() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             (_r / "scripts" / "thing.py").write_text(
                 'import sys\n'
+                'ANCHOR = "VALUE != 1"  # keeps the manifest anchor bound (backlog #252 pre-check)\n'
                 'def _self_test():\n'
                 '    print("S" * 800)\n'
                 '    raise RuntimeError("the tree went bad underneath")\n'
@@ -3737,6 +3814,7 @@ def _self_test() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             (_r / "scripts" / "thing.py").write_text(
                 'import sys\n'
+                'ANCHOR = "VALUE != 1"  # keeps the manifest anchor bound (backlog #252 pre-check)\n'
                 'def _self_test():\n'
                 '    sys.stderr.write("N" * 600 + "\\n")\n'
                 '    print("  [FAIL] the value is one")\n'
@@ -3981,8 +4059,20 @@ def _self_test() -> int:
                     {"name": "anchor absent two", "file": "scripts/thing.py",
                      "edits": [["NO SUCH TEXT TWO", "y"]], "expect": "value is one"}]))
                 EXPECTED_MUTATIONS["scripts/thing.py"] = 2
-                _outB = _mutate_output(_rB)
+                # ⟳ backlog #252: the pre-check now refuses this world before staging, naming both. The
+                # late shortfall path stays as defence (a target changed between pre-check and run), so
+                # it is reached here with the pre-check stood down, and the pre-check asserted separately.
+                _outB_pre = _mutate_output(_rB)
+                _ap = globals()["anchor_problems"]; globals()["anchor_problems"] = lambda m, r: []
+                try:
+                    _outB = _mutate_output(_rB)
+                finally:
+                    globals()["anchor_problems"] = _ap
                 EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+                case("⭐ ...and with the pre-check in place the same world is refused UP FRONT, naming both "
+                     "entries (backlog #252)",
+                     ("'anchor absent one'" in _outB_pre, "'anchor absent two'" in _outB_pre,
+                      "before any tree is staged" in _outB_pre), (True, True, True))
                 case("a TOTAL SHORTFALL prints no tally either (r5 H1, path 3 of 3)",
                      _no_tally(_outB), (True, False, False))
                 case("...and it names the arithmetic, so dropped entries are not invisible",
@@ -5962,7 +6052,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2125)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2129)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
