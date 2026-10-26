@@ -17560,6 +17560,8 @@ a gate (a helper it imports; exit status 3): every `scripts/*` file now counts a
 40 PRs held); a condition removed far from its failure line is stated as the SEMANTIC bound — review is the
 primary protection, this stage a second net. r9 found two more honest gaps — a re-indented `return 1` read as
 moved, and `sys.exit(10)` / `raise` unknown — now closed (10 of 40 held); r10's `sys.exit("message")` too, and any
-collection error is now CANNOT RUN. Round 11 is a confirmation round: further findings are filed, not folded. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
+collection error is now CANNOT RUN. Round 11 confirmed the round-10 fold and found one more honest gap —
+TypeScript gates such as `check-service-confinement.ts` are not read as gate code — FILED as backlog #354 rather
+than folded, as the stop rule written before that round required. Checked by a self-test that builds a REAL git repository with every shape found, including those. Bounds stated in the script: a re-add in dead code reads as a move, and a removal beyond the
 window is unseen. 199 cases (incl. `main()` over a fake `_run` and a real-git world), 59 new mutations net, 75/75. `check-main-drivable`'s `MAIN_DEBT` drops the script (debt paid). `dev-process.md`
 (still 220/220), the push hook's message, and the merge memory updated.
