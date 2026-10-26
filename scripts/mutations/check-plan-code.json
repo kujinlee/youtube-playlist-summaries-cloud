@@ -240,8 +240,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "            print(not_measured_line(verdict, shard))\n        return 0 if ok else 1",
-        "            print(not_measured_line(verdict, shard)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
+        "            print(not_measured_line(verdict, shard, only))\n        return 0 if ok else 1",
+        "            print(not_measured_line(verdict, shard, only)\n                  + f\" {len(verdict.entries)} survivor(s)\")\n        return 0 if ok else 1"
       ]
     ],
     "expect": "--mutate mode refuses to print a tally it did not earn"
@@ -514,8 +514,8 @@
     "name": "--mutate stops supplying the reporter, so every default-silent layer below it stays silent and the feature is off while all its other cases still pass",
     "edits": [
       [
-        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard)",
-        "mutate_delivered(mroot, shard=shard)"
+        "mutate_delivered(mroot, progress=stderr_progress,\n                                               shard=shard, budget=budget, only=only)",
+        "mutate_delivered(mroot, shard=shard, budget=budget, only=only)"
       ]
     ],
     "expect": [
@@ -1083,7 +1083,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard)}\")",
+        "              f\"{len(verdict.survivors)} survivor(s)\"\n            + f\" — measured over {shard_label(shard, only)}\")",
         "              f\"{len(verdict.survivors)} survivor(s)\")"
       ]
     ],
@@ -1097,7 +1097,7 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard)}\"",
+        "    return f\"NOT MEASURED — {nm.reason} — measured over {shard_label(shard, only)}\"",
         "    return f\"NOT MEASURED — {nm.reason}\""
       ]
     ],
@@ -1452,8 +1452,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "budget = None if (os.environ.get(\"CI\") or a.allow_long_local) else LOCAL_SWEEP_BUDGET",
-        "budget = None if a.allow_long_local else LOCAL_SWEEP_BUDGET"
+        "budget = None if (_ci or a.allow_long_local) else (",
+        "budget = None if a.allow_long_local else ("
       ]
     ],
     "expect": [
@@ -1465,8 +1465,8 @@
     "file": "scripts/check-plan-code.py",
     "edits": [
       [
-        "os.environ.get(\"CI\") or a.allow_long_local)",
-        "os.environ.get(\"CI\"))"
+        "_ci or a.allow_long_local)",
+        "_ci)"
       ]
     ],
     "expect": [
@@ -1577,6 +1577,45 @@
     ],
     "expect": [
       "--mutate . ... --shard is refused, rc=2, saying why"
+    ]
+  },
+  {
+    "name": "--only: main() never passes the slice to the run",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        only = frozenset(a.only) if a.only else None",
+        "        only = None"
+      ]
+    ],
+    "expect": [
+      "⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0"
+    ]
+  },
+  {
+    "name": "--only: main()'s tally line forgets the slice",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "            print(tally_line(ok, verdict, shard, only))",
+        "            print(tally_line(ok, verdict, shard))"
+      ]
+    ],
+    "expect": [
+      "⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0"
+    ]
+  },
+  {
+    "name": "local budget: any non-empty CI counts, CI=false included",
+    "file": "scripts/check-plan-code.py",
+    "edits": [
+      [
+        "        _ci = os.environ.get(\"CI\", \"\").lower() == \"true\"",
+        "        _ci = bool(os.environ.get(\"CI\"))"
+      ]
+    ],
+    "expect": [
+      "...an exported CI=false is NOT CI, so the budget still applies, rc=2"
     ]
   }
 ]

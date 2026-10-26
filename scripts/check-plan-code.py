@@ -3,7 +3,7 @@
 
     python3 scripts/check-plan-code.py --mutate .           # THE MODE. Mutate the DELIVERED scripts
     python3 scripts/check-plan-code.py --mutate . --shard 2/5   # ...only shard 2 of 5 of it
-    python3 scripts/check-plan-code.py --self-test          # 235 cases
+    python3 scripts/check-plan-code.py --self-test          # 237 cases
 
 ⛔ PLAN MODE IS RETIRED — refused 2026-09-08, CODE DELETED 2026-09-09. `<plan.md>`,
 `--evidence`, `--compare` and `--verify-evidence` REFUSE with rc=2 and a sentence
@@ -1346,8 +1346,9 @@ EXPECTED_MUTATIONS = {
     # Three entries: losing the RUN-UNPARSED state, conflating the two causes of a None
     # change-set, and inverting the parsed verdict outright.
     # ⟳ 2026-10-25: 117 -> 128, the LOCAL SWEEP BUDGET, --allow-long-local and --only (backlog #208):
-    #   eleven entries added, none retired.
-    "scripts/check-plan-code.py": 128,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
+    #   eleven entries added, none retired. ⟳ r1 fold: 128 -> 131 — four anchors this branch orphaned
+    #   REBOUND (r1 CLAUDE H2, plus two of its own), three added for main()'s --only wiring and CI=true.
+    "scripts/check-plan-code.py": 131,   # ⟳ 2026-10-21 r4: +2, SWEEP_RELEVANT_ROOTS — one
     # entry for the collapse back to `scripts/` only (the hole Codex PROVED with
     # .agents/skills/shared/handoff-path.md, 25/25 -> 24/25) and one for dropping the `docs`
     # exclusion, which would revert backlog #173's pinned decision and its whole saving.
@@ -2499,17 +2500,19 @@ def mutate_delivered(root: pathlib.Path,
             out = merged_output(so, se)
             ev_files[name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
                               "blocks": None}
-            # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN: the estimate only grows, so the
-            # targets timed so far already bound it — refusing here costs one suite, not all.
-            why = local_budget_refusal(control_seconds,
-                                       [m for m in shard_muts if m["file"] in control_seconds], budget)
-            if why:
-                return False, [why], NotMeasured.from_counts([], None, ev_files)
             if not control_is_green(rc, out):
                 report.append(f"CANNOT RUN — control run of {name} did not prove the suite "
                               f"works (exit {rc}) BEFORE any mutation was applied. Every "
                               f"verdict below would be an artefact. Treat this as NOT "
                               f"CHECKED.\n    {diagnostic_tail(so, se)}")
+                continue
+            # THE BUDGET, AS SOON AS IT IS KNOWN TO BE BLOWN — after this control proved GREEN (r1 L2:
+            # a slow FAILING control read as "REFUSED LOCALLY"). The estimate only grows, so the
+            # targets timed so far bound it — refusing here costs one suite, not all.
+            why = local_budget_refusal(control_seconds,
+                                       [m for m in shard_muts if m["file"] in control_seconds], budget)
+            if why:
+                return False, [why], NotMeasured.from_counts([], None, ev_files)
         if report:
             return False, report, NotMeasured.from_counts([], None, ev_files)
         ok, m_report, m_muts, m_survivors = run_mutations(d, shard_muts, set(targets),
@@ -2904,6 +2907,31 @@ def parse_fail_names(out: str) -> list[str]:
     """
     return [l.strip()[7:].rsplit(": got ", 1)[0].strip()
             for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
+
+
+def _budget_wiring(root: pathlib.Path) -> dict:
+    """`main()` over the fixture ROOT under each CI / flag / --only setting: {key: (rc, stdout)}.
+
+    ⛔ A SMALL FUNCTION ON PURPOSE (PR #400 r1 H1, measured): `check-main-drivable` analyses every
+    `main()` call site against its ENCLOSING function, and inside the long `_self_test` this one
+    call cost its suite ~30s and pushed it past `SUITE_TIMEOUT`. Here it costs nothing."""
+    saved = os.environ.pop("CI", None)
+    out = {}
+    try:
+        for key, ci, extra, bud in (("local", None, [], 0), ("flag", None, ["--allow-long-local"], 0),
+                                    ("cifalse", "false", [], 0), ("ci", "true", [], 0),
+                                    ("only", None, ["--only", "scripts/thing.py"], 3600)):
+            os.environ.pop("CI", None)
+            if ci is not None:
+                os.environ["CI"] = ci
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                out[key] = (main(["--mutate", str(root), *extra], local_budget=bud), buf.getvalue())
+    finally:
+        os.environ.pop("CI", None)
+        if saved is not None:
+            os.environ["CI"] = saved
+    return out
 
 
 def _self_test() -> int:
@@ -3528,19 +3556,18 @@ def _self_test() -> int:
             case("...and refuses a target no manifest names",
                  (_okn, bool(_repn) and "--only names scripts/nope.py" in _repn[0]), (False, True))
             # main()'s WIRING: off CI the budget applies, on CI or with the one-run flag it does not.
-            _saved_budget, _saved_ci = LOCAL_SWEEP_BUDGET, os.environ.pop("CI", None)
-            globals()["LOCAL_SWEEP_BUDGET"] = 0
-            try:
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                    _rc_local = main(["--mutate", str(_r)])
-                    _rc_flag = main(["--mutate", str(_r), "--allow-long-local"])
-                    os.environ["CI"] = "true"
-                    _rc_ci = main(["--mutate", str(_r)])
-            finally:
-                globals()["LOCAL_SWEEP_BUDGET"] = _saved_budget
-                os.environ.pop("CI", None)
-                if _saved_ci is not None:
-                    os.environ["CI"] = _saved_ci
+            # ⟳ PR #400 r1 H1: the budget is a PARAMETER, not a `globals()` rebind — the rebind made
+            # check-main-drivable's call-site analysis cost ~85s and pushed its suite past 120s.
+            # ⟳ PR #400 r1 H1, re-measured: the cost was the NUMBER of `main(["--mutate"…])` call
+            # sites (check-main-drivable analyses each — 209s vs 50s on master), not the rebind. ONE
+            # call site, driven from a table.
+            _wired = _budget_wiring(_r)
+            _rc_local, _rc_flag, _rc_cifalse, _rc_ci = (_wired[k][0] for k in ("local", "flag", "cifalse", "ci"))
+            _rc_only, _out_only = _wired["only"][0], io.StringIO(_wired["only"][1])
+            case("...an exported CI=false is NOT CI, so the budget still applies, rc=2", _rc_cifalse, 2)
+            case("⭐ main() wires --only to a verdict line that names the DIAGNOSTIC slice, rc=0",
+                 (_rc_only, "measured over ONLY scripts/thing.py — a DIAGNOSTIC slice" in _out_only.getvalue()),
+                 (0, True))
             case("⭐ main() off CI REFUSES a run past the local budget, rc=2", _rc_local, 2)
             case("...--allow-long-local lets THAT run through, rc=0", _rc_flag, 0)
             case("...and on CI the budget never applies, rc=0", _rc_ci, 0)
@@ -5881,7 +5908,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2041)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2044)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
@@ -5995,7 +6022,7 @@ def _self_test() -> int:
     return _drift_rc(__doc__, ok, fail)
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], local_budget: "float | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("plan", nargs="?")
@@ -6012,7 +6039,8 @@ def main(argv: list[str]) -> int:
     # ⚠ DERIVED from `SHARD_FLAGS`, never typed twice — round 7 H1. The dict is the single
     # declaration; this loop and the mode check in `main` are its only two readers.
     ap.add_argument("--only", metavar="SCRIPT", action="append",
-                    help="With --mutate: run only the mutations targeting SCRIPT (repeatable). "
+                    help="With --mutate: run only the mutations targeting SCRIPT, written as the "
+                         "manifest's `file` (e.g. scripts/check-x.py; repeatable). "
                          "A DIAGNOSTIC slice — the gate is the whole manifest, in CI.")
     ap.add_argument("--allow-long-local", action="store_true",
                     help="With --mutate, off CI: run even past the local budget. THIS RUN ONLY.")
@@ -6156,7 +6184,10 @@ def main(argv: list[str]) -> int:
         # to silence, so a nested run cannot write into the stream its parent reads.
         # ⛔ OFF CI the budget applies unless THIS invocation asks otherwise; `CI` is set by
         # every GitHub Actions runner, so the sharded gate is never refused.
-        budget = None if (os.environ.get("CI") or a.allow_long_local) else LOCAL_SWEEP_BUDGET
+        # L1: only a CI runner's own `CI=true` counts — an exported `CI=false` is not CI.
+        _ci = os.environ.get("CI", "").lower() == "true"
+        budget = None if (_ci or a.allow_long_local) else (
+            LOCAL_SWEEP_BUDGET if local_budget is None else local_budget)
         only = frozenset(a.only) if a.only else None
         ok, report, verdict = mutate_delivered(mroot, progress=stderr_progress,
                                                shard=shard, budget=budget, only=only)

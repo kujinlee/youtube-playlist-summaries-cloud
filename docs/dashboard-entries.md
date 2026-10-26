@@ -17534,7 +17534,7 @@ the control loop refuses as soon as the running estimate passes `LOCAL_SWEEP_BUD
 NOTHING MEASURED — naming the costliest target. `--allow-long-local` is a FLAG, so the exception
 cannot outlive its run. `--only <script>` (backlog #208's inner loop) narrows execution only; every
 whole-manifest check still runs, and the verdict reads "a DIAGNOSTIC slice, not the gate". Measured:
-the unscoped local sweep refused after 12s; `--only scripts/check-merge-ready.py` 4.8s. 233 cases; 11
-mutations (117 -> 128), each killed by its named case over a green control (in memory — the full
+the unscoped local sweep refused after 12s; `--only scripts/check-merge-ready.py` 4.8s. 237 cases; 14
+mutations (117 -> 131; review r1 also re-bound four anchors this branch had orphaned), each killed by its named case over a green control (in memory — the full
 128-entry run is itself past the budget, so it is CI's). `dev-process.md`'s `check-plan-code` row now
 states the rule and the draft-PR-at-slice-start practice; the push memory no longer forbids a draft.
