@@ -17585,3 +17585,15 @@ the unscoped local sweep refused after 12s; `--only scripts/check-merge-ready.py
 mutations (117 -> 131; review r1 also re-bound four anchors this branch had orphaned), each killed by its named case over a green control (in memory — the full
 131-entry run is itself past the budget, so it is CI's). `dev-process.md`'s `check-plan-code` row now
 states the rule and the draft-PR-at-slice-start practice; the push memory no longer forbids a draft.
+
+
+## 2026-10-26
+The new merge rule held its first pull request for the owner, and it was a false alarm: one line
+had only gained two arguments, but it sat next to a place where the program reports failure, so the
+rule could not tell it from a weakened check. The owner looked and merged it. The pattern is now
+recorded as a backlog item, to fix only if it keeps happening.
+<!--tech-->
+PR #400 (`local-sweep-guard`) merged `ba4d2c28` on the owner's call after `check-merge-ready` exit 3:
+`failure_path_removals` counted `shard=shard)` -> `shard=shard, budget=budget, only=only)` as a rewrite on
+a failure path. Filed as backlog #355 (XS, tooling) with the falsifier: the extended-call shape READY while
+`return 1` -> `return 0` and an `or`-widened condition stay HOLD. Roadmap line added.
