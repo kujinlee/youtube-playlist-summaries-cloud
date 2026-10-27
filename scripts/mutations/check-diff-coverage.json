@@ -203,8 +203,8 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        r = git(\"diff\", \"--no-ext-diff\", \"--src-prefix=a/\", \"--dst-prefix=b/\", \"-U0\", \"--no-color\",",
-        "        r = git(\"diff\", \"-U0\", \"--no-color\","
+        "        r = git(\"diff\", \"--no-ext-diff\", \"--no-textconv\", \"--src-prefix=a/\", \"--dst-prefix=b/\", \"-U0\", \"--no-color\",",
+        "        r = git(\"diff\", \"--no-textconv\", \"-U0\", \"--no-color\","
       ]
     ],
     "expect": [
@@ -229,12 +229,12 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "                   errors=\"replace\")",
-        "                   )"
+        "r.stdout.decode(\"utf-8\", \"replace\"), r.stderr.decode",
+        "r.stdout.decode(\"utf-8\", \"strict\"), r.stderr.decode"
       ]
     ],
     "expect": [
-      "⭐ every git call decodes with replacement — a non-UTF-8 byte is not a traceback"
+      "⭐ a non-UTF-8 byte in git's output is decoded with replacement, not a traceback"
     ]
   },
   {
@@ -307,12 +307,181 @@
     "file": "scripts/check-diff-coverage.py",
     "edits": [
       [
-        "        shown = git(\"show\", f\"HEAD:{p}\")  # the committed tree the diff describes, never the working tree",
-        "        shown = git(\"show\", f\":{p}\")  # the INDEX, not the committed tree"
+        "        shown = git(\"show\", \"--no-textconv\", f\"HEAD:{p}\")",
+        "        shown = git(\"show\", \"--no-textconv\", f\":{p}\")"
       ]
     ],
     "expect": [
       "⭐ the source is read from the committed HEAD, not the working tree (r3)"
+    ]
+  },
+  {
+    "name": "⭐ git's output is newline-TRANSLATED again, as `text=True` did — a lone CR becomes LF (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "r.stdout.decode(\"utf-8\", \"replace\"), r.stderr",
+        "r.stdout.decode(\"utf-8\", \"replace\").replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\"), r.stderr"
+      ]
+    ],
+    "expect": [
+      "⭐ a committed lone CR, read by REAL git, is NOT CHECKED — never 'every one is edited' (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ the diff lets a textconv driver run again (backlog #371)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "r = git(\"diff\", \"--no-ext-diff\", \"--no-textconv\", \"--src-prefix=a/\",",
+        "r = git(\"diff\", \"--no-ext-diff\", \"--src-prefix=a/\","
+      ]
+    ],
+    "expect": [
+      "⭐ a textconv driver that empties the diff still WARNS the new decision line (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ the manifests are read from the WORKING TREE again (backlog #371 r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            entries, problems = _plan_code(root).load_manifests(snap)",
+        "            entries, problems = _plan_code(root).load_manifests(root)"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCOMMITTED or IGNORED manifest cannot clear a committed line — manifests come from HEAD (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ a failed ls-tree is read as no manifests (backlog #371 r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "    if r.returncode != 0:\n        return f\"`git ls-tree HEAD scripts/` failed",
+        "    if False:\n        return f\"`git ls-tree HEAD scripts/` failed"
+      ]
+    ],
+    "expect": [
+      "⭐ HEAD's tree that cannot be LISTED is CANNOT RUN — no manifests read is not a clean pass (backlog #371)"
+    ]
+  },
+  {
+    "name": "⭐ GIT_DIR is inherited again — another repository is measured (backlog #371 r1 H1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                env=constructed_env())",
+        "                env=dict(os.environ))"
+      ]
+    ],
+    "expect": [
+      "⭐ under an exported GIT_DIR naming ANOTHER repo, `root` is still measured and the other is untouched (r1 H1)"
+    ]
+  },
+  {
+    "name": "⭐ a run that measured nothing claims every line is edited again (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "                   else \" — none changed, so nothing was measured\"))",
+        "                   else \" — every one is edited by a mutation\"))"
+      ]
+    ],
+    "expect": [
+      "⭐ a range that changes NO manifested script says nothing was measured — never 'every one is edited' (r1)"
+    ]
+  },
+  {
+    "name": "⭐ an unreadable manifest blob is skipped — a partial set reads as whole (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            if blob.returncode != 0:\n",
+        "            if False:\n"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifest BLOB that cannot be read at HEAD is CANNOT RUN, never a partial set read as whole (r1)"
+    ]
+  },
+  {
+    "name": "⭐ the snapshot's refusal is ignored (r1)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        if why:\n            return 2,",
+        "        if False:\n            return 2,"
+      ]
+    ],
+    "expect": [
+      "⭐ HEAD's tree that cannot be LISTED is CANNOT RUN — no manifests read is not a clean pass (backlog #371)"
+    ]
+  },
+  {
+    "name": "the snapshot writes no target stubs — the loader refuses every manifest",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "            (snap / path).touch()",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ over the REAL manifests, an unedited decision line of a real guard is warned by file:line"
+    ]
+  },
+  {
+    "name": "⭐ the constructed environment passes GIT_* through again (r2 REDESIGN)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "return {k: os.environ[k] for k in PASSED_ENV if k in os.environ}",
+        "return {k: v for k, v in os.environ.items() if k in PASSED_ENV or k.startswith(\"GIT_\")}"
+      ]
+    ],
+    "expect": [
+      "⭐ every git call gets a CONSTRUCTED environment — no GIT_* variable at all reaches it (r2 REDESIGN)"
+    ]
+  },
+  {
+    "name": "⭐ attributes are read from the WORKING TREE again (r2 REDESIGN)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "r = run([\"git\", \"--attr-source=HEAD\", \"-c\", \"core.quotepath=off\", *args]",
+        "r = run([\"git\", \"-c\", \"core.quotepath=off\", *args]"
+      ]
+    ],
+    "expect": [
+      "⭐ an UNCOMMITTED .gitattributes cannot change what is measured — attributes come from HEAD (r2)"
+    ]
+  },
+  {
+    "name": "⭐ a non-regular manifest at HEAD is read as one again — a symlink's link text (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "parts[1] != \"blob\" or parts[0] not in (\"100644\", \"100755\")):",
+        "parts[1] != \"blob\"):"
+      ]
+    ],
+    "expect": [
+      "⭐ a manifest that is a SYMLINK at HEAD is CANNOT RUN — its link text is not a manifest (r2)"
+    ]
+  },
+  {
+    "name": "⭐ the fixtures inherit the environment again (r2)",
+    "file": "scripts/check-diff-coverage.py",
+    "edits": [
+      [
+        "        return dict(constructed_env(), GIT_CONFIG_GLOBAL=os.devnull,",
+        "        return dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,"
+      ]
+    ],
+    "expect": [
+      "⭐ command-scope git config (GIT_CONFIG_COUNT: a failing pre-commit hook) cannot reach a fixture (r2)"
     ]
   }
 ]
