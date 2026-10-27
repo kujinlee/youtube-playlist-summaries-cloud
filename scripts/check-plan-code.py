@@ -1872,7 +1872,7 @@ EXPECTED_MUTATIONS = {
     "scripts/check-handoff-path.py": 6,
     "scripts/check-diff-coverage.py": 24,
     "scripts/session-state.py": 25,
-    "scripts/check-hook-commands.py": 20,
+    "scripts/check-hook-commands.py": 34,
     # backlog #364 (2026-10-27): the launcher's own test, pinned in the commit that creates it. Its
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
     "scripts/check-run-hook.py": 9,
@@ -6062,7 +6062,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2216)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2230)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
