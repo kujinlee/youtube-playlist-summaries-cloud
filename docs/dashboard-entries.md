@@ -17735,6 +17735,23 @@ Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progr
 
 
 ## 2026-10-26
+The project's safety hooks stop working whenever the session steps into a subfolder, and that is still
+true: three ways of fixing it each broke something else under review, so the fix now gets a design review
+of its own before another attempt. What ships instead is a check that every hook is registered one way,
+exists, and is actually wired up — so the eventual fix has one place to change, and a hook can no longer
+sit in the folder doing nothing.
+<!--tech-->
+Branch `hooks-absolute-path` (backlog #223, PR #409), SPLIT at the owner's choice A. Ships: `check-hook-commands.py`
+(in CI) — one registration shape (today's `bash .claude/hooks/<name>.sh`), a registered hook must exist, every hook
+file registered or in `UNREGISTERED` with a reason (`check-memory-index-budget.sh`). `.claude/` is byte-identical to
+master. 22 cases; 12 mutations (2138 -> 2150), each killed by its named case. Split out: backlog #364, the launcher,
+after r1 (project dir ran main's hooks from a worktree), r2 (git discovery steerable), r3 (a marker walk skipped
+pre-launcher worktrees) — r2 and r3 fold-induced, so an architecture review comes first.
+⟳ r4 (Codex, last — DEFER): `.claude/` byte-identical to master confirmed; the guard skips an entry with no or an unknown
+`type` and accepts an empty UNREGISTERED reason — filed as backlog #365 and stated in the guard's docstring.
+
+
+## 2026-10-26
 Every new session, and every time the conversation is automatically compacted, now begins with a short
 block listing what is in flight: each open pull request with its state and checks, the latest review it
 added and the bet that review is testing, and any background job someone recorded. It is worked out from
