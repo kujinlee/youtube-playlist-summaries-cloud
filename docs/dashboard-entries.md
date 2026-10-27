@@ -17789,5 +17789,7 @@ as it was. A pull request whose check results GitHub did not return now says so,
 Branch `ledger-cap-safety` (backlog #369, from PR #410 round 4). `scripts/session-state.py`: `_whole()` makes `ledger_add`
 and `ledger_done` raise `LedgerRefused` (CLI exit 2) for a ledger over `MAX_LEDGER` or not a regular file, and `_write`
 refuses a body over the cap BEFORE `os.replace`; `render()` prints `checks: UNREADABLE` for a rollup that is not a list
-(missing, `null`, `{}`, `""`). The row's falsifier is two cases; 45 cases; 21 mutations (4 new), each killed by its case.
+(missing, `null`, `{}`, `""`). ⟳ r1 (both halves): the first fix duplicated the size rule (one `>=` brought the erasure
+back) and a symlinked lock lost a job under three concurrent adds — now ONE read rule (`open(O_NOFOLLOW)`, `fstat`, one read)
+for the block and every update, an `O_NOFOLLOW` lock, UTF-8 writes. 51 cases; 25 mutations.
 

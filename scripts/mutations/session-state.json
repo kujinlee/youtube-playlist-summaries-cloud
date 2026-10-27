@@ -143,19 +143,6 @@
     ]
   },
   {
-    "name": "⭐ an oversized ledger is read anyway",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "    if st.st_size > MAX_LEDGER:\n        return [], [f\"{LEDGER_REL} is {st.st_size} bytes",
-        "    if False:\n        return [], [f\"{LEDGER_REL} is {st.st_size} bytes"
-      ]
-    ],
-    "expect": [
-      "⭐ a ledger over MAX_LEDGER is refused unread (r3 F4: 139 MB took 35 s)"
-    ]
-  },
-  {
     "name": "⭐ an empty id is accepted by add",
     "file": "scripts/session-state.py",
     "edits": [
@@ -182,32 +169,6 @@
     ]
   },
   {
-    "name": "⭐ the ledger is split on every Unicode line break",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "    for i, line in enumerate(path.read_bytes().split(b\"\\n\"), 1):",
-        "    for i, line in enumerate((x.encode(\"utf-8\", \"surrogateescape\") for x in path.read_bytes().decode(\"utf-8\", \"surrogateescape\").splitlines()), 1):"
-      ]
-    ],
-    "expect": [
-      "⭐ a line written elsewhere with a RAW U+2028 in a value is still ONE readable job — split on \\n only"
-    ]
-  },
-  {
-    "name": "⭐ the ledger lock is dropped",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "        fcntl.flock(fh, fcntl.LOCK_EX)\n",
-        ""
-      ]
-    ],
-    "expect": [
-      "⭐ 20 concurrent adds keep all 20 jobs"
-    ]
-  },
-  {
     "name": "⭐ main() no longer prints the block",
     "file": "scripts/session-state.py",
     "edits": [
@@ -218,32 +179,6 @@
     ],
     "expect": [
       "⭐ main() PRINTS the block — the hook's whole output"
-    ]
-  },
-  {
-    "name": "⭐ an oversized ledger is rewritten anyway (backlog #369)",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "    if st.st_size > MAX_LEDGER:\n        raise LedgerRefused(",
-        "    if False:\n        raise LedgerRefused("
-      ]
-    ],
-    "expect": [
-      "⭐ --add against an OVERSIZED ledger is REFUSED and leaves it byte-identical (backlog #369 falsifier)"
-    ]
-  },
-  {
-    "name": "⭐ --done skips the whole-ledger check (backlog #369)",
-    "file": "scripts/session-state.py",
-    "edits": [
-      [
-        "    with _locked(path):\n        _whole(path)\n        entries, _, raw = read_ledger(path)\n        kept",
-        "    with _locked(path):\n        entries, _, raw = read_ledger(path)\n        kept"
-      ]
-    ],
-    "expect": [
-      "⭐ --done against an OVERSIZED ledger is REFUSED too, never 'no such id' (backlog #369 falsifier)"
     ]
   },
   {
@@ -269,7 +204,124 @@
       ]
     ],
     "expect": [
-      "⭐ a rollup of None reads UNREADABLE, never NO CHECKS (backlog #369)"
+      "⭐ a rollup that is None reads UNREADABLE, never NO CHECKS (backlog #369)"
+    ]
+  },
+  {
+    "name": "⭐ the one read rule drifts: >= at the cap (PR #413 r1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if st.st_size > MAX_LEDGER:\n            return None,",
+        "        if st.st_size >= MAX_LEDGER:\n            return None,"
+      ]
+    ],
+    "expect": [
+      "⭐ a ledger of EXACTLY the cap is read WHOLE by the block AND by an update — one rule (PR #413 r1)"
+    ]
+  },
+  {
+    "name": "⭐ an update reads past a refusal and rewrites anyway (backlog #369)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if data is None:\n        raise LedgerRefused(",
+        "    if False:\n        raise LedgerRefused("
+      ]
+    ],
+    "expect": [
+      "⭐ --add against an OVERSIZED ledger is REFUSED and leaves it byte-identical (backlog #369 falsifier)"
+    ]
+  },
+  {
+    "name": "⭐ a symlinked ledger is followed (PR #413 r1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)",
+        "        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)"
+      ]
+    ],
+    "expect": [
+      "⭐ a SYMLINKED ledger is refused by the block and by an update, and the link survives (PR #413 r1)"
+    ]
+  },
+  {
+    "name": "⭐ a symlinked lock file is followed (PR #413 r1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)",
+        "os.O_RDWR | os.O_CREAT, 0o644)"
+      ]
+    ],
+    "expect": [
+      "⭐ a SYMLINKED lock file is refused, so no writer can lock a replaceable inode (PR #413 r1)"
+    ]
+  },
+  {
+    "name": "⭐ writes are ASCII-escaped again and re-inflate (PR #413 r1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "json.dumps(e, ensure_ascii=False).encode(\"utf-8\")",
+        "json.dumps(e, ensure_ascii=True).encode(\"ascii\")"
+      ]
+    ],
+    "expect": [
+      "⭐ a non-ASCII ledger under the cap stays under it when rewritten — no re-escaping (PR #413 r1)"
+    ]
+  },
+  {
+    "name": "a non-regular ledger is read (F7)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if not stat.S_ISREG(st.st_mode):\n            return None,",
+        "        if False:\n            return None,"
+      ]
+    ],
+    "expect": [
+      "⭐ a ledger that is NOT a regular file is refused without reading (a FIFO hung the hook)"
+    ]
+  },
+  {
+    "name": "missing PR fields pass quietly (PR #413 r1)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            if missing:\n                L.append(",
+        "            if False:\n                L.append("
+      ]
+    ],
+    "expect": [
+      "⭐ a PR element missing its fields says UNREADABLE, never a quiet `?` (PR #413 r1)"
+    ]
+  },
+  {
+    "name": "⭐ the ledger lock is dropped",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        fcntl.flock(fd, fcntl.LOCK_EX)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "⭐ 20 concurrent adds keep all 20 jobs"
+    ]
+  },
+  {
+    "name": "⭐ the ledger is split on every Unicode line break",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    for i, line in enumerate(data.split(b\"\\n\"), 1):",
+        "    for i, line in enumerate((x.encode(\"utf-8\", \"surrogateescape\") for x in data.decode(\"utf-8\", \"surrogateescape\").splitlines()), 1):"
+      ]
+    ],
+    "expect": [
+      "⭐ a line written elsewhere with a RAW U+2028 in a value is still ONE readable job — split on \\n only"
     ]
   }
 ]
