@@ -17770,6 +17770,18 @@ as NO CHECKS — filed as backlog #369, not folded; the loop stops.
 
 
 ## 2026-10-26
+The check that every hook is registered one way now also refuses a hook entry it does not recognise and an
+exemption with no reason written down, instead of quietly letting both through.
+<!--tech-->
+Branch `hook-guard-gaps` (backlog #365, from PR #409 round 4). `check-hook-commands.py`: an entry with no `type` or one
+outside `KNOWN_TYPES` (the 5 of Claude Code 2.1.309's schema) is Malformed → CANNOT RUN; an empty or whitespace `UNREGISTERED` reason is
+refused; the alternate-path and `main()` divergence cases assert the shape diagnostic (they passed on a second
+violation before). Known positive: `{}`, `"commmand"` and an empty reason exited 0 before, 2/2/1 now. ⟳ r1 (both halves):
+the first fold knew 2 of Claude Code 2.1.309's 5 hook types, crashed on a list `type`, took `str(None)` as a reason —
+fixed. 29 cases; 16 mutations. Filed backlog #368 (`args` makes a hook launch nothing).
+
+
+## 2026-10-26
 A new local check points at each changed line that makes a decision — an `if`, a `return`, a `raise` — where none
 of the project's planted-fault tests edits that line. It only warns. On tonight's own work it pointed at a line where
 a reviewer later found a real gap. Running it on every pull request is split out: tried in CI, it produced up to 420
