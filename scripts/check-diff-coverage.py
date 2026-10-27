@@ -293,9 +293,11 @@ def run_check(root: Path, base: str, run=subprocess.run) -> tuple[int, list[str]
         # ⛔ BYTES, decoded with replacement and NO newline translation (backlog #371): `text=True` turns on universal
         # newlines, which rewrote a lone CR — in a source it hid from `measurable()`; in the DIFF it split a deleted line
         # into a fake `diff --git` header and dropped the file's later hunks (PR #415 r1).
-        # `--attr-source=HEAD`: attributes come from the committed tree, like the sources and manifests — an
-        # uncommitted `*.py -diff` turned a WARN into a binary NOT CHECKED (r2). Needs git 2.40; an older git refuses
-        # the option, which is CANNOT RUN, never a silent fallback to the working tree.
+        # `--attr-source=HEAD`: the IN-TREE `.gitattributes` comes from the committed tree, like the sources and
+        # manifests — an uncommitted `*.py -diff` had turned a WARN into a binary NOT CHECKED (r2). ⚠ BOUND, measured
+        # r3: `.git/info/attributes` and `core.attributesFile` (local, or via HOME) STILL apply — each can turn a WARN
+        # into NOT CHECKED, never into "every one is edited" (backlog #378). Needs git 2.41 (r3 built 2.39.5 and 2.40.0:
+        # both refuse it); an older git is CANNOT RUN, never a silent fallback to the working tree.
         r = run(["git", "--attr-source=HEAD", "-c", "core.quotepath=off", *args], cwd=root, capture_output=True,
                 env=constructed_env())
         return subprocess.CompletedProcess(r.args if hasattr(r, "args") else args, r.returncode,

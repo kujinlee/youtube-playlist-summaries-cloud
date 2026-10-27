@@ -17856,6 +17856,6 @@ call read as bytes (no universal-newline translation — a lone CR is NOT CHECKE
 on the diff (measured: a textconv driver emptied a 4-line diff); manifests read from HEAD's object store, like the sources.
 ⟳ r1 (both halves): a `git status` check missed five working-tree states, each a clean zero — replaced. Also found: a
 2026-09-14 fixture had written a fake identity into the live `.git/config` (355 commits as `t`) — repaired, class filed as
-backlog #373. ⟳ r2 (REDESIGN): git's environment is built from an allow-list, and attributes and manifests are read at
-HEAD too (a symlinked manifest's link text had been read as JSON). 61 cases; 37 mutations, each killed by its named case.
+backlog #373. ⟳ r2 (REDESIGN): git's environment is built from an allow-list, and the in-tree attributes and the manifests are read
+at HEAD too (a symlinked manifest's link text had been read as JSON). 61 cases; 37 mutations, each killed by its named case.
 
