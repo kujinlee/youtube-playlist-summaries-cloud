@@ -17942,9 +17942,9 @@ the parser cannot read (a decorated or non-integer row number), and any table bl
 opens on anything but a declared header. Measured at the parser commit
 `677465b0`, over the 334 rows the backlog had then: 0 differ from the old rule, 0 malformed, and
 the features page's 329 backlog links are identical to master's, node by node. The self-test
-re-checks every row on each run; HEAD's backlog has 337. Mutations: gen-backlog-page 5 → 18, gen-features-page 10 → 15,
-check-features 22 → 28 (one retired with the code it guarded, several retargeted); gen-backlog-page
-reaches 18 with two on the header check. A family area that is nobody's nearest claimant is stale,
+re-checks every row on each run; HEAD's backlog has 337. Mutations: gen-backlog-page 5 → 21, gen-features-page 10 → 15,
+check-features 22 → 30 (one retired with the code it guarded, several retargeted); gen-backlog-page
+reaches 21 with two on the header check, two on the table-block check and one on the empty tag group. A family area that is nobody's nearest claimant is stale,
 which keeps the stale-area rule as strict as master's.
 
 The retag (second commit): the suite is everything under `(comprehensibility)`. `status-pages` keeps
