@@ -2,7 +2,7 @@
 """Validate docs/features.md — the feature tree the /features page renders.
 
     python3 scripts/check-features.py             # validate the living tree
-    python3 scripts/check-features.py --self-test # 47 cases against synthetic trees
+    python3 scripts/check-features.py --self-test # 48 cases against synthetic trees
 """
 import re, sys, pathlib
 from dataclasses import dataclass, field
@@ -471,6 +471,13 @@ expected-because: standard for a hosted multi-tenant service.
                             "|---|---|---|---|---|---|\n| 999 | 🟡 **Probe** | f | S | (not-claimed) | open |\n")
     check("a table whose header misspells Bundle FAILS the gate, naming the table",
           (_bundel[0], len(_bundel[1]), "`## Probe`" in " ".join(_bundel[1])), (set(), 1, True))
+    # ⛔ backlog #381 r4, Codex X1 — the probe verbatim: a table headed `| No |` (or with no header)
+    # is a gate FAILURE naming its first line. Master's gate read the row; round 3's parser skipped it.
+    _no = backlog_areas(_bl("| 1 | x | f | S | (worker) | open |")
+                        + "\n## Probe\n| No | Item | Touches | Size | Bundle | Status |\n"
+                        "|---|---|---|---|---|---|\n| ⭐999 | 🟡 **Probe** | f | S | (not-claimed) | open |\n")
+    check("a table headed `| No |` FAILS the gate, naming its first line",
+          (_no[0], len(_no[1]), "| No |" in " ".join(_no[1])), (set(), 1, True))
     # ⛔ backlog #381 r1, Claude M1: a family area that is nobody's NEAREST claimant places no row.
     both = parse_features(TREE.replace("anchors: cloud-publishing", "areas: (cloud), (cloud/money)"))[0]
     check("a family area that is nobody's NEAREST claimant is stale",

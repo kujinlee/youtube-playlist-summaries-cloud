@@ -196,5 +196,27 @@
       ]
     ],
     "expect": "a six-column table whose header misspells Bundle REFUSES, naming the table"
+  },
+  {
+    "name": "the block-header check is dropped, so a table headed `| No |`, or none, hides its rows again",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "        if starts_block:\n            why = block_error(line, section)",
+        "        if False:\n            why = block_error(line, section)"
+      ]
+    ],
+    "expect": "a table headed `| No |` REFUSES — the r4 probe"
+  },
+  {
+    "name": "an undeclared non-`#` header is accepted as a legend, so `| No |` passes",
+    "file": "scripts/gen-backlog-page.py",
+    "edits": [
+      [
+        "    if cells in LEGEND_SCHEMAS:\n        return None",
+        "    if cells:\n        return None"
+      ]
+    ],
+    "expect": "a table headed `| No |` REFUSES — the r4 probe"
   }
 ]

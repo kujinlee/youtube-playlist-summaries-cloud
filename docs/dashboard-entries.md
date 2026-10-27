@@ -17919,8 +17919,8 @@ delete the detector. Escape shapes are backlog #380.
 ## 2026-10-27
 A backlog item can now carry more than one tag, written as `(tooling) (comprehensibility)`, and it
 shows up under each one, both in the backlog page's tag filter and on the features page. That made
-it possible to show the comprehensibility suite's real state: the features page now lists 30 open
-items across its three suite features (status pages 14, the feature map 2, explainer pages 19;
+it possible to show the comprehensibility suite's real state: the features page now lists 31 open
+items across its three suite features (status pages 14, the feature map 3, explainer pages 19;
 an item can sit under two), where it showed 15 before, because work tagged as tooling or process
 was invisible there. Four items that were filed under the suite but are not page work moved to
 process or tooling.
@@ -17938,7 +17938,8 @@ because the page's filter splits its tag list on `|`. `check-features` reads row
 page's own header-aware parser, so a row with a wrong number of cells fails the gate, naming the
 row, and a table whose header is not one of the two declared backlog tables (a misspelled
 `Bundle`, say) fails it naming the table, and so does any row-like line inside an item table that
-the parser cannot read (a decorated or non-integer row number). Measured at the parser commit
+the parser cannot read (a decorated or non-integer row number), and any table block that
+opens on anything but a declared header. Measured at the parser commit
 `677465b0`, over the 334 rows the backlog had then: 0 differ from the old rule, 0 malformed, and
 the features page's 329 backlog links are identical to master's, node by node. The self-test
 re-checks every row on each run; HEAD's backlog has 337. Mutations: gen-backlog-page 5 → 18, gen-features-page 10 → 15,
@@ -17953,6 +17954,7 @@ suite tag beside their own area, 10 suite rows were refined to a sub-area, and 4
 (backlog #39 and backlog #90 to `(process)`, backlog #100 and backlog #101 to `(tooling)`). The
 five page-chrome rows also carry `(comprehensibility)`, since the status pages render through
 that chrome. Open by severity, counted by the features page's own `collect` with ✅ rows
-excluded: status-pages 🟠3 🟡8 🟢3, feature-map 🟡2, explainer-pages 🟠4 🟡10 🟢5; 30 distinct.
+excluded: status-pages 🟠3 🟡8 🟢3, feature-map 🟡3, explainer-pages 🟠4 🟡10 🟢5; 31 distinct
+(one of them backlog #383, filed by the round-3 fold).
 42 bare `#N` references were qualified: 22 already on six retagged rows, which the namespace
 guard reads as new once the line is touched, and 20 in backlog #381's own status text.

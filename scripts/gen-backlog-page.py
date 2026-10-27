@@ -2,7 +2,7 @@
 """Render `docs/backlog.md` as a browsable HTML page at a STABLE url.
 
     python3 scripts/gen-backlog-page.py          # → ~/explainers/backlog-table.html
-    python3 scripts/gen-backlog-page.py --self-test  # 182 cases
+    python3 scripts/gen-backlog-page.py --self-test  # 185 cases
     open http://127.0.0.1:7391/backlog-table     # after scripts/explainer-serve.py
 
 WHY THIS EXISTS
@@ -928,6 +928,37 @@ TABLE_SCHEMAS = (
 )
 
 
+# Non-item tables a block may legitimately begin with — legends, keys. Measured 2026-10-27: the real
+# `docs/backlog.md` has NONE (its only two table blocks are the item tables above), so this is empty
+# on purpose. A block it names is not read for rows; a numbered line inside one still raises.
+LEGEND_SCHEMAS: tuple[tuple[str, ...], ...] = ()
+
+
+def block_error(first: str, section: str) -> str | None:
+    """PURE. Why a table BLOCK — a maximal run of lines starting with `|` — may not begin with
+    `first`, or None when `first` is a declared header (an item schema's `| # |`, or a legend).
+
+    ⛔ backlog #381 r4, Codex X1, and the CLASS three rounds entered by three routes: a row that
+    master's positional read saw and this parser loses. Rounds 2 and 3 closed a misspelled header
+    and an unread decorated row UNDER a `| # |` header; round 4 put the decorated row under a
+    header that is not `| # |` at all (`| No |`), or under none, where `header` is never live and
+    the row was skipped before `unread` could see it. So every block must BEGIN with a declared
+    header, and an undeclared or missing one names the block's first line.
+
+    ⚠ FENCES ARE NOT SPECIAL, deliberately: `parse` already reads a fenced table as real rows (see
+    its fence note), and master's `check-features` read a fenced row too, so skipping fenced blocks
+    here would be the one way to make master red and this green. `docs/backlog.md` has 0 fences."""
+    if re.match(r"^\|\s*#\s*\|", first):
+        return None                     # an item header; `header_error` checks its columns
+    cells = tuple(" ".join(c.strip().lower().split()) for c in CELL_SPLIT.split(first)[1:-1])
+    if cells in LEGEND_SCHEMAS:
+        return None
+    return (f"a table block under `## {section}` begins with {first.strip()[:70]!r}, which is not a "
+            f"declared header — every table in docs/backlog.md must open with `| # | Item | … |` "
+            f"(or a legend named in LEGEND_SCHEMAS); a block with no header, or another one, hides "
+            f"its rows from every reader")
+
+
 def header_error(header: list[str], section: str) -> str | None:
     """PURE. Why a `| # |` header is not a declared schema, or None when it is one."""
     if tuple(" ".join(c.split()) for c in header) in TABLE_SCHEMAS:
@@ -1075,7 +1106,14 @@ def parse(lines: Sequence[str], unread: list[str] | None = None) -> list[dict]:
     # rows. Trading "the warning is noisy" for "rows disappear" is a bad trade, and `docs/backlog.md`
     # has 0 fences today, so the trade bought nothing. A fenced example table is therefore still
     # READ as real rows — pre-existing, older and worse than the noise beside it, and its own slice.
+    in_block = False
     for line in lines:
+        starts_block = line.startswith("|") and not in_block
+        in_block = line.startswith("|")
+        if starts_block:
+            why = block_error(line, section)
+            if why:
+                raise ShapeError(why)
         if line.startswith("## "):
             # ⚠ `seen_delimiter` is NOT reset here (r4 L-3): `header` is emptied, and nothing is
             # reported while `header` is falsy, so this reset could be removed with the suite
@@ -2536,19 +2574,33 @@ def _self_test_body() -> int:
     # ── THE POPULATION, asserted separately from the rule (portable-practices §21) ───────────────
     case("the delimiter under the header is not reported",
          lambda: not any(set(ln.strip()) <= set("|-: ") for ln in _dropped()))
-    case("a table with no `| # |` header of its own reports nothing",
-         lambda: _unread_of(["## Items", "| Key | Meaning |", "|---|---|",
-                             "| A | Bundle A |"]) == [])
+    # ⟳ backlog #381 r4: a table that is not a declared one is REFUSED, naming its first line. This
+    # case used to assert that such a table reported NOTHING — the silence the round-4 probe used.
+    case("a table with no `| # |` header of its own REFUSES, naming the block",
+         lambda: "'| Key | Meaning |'" in _shape_of(["## Items", "| Key | Meaning |", "|---|---|",
+                                                      "| A | Bundle A |"]))
+    case("…and a headerless block (it opens on a data row or a delimiter) REFUSES too",
+         lambda: "⭐999" in _shape_of(["## Probe", "| ⭐999 | x | f | S | (n) | open |"])
+         and "'|---|---|'" in _shape_of(["## Probe", "|---|---|", "| a | b |"]))
+    # Codex r4's probe verbatim: master's gate read this row, and the round-3 parser skipped it.
+    case("a table headed `| No |` REFUSES — the r4 probe",
+         lambda: "'| No | Item | Touches | Size | Bundle | Status |'" in _shape_of(
+             ["## Probe", "| No | Item | Touches | Size | Bundle | Status |", "|---|---|---|---|---|---|",
+              "| ⭐999 | 🟡 **Probe** | f | S | (not-claimed) | open |"]))
     # ⛔ r1 finding H-1 was REVERSED by r3's Blocking, and this case records the reversal rather
     # than quietly dropping it. r1 asked for a legend table in the Items section to report nothing;
     # r2 delivered that by narrowing the report to a contiguous block, and r3 measured what the
     # narrowing cost — a decorated row below the block vanished exactly where a plain one rendered.
     # In a section where `header` is live, a legend row is NOT harmless: `| 5 | Bundle E |` there is
     # read as item 5, or raises on its width. So it is reported, and the delimiter is not.
+    # ⟳ backlog #381 r4: an UNDECLARED legend now refuses outright; a DECLARED one in a section
+    # where `header` is live is still reported, row by row.
+    _LEGEND_DOC = ["## Items", "| # | Item | Status |", "|---|---|---|",
+                   "| 5 | x | y |", "", "Markers used above:", "",
+                   "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]
     case("a legend table in the SAME section is reported — it is a hazard, not decoration",
-         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
-                             "| 5 | x | y |", "", "Markers used above:", "",
-                             "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"])
+         lambda: "'| Marker | Meaning |'" in _shape_of(_LEGEND_DOC)
+         and _with_legend(lambda: _unread_of(_LEGEND_DOC))
          == ["| Marker | Meaning |", "|---|---|", "| 🟠 | high |"])
     # ⚠ r4 L-3. TWO `| # |` tables, which is what `docs/backlog.md` actually is — this is the
     # input that makes the header branch's `seen_delimiter` reset load-bearing.
@@ -2571,10 +2623,12 @@ def _self_test_body() -> int:
          lambda: len(parse(["## Items", "|  #  | ITEM | Touches | Size |  Bundle  | Status |",
                             "|---|---|---|---|---|---|", "| 1 | x | f | S | (a) | open |",
                             "## Found", "| # | Item | Status |", "|---|---|---|", "| 2 | y | open |"])) == 2)
-    case("a legend table in its OWN section reports nothing",
-         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
-                             "| 5 | x | y |", "", "## Markers", "",
-                             "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]) == [])
+    _OWN = ["## Items", "| # | Item | Status |", "|---|---|---|",
+            "| 5 | x | y |", "", "## Markers", "",
+            "| Marker | Meaning |", "|---|---|", "| 🟠 | high |"]
+    case("a legend table in its OWN section reports nothing — once it is DECLARED",
+         lambda: _with_legend(lambda: (_unread_of(_OWN), len(parse(_OWN)))) == ([], 1)
+         and "'| Marker | Meaning |'" in _shape_of(_OWN))
 
     # ⭐⭐ THE BLOCKING FROM r3, AND ITS FALSIFIER. The two populations are asserted against EACH
     # OTHER, not each alone — which is the only form that can catch a report gate drifting narrower
@@ -2597,23 +2651,28 @@ def _self_test_body() -> int:
             read = any(r["num"] == 111 for r in parse(head + ["| 111 | new | pending |"]))
         except ShapeError:
             read = False
+        # ⟳ backlog #381 r4: the decorated row has THREE outcomes now — reported in `unread`,
+        # REFUSED (a `ShapeError`, as loud as a report), or silent. Silent is the defect.
         seen: list[str] = []
-        parse(head + ["| ⭐111 | new | pending |"], unread=seen)
-        return read, any("⭐111" in ln for ln in seen)
+        try:
+            parse(head + ["| ⭐111 | new | pending |"], unread=seen)
+        except ShapeError:
+            return read, "refused"
+        return read, "reported" if any("⭐111" in ln for ln in seen) else "silent"
 
     case("wherever a plain row would be READ, a decorated one is REPORTED",
-         lambda: all(_read_vs_reported(c)[0] == _read_vs_reported(c)[1] for c in _CONTEXTS))
+         lambda: all(_read_vs_reported(c)[1] != "silent" for c in _CONTEXTS)
+         and all(_read_vs_reported(c)[1] == "reported" for c in _CONTEXTS if _read_vs_reported(c)[0]))
     case("…and the pairing is not vacuous — it covers both answers",
-         lambda: {_read_vs_reported(c)[0] for c in _CONTEXTS} == {True, False})
+         lambda: {_read_vs_reported(c)[0] for c in _CONTEXTS} == {True, False}
+         and {_read_vs_reported(c)[1] for c in _CONTEXTS} == {"reported", "refused"})
 
-    # ⚠ THE RESIDUE, PINNED SO IT IS VISIBLE. Where no `| # |` header is live, `parse` reads
-    # nothing, so a decorated row there is neither read nor reported. Its plain counterpart RAISES
-    # (`ShapeError`, "row has N cells, header has 0"), so the ordinary mistake is loud; the
-    # decorated one is not. Closing this needs a way to say "that first cell was MEANT to be a
-    # number", which is an allowlist of decorations — the shape this slice has already paid for
-    # twice. Stated, not hidden, and left as follow-up work.
-    case("a decorated row where NO item table is open is silent — the one stated gap",
-         lambda: _unread_of(["## Notes", "| ⭐111 | new | pending |"]) == []
+    # ⟳ THE RESIDUE THAT WAS PINNED HERE IS CLOSED (backlog #381 r4). Where no `| # |` header is
+    # live a decorated row was neither read nor reported, and this case asserted that silence as
+    # "the one stated gap". It needed no allowlist of decorations after all: a row with no header is
+    # a table BLOCK with no header, and `block_error` refuses the block, whatever its first cell.
+    case("a decorated row where NO item table is open is REFUSED — the stated gap is closed",
+         lambda: _raises(lambda: parse(["## Notes", "| ⭐111 | new | pending |"]), ShapeError)
          and _raises(lambda: parse(["## Notes", "| 111 | new | pending |"]), ShapeError))
 
     # ⭐ r3, both halves. `row_ish`'s three-character prefix is a judgement, so both sides of it are
@@ -2661,9 +2720,11 @@ def _self_test_body() -> int:
          lambda: row_ish("abc| 5 | x |") and not row_ish("abcd| 5 | x |"))
     # ⚠ r2 finding L-1. The comment claimed a blank line AND `## ` both end the block; only the
     # first was pinned, and deleting the `## ` reset killed 0 of 110 cases. Same class as r1's L-3.
+    # ⟳ backlog #381 r4: the row after the new section opens a NEW block, which has no header and
+    # refuses — so the case still proves the `## ` line ended the first block.
     case("a new `## ` section closes the block",
-         lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
-                             "| 5 | x | y |", "## Notes", "| ⭐9 | x | y |"]) == [])
+         lambda: "`## Notes`" in _shape_of(["## Items", "| # | Item | Status |", "|---|---|---|",
+                                           "| 5 | x | y |", "## Notes", "| ⭐9 | x | y |"]))
     case("the block ends at a blank line",
          lambda: _unread_of(["## Items", "| # | Item | Status |", "|---|---|---|",
                              "| 5 | x | y |", "", "ordinary prose"]) == [])
@@ -3406,6 +3467,11 @@ def _self_test_body() -> int:
          and set(_placed).isdisjoint(_indexed)
          and set(_placed) | _indexed == _open_real)
     case("the real file parses at all (fail-closed on a restructure)", lambda: len(real) > 20)
+    # ⟳ backlog #381 r4: with every block required to open on a declared header, the real file must
+    # still give one row per item line — relative to the file, never a constant (337 today).
+    case("the REAL backlog yields one row per `| <number> |` line under the block-header rule",
+         lambda: len(real) == sum(bool(re.match(r"^\|\s*\d+\s*\|", ln))
+                                  for ln in BACKLOG.read_text().splitlines()) > 0)
     # ⛔ backlog #381: EVERY CELL PARSES TO EXACTLY WHAT THE PRE-#381 RULE GIVES IT, GROUP BY GROUP.
     # `_legacy` is the pre-#381 `bundle_tags`, copied VERBATIM and frozen here, so the comparison is
     # against an independent copy rather than the code under test. A multi-tag cell has no pre-#381
@@ -3479,6 +3545,18 @@ def _self_test_body() -> int:
         failed += not ok
     print(f"\n{len(cases) - failed}/{len(cases)} passed")
     return 1 if failed else 0
+
+
+def _with_legend(fn):
+    """Run `fn` with `| Marker | Meaning |` declared in LEGEND_SCHEMAS, then restore it. The real file
+    declares no legend, so a DECLARED legend can only be exercised by declaring one here."""
+    global LEGEND_SCHEMAS
+    saved = LEGEND_SCHEMAS
+    LEGEND_SCHEMAS = (("marker", "meaning"),)
+    try:
+        return fn()
+    finally:
+        LEGEND_SCHEMAS = saved
 
 
 def _shape_of(lines: Sequence[str]) -> str:
