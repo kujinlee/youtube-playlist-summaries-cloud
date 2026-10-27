@@ -1,0 +1,145 @@
+[
+  {
+    "name": "an EMPTY rollup reads as fine instead of NO CHECKS",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        return \"NO CHECKS\"",
+        "        return \"0 pass\""
+      ]
+    ],
+    "expect": [
+      "⭐ an EMPTY rollup says NO CHECKS — the PR #407 state the handoff missed"
+    ]
+  },
+  {
+    "name": "failures are no longer counted as fail",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        elif concl in (\"FAILURE\", \"TIMED_OUT\",",
+        "        elif concl in (\"TIMED_OUT\","
+      ]
+    ],
+    "expect": [
+      "a mixed rollup is summarised with failures first"
+    ]
+  },
+  {
+    "name": "the newest record is picked by name, not round number",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        if mid.isdigit() and int(mid) > best_n:",
+        "        if mid.isdigit() and (best is None or n > best):"
+      ]
+    ],
+    "expect": [
+      "the newest record is the highest ROUND, numerically, for THIS branch only"
+    ]
+  },
+  {
+    "name": "closed bets are shown as open",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "r.get(\"outcome\") is not None:",
+        "False:"
+      ]
+    ],
+    "expect": [
+      "only THIS branch's bets still awaiting an outcome are open"
+    ]
+  },
+  {
+    "name": "⭐ gh failing prints an empty list instead of CANNOT RUN",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "        L.append(f\"OPEN PRS: CANNOT RUN — {pr_error}. Treat as NOT CHECKED, never as 'nothing open'.\")",
+        "        L.append(\"OPEN PRS: none (gh answered).\")"
+      ]
+    ],
+    "expect": [
+      "⭐ gh failing prints CANNOT RUN — never an empty list"
+    ]
+  },
+  {
+    "name": "a failed fetch is not flagged",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if not fetch_ok:",
+        "    if False:"
+      ]
+    ],
+    "expect": [
+      "a failed fetch is flagged as possibly STALE"
+    ]
+  },
+  {
+    "name": "a branch read failure is hidden",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "                L.append(f\"      branch records: CANNOT READ — {info['error']}\")",
+        "                pass"
+      ]
+    ],
+    "expect": [
+      "a branch whose records cannot be read says so on its line"
+    ]
+  },
+  {
+    "name": "an unreadable ledger line is dropped silently",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            problems.append(f\"ledger line {i} unreadable ({exc}) — NOT SHOWN\")",
+        "            pass"
+      ]
+    ],
+    "expect": [
+      "⭐ an unreadable ledger line is REPORTED, not silently dropped"
+    ]
+  },
+  {
+    "name": "re-adding an id appends a duplicate",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    entries = [e for e in entries if e.get(\"id\") != id_]\n    entries.append",
+        "    entries.append"
+      ]
+    ],
+    "expect": [
+      "re-adding an id REPLACES it — one line per job"
+    ]
+  },
+  {
+    "name": "gh's JSON is never read",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "            prs = json.loads(out)",
+        "            prs = []"
+      ]
+    ],
+    "expect": [
+      "collect() wires the newest record, the open bet and the ledger into one block"
+    ]
+  },
+  {
+    "name": "the ledger is read from the repo, not the root given",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    ledger, problems = read_ledger(root / LEDGER_REL)",
+        "    ledger, problems = read_ledger(REPO_ROOT / LEDGER_REL)"
+      ]
+    ],
+    "expect": [
+      "collect() wires the newest record, the open bet and the ledger into one block"
+    ]
+  }
+]

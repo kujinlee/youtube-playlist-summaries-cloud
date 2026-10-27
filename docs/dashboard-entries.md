@@ -17732,3 +17732,18 @@ New `/goal-tree` command: prints every work thread under the request it serves â
 bookkeeping or side question, named by backlog row, PR state read live. Filed backlog #363 to have the work-lines
 page draw that tree from recorded data instead.
 Committed the explainer `docs/explainers/2026-10-26-brief-2026-10-26-topic-progress-and-plan`.
+
+
+## 2026-10-26
+Every new session, and every time the conversation is automatically compacted, now begins with a short
+block listing what is in flight: each open pull request with its state and checks, the latest review and
+the bet it is testing, and any background job with what to do when it finishes. It is worked out from
+GitHub and git at that moment, so unlike a written handoff it cannot go stale.
+<!--tech-->
+Branch `session-state` (backlog #362). `scripts/session-state.py`: open PRs from `gh pr list` (head, draft,
+`mergeStateStatus`, a check summary that says `NO CHECKS` for an empty rollup), per branch the newest
+`docs/reviews/coordinator/<branch>-r<N>-coordinator.md` heading and decision-log rows with `outcome: null`, and the
+gitignored ledger `.claude/inflight.jsonl`. `.claude/hooks/session-state.sh` is a SessionStart hook (no matcher:
+startup, resume, compact) that always exits 0; `gh` failing prints CANNOT RUN, a failed fetch prints STALE. Live:
+6 PRs in ~2 s. 28 cases; 11 mutations, each killed by its named case. âš  Same subdirectory limit as backlog #364.
+

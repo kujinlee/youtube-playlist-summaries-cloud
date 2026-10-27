@@ -313,6 +313,35 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #362 (2026-10-26): every parameter varied by a case; none exempt.
+    "session-state.py": (
+        "check_summary.rollup",
+        "collect.now",
+        "collect.root",
+        "collect.run",
+        "ledger_add.id_",
+        "ledger_add.now",
+        "ledger_add.on_done",
+        "ledger_add.path",
+        "ledger_add.what",
+        "ledger_done.id_",
+        "ledger_done.path",
+        "main.argv",
+        "main.root",
+        "main.run",
+        "newest_record.branch",
+        "newest_record.names",
+        "open_bets.branch",
+        "open_bets.log_text",
+        "read_ledger.path",
+        "render.fetch_ok",
+        "render.ledger",
+        "render.ledger_problems",
+        "render.now",
+        "render.per_branch",
+        "render.pr_error",
+        "render.prs",
+    ),
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
     # ⟳ r1 fold: `read_transcripts.root` left — every checkout is read now, keyed in `replay`.
     "backfill-work-lines.py": (
