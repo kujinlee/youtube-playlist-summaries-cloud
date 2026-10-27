@@ -87,6 +87,8 @@ POPULATION: frozenset[str] = frozenset({
     # 46 → 73 → 74 → 76 → 79 while it was being written, each step for a real reason, so a
     # docstring count nothing verifies would have been wrong four times in one evening.
     "check-main-drivable.py",
+    # ⟳ 2026-10-26 (backlog #223): pinned in the commit that creates it.
+    "check-hook-commands.py",
     # ⟳ 2026-10-19: pinned in the commit that creates it, because this guard REFUSED it until
     # it was — a declared count with no reader is exactly `a-count-with-no-owner`. Earned:
     # its suite went 16 → 18 → 19 → 24 → 26 → 37 → 39 while being written, each step for a

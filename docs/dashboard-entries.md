@@ -17687,3 +17687,19 @@ first version asked `git`, which an old git, `GIT_DIR` and a moved main checkout
 is now `shlex.join`ed; every state command (`--plan` included) is witnessed. 9 cases over a real repo and a real
 linked worktree (136 total), 6 mutations (2115 -> 2121 after merging master); the suite's state-path `global` moved
 to the top of `_self_test` so the new cases can run first. Filed backlog #358 (ffmpeg hang: bimodal, 16–19s or >150s x3).
+
+
+## 2026-10-26
+The project's safety hooks — including the one that stops a push straight to the main branch — only
+worked while the session sat in the project's top folder. One step into a subfolder and every one of them
+silently failed to start, and nothing stopped. They now start from anywhere, and a new check refuses any
+hook written the old way, so the next settings edit cannot quietly bring it back.
+<!--tech-->
+Branch `hooks-absolute-path` (backlog #223). `.claude/settings.json`: 13 commands `bash .claude/hooks/X.sh` ->
+`bash "${CLAUDE_PROJECT_DIR:-.}"/.claude/hooks/X.sh` (fallback = old behaviour, so no hook is less reachable). New
+`scripts/check-hook-commands.py`: per `type: command` hook, a token naming an existing repo file by a relative path
+is refused, and an anchored token whose file is missing is refused; missing/unparseable settings, a malformed hooks
+block, or ZERO commands are CANNOT RUN. Known positive: the unfixed file gave rc 1 with 13 findings. 19 cases; 6
+mutations (2138 -> 2144), each killed by its named case; CI runs `--self-test` and the live check. `main.argv`
+EXEMPT in check-fixture-variation (its second value re-enters the suite), as for check-goal-status.
+⚠ Live falsifier owed after merge: a push to master from `scripts/` must be refused.

@@ -313,6 +313,9 @@ KNOWN_UNVARIED: dict[str, tuple[str, ...]] = {
 #   * the honest boundary: this guard proves a parameter was THOUGHT ABOUT in the source. It
 #     does not prove the source it read is the code that runs.
 EXAMINED_KEYS: dict[str, tuple[str, ...]] = {
+    # backlog #223 (2026-10-26): every parameter varied except `main.argv`, EXEMPT with its reason.
+    "check-hook-commands.py": (
+        "check.path", "check.root", "main.argv", "main.root", "problems.commands", "problems.exists",),
     # The work-lines backfill (2026-10-22). Every parameter is varied by a case; none is exempt.
     # ⟳ r1 fold: `read_transcripts.root` left — every checkout is read now, keyed in `replay`.
     "backfill-work-lines.py": (
@@ -1051,6 +1054,7 @@ EXEMPT: dict[str, str] = {
     # The dispatch IS covered — every `main([])` case reaches it and takes the other branch —
     # so what is unvaried here is a parameter whose second value is self-referential, not an
     # untested clause.
+    "check-hook-commands.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by the three main([]) cases",
     "check-goal-status.py:main.argv": "argv has two values and the second is `--self-test`, which re-enters the suite from inside itself; the dispatch is covered by every other case",
     # ⟳⟳ 2026-09-16 — TWO `peer-sites.py:changed_lines.*` EXEMPTIONS STOOD HERE AND ARE GONE,
     # because round 1's Codex half measured their premise FALSE. They claimed varying `ref` and
