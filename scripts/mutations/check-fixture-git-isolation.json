@@ -4,7 +4,7 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "        if _git_argv(n) and any(_const(e) in BUILD_VERBS for e in n.elts):\n",
+        "        if _git_argv(n) and _subcommand(n.elts[1:]) in BUILD_VERBS:\n",
         "        if False:\n"
       ]
     ],
@@ -30,7 +30,7 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "                    and any(_const(a) in BUILD_VERBS for a in n.args):",
+        "                    and _subcommand(list(itertools.dropwhile(lambda a: not isinstance(a, ast.Constant), n.args))) \\\n                    in BUILD_VERBS:",
         "                    and False:"
       ]
     ],
@@ -121,7 +121,7 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    if len(body) == 1 and isinstance(body[0], ast.With) and any(_isolates(i, mods, funcs) for i in body[0].items):\n        return body[0]\n",
+        "    if len(body) == 1 and isinstance(body[0], ast.With) and len(body[0].items) == 1 \\\n            and _isolates(body[0].items[0], mods, funcs):\n        return body[0]\n",
         "    if any(isinstance(b, ast.With) and any(_isolates(i, mods, funcs) for i in b.items) for b in body):\n        return next(b for b in body if isinstance(b, ast.With))\n"
       ]
     ],
@@ -148,7 +148,7 @@
     "file": "scripts/check-fixture-git-isolation.py",
     "edits": [
       [
-        "    c = item.context_expr\n    if not isinstance(c, ast.Call):\n        return False\n",
+        "    c = item.context_expr\n    if not isinstance(c, ast.Call) or c.args or c.keywords:\n        return False\n",
         "    c = item.context_expr\n    if True:\n        return True\n"
       ]
     ],
@@ -468,6 +468,123 @@
       "⭐ main() over a world with one unisolated builder, in a SUBDIRECTORY, exits 1 naming it",
       "main() over a world with no scripts is CANNOT RUN, never a pass",
       "a file that does not parse makes the whole run CANNOT RUN"
+    ]
+  },
+  {
+    "name": "the entry's `with` may carry a second context item (r2 X4)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "and len(body[0].items) == 1 \\\n",
+        "and len(body[0].items) >= 1 \\\n"
+      ]
+    ],
+    "expect": [
+      "...and so is a second item AFTER isolated(): the entry's `with` has exactly ONE item"
+    ]
+  },
+  {
+    "name": "isolated() may take arguments (r2 X4)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if not isinstance(c, ast.Call) or c.args or c.keywords:",
+        "    if not isinstance(c, ast.Call):"
+      ]
+    ],
+    "expect": [
+      "⟳ r2 X4: `isolated()` with an argument (the caller's HOME handed back in) is refused"
+    ]
+  },
+  {
+    "name": "every literal after git is taken as the subcommand (r2 X8)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        return v if isinstance(v, str) else None\n    return None\n",
+        "        if v in BUILD_VERBS:\n            return v\n    return None\n"
+      ]
+    ],
+    "expect": [
+      "⟳ r2 X8: `init` as an ARGUMENT of another subcommand is not a build"
+    ]
+  },
+  {
+    "name": "a global option's VALUE is not skipped",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "            if v in GIT_VALUE_OPTS:\n                next(it, None)\n",
+        ""
+      ]
+    ],
+    "expect": [
+      "...but `init` after global options that take values IS one"
+    ]
+  },
+  {
+    "name": "a wrapper's leading cwd argument is not skipped",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "list(itertools.dropwhile(lambda a: not isinstance(a, ast.Constant), n.args))",
+        "n.args"
+      ]
+    ],
+    "expect": [
+      "a wrapper whose FIRST argument is its cwd, called `(d, \"init\")`, builds one"
+    ]
+  },
+  {
+    "name": "a shell git with global options before init is not a build",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "git(?:\\s+(?:-C|-c|--git-dir|--work-tree|--namespace)\\s+\\S+|\\s+-\\S+)*",
+        "git"
+      ]
+    ],
+    "expect": [
+      "an f-string to subprocess shell=True builds one"
+    ]
+  },
+  {
+    "name": "GIT_SUITES files are not checked (r2 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "        code, m = check_source(src, rel, suite=rel in suites)",
+        "        code, m = check_source(src, rel)"
+      ]
+    ],
+    "expect": [
+      "main() refuses an unisolated GIT_SUITES file"
+    ]
+  },
+  {
+    "name": "a suite file with no build sign is let through (r2 X1)",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    if not signs and not suite:\n        return 0, msgs\n",
+        "    if not signs:\n        return 0, msgs\n"
+      ]
+    ],
+    "expect": [
+      "⟳ r2 X1: a GIT_SUITES file that builds nothing is still checked: unisolated it is refused"
+    ]
+  },
+  {
+    "name": "a GIT_SUITES entry for a deleted file is kept",
+    "file": "scripts/check-fixture-git-isolation.py",
+    "edits": [
+      [
+        "    for rel in sorted(set(suites) - present):",
+        "    for rel in []:"
+      ]
+    ],
+    "expect": [
+      "...and a GIT_SUITES entry whose file does not exist"
     ]
   }
 ]

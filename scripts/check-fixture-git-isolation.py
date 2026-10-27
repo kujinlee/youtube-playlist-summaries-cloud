@@ -18,13 +18,24 @@ production readers a self-test drives inherit `os.environ` whatever any call pas
 WHAT IT CHECKS, per `scripts/**/*.py`, parsed with `ast`:
 
   1. does the file BUILD A REPOSITORY? A git argv literal (list or tuple, first element `"git"`, a name
-     containing `git`, or `which("git")`) holding `init` or `clone`; a shell string handed to a process
-     launcher that runs `git … init|clone`; a call with a positional `"init"`/`"clone"` to a WRAPPER — a
-     function or lambda in the file whose git argv takes `*args`; or a literal `["init", "-<flag>"]` in a
-     file that has such a wrapper (iterated and passed on). A bare `"init"` anywhere else is not a sign.
+     containing `git`, or `which("git")`) whose SUBCOMMAND is `init` or `clone`; a shell string handed to
+     a process launcher that runs `git [global options] init|clone`; a call to a WRAPPER — a function or
+     lambda in the file whose git argv takes `*args` — whose subcommand is `init`/`clone`; or a literal
+     `["init", "-<flag>"]` in a file that has such a wrapper (iterated and passed on). The SUBCOMMAND is the
+     first non-option element after `git`, skipping global options and the values `-C`, `-c`, `--git-dir`,
+     `--work-tree`, `--namespace`, `--super-prefix` and `--config-env` take (⟳ r2 X8: `["git", "log",
+     "--grep", "init"]` is not a build). A bare `"init"` anywhere else is not a sign.
+     ⟳ r2 X1: a suite that RUNS git without building a repository (`brief-compose` reaches
+     `page_chrome.provenance()`, which runs `git status` on the checkout) needs isolation too. Such suites
+     are a DECLARED list, `GIT_SUITES`, each with its reason — chosen over detecting calls into known git
+     readers because a reader list would be a second, partial copy of every module's call graph. A listed
+     file is checked as if it built a repository; a listed file that no longer exists is refused. The
+     population that FILLS the list is the falsifier run over every `--self-test` in `scripts/`.
   2. if so, it has a self-test ENTRY (a module-level function named `self_test`, `_self_test`, `selftest`
      — underscores and case ignored) and every entry's body is, after an optional docstring and
-     `import fixture_git`, exactly ONE `with fixture_git.isolated(...):` statement (any import alias).
+     `import fixture_git`, exactly ONE `with fixture_git.isolated():` statement (any import alias) with ONE
+     item, the call taking NO arguments (⟳ r2 X4: `with earlier(), fixture_git.isolated():` ran `earlier`
+     before isolation, and `isolated(HOME=os.environ["HOME"])` handed the caller's HOME back in).
   3. every module-level function that block calls is called from NOWHERE else in the file — otherwise the
      suite has a second, unisolated way in.
   4. no repository is built at module level (it would run at import, before any block), and no copy of
@@ -49,8 +60,21 @@ is not required to isolate. A repository-building helper in a builder file that 
 ANOTHER file is isolated only if that file's self-test is. Threads running beside the block, and a copy of
 `os.environ` made inside a function that runs at import but is not a module-level call here, are not seen.
 
+⛔ LIMITS — NOT STOPPED, BY DESIGN OF AN IN-PROCESS SWAP (round 2, `docs/reviews/codex/fixture-git-
+isolation-r2-codex.md`; the structural fix, a fresh child interpreter with a constructed environment, is
+backlog #380). Each was executed by Codex against an accepted program and wrote the victim:
+  * X2 — a copy of `os.environ` taken at import in a SIBLING module, through a default argument that calls
+    a snapshot helper, a class attribute, or `functools.partial(os.environ.copy)()`;
+  * X3 — a `fixture_git.isolated` name REBOUND to something else (`from contextlib import nullcontext as x`);
+  * X5 — an isolated decoy `self_test` while `--self-test` dispatches to a different, unisolated function;
+  * X6 — an `atexit` callback that launches git after the block has restored the caller's environment;
+  * X7 — `os.putenv`, which writes the C environment that restoring `os.environ` never sees;
+  * X9 (a false refusal) — a builder helper module with no self-test of its own, imported by an isolated
+    entry, is refused.
+No script in `scripts/` does any of these; the derived falsifier is that evidence, not this guard.
+
     python3 scripts/check-fixture-git-isolation.py
-    python3 scripts/check-fixture-git-isolation.py --self-test  # 70 cases
+    python3 scripts/check-fixture-git-isolation.py --self-test  # 84 cases
 
 EXIT CODES (repo convention): 0 = every repository-building self-test is isolated · 1 = a file refused ·
 2 = CANNOT RUN (no scripts found, a file that does not parse — never a pass).
@@ -60,6 +84,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import itertools
 import re
 import sys
 from pathlib import Path
@@ -71,7 +96,17 @@ BUILD_VERBS = frozenset({"init", "clone"})
 LAUNCHERS = frozenset({"run", "Popen", "check_output", "check_call", "call", "system", "popen",
                        "getoutput", "getstatusoutput", "execv", "execvp", "execve", "execvpe",
                        "spawnv", "spawnvp", "spawnve", "spawnl", "spawnlp"})
-SHELL_BUILD = re.compile(r"(?:^|[\s;&|(`])git\b[^;&|\n]*?\s(?:init|clone)\b")
+# git's global options that take a SEPARATE value: `-C <path>`, `-c <k=v>`, `--git-dir <path>`, ...
+GIT_VALUE_OPTS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env"})
+SHELL_BUILD = re.compile(r"(?:^|[\s;&|(`])git(?:\s+(?:-C|-c|--git-dir|--work-tree|--namespace)\s+\S+|\s+-\S+)*"
+                         r"\s+(?:init|clone)\b")
+# Suites that RUN git without building a repository, so need isolation too (⟳ r2 X1), each with its reason.
+GIT_SUITES: dict[str, str] = {
+    "scripts/brief-compose.py": "its self-test drives main(), which calls page_chrome.provenance() and so runs "
+                                "`git status` on the checkout — r2 X1: caller config ran 8-9 times in a green suite",
+    "scripts/gen-backlog-page.py": "its self-test reads the real checkout's history (`git log`/`git show`) — the r1 "
+                                   "falsifier saw caller config run 3 times",
+}
 
 # Files that build a repository and isolate it WITHOUT `isolated()`, each with its reason. Empty on purpose.
 EXEMPT: dict[str, str] = {}
@@ -93,6 +128,22 @@ def _is_git(n: ast.AST) -> bool:
         name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
         return name == "which" and bool(n.args) and _const(n.args[0]) == "git"
     return False
+
+
+def _subcommand(elts: list[ast.AST]) -> object:
+    """git's SUBCOMMAND among the elements after `git`: the first non-option, skipping global options and the
+    values GIT_VALUE_OPTS take. None when it is not a literal (a name, a `*args`) — unknown, so not a sign."""
+    it = iter(elts)
+    for e in it:
+        if isinstance(e, ast.Starred):
+            return None
+        v = _const(e)
+        if isinstance(v, str) and v.startswith("-"):
+            if v in GIT_VALUE_OPTS:
+                next(it, None)
+            continue
+        return v if isinstance(v, str) else None
+    return None
 
 
 def _git_argv(n: ast.AST) -> bool:
@@ -145,13 +196,14 @@ def build_signs(tree: ast.AST) -> list[ast.AST]:
     aliases, wrappers = _launcher_names(tree), _wrappers(tree)
     signs = []
     for n in ast.walk(tree):
-        if _git_argv(n) and any(_const(e) in BUILD_VERBS for e in n.elts):
+        if _git_argv(n) and _subcommand(n.elts[1:]) in BUILD_VERBS:
             signs.append(n)
         elif isinstance(n, ast.Call):
             if _launches(n, aliases) and n.args and any(SHELL_BUILD.search(s) for s in _strings(n.args[0])):
                 signs.append(n)
             elif isinstance(n.func, ast.Name) and n.func.id in wrappers \
-                    and any(_const(a) in BUILD_VERBS for a in n.args):
+                    and _subcommand(list(itertools.dropwhile(lambda a: not isinstance(a, ast.Constant), n.args))) \
+                    in BUILD_VERBS:
                 signs.append(n)
         elif wrappers and isinstance(n, (ast.List, ast.Tuple)) and len(n.elts) >= 2 \
                 and _const(n.elts[0]) in BUILD_VERBS and str(_const(n.elts[1])).startswith("-"):
@@ -172,7 +224,7 @@ def _helper_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
 
 def _isolates(item: ast.withitem, mods: set[str], funcs: set[str]) -> bool:
     c = item.context_expr
-    if not isinstance(c, ast.Call):
+    if not isinstance(c, ast.Call) or c.args or c.keywords:
         return False
     f = c.func
     if isinstance(f, ast.Attribute):
@@ -191,7 +243,8 @@ def _entry_block(fn: ast.FunctionDef, mods: set[str], funcs: set[str]) -> ast.Wi
     if body and isinstance(body[0], ast.Expr) and isinstance(_const(body[0].value), str):
         body = body[1:]
     body = [s for s in body if not _is_helper_import(s)]
-    if len(body) == 1 and isinstance(body[0], ast.With) and any(_isolates(i, mods, funcs) for i in body[0].items):
+    if len(body) == 1 and isinstance(body[0], ast.With) and len(body[0].items) == 1 \
+            and _isolates(body[0].items[0], mods, funcs):
         return body[0]
     return None
 
@@ -259,7 +312,7 @@ def _parents(tree: ast.AST) -> dict[int, ast.AST]:
     return {id(c): p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
 
 
-def check_source(src: str, rel: str) -> tuple[int, list[str]]:
+def check_source(src: str, rel: str, suite: bool = False) -> tuple[int, list[str]]:
     """(0 isolated or not a builder | 1 refused | 2 does not parse, messages)."""
     try:
         tree = ast.parse(src, filename=rel)
@@ -268,9 +321,9 @@ def check_source(src: str, rel: str) -> tuple[int, list[str]]:
     msgs = []
     env_names = _environ_refs(tree)
     signs = build_signs(tree)
-    if not signs:
+    if not signs and not suite:
         return 0, msgs
-    first = min(getattr(s, "lineno", 0) for s in signs)
+    first = min((getattr(s, "lineno", 0) for s in signs), default=1)
     parents = _parents(tree)
 
     def enclosing_fn(n: ast.AST) -> ast.AST | None:
@@ -287,8 +340,8 @@ def check_source(src: str, rel: str) -> tuple[int, list[str]]:
     entries = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                and n.name.replace("_", "").lower() == "selftest"]
     if not entries:
-        msgs.append(f"REFUSED {rel}:{first}: builds a git repository, but has no self-test entry (`self_test`, "
-                    f"`_self_test`) to run inside fixture_git.isolated()")
+        msgs.append(f"REFUSED {rel}:{first}: {'builds a git repository' if signs else 'is a GIT_SUITES entry'}, but "
+                    f"has no self-test entry (`self_test`, `_self_test`) to run inside fixture_git.isolated()")
     blocks = []
     for e in entries:
         b = _entry_block(e, mods, funcs)
@@ -322,7 +375,7 @@ def check_source(src: str, rel: str) -> tuple[int, list[str]]:
     return (1 if msgs else 0), msgs
 
 
-def run_check(root: Path, exempt: dict[str, str]) -> tuple[int, list[str]]:
+def run_check(root: Path, exempt: dict[str, str], suites: dict[str, str] = GIT_SUITES) -> tuple[int, list[str]]:
     scripts = root / "scripts"
     files = sorted(scripts.rglob("*.py")) if scripts.is_dir() else []
     if not files:
@@ -344,15 +397,18 @@ def run_check(root: Path, exempt: dict[str, str]) -> tuple[int, list[str]]:
                 worst = max(worst, 1)
                 msgs.append(f"REFUSED {rel}: EXEMPT, but it no longer builds a git repository — remove the entry")
             continue
-        builders += builds
-        code, m = check_source(src, rel)
+        builders += builds or rel in suites
+        code, m = check_source(src, rel, suite=rel in suites)
         worst = max(worst, code)
         msgs += m
     for rel in sorted(set(exempt) - present):
         worst = max(worst, 1)
         msgs.append(f"REFUSED {rel}: EXEMPT, but the file does not exist — remove the entry")
+    for rel in sorted(set(suites) - present):
+        worst = max(worst, 1)
+        msgs.append(f"REFUSED {rel}: listed in GIT_SUITES, but the file does not exist — remove the entry")
     if worst == 0:
-        msgs.append(f"{builders} repository-building self-test(s) run inside {HELPER_MODULE}.isolated(), "
+        msgs.append(f"{builders} git-running self-test(s) run inside {HELPER_MODULE}.isolated(), "
                     f"{len(exempt)} exempt, {len(files)} file(s) read")
     return worst, msgs
 
@@ -503,6 +559,20 @@ def _self_test_body() -> int:
          rc('from subprocess import run as r\ndef _self_test():\n    r("git init -q d", shell=True)\n'), 1)
     case("...nor a docstring that says `git init`", rc('def f():\n    """runs git init"""\n'), 0)
     case("...nor a git argv with no init or clone", builder('subprocess.run(["git", "status"])'), 0)
+    case("⟳ r2 X8: `init` as an ARGUMENT of another subcommand is not a build",
+         builder('subprocess.run(["git", "log", "--grep", "init"])'), 0)
+    case("...but `init` after global options that take values IS one",
+         builder('subprocess.run(["git", "-c", "x=y", "--git-dir", "g", "--bare", "init"])'), 1)
+    case("a wrapper whose FIRST argument is its cwd, called `(d, \"init\")`, builds one",
+         rc('import subprocess\ndef git(cwd, *a):\n    subprocess.run(["git", "-C", cwd, *a])\ndef _self_test():\n'
+            '    git(d, "init", "-q")\n'), 1)
+    case("...and a wrapper called with `log ... init` is not a build",
+         rc('import subprocess\ndef g(*a):\n    subprocess.run(["git", *a])\ndef _self_test():\n'
+            '    g("log", "--grep", "init")\n'), 0)
+    case("...while a wrapper called with options then `init` is",
+         rc('import subprocess\ndef g(*a):\n    subprocess.run(["git", *a])\ndef _self_test():\n'
+            '    g("-c", "a=b", "init", "-q")\n'), 1)
+    case("...and a shell `git log --grep init` is not a build", builder('os.system("git log --grep init")'), 0)
     case("an ordinary shell string with no git is not a build", builder('os.system("make init")'), 0)
 
     # ── the closed shape ─────────────────────────────────────────────────────────────────────────
@@ -519,8 +589,17 @@ def _self_test_body() -> int:
          shaped("def _self_test():\n    with fg.isolated():\n        return _self_test_body()\n",
                 head="import subprocess\nimport fixture_git as fg\n"), 0)
     case("...with `from fixture_git import isolated`",
-         shaped("def _self_test():\n    with isolated(HOME='h'):\n        return _self_test_body()\n",
+         shaped("def _self_test():\n    with isolated():\n        return _self_test_body()\n",
                 head="import subprocess\nfrom fixture_git import isolated\n"), 0)
+    case("⟳ r2 X4: a SECOND context item in the entry's `with` is refused (it enters before isolation)",
+         shaped("def _self_test():\n    import fixture_git\n    with earlier(), fixture_git.isolated():\n"
+                "        return _self_test_body()\n"), 1)
+    case("...and so is a second item AFTER isolated(): the entry's `with` has exactly ONE item",
+         shaped("def _self_test():\n    import fixture_git\n    with fixture_git.isolated(), later():\n"
+                "        return _self_test_body()\n"), 1)
+    case("⟳ r2 X4: `isolated()` with an argument (the caller's HOME handed back in) is refused",
+         shaped("def _self_test():\n    import fixture_git\n    with fixture_git.isolated(HOME='h'):\n"
+                "        return _self_test_body()\n"), 1)
     case("an `isolated()` of some OTHER module is not the helper",
          shaped("def _self_test():\n    with other.isolated():\n        return _self_test_body()\n",
                 head="import subprocess\nimport other\n"), 1)
@@ -575,25 +654,38 @@ def _self_test_body() -> int:
     good = program("", "")
     bad = program("", "", wrapped=False)
     w_ok = world({"scripts/good.py": good, "scripts/sub/plain.py": "x = 1\n"})
-    code, text = drive(lambda: main([], root=w_ok, exempt={}))
+    code, text = drive(lambda: main([], root=w_ok, exempt={}, suites={}))
     case("main() over an isolated world exits 0 and says how many it read", (code, "2 file(s) read" in text), (0, True))
     w_bad = world({"scripts/good.py": good, "scripts/sub/bad.py": bad})
-    code, text = drive(lambda: main([], root=w_bad, exempt={}))
+    code, text = drive(lambda: main([], root=w_bad, exempt={}, suites={}))
     case("⭐ main() over a world with one unisolated builder, in a SUBDIRECTORY, exits 1 naming it",
          (code, "REFUSED scripts/sub/bad.py:" in text), (1, True))
     w_ex = world({"scripts/bad.py": bad})
-    code, _ = drive(lambda: main([], root=w_ex, exempt={"scripts/bad.py": "isolates another way"}))
+    code, _ = drive(lambda: main([], root=w_ex, exempt={"scripts/bad.py": "isolates another way"}, suites={}))
     case("an EXEMPT file is not checked", code, 0)
     w_stale = world({"scripts/good.py": good, "scripts/plain.py": "x = 1\n"})
-    code, text = drive(lambda: main([], root=w_stale, exempt={"scripts/plain.py": "r", "scripts/gone.py": "r"}))
+    code, text = drive(lambda: main([], root=w_stale, exempt={"scripts/plain.py": "r", "scripts/gone.py": "r"}, suites={}))
     case("⭐ an EXEMPT entry that no longer builds a repository, or no longer exists, is refused",
          (code, "plain.py: EXEMPT, but it no longer builds" in text, "gone.py: EXEMPT, but the file does not exist" in text),
          (1, True, True))
     w_none = world({"README": "no scripts here\n"})
-    code, text = drive(lambda: main([], root=w_none, exempt={}))
+    code, text = drive(lambda: main([], root=w_none, exempt={}, suites={}))
     case("main() over a world with no scripts is CANNOT RUN, never a pass", (code, "CANNOT RUN" in text), (2, True))
+    plain_suite = 'import subprocess\ndef _self_test():\n    subprocess.run(["git", "status"])\n'
+    iso_suite = ('import subprocess\ndef _b():\n    subprocess.run(["git", "status"])\n'
+                 'def _self_test():\n    import fixture_git\n    with fixture_git.isolated():\n        return _b()\n')
+    case("⟳ r2 X1: a GIT_SUITES file that builds nothing is still checked: unisolated it is refused",
+         check_source(plain_suite, "scripts/s.py", suite=True)[0], 1)
+    case("...isolated it is accepted", check_source(iso_suite, "scripts/s.py", suite=True)[0], 0)
+    case("...and the same unisolated file NOT listed is not checked", check_source(plain_suite, "scripts/s.py")[0], 0)
+    w_suite = world({"scripts/s.py": plain_suite})
+    code, text = drive(lambda: main([], root=w_suite, exempt={}, suites={"scripts/s.py": "runs git"}))
+    case("main() refuses an unisolated GIT_SUITES file", (code, "REFUSED scripts/s.py:" in text), (1, True))
+    w_gone = world({"scripts/s.py": iso_suite})
+    code, text = drive(lambda: main([], root=w_gone, exempt={}, suites={"scripts/gone.py": "r"}))
+    case("...and a GIT_SUITES entry whose file does not exist", (code, "gone.py: listed in GIT_SUITES" in text), (1, True))
     w_broken = world({"scripts/broken.py": "def (:\n", "scripts/good.py": good})
-    code, _ = drive(lambda: main([], root=w_broken, exempt={}))
+    code, _ = drive(lambda: main([], root=w_broken, exempt={}, suites={}))
     case("a file that does not parse makes the whole run CANNOT RUN", code, 2)
     for d in made:
         shutil.rmtree(d, ignore_errors=True)
@@ -603,13 +695,14 @@ def _self_test_body() -> int:
     return 1 if failures else 0
 
 
-def main(argv: list[str] | None = None, root: Path = REPO_ROOT, exempt: dict[str, str] = EXEMPT) -> int:
+def main(argv: list[str] | None = None, root: Path = REPO_ROOT, exempt: dict[str, str] = EXEMPT,
+         suites: dict[str, str] = GIT_SUITES) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true", help="run the case suite and exit")
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
-    code, msgs = run_check(root, exempt)
+    code, msgs = run_check(root, exempt, suites)
     if code == 0:
         print(f"ok — {msgs[-1]}")
         return 0

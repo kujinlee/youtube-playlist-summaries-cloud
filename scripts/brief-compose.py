@@ -1068,6 +1068,13 @@ def _report_line(name: str, ok: bool) -> str:
 
 
 def self_test() -> int:
+    """The suite, inside `fixture_git.isolated()`: it runs git through page_chrome.provenance() (backlog #373)."""
+    import fixture_git
+    with fixture_git.isolated():
+        return _self_test_suite()
+
+
+def _self_test_suite() -> int:
     """Run the body, and REPORT whatever it managed to decide even if it raised.
 
     ⛔ THE SUITE USED TO LOSE EVERY RESULT TO ONE EXCEPTION. Cases are accumulated and printed

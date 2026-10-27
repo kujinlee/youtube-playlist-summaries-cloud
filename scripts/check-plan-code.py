@@ -1877,8 +1877,9 @@ EXPECTED_MUTATIONS = {
     # Python rules only — the launcher's shell mutants are killed inside its `--self-test`.
     "scripts/check-run-hook.py": 12,
     # backlog #373 (2026-10-27): the fixture-git guard and the helper it enforces. 17 -> 36 and 6 -> 12 in the
-    # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
-    "scripts/check-fixture-git-isolation.py": 36,
+    # round-1 REDESIGN (isolated(), the closed entry shape, the import-time capture rules); 36 -> 45 in round 2's
+    # SPLIT (one argument-free item, the subcommand rule, GIT_SUITES). `fixture_git.py` is a LIBRARY, so the literal list below is its outside observer.
+    "scripts/check-fixture-git-isolation.py": 45,
     "scripts/fixture_git.py": 12,
     # ⟳ 2026-09-07. Third of PR #247's four, and the money one — backlog #26's trigger. Six
     # targets in the PURE halves: the per-occurrence line scan (the r12 blocking defect), the
@@ -6068,7 +6069,7 @@ def _self_test() -> int:
     case("every relevant root is a real HARNESS_TREE member — no root invented here",
          sorted(r.rstrip("/") for r in SWEEP_RELEVANT_ROOTS) ==
          sorted(set(HARNESS_TREE) - {"docs"}), True)
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2294)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 2303)
 
     # ─── HARNESS_TREE ────────────────────────────────────────────────────────────────────
     # This trio is deliberately self-consistent in BOTH worlds: run from the repo the entries
