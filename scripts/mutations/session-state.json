@@ -147,8 +147,8 @@
     "file": "scripts/session-state.py",
     "edits": [
       [
-        "    if st.st_size > MAX_LEDGER:",
-        "    if False:"
+        "    if st.st_size > MAX_LEDGER:\n        return [], [f\"{LEDGER_REL} is {st.st_size} bytes",
+        "    if False:\n        return [], [f\"{LEDGER_REL} is {st.st_size} bytes"
       ]
     ],
     "expect": [
@@ -218,6 +218,58 @@
     ],
     "expect": [
       "⭐ main() PRINTS the block — the hook's whole output"
+    ]
+  },
+  {
+    "name": "⭐ an oversized ledger is rewritten anyway (backlog #369)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if st.st_size > MAX_LEDGER:\n        raise LedgerRefused(",
+        "    if False:\n        raise LedgerRefused("
+      ]
+    ],
+    "expect": [
+      "⭐ --add against an OVERSIZED ledger is REFUSED and leaves it byte-identical (backlog #369 falsifier)"
+    ]
+  },
+  {
+    "name": "⭐ --done skips the whole-ledger check (backlog #369)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    with _locked(path):\n        _whole(path)\n        entries, _, raw = read_ledger(path)\n        kept",
+        "    with _locked(path):\n        entries, _, raw = read_ledger(path)\n        kept"
+      ]
+    ],
+    "expect": [
+      "⭐ --done against an OVERSIZED ledger is REFUSED too, never 'no such id' (backlog #369 falsifier)"
+    ]
+  },
+  {
+    "name": "⭐ a write over the cap replaces the ledger anyway (backlog #369)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "    if len(body) > MAX_LEDGER:  # refused BEFORE replacing",
+        "    if False:  # refused BEFORE replacing"
+      ]
+    ],
+    "expect": [
+      "⭐ an add that would take the ledger OVER the cap is refused BEFORE replacing it"
+    ]
+  },
+  {
+    "name": "⭐ a missing rollup reads NO CHECKS again (backlog #369)",
+    "file": "scripts/session-state.py",
+    "edits": [
+      [
+        "f\"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}\")",
+        "f\"{check_summary(rollup or [])}\")"
+      ]
+    ],
+    "expect": [
+      "⭐ a rollup of None reads UNREADABLE, never NO CHECKS (backlog #369)"
     ]
   }
 ]

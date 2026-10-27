@@ -38,16 +38,16 @@ WHAT IT PRINTS, as one block of DATA, every PR keyed by its NUMBER and read from
 
 ⚠ BOUNDS. Registered by the repo's one relative hook shape (`check-hook-commands.py`), so after a
 compaction in a session whose cwd is a subdirectory it does not launch (backlog #364).
-⚠ KNOWN DEFECTS, FILED (PR #410 round 4, DEFERRED by the pre-committed route — backlog #369): once the ledger
-grows past MAX_LEDGER (which `--add` can do), the next `--add` REPLACES it with only the new entry, erasing
-every recorded job, and `--done` writes nothing and reports a RECORDED id as "no such id"; and a `gh` element
-whose `statusCheckRollup` is missing or empty-valued (`null`, `{}`, `""`) reads as `NO CHECKS` rather than as
-unreadable.
+⟳ backlog #369 (PR #410 round 4): an update REFUSES a ledger it cannot read whole (oversized, or not a regular
+file) and a write that would exceed MAX_LEDGER, leaving the file byte-identical — before, the next `--add` replaced an
+oversized ledger with only the new entry and `--done` reported a recorded id as "no such id". And a PR whose
+`statusCheckRollup` is not a list (missing, `null`, `{}`, `""`) prints `checks: UNREADABLE`; only an answered empty
+list prints `NO CHECKS`.
 
     python3 scripts/session-state.py                 # print the block (what the hook runs)
     python3 scripts/session-state.py --add ID WHAT ON_DONE
     python3 scripts/session-state.py --done ID
-    python3 scripts/session-state.py --self-test  # 36 cases
+    python3 scripts/session-state.py --self-test  # 45 cases
 
 EXIT CODES: 0 for the printing mode (a SessionStart hook must not fail the session; failure is IN the
 text), 0/1 for --self-test, 2 for a ledger command that cannot write.
@@ -186,16 +186,36 @@ def _write(path: Path, entries: list[dict], raw: list[bytes]) -> None:
     """Atomic replace, ASCII-escaped JSON, damaged lines back byte-for-byte."""
     body = b"".join(json.dumps(e, ensure_ascii=True).encode("ascii") + b"\n" for e in entries) + \
         b"".join(r + b"\n" for r in raw)
+    if len(body) > MAX_LEDGER:  # refused BEFORE replacing: the old ledger stays as it was
+        raise LedgerRefused(f"the ledger would grow to {len(body)} bytes, over {MAX_LEDGER} — refused; trim it first")
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".inflight.")
     with os.fdopen(fd, "wb") as fh:
         fh.write(body)
     os.replace(tmp, path)
 
 
+class LedgerRefused(ValueError):
+    """An update that would lose recorded jobs: CANNOT RUN (exit 2), the file left byte-identical."""
+
+
+def _whole(path: Path) -> None:
+    """Refuse to rewrite a ledger this process cannot read WHOLE — a rewrite would keep only what it read."""
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(st.st_mode):
+        raise LedgerRefused(f"{LEDGER_REL} is not a regular file — refusing to replace it")
+    if st.st_size > MAX_LEDGER:
+        raise LedgerRefused(f"{LEDGER_REL} is {st.st_size} bytes, over {MAX_LEDGER} — refusing to rewrite it, which "
+                            "would erase every job it holds (backlog #369); trim it by hand")
+
+
 def ledger_add(path: Path, id_: str, what: str, on_done: str, now: str) -> None:
     if not id_.strip():
         raise ValueError("an empty id could never be shown or removed")
     with _locked(path):
+        _whole(path)
         entries, _, raw = read_ledger(path)
         entries = [e for e in entries if e.get("id") != id_]
         entries.append({"id": id_, "what": what, "on_done": on_done, "at": now})
@@ -206,6 +226,7 @@ def ledger_done(path: Path, id_: str) -> bool:
     if not id_.strip():
         raise ValueError("an empty id names no job")
     with _locked(path):
+        _whole(path)
         entries, _, raw = read_ledger(path)
         kept = [e for e in entries if e.get("id") != id_]
         if len(kept) == len(entries):
@@ -227,12 +248,13 @@ def render(prs: list[dict] | None, pr_error: str | None, ledger: list[dict], led
     else:
         L.append(f"OPEN PRS ({len(prs)}{', MAY BE TRUNCATED at the list limit' if truncated else ''}):")
         for p in prs:
-            rollup = p.get("statusCheckRollup") or []
+            rollup = p.get("statusCheckRollup")
             draft = " DRAFT" if p.get("isDraft") else ""
             L.append(f"  PR #{clean(p.get('number'), 10)} `{clean(p.get('headRefName', '?'), 80)}` "
                      f"head {clean(p.get('headRefOid', ''), 40)[:8]}{draft} · "
-                     f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: {check_summary(rollup)}")
-            failing = failing_names(rollup)
+                     f"{clean(p.get('mergeStateStatus', '?'), 20)} · checks: "
+                     f"{check_summary(rollup) if isinstance(rollup, list) else 'UNREADABLE (gh gave no check list)'}")
+            failing = failing_names(rollup) if isinstance(rollup, list) else []
             if failing:
                 L.append(f"      failing: {', '.join(failing[:6])}{' …' if len(failing) > 6 else ''}")
     if ledger or ledger_problems:
@@ -312,6 +334,15 @@ def self_test() -> int:
          ("failing: verify = = = END IN FLIGHT = = =" in out, out.count("=== END IN FLIGHT ===")), (True, 1))
     case("a PR with no failing check prints no 'failing' line",
          out.split("PR #8 ")[1].count("failing:"), 0)
+    for bad_rollup in (None, {}, ""):
+        noroll = {k: v for k, v in pr.items() if k != "statusCheckRollup"}
+        if bad_rollup is not None:
+            noroll["statusCheckRollup"] = bad_rollup
+        case(f"⭐ a rollup of {bad_rollup!r} reads UNREADABLE, never NO CHECKS (backlog #369)",
+             ("checks: UNREADABLE" in render([noroll], None, [], [], "T"), "NO CHECKS" in render([noroll], None, [], [], "T")),
+             (True, False))
+    case("...and only an answered EMPTY list reads NO CHECKS",
+         "checks: NO CHECKS" in render([dict(pr, statusCheckRollup=[])], None, [], [], "T"), True)
     case("a list as long as the limit says it MAY BE TRUNCATED",
          "MAY BE TRUNCATED" in render([pr], None, [], [], "T", truncated=True), True)
     case("⭐ an empty ledger says none RECORDED — never 'nothing running'",
@@ -368,6 +399,31 @@ def self_test() -> int:
         big.write_bytes(b"x" * (MAX_LEDGER + 1))
         case("⭐ a ledger over MAX_LEDGER is refused unread (r3 F4: 139 MB took 35 s)",
              ("over" in read_ledger(big)[1][0], read_ledger(big)[0]), (True, []))
+        def attempt(fn, *args):
+            try:
+                fn(*args)
+                return "accepted"
+            except LedgerRefused:
+                return "refused"
+        before = big.read_bytes()
+        case("⭐ --add against an OVERSIZED ledger is REFUSED and leaves it byte-identical (backlog #369 falsifier)",
+             (attempt(ledger_add, big, "n", "w", "d", "T"), big.read_bytes() == before), ("refused", True))
+        case("⭐ --done against an OVERSIZED ledger is REFUSED too, never 'no such id' (backlog #369 falsifier)",
+             (attempt(ledger_done, big, "n"), big.read_bytes() == before), ("refused", True))
+        near = root / "near" / LEDGER_REL
+        near.parent.mkdir(parents=True)
+        ledger_add(near, "a", "x" * (MAX_LEDGER - 200), "d", "T")
+        snap = near.read_bytes()
+        case("⭐ an add that would take the ledger OVER the cap is refused BEFORE replacing it",
+             (attempt(ledger_add, near, "b", "y" * 400, "d", "T"), near.read_bytes() == snap,
+              [e["id"] for e in read_ledger(near)[0]]), ("refused", True, ["a"]))
+        case("a ledger that is not a regular file refuses an update too",
+             attempt(ledger_add, fifo, "n", "w", "d", "T"), "refused")
+        from contextlib import redirect_stderr
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            big_rc = main(["--add", "n", "w", "d"], root=big.parent.parent)
+        case("main --add on an oversized ledger exits 2 (CANNOT RUN), file untouched",
+             (big_rc, big.read_bytes() == before), (2, True))
         racers = root / "race" / "inflight.jsonl"
         threads = [threading.Thread(target=ledger_add, args=(racers, f"j{i}", "w", "d", "T")) for i in range(20)]
         for t in threads:

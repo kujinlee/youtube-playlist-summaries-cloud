@@ -17780,3 +17780,14 @@ violation before). Known positive: `{}`, `"commmand"` and an empty reason exited
 the first fold knew 2 of Claude Code 2.1.309's 5 hook types, crashed on a list `type`, took `str(None)` as a reason —
 fixed. 29 cases; 16 mutations. Filed backlog #368 (`args` makes a hook launch nothing).
 
+
+## 2026-10-27
+The list of running background jobs that every session now starts with can no longer wipe itself: once it grew past
+its size limit, the next recorded job used to replace every entry in it. It now refuses the change and leaves the file
+as it was. A pull request whose check results GitHub did not return now says so, instead of claiming no checks ran.
+<!--tech-->
+Branch `ledger-cap-safety` (backlog #369, from PR #410 round 4). `scripts/session-state.py`: `_whole()` makes `ledger_add`
+and `ledger_done` raise `LedgerRefused` (CLI exit 2) for a ledger over `MAX_LEDGER` or not a regular file, and `_write`
+refuses a body over the cap BEFORE `os.replace`; `render()` prints `checks: UNREADABLE` for a rollup that is not a list
+(missing, `null`, `{}`, `""`). The row's falsifier is two cases; 45 cases; 21 mutations (4 new), each killed by its case.
+
