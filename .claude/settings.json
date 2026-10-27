@@ -121,5 +121,12 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh run watch *)",
+      "Bash(git check-ignore *)",
+      "Bash(docker buildx imagetools inspect *)"
+    ]
   }
 }
